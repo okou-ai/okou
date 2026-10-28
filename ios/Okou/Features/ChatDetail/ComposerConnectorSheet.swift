@@ -35,6 +35,13 @@ struct ComposerConnectorSheet: View {
       List {
         if let error = store.error { ConnectorLoadError(error: error) { await store.refresh() } }
         Section {
+          NavigationLink {
+            ComposerRemoteControls(store: store)
+          } label: {
+            Label("Remote control", systemImage: "desktopcomputer")
+          }
+        }
+        Section {
           if let error = store.connectorError {
             ConnectorLoadError(error: error) { await store.refresh() }
           } else if store.isLoading && store.connectors.isEmpty {
@@ -62,13 +69,6 @@ struct ComposerConnectorSheet: View {
         } footer: {
           Text("Service access applies to this Agent. Account choices apply to this conversation.")
         }
-        Section {
-          NavigationLink {
-            ComposerRemoteControls(store: store)
-          } label: {
-            Label("Remote control", systemImage: "desktopcomputer")
-          }
-        }
       }
       .searchable(text: $search, prompt: "Find connectors")
       .navigationTitle("Connectors")
@@ -78,7 +78,6 @@ struct ComposerConnectorSheet: View {
       }
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
       .task { await store.refresh() }
-      .refreshable { await store.refresh() }
       .onChange(of: scenePhase) { _, phase in
         if phase == .active { Task { await store.refresh() } }
       }
@@ -180,7 +179,7 @@ struct ComposerConnectorSheet: View {
     } else {
       ContentUnavailableView(
         "Connector unavailable", systemImage: "powerplug",
-        description: Text("Return to Connectors and refresh to choose an available service."))
+        description: Text("Return to Connectors to choose an available service."))
     }
   }
 
@@ -237,7 +236,7 @@ private struct ComposerRemoteControls: View {
           }
         }
         Section {
-          ForEach(remotes.computerUseHosts) { host in
+          ForEach(store.visibleComputerUseHosts) { host in
             Toggle(
               isOn: Binding(
                 get: { store.computerAccess.computerUseHostId == host.id },
@@ -259,8 +258,8 @@ private struct ComposerRemoteControls: View {
             .tint(.green)
             .disabled(store.isSaving)
           }
-          if remotes.computerUseHosts.isEmpty {
-            Text("No computers connected").foregroundStyle(.secondary)
+          if store.visibleComputerUseHosts.isEmpty {
+            Text("No online computers").foregroundStyle(.secondary)
           }
           Button("Connect my computer") { showsDesktopSetup = true }
         } header: {
@@ -300,8 +299,7 @@ private struct ComposerRemoteControls: View {
     .sheet(isPresented: $showsDesktopSetup) {
       NavigationStack {
         Form {
-          Text(
-            "Install Okou Desktop on your Mac, connect your account, then return here and refresh.")
+          Text("Install Okou Desktop on your Mac, connect your account, then reopen Connectors.")
           ShareLink("Share Desktop download link", item: store.service.desktopDownloadURL)
           Link("Download for Mac", destination: store.service.desktopDownloadURL)
         }

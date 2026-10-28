@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   GET_STARTED_REWARDS,
   GET_STARTED_REWARD_TTL_MS,
+  getStartedQuestKeySchema,
 } from "@okouai/api-contracts/contracts/get-started";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
@@ -17,7 +18,9 @@ export function getStartedRewardAvailabilityQuery(
   if (!claim.beneficiaryUserId || claim.rewardTarget !== "user") {
     throw new Error("Personal reward has no beneficiary");
   }
-  const limit = GET_STARTED_REWARDS[claim.questKey].limit;
+  // A retired share receipt is never granted again.
+  const limit =
+    GET_STARTED_REWARDS[getStartedQuestKeySchema.parse(claim.questKey)].limit;
   return new QueryBuilder()
     .select({
       rewardKey: getStartedClaims.rewardKey,

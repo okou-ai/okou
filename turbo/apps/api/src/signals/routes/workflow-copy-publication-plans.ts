@@ -5,13 +5,14 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  pgTextDecoder,
+  nullableDriverValueDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { QueryBuilder, alias } from "drizzle-orm/pg-core";
 import {
@@ -25,14 +26,9 @@ import {
 } from "../services/workflow-automation-account-classification.service";
 import { officialAccountProjectionReadPlan } from "../services/official-workflow-account-projection";
 import { prepareChatThreadInsert } from "../services/chat-thread-create.service";
-import {
-  workflowUserAutomationThreadOwnerCondition,
-  type WorkflowThreadPreparation,
-} from "../services/workflow-user-automation-thread.service";
+import type { WorkflowThreadPreparation } from "../services/workflow-user-automation-thread.service";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import {
-  CopyPreparationConflict,
-  copySourcePlans,
   type WorkflowCopyInput,
   WorkflowCopySource,
 } from "./workflow-copy-source";
@@ -237,19 +233,6 @@ export function workflowCopyThreadPlan(args: WorkflowCopyPublicationArgs) {
     updatedAt: args.currentTime,
   });
 }
-export function copyThreadColumns() {
-  return {
-    id: chatThreads.id,
-    userId: chatThreads.userId,
-    title: chatThreads.title,
-    selectedModel: chatThreads.selectedModel,
-    modelSettings: chatThreads.modelSettings,
-    codexServiceTier: chatThreads.codexServiceTier,
-    computerUseHostId: chatThreads.computerUseHostId,
-    cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    createdAt: chatThreads.createdAt,
-  };
-}
 export function workflowCopyThreadBindingValues(
   args: WorkflowCopyPublicationArgs,
 ) {
@@ -261,19 +244,8 @@ export function workflowCopyThreadBindingValues(
     updatedAt: args.currentTime,
   };
 }
-export function copyBindingConflict() {
-  return {
-    target: [
-      workflowUserAutomationThreads.orgId,
-      workflowUserAutomationThreads.userId,
-      workflowUserAutomationThreads.workflowId,
-    ],
-  };
-}
-
 export function copyPublicationPlans(args: WorkflowCopyPublicationArgs) {
   return {
-    ...copySourcePlans(args),
     slug: workflowCopySlugQuery({
       ...args,
       sourceWorkflow: args.source.sourceWorkflow,
@@ -284,25 +256,6 @@ export function copyPublicationPlans(args: WorkflowCopyPublicationArgs) {
     }),
     thread: workflowCopyThreadPlan(args),
     bindingValues: workflowCopyThreadBindingValues(args),
-    binding: new QueryBuilder()
-      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-      .from(workflowUserAutomationThreads)
-      .where(
-        workflowUserAutomationThreadOwnerCondition({
-          ...args,
-          workflowId: args.targetWorkflowId,
-        }),
-      )
-      .limit(1)
-      .as("copy_binding"),
-    bindingCondition: workflowUserAutomationThreadOwnerCondition({
-      ...args,
-      workflowId: args.targetWorkflowId,
-    }),
-    idColumns: { id: workflows.id },
-    workflowError: "Failed to copy workflow",
-    automationError: "Failed to copy workflow automation",
-    threadError: "Failed to create workflow automation chat thread",
   };
 }
 export function copyAutomationPlan(
@@ -322,12 +275,6 @@ export function copyAutomationPlan(
       ? { ...webhook, createdAt: args.currentTime, updatedAt: args.currentTime }
       : null,
   };
-}
-export function requireCopiedRow<T>(row: T | undefined, message: string): T {
-  if (!row) {
-    throw new Error(message);
-  }
-  return row;
 }
 export function copyNeedsThread(source: WorkflowCopySource) {
   return source.sourceAutomations.some((row) => {
@@ -350,6 +297,9 @@ export function copyAccountReadPlan(
       eventType: workflowAutomations.eventType,
       eventConfig: workflowAutomations.eventConfig,
       eventConnectorId: workflowAutomations.eventConnectorId,
+      observedXmin: sql`${workflowAutomations}.xmin::text`
+        .mapWith(pgTextDecoder)
+        .as("observed_xmin"),
       connectorId: selectedId
         .mapWith(nullableDriverValueDecoder(connectors.id))
         .as("connectorId"),
@@ -411,6 +361,7 @@ export function copyAccountReadPlan(
     source,
     columns: {
       ...plan.columns,
+      observedXmin: source.observedXmin,
       automation: {
         id: source.id,
         workflowId: source.workflowId,
@@ -422,28 +373,13 @@ export function copyAccountReadPlan(
   };
 }
 
-export function copyNotionInvalidation(automationId: string) {
+export function copyNotionInvalidationValues() {
   const currentTime = nowDate();
   return {
-    values: {
-      status: "skipped" as const,
-      skipReason:
-        "Notion account selection changed before the event was processed",
-      processedAt: currentTime,
-      updatedAt: currentTime,
-    },
-    condition: and(
-      eq(notionWorkflowPendingEvents.automationId, automationId),
-      inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
-    ),
+    status: "skipped" as const,
+    skipReason:
+      "Notion account selection changed before the event was processed",
+    processedAt: currentTime,
+    updatedAt: currentTime,
   };
-}
-
-export function requireCopySlugAvailable(
-  row: { readonly id: string } | undefined,
-  name: string,
-): void {
-  if (row) {
-    throw new CopyPreparationConflict(copySlugConflict(name));
-  }
 }

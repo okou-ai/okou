@@ -222,7 +222,7 @@ test("keeps the Morning Brief toggle disabled while an unavailable reason is rep
   const card = await screen.findByTestId("morning-brief-preference");
   await expect(
     within(card).findByText(
-      "Choose a usable default Agent before enabling Morning Brief.",
+      "Okou is unavailable in this workspace. Contact a workspace administrator.",
     ),
   ).resolves.toBeInTheDocument();
   expect(

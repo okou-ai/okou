@@ -231,3 +231,167 @@ async def test_builtin_catalog_auth_uses_current_catalog_destination(
     assert isinstance(matched, dict)
     assert matched["base"] == "https://replacement.example.com/server"
     assert matched["sourceId"] == _SOURCE_ID
+
+
+@pytest.mark.parametrize("requestheaders_first", [False, True])
+async def test_builtin_static_headers_follow_catalog_across_mcp_requests_and_profile_changes(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first
+):
+    registry_path = tmp_path / "registry.json"
+    cache_path = tmp_path / "catalog.json"
+    configured_headers = {
+        "Authorization": "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}",
+        "X-Datadog-MCP-Toolsets": "all,cases",
+        "X-Mcp-Options": "Mode=FULL; preview=v2",
+    }
+    builtin = _firewall(_BUILTIN, oauth=True)
+    builtin["apis"][0].pop("id")
+    builtin["apis"][0]["auth"]["headers"] = configured_headers
+    sandbox = {
+        "runId": "builtin-static-headers",
+        "cliAgentType": "codex",
+        "sandboxToken": "sandbox-token",
+        "encryptedSecrets": "iv:tag:data",
+        "networkLogPath": str(tmp_path / "network.jsonl"),
+        "proxyLogPath": str(tmp_path / "proxy.jsonl"),
+        "billableFirewalls": [],
+        "firewalls": [{"kind": "builtin", "name": _BUILTIN, "sourceId": _SOURCE_ID}],
+        "connectorRuntimeTargets": [{"kind": "builtin", "connectorSlug": _BUILTIN}],
+        "connectorRoutingVariables": {f"builtin:{_BUILTIN}": {}},
+        "networkPolicies": {
+            _BUILTIN: {"allow": [], "deny": [], "ask": [], "unknownPolicy": "allow"}
+        },
+    }
+    write_multi_sandbox_registry(registry_path, {_CLIENT_IP: sandbox})
+    write_catalog_cache(
+        cache_path,
+        digest="sha256:" + "a" * 64,
+        version="static-one",
+        firewalls={_BUILTIN: builtin},
+    )
+    endpoint = FakeAuthEndpoint()
+    for toolsets in ("all,cases", "all,apm"):
+        endpoint.queue_json_response(
+            firewall_auth_success_response(
+                {
+                    "Authorization": "Bearer selected-account",
+                    "X-Datadog-MCP-Toolsets": toolsets,
+                    "X-Mcp-Options": "Mode=FULL; preview=v2",
+                }
+            )
+        )
+    requests = [
+        (
+            "POST",
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "catalog-header-fixture", "version": "1.0.0"},
+                },
+            },
+        ),
+        ("POST", {"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        ("POST", {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        (
+            "POST",
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "fixture-tool", "arguments": {}},
+            },
+        ),
+        ("GET", None),
+        ("DELETE", None),
+    ]
+    with (
+        endpoint.run(),
+        mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            api_url=endpoint.api_url,
+        ),
+    ):
+        for index, (method, rpc_body) in enumerate(requests):
+            body = json.dumps(rpc_body).encode() if rpc_body is not None else None
+            flow = real_flow(
+                with_response=False,
+                client_ip=_CLIENT_IP,
+                host="shared.example.com",
+                path="/server",
+                method=method,
+                request_body=body,
+                request_content_type="application/json" if body is not None else None,
+            )
+            flow.request.headers["X-Okou-Connector-Intent"] = _BUILTIN
+            flow.request.headers["Authorization"] = "Bearer caller-controlled"
+            flow.request.headers.add("X-Datadog-MCP-Toolsets", "core")
+            flow.request.headers.add("x-datadog-mcp-toolsets", "caller-controlled")
+            flow.request.headers["X-Mcp-Options"] = "caller-controlled"
+            if index > 0:
+                flow.request.headers["Mcp-Session-Id"] = "provider-session"
+                flow.request.headers["MCP-Protocol-Version"] = "2025-06-18"
+            if method == "GET":
+                flow.request.headers["Last-Event-ID"] = "resume-event"
+            if requestheaders_first:
+                result = mitm_addon.requestheaders(flow)
+                if result is not None:
+                    await await_requestheaders_result(result)
+            await mitm_addon.request(flow)
+            assert flow.response is None
+            assert flow.error is None
+            assert flow.request.headers["Authorization"] == "Bearer selected-account"
+            assert flow.request.headers.get_all("X-Datadog-MCP-Toolsets") == ["all,cases"]
+            assert flow.request.headers["X-Mcp-Options"] == "Mode=FULL; preview=v2"
+            if index > 0:
+                assert flow.request.headers["Mcp-Session-Id"] == "provider-session"
+                assert flow.request.headers["MCP-Protocol-Version"] == "2025-06-18"
+            if method == "GET":
+                assert flow.request.headers["Last-Event-ID"] == "resume-event"
+
+        assert endpoint.request_count == 1
+        requested = endpoint.requests[0].json_body()
+        assert requested["authHeaders"] == configured_headers
+        matched = requested["matchedFirewall"]
+        assert isinstance(matched, dict)
+        assert matched["sourceId"] == _SOURCE_ID
+        assert matched["connectorSlug"] == _BUILTIN
+
+        changed = _firewall(_BUILTIN, oauth=True)
+        changed["apis"][0].pop("id")
+        changed["apis"][0]["auth"]["headers"] = {
+            **configured_headers,
+            "X-Datadog-MCP-Toolsets": "all,apm",
+        }
+        write_catalog_cache(
+            cache_path,
+            digest="sha256:" + "b" * 64,
+            version="static-two",
+            firewalls={_BUILTIN: changed},
+        )
+        resumed = real_flow(
+            with_response=False,
+            client_ip=_CLIENT_IP,
+            host="shared.example.com",
+            path="/server",
+            method="GET",
+        )
+        resumed.request.headers["X-Okou-Connector-Intent"] = _BUILTIN
+        resumed.request.headers["Mcp-Session-Id"] = "provider-session"
+        resumed.request.headers["Last-Event-ID"] = "resume-event"
+        await mitm_addon.request(resumed)
+        assert resumed.response is None
+        assert resumed.error is None
+        assert resumed.request.headers["X-Datadog-MCP-Toolsets"] == "all,apm"
+        assert resumed.request.headers["X-Mcp-Options"] == "Mode=FULL; preview=v2"
+        assert resumed.request.headers["Authorization"] == "Bearer selected-account"
+        assert resumed.request.headers["Mcp-Session-Id"] == "provider-session"
+        assert resumed.request.headers["Last-Event-ID"] == "resume-event"
+        assert endpoint.request_count == 2
+        assert (
+            endpoint.requests[1].json_body()["authHeaders"] == changed["apis"][0]["auth"]["headers"]
+        )

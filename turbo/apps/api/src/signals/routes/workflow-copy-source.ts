@@ -33,7 +33,18 @@ import {
   type WorkflowMember,
 } from "../services/workflow-data.service";
 
+interface WorkflowCopyObservation {
+  readonly workflowXmin: string;
+  readonly parents: readonly { readonly id: string; readonly xmin: string }[];
+  readonly automations: readonly {
+    readonly id: string;
+    readonly xmin: string;
+  }[];
+  readonly acceptedReleaseId: string | null;
+}
+
 export interface WorkflowCopySource {
+  readonly observation: WorkflowCopyObservation;
   readonly revision: string | null;
   readonly sourceWorkflow: WorkflowRow;
   readonly sourceAutomations: readonly (typeof workflowAutomations.$inferSelect)[];
@@ -77,11 +88,8 @@ export function workflowCopyConflict(message = WORKFLOW_COPY_CHANGED_MESSAGE) {
   return { kind: "conflict" as const, message };
 }
 
-/** Publication retains inner locks; preparation uses ordinary statement reads. */
-export function copySourcePlans(
-  args: WorkflowCopyInput,
-  mode: "publication" | "preparation" = "publication",
-) {
+/** Capture the source and native row versions before external preparation. */
+export function copySourcePlans(args: WorkflowCopyInput) {
   const definitionName = args.sourceWorkflow.officialDefinitionName;
   const official = definitionName !== null;
   if (definitionName === "") {
@@ -91,7 +99,12 @@ export function copySourcePlans(
   }
   const catalog = acceptedOfficialWorkflowCatalogReadPlan();
   const source = new QueryBuilder()
-    .select()
+    .select({
+      workflow: getTableColumns(workflows),
+      observedXmin: sql`${workflows}.xmin::text`
+        .mapWith(pgTextDecoder)
+        .as("observed_xmin"),
+    })
     .from(workflows)
     .where(
       and(
@@ -134,12 +147,6 @@ export function copySourcePlans(
   return {
     official,
     definitionName,
-    catalogLock: new QueryBuilder()
-      .select({ authority: officialWorkflowCatalogState.authority })
-      .from(officialWorkflowCatalogState)
-      .where(catalog.condition)
-      .for("share")
-      .as("copy_catalog_lock"),
     catalog: new QueryBuilder()
       .select(catalog.columns)
       .from(officialWorkflowCatalogState)
@@ -148,7 +155,12 @@ export function copySourcePlans(
       .limit(1)
       .as("copy_catalog"),
     parents: new QueryBuilder()
-      .select({ id: agents.id })
+      .select({
+        id: agents.id,
+        owner: agents.owner,
+        visibility: agents.visibility,
+        xmin: sql`${agents}.xmin::text`.mapWith(pgTextDecoder).as("xmin"),
+      })
       .from(agents)
       .where(
         and(
@@ -157,21 +169,14 @@ export function copySourcePlans(
         ),
       )
       .orderBy(asc(agents.id))
-      .for("share")
-      .as("copy_parent_locks"),
-    target: workflowCopyAgentQuery(args.orgId, args.targetAgentId),
-    source: (mode === "publication" ? source.for("update") : source)
-      .limit(1)
-      .as("copy_source_lock"),
+      .as("copy_parents"),
+    source: source.limit(1).as("copy_source"),
     visible: workflowCopyVisibleQuery({
       orgId: args.orgId,
       member: args.member,
       workflowId: args.sourceWorkflow.id,
     }),
-    automations: (mode === "publication"
-      ? automations.for("update")
-      : automations
-    ).as("copy_automation_locks"),
+    automations: automations.as("copy_automations"),
   };
 }
 
@@ -231,7 +236,6 @@ export function workflowCopyVisibleQuery(args: {
 
 export function copyWebhooksQuery(
   rows: WorkflowCopySource["sourceAutomations"],
-  mode: "publication" | "preparation" = "publication",
 ) {
   const query = new QueryBuilder()
     .select({
@@ -249,9 +253,7 @@ export function copyWebhooksQuery(
       ),
     )
     .orderBy(asc(workflowWebhookAutomations.automationId));
-  return (mode === "publication" ? query.for("share") : query).as(
-    "copy_webhook_locks",
-  );
+  return query.as("copy_webhooks");
 }
 
 export function requireCopyTarget(
@@ -327,11 +329,12 @@ export function copySourceResult(
   visible: WorkflowRow,
   materialization: OfficialCopyMaterialization | null,
   rows: WorkflowCopySource["sourceAutomations"],
-  facts: Pick<WorkflowCopySource, "webhooks">,
-) {
+  facts: Pick<WorkflowCopySource, "webhooks" | "observation">,
+): { readonly kind: "ok"; readonly source: WorkflowCopySource } {
   return {
     kind: "ok" as const,
     source: {
+      observation: facts.observation,
       revision: materialization?.revision ?? null,
       sourceWorkflow: materialization?.sourceWorkflow ?? visible,
       sourceAutomations: materialization?.sourceAutomations ?? rows,
@@ -404,13 +407,4 @@ export function requireCopyVisibility(
     throw new CopyPreparationConflict();
   }
   return row;
-}
-
-export function requirePreparedCopyUnchanged(
-  current: WorkflowCopySource,
-  prepared: WorkflowCopySource,
-): void {
-  if (!isDeepStrictEqual(current, prepared)) {
-    throw new CopyPreparationConflict();
-  }
 }

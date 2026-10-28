@@ -82,7 +82,17 @@ export const updateIosPushRegistration$ = command(
       .onConflictDoUpdate({
         target: iosPushRegistrations.installationId,
         set: binding.enabled
-          ? { ...binding, updatedAt: sql`now()` }
+          ? {
+              ...binding,
+              updatedAt: sql`now()`,
+              // Re-registration after a background launch must retain this user's acknowledgement.
+              badgeClearedRevision: sql`CASE
+                WHEN ${iosPushRegistrations.userId} = ${binding.userId}
+                  AND ${iosPushRegistrations.badgeClearedRevision} = ${iosPushRegistrations.revision}
+                THEN ${binding.revision}::bigint
+                ELSE NULL
+              END`,
+            }
           : {
               enabled: false,
               revision: binding.revision,

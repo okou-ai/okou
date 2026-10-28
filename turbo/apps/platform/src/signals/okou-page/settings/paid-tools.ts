@@ -5,17 +5,22 @@ import {
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../../auth.ts";
 import { effectiveImageModel$ } from "../../external/user-model-preference.ts";
 import { disabledPaidTools$, reloadDisabledPaidTools$ } from "../paid-tools.ts";
+import { dataRouterCatalog$ } from "./paid-tools-catalog.ts";
 import {
   settingsActiveSection$,
   settingsDialogOpen$,
   settingsVisit$,
 } from "./settings-dialog.ts";
+
+const OKOU_PAID_TOOL_IDS: ReadonlySet<string> = new Set(
+  AVAILABLE_PAID_TOOL_IDS,
+);
 
 function createPaidToolsSignals(
   createClient: ApiClientFactory,
@@ -35,7 +40,7 @@ function createPaidToolsSignals(
       return !disabledTools.includes(toolId);
     });
     const update$ = command(
-      async ({ set }, enabled: boolean, signal: AbortSignal) => {
+      async ({ get, set }, enabled: boolean, signal: AbortSignal) => {
         signal.throwIfAborted();
         assertCurrent();
         const response = await accept(
@@ -53,16 +58,35 @@ function createPaidToolsSignals(
           set(imageModel.discardDraft$);
         }
         set(reloadDisabledPaidTools$);
+        // Keep this row saving until its confirmed state is visible again.
+        await get(enabled$);
+        signal.throwIfAborted();
+        assertCurrent();
       },
     );
     return { toolId, enabled$, update$ };
   }
-  const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
-    return createTool(toolId);
+  const webSearch = createTool("web-search");
+  const imageGeneration = createTool("image-generation");
+  // Okou owns web search and image generation; Router's family with an Okou
+  // tool ID is controlled by that Okou row.
+  const dataFamilies$ = computed(async (get) => {
+    assertCurrent();
+    const families = await get(dataRouterCatalog$);
+    assertCurrent();
+    return families
+      .filter((family) => {
+        return !OKOU_PAID_TOOL_IDS.has(family.id);
+      })
+      .map((family) => {
+        return { ...createTool(family.id), family };
+      });
   });
   return {
     disabledTools$,
-    tools,
+    webSearch,
+    imageGeneration,
+    dataFamilies$,
     imageModel,
   };
 }
@@ -169,5 +193,12 @@ export const paidToolsSettings$ = computed(async (get) => {
 export type PaidToolsSettings = ReturnType<typeof createPaidToolsSignals> & {
   readonly key: string;
 };
-export type PaidToolSettings = PaidToolsSettings["tools"][number];
+export type PaidToolSettings =
+  PaidToolsSettings["webSearch"] | PaidToolsSettings["imageGeneration"];
+export type DataFamilySettings =
+  PaidToolsSettings["dataFamilies$"] extends Computed<Promise<infer Families>>
+    ? Families extends readonly (infer Family)[]
+      ? Family
+      : never
+    : never;
 export type ImageModelSettings = PaidToolsSettings["imageModel"];

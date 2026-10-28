@@ -104,6 +104,7 @@ assert_env_value SHELL /bin/bash
 assert_env_value LANG C.UTF-8
 assert_env_value NPM_CONFIG_UPDATE_NOTIFIER false
 assert_env_value NODE_EXTRA_CA_CERTS /usr/local/share/ca-certificates/vm0-proxy-ca.crt
+assert_env_value AGENT_BROWSER_USE_SYSTEM_CA 1
 assert_env_value SSL_CERT_FILE /etc/ssl/certs/ca-certificates.crt
 assert_env_value REQUESTS_CA_BUNDLE /etc/ssl/certs/ca-certificates.crt
 assert_env_value CARGO_HTTP_CAINFO /etc/ssl/certs/ca-certificates.crt

@@ -33,6 +33,8 @@ Choose a command:
   custom        Create/update/show/delete org custom connector definitions.
   connect       Connect builtin manual grants or custom manual/no-auth accounts.
   oauth start   Start existing OAuth/OpenID/automatic account authorization.
+  account disconnect
+                Disconnect one exact saved account directly, without approval.
   check         Diagnose a failed URL or a builtin environment name.
   permission-request
                 Request a diagnosed builtin permission; custom permissions use settings.
@@ -45,10 +47,14 @@ Connection and access:
   Use connect for member credentials and oauth start for existing authorization
   flows. Neither command changes Agent grants or fine-grained permissions.
   Use unauthorize to remove an Agent's connector grant directly.
+  Use account disconnect --connection-id <uuid> to remove a saved account across
+  all Agents. See account disconnect --help for reconnection risks.
 
 Run context:
   Inside a run, omit --agent to use the current Agent (OKOU_AGENT_ID).
-  An explicit --agent must match the current Agent.
+  Account inspection and permission-request require an explicit --agent to match
+  the current Agent. Unauthorize can target another visible Agent with --agent;
+  it only removes the current user's grant.
   Agent selection does not replace the accounts admitted to that run. Missing
   run account context means unavailable; it does not select another account.
   Outside a run, commands exposing --agent can inspect that Agent's authorization.

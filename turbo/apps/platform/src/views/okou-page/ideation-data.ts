@@ -4,6 +4,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 interface UseCase {
   readonly id: string;
   readonly prompt: string;
+  readonly customAgentOnly?: boolean;
   readonly connectorSlugs?: readonly ConnectorSlug[];
   readonly featureFlag?: FeatureSwitchKey;
 }
@@ -14,6 +15,7 @@ interface Category {
 }
 
 interface IdeationFilterOptions {
+  readonly isCustomAgent: boolean;
   readonly features?: Partial<Record<FeatureSwitchKey, boolean>>;
   readonly visibleConnectorSlugs?: ReadonlySet<string>;
 }
@@ -472,6 +474,7 @@ const categories: readonly Category[] = [
       {
         id: "self-update-instructions",
         prompt: "Update yourself: add the following instructions — ...",
+        customAgentOnly: true,
       },
       {
         id: "meeting-notes-pipeline",
@@ -541,6 +544,9 @@ function filterUseCase(
 ): UseCase | null {
   const visibleConnectorSlugs = options.visibleConnectorSlugs;
   if (!isEnabled(useCase, options.features)) {
+    return null;
+  }
+  if (useCase.customAgentOnly && !options.isCustomAgent) {
     return null;
   }
 

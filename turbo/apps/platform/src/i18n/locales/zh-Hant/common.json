@@ -1352,9 +1352,6 @@
     "cardTitle": "雲端瀏覽器",
     "close": "關閉實時瀏覽器",
     "documentTitle": "實時瀏覽器",
-    "fitAction": "適應",
-    "fitWindow": "讓瀏覽器適應視窗",
-    "iframeTitle": "實時瀏覽器：{{name}}",
     "notFound": "未找到瀏覽器",
     "open": "開啟 {{name}} 瀏覽器",
     "openAction": "開啟",
@@ -1468,40 +1465,8 @@
           "name": "邀請你的團隊",
           "unit": "每位成員"
         },
-        "notEligible": "不符合條件",
         "pendingState": "{{amount}} 待發放",
-        "rejected": {
-          "alreadyRedeemed": "貼文已被使用",
-          "authorAlreadyRewarded": "該帳號已領取過獎勵",
-          "authorUnavailable": "無法確認作者",
-          "officialAccount": "{{assistantName}} 官方貼文不計入",
-          "postMustMention": "需要提到 {{assistantName}}"
-        },
         "rewardsNote": "獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
-        "share": {
-          "action": "分享",
-          "description": "發帖後把連結貼過來",
-          "name": "分享到 X"
-        },
-        "shareDialog": {
-          "description": "提交一條公開貼文供稽核。每人只能成功領取一次獎勵。",
-          "helper": "貼文必須是公開的，並且提到 {{assistantName}}。",
-          "inputLabel": "貼文連結",
-          "openX": "開啟 X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "不用再做什麼，點數會自己入帳。",
-          "reviewDone": "知道了",
-          "reviewExplain": "只要貼文是公開的並且提到了 {{assistantName}}，獎勵就會自動發放。如果有問題，這一步會帶著原因重新開啟。",
-          "reviewOpenPost": "開啟貼文",
-          "reviewPending": "通常一小時內",
-          "reviewTime": "審核通常一小時內完成。",
-          "reviewTitle": "貼文已經在審核了",
-          "stepPaste": "把連結貼回來",
-          "stepWrite": "寫這則貼文",
-          "submit": "提交",
-          "title": "在 X 上分享 {{assistantName}}",
-          "writingPrompt": "用自己的話寫下你實際用 {{assistantName}} 嘗試過的事。"
-        },
         "slack": {
           "action": "新增",
           "description": "團隊日常辦公的地方",
@@ -1555,10 +1520,11 @@
       "viewAgentProfile": "檢視智能體資料"
     },
     "agentSuggestions": {
-      "customDirection": "自己指定方向",
-      "customDirectionDescription": "帶上完整背景，繼續追問或補充你的要求",
-      "customPrepared": "已加入輸入框",
-      "customPreparedDescription": "在上方補充要求，傳送後開啟新對話",
+      "customDirection": "我想……",
+      "customDirectionDescription": "提出問題，或說說你想做什麼。",
+      "customPlaceholder": "你有什麼想法？",
+      "customPrepared": "接著說……",
+      "customPreparedDescription": "在上方輸入訊息，然後傳送。",
       "dismiss": "忽略",
       "label": "建議",
       "next": "下一則建議",
@@ -3611,8 +3577,8 @@
         "manageConnection": "管理已連接帳號",
         "open": "開啟 Telegram",
         "openSetup": "開啟設定流程",
-        "setupDescription": "在設定中選擇預設代理，然後返回此頁面連接 Telegram。",
-        "setupMemberDescription": "請工作區管理員選擇預設代理，然後返回此頁面。",
+        "setupDescription": "請完成工作區設定以初始化 Okou，然後返回此頁面連接 Telegram。",
+        "setupMemberDescription": "請工作區管理員完成設定並初始化 Okou，然後返回此頁面。",
         "setupTitle": "完成帳號設定",
         "successDescription": "在 Telegram 中傳送訊息給機器人，即可開始聊天。",
         "successTitle": "已連線到 Telegram！"
@@ -3952,18 +3918,18 @@
   "desktopShellAuthorization": {
     "actionFailed": "無法更新授權。",
     "allow": "允許 1 小時",
-    "approved": "已允許使用 Shell",
+    "approved": "已授權",
     "deadline": "到期時間：{{date}}",
     "denied": "已拒絕申請",
     "deny": "拒絕",
     "description": "Agent 需要取得在你的電腦上使用 Shell 的權限。",
-    "details": "查看詳情",
     "expired": "授權已到期",
     "loading": "正在載入授權…",
     "pending": "等待批准",
     "revoke": "撤銷授權",
     "revoked": "已撤銷 Shell 授權",
-    "scope": "僅限目前的 Chat 和電腦。授權結束後，既有終端仍保持開啟。",
+    "scope": "僅限目前的 Chat 和電腦",
+    "terminalNotice": "授權結束後，既有終端仍保持開啟。",
     "title": "Desktop Shell 授權",
     "unavailable": "授權無法使用",
     "waiting": "Run 仍在執行或已切換電腦，暫時無法批准。"
@@ -4021,6 +3987,15 @@
     "previousPage": "上一頁樣張",
     "title": "文件",
     "useNamed": "使用 {{title}}"
+  },
+  "featureGuide": {
+    "close": "關閉新功能指南",
+    "dismiss": "知道了",
+    "label": "新功能",
+    "next": "下一步",
+    "preview": "預覽",
+    "previous": "上一步",
+    "tryPrompt": "試試這個任務"
   },
   "global": {
     "errors": {
@@ -4237,6 +4212,134 @@
         "teamCopy": "在同一個工作區協作。",
         "teamTitle": "邀請同事"
       },
+      "outcomes": {
+        "accessibleLabel": "根據 {{source}} 整理的{{title}}示意，內容均為範例資料。",
+        "examples": {
+          "coaching": {
+            "context": "週四 10:00 · 45 分鐘課程",
+            "next": "確定下一步",
+            "nextTime": "10 分鐘",
+            "practice": "練習新技能",
+            "practiceTime": "25 分鐘",
+            "review": "回顧上次課程",
+            "reviewTime": "10 分鐘"
+          },
+          "consulting": {
+            "agenda": "範圍與時程",
+            "background": "背景",
+            "context": "Acme Studio · 週四 10:00",
+            "discuss": "討論",
+            "expansion": "計畫拓展業務",
+            "goal": "目標",
+            "objective": "改善新使用者引導"
+          },
+          "design": {
+            "brandGuide": "品牌規範",
+            "clientBrief": "客戶 brief",
+            "deliverables": "交付項目",
+            "direction": "視覺方向",
+            "photos": "產品照片",
+            "positioning": "面向環保消費者，傳達「同樣保養，更少浪費」。",
+            "project": "補充裝保養品上市",
+            "scope": "到達網頁 + 3 張廣告素材",
+            "visuals": "簡潔的產品特寫"
+          },
+          "finance": {
+            "context": "10 月 · 月結回顧",
+            "expenses": "支出",
+            "income": "收入",
+            "reconcile": "待對帳",
+            "transactions": "3 筆交易"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "營收成長",
+            "margin": "毛利率",
+            "metric": "指標",
+            "northstar": "Northstar",
+            "watch": "關注：客戶集中度。"
+          },
+          "marketing": {
+            "comparison": "對比此前 7 天",
+            "period": "最近 7 天"
+          },
+          "operations": {
+            "agenda": "確認團隊議程",
+            "context": "本週 · 3 項重點",
+            "friday": "週五",
+            "quote": "審核供應商報價",
+            "today": "今天",
+            "tuesday": "週二",
+            "update": "傳送專案進展"
+          },
+          "other": {
+            "brief": "查看共用簡報",
+            "call": "確認明天的通話",
+            "context": "來自近期郵件",
+            "reply": "回覆 Alex"
+          },
+          "research": {
+            "action": "測試有引導的首個任務",
+            "context": "客戶訪談 · 5 份筆記",
+            "evidence": "依據",
+            "finding": "發現",
+            "insight": "設定過程耗時過長",
+            "interviews": "5 次訪談中有 3 次提及",
+            "next": "下一步"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 個商機需要關注",
+            "demo": "明天展示",
+            "next": "下一步：跟進 Acme。",
+            "northstar": "Northstar",
+            "proposal": "提案已傳送"
+          },
+          "software": {
+            "context": "2 項已合併 · 1 個待解決問題",
+            "issue": "CSV 匯出失敗",
+            "search": "提升搜尋速度",
+            "signup": "簡化註冊流程"
+          }
+        },
+        "expandLabel": "看看連接後能獲得什麼",
+        "industries": {
+          "coaching": {
+            "title": "課程準備計畫"
+          },
+          "consulting": {
+            "title": "客戶會前簡報"
+          },
+          "design": {
+            "title": "創意簡報"
+          },
+          "finance": {
+            "title": "月結概覽"
+          },
+          "investing": {
+            "title": "公司研究比較"
+          },
+          "marketing": {
+            "title": "廣告成效簡報"
+          },
+          "operations": {
+            "title": "本週工作計畫"
+          },
+          "other": {
+            "title": "下一步行動"
+          },
+          "research": {
+            "title": "研究重點摘要"
+          },
+          "sales": {
+            "title": "客戶跟進摘要"
+          },
+          "software": {
+            "title": "版本進展摘要"
+          }
+        },
+        "title": "讓常用工具幫你完成工作"
+      },
       "prompt": {
         "connectorsDescription": "連接這些工具，讓 Okou 更了解你的工作情境，更有針對性地幫你完成任務。也可以稍後再連接。",
         "connectorsTitle": "連接你的工作工具",
@@ -4308,6 +4411,12 @@
         "copy": "Okou 越了解你的工作，就越聰明。連接一個你每天在用的工具，從一項基於真實工作的任務開始。",
         "permissions": "Okou 會參考少量資訊為你量身打造第一項任務；Agent 能做什麼、授權多久，都由你決定。",
         "securityLink": "瞭解 Okou 如何保護你的資料",
+        "skipDialog": {
+          "connect": "繼續連接",
+          "description": "建議先連接常用工具，讓 Okou 更了解你的工作，提供更貼近需求的協助。你也可以稍後再連接。",
+          "skip": "仍然略過",
+          "title": "連接工具，讓 Okou 更懂你的工作"
+        },
         "title": "連接一個工作工具"
       },
       "startingPrompt": {
@@ -5241,6 +5350,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "連接",
         "connectAccount": "連接帳號",
+        "creditsBalance": "{{value}} {{provider}} 積分",
+        "creditsLabel": "{{provider}} 積分",
+        "creditsUnlimited": "無上限",
         "disconnectAccount": "斷開帳號連線",
         "disconnectDescription": "這會把帳號從 Okou 中移除，但不會取消你在該服務商處的訂閱。",
         "disconnecting": "正在斷開…",
@@ -5338,37 +5450,9 @@
       "timing": "修改對之後的執行生效。正在執行和已準備好的任務可能仍沿用原來的設定。",
       "title": "內建工具",
       "tools": {
-        "data-search": {
-          "description": "補充職業資料，研究公司、流量、廣告、創作者及其他商業資料。",
-          "name": "進階資料研究"
-        },
-        "finance": {
-          "description": "查詢公司、行情和市場資料。",
-          "name": "金融資料"
-        },
         "image-generation": {
           "description": "用內建模型生成圖片。",
           "name": "圖片生成"
-        },
-        "maps": {
-          "description": "查詢地點、地址和路線。",
-          "name": "地圖與地點"
-        },
-        "people-search": {
-          "description": "查詢公開的職業資料。",
-          "name": "人物搜尋"
-        },
-        "scrape": {
-          "description": "讀取並提取網頁內容。",
-          "name": "網頁內容提取"
-        },
-        "seo": {
-          "description": "研究搜尋排名、關鍵詞和外鏈。",
-          "name": "SEO 研究"
-        },
-        "social": {
-          "description": "研究公開的社交內容並收集素材。",
-          "name": "社交研究"
         },
         "web-search": {
           "description": "在網上查詢最新資訊。",
@@ -5505,7 +5589,7 @@
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。",
         "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
         "errorMessage": "晨報設定無法載入或更新。",
-        "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
+        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
@@ -5514,7 +5598,7 @@
       "proactiveLearning": {
         "description": "夜間回顧你的資訊和工作，整理個人記憶、更新理解。",
         "errorMessage": "無法載入或更新此設定。",
-        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
@@ -5523,7 +5607,7 @@
       "proactivePlanningAction": {
         "description": "在你交辦的範圍內規劃並推進任務，需要你處理時提醒你。",
         "errorMessage": "無法載入或更新此設定。",
-        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
@@ -5532,7 +5616,7 @@
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
         "errorMessage": "無法載入或更新主動建議設定。",
-        "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
+        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",

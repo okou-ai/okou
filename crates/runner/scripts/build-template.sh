@@ -114,11 +114,11 @@ CACHE_TMP_TAR=""
 # Pinned versions (changes here invalidate the template cache via script hash)
 NODE_VERSION="24.22.1"
 GO_VERSION="1.27.3"
-CLAUDE_CODE_VERSION="2.1.311"
-CODEX_CLI_VERSION="0.164.0"
+CLAUDE_CODE_VERSION="2.1.312"
+CODEX_CLI_VERSION="0.165.0"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
-AGENT_BROWSER_VERSION="0.38.1-vm0.1"
+AGENT_BROWSER_VERSION="0.39.4-vm0.1"
 PNPM_VERSION="12.15.0"
 UV_VERSION="0.13.6"
 CHROMIUM_VERSION="156.0.8078.47-1~deb12u1"
@@ -499,7 +499,7 @@ install_runtimes() {
     chmod +x /usr/local/bin/claude
   "
 
-  # agent-browser CLI (vm0 fork with native system root certificate support)
+  # agent-browser CLI (vm0 fork with opt-in native system root certificate support)
   sudo chroot "$ROOTFS_DIR" bash -c "
     ARCH=\$(dpkg --print-architecture)
     case \"\$ARCH\" in

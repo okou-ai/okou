@@ -251,6 +251,8 @@ const VALID_RULE_METHODS = new Set([
   "DELETE",
   "HEAD",
   "OPTIONS",
+  "PROPFIND",
+  "REPORT",
   "ANY",
 ]);
 const FORBIDDEN_RUNTIME_HOST_CHARS = new Set("#%*,/<>?@\\^|{}".split(""));

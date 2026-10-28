@@ -118,6 +118,107 @@ export async function validatePiMemoryStage1Cost(
       note: "A1 inventory only. A2 also requires closure/fencing, verified writer drain, no conflicts or pending anchor gaps, and a complete scoped inventory.",
     });
     console.log("Billing attribution dry-run CLI inventory contract passed");
+    // Exercise the maintained operator through its real CLI, in this schema.
+    const migrateOrg = randomUUID();
+    const migrateRun = randomUUID();
+    const migrateJob = randomUUID();
+    await writer.query(
+      `INSERT INTO agent_runs(id,org_id,user_id,status,prompt,trigger_source,autonomy_budget,created_at)
+      VALUES($1,$2,'user','completed','attribution fixture','web',0,'2026-09-15')`,
+      [migrateRun, migrateOrg],
+    );
+    await writer.query(
+      `INSERT INTO built_in_generation_jobs(type,status,org_id,user_id,run_id,request)
+      VALUES('image','completed',$1,'user',$2,'{}')`,
+      [migrateOrg, migrateRun],
+    );
+    await writer.query(
+      `INSERT INTO usage_event(idempotency_key,org_id,user_id,run_id,kind,provider,category,quantity)
+      VALUES(gen_random_uuid(),$1,'user',$2,'model',$3,'tokens.input',1)`,
+      [migrateOrg, migrateRun, model],
+    );
+    await writer.query(
+      `INSERT INTO usage_event_hourly_rollup(processed_hour,org_id,user_id,run_id,kind,provider,category,quantity,credits_charged)
+      VALUES('2026-09-15',$1,'user',$2,'model',$3,'tokens.input',1,0)`,
+      [migrateOrg, migrateRun, model],
+    );
+    const migrate = async (maxRows: string) => {
+      const result = await promisify(execFile)(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "scripts/billing-attribution.ts",
+          "--org-id",
+          migrateOrg,
+          "--migrate",
+          "--ack-writer-drain",
+          "--job-id",
+          migrateJob,
+          "--batch-size",
+          "1",
+          "--max-rows",
+          maxRows,
+          "--max-ms",
+          "5000",
+        ],
+        { env: { ...process.env, DATABASE_URL: scopedUrl.toString() } },
+      );
+      return JSON.parse(result.stdout);
+    };
+    const firstBatch = await migrate("1");
+    assert.equal(firstBatch.scannedThisInvocation, 1);
+    assert.equal(firstBatch.checkpoint.phase, "runs");
+    assert.equal(firstBatch.checkpoint.scanned, "1");
+    assert.equal(firstBatch.checkpoint.populated, "1");
+    // A real statement failure must preserve the last committed batch and leave
+    // the rejected batch's source writes unapplied. No trigger or lock fixture.
+    await writer.query(
+      "ALTER TABLE billing_attribution_backfill ADD CONSTRAINT fixture_batch_failure CHECK (populated < 2)",
+    );
+    await assert.rejects(migrate("20"), /fixture_batch_failure/);
+    const failedBatch = (
+      await writer.query(
+        "SELECT phase,scanned,populated FROM billing_attribution_backfill WHERE id=$1",
+        [migrateJob],
+      )
+    ).rows[0];
+    assert.deepEqual(failedBatch, {
+      phase: "jobs",
+      scanned: "1",
+      populated: "1",
+    });
+    const rejectedSource = (
+      await writer.query(
+        "SELECT billing_context FROM built_in_generation_jobs WHERE org_id=$1",
+        [migrateOrg],
+      )
+    ).rows[0];
+    assert.equal(rejectedSource.billing_context, "legacy_unknown");
+    await writer.query(
+      "ALTER TABLE billing_attribution_backfill DROP CONSTRAINT fixture_batch_failure",
+    );
+    const resumed = await migrate("20");
+    assert.equal(resumed.scannedThisInvocation, 3);
+    assert.equal(resumed.checkpoint.phase, "done");
+    assert.equal(resumed.checkpoint.scanned, "4");
+    assert.equal(resumed.checkpoint.populated, "4");
+    assert.equal(resumed.checkpoint.missing_source, "0");
+    assert.equal(resumed.checkpoint.conflicts, "0");
+    assert.equal(resumed.activationReady, false);
+    const observed = (
+      await writer.query(
+        "SELECT usage_observed FROM billing_run_attribution WHERE run_id=$1",
+        [migrateRun],
+      )
+    ).rows[0];
+    assert.equal(observed.usage_observed, true);
+    const completed = await migrate("20");
+    assert.equal(completed.scannedThisInvocation, 0);
+    assert.deepEqual(completed.checkpoint, resumed.checkpoint);
+    console.log(
+      "Billing attribution migrate CLI atomic batch and resume contract passed",
+    );
     await client.query(
       "INSERT INTO usage_pricing(kind,provider,category,unit_price,unit_size) VALUES('model',$1,'tokens.input',3,1000000)",
       [model],

@@ -1,5 +1,81 @@
 # Changelog
 
+## [8.796.2](https://github.com/okou-ai/okou/compare/core-v8.796.1...core-v8.796.2) (2026-10-28)
+
+
+### Refactoring
+
+* **browser:** roll out okou viewer and remove feature switch ([#43671](https://github.com/okou-ai/okou/issues/43671)) ([97e8ca7](https://github.com/okou-ai/okou/commit/97e8ca71f4d6ac0cd015de589eb5d8179a96bddd))
+
+## [8.796.1](https://github.com/okou-ai/okou/compare/core-v8.796.0...core-v8.796.1) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.15.0
+
+## [8.796.0](https://github.com/okou-ai/okou/compare/core-v8.795.1...core-v8.796.0) (2026-10-28)
+
+
+### Features
+
+* **app:** add gated date separators to chat threads ([#43646](https://github.com/okou-ai/okou/issues/43646)) ([5a0449a](https://github.com/okou-ai/okou/commit/5a0449a28f270e0d4101a0c862bf003830e40987))
+
+## [8.795.1](https://github.com/okou-ai/okou/compare/core-v8.795.0...core-v8.795.1) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.2
+
+## [8.795.0](https://github.com/okou-ai/okou/compare/core-v8.794.1...core-v8.795.0) (2026-10-28)
+
+
+### Features
+
+* **app:** show connector outcomes during onboarding ([#43542](https://github.com/okou-ai/okou/issues/43542)) ([746e094](https://github.com/okou-ai/okou/commit/746e094cf571e2b05117fd5141594625bc134abd))
+* prepare dav support and icloud connector rollout ([#43517](https://github.com/okou-ai/okou/issues/43517)) ([c8de621](https://github.com/okou-ai/okou/commit/c8de6212dc54a5aae0d4658acf1afa6a35f939ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.1
+
+## [8.794.1](https://github.com/okou-ai/okou/compare/core-v8.794.0...core-v8.794.1) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.0
+
+## [8.794.0](https://github.com/okou-ai/okou/compare/core-v8.793.4...core-v8.794.0) (2026-10-27)
+
+
+### Features
+
+* enable remote control guided setup for everyone ([#43445](https://github.com/okou-ai/okou/issues/43445)) ([4e5e2c3](https://github.com/okou-ai/okou/commit/4e5e2c3143150de64b99336151672e866b62c845))
+* release website controls and thread email manager ([#43476](https://github.com/okou-ai/okou/issues/43476)) ([e9989fb](https://github.com/okou-ai/okou/commit/e9989fbe0eceec17fe7d0ede926236d729b299cd))
+
+
+### Refactoring
+
+* remove ios composer connectors feature switch ([#43460](https://github.com/okou-ai/okou/issues/43460)) ([200c6e7](https://github.com/okou-ai/okou/commit/200c6e7fb5f600110cb3005c88175fffcbc57738))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.13.0
+
 ## [8.793.4](https://github.com/okou-ai/okou/compare/core-v8.793.3...core-v8.793.4) (2026-10-27)
 
 

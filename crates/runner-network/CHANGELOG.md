@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.93](https://github.com/okou-ai/okou/compare/runner-network-v0.2.92...runner-network-v0.2.93) (2026-10-28)
+
+## [0.2.92](https://github.com/okou-ai/okou/compare/runner-network-v0.2.91...runner-network-v0.2.92) (2026-10-28)
+
+## [0.2.91](https://github.com/okou-ai/okou/compare/runner-network-v0.2.90...runner-network-v0.2.91) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-network:** retain registry lock through physical publication ([#43518](https://github.com/okou-ai/okou/issues/43518)) ([60ecd58](https://github.com/okou-ai/okou/commit/60ecd5843fad27fe33dd984a981d510d3f9c03ce))
+
+## [0.2.90](https://github.com/okou-ai/okou/compare/runner-network-v0.2.89...runner-network-v0.2.90) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-network:** retain monitor custody through stop cancellation ([#43472](https://github.com/okou-ai/okou/issues/43472)) ([005ee61](https://github.com/okou-ai/okou/commit/005ee610ab14e1cafd65ed843c297d3309395788))
+
 ## [0.2.89](https://github.com/okou-ai/okou/compare/runner-network-v0.2.88...runner-network-v0.2.89) (2026-10-27)
 
 ## [0.2.88](https://github.com/okou-ai/okou/compare/runner-network-v0.2.87...runner-network-v0.2.88) (2026-10-27)

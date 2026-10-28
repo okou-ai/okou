@@ -104,6 +104,7 @@ import { debugMorningBriefRoutes } from "./routes/debug-morning-brief";
 import { notificationsRoutes } from "./routes/notifications";
 import { emailUnsubscribeRoutes } from "./routes/email-unsubscribe";
 import { featureSwitchesRoutes } from "./routes/feature-switches";
+import { featureGuidesRoutes } from "./routes/feature-guides";
 import { feishuBrowserConnectRoutes } from "./routes/feishu-browser-connect";
 import { feishuConnectRoutes } from "./routes/feishu-connect";
 import { feishuEventsRoutes } from "./routes/feishu-events";
@@ -221,7 +222,6 @@ import { voiceIoTranscribeRoutes } from "./routes/voice-io-transcribe";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 
 import { dataRouterHistoryRoutes } from "./routes/data-router-history";
-import { dataRouterToolsRoutes } from "./routes/data-router-tools";
 import { webhooksAgentDataRequestRoutes } from "./routes/webhooks-agent-data-request";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
@@ -272,7 +272,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentDataRequestRoutes,
   ...dataRouterHistoryRoutes,
-  ...dataRouterToolsRoutes,
   ...webhooksAgentEventsRoutes,
   ...webhooksAgentSessionOutputRoutes,
   ...webhooksAgentFirewallAuthRoutes,
@@ -354,6 +353,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
   ...featureSwitchesRoutes,
+  ...featureGuidesRoutes,
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,

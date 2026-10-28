@@ -1,5 +1,106 @@
 # Changelog
 
+## [10.5.6](https://github.com/okou-ai/okou/compare/cli-v10.5.5...cli-v10.5.6) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.796.2
+    * @okouai/pi-agent-runtime bumped to 1.51.12
+
+## [10.5.5](https://github.com/okou-ai/okou/compare/cli-v10.5.4...cli-v10.5.5) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.15.0
+    * @okouai/core bumped to 8.796.1
+    * @okouai/pi-agent-runtime bumped to 1.51.11
+
+## [10.5.4](https://github.com/okou-ai/okou/compare/cli-v10.5.3...cli-v10.5.4) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.796.0
+    * @okouai/pi-agent-runtime bumped to 1.51.10
+
+## [10.5.3](https://github.com/okou-ai/okou/compare/cli-v10.5.2...cli-v10.5.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **cli:** allow cross-agent connector revocation ([#43640](https://github.com/okou-ai/okou/issues/43640)) ([e1b3162](https://github.com/okou-ai/okou/commit/e1b31622711f73dd73c99e8add7cceb836fb6548))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.14.2
+    * @okouai/connectors bumped to 3.18.0
+    * @okouai/core bumped to 8.795.1
+    * @okouai/pi-agent-runtime bumped to 1.51.9
+
+## [10.5.2](https://github.com/okou-ai/okou/compare/cli-v10.5.1...cli-v10.5.2) (2026-10-28)
+
+
+### Refactoring
+
+* **browser:** simplify cli window attachment ([#43545](https://github.com/okou-ai/okou/issues/43545)) ([e541aab](https://github.com/okou-ai/okou/commit/e541aabc44a2af1e4c8c68cee90ddee789dca45e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.14.1
+    * @okouai/connectors bumped to 3.17.0
+    * @okouai/core bumped to 8.795.0
+    * @okouai/pi-agent-runtime bumped to 1.51.8
+
+## [10.5.1](https://github.com/okou-ai/okou/compare/cli-v10.5.0...cli-v10.5.1) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.14.0
+    * @okouai/core bumped to 8.794.1
+    * @okouai/pi-agent-runtime bumped to 1.51.7
+
+## [10.5.0](https://github.com/okou-ai/okou/compare/cli-v10.4.1...cli-v10.5.0) (2026-10-27)
+
+
+### Features
+
+* **browser:** bind cli tools to chat windows ([#43449](https://github.com/okou-ai/okou/issues/43449)) ([a591c65](https://github.com/okou-ai/okou/commit/a591c65fb21156ab71f7d3f20584a1632f247f89))
+* **cli:** add connector account disconnect command ([#43475](https://github.com/okou-ai/okou/issues/43475)) ([f1ebfa9](https://github.com/okou-ai/okou/commit/f1ebfa965b91f329ab91398bc311531b51a09e3a))
+* **cli:** add connector unauthorize command ([#43456](https://github.com/okou-ai/okou/issues/43456)) ([3b6d5f0](https://github.com/okou-ai/okou/commit/3b6d5f03d0e8d1fa9b9e1446353104c21e1962c3))
+* **cli:** write large data call bodies to a temp file ([#43451](https://github.com/okou-ai/okou/issues/43451)) ([ccc4701](https://github.com/okou-ai/okou/commit/ccc4701e208e6e56716b2fb212f48a741c4205f1))
+
+
+### Refactoring
+
+* **data:** speak only stateless mcp 2026-07-28 to data router ([#43447](https://github.com/okou-ai/okou/issues/43447)) ([bb57027](https://github.com/okou-ai/okou/commit/bb57027eaa3a6a1856cfa35c5f6b87cf0a2a6549))
+* let data router own its tool catalog ([#43457](https://github.com/okou-ai/okou/issues/43457)) ([5152b2d](https://github.com/okou-ai/okou/commit/5152b2d43e1cdefe15cf338cd43abdaf19f84504))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.13.0
+    * @okouai/core bumped to 8.794.0
+    * @okouai/pi-agent-runtime bumped to 1.51.6
+
 ## [10.4.1](https://github.com/okou-ai/okou/compare/cli-v10.4.0...cli-v10.4.1) (2026-10-27)
 
 

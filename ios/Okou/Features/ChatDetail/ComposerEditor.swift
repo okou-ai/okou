@@ -8,6 +8,7 @@ final class ComposerEditor {
   let workflows = ComposerWorkflowSuggestions()
   private struct Input {
     weak var view: ComposerTextView?
+    let blockID: UUID?
     let order: Int
     let canAppend: Bool
     let isCurrent: @MainActor () -> Bool
@@ -128,13 +129,13 @@ final class ComposerEditor {
   var view: ComposerTextView? { mounted.last(where: \.canAppend)?.view }
 
   func register(
-    _ view: ComposerTextView, order: Int, canAppend: Bool,
+    _ view: ComposerTextView, blockID: UUID?, order: Int, canAppend: Bool,
     isCurrent: @escaping @MainActor () -> Bool,
     searchableRanges: @escaping @MainActor () -> [NSRange]?,
     focusRequested: @escaping @MainActor () -> Void
   ) {
     inputs[ObjectIdentifier(view)] = Input(
-      view: view, order: order, canAppend: canAppend, isCurrent: isCurrent,
+      view: view, blockID: blockID, order: order, canAppend: canAppend, isCurrent: isCurrent,
       searchableRanges: searchableRanges, focusRequested: focusRequested)
   }
 
@@ -149,6 +150,16 @@ final class ComposerEditor {
     for input in inputs.values where input.isCurrent() {
       input.view?.setFocused(false)
     }
+  }
+
+  func prepareForFeedbackRemoval(_ id: UUID) -> UUID? {
+    let input = mounted.first { $0.view?.isFirstResponder == true }
+    input?.view?.unmarkText()
+    dismissMentions()
+    workflows.dismiss()
+    // A retained note editor must not undo back into the discarded note.
+    if input?.blockID == id { input?.view?.undoManager?.removeAllActions() }
+    return input?.blockID
   }
 
   func selectOrAppendText(_ value: String) {

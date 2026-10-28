@@ -9,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -72,6 +73,7 @@ test("Review personal subscription usage in the account menu", async () => {
   context.mocks.data.personalModelProviders([
     connectedPersonalCodexProvider({
       subscriptionResetCreditsNextExpiresAt: "2030-01-04T00:48:00.000Z",
+      subscriptionCredits: { balance: 1250.5, unlimited: false },
     }),
     connectedPersonalClaudeCodeProvider(),
   ]);
@@ -105,6 +107,8 @@ test("Review personal subscription usage in the account menu", async () => {
   expect(within(panel).getByText("55%")).toBeInTheDocument();
   expect(within(panel).getByText("88%")).toBeInTheDocument();
   expect(within(panel).getByText("76%")).toBeInTheDocument();
+  expect(within(panel).getByText("ChatGPT credits")).toBeInTheDocument();
+  expect(within(panel).getByText("1,250.5")).toBeInTheDocument();
   const resetCredits = within(panel).getByLabelText("2 resets left");
   expect(within(resetCredits).getByText("2 resets left")).toBeInTheDocument();
   expect(within(panel).queryByText(/Resets in /)).not.toBeInTheDocument();
@@ -154,6 +158,54 @@ test("Review personal subscription usage in the account menu", async () => {
     credits.compareDocumentPosition(codex) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 });
+
+test.each<{
+  name: string;
+  credits: ModelProviderResponse["subscriptionCredits"];
+  expected: string;
+}>([
+  { name: "zero", credits: { balance: 0, unlimited: false }, expected: "0" },
+  { name: "unavailable", credits: null, expected: "—" },
+  {
+    name: "unlimited",
+    credits: { balance: null, unlimited: true },
+    expected: "Unlimited",
+  },
+  {
+    name: "small positive",
+    credits: { balance: 0.0001, unlimited: false },
+    expected: "< 0.01",
+  },
+])(
+  "Show $name provider credits without quota windows",
+  async ({ credits, expected }) => {
+    mockAdminAccountSidebar();
+    context.mocks.browser.languages(["zh-CN"]);
+    context.mocks.data.personalModelProviders([
+      connectedPersonalCodexProvider({
+        subscriptionUsage: null,
+        subscriptionNextResetAt: null,
+        subscriptionResetPeriod: null,
+        subscriptionResetCredits: 0,
+        subscriptionCredits: credits,
+      }),
+    ]);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      locale: "zh-Hans",
+      auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+    const menu = await openAccountMenu();
+    const panel = await within(menu).findByTestId("account-menu-subscriptions");
+    // Page tests use en-US copy through the shared locale-resource fixture.
+    expect(document.documentElement).toHaveAttribute("lang", "zh-Hans");
+    expect(within(panel).getByText("ChatGPT credits")).toBeInTheDocument();
+    expect(within(panel).getByText(expected)).toBeInTheDocument();
+    expect(within(menu).getByText("12,500 credits")).toBeInTheDocument();
+  },
+);
 
 test("Show the reset time of a plan that is running low", async () => {
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);

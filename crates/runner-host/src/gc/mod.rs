@@ -1,7 +1,8 @@
-//! Shared filesystem accounting and identity-aware lock cleanup for host GC.
+//! Shared filesystem accounting and guarded physical cleanup for host GC.
 
 mod filesystem;
 mod lock_file;
+mod removal;
 pub mod workspaces;
 
 pub use filesystem::{
@@ -11,6 +12,7 @@ pub use filesystem::{
 pub use lock_file::{
     ExistingLockProbe, LockProbe, probe_existing_lock, probe_lock, remove_unused_lock_after_probe,
 };
+pub use removal::remove_dir_all_with_lock;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

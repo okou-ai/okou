@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::ffi::OsString;
+use std::fs::File;
 use std::future::Future;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
@@ -14,11 +15,12 @@ use super::lock_file::{ExistingLockProbe, probe_existing_lock, remove_unused_loc
 use crate::byte_size::human_bytes;
 use crate::error::{HostError, HostResult};
 use crate::paths::{HomePaths, base_dir_lock_name};
-type RemoveDirAllFuture<'a> = Pin<Box<dyn Future<Output = std::io::Result<()>> + 'a>>;
-type RemoveDirAllFn = for<'a> fn(&'a Path) -> RemoveDirAllFuture<'a>;
+type RemoveDirAllFuture<'a> =
+    Pin<Box<dyn Future<Output = (Flock<File>, std::io::Result<()>)> + 'a>>;
+type RemoveDirAllFn = for<'a> fn(&'a Path, Flock<File>) -> RemoveDirAllFuture<'a>;
 
-fn real_remove_dir_all(path: &Path) -> RemoveDirAllFuture<'_> {
-    Box::pin(tokio::fs::remove_dir_all(path))
+fn real_remove_dir_all(path: &Path, lock: Flock<File>) -> RemoveDirAllFuture<'_> {
+    Box::pin(super::remove_dir_all_with_lock(path, lock))
 }
 
 /// Caller-owned age policy; Host does not choose the command's grace period.
@@ -73,7 +75,7 @@ struct DeadRunnerBaseDirLease {
     base_dir: Option<PathBuf>,
     lock_path: PathBuf,
     lock_name: String,
-    lock_guard: Flock<std::fs::File>,
+    lock_guard: Flock<File>,
 }
 
 struct DeadRunnerBaseDirLockCandidate {
@@ -371,7 +373,7 @@ async fn gc_workspace_orphans_with_candidates_and_remove(
         let Some(base_dir) = lease.base_dir.as_deref() else {
             if remove_unused_lock_after_probe(
                 &lease.lock_path,
-                &lease.lock_guard,
+                lease.lock_guard,
                 &lease.lock_name,
                 pass.dry_run,
             )
@@ -390,15 +392,21 @@ async fn gc_workspace_orphans_with_candidates_and_remove(
             continue;
         }
 
-        let (cleaned, freed, lock_decision) =
-            gc_workspace_orphans_in_base_dir(base_dir, &active, pass, remove_dir_all).await;
+        let (lock_guard, cleaned, freed, lock_decision) = gc_workspace_orphans_in_base_dir(
+            base_dir,
+            lease.lock_guard,
+            &active,
+            pass,
+            remove_dir_all,
+        )
+        .await;
         summary.workspaces_cleaned += cleaned;
         summary.bytes_freed += freed;
 
         if lock_decision == BaseDirLockDecision::RemoveIfStillFree
             && remove_unused_lock_after_probe(
                 &lease.lock_path,
-                &lease.lock_guard,
+                lock_guard,
                 &lease.lock_name,
                 pass.dry_run,
             )
@@ -413,46 +421,51 @@ async fn gc_workspace_orphans_with_candidates_and_remove(
 
 async fn gc_workspace_orphans_in_base_dir(
     base_dir: &Path,
+    mut lock_guard: Flock<File>,
     active: &HashSet<PathBuf>,
     pass: WorkspaceGcPass,
     remove_dir_all: RemoveDirAllFn,
-) -> (u32, u64, BaseDirLockDecision) {
+) -> (Flock<File>, u32, u64, BaseDirLockDecision) {
     match gc_path_dir_status(base_dir).await {
         Ok(GcDirStatus::RealDir(_)) => {}
-        Ok(GcDirStatus::Missing) => return (0, 0, BaseDirLockDecision::RemoveIfStillFree),
+        Ok(GcDirStatus::Missing) => {
+            return (lock_guard, 0, 0, BaseDirLockDecision::RemoveIfStillFree);
+        }
         Ok(GcDirStatus::NotDirectory) => {
             warn!(
                 "workspace gc: {} is not a real base directory, skipping",
                 base_dir.display()
             );
-            return (0, 0, BaseDirLockDecision::Preserve);
+            return (lock_guard, 0, 0, BaseDirLockDecision::Preserve);
         }
         Err(e) => {
             warn!(
                 "workspace gc: cannot stat base directory {}: {e}",
                 base_dir.display()
             );
-            return (0, 0, BaseDirLockDecision::Preserve);
+            return (lock_guard, 0, 0, BaseDirLockDecision::Preserve);
         }
     }
 
     let workspaces_dir = base_dir.join("workspaces");
     match gc_path_dir_status(&workspaces_dir).await {
         Ok(GcDirStatus::RealDir(_)) => {}
-        Ok(GcDirStatus::Missing) => return (0, 0, BaseDirLockDecision::RemoveIfStillFree),
+        Ok(GcDirStatus::Missing) => {
+            return (lock_guard, 0, 0, BaseDirLockDecision::RemoveIfStillFree);
+        }
         Ok(GcDirStatus::NotDirectory) => {
             warn!(
                 "workspace gc: {} is not a real directory, skipping",
                 workspaces_dir.display()
             );
-            return (0, 0, BaseDirLockDecision::Preserve);
+            return (lock_guard, 0, 0, BaseDirLockDecision::Preserve);
         }
         Err(e) => {
             warn!(
                 "workspace gc: cannot stat {}: {e}",
                 workspaces_dir.display()
             );
-            return (0, 0, BaseDirLockDecision::Preserve);
+            return (lock_guard, 0, 0, BaseDirLockDecision::Preserve);
         }
     }
 
@@ -463,7 +476,7 @@ async fn gc_workspace_orphans_in_base_dir(
                 "workspace gc: cannot read {}: {e}",
                 workspaces_dir.display()
             );
-            return (0, 0, BaseDirLockDecision::Preserve);
+            return (lock_guard, 0, 0, BaseDirLockDecision::Preserve);
         }
     };
 
@@ -520,7 +533,9 @@ async fn gc_workspace_orphans_in_base_dir(
                 human_bytes(size)
             );
         } else {
-            match remove_dir_all(&path).await {
+            let (returned_lock, result) = remove_dir_all(&path, lock_guard).await;
+            lock_guard = returned_lock;
+            match result {
                 Ok(()) => {}
                 Err(e) => {
                     warn!("workspace gc: cannot remove {}: {e}", path.display());
@@ -539,7 +554,7 @@ async fn gc_workspace_orphans_in_base_dir(
         BaseDirLockDecision::RemoveIfStillFree
     };
 
-    (cleaned, freed, lock_decision)
+    (lock_guard, cleaned, freed, lock_decision)
 }
 
 #[cfg(test)]

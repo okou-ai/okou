@@ -1352,9 +1352,6 @@
     "cardTitle": "Browser cloud",
     "close": "Tutup browser live",
     "documentTitle": "Browser live",
-    "fitAction": "Sesuaikan",
-    "fitWindow": "Sesuaikan browser ke jendela",
-    "iframeTitle": "Browser live: {{name}}",
     "notFound": "Browser tidak ditemukan",
     "open": "Buka browser {{name}}",
     "openAction": "Buka",
@@ -1468,40 +1465,8 @@
           "name": "Undang tim kamu",
           "unit": "per anggota"
         },
-        "notEligible": "Tidak memenuhi syarat",
         "pendingState": "{{amount}} tertunda",
-        "rejected": {
-          "alreadyRedeemed": "Postingan sudah dipakai",
-          "authorAlreadyRewarded": "Akun sudah diberi hadiah",
-          "authorUnavailable": "Penulis tidak dapat diverifikasi",
-          "officialAccount": "Postingan resmi {{assistantName}} tidak dihitung",
-          "postMustMention": "Harus menyebut {{assistantName}}"
-        },
         "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
-        "share": {
-          "action": "Bagikan",
-          "description": "Posting, lalu tempel tautannya",
-          "name": "Bagikan di X"
-        },
-        "shareDialog": {
-          "description": "Kirim postingan publik untuk ditinjau. Satu hadiah yang disetujui per orang.",
-          "helper": "Postingan harus publik dan menyebut {{assistantName}}.",
-          "inputLabel": "Tautan postingan",
-          "openX": "Buka X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "Tidak ada lagi yang perlu dilakukan — kreditnya masuk sendiri.",
-          "reviewDone": "Selesai",
-          "reviewExplain": "Jika postingannya publik dan menyebut {{assistantName}}, hadiahnya diberikan otomatis. Kalau ada yang kurang tepat, langkah ini terbuka lagi beserta alasannya.",
-          "reviewOpenPost": "Buka postingan",
-          "reviewPending": "Biasanya kurang dari satu jam",
-          "reviewTime": "Peninjauan biasanya selesai dalam satu jam.",
-          "reviewTitle": "Postingan Anda sedang ditinjau",
-          "stepPaste": "Tempel tautannya",
-          "stepWrite": "Tulis postingannya",
-          "submit": "Kirim",
-          "title": "Bagikan {{assistantName}} di X",
-          "writingPrompt": "Tulis dengan kata-katamu sendiri tentang sesuatu yang benar-benar kamu coba dengan {{assistantName}}."
-        },
         "slack": {
           "action": "Tambahkan",
           "description": "Tempat tim kamu sudah bekerja",
@@ -1555,10 +1520,11 @@
       "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
-      "customDirection": "Tentukan arah sendiri",
-      "customDirectionDescription": "Bawa konteks lengkap untuk bertanya lebih lanjut atau menambahkan kebutuhan",
-      "customPrepared": "Ditambahkan ke pesan",
-      "customPreparedDescription": "Tambahkan kebutuhan di atas, lalu kirim untuk memulai percakapan baru",
+      "customDirection": "Saya ingin…",
+      "customDirectionDescription": "Ajukan pertanyaan atau jelaskan apa yang ingin Anda lakukan.",
+      "customPlaceholder": "Apa yang Anda pikirkan?",
+      "customPrepared": "Silakan lanjutkan…",
+      "customPreparedDescription": "Tulis pesan Anda di atas, lalu kirim.",
       "dismiss": "Abaikan",
       "label": "Saran",
       "next": "Saran berikutnya",
@@ -3611,8 +3577,8 @@
         "manageConnection": "Kelola akun terhubung",
         "open": "Buka Telegram",
         "openSetup": "Buka pengaturan awal",
-        "setupDescription": "Pilih agen default di pengaturan, lalu kembali ke sini untuk menghubungkan Telegram.",
-        "setupMemberDescription": "Minta administrator ruang kerja memilih agen default, lalu kembali ke sini.",
+        "setupDescription": "Selesaikan pengaturan ruang kerja untuk menginisialisasi Okou, lalu kembali ke sini untuk menghubungkan Telegram.",
+        "setupMemberDescription": "Minta administrator ruang kerja menyelesaikan pengaturan dan menginisialisasi Okou, lalu kembali ke sini.",
         "setupTitle": "Selesaikan pengaturan akun",
         "successDescription": "Kirim pesan ke bot di Telegram untuk mulai mengobrol.",
         "successTitle": "Berhasil tersambung ke Telegram!"
@@ -3952,18 +3918,18 @@
   "desktopShellAuthorization": {
     "actionFailed": "Tidak dapat memperbarui otorisasi.",
     "allow": "Izinkan selama 1 jam",
-    "approved": "Akses Shell diizinkan",
+    "approved": "Diizinkan",
     "deadline": "Berakhir {{date}}",
     "denied": "Permintaan ditolak",
     "deny": "Tolak",
     "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
-    "details": "Buka detail",
     "expired": "Otorisasi kedaluwarsa",
     "loading": "Memuat otorisasi…",
     "pending": "Siap disetujui",
     "revoke": "Cabut akses",
     "revoked": "Akses Shell dicabut",
-    "scope": "Hanya chat dan komputer ini. Terminal yang ada tetap terbuka saat akses berakhir.",
+    "scope": "Hanya chat dan komputer ini",
+    "terminalNotice": "Terminal yang ada tetap terbuka saat akses berakhir.",
     "title": "Akses Desktop Shell",
     "unavailable": "Otorisasi tidak tersedia",
     "waiting": "Persetujuan tidak tersedia saat Run aktif atau komputer yang dipilih telah berubah."
@@ -4021,6 +3987,15 @@
     "previousPage": "Halaman contoh sebelumnya",
     "title": "Dokumen",
     "useNamed": "Gunakan {{title}}"
+  },
+  "featureGuide": {
+    "close": "Tutup panduan fitur",
+    "dismiss": "Mengerti",
+    "label": "Yang baru",
+    "next": "Berikutnya",
+    "preview": "Pratinjau",
+    "previous": "Sebelumnya",
+    "tryPrompt": "Coba tugas ini"
   },
   "global": {
     "errors": {
@@ -4237,6 +4212,134 @@
         "teamCopy": "Bekerja bersama di satu ruang kerja.",
         "teamTitle": "Undang rekan tim"
       },
+      "outcomes": {
+        "accessibleLabel": "Contoh {{title}} yang disusun dari {{source}}. Semua konten adalah data contoh.",
+        "examples": {
+          "coaching": {
+            "context": "Kamis, 10:00 · sesi 45 menit",
+            "next": "Tentukan langkah berikutnya",
+            "nextTime": "10 mnt",
+            "practice": "Latih keterampilan baru",
+            "practiceTime": "25 mnt",
+            "review": "Tinjau sesi sebelumnya",
+            "reviewTime": "10 mnt"
+          },
+          "consulting": {
+            "agenda": "Cakupan dan jadwal",
+            "background": "Konteks",
+            "context": "Acme Studio · Kamis, 10:00",
+            "discuss": "Bahasan",
+            "expansion": "Rencana ekspansi",
+            "goal": "Tujuan",
+            "objective": "Perbaiki onboarding"
+          },
+          "design": {
+            "brandGuide": "Panduan merek",
+            "clientBrief": "Brief klien",
+            "deliverables": "Hasil kerja",
+            "direction": "Arah visual",
+            "photos": "Foto produk",
+            "positioning": "“Perawatan sama. Limbah lebih sedikit.” untuk pembeli peduli lingkungan.",
+            "project": "Peluncuran skincare isi ulang",
+            "scope": "Landing page + 3 iklan",
+            "visuals": "Close-up produk yang bersih"
+          },
+          "finance": {
+            "context": "Oktober · tinjauan akhir bulan",
+            "expenses": "Pengeluaran",
+            "income": "Pendapatan",
+            "reconcile": "Perlu rekonsiliasi",
+            "transactions": "3 transaksi"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "Pertumbuhan pendapatan",
+            "margin": "Margin kotor",
+            "metric": "Metrik",
+            "northstar": "Northstar",
+            "watch": "Perhatikan: konsentrasi pelanggan."
+          },
+          "marketing": {
+            "comparison": "vs 7 hari sebelumnya",
+            "period": "7 hari terakhir"
+          },
+          "operations": {
+            "agenda": "Konfirmasi agenda tim",
+            "context": "Minggu ini · 3 prioritas",
+            "friday": "Jum.",
+            "quote": "Tinjau penawaran vendor",
+            "today": "Hari ini",
+            "tuesday": "Sel.",
+            "update": "Kirim pembaruan proyek"
+          },
+          "other": {
+            "brief": "Tinjau brief yang dibagikan",
+            "call": "Konfirmasi panggilan besok",
+            "context": "Dari email terbaru",
+            "reply": "Balas Alex"
+          },
+          "research": {
+            "action": "Uji tugas pertama dengan panduan",
+            "context": "Wawancara pelanggan · 5 catatan",
+            "evidence": "Bukti",
+            "finding": "Temuan",
+            "insight": "Penyiapan terlalu lama",
+            "interviews": "3 dari 5 wawancara",
+            "next": "Berikutnya"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 peluang perlu perhatian",
+            "demo": "Demo besok",
+            "next": "Berikutnya: tindak lanjuti Acme.",
+            "northstar": "Northstar",
+            "proposal": "Proposal terkirim"
+          },
+          "software": {
+            "context": "2 digabung · 1 masalah terbuka",
+            "issue": "Ekspor CSV gagal",
+            "search": "Pencarian lebih cepat",
+            "signup": "Pendaftaran lebih mudah"
+          }
+        },
+        "expandLabel": "Lihat contoh hasil yang bisa Anda dapatkan",
+        "industries": {
+          "coaching": {
+            "title": "Rencana sesi"
+          },
+          "consulting": {
+            "title": "Brief rapat klien"
+          },
+          "design": {
+            "title": "Brief kreatif"
+          },
+          "finance": {
+            "title": "Ringkasan akhir bulan"
+          },
+          "investing": {
+            "title": "Perbandingan perusahaan"
+          },
+          "marketing": {
+            "title": "Ringkasan kampanye"
+          },
+          "operations": {
+            "title": "Minggu ini"
+          },
+          "other": {
+            "title": "Langkah berikutnya"
+          },
+          "research": {
+            "title": "Ringkasan riset"
+          },
+          "sales": {
+            "title": "Tindak lanjut penjualan"
+          },
+          "software": {
+            "title": "Ringkasan rilis"
+          }
+        },
+        "title": "Manfaatkan alat kerja sehari-hari Anda"
+      },
       "prompt": {
         "connectorsDescription": "Hubungkan alat kerja Anda agar Okou memahami konteks pekerjaan dan menyelesaikan tugas sesuai kebutuhan Anda. Anda juga bisa menghubungkannya nanti.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
@@ -4308,6 +4411,12 @@
         "copy": "Semakin Okou memahami pekerjaan Anda, semakin cerdas ia bekerja. Hubungkan alat yang Anda gunakan setiap hari untuk memulai dengan tugas dari pekerjaan nyata Anda.",
         "permissions": "Okou menggunakan sedikit sampel untuk menyesuaikan tugas pertama Anda. Anda yang menentukan apa yang dapat dilakukan Agent dan berapa lama.",
         "securityLink": "Cara Okou melindungi data Anda",
+        "skipDialog": {
+          "connect": "Hubungkan alat",
+          "description": "Sebaiknya hubungkan alat kerja Anda agar Okou memahami pekerjaan Anda dan memberikan bantuan yang lebih sesuai. Anda juga dapat menghubungkannya nanti.",
+          "skip": "Lewati untuk sekarang",
+          "title": "Okou lebih membantu dengan alat kerja Anda"
+        },
         "title": "Hubungkan alat kerja"
       },
       "startingPrompt": {
@@ -5241,6 +5350,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "Hubungkan",
         "connectAccount": "Hubungkan akun",
+        "creditsBalance": "{{value}} kredit {{provider}}",
+        "creditsLabel": "Kredit {{provider}}",
+        "creditsUnlimited": "Tanpa batas",
         "disconnectAccount": "Putuskan akun",
         "disconnectDescription": "Ini menghapus akun dari Okou. Langganan Anda dengan penyedia tidak akan dibatalkan.",
         "disconnecting": "Memutuskan…",
@@ -5338,37 +5450,9 @@
       "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
       "title": "Alat bawaan",
       "tools": {
-        "data-search": {
-          "description": "Perkaya profil profesional dan teliti perusahaan, trafik, iklan, kreator, serta data bisnis lainnya.",
-          "name": "Riset data lanjutan"
-        },
-        "finance": {
-          "description": "Cari perusahaan, harga, dan data pasar.",
-          "name": "Data keuangan"
-        },
         "image-generation": {
           "description": "Buat gambar dengan model bawaan.",
           "name": "Pembuatan gambar"
-        },
-        "maps": {
-          "description": "Temukan tempat, alamat, dan rute.",
-          "name": "Peta dan tempat"
-        },
-        "people-search": {
-          "description": "Temukan profil profesional publik.",
-          "name": "Pencarian orang"
-        },
-        "scrape": {
-          "description": "Baca dan ekstrak konten halaman web.",
-          "name": "Ekstraksi halaman"
-        },
-        "seo": {
-          "description": "Teliti peringkat pencarian, kata kunci, dan backlink.",
-          "name": "Riset SEO"
-        },
-        "social": {
-          "description": "Teliti postingan sosial publik dan kumpulkan media.",
-          "name": "Riset sosial"
         },
         "web-search": {
           "description": "Temukan informasi terkini di web.",
@@ -5505,7 +5589,7 @@
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten.",
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
         "errorMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
+        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
@@ -5514,7 +5598,7 @@
       "proactiveLearning": {
         "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
         "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Pilih Agent default yang tersedia.",
+        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
@@ -5523,7 +5607,7 @@
       "proactivePlanningAction": {
         "description": "Rencanakan dan kerjakan tugas yang Anda delegasikan, serta beri tahu saat masukan Anda diperlukan.",
         "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Pilih Agent default yang tersedia.",
+        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
@@ -5532,7 +5616,7 @@
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
+        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",

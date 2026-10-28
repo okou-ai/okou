@@ -522,6 +522,7 @@ describe("agent completion failure reasons", () => {
       "provider_stream_timeout",
       "provider_queue_timeout",
       "provider_server_error",
+      "provider_bad_request",
       "response_connection_lost",
       "safety_policy_refusal",
       "reconnect_required",

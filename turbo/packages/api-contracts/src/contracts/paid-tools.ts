@@ -1,42 +1,23 @@
-import {
-  array,
-  boolean,
-  object,
-  string,
-  union,
-  enum as zEnum,
-  type infer as zInfer,
-} from "zod";
+import { array, boolean, object, string, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
+/**
+ * Paid tools whose behavior Okou owns. Web search is provided by Data Router
+ * while enabled and by a personal subscription's framework tool while disabled.
+ */
 export const AVAILABLE_PAID_TOOL_IDS = [
   "web-search",
-  "people-search",
-  "data-search",
-  "scrape",
-  "finance",
-  "maps",
-  "seo",
-  "social",
   "image-generation",
 ] as const;
 
-// Keep retired IDs parseable for saved preferences and installed older clients.
-// Discovery and settings controls use only AVAILABLE_PAID_TOOL_IDS.
-export const PAID_TOOL_IDS = [
-  ...AVAILABLE_PAID_TOOL_IDS,
-  "image-recognition",
-  "video-generation",
-  "voice-generation",
-  "avatar-video-generation",
-] as const;
-
-export const paidToolIdSchema = union([
-  zEnum(PAID_TOOL_IDS),
-  string().regex(/^data:[a-zA-Z0-9_.-]{1,128}$/),
-]);
+/**
+ * Okou-owned tools and Data Router family IDs share one sparse namespace of
+ * disabled preferences. Router owns family IDs, so Okou validates only their
+ * format; retired and unknown IDs stay parseable and simply match nothing.
+ */
+export const paidToolIdSchema = string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/);
 export type PaidToolId = zInfer<typeof paidToolIdSchema>;
 
 export const DISABLED_PAID_TOOLS_ENV_VAR = "OKOU_DISABLED_PAID_TOOLS";

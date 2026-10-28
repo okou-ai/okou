@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.15.47](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.46...runner-executor-v0.15.47) (2026-10-28)
+
+## [0.15.46](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.45...runner-executor-v0.15.46) (2026-10-28)
+
+## [0.15.45](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.44...runner-executor-v0.15.45) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner:** batch workflow document publication and application ([#43510](https://github.com/okou-ai/okou/issues/43510)) ([74cce31](https://github.com/okou-ai/okou/commit/74cce31a39c11dbfd04c263d7386216e99485011))
+
+## [0.15.44](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.43...runner-executor-v0.15.44) (2026-10-27)
+
+
+### Documentation
+
+* **runner:** clarify startup concurrency through agent readiness ([#43486](https://github.com/okou-ai/okou/issues/43486)) ([2047572](https://github.com/okou-ai/okou/commit/2047572de906f2fd3f1a2b325c1e6eaf19f3f0dc))
+
+
+### Refactoring
+
+* **runner-executor:** own failed preparation retirement ([#43442](https://github.com/okou-ai/okou/issues/43442)) ([4814a07](https://github.com/okou-ai/okou/commit/4814a07962a44763f9f7e6862e92a8b24af24fe6))
+
 ## [0.15.43](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.42...runner-executor-v0.15.43) (2026-10-27)
 
 ## [0.15.42](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.41...runner-executor-v0.15.42) (2026-10-27)

@@ -18,13 +18,19 @@ final class ChatThreadActionsTests: XCTestCase {
     store.list.renameTitle = "  Focus for this week  "
     let gate = ThreadActionGate()
     defer { gate.open() }
-    fixture.state.value.withLock { $0.nextGate = gate }
+    let requested = expectation(description: "Write reached the HTTP boundary")
+    fixture.state.value.withLock {
+      $0.nextGate = gate
+      $0.nextWriteRequested = { requested.fulfill() }
+    }
     let saving = Task { await store.list.saveRename() }
-    addTeardownBlock {
+    addTeardownBlock { @MainActor in
+      store.close()
+      saving.cancel()
       gate.open()
       await saving.value
     }
-    try await eventually { fixture.writes.contains { $0.action == "rename" } }
+    await fulfillment(of: [requested], timeout: 3)
     XCTAssertNil(store.list.renameRequest)
     XCTAssertEqual(store.list.threads.first?.displayTitle, "Focus for this week")
     XCTAssertEqual(store.selectedConversation?.thread.displayTitle, "Focus for this week")
@@ -53,13 +59,19 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertTrue(undo.requiresNavigation)
     let gate = ThreadActionGate()
     defer { gate.open() }
-    fixture.state.value.withLock { $0.nextGate = gate }
+    let requested = expectation(description: "Write reached the HTTP boundary")
+    fixture.state.value.withLock {
+      $0.nextGate = gate
+      $0.nextWriteRequested = { requested.fulfill() }
+    }
     let creating = Task { await store.createChat(agentID: ThreadActionsFixture.agent) }
-    addTeardownBlock {
+    addTeardownBlock { @MainActor in
+      store.close()
+      creating.cancel()
       gate.open()
       await creating.value
     }
-    try await eventually { fixture.writes.contains { $0.action == "create" } }
+    await fulfillment(of: [requested], timeout: 3)
     await undo.action()
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "create"])
@@ -186,10 +198,14 @@ final class ChatThreadActionsTests: XCTestCase {
     await store.refreshNavigation()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
-    let conversation = try XCTUnwrap(store.selectedConversation)
+    try XCTUnwrap(store.selectedConversation).draft = "Keep my reply after undo"
     let gate = ThreadActionGate()
     defer { gate.open() }
-    fixture.state.value.withLock { $0.nextGate = gate }
+    let requested = expectation(description: "Write reached the HTTP boundary")
+    fixture.state.value.withLock {
+      $0.nextGate = gate
+      $0.nextWriteRequested = { requested.fulfill() }
+    }
     let archiving = Task {
       await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     }
@@ -198,7 +214,7 @@ final class ChatThreadActionsTests: XCTestCase {
       gate.open()
       _ = await archiving.value
     }
-    try await eventually { fixture.writes.contains { $0.action == "archive" } }
+    await fulfillment(of: [requested], timeout: 3)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
     XCTAssertTrue(store.list.threads(agentID: ThreadActionsFixture.agent, archived: false).isEmpty)
@@ -215,7 +231,7 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
     await (try XCTUnwrap(store.threadFeedback)).action()
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
-    XCTAssertTrue(store.selectedConversation === conversation)
+    XCTAssertEqual(store.selectedConversation?.draft, "Keep my reply after undo")
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }
@@ -262,12 +278,17 @@ final class ChatThreadActionsTests: XCTestCase {
     for operation in ["archive", "mute", "rename"] {
       let fixture = ThreadActionsFixture()
       let store = fixture.workspace()
+      defer { store.close() }
       await store.refreshNavigation()
       await store.refresh()
       store.selectChat(ThreadActionsFixture.thread)
       let gate = ThreadActionGate()
       defer { gate.open() }
-      fixture.state.value.withLock { $0.nextGate = gate }
+      let requested = expectation(description: "Write reached the HTTP boundary")
+      fixture.state.value.withLock {
+        $0.nextGate = gate
+        $0.nextWriteRequested = { requested.fulfill() }
+      }
       let pending = Task {
         switch operation {
         case "archive":
@@ -279,7 +300,13 @@ final class ChatThreadActionsTests: XCTestCase {
           await store.list.saveRename()
         }
       }
-      try await eventually { !fixture.writes.isEmpty }
+      addTeardownBlock { @MainActor in
+        store.close()
+        pending.cancel()
+        gate.open()
+        await pending.value
+      }
+      await fulfillment(of: [requested], timeout: 3)
       store.close()
       gate.open()
       await pending.value
@@ -342,6 +369,7 @@ private final class ThreadActionsFixture: Sendable {
     var mutingEnabled = true
     var failNext: [String: Int] = [:]
     var nextGate: ThreadActionGate?
+    var nextWriteRequested: (@Sendable () -> Void)?
     var writes: [Write] = []
     var events: [String] = []
   }
@@ -359,12 +387,15 @@ private final class ThreadActionsFixture: Sendable {
     http = ChatHTTPFixture { request in
       let path = request.url?.path ?? ""
       if request.httpMethod == "POST", path == "/api/chat-threads" {
-        let gate = state.value.withLock { state in
+        let (gate, requested) = state.value.withLock { state in
           state.writes.append(Write(action: "create", eventID: nil, title: nil))
           let gate = state.nextGate
+          let requested = state.nextWriteRequested
           state.nextGate = nil
-          return gate
+          state.nextWriteRequested = nil
+          return (gate, requested)
         }
+        requested?()
         await gate?.wait()
         try Task.checkCancellation()
         return ChatHTTPResponse(
@@ -387,12 +418,15 @@ private final class ThreadActionsFixture: Sendable {
           }?.value
         let eventID = renameBody["eventId"] ?? queryEventID
         let title = renameBody["title"]
-        let (gate, status) = state.value.withLock { state in
+        let (gate, status, requested) = state.value.withLock { state in
           state.writes.append(Write(action: action, eventID: eventID, title: title))
           let gate = state.nextGate
+          let requested = state.nextWriteRequested
           state.nextGate = nil
-          return (gate, state.failNext.removeValue(forKey: action) ?? 204)
+          state.nextWriteRequested = nil
+          return (gate, state.failNext.removeValue(forKey: action) ?? 204, requested)
         }
+        requested?()
         await gate?.wait()
         try Task.checkCancellation()
         if status != 204 {

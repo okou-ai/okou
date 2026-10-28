@@ -13,10 +13,12 @@ struct NotificationStateRequest: Encodable {
   }
   let installationId: String
   let registrationRevision: Int?
+  let badgeClearSequence: Int?
   let notifications: [Receipt]
 }
 
 struct NotificationStateResponse: Decodable, Sendable {
   let unreadCount: Int
+  let badgeCount: Int?
   let removeIdentifiers: [String]
 }

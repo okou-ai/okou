@@ -992,6 +992,7 @@ describe("GET /api/artifacts/catalog", () => {
       site,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
+      visibility: "public" as const,
       files: [hostedTextFile("/index.html", "<main>first</main>")],
     };
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);

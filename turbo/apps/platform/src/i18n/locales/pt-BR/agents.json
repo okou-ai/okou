@@ -542,7 +542,6 @@
         "label": "Como ele se comunica"
       },
       "visibility": {
-        "defaultDescription": "O agente padrão do espaço de trabalho deve permanecer público para todos os membros.",
         "description": "Visível para todas as pessoas deste workspace.",
         "label": "Tornar público"
       }

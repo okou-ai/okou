@@ -10,6 +10,7 @@ import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts"
 import { resetSignal } from "../../utils.ts";
 import { usagePackManagementAsync$ } from "../billing.ts";
 import { invalidateEmailSubscription$ } from "./email-subscription.ts";
+import { startPaidToolsCatalogDiscovery$ } from "./paid-tools-catalog.ts";
 import {
   managedUsagePackSelection,
   resetUsagePackPricing$,
@@ -250,10 +251,9 @@ export const setSettingsDialogOpen$ = command(
       set(internalSettingsVisit$, (visit) => {
         return visit + 1;
       });
-      set(
-        internalSettingsActionSignal$,
-        set(resetSettingsActionSignal$, pageSignal),
-      );
+      const actionSignal = set(resetSettingsActionSignal$, pageSignal);
+      set(internalSettingsActionSignal$, actionSignal);
+      set(startPaidToolsCatalogDiscovery$, actionSignal);
     }
     if (get(internalSettingsDialogSessionActive$)) {
       set(internalSettingsDialogOpen$, true);

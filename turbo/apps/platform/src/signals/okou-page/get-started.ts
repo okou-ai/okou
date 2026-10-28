@@ -18,7 +18,7 @@ import { setAblyLoop$ } from "../realtime.ts";
 import { agentPhoneLinkStatus$ } from "./agentphone.ts";
 import { reloadSlackOrg$, slackOrgData$ } from "./slack.ts";
 
-export type GetStartedQuestStatus = "todo" | "inReview" | "done" | "rejected";
+export type GetStartedQuestStatus = "todo" | "inReview" | "done";
 export interface GetStartedQuest {
   readonly key: GetStartedQuestKey;
   readonly status: GetStartedQuestStatus;
@@ -29,20 +29,17 @@ export interface GetStartedQuest {
   readonly canEarnMore: boolean;
   readonly rewardAmount: number;
   readonly rewardTarget: "user" | "org";
-  /** Why the last claim was turned down, when one was. */
-  readonly rejectedReason: string | null;
 }
 
 /**
  * The quests whose reward is decided by the review worker rather than by the
  * act itself.
  *
- * `processGetStartedClaims` leases exactly these two keys, so a claim of theirs
+ * `processGetStartedClaims` leases exactly these keys, so a claim of theirs
  * sitting in `pending` means a reviewer still holds it. Everything else is
  * granted inside the transaction that completes it and never waits.
  */
 const REVIEWED_QUEST_KEYS: ReadonlySet<GetStartedQuestKey> = new Set([
-  "share",
   "workflow",
 ]);
 
@@ -70,15 +67,6 @@ export const setGetStartedMenuOpen$ = command(({ set }, open: boolean) => {
     set(reloadSlackOrg$);
     set(reloadGetStarted$);
   }
-});
-
-/**
- * The latest share claim, which carries what the row cannot: which post is in
- * the queue and when it went in.
- */
-export const shareClaim$ = computed(async (get) => {
-  const data = await get(getStartedStatus$);
-  return data?.shareClaim ?? null;
 });
 
 /**
@@ -146,7 +134,6 @@ export const getStartedQuests$ = computed(
       )
         ? "done"
         : "todo";
-      let rejectedReason: string | null = null;
       // A reviewed quest that has a claim in flight is waiting, not untouched.
       // Without this the workflow row kept offering its own action for as long
       // as the hourly worker took to reach the claim the user had just earned.
@@ -157,24 +144,7 @@ export const getStartedQuests$ = computed(
       ) {
         status = "inReview";
       }
-      if (quest.key === "share" && status === "todo") {
-        // The claim carries the outcome of the latest attempt, including the
-        // reason it was turned down, which the per-quest counts cannot express.
-        if (
-          data.shareClaim?.status === "pending" ||
-          data.shareClaim?.status === "reviewing"
-        ) {
-          status = "inReview";
-        }
-        if (
-          data.shareClaim?.status === "rejected" ||
-          data.shareClaim?.status === "ineligible"
-        ) {
-          status = "rejected";
-          rejectedReason = data.shareClaim.reason;
-        }
-      }
-      return { ...quest, status, rejectedReason };
+      return { ...quest, status };
     });
     const slack = quests.find((quest) => {
       return quest.key === "slack";
@@ -257,8 +227,7 @@ export const setRewardsNoteOpen$ = command(({ set }, open: boolean) => {
  * Which quest's intro dialog is open, if any.
  *
  * The panel is a dropdown and its rows close it on select, so the dialog that
- * explains a quest cannot live in the panel's own tree. It is held here for the
- * same reason the share dialog is.
+ * explains a quest cannot live in the panel's own tree and is held here.
  */
 const internalQuestIntroKey$ = state<GetStartedQuestKey | null>(null);
 export const questIntroKey$ = computed((get) => {
@@ -285,56 +254,6 @@ export const setQuestIntroKey$ = command(
     if (key !== null) {
       set(internalQuestIntroLastKey$, key);
     }
-  },
-);
-
-const internalShareDialogOpen$ = state(false);
-const internalSharePostDraft$ = state("");
-const internalShareSubmission$ = state<Promise<void> | null>(null);
-const resetShareSubmission$ = resetSignal();
-export const shareDialogOpen$ = computed((get) => {
-  return get(internalShareDialogOpen$);
-});
-export const sharePostDraft$ = computed((get) => {
-  return get(internalSharePostDraft$);
-});
-export const shareSubmission$ = computed((get) => {
-  return get(internalShareSubmission$);
-});
-export const setShareDialogOpen$ = command(({ set }, open: boolean) => {
-  set(internalShareDialogOpen$, open);
-  if (!open) {
-    set(resetShareSubmission$);
-    set(internalSharePostDraft$, "");
-    set(internalShareSubmission$, null);
-  }
-});
-export const setSharePostDraft$ = command(({ set }, draft: string) => {
-  set(internalSharePostDraft$, draft);
-});
-const submitShareRequest$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    await accept(
-      get(apiClient$)(getStartedContract).submitShare({
-        body: { url: get(internalSharePostDraft$).trim() },
-        fetchOptions: { signal },
-      }),
-      [202],
-      signal,
-    );
-    signal.throwIfAborted();
-    set(reloadGetStarted$);
-    set(internalShareDialogOpen$, false);
-    set(internalSharePostDraft$, "");
-  },
-);
-export const submitSharePost$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    const requestSignal = set(resetShareSubmission$, signal);
-    const pending = set(submitShareRequest$, requestSignal);
-    set(internalShareSubmission$, pending);
-    await pending;
-    signal.throwIfAborted();
   },
 );
 

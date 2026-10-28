@@ -1395,6 +1395,32 @@ mod tests {
     }
 
     #[test]
+    fn opaque_codex_bad_request_preserves_original_error_and_failed_outcome() {
+        let error = r#"{"detail":"Bad Request"}"#;
+        let failure = json!({"type": "message_end", "message": {
+            "role": "assistant", "api": "openai-codex-responses", "stopReason": "error",
+            "errorMessage": error,
+            "diagnostics": [{"type": "okou_model_request", "details": {
+                "httpStatus": 400, "transportAttempts": 1, "failureReason": "provider_bad_request"
+            }}]
+        }});
+        let (responses, _rx) = response_channel();
+        let mut projection = PiRpcProjection::new("run", "session");
+        projection.project(failure, &responses, 0).unwrap();
+        let result = projection
+            .project(json!({"type": "agent_settled"}), &responses, 0)
+            .unwrap()
+            .expect("terminal failed result");
+
+        assert_eq!(result["is_error"], true);
+        assert_eq!(result["result"], error);
+        assert_eq!(result["failureReason"], "provider_bad_request");
+        assert_eq!(result["modelRequest"]["httpStatus"], 400);
+        assert_eq!(result["modelRequest"]["transportAttempts"], 1);
+        assert_eq!(result["modelRequest"]["retryAttempts"], 0);
+    }
+
+    #[test]
     fn semantic_http_success_keeps_failed_reason_and_observed_retries() {
         let processing_failure: Value = serde_json::from_str(include_str!(
             "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-request-processing-error.json"

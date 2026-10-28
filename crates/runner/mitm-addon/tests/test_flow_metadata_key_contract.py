@@ -779,6 +779,131 @@ async def test_comprehension_walrus_fixture_matches_runtime_metadata_accesses(ca
     assert metadata.accesses == ["sandbox_run_id"] * access_count
 
 
+@pytest.mark.parametrize("has_violations", [True, False])
+def test_comprehension_loop_aliases_through_api_and_cli(tmp_path, has_violations):
+    addon_root = tmp_path / "mitm-addon"
+    check_script = _copy_linter_scripts(addon_root)
+    src_root = addon_root / "src"
+    src_root.mkdir()
+    (src_root / "flow_metadata_keys.py").write_text(
+        'SANDBOX_RUN_ID = "sandbox_run_id"\n', encoding="utf-8"
+    )
+    fixtures = ["comprehension_loop_aliases.allowed.py.txt"]
+    if has_violations:
+        fixtures.insert(0, "comprehension_loop_aliases.base.py.txt")
+    source_path = src_root / "comprehension_loop_aliases.py"
+    _write_python_source(source_path, *fixtures)
+    expected = _expected_lines("comprehension_loop_aliases.expected.txt") if has_violations else []
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+    result = _run_check_script(check_script, addon_root, tmp_path)
+
+    assert _normalized_violations(source_path, violations) == expected
+    assert result.returncode == (1 if has_violations else 0)
+    assert result.stdout == "".join(f"src/{line}\n" for line in expected)
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    ("case", "access_count"),
+    [
+        ("list_body", 1),
+        ("set_body", 1),
+        ("dict_value", 1),
+        ("dict_key", 1),
+        ("consumed_generator", 1),
+        ("rejected_filter", 1),
+        ("filter_alias_chain", 1),
+        ("nested_inner", 1),
+        ("nested_outer", 1),
+        ("outer_filter", 1),
+        ("later_iterable", 1),
+        ("empty_inner", 1),
+        ("nested_comprehension", 1),
+        ("walrus_stays_enclosing", 1),
+        ("deferred_creation_retains_alias", 1),
+        ("async_body", 1),
+        ("false_filter", 1),
+        ("target_access", 1),
+        ("nested_chain", 2),
+        ("nested_first_iterable", 1),
+        ("ordinary_dictionary", 0),
+        ("empty_iterable", 0),
+        ("single_iteration", 0),
+        ("alias_killed_before_access", 0),
+        ("target_stays_local", 0),
+        ("single_outer_empty_inner", 0),
+        ("both_levels_single", 0),
+        ("inner_target_rebinds", 0),
+        ("first_iterable_runs_once", 0),
+        ("nested_kill", 0),
+    ],
+)
+async def test_comprehension_loop_alias_fixture_matches_runtime_accesses(case, access_count):
+    # Execute only these checked-in bounded functions as the diagnostic oracle.
+    namespace = {}
+    for suffix in ("base", "allowed"):
+        namespace.update(
+            runpy.run_path(str(_FIXTURE_ROOT / f"comprehension_loop_aliases.{suffix}.py.txt"))
+        )
+    metadata = _TrackedMetadata()
+
+    result = namespace[case](SimpleNamespace(metadata=metadata))
+    if inspect.isawaitable(result):
+        await result
+
+    assert metadata.accesses == ["sandbox_run_id"] * access_count
+
+
+@pytest.mark.parametrize("iterations", [0, 1, 2, 3])
+def test_comprehension_alias_chain_respects_literal_bounds(tmp_path, iterations):
+    source_path = tmp_path / "literal_comprehension.py"
+    source_path.write_text(
+        "def exercise(flow):\n"
+        "    first = second = {}\n"
+        '    return [(first.get("sandbox_run_id"), (first := second),\n'
+        "             (second := flow.metadata))[0]\n"
+        f"            for _ in {list(range(iterations))}]\n",
+        encoding="utf-8",
+    )
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == (
+        ["literal_comprehension.py:3: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access"]
+        if iterations == 3
+        else []
+    )
+
+
+@pytest.mark.parametrize("generators", ["for _ in rows", "for _ in [0] for inner in rows"])
+def test_check_flow_metadata_keys_cli_converges_for_comprehension_alias_chain(tmp_path, generators):
+    addon_root = tmp_path / "mitm-addon"
+    check_script = _copy_linter_scripts(addon_root)
+    src_root = addon_root / "src"
+    src_root.mkdir()
+    (src_root / "flow_metadata_keys.py").write_text(
+        'SANDBOX_RUN_ID = "sandbox_run_id"\n', encoding="utf-8"
+    )
+    names = [f"alias_{index}" for index in range(32)]
+    transfers = ", ".join(f"({target} := {value})" for target, value in itertools.pairwise(names))
+    (src_root / "chain.py").write_text(
+        "def exercise(flow, rows):\n"
+        f"    {' = '.join(names)} = {{}}\n"
+        '    return [(alias_0.get("sandbox_run_id"), '
+        f"{transfers}, ({names[-1]} := flow.metadata))[0] {generators}]\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check_script(check_script, addon_root, tmp_path, timeout_seconds=2)
+
+    assert result.returncode == 1
+    assert result.stdout == (
+        "src/chain.py:3: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access\n"
+    )
+    assert result.stderr == ""
+
+
 def test_registered_flow_metadata_guard_tracks_break_statement_exits(tmp_path):
     source_path = tmp_path / "break_statement_flow.py"
     _write_python_source(source_path, "break_statement_flow.base.py.txt")

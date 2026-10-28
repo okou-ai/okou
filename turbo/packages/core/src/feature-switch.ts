@@ -54,11 +54,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.IosComposerConnectors]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "iOS composer connectors",
+  [FeatureSwitchKey.FeatureGuides]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Feature guides",
+    description: "Show published product updates once per user and edition.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.OnboardingSourceOutcomes]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Onboarding source outcomes",
     description:
-      "Choose connector accounts, permissions, and remote access from native iOS chat.",
+      "Show industry-specific examples of work prepared from connected tools.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -81,8 +87,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     displayName: "Website visibility",
     description: "Control who can visit a published website.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.
@@ -90,8 +95,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     displayName: "Website URL editing",
     description: "Customize a published website address from its Share menu.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
@@ -112,8 +116,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     displayName: "Thread email manager",
     description: "Browse thread emails and send or delete selected drafts.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
@@ -141,6 +144,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Unified chat workspace",
     description:
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.ChatThreadTimeline]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Chat timeline",
+    description:
+      "Separate chat history by day, with Today shown only alongside Yesterday.",
     enabled: false,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
@@ -202,14 +212,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description:
       "Create native web forms that apply user-provided values to exact managed Browser controls",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.BrowserCdpViewer]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Okou browser viewer",
-    description:
-      "Use Okou's interactive browser viewer in conversations and standalone browser pages",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -284,6 +286,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Garmin Connect wellness connector",
     enabled: false,
+  },
+  [FeatureSwitchKey.ICloudConnector]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iCloud Calendar and Contacts",
+    description:
+      "Connect iCloud calendars and contacts with an app-specific password.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
@@ -399,7 +409,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Show Codex and Claude Code personal subscription usage in the account menu and on the Me page.",
+      "Show personal subscription usage in the account menu and on Me, and provider credit balances on connected accounts.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

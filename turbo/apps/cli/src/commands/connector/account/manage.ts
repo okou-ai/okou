@@ -118,15 +118,32 @@ export const connectorAccountImpactCommand = accountCommand(
   }),
 );
 
-export const deleteConnectorAccountCommand = accountCommand(
-  "delete",
-  "Delete one exact member account (use impact to inspect references first)",
-).action(
-  withErrorHandler(async (selector: string, options: Options) => {
-    printResult(
-      await deleteConnectorAccount(await selection(selector, options)),
-      options.json,
-      "Connector account deleted.",
-    );
-  }),
-);
+export const disconnectConnectorAccountCommand = accountCommand(
+  "disconnect",
+  "Disconnect one exact member account without an approval step",
+)
+  .alias("delete")
+  .addHelpText(
+    "after",
+    `
+Disconnect removes this saved account for the user across all Agents, not just
+this Agent's access. Use account impact to inspect affected references first.
+Reconnecting after disconnect may require the user to sign in to the target
+website again or provide the API token again. If the user has forgotten their
+password, cannot sign in, or has lost the API token, they may be unable to
+reconnect. To remove only this Agent's access while keeping the saved account,
+use connector unauthorize.
+
+Examples:
+  okou connector account disconnect github --connection-id <uuid>
+  okou connector account disconnect custom:<uuid> --connection-id <uuid> --json`,
+  )
+  .action(
+    withErrorHandler(async (selector: string, options: Options) => {
+      printResult(
+        await deleteConnectorAccount(await selection(selector, options)),
+        options.json,
+        "Connector account disconnected. Reconnecting may require signing in to the target website again.",
+      );
+    }),
+  );

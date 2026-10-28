@@ -1,4 +1,10 @@
 import {
+  legacyPlanSubscriptionEntitlementPublication,
+  trialShorteningWhere,
+  unpreparedLegacyPlanTrialLots,
+  legacyPlanTrialLotMembership,
+} from "./legacy-plan-subscription-publication";
+import {
   canceledPlanEntitlementConflictValues,
   canceledPlanEntitlementInsertSql,
   canceledPlanEntitlementProjection,
@@ -37,23 +43,27 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import {
   usagePackAllocationChanges,
   usagePackSubscriptions,
-  usagePackAllocations,
 } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
 import {
   and,
   eq,
+  exists,
   gt,
   inArray,
   isNull,
-  notInArray,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
 
 import { env } from "../../lib/env";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgIntegerDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import { logger } from "../../lib/log";
 import { now, nowDate, nowDateSql } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -1543,7 +1553,7 @@ const publishAtomPlanInvoice$ = command(
   ) => {
     const db = set(writeDb$);
     const { invoice, details } = input;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0325; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: Atom invoice receipts, shared/member credit grants and plan publication must commit or roll back together; single-statement alternative: wallet arbitration precedes a fresh expiration check, and a later rejected member grant must roll back earlier financial writes.
     return await db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(orgMetadataCanonicalWrites)
@@ -3838,26 +3848,13 @@ function legacyPlanPublication(args: Omit<LegacyPlanPublication, "orgId">) {
   };
 }
 
-function trialShorteningWhere(orgId: string, end: Date) {
-  return and(
-    eq(creditExpiresRecord.orgId, orgId),
-    eq(creditExpiresRecord.source, "subscription_renewal"),
-    gt(creditExpiresRecord.expiresAt, end),
-    gt(creditExpiresRecord.remaining, 0),
-  );
-}
-
 function legacyPlanEntitlement(
   args: LegacyPlanPublication,
   input: {
     readonly tier: BillingSubscriptionTier;
     readonly item: SubscriptionInput["items"]["data"][number];
-    readonly showUsagePack: boolean;
-    readonly owner: string | undefined;
   },
 ) {
-  const duplicateOwner =
-    input.owner !== undefined && input.owner !== args.orgId;
   const metadata = retireMarketingMetadata(args.subscription.metadata ?? {});
   return {
     ...orgPlanEntitlementValues(
@@ -3876,17 +3873,12 @@ function legacyPlanEntitlement(
           : null,
         cancelAt: args.scheduledEnd,
         expiresAt: args.scheduledEnd,
-        showUsagePack: input.showUsagePack,
+        // The publication SQL applies live membership to this tier policy.
+        showUsagePack: true,
       },
       {
-        stripeSubscriptionId: duplicateOwner ? null : args.subscription.id,
-        sourceMetadata: duplicateOwner
-          ? {
-              ...metadata,
-              stripeSubscriptionSnapshotSkipped:
-                "duplicate_stripe_subscription_id",
-            }
-          : metadata,
+        stripeSubscriptionId: args.subscription.id,
+        sourceMetadata: metadata,
       },
     ),
     stripeProductId: null,
@@ -3902,116 +3894,127 @@ const publishLegacyPlanSubscription$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
     const prepared = legacyPlanPublication(args);
-    const lots = prepared.trialEnd
-      ? await db
-          .select({ id: creditExpiresRecord.id })
-          .from(creditExpiresRecord)
-          .where(trialShorteningWhere(args.orgId, prepared.trialEnd))
-      : [];
+    // The wallet version and lot cohort must come from the same snapshot.
+    // Grant/extension writers also update this wallet in their atomic operation.
+    const snapshot = await db
+      .select({
+        rowVersion: sql`${orgMetadata}.xmin::text`.mapWith(pgTextDecoder),
+        lotId: creditExpiresRecord.id,
+      })
+      .from(orgMetadata)
+      .leftJoin(
+        creditExpiresRecord,
+        prepared.trialEnd
+          ? trialShorteningWhere(args.orgId, prepared.trialEnd)
+          : sql`false`,
+      )
+      .where(and(eq(orgMetadata.orgId, args.orgId), prepared.target));
     signal.throwIfAborted();
-    const lotIds = lots.map((row) => {
-      return row.id;
+    const wallet = snapshot[0];
+    if (!wallet) {
+      return false;
+    }
+    const lotIds = snapshot.flatMap((row) => {
+      return row.lotId === null ? [] : [row.lotId];
     });
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0329; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      // No row lock: publish the plan projection as a conditional write on the
-      // subscription binding first; the wallet row it writes then orders the
-      // credit-lot re-check below against grant writers.
-      const publication = legacyPlanPublication(args);
-      const [wallet] = await tx
+    const publication = legacyPlanPublication(args);
+    const published = db.$with("published_legacy_plan").as(
+      db
         .update(orgMetadata)
         .set(publication.values)
-        .where(and(eq(orgMetadata.orgId, args.orgId), prepared.target))
-        .returning({ orgId: orgMetadata.orgId });
-      if (!wallet) {
-        return false;
-      }
-      if (publication.trialEnd) {
-        const [unprepared] = await tx
-          .select({ id: creditExpiresRecord.id })
-          .from(creditExpiresRecord)
-          .where(
-            and(
-              trialShorteningWhere(args.orgId, publication.trialEnd),
-              notInArray(creditExpiresRecord.id, lotIds),
-            ),
+        .where(
+          and(
+            eq(orgMetadata.orgId, args.orgId),
+            prepared.target,
+            eq(sql`${orgMetadata}.xmin::text`, wallet.rowVersion),
+          ),
+        )
+        .returning({ orgId: orgMetadata.orgId }),
+    );
+    const entitlementInput =
+      publication.planTier && publication.planItem
+        ? legacyPlanSubscriptionEntitlementPublication(
+            legacyPlanEntitlement(args, {
+              tier: publication.planTier,
+              item: publication.planItem,
+            }),
+            db.select({ orgId: published.orgId }).from(published).getSQL(),
+            args.subscription.id,
           )
-          .limit(1);
-        if (unprepared) {
-          throw new Error(
-            "Subscription credit lots changed during trial shortening",
-          );
-        }
-      }
-      if (publication.planTier && publication.planItem) {
-        const [memberPack] = await tx
-          .select({ id: usagePackAllocations.id })
-          .from(usagePackSubscriptions)
-          .innerJoin(
-            usagePackAllocations,
-            eq(
-              usagePackAllocations.usagePackSubscriptionId,
-              usagePackSubscriptions.id,
-            ),
-          )
-          .where(
-            and(
-              eq(usagePackSubscriptions.orgId, args.orgId),
-              eq(
-                usagePackSubscriptions.stripeSubscriptionId,
-                args.subscription.id,
+        : null;
+    const entitlement = entitlementInput
+      ? db.$with("published_legacy_entitlement").as(
+          db
+            .insert(orgPlanEntitlements)
+            .select(entitlementInput.source)
+            .onConflictDoUpdate({
+              target: orgPlanEntitlements.orgId,
+              set: entitlementInput.values,
+            })
+            .returning({ orgId: orgPlanEntitlements.orgId }),
+        )
+      : undefined;
+    const shortened = publication.trialEnd
+      ? db.$with("shortened_legacy_trial_lots").as(
+          db
+            .update(creditExpiresRecord)
+            .set({ expiresAt: publication.trialEnd })
+            .from(entitlement ?? published)
+            .where(
+              and(
+                trialShorteningWhere(args.orgId, publication.trialEnd),
+                legacyPlanTrialLotMembership(lotIds),
               ),
-              notInArray(usagePackSubscriptions.subscriptionStatus, [
-                "canceled",
-                "incomplete_expired",
-                "invalid",
-              ]),
-              inArray(usagePackAllocations.status, [
-                "pending_payment",
-                "active",
-                "pending_invitation",
-                "paid_pending_invitation",
-              ]),
-            ),
-          )
-          .limit(1);
-        const [owner] = await tx
-          .select({ orgId: orgPlanEntitlements.orgId })
-          .from(orgPlanEntitlements)
-          .where(
-            eq(orgPlanEntitlements.stripeSubscriptionId, args.subscription.id),
-          )
-          .limit(1);
-        const entitlement = legacyPlanEntitlement(args, {
-          tier: publication.planTier,
-          item: publication.planItem,
-          showUsagePack: memberPack !== undefined,
-          owner: owner?.orgId,
-        });
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(entitlement)
-          .onConflictDoUpdate({
-            target: orgPlanEntitlements.orgId,
-            set: entitlement,
-          });
-      }
-      if (publication.trialEnd) {
-        await tx
-          .update(creditExpiresRecord)
-          .set({ expiresAt: publication.trialEnd })
-          .where(
-            and(
-              trialShorteningWhere(args.orgId, publication.trialEnd),
-              inArray(creditExpiresRecord.id, lotIds),
-            ),
-          );
-      }
-      signal.throwIfAborted();
-      return true;
-    });
+            )
+            .returning({ id: creditExpiresRecord.id }),
+        )
+      : undefined;
+    const applied = exists(
+      db.select({ orgId: published.orgId }).from(published),
+    );
+    const target = exists(
+      db
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(and(eq(orgMetadata.orgId, args.orgId), prepared.target)),
+    );
+    const unprepared = publication.trialEnd
+      ? unpreparedLegacyPlanTrialLots(args.orgId, publication.trialEnd, lotIds)
+      : sql`false`;
+    // A stale cohort aborts the whole statement, including every DML CTE.
+    // This replaces the old post-wallet fresh snapshot with a natural xmin CAS.
+    const outcome = await settle(
+      db
+        .with(
+          published,
+          ...(entitlement ? [entitlement] : []),
+          ...(shortened ? [shortened] : []),
+        )
+        .select({
+          applied: applied.mapWith(pgBooleanDecoder),
+          guard: sql`1 / CASE
+          WHEN ${applied} THEN CASE WHEN ${unprepared} THEN 0 ELSE 1 END
+          WHEN ${target} THEN 0
+          ELSE 1 END`.mapWith(pgIntegerDecoder),
+        })
+        .from(sql`(VALUES (1)) AS publication_outcome(value)`),
+    );
     signal.throwIfAborted();
-    return result;
+    if (!outcome.ok) {
+      if (safeSqlStateCode(outcome.error) === "22012") {
+        throw new Error(
+          publication.trialEnd
+            ? "Subscription credit lots changed during trial shortening"
+            : "Subscription plan changed during publication",
+        );
+      }
+      throw outcome.error;
+    }
+    const [result] = outcome.value;
+    if (!result) {
+      throw new Error("Subscription publication returned no outcome");
+    }
+    return result.applied;
   },
 );
 

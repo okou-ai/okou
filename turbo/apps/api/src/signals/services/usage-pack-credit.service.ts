@@ -60,42 +60,6 @@ export function usagePackCreditGrantValues(args: UsagePackCreditGrantArgs) {
   };
 }
 
-export function usagePackCreditGrantReadPlan(args: UsagePackCreditGrantArgs) {
-  return {
-    columns: {
-      id: usagePackCreditGrants.id,
-      orgId: usagePackCreditGrants.orgId,
-      userId: usagePackCreditGrants.userId,
-      grantType: usagePackCreditGrants.grantType,
-      originalAmount: usagePackCreditGrants.originalAmount,
-      expiresAt: usagePackCreditGrants.expiresAt,
-    },
-    condition: eq(usagePackCreditGrants.idempotencyKey, args.idempotencyKey),
-  };
-}
-
-export function requireUsagePackCreditGrant(
-  existing:
-    | Pick<
-        typeof usagePackCreditGrants.$inferSelect,
-        "id" | "orgId" | "userId" | "grantType" | "originalAmount" | "expiresAt"
-      >
-    | undefined,
-  args: UsagePackCreditGrantArgs,
-): string {
-  if (
-    !existing ||
-    existing.orgId !== args.orgId ||
-    existing.userId !== args.userId ||
-    existing.grantType !== args.grantType ||
-    existing.originalAmount !== args.amount ||
-    existing.expiresAt.getTime() !== args.expiresAt.getTime()
-  ) {
-    throw new Error("Usage pack credit grant idempotency key conflict");
-  }
-  return existing.id;
-}
-
 /** Callers check cancellation after the complete unsignalled admission phase. */
 export const getSpendableUsagePackCredits$ = command(
   async (

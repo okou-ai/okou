@@ -5,23 +5,14 @@ import {
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
+import { completedGetStartedQuestSql } from "../services/get-started-member-reward";
+import { processGetStartedClaims$ } from "../services/get-started-review.service";
 import {
-  completedGetStartedQuestSql,
-  unresolvedClaimWhere,
-} from "../services/get-started-member-reward";
-import {
-  normalizeGetStartedPostUrl,
-  processGetStartedClaims$,
-} from "../services/get-started-review.service";
-import {
-  createGetStartedClaim$,
   getStartedClaimResponse,
   getStartedStatus$,
   getStartedUtcDay,
@@ -80,88 +71,6 @@ const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: getStartedClaimResponse(current) };
 });
 
-const shareBody$ = bodyResultOf(getStartedContract.submitShare);
-const share$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const body = await get(shareBody$);
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const post = normalizeGetStartedPostUrl(body.data.url);
-  if (!post) {
-    return badRequestMessage("Submit a valid public X post URL");
-  }
-  const db = set(writeDb$);
-  const [granted] = await db
-    .select()
-    .from(getStartedClaims)
-    .where(
-      and(
-        eq(getStartedClaims.beneficiaryUserId, auth.userId),
-        eq(getStartedClaims.questKey, "share"),
-        eq(getStartedClaims.status, "granted"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (granted) {
-    return { status: 202 as const, body: getStartedClaimResponse(granted) };
-  }
-  const pending = await set(
-    createGetStartedClaim$,
-    {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      questKey: "share",
-      sourceKey: post.id,
-      postUrl: post.url,
-    },
-    signal,
-  );
-  if (pending.status !== "pending") {
-    return { status: 202 as const, body: getStartedClaimResponse(pending) };
-  }
-  // Historical grants used post identities rather than author identities.
-  const [used] = await db
-    .select({ id: getStartedClaims.id })
-    .from(getStartedClaims)
-    .where(eq(getStartedClaims.rewardKey, `share:${post.id}`))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!used) {
-    return { status: 202 as const, body: getStartedClaimResponse(pending) };
-  }
-  const [duplicate] = await db
-    .update(getStartedClaims)
-    .set({
-      status: "ineligible",
-      reason: "already_redeemed",
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        unresolvedClaimWhere(pending),
-        eq(getStartedClaims.status, "pending"),
-      ),
-    )
-    .returning();
-  signal.throwIfAborted();
-  if (duplicate) {
-    return { status: 202 as const, body: getStartedClaimResponse(duplicate) };
-  }
-  // A reviewer acquired or resolved the claim; serialize its current result.
-  const [current] = await db
-    .select()
-    .from(getStartedClaims)
-    .where(eq(getStartedClaims.id, pending.id));
-  signal.throwIfAborted();
-  if (!current) {
-    throw new Error("Duplicate X claim disappeared");
-  }
-  return { status: 202 as const, body: getStartedClaimResponse(current) };
-});
-
 const review$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!get(hasValidCronSecret$)) {
     return cronUnauthorized();
@@ -187,13 +96,6 @@ export const getStartedRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
       checkin$,
-    ),
-  },
-  {
-    route: getStartedContract.submitShare,
-    handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
-      share$,
     ),
   },
   { route: cronGetStartedContract.process, handler: review$ },

@@ -12,6 +12,139 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1072.2](https://github.com/okou-ai/okou/compare/app-v0.1072.1...app-v0.1072.2) (2026-10-28)
+
+
+### Refactoring
+
+* **browser:** roll out okou viewer and remove feature switch ([#43671](https://github.com/okou-ai/okou/issues/43671)) ([97e8ca7](https://github.com/okou-ai/okou/commit/97e8ca71f4d6ac0cd015de589eb5d8179a96bddd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.2
+
+## [0.1072.1](https://github.com/okou-ai/okou/compare/app-v0.1072.0...app-v0.1072.1) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.15.0
+    * @okouai/core bumped to 8.796.1
+
+## [0.1072.0](https://github.com/okou-ai/okou/compare/app-v0.1071.1...app-v0.1072.0) (2026-10-28)
+
+
+### Features
+
+* **app:** add gated date separators to chat threads ([#43646](https://github.com/okou-ai/okou/issues/43646)) ([5a0449a](https://github.com/okou-ai/okou/commit/5a0449a28f270e0d4101a0c862bf003830e40987))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.0
+
+## [0.1071.1](https://github.com/okou-ai/okou/compare/app-v0.1071.0...app-v0.1071.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **app:** show manually opened resources without delay ([#43521](https://github.com/okou-ai/okou/issues/43521)) ([cc755d3](https://github.com/okou-ai/okou/commit/cc755d389ed12ab5069d4c896a58e01beb57aeb7))
+* **pi:** classify opaque codex bad requests ([#43630](https://github.com/okou-ai/okou/issues/43630)) ([fd956ef](https://github.com/okou-ai/okou/commit/fd956ef072e4118fdc15a39febed4e286f479b5d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.2
+    * @okouai/connectors bumped to 3.18.0
+    * @okouai/core bumped to 8.795.1
+
+## [0.1071.0](https://github.com/okou-ai/okou/compare/app-v0.1070.1...app-v0.1071.0) (2026-10-28)
+
+
+### Features
+
+* **app:** show connector outcomes during onboarding ([#43542](https://github.com/okou-ai/okou/issues/43542)) ([746e094](https://github.com/okou-ai/okou/commit/746e094cf571e2b05117fd5141594625bc134abd))
+
+
+### Refactoring
+
+* **app:** read the data router catalog with stateless mcp 2026-07-28 ([#43560](https://github.com/okou-ai/okou/issues/43560)) ([ad90edc](https://github.com/okou-ai/okou/commit/ad90edca2c9121002e169d146fafa8262d947fe7))
+
+
+### Performance Improvements
+
+* **app:** await embedded viewer menus by scoped semantics ([#43564](https://github.com/okou-ai/okou/issues/43564)) ([4760f3c](https://github.com/okou-ai/okou/commit/4760f3c5a4a1777f06fa6b50e46b62a921e01cec))
+* **app:** shorten embedded viewer menu preparation ([#43548](https://github.com/okou-ai/okou/issues/43548)) ([61baa28](https://github.com/okou-ai/okou/commit/61baa286dfd8ed56508aceca638e299c69860376))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.1
+    * @okouai/connectors bumped to 3.17.0
+    * @okouai/core bumped to 8.795.0
+
+## [0.1070.1](https://github.com/okou-ai/okou/compare/app-v0.1070.0...app-v0.1070.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **app:** align desktop shell authorization card with chat actions ([#43524](https://github.com/okou-ai/okou/issues/43524)) ([c15e621](https://github.com/okou-ai/okou/commit/c15e621ffa1520b3a519105b5027a309c9e495c4))
+
+
+### Performance Improvements
+
+* preserve headroom in browser and credit tests ([#43501](https://github.com/okou-ai/okou/issues/43501)) ([366046d](https://github.com/okou-ai/okou/commit/366046dea52dc5c6f0f546df313df654a8545400))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.0
+    * @okouai/core bumped to 8.794.1
+
+## [0.1070.0](https://github.com/okou-ai/okou/compare/app-v0.1069.1...app-v0.1070.0) (2026-10-27)
+
+
+### Features
+
+* enable remote control guided setup for everyone ([#43445](https://github.com/okou-ai/okou/issues/43445)) ([4e5e2c3](https://github.com/okou-ai/okou/commit/4e5e2c3143150de64b99336151672e866b62c845))
+* release website controls and thread email manager ([#43476](https://github.com/okou-ai/okou/issues/43476)) ([e9989fb](https://github.com/okou-ai/okou/commit/e9989fbe0eceec17fe7d0ede926236d729b299cd))
+* remove the x share quest from get started ([#43455](https://github.com/okou-ai/okou/issues/43455)) ([3059ea2](https://github.com/okou-ai/okou/commit/3059ea2c584b81e069c750e0e9f2f2e531f03e83))
+
+
+### Bug Fixes
+
+* **app:** restrict agent self-management to custom agents ([#43481](https://github.com/okou-ai/okou/issues/43481)) ([c9c00ca](https://github.com/okou-ai/okou/commit/c9c00ca806f8fbfcd2cc451ffac6c8aa1a61d908))
+* **app:** simplify suggestion follow-up copy ([#43474](https://github.com/okou-ai/okou/issues/43474)) ([7548997](https://github.com/okou-ai/okou/commit/754899704fa3bb26f4f318c9a4cb45059ab94796))
+* **app:** use official google workspace logos in artifact menus ([#43426](https://github.com/okou-ai/okou/issues/43426)) ([2d3527f](https://github.com/okou-ai/okou/commit/2d3527fc775941f081c0aa133bbc9f52dcd77e16))
+* **chat:** exclude queue waiting from work duration ([#43444](https://github.com/okou-ai/okou/issues/43444)) ([c32b48e](https://github.com/okou-ai/okou/commit/c32b48efe24ccca368cafff6b67f1ba52537f3d4))
+
+
+### Refactoring
+
+* let data router own its tool catalog ([#43457](https://github.com/okou-ai/okou/issues/43457)) ([5152b2d](https://github.com/okou-ai/okou/commit/5152b2d43e1cdefe15cf338cd43abdaf19f84504))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.13.0
+    * @okouai/core bumped to 8.794.0
+    * @okouai/ui bumped to 1.18.5
+
 ## [0.1069.1](https://github.com/okou-ai/okou/compare/app-v0.1069.0...app-v0.1069.1) (2026-10-27)
 
 

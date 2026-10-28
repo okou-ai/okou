@@ -7,9 +7,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::call_records::{
     CodexSessionCleanupCall, CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall,
-    GuestStateRestoreCall, ProcessCancelCall, ProcessControlCall, SessionHistoryIdentityVerifyCall,
-    StartAgentProcessCall, StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall,
-    WriteFilesCall,
+    GuestStateRestoreCall, ProcessCancelCall, ProcessControlCall, ReadFileCall,
+    SessionHistoryIdentityVerifyCall, StartAgentProcessCall, StartProcessCall, StorageManifestCall,
+    WaitProcessCall, WriteFileCall, WriteFilesCall,
 };
 use crate::lifecycle::{DestroyBehavior, LifecycleBehaviors, MockLifecycleGate};
 use crate::support::LockIgnoringPoison;
@@ -115,6 +115,8 @@ pub(crate) struct FileOverrideState {
     pub(crate) private_write_files_calls: Mutex<Vec<WriteFilesCall>>,
     /// FIFO queue of write_private_files results consumed by factory-created sandboxes.
     pub(crate) private_write_files_results: Mutex<VecDeque<Result<()>>>,
+    /// Recorded read_file calls across all sandboxes built from this override set.
+    pub(crate) read_file_calls: Mutex<Vec<ReadFileCall>>,
     /// FIFO queue of read_file results consumed by factory-created sandboxes.
     pub(crate) read_file_results: Mutex<VecDeque<Result<Option<Vec<u8>>>>>,
     /// FIFO queue of copy_file results consumed by factory-created sandboxes.
@@ -818,6 +820,13 @@ impl MockSandboxOverrides {
             .private_write_files_results
             .lock_ignoring_poison()
             .push_back(result);
+    }
+
+    /// Return recorded read-file calls across all attached sandboxes.
+    ///
+    /// Calls are recorded in order, including reads that fail mock validation.
+    pub fn read_file_calls(&self) -> Vec<ReadFileCall> {
+        self.file.read_file_calls.lock_ignoring_poison().clone()
     }
 
     /// Queue a read_file result applied to the next read made through any

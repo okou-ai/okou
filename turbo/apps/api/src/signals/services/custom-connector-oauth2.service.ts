@@ -1,16 +1,7 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import {
-  connectorCredentialDeletion,
-  connectorCredentialDeletionKinds,
-} from "./connector-account-mutation.service";
-import {
-  completedGetStartedQuestSql,
-  memberRewardWalletQuery,
-} from "./get-started-member-reward";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { slackRewardWalletEntitlement } from "./slack-installation-reward";
+import { customOAuthConnectionPublicationSql } from "./custom-oauth-connection-publication";
+import { pgTextDecoder } from "../../lib/db-structured-result";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "./get-started-rewards.service";
 import { feishuPlatformFromTokenUrl } from "@okouai/core/feishu-platform";
 import { Buffer } from "node:buffer";
@@ -88,15 +79,10 @@ import { customConnectorDefinitionSelection } from "./custom-connector-definitio
 import type { StoredCustomConnectorOAuthState } from "./connector-oauth-state.service";
 import {
   type ConnectorConnectionMutationResolution,
-  awaitConnectorConnectionRow,
   existingConnectorConnectionSelection,
   connectorConnectionMutationReadPlan as connectionMutationReadPlan,
   connectorConnectionMutationReadResult as connectionMutationReadResult,
   type ConnectorConnectionMutationArgs,
-  connectorConnectionMetadataWritePlan as connectionMetadataWritePlan,
-  connectorConnectionMetadataWriteResult as connectionMetadataWriteResult,
-  connectorConnectionSelection as connectionSelection,
-  type ConnectorConnectionMetadataQuery,
   type ConnectorConnectionWriteArgs,
 } from "./connector-connection-write.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
@@ -139,7 +125,6 @@ import {
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import {
   automaticNoAuthPublicationSql,
-  customConnectorOAuthBindingDeletionPlan as customOAuthBindingDeletion,
   customConnectorOAuthStartFromRow,
   customConnectorOAuthStartResultSchema,
   customConnectorOAuthStartSql,
@@ -1897,6 +1882,11 @@ type StoreCustomConnectorOAuth2ConnectionResult =
   | { readonly kind: "stored"; readonly connectionId: string }
   | { readonly kind: "missing" | "ambiguous" | "sibling-disabled" };
 
+const customOAuthPublicationRow = object({
+  connection_id: string().uuid().nullable(),
+  complete: literal(1),
+}).strict();
+
 export const storeCustomConnectorOAuth2Connection$ = command(
   async function storeCustomConnectorOAuth2Connection(
     { set },
@@ -1906,127 +1896,113 @@ export const storeCustomConnectorOAuth2Connection$ = command(
     const db = set(writeDb$);
     const encrypted = await encryptTokenValues(args);
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0141; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [insertedWallet] = await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({ orgId: args.orgId })
-        .onConflictDoNothing()
-        .returning({ orgId: orgMetadata.orgId });
-      await tx.select().from(memberRewardWalletQuery(args.orgId));
-      if (insertedWallet) {
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(slackRewardWalletEntitlement(args.orgId))
-          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-      }
-      const contractRef = customOAuth2CredentialContractRef(args);
-      const contract = await (async () => {
-        const plan =
-          customConnectorOAuth2CredentialContractReadPlan(contractRef);
-        const rows = await tx
-          .select(plan.columns)
-          .from(plan.from)
-          .leftJoin(plan.join.table, plan.join.on)
-          .where(plan.where)
-          .for("update", { of: plan.from })
-          .limit(1);
-        return customConnectorOAuth2CredentialContractFromRows(
-          rows,
-          contractRef,
-        );
-      })();
-      signal.throwIfAborted();
-      const mutationReadArgs: ConnectorConnectionMutationArgs =
-        customOAuthConnectionMutationValues(args, contract);
-      const resolution = await (async () => {
-        let read = connectionMutationReadPlan(mutationReadArgs);
-        for (;;) {
-          const rows = await tx
-            .select(read.columns)
-            .from(read.from)
-            .where(read.where)
-            .orderBy(...read.orderBy)
-            .limit(read.limit);
-          const result = connectionMutationReadResult(
-            mutationReadArgs,
-            read,
-            rows,
-          );
-          if (result.kind === "resolved") {
-            return result.resolution;
-          }
-          read = result.read;
+    const contractRef = customOAuth2CredentialContractRef(args);
+    const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
+    const contract = customConnectorOAuth2CredentialContractFromRows(
+      await db
+        .select(plan.columns)
+        .from(plan.from)
+        .leftJoin(plan.join.table, plan.join.on)
+        .where(plan.where)
+        .limit(1),
+      contractRef,
+    );
+    signal.throwIfAborted();
+    const mutationReadArgs = customOAuthConnectionMutationValues(
+      args,
+      contract,
+    );
+    const revisions = new Map<string, string>();
+    const resolution = await (async () => {
+      let read = connectionMutationReadPlan(mutationReadArgs);
+      for (;;) {
+        const rows = await db
+          .select({
+            ...read.columns,
+            publicationRevision: sql`${connectors}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(read.from)
+          .where(read.where)
+          .orderBy(...read.orderBy)
+          .limit(read.limit);
+        signal.throwIfAborted();
+        for (const row of rows) {
+          revisions.set(row.id, row.publicationRevision);
         }
-      })();
-      signal.throwIfAborted();
+        const result = connectionMutationReadResult(
+          mutationReadArgs,
+          read,
+          rows,
+        );
+        if (result.kind === "resolved") {
+          return result.resolution;
+        }
+        read = result.read;
+      }
+    })();
+    signal.throwIfAborted();
+    const metadata =
+      resolution.kind === "ready"
+        ? customOAuthWriteArgs(args, resolution)
+        : null;
+    const accountRevision =
+      metadata?.resolution.kind === "update"
+        ? revisions.get(metadata.resolution.existing.id)
+        : null;
+    if (accountRevision === undefined) {
+      throw new Error(
+        "Custom OAuth reconnect has no observed account revision",
+      );
+    }
+    const query = customOAuthConnectionPublicationSql({
+      ...contractRef,
+      providerAdapter: contract.providerAdapter,
+      account: metadata === null ? null : { metadata, accountRevision },
+      // The statement replaces this descriptor's ID with its actual winning account.
+      tokens: customOAuthTokenRows(
+        args,
+        "00000000-0000-4000-8000-000000000000",
+        encrypted,
+      ),
+      binding: args.automaticOAuthBinding
+        ? { customConnectorId: args.connectorId, ...args.automaticOAuthBinding }
+        : null,
+      quest: customOAuthQuest(args),
+    });
+    signal.throwIfAborted();
+    // Finish the admitted publication before the caller observes post-commit abort.
+    return await (async () => {
+      const result = await settle(
+        (async () => {
+          return parseRawRows(
+            customOAuthPublicationRow,
+            await db.execute(query),
+          );
+        })(),
+      );
+      if (!result.ok) {
+        if (safeSqlStateCode(result.error) === "22012") {
+          throw new Error(
+            "Custom connector account or credential contract changed while connecting; submit the connection again",
+            { cause: result.error },
+          );
+        }
+        throw result.error;
+      }
+      const [published] = result.value;
+      if (result.value.length !== 1 || !published) {
+        throw new Error("Custom OAuth publication returned an invalid result");
+      }
       if (resolution.kind !== "ready") {
         return resolution;
       }
-
-      const connectionArgs = customOAuthWriteArgs(args, resolution);
-
-      const connection = await awaitConnectorConnectionRow(
-        (async () => {
-          const outcome = await (async () => {
-            let write = connectionMetadataWritePlan(connectionArgs);
-            for (;;) {
-              const query: ConnectorConnectionMetadataQuery =
-                write.kind === "update"
-                  ? tx.update(connectors).set(write.values).where(write.where)
-                  : write.conflict
-                    ? tx
-                        .insert(connectors)
-                        .values(write.values)
-                        .onConflictDoNothing(write.conflict)
-                    : tx.insert(connectors).values(write.values);
-              const [row] = await query.returning(connectionSelection());
-              const result = connectionMetadataWriteResult(write, row);
-              if (result.kind === "resolved") {
-                return write.phase === "existing"
-                  ? result.outcome
-                  : await Promise.resolve(result.outcome);
-              }
-              write = result.write;
-            }
-          })();
-          signal.throwIfAborted();
-          if (outcome.kind !== "written") {
-            return outcome;
-          }
-          const connection = outcome.row;
-
-          for (const kind of connectorCredentialDeletionKinds) {
-            const deletion = connectorCredentialDeletion(kind, connection);
-            await tx.delete(deletion.from).where(deletion.where);
-            if (kind !== "builtin-oauth") {
-              signal.throwIfAborted();
-            }
-          }
-          const connectorId = connection.id;
-          await (async () => {
-            await tx
-              .insert(secrets)
-              .values(customOAuthTokenRows(args, connectorId, encrypted));
-            const deletion = customOAuthBindingDeletion(connectorId);
-            await tx.delete(deletion.from).where(deletion.where);
-            if (args.automaticOAuthBinding) {
-              await tx.insert(customConnectorAccountOauthBindings).values({
-                connectorAccountId: connectorId,
-                customConnectorId: args.connectorId,
-                ...args.automaticOAuthBinding,
-              });
-            }
-          })();
-          signal.throwIfAborted();
-          return outcome;
-        })(),
-      );
-      await tx.execute(
-        completedGetStartedQuestSql(customOAuthQuest(args), nowDate()),
-      );
-      return { kind: "stored", connectionId: connection.id };
-    });
+      if (published.connection_id === null) {
+        throw new Error("Custom OAuth publication did not return its account");
+      }
+      return { kind: "stored", connectionId: published.connection_id };
+    })();
   },
 );
 

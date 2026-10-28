@@ -382,7 +382,9 @@ pub enum SignalSource {
 #[derive(Debug, PartialEq, Eq)]
 enum StartLoopEvent {
     BudgetExhaustedReactorEntered,
-    RoutineHeartbeatRequested { mode: RunnerMode },
+    RoutineHeartbeatRequested {
+        mode: RunnerMode,
+    },
     HomeCacheChangeObserved,
     HomeCacheGcTickConsumed,
     HomeCachePressureTickConsumed,
@@ -394,11 +396,31 @@ enum StartLoopEvent {
     RunningJobsDrainEntered,
     DestroyTasksDrainEntered,
     DestroyTasksDrainCompleted,
-    FinalizingCapacityWaitEntered { run_id: RunId },
-    ReservedPreparingCommitted { run_id: RunId },
-    ActiveRunStatusPublished { run_id: RunId },
-    BeforeIdlePoolOwnershipTransfer { run_id: RunId },
-    SandboxParkedForReuse { run_id: RunId, reuse_key: String },
+    FinalizingCapacityWaitEntered {
+        run_id: RunId,
+    },
+    PeerHomeRecheckCompleted {
+        run_id: RunId,
+        ready: bool,
+    },
+    ReservedPreparingCommitted {
+        run_id: RunId,
+    },
+    ActiveRunStatusPublished {
+        run_id: RunId,
+    },
+    ExecutorCompleted {
+        run_id: RunId,
+        discovered_cli_agent_session_id: Option<String>,
+        sandbox_reuse_disposition: crate::executor::SandboxReuseDisposition,
+    },
+    BeforeIdlePoolOwnershipTransfer {
+        run_id: RunId,
+    },
+    SandboxParkedForReuse {
+        run_id: RunId,
+        reuse_key: String,
+    },
     UsageFlushRequested,
 }
 

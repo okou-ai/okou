@@ -105,7 +105,12 @@ impl OomEvidenceUploadFailure {
 /// Actual startup resource after preparation settles.
 pub(crate) use runner_types::types::SandboxStartupPath as RunnerStartupPath;
 
-/// Inclusive number of Runner jobs in post-claim work before guest process spawn.
+/// Inclusive post-claim startup concurrency captured when a job enters timing.
+///
+/// Each job remains a member until its timing is consumed after Agent readiness
+/// or dropped on early exit, including time after its guest process has spawned.
+/// The fixed cohort remains available for `api_to_spawn` and `api_to_agent_ready`
+/// after live membership ends; it is not a continuously updated gauge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub(crate) enum RunnerPreSpawnConcurrencyBucket {
     #[serde(rename = "1")]
@@ -208,7 +213,8 @@ impl RunnerResourceBudgetOccupancy {
     }
 }
 
-/// Shared cohort label that becomes inactive when startup terminates before spawn.
+/// Shared admission-time cohort label deactivated when startup timing drops early.
+/// Successful Agent readiness preserves it for the startup-boundary rows.
 #[derive(Clone)]
 pub(crate) struct RunnerPreSpawnAttribution {
     bucket: RunnerPreSpawnConcurrencyBucket,

@@ -33,6 +33,7 @@ import {
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
+import type { RunnerReusePreferenceTiming } from "./runner-reuse-timing.service";
 
 const RUNNER_REUSE_PROTECTION_MS = 2000;
 const RUNNER_EXACT_SOURCE_PROTECTION_MS = Math.min(
@@ -518,7 +519,9 @@ function runnerPreferenceTelemetryResolution(
 
 export function runnerPreferenceTelemetryDimensions(
   preference: RunnerPreference,
-): Record<string, string> {
+): Record<string, string> & {
+  readonly runner_preference_resolution: RunnerPreferenceTelemetryResolution;
+} {
   return {
     runner_preference_resolution:
       runnerPreferenceTelemetryResolution(preference),
@@ -803,6 +806,7 @@ export const resolveRunnerReusePreference$ = command(
   async (
     { set },
     args: RunnerReusePreferenceArgs,
+    timing?: RunnerReusePreferenceTiming,
   ): Promise<RunnerReusePreferenceResolution> => {
     if (!args.reuseKey) {
       return {
@@ -825,15 +829,24 @@ export const resolveRunnerReusePreference$ = command(
       profile: args.profile,
       reuseKey: args.reuseKey,
     };
-    let holder = await set(findRunnerReuseHolder$, {
-      ...lookupArgs,
-      ...lookupStages,
-    });
+    const selectHolder = () => {
+      return set(findRunnerReuseHolder$, {
+        ...lookupArgs,
+        ...lookupStages,
+      });
+    };
+    let holder = await (timing?.measure("holder_select", selectHolder) ??
+      selectHolder());
 
     // Prepare the holder before starting a new window. Both delivery paths
     // await this write before returning a poll result or publishing to Ably.
+    const startDiscovery = () => {
+      return set(startRunnerJobDiscovery$, args);
+    };
     const discoveryStartedAt =
-      args.discoveryStartedAt ?? (await set(startRunnerJobDiscovery$, args));
+      args.discoveryStartedAt ??
+      (await (timing?.measure("discovery_persist", startDiscovery) ??
+        startDiscovery()));
     if (discoveryStartedAt === null) {
       return {
         preference: { kind: "noPreference", reason: "noViableHolder" },
@@ -864,10 +877,14 @@ export const resolveRunnerReusePreference$ = command(
     ) {
       // A competing discovery or the lookup itself may have consumed a stage.
       // Select using the saved deadline without renewing it or retrying writes.
-      holder = await set(findRunnerReuseHolder$, {
-        ...lookupArgs,
-        ...savedStages,
-      });
+      const reselectHolder = () => {
+        return set(findRunnerReuseHolder$, {
+          ...lookupArgs,
+          ...savedStages,
+        });
+      };
+      holder = await (timing?.measure("holder_reselect", reselectHolder) ??
+        reselectHolder());
     }
     return runnerReusePreferenceResult({
       holder,

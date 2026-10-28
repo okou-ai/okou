@@ -25,7 +25,6 @@ export const BROWSER_SCREEN_WIDTH = 1440;
 export const BROWSER_INITIAL_SCREEN_HEIGHT = 900;
 export const BROWSER_MIN_SCREEN_HEIGHT = 320;
 export const BROWSER_MAX_SCREEN_HEIGHT = 3456;
-
 export const browserStatusSchema = zEnum([
   "creating",
   "active",
@@ -54,6 +53,13 @@ const browserScreenSchema = object({
   resizable: boolean(),
 });
 
+export const browserWindowContextSchema = object({
+  instanceId: uuid(),
+  primaryWindowId: number().int().nonnegative().safe(),
+}).strict();
+
+export type BrowserWindowContext = zInfer<typeof browserWindowContextSchema>;
+
 export const browserSessionSchema = object({
   threadId: uuid(),
   name: string().min(1).max(64),
@@ -65,6 +71,9 @@ export const browserSessionSchema = object({
   timeoutMinutes: number().int().positive(),
   // Only live provider instances have persisted window dimensions.
   screen: browserScreenSchema.optional(),
+  // Published by the shared-owner writer after its CLI readers are deployed.
+  // Per-thread Browsers have no shared native-window context.
+  window: browserWindowContextSchema.optional(),
   // When Okou reclaims the live provider instance unless somebody leases it
   // again. Null once no provider instance is running.
   idleExpiresAt: iso.datetime().nullable(),

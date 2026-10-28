@@ -24,16 +24,6 @@ import {
 } from "drizzle-orm";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 
-export function customConnectorOAuthBindingDeletionPlan(connectionId: string) {
-  return {
-    from: customConnectorAccountOauthBindings,
-    where: eq(
-      customConnectorAccountOauthBindings.connectorAccountId,
-      connectionId,
-    ),
-  };
-}
-
 export const customConnectorOAuthStartResultSchema = object({
   contractValid: boolean(),
   accountPresent: boolean(),

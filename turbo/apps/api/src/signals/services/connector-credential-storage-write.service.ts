@@ -82,16 +82,6 @@ export function manualGrantCredentialArgs(
   };
 }
 
-export function requireManualGrantWrite(
-  row: { readonly id: string } | undefined,
-  kind: "secret" | "variable",
-  name: string,
-): void {
-  if (!row) {
-    throw new Error(`Connector ${kind} ${name} is owned by another row`);
-  }
-}
-
 export function manualGrantConnectionMetadata(args: {
   readonly orgId: string;
   readonly userId: string;

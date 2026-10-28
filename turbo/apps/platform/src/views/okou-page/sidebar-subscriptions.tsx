@@ -28,6 +28,7 @@ import {
   CodexResetCreditsMenuItem,
 } from "./components/preferences/codex-reset-usage-dialog.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
+import { formatSubscriptionCredits } from "./subscription-credits-format.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 type SubscriptionUsage = AccountMenuSubscriptionUsage;
@@ -95,6 +96,7 @@ export function AccountMenuSubscriptionsPanel({
                   type={row.type}
                   label={label}
                   usage={row.usage}
+                  credits={row.credits}
                   resetCredits={row.resetCredits}
                   resetCreditsNextExpiresAt={row.resetCreditsNextExpiresAt}
                   resetPending={resetPending}
@@ -147,6 +149,7 @@ function AccountMenuSubscriptionProviderSection({
   type,
   label,
   usage,
+  credits,
   resetCredits,
   resetCreditsNextExpiresAt,
   resetPending,
@@ -155,7 +158,8 @@ function AccountMenuSubscriptionProviderSection({
 }: {
   readonly type: AccountMenuSubscriptionUsageRow["type"];
   readonly label: string;
-  readonly usage: SubscriptionUsage;
+  readonly usage: SubscriptionUsage | null;
+  readonly credits?: AccountMenuSubscriptionUsageRow["credits"];
   readonly resetCredits?: number | null;
   readonly resetCreditsNextExpiresAt?: string | null;
   readonly resetPending: boolean;
@@ -163,6 +167,10 @@ function AccountMenuSubscriptionProviderSection({
   readonly onResetCodexUsage?: (resetCredits: number | null) => void;
 }) {
   const { t } = useTranslation();
+  const creditBalance = formatSubscriptionCredits({
+    type,
+    subscriptionCredits: credits,
+  });
   const windows = subscriptionUsageWindows(usage);
   const limiting = limitingSubscriptionUsageWindow(usage);
   const remaining = limiting?.remainingPercent ?? null;
@@ -229,6 +237,14 @@ function AccountMenuSubscriptionProviderSection({
             "fallbackText" in reset ? reset.fallbackText : reset.tooltipTitle
           }`}
         </p>
+      )}
+      {creditBalance === null ? null : (
+        <div className="flex items-center justify-between gap-2 text-xs leading-4 text-muted-foreground">
+          <span className="min-w-0 truncate">{creditBalance.label}</span>
+          <span className="shrink-0 tabular-nums text-foreground">
+            {creditBalance.value}
+          </span>
+        </div>
       )}
     </section>
   );

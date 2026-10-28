@@ -5,6 +5,9 @@ use super::super::support::{
     wait_idle_pool_reuse_keys, wait_sandbox_lifecycle_counts,
     wait_status_idle_empty_with_active_run, wait_status_idle_reuse_keys_and_active_runs,
 };
+use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
+use api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR;
+use guest_contracts::runtime_paths;
 
 // -----------------------------------------------------------------------
 // Test 9: idle pool park/take is gated on reuse-key availability.
@@ -526,15 +529,14 @@ async fn same_thread_reuses_sandbox_across_provider_session_change() {
 #[tokio::test(start_paused = true)]
 async fn discovered_cli_session_does_not_substitute_for_reuse_key() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
-        pattern: "/.vm0/guest-agent/runs/".into(),
-        exit_code: 0,
-        stdout: b"sess-evict".to_vec(),
-        stderr: Vec::new(),
-    });
-    let (config, env) = mock_run_config_with_overrides(test_profiles(), 8, 16384, 4, overrides);
+    // Successful execution reads final history metadata before discovering the session ID.
+    overrides.push_read_file_result(Ok(None));
+    overrides.push_read_file_result(Ok(Some(b"sess-evict".to_vec())));
+    let (config, env) =
+        mock_run_config_with_overrides(test_profiles(), 8, 16384, 4, Arc::clone(&overrides));
     let budget = Arc::clone(&config.capacity.budget);
     let idle_pool = Arc::clone(&config.shared.idle_pool);
+    assert!(config.shared.parking_gate.is_open());
 
     let seeded_sandbox_id =
         seed_idle_pool(&idle_pool, &budget, "sess-evict", "vm0/default", 2, 4096).await;
@@ -542,11 +544,12 @@ async fn discovered_cli_session_does_not_substitute_for_reuse_key() {
 
     let run_handle = tokio::spawn(run(config));
 
-    // Push job without a native session identity — first run, no session context.
-    // read_guest_cli_agent_session_id() will be called and return "sess-evict"
-    // via the exec matcher.
+    // The first-run job has neither a reuse key nor a supplied CLI session identity.
     let run_id = RunId::new_v4();
-    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+    let context = minimal_context(run_id);
+    assert!(context.reuse_key().is_none());
+    assert!(context.cli_agent_session_id().is_none());
+    push_job(&env, run_id, "vm0/default", Some(context));
 
     let c = env
         .handle
@@ -554,6 +557,50 @@ async fn discovered_cli_session_does_not_substitute_for_reuse_key() {
         .await;
     assert!(c.is_some(), "job should complete");
     assert_eq!(c.unwrap().exit_code, 0);
+
+    let (discovered_session_id, reuse_disposition) = env
+        .start_observer
+        .wait_for(
+            Duration::from_secs(5),
+            "executor completion",
+            |event| match event {
+                StartLoopEvent::ExecutorCompleted {
+                    run_id: observed_run_id,
+                    discovered_cli_agent_session_id,
+                    sandbox_reuse_disposition,
+                } if *observed_run_id == run_id => Some((
+                    discovered_cli_agent_session_id.clone(),
+                    *sandbox_reuse_disposition,
+                )),
+                _ => None,
+            },
+        )
+        .await;
+    assert_eq!(discovered_session_id.as_deref(), Some("sess-evict"));
+    assert_eq!(
+        reuse_disposition,
+        SandboxReuseDisposition::Eligible(SandboxReuseTerminal::Success)
+    );
+    let read_calls = overrides.read_file_calls();
+    let run_dir =
+        runtime_paths::run_dir_for_home(CANONICAL_GUEST_HOME_DIR, &run_id.to_string()).unwrap();
+    assert_eq!(read_calls.len(), 2);
+    assert_eq!(
+        read_calls[0].path,
+        runtime_paths::final_session_history_identity_file(&run_dir)
+            .to_str()
+            .unwrap()
+    );
+    assert_eq!(
+        read_calls[1],
+        sandbox_mock::ReadFileCall {
+            path: runtime_paths::session_id_file(&run_dir)
+                .to_str()
+                .unwrap()
+                .into(),
+            max_bytes: 64 * 1024,
+        }
+    );
 
     // The new sandbox is destroyed while the pre-existing idle sandbox keeps
     // its lease, so the net budget count remains one.
@@ -570,6 +617,13 @@ async fn discovered_cli_session_does_not_substitute_for_reuse_key() {
         seeded_sandbox_id
     );
     drop(pool);
+
+    let created = overrides.create_configs();
+    assert_eq!(created.len(), 1);
+    assert_ne!(created[0].id, seeded_sandbox_id);
+    assert_eq!(overrides.stop_call_count(), 1);
+    assert_eq!(overrides.destroy_call_count(), 1);
+    assert_eq!(overrides.park_call_count(), 0);
 
     shutdown(&env, run_handle).await;
 }

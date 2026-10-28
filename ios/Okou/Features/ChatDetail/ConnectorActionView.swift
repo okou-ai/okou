@@ -6,44 +6,78 @@ struct ConnectorActionCard: View {
   let action: ChatConnectorAction
   let store: ConnectorActionStore
   let loadsState: Bool
-  @ScaledMetric(relativeTo: .body) private var cardHeight: CGFloat = 156
+  @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 80
+
+  private var state: ConnectorActionStore.State {
+    action.kind == .unavailable ? .unavailable : (store.states[action.id] ?? .loading)
+  }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      switch action.kind == .unavailable ? .unavailable : (store.states[action.id] ?? .loading) {
-      case .loading:
-        Label("Loading connector…", systemImage: "link")
-        ProgressView().controlSize(.small)
-      case .unavailable:
-        Label("Action unavailable", systemImage: "link.badge.plus")
-        Text("This action no longer matches an available connector in this conversation.")
-          .font(.caption).foregroundStyle(.secondary)
-      case .failed(let error):
-        Label("Could not load connector", systemImage: "exclamationmark.circle")
-        Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-        Button("Retry") { Task { await store.refresh(action) } }.buttonStyle(.bordered)
-      case .ready(let status):
-        Label(status.label, systemImage: "link").font(.headline).lineLimit(1)
-        Text(status.account?.label ?? "Connect an account for this Agent")
-          .font(.subheadline).lineLimit(1).textSelection(.enabled)
-        (store.notices[action.id].map { Text($0) } ?? Text(reason(status))).font(.caption)
-          .foregroundStyle(.secondary).lineLimit(2)
-        Spacer(minLength: 0)
-        HStack {
-          Button(button(status)) { store.activate(action) }
-            .buttonStyle(NeutralProminentButtonStyle())
-            .disabled(complete(status) || store.active != nil)
-          if complete(status) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+    Group {
+      if action.kind == .unavailable {
+        information
+          .padding(.horizontal, 16).padding(.vertical, 12)
+          .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+          .modifier(ChatCardSurface())
+      } else {
+        ChatActionCard {
+          information
+            .frame(height: informationHeight, alignment: .leading)
+        } actions: {
+          switch state {
+          case .loading:
+            ProgressView("Loading connector…").font(.caption).frame(minHeight: 44)
+          case .unavailable:
+            Color.clear.frame(height: 44).accessibilityHidden(true).allowsHitTesting(false)
+          case .failed:
+            Button("Retry") { Task { await store.refresh(action) } }
+          case .ready(let status):
+            HStack {
+              Button(button(status)) { store.activate(action) }
+                .disabled(complete(status) || store.active != nil)
+              if complete(status) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+              }
+            }
+          }
         }
       }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    // Equal loading/ready/error heights keep measured native rows stable during network updates.
-    .frame(height: cardHeight, alignment: .topLeading)
-    .padding(14)
-    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
     .accessibilityIdentifier("connector-action-card")
     .task(id: action.id) { if loadsState { await store.refresh(action) } }
+  }
+
+  @ViewBuilder private var information: some View {
+    switch state {
+    case .loading:
+      ChatCardHeader(
+        title: String(localized: "Loading connector…"), systemImage: "link", titleLineLimit: 1
+      ) {
+        EmptyView()
+      }
+    case .unavailable:
+      ChatCardHeader(
+        title: String(localized: "Action unavailable"), systemImage: "link.badge.plus",
+        titleLineLimit: 1
+      ) {
+        Text("This action no longer matches an available connector in this conversation.")
+          .lineLimit(2, reservesSpace: true)
+      }
+    case .failed(let error):
+      ChatCardHeader(
+        title: String(localized: "Could not load connector"), systemImage: "exclamationmark.circle",
+        titleLineLimit: 1
+      ) {
+        Text(error).font(.caption).lineLimit(2, reservesSpace: true).textSelection(.enabled)
+      }
+    case .ready(let status):
+      ChatCardHeader(title: status.label, systemImage: "link", titleLineLimit: 1) {
+        Text(status.account?.label ?? String(localized: "Connect an account for this Agent"))
+          .lineLimit(1, reservesSpace: true).textSelection(.enabled)
+        (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
+          .font(.caption).lineLimit(2, reservesSpace: true)
+      }
+    }
   }
   private func complete(_ status: ChatConnectorStatus) -> Bool {
     switch action.kind {

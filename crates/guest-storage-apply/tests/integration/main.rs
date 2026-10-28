@@ -13,3 +13,4 @@ mod process;
 mod rooted_extraction;
 mod scheduling;
 mod workflow_attachments;
+mod workflow_documents;

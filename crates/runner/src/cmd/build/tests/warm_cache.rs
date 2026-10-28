@@ -348,7 +348,8 @@ async fn template_warm_cleanup_removes_empty_parent() {
     let attempt = template_attempt_dir(&parent, TEMPLATE_WARM_ATTEMPT_DIR_PREFIX);
     tokio::fs::create_dir_all(&attempt).await.unwrap();
 
-    finish_template_warm_dir_result(&parent, &attempt, Ok(()))
+    template_cleanup_owner(dir.path())
+        .finish_warm(&parent, &attempt, Ok(()))
         .await
         .unwrap();
 
@@ -366,13 +367,14 @@ async fn template_warm_cleanup_preserves_original_error_when_parent_cleanup_fail
     let attempt = parent.join("attempt");
     tokio::fs::write(&parent, b"file").await.unwrap();
 
-    let err = finish_template_warm_dir_result(
-        &parent,
-        &attempt,
-        Err(RunnerError::Internal("warm failed".into())),
-    )
-    .await
-    .unwrap_err();
+    let err = template_cleanup_owner(dir.path())
+        .finish_warm(
+            &parent,
+            &attempt,
+            Err(RunnerError::Internal("warm failed".into())),
+        )
+        .await
+        .unwrap_err();
 
     assert!(err.to_string().contains("warm failed"));
 }
@@ -385,7 +387,10 @@ async fn template_warm_parent_cleanup_removes_stale_file() {
     tokio::fs::create_dir_all(home.images_dir()).await.unwrap();
     tokio::fs::write(&parent, b"not a directory").await.unwrap();
 
-    cleanup_template_warm_parent(&parent).await.unwrap();
+    template_cleanup_owner(dir.path())
+        .warm_parent(&parent)
+        .await
+        .unwrap();
 
     assert!(
         !parent.exists(),

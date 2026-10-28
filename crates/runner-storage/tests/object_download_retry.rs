@@ -38,8 +38,11 @@ async fn an_expired_budget_does_not_poll_another_attempt() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn an_overdue_ready_result_is_rejected_even_when_it_beats_the_timeout() {
-    for result in [Ok("late body"), Err("late provider failure")] {
+async fn a_ready_result_at_or_after_the_deadline_cannot_beat_the_timeout() {
+    for (overdue, result) in [Duration::ZERO, Duration::from_secs(1)]
+        .into_iter()
+        .flat_map(|overdue| [Ok("late body"), Err("late provider failure")].map(|r| (overdue, r)))
+    {
         let budget = ObjectDownloadRetryBudget::default();
         let (send, receive) = oneshot::channel();
         let attempt = budget.run_attempt(async { receive.await.unwrap() });
@@ -48,7 +51,7 @@ async fn an_overdue_ready_result_is_rejected_even_when_it_beats_the_timeout() {
         // expiration, the ready inner future wins Tokio's polling order; the
         // shared post-attempt check must still reject both success and failure.
         assert!(poll!(&mut attempt).is_pending());
-        tokio::time::advance(OBJECT_DOWNLOAD_BUDGET + Duration::from_secs(1)).await;
+        tokio::time::advance(OBJECT_DOWNLOAD_BUDGET + overdue).await;
         send.send(result).unwrap();
         assert_eq!(attempt.await, Err(ObjectDownloadBudgetExpired));
     }

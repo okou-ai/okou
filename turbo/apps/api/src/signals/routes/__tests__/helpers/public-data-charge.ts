@@ -1,16 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { expect } from "vitest";
 import { http, HttpResponse } from "msw";
+import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import { dataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import { server } from "../../../../mocks/server";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { chatInputStatusRoutes } from "../../chat-input-status";
 import { webhooksAgentDataRequestRoutes } from "../../webhooks-agent-data-request";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
+import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
+import { createRouteMocks } from "./route-test";
 
 /** Register through the production MITM webhook and mock only the remote Router. */
 export async function registerPublicDataUsage(
@@ -69,13 +73,48 @@ export async function chargePublicDataUsage(
     visibility: "private",
   });
   const runnerGroup = runs.configureRunnerGroup();
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Consume data for billing verification",
-    model: null,
+  const clientEventId = randomUUID();
+  const sent = await createChatFilesBddApi(context).requestSendEvent(
+    actor,
+    {
+      agentId: agent.agentId,
+      prompt: "Consume data for billing verification",
+      model: null,
+      clientEventId,
+    },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected the billing Thread input to be accepted");
+  }
+  await flushWaitUntilForTest();
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  // Only the consuming Run ID is needed; observe this exact public input
+  // without materializing its history or reading unused Run details.
+  const observed = await accept(
+    setupApp({ context, routes: chatInputStatusRoutes })(
+      chatInputStatusContract,
+    ).get({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { threadId: sent.body.threadId, eventId: clientEventId },
+    }),
+    [200],
+  );
+  expect(observed.body).toMatchObject({
+    threadId: sent.body.threadId,
+    eventId: clientEventId,
+    status: "consumed",
   });
+  if (observed.body.status !== "consumed") {
+    throw new Error("Expected the billing Thread input to launch a Run");
+  }
+  const runId = observed.body.runId;
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.claimRunnerJob(runId);
   // Run setup authenticates its actor and installs a single-member directory.
   // Restore the caller's provider fixture before the debit refreshes membership.
   if (memberships) {
@@ -83,14 +122,9 @@ export async function chargePublicDataUsage(
       memberships,
     );
   }
-  await registerPublicDataUsage(
-    context,
-    run.runId,
-    claim.sandboxToken,
-    credits,
-  );
+  await registerPublicDataUsage(context, runId, claim.sandboxToken, credits);
   await createWebhookCallbackApi(context).requestAgentComplete(
-    { runId: run.runId, exitCode: 1, error: "Billing fixture finished" },
+    { runId, exitCode: 1, error: "Billing fixture finished" },
     { authorization: `Bearer ${claim.sandboxToken}` },
     [200],
   );

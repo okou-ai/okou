@@ -1,5 +1,83 @@
 # Changelog
 
+## [0.239.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.239.2...runner-rs-v0.239.3) (2026-10-28)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.239.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.239.1...runner-rs-v0.239.2) (2026-10-28)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.239.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.239.0...runner-rs-v0.239.1) (2026-10-28)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.239.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.238.0...runner-rs-v0.239.0) (2026-10-28)
+
+
+### Features
+
+* **mcp:** support catalog-owned static request headers ([#43626](https://github.com/okou-ai/okou/issues/43626)) ([e145904](https://github.com/okou-ai/okou/commit/e145904a15970ef0072eff84c990cf2cc24f6212))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.238.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.21...runner-rs-v0.238.0) (2026-10-28)
+
+
+### Features
+
+* prepare dav support and icloud connector rollout ([#43517](https://github.com/okou-ai/okou/issues/43517)) ([c8de621](https://github.com/okou-ai/okou/commit/c8de6212dc54a5aae0d4658acf1afa6a35f939ab))
+
+
+### Bug Fixes
+
+* **runner:** retain debootstrap cache locks through physical unlink ([#43598](https://github.com/okou-ai/okou/issues/43598)) ([3f5af22](https://github.com/okou-ai/okou/commit/3f5af22ffbdf09a345c8b7c2a9cd7c6778415540))
+* **runner:** retain image gc locks through physical deletion ([#43586](https://github.com/okou-ai/okou/issues/43586)) ([61d0f4c](https://github.com/okou-ai/okou/commit/61d0f4c3a2a14415f61cbcadfff4663138c0a92b))
+* **runner:** retain local submit input producer custody ([#43615](https://github.com/okou-ai/okou/issues/43615)) ([8c4f35a](https://github.com/okou-ai/okou/commit/8c4f35a86d29637df8c5a5f883ad9f86a2f7b0b1))
+* **runner:** retain service locks through physical version gc deletion ([#43571](https://github.com/okou-ai/okou/issues/43571)) ([16cc08b](https://github.com/okou-ai/okou/commit/16cc08b8c86cd8c20f1b6e65b601acfd7cc9cd4d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.21](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.20...runner-rs-v0.237.21) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-host:** retain gc lock custody through physical removal ([#43541](https://github.com/okou-ai/okou/issues/43541)) ([1a38580](https://github.com/okou-ai/okou/commit/1a3858059ececb7582b6231763a386a85d9922a9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.19...runner-rs-v0.237.20) (2026-10-27)
+
+
+### Bug Fixes
+
+* **python:** track aliases across comprehension iterations ([#43488](https://github.com/okou-ai/okou/issues/43488)) ([e38206d](https://github.com/okou-ai/okou/commit/e38206dcc8e9b207ccbb69167e406a382b44b7c8))
+* **runner:** update agent-browser and enable system ca trust ([#43487](https://github.com/okou-ai/okou/issues/43487)) ([8de4e51](https://github.com/okou-ai/okou/commit/8de4e51f45a5b6cda2d3fd6428ad20ecccc22520))
+
+
+### Performance Improvements
+
+* **mitm-addon:** bound auth.base connection nomination selection ([#43490](https://github.com/okou-ai/okou/issues/43490)) ([d6bd670](https://github.com/okou-ai/okou/commit/d6bd6704b32c0e922c3e544edf01ea1d71f6d589))
+* **runner:** bound authorization probing before sigv4 prebinding ([#43436](https://github.com/okou-ai/okou/issues/43436)) ([e56b9a4](https://github.com/okou-ai/okou/commit/e56b9a4d5bfa61b1ed1e6c4c52211a324c077aa5))
+* **runner:** retain up to 4096 home caches ([#43450](https://github.com/okou-ai/okou/issues/43450)) ([a8acf68](https://github.com/okou-ai/okou/commit/a8acf680771ab83fdb7882311ccee1d497dc9493))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.18...runner-rs-v0.237.19) (2026-10-27)
 
 

@@ -7,7 +7,7 @@ import {
   updateConnectorAccountCommand,
   setDefaultConnectorAccountCommand,
   connectorAccountImpactCommand,
-  deleteConnectorAccountCommand,
+  disconnectConnectorAccountCommand,
 } from "./manage";
 
 export const connectorAccountCommand = new Command()
@@ -17,6 +17,6 @@ export const connectorAccountCommand = new Command()
   .addCommand(updateConnectorAccountCommand)
   .addCommand(setDefaultConnectorAccountCommand)
   .addCommand(connectorAccountImpactCommand)
-  .addCommand(deleteConnectorAccountCommand)
+  .addCommand(disconnectConnectorAccountCommand)
   .addCommand(listConnectorAccountsCommand)
   .addCommand(switchConnectorAccountRequestCommand);

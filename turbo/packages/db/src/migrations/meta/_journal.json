@@ -2756,15 +2756,36 @@
     {
       "idx": 1472,
       "version": "7",
-      "when": 1793095360753,
-      "tag": "1472_absurd_shard",
+      "when": 1793093699044,
+      "tag": "1472_retire_get_started_share_claims",
       "breakpoints": true
     },
     {
       "idx": 1473,
       "version": "7",
-      "when": 1793095557976,
-      "tag": "1473_green_jubilee",
+      "when": 1793097690311,
+      "tag": "1473_ios_badge_foreground_cursor",
+      "breakpoints": true
+    },
+    {
+      "idx": 1474,
+      "version": "7",
+      "when": 1793149657957,
+      "tag": "1474_drop_run_output_memory_citations",
+      "breakpoints": true
+    },
+    {
+      "idx": 1475,
+      "version": "7",
+      "when": 1793160498064,
+      "tag": "1475_handy_guardsmen",
+      "breakpoints": true
+    },
+    {
+      "idx": 1476,
+      "version": "7",
+      "when": 1793176316250,
+      "tag": "1476_halloween_quiz_2026",
       "breakpoints": true
     }
   ]

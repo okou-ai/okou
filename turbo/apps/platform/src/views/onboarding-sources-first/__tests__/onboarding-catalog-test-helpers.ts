@@ -56,7 +56,7 @@ export function onboardingSourceItem(item: {
   });
 }
 
-/** Gmail, connected: the source every step after the source step requires. */
+/** Gmail, connected: a source for personalized starting prompts. */
 export function connectedGmailSource(): PublicConnectorCatalogStatusItem {
   return onboardingSourceItem({
     slug: "gmail",
@@ -92,7 +92,7 @@ function builtinConnection(
  *   sources, projected to connect items. `ready` holds the response back and
  *   `unavailable` answers 503 instead.
  * - the user's connections (`GET /api/connectors`) hold one per connected
- *   entry, which the guard of every step after the source step reads.
+ *   entry.
  * - `GET /api/connector-catalog/:slug` answers the connect modal with the full
  *   entry, and 404 for any other slug. It is installed first so the static
  *   catalog routes registered after it are not read as a slug.

@@ -7,8 +7,13 @@ use super::super::storage::{
     guest_storage_manifest_cleanup_command,
 };
 use super::super::{DEFAULT_EXEC_TIMEOUT, guest_runtime_dir};
-use super::support::{minimal_context, sandbox_exec_error, sandbox_write_file_error};
+use super::support::{
+    minimal_context, sandbox_exec_error, sandbox_write_file_error, test_executor_config,
+    test_telemetry,
+};
 use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
+
+mod workflow_documents;
 
 fn empty_manifest() -> Manifest {
     Manifest {
@@ -21,6 +26,8 @@ fn empty_manifest() -> Manifest {
 
 #[tokio::test]
 async fn workflow_documents_use_private_transport_and_propagate_helper_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
     let sandbox = MockSandbox::new("test");
     let mut context = minimal_context();
     let workflow_id = uuid::Uuid::new_v4();
@@ -37,9 +44,13 @@ async fn workflow_documents_use_private_transport_and_propagate_helper_failure()
             }))
             .unwrap(),
         );
-        super::super::storage::apply_workflow_skill_documents(&sandbox, &context)
-            .await
-            .unwrap();
+        super::super::storage::apply_workflow_skill_documents(
+            &sandbox,
+            &context,
+            &mut test_telemetry(&config, &context),
+        )
+        .await
+        .unwrap();
         let writes = sandbox.private_write_files_calls();
         let last = &writes.last().unwrap().files[0];
         assert_eq!(last.content, body.as_bytes());
@@ -51,14 +62,20 @@ async fn workflow_documents_use_private_transport_and_propagate_helper_failure()
     }
     sandbox.push_exec_result(Ok(ExecResult::new(1, Vec::new(), Vec::new())));
     assert!(
-        super::super::storage::apply_workflow_skill_documents(&sandbox, &context)
-            .await
-            .is_err()
+        super::super::storage::apply_workflow_skill_documents(
+            &sandbox,
+            &context,
+            &mut test_telemetry(&config, &context)
+        )
+        .await
+        .is_err()
     );
 }
 
 #[tokio::test]
 async fn inline_instructions_are_optional_and_use_private_file_transport() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
     let sandbox = MockSandbox::new("test");
     let mut context = minimal_context();
     assert!(
@@ -73,7 +90,7 @@ async fn inline_instructions_are_optional_and_use_private_file_transport() {
         super::super::storage::AgentInstructionSource::prepare(&context)
             .unwrap()
             .unwrap()
-            .publish_and_apply(&sandbox, &context)
+            .publish_and_apply(&sandbox, &context, &mut test_telemetry(&config, &context))
             .await
             .unwrap();
         let calls = sandbox.private_write_files_calls();
@@ -91,6 +108,8 @@ async fn inline_instructions_are_optional_and_use_private_file_transport() {
 
 #[tokio::test]
 async fn inline_instruction_helper_failure_is_required() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
     let sandbox = MockSandbox::new("test");
     let mut context = minimal_context();
     context.agent_instructions = Some("new".into());
@@ -99,7 +118,7 @@ async fn inline_instruction_helper_failure_is_required() {
         super::super::storage::AgentInstructionSource::prepare(&context)
             .unwrap()
             .unwrap()
-            .publish_and_apply(&sandbox, &context)
+            .publish_and_apply(&sandbox, &context, &mut test_telemetry(&config, &context))
             .await
             .is_err()
     );
@@ -107,6 +126,8 @@ async fn inline_instruction_helper_failure_is_required() {
 
 #[tokio::test]
 async fn inline_instruction_transfer_failure_does_not_apply_stale_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
     let sandbox = MockSandbox::new("test");
     let mut context = minimal_context();
     context.agent_instructions = Some("new".into());
@@ -115,7 +136,7 @@ async fn inline_instruction_transfer_failure_does_not_apply_stale_source() {
         super::super::storage::AgentInstructionSource::prepare(&context)
             .unwrap()
             .unwrap()
-            .publish_and_apply(&sandbox, &context)
+            .publish_and_apply(&sandbox, &context, &mut test_telemetry(&config, &context))
             .await
             .is_err()
     );

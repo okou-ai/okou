@@ -10,12 +10,13 @@ import errno
 import http.client as http_client
 import io
 import ipaddress
+import re
 import socket
 import ssl
 import threading
 import time
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import suppress
 from typing import NamedTuple, Protocol
 
@@ -56,6 +57,33 @@ _AUTH_BASE_RESPONSE_MAX_LINE_BYTES = 64 * 1024
 _AUTH_BASE_RESPONSE_MAX_HEADER_LINES = 100
 _PERCENT_DECODED_UPSTREAM_HOST_SYNTAX_CHARS = frozenset("{}*.\u3002\uff0e\uff61,")
 _UPSTREAM_HOST_FORBIDDEN_CHARS = frozenset("{}*")
+# UTF-8 encodings of str.strip() whitespace, matching mitmproxy's native
+# UTF-8/surrogateescape conversion without decoding the whole Connection value.
+_CONNECTION_WHITESPACE_BYTES = (
+    rb"(?:[\x09-\x0d\x1c-\x20]|\xc2[\x85\xa0]|\xe1\x9a\x80"
+    rb"|\xe2\x80[\x80-\x8a\xa8\xa9\xaf]|\xe2\x81\x9f|\xe3\x80\x80)"
+)
+_AUTH_BASE_CLIENT_HEADER_NAMES = frozenset(("content-type", "content-encoding"))
+# Search remaining names together, then skip repetitions of an excluded name.
+_AUTH_BASE_CLIENT_CONNECTION_PATTERNS = {
+    frozenset(names): (
+        re.compile(rf"(?:\A|,)\s*+(?ai:({'|'.join(names)}))\s*+(?=,|\Z)"),
+        re.compile(
+            rb"(?:\A|,)"
+            + _CONNECTION_WHITESPACE_BYTES
+            + rb"*+(?i:("
+            + b"|".join(name.encode("ascii") for name in names)
+            + rb"))"
+            + _CONNECTION_WHITESPACE_BYTES
+            + rb"*+(?=,|\Z)"
+        ),
+    )
+    for names in (
+        ("content-type",),
+        ("content-encoding",),
+        ("content-encoding", "content-type"),
+    )
+}
 _https_context: ssl.SSLContext | None = None
 _https_context_lock = threading.Lock()
 _dns_resolver: _AddressResolver | None = None
@@ -348,27 +376,54 @@ def forwarded_request_header_pairs(headers) -> list[tuple[str, str]]:
 def forwarded_auth_base_client_header_pairs(
     headers,
 ) -> list[tuple[str, str]]:
-    """Select representation metadata allowed to cross an auth.base rewrite."""
+    """Select representation metadata without collecting arbitrary nominations."""
+    connection_values: Iterable[bytes | str]
     if isinstance(headers, http.Headers):
-        # Skip discarded raw values before mitmproxy decodes them. Connection
-        # must remain available to exclude nominated representation fields.
+        connection_values = (
+            value for name, value in headers.fields if name.lower() == b"connection"
+        )
+        # Decode only representation fields; scan Connection as original bytes.
         headers = http.Headers(
             (name, value)
             for name, value in headers.fields
-            if name.lower() in {b"content-type", b"content-encoding", b"connection"}
+            if name.lower() in {b"content-type", b"content-encoding"}
         )
-    raw_pairs = header_pairs(headers)
-    content_type_count = sum(1 for name, _value in raw_pairs if name.lower() == "content-type")
+        pairs = header_pairs(headers)
+    else:
+        pairs = header_pairs(headers)
+        connection_values = (value for name, value in pairs if name.lower() == "connection")
+    content_type_count = sum(1 for name, _value in pairs if name.lower() == "content-type")
     if content_type_count > 1:
         raise InvalidAuthBaseRequestHeadersError(
             "auth.base requests must contain at most one Content-Type header"
         )
 
-    return [
-        (name, value)
-        for name, value in forwarded_request_header_pairs(raw_pairs)
-        if name.lower() in {"content-type", "content-encoding"}
-    ]
+    allowed_names = {
+        name.lower() for name, _value in pairs if name.lower() in _AUTH_BASE_CLIENT_HEADER_NAMES
+    }
+    for value in connection_values:
+        offset = 0
+        # At most two matches, copying only recognized names, with no per-token
+        # strings or backtracking storage for long whitespace runs.
+        while allowed_names:
+            text_pattern, raw_pattern = _AUTH_BASE_CLIENT_CONNECTION_PATTERNS[
+                frozenset(allowed_names)
+            ]
+            match = (
+                raw_pattern.search(value, offset)
+                if isinstance(value, bytes)
+                else text_pattern.search(value, offset)
+            )
+            if match is None:
+                break
+            nominated = match.group(1)
+            if isinstance(nominated, bytes):
+                nominated = nominated.decode("ascii")
+            allowed_names.remove(nominated.lower())
+            offset = match.end()
+        if not allowed_names:
+            break
+    return [(name, value) for name, value in pairs if name.lower() in allowed_names]
 
 
 def _validate_resolved_auth_header_pair(header_name: str, header_value: str) -> None:

@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.21.3](https://github.com/okou-ai/okou/compare/ios-v0.21.2...ios-v0.21.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **ios:** animate chat anchoring with the keyboard ([#43565](https://github.com/okou-ai/okou/issues/43565)) ([1554870](https://github.com/okou-ai/okou/commit/1554870a2a6b0b66647b5fdf9983a89acbbd980b))
+* **ios:** keep keyboard open when removing quotes ([#43553](https://github.com/okou-ai/okou/issues/43553)) ([edf179f](https://github.com/okou-ai/okou/commit/edf179fc1d3d5cd29bf5bbe28016ec2fbb899ba6))
+* **ios:** move remote control above services ([#43556](https://github.com/okou-ai/okou/issues/43556)) ([8e6ede9](https://github.com/okou-ai/okou/commit/8e6ede96d578b2213f248a5a875790bea1b0aae8))
+* **ios:** remove pull-to-refresh from connectors ([#43561](https://github.com/okou-ai/okou/issues/43561)) ([2a28063](https://github.com/okou-ai/okou/commit/2a28063b80c4de37df7a33a91fed30401fc57d5b))
+
+## [0.21.2](https://github.com/okou-ai/okou/compare/ios-v0.21.1...ios-v0.21.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** align chat card layouts with web ([#43503](https://github.com/okou-ai/okou/issues/43503)) ([df2ac12](https://github.com/okou-ai/okou/commit/df2ac120e2fd0b8d75f90dce76f0d8944ad2904d))
+* **ios:** select and quote message text in place ([#43514](https://github.com/okou-ai/okou/issues/43514)) ([94575e1](https://github.com/okou-ai/okou/commit/94575e138a0380f15e4c2613e178ae6d1ba4fc69))
+
+
+### CI
+
+* **ios:** reset oversized compiler history before warming ([#43523](https://github.com/okou-ai/okou/issues/43523)) ([4983c38](https://github.com/okou-ai/okou/commit/4983c38f6d805d0020ce87c07d7f067773bb5d30))
+
+## [0.21.1](https://github.com/okou-ai/okou/compare/ios-v0.21.0...ios-v0.21.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** animate sent messages from the composer ([#43446](https://github.com/okou-ai/okou/issues/43446)) ([a1eaff8](https://github.com/okou-ai/okou/commit/a1eaff89f5c436d173378e780aa89808d4395bc1))
+* **ios:** place caret at end when expanding composer ([#43491](https://github.com/okou-ai/okou/issues/43491)) ([79cc482](https://github.com/okou-ai/okou/commit/79cc482f4134ebe74824c231d007e268c68dafb5))
+* **ios:** remove sidebar bottom scroll blur ([#43478](https://github.com/okou-ai/okou/issues/43478)) ([f25fc18](https://github.com/okou-ai/okou/commit/f25fc18906f3e7cd3b30a66df8f1c83ff834377c))
+
+
+### CI
+
+* **ios:** skip cache downloads for fully warm producers ([#43465](https://github.com/okou-ai/okou/issues/43465)) ([7217232](https://github.com/okou-ai/okou/commit/72172326916f0348a8a26fa97386e523639ca806))
+
+
+### Refactoring
+
+* remove ios composer connectors feature switch ([#43460](https://github.com/okou-ai/okou/issues/43460)) ([200c6e7](https://github.com/okou-ai/okou/commit/200c6e7fb5f600110cb3005c88175fffcbc57738))
+
+
+### Performance Improvements
+
+* **ios:** reduce cached chat restoration latency ([#43493](https://github.com/okou-ai/okou/issues/43493)) ([3813c92](https://github.com/okou-ai/okou/commit/3813c92b0539ac0e06fc39531ec535b4934b29d8))
+
 ## [0.21.0](https://github.com/okou-ai/okou/compare/ios-v0.20.6...ios-v0.21.0) (2026-10-27)
 
 

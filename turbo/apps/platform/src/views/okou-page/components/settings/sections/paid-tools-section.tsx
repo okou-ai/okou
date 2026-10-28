@@ -2,16 +2,7 @@ import type { Select as SelectPrimitive } from "@base-ui/react/select";
 import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import {
-  ChartNoAxesCombined,
-  FileText,
-  Globe,
-  Image,
-  MapPin,
-  Search,
-  Users,
-  MessageCircle,
-} from "lucide-react";
+import { Database, Image, Search, type LucideIcon } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -27,8 +18,10 @@ import {
   resolveImageModel,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
+import { dataRouterFamilyText } from "@okouai/api-contracts/contracts/data-router-tools";
 import {
   paidToolsSettings$,
+  type DataFamilySettings,
   type ImageModelSettings,
   type PaidToolsSettings,
   type PaidToolSettings,
@@ -42,30 +35,26 @@ import { SettingsSectionHeading } from "../settings-section-heading.tsx";
 
 const TOOL_ICONS = {
   "web-search": Search,
-  "people-search": Users,
-  "data-search": Search,
-  scrape: FileText,
-  finance: ChartNoAxesCombined,
-  maps: MapPin,
-  seo: Globe,
-  social: MessageCircle,
   "image-generation": Image,
 } as const;
 
-function PaidToolRow({
+function ToolToggleRow({
   tool,
+  icon,
+  title,
+  description,
   grouped = false,
 }: {
-  readonly tool: PaidToolSettings;
+  readonly tool: PaidToolSettings | DataFamilySettings;
+  readonly icon: LucideIcon;
+  readonly title: string;
+  readonly description: string;
   readonly grouped?: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useLoadable(tool.enabled$);
+  const enabled = useLastLoadable(tool.enabled$);
   const [save, update] = useLoadableSet(tool.update$);
   const signal = useGet(settingsActionSignal$);
-  const title = t(($) => {
-    return $.settings.paidTools.tools[tool.toolId].name;
-  });
   const pending = save.state === "loading";
   const current = enabled.state === "hasData" ? enabled.data : false;
   const toggle = (checked: boolean) => {
@@ -75,12 +64,10 @@ function PaidToolRow({
   };
   return (
     <PreferenceCardRow
-      icon={TOOL_ICONS[tool.toolId]}
+      icon={icon}
       grouped={grouped}
       title={title}
-      description={t(($) => {
-        return $.settings.paidTools.tools[tool.toolId].description;
-      })}
+      description={description}
       status={
         pending ? (
           <p role="status" className="text-sm text-muted-foreground">
@@ -109,6 +96,61 @@ function PaidToolRow({
       />
     </PreferenceCardRow>
   );
+}
+
+function PaidToolRow({
+  tool,
+  grouped = false,
+}: {
+  readonly tool: PaidToolSettings;
+  readonly grouped?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ToolToggleRow
+      tool={tool}
+      icon={TOOL_ICONS[tool.toolId]}
+      grouped={grouped}
+      title={t(($) => {
+        return $.settings.paidTools.tools[tool.toolId].name;
+      })}
+      description={t(($) => {
+        return $.settings.paidTools.tools[tool.toolId].description;
+      })}
+    />
+  );
+}
+
+/** Router owns family text; the App only selects the current locale. */
+function DataFamilyRow({ tool }: { readonly tool: DataFamilySettings }) {
+  const { i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? i18n.language;
+  return (
+    <ToolToggleRow
+      tool={tool}
+      icon={Database}
+      title={dataRouterFamilyText(tool.family.title, locale, tool.family.id)}
+      description={dataRouterFamilyText(
+        tool.family.description,
+        locale,
+        tool.family.id,
+      )}
+    />
+  );
+}
+
+function DataFamilyRows({
+  settings,
+}: {
+  readonly settings: PaidToolsSettings;
+}) {
+  const families = useLoadable(settings.dataFamilies$);
+  if (families.state !== "hasData") {
+    return <PaidToolsLoadStatus failed={families.state === "hasError"} />;
+  }
+  return families.data.map((tool) => {
+    return <DataFamilyRow key={tool.toolId} tool={tool} />;
+  });
 }
 
 interface ImageModelOption {
@@ -143,7 +185,7 @@ function ImageModelRow({
 }) {
   const { t } = useTranslation();
   const selected = useLastLoadable(imageModel.selected$);
-  const enabled = useLoadable(toolEnabled);
+  const enabled = useLastLoadable(toolEnabled);
   const draft = useGet(imageModel.draft$);
   const [save, update] = useLoadableSet(imageModel.update$);
   const signal = useGet(settingsActionSignal$);
@@ -297,17 +339,12 @@ function PaidToolsContent({
       ) : (
         <>
           <div className="flex flex-col gap-3">
-            {settings.tools.map((tool) => {
-              return tool.toolId === "image-generation" ? (
-                <ImageGenerationRows
-                  key={tool.toolId}
-                  tool={tool}
-                  imageModel={settings.imageModel}
-                />
-              ) : (
-                <PaidToolRow key={tool.toolId} tool={tool} />
-              );
-            })}
+            <PaidToolRow tool={settings.webSearch} />
+            <DataFamilyRows settings={settings} />
+            <ImageGenerationRows
+              tool={settings.imageGeneration}
+              imageModel={settings.imageModel}
+            />
           </div>
           <p className="text-xs text-muted-foreground">
             {workspace.state === "hasData" && workspace.data && (

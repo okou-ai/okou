@@ -9,6 +9,7 @@ import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as agentSuggestionSchema from "./schema/agent-suggestion";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
+import * as featureGuideSchema from "./schema/feature-guide";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as agentSchema from "./schema/agent";
@@ -126,7 +127,6 @@ import * as chatEventSnapshotSchema from "./schema/chat-event-snapshot";
 import * as chatThreadEventSchema from "./schema/chat-thread-event";
 import * as chatThreadSnapshotSchema from "./schema/chat-thread-snapshot";
 import * as runOutputMaterializationSchema from "./schema/run-output-materialization";
-import * as runOutputMemoryCitationSchema from "./schema/run-output-memory-citation";
 import * as runOutputLegacyPiEventSchema from "./schema/run-output-legacy-pi-event";
 import * as orgCustomConnectorSchema from "./schema/org-custom-connector";
 import * as orgCustomConnectorOauthConfigSchema from "./schema/org-custom-connector-oauth-config";
@@ -172,6 +172,7 @@ export const schema = {
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,
   ...userSchema,
+  ...featureGuideSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,
@@ -292,7 +293,6 @@ export const schema = {
   ...chatThreadEventSchema,
   ...chatThreadSnapshotSchema,
   ...runOutputMaterializationSchema,
-  ...runOutputMemoryCitationSchema,
   ...runOutputLegacyPiEventSchema,
   ...orgCustomConnectorSchema,
   ...orgCustomConnectorOauthConfigSchema,

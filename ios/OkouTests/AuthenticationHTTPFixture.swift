@@ -115,21 +115,28 @@ final class AuthenticationHTTPFixture: Sendable {
       // SDK refreshes enqueue Keychain writes. Its test-only configure resets
       // the previous SDK and cancels pending persistence, unlike a cold launch.
       // Wait for the actual old-group session before testing its restoration.
-      try await eventually(message: "The initial session must be committed to Keychain") {
-        let query: [String: Any] = [
-          kSecClass as String: kSecClassGenericPassword,
-          kSecAttrService as String: "ai.okou.tests." + self.host,
-          kSecAttrAccount as String: "cachedClient",
-          kSecReturnData as String: true,
-          kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-          let data = result as? Data,
-          let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return false }
-        return value["last_active_session_id"] as? String == snapshot.sessionID
-      }
+      let service = "ai.okou.tests." + host
+      let sessionID = snapshot.sessionID
+      let persisted = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in
+          let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: "cachedClient",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+          ]
+          var result: CFTypeRef?
+          guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+            let data = result as? Data,
+            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+          else { return false }
+          return value["last_active_session_id"] as? String == sessionID
+        }, object: nil)
+      let result = await XCTWaiter.fulfillment(of: [persisted], timeout: 3)
+      _ = try XCTUnwrap(
+        result == .completed ? true : nil,
+        "The initial session must be committed to Keychain before SDK restoration")
     }
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(

@@ -88,9 +88,15 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     await resource.refresh()
     let store = resource.subscriptions
     store.start(type: .claude)
-    try await eventually { store.phase == .pending }
+    try await waitForBusinessResult { store.phase == .pending }
     store.authorizationCode = "example-code"
     let completion = Task { await store.submitClaudeCode() }
+    addTeardownBlock { @MainActor in
+      resource.close()
+      completion.cancel()
+      quotaGate.open()
+      await completion.value
+    }
     await fulfillment(of: [quotaStarted], timeout: 3)
     XCTAssertEqual(resource.configuration?.defaultSelection.model, "claude-model")
     XCTAssertTrue(store.accounts.isEmpty)
@@ -122,12 +128,12 @@ final class SubscriptionAuthorizationTests: XCTestCase {
       client: fixture.client, authNow: { clock.now }, authSleep: clock.sleep, didFail: { _ in })
     defer { store.close() }
     store.start(type: .codex)
-    try await eventually { store.phase == .pending }
+    try await waitForBusinessResult { store.phase == .pending }
     XCTAssertEqual(store.verificationCode, "EXAMPLE-CODE")
     await fulfillment(of: [scheduled], timeout: 3)
     clock.advance(by: .seconds(1))
     await fulfillment(of: [completed], timeout: 3)
-    try await eventually { store.phase == .complete && !store.accounts.isEmpty }
+    try await waitForBusinessResult { store.phase == .complete && !store.accounts.isEmpty }
     XCTAssertNil(store.browserURL)
     XCTAssertNil(store.verificationCode)
     XCTAssertEqual(store.authorizationCode, "")
@@ -150,7 +156,7 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
     defer { store.close() }
     store.start(type: .claude, accountID: ModelHTTPFixtures.accountID)
-    try await eventually { store.phase == .pending }
+    try await waitForBusinessResult { store.phase == .pending }
     XCTAssertNil(store.verificationCode)
     await store.submitClaudeCode()
     XCTAssertTrue(submitted.withLock { $0.isEmpty })
@@ -206,8 +212,9 @@ final class SubscriptionAuthorizationTests: XCTestCase {
       throw URLError(.unsupportedURL)
     }
     let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
+    defer { store.close() }
     store.start(type: .claude)
-    try await eventually { store.phase == .pending }
+    try await waitForBusinessResult { store.phase == .pending }
     store.authorizationCode = "invalid-example"
     await store.submitClaudeCode()
     XCTAssertEqual(store.phase, .pending)
@@ -247,9 +254,15 @@ final class SubscriptionAuthorizationTests: XCTestCase {
       completionGate.open()
     }
     store.start(type: .claude)
-    try await eventually { store.phase == .pending }
+    try await waitForBusinessResult { store.phase == .pending }
     store.authorizationCode = "example-code"
     let completion = Task { await store.submitClaudeCode() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      completion.cancel()
+      completionGate.open()
+      await completion.value
+    }
     await fulfillment(of: [completing, scheduled], timeout: 3)
     clock.advance(by: .seconds(1))
     await fulfillment(of: [cancelled], timeout: 3)

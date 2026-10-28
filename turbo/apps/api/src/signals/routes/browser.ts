@@ -1,6 +1,4 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -21,7 +19,6 @@ import {
   useBrowser$,
   type BrowserServiceError,
 } from "../services/browser.service";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
 function errorResponse(error: BrowserServiceError) {
   return {
@@ -252,24 +249,6 @@ const viewerConnectionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
-    const featureContext = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.BrowserCdpViewer, featureContext)) {
-      return {
-        status: 403 as const,
-        body: {
-          error: {
-            code: "FORBIDDEN",
-            message: "Okou browser viewer is not enabled",
-          },
-        },
-      };
-    }
     const result = await set(
       getBrowserViewerConnection$,
       {

@@ -47,6 +47,7 @@ async function publish() {
     site: name,
     artifactKind: "hosted-site",
     spaFallback: false,
+    visibility: "public",
     files: [hostedTextFile("/index.html", "<p>one</p>")],
   });
   await api.completeHostedSite(owner, prepared.deploymentId);
@@ -55,7 +56,6 @@ async function publish() {
 
 test("renames only the active address while immutable versions and the CLI site identity survive", async () => {
   const { owner, api, name, prepared } = await publish();
-  await enable(owner);
   const http = client(owner);
   const next = `${name}-new`;
   const response = await accept(
@@ -155,6 +155,7 @@ test("renames only the active address while immutable versions and the CLI site 
 
 test("gates writes, validates addresses, and hides other owners' websites", async () => {
   const { owner, prepared, name } = await publish();
+  await enable(owner, false);
   const rename = {
     headers,
     params: { siteId: prepared.siteId },

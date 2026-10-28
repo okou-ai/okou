@@ -7656,6 +7656,7 @@ describe("okou browser route", () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserNativeInput]: true,
+      [FeatureSwitchKey.BrowserSharedOwner]: true,
     });
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
@@ -7676,6 +7677,9 @@ describe("okou browser route", () => {
     expect(claim.appendSystemPrompt ?? "").not.toContain(
       "Browser tab continuity:",
     );
+    expect(claim.appendSystemPrompt ?? "").not.toContain(
+      "Browser chat window:",
+    );
     const browserToken = claim.platformEnvironment.OKOU_TOKEN;
     if (!browserToken) {
       throw new Error("Expected a claimed agent token");
@@ -7691,6 +7695,9 @@ describe("okou browser route", () => {
 
   it("omits native input guidance when the switch is disabled", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserSharedOwner]: false,
+    });
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
       prompt: "Open a managed browser",
@@ -7701,7 +7708,7 @@ describe("okou browser route", () => {
     const claim = await runs.claimRunnerJob(sent.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
-      "Okou Cloud Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser",
+      "Okou Cloud Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser owned by the current chat thread",
     );
     expect(appendSystemPrompt).toContain(
       "Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes",
@@ -7711,6 +7718,7 @@ describe("okou browser route", () => {
       "Browser tab continuity: When resuming a page after `okou browser use`",
     );
     expect(appendSystemPrompt).toContain("`okou browser tab list`");
+    expect(appendSystemPrompt).not.toContain("Browser chat window:");
     expect(appendSystemPrompt).toContain(
       "Keep the selected tab only if non-sensitive page evidence confirms it",
     );
@@ -7727,6 +7735,36 @@ describe("okou browser route", () => {
     expect(appendSystemPrompt).not.toContain("Browser user input priority:");
     expect(appendSystemPrompt).not.toContain(
       "Okou Browser is currently off for this chat thread",
+    );
+  });
+
+  it("guides enabled chats to their shared Browser window", async () => {
+    const { runs, chat, actor, agent } = await setupBrowserScenario();
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserSharedOwner]: true,
+    });
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Use this chat's shared Browser window",
+      cloudBrowserEnabled: true,
+    });
+
+    await flushWaitUntilForTest();
+    const claim = await runs.claimRunnerJob(sent.runId);
+    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+    expect(appendSystemPrompt).toContain("this chat's managed Browser");
+    expect(appendSystemPrompt).toContain(
+      "initially selects a page in the reported chat window",
+    );
+    expect(appendSystemPrompt).toContain(
+      "shows the driver's safe tab inventory",
+    );
+    expect(appendSystemPrompt).toContain("Every CDP API remains callable");
+    expect(appendSystemPrompt).toContain(
+      "source-less `Target.createTarget` pages",
+    );
+    expect(appendSystemPrompt).toContain(
+      "login, logout and account switching affect sibling chats",
     );
   });
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.7.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.3...runner-storage-v0.7.4) (2026-10-28)
+
+## [0.7.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.2...runner-storage-v0.7.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **runner-storage:** retain cache locks through physical gc deletion ([#43557](https://github.com/okou-ai/okou/issues/43557)) ([9711081](https://github.com/okou-ai/okou/commit/971108115d0031bd3a228429d0d61e2650a5a88b))
+* **runner:** retain service locks through physical version gc deletion ([#43571](https://github.com/okou-ai/okou/issues/43571)) ([16cc08b](https://github.com/okou-ai/okou/commit/16cc08b8c86cd8c20f1b6e65b601acfd7cc9cd4d))
+
+## [0.7.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.1...runner-storage-v0.7.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-host:** retain gc lock custody through physical removal ([#43541](https://github.com/okou-ai/okou/issues/43541)) ([1a38580](https://github.com/okou-ai/okou/commit/1a3858059ececb7582b6231763a386a85d9922a9))
+
+## [0.7.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.0...runner-storage-v0.7.1) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner-storage:** retry stalled first archive headers sooner ([#43499](https://github.com/okou-ai/okou/issues/43499)) ([aeb7be6](https://github.com/okou-ai/okou/commit/aeb7be68c01a0277e70108ab87b11dc066ed7647))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.17...runner-storage-v0.7.0) (2026-10-27)
 
 

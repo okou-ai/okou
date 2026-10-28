@@ -816,6 +816,83 @@ export function chatEventInsertSql(
   );
 }
 
+export function assistantErrorEventType(
+  lifecycleEvent: "failed" | "cancelled",
+): "run.failed" | "run.cancelled" {
+  return lifecycleEvent === "failed" ? "run.failed" : "run.cancelled";
+}
+
+export function assistantErrorEventInsertSql(
+  input: {
+    readonly threadId: string;
+    readonly lifecycleEvent: "failed" | "cancelled";
+    readonly runId: string;
+    readonly failureReason: RunFailureReasonToken | null;
+  },
+  displayErrorMessage: string,
+): SQL {
+  return chatEventInsertSql(
+    {
+      chatThreadId: input.threadId,
+      eventType: assistantErrorEventType(input.lifecycleEvent),
+      content: displayErrorMessage,
+      runId: input.runId,
+      error: displayErrorMessage,
+      ...(input.lifecycleEvent === "failed" && input.failureReason !== null
+        ? { failureReason: input.failureReason }
+        : {}),
+    },
+    "run-lifecycle",
+  );
+}
+
+export function runLifecycleMarkerEventType(
+  event: "completed" | "cancelled",
+): "run.completed" | "run.cancelled" {
+  return event === "completed" ? "run.completed" : "run.cancelled";
+}
+
+export function runLifecycleMarkerInsertSql(
+  input: {
+    readonly threadId: string;
+    readonly event: "completed" | "cancelled";
+    readonly runId: string;
+  },
+  markerCreatedAt: Date,
+): SQL {
+  return chatEventInsertSql(
+    {
+      chatThreadId: input.threadId,
+      eventType: runLifecycleMarkerEventType(input.event),
+      content: null,
+      runId: input.runId,
+      createdAt: markerCreatedAt,
+    },
+    "run-lifecycle",
+  );
+}
+
+export function integrationCompletionFallbackInsertSql(
+  eventId: string,
+  input: {
+    readonly runId: string;
+    readonly threadId: string;
+    readonly createdAt: Date;
+  },
+): SQL {
+  return chatEventInsertSql(
+    {
+      id: eventId,
+      chatThreadId: input.threadId,
+      eventType: "output.message",
+      content: "Task completed successfully.",
+      runId: input.runId,
+      createdAt: input.createdAt,
+    },
+    "id",
+  );
+}
+
 /** Empty batches reserve nothing and return no rows. */
 export function chatEventsInsertSql(values: readonly AppendChatEvent[]): SQL {
   return appendCanonicalChatEventsSql(

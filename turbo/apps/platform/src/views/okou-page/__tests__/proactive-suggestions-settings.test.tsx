@@ -84,7 +84,7 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
   const card = await screen.findByTestId("proactive-suggestions-preference");
   await expect(
     within(card).findByText(
-      "Choose a usable default Agent to receive proactive suggestions.",
+      "Okou is unavailable in this workspace. Contact a workspace administrator.",
     ),
   ).resolves.toBeInTheDocument();
   const toggle = within(card).getByRole("switch", {

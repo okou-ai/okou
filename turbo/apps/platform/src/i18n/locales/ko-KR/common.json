@@ -1352,9 +1352,6 @@
     "cardTitle": "클라우드 브라우저",
     "close": "라이브 브라우저 닫기",
     "documentTitle": "라이브 브라우저",
-    "fitAction": "맞춤",
-    "fitWindow": "브라우저 창에 맞춤",
-    "iframeTitle": "라이브 브라우저: {{name}}",
     "notFound": "브라우저를 찾을 수 없습니다",
     "open": "{{name}} 브라우저 열기",
     "openAction": "열기",
@@ -1468,40 +1465,8 @@
           "name": "팀 초대하기",
           "unit": "멤버당"
         },
-        "notEligible": "대상 아님",
         "pendingState": "{{amount}}명 대기 중",
-        "rejected": {
-          "alreadyRedeemed": "이미 사용된 게시물",
-          "authorAlreadyRewarded": "이미 보상받은 계정",
-          "authorUnavailable": "작성자 확인 불가",
-          "officialAccount": "{{assistantName}} 공식 게시물은 제외",
-          "postMustMention": "{{assistantName}} 언급 필요"
-        },
         "rewardsNote": "보상은 지급 후 7일이 지나면 만료돼요. 출석은 UTC 00:00에 초기화됩니다. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
-        "share": {
-          "action": "공유",
-          "description": "게시한 뒤 링크를 붙여넣기",
-          "name": "X에 공유하기"
-        },
-        "shareDialog": {
-          "description": "공개 게시물을 제출하면 검토해요. 1인당 한 번 보상을 받을 수 있어요.",
-          "helper": "게시물은 공개 상태여야 하고 {{assistantName}}을(를) 언급해야 합니다.",
-          "inputLabel": "게시물 링크",
-          "openX": "X 열기",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "더 하실 일은 없습니다. 크레딧은 자동으로 지급됩니다.",
-          "reviewDone": "완료",
-          "reviewExplain": "게시물이 공개되어 있고 {{assistantName}}을(를) 언급하면 보상이 자동으로 지급됩니다. 문제가 있으면 이 단계가 사유와 함께 다시 열립니다.",
-          "reviewOpenPost": "게시물 열기",
-          "reviewPending": "보통 한 시간 이내",
-          "reviewTime": "검토는 보통 한 시간 안에 끝납니다.",
-          "reviewTitle": "게시물을 검토하고 있어요",
-          "stepPaste": "링크 붙여넣기",
-          "stepWrite": "게시물 작성하기",
-          "submit": "제출",
-          "title": "X에 {{assistantName}} 공유하기",
-          "writingPrompt": "{{assistantName}}에서 실제로 해 본 일을 자신의 말로 적어 주세요."
-        },
         "slack": {
           "action": "추가",
           "description": "팀이 이미 일하고 있는 곳으로",
@@ -1555,10 +1520,11 @@
       "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
-      "customDirection": "직접 방향 정하기",
-      "customDirectionDescription": "전체 배경을 바탕으로 추가 질문이나 요청 입력",
-      "customPrepared": "입력창에 추가됨",
-      "customPreparedDescription": "위에 요청을 입력하고 보내면 새 채팅이 시작됩니다",
+      "customDirection": "이렇게 하고 싶어요…",
+      "customDirectionDescription": "질문하거나 하고 싶은 일을 알려주세요.",
+      "customPlaceholder": "어떤 생각을 하고 계신가요?",
+      "customPrepared": "계속 말씀해 주세요…",
+      "customPreparedDescription": "위에 메시지를 입력한 뒤 보내세요.",
       "dismiss": "무시",
       "label": "제안",
       "next": "다음 제안",
@@ -3611,8 +3577,8 @@
         "manageConnection": "연결된 계정 관리",
         "open": "Telegram 열기",
         "openSetup": "설정 열기",
-        "setupDescription": "설정에서 기본 에이전트를 선택한 다음 이 페이지로 돌아와 Telegram을 연결하세요.",
-        "setupMemberDescription": "워크스페이스 관리자에게 기본 에이전트를 선택해 달라고 요청한 다음 이 페이지로 돌아오세요.",
+        "setupDescription": "워크스페이스 설정을 완료하여 Okou를 초기화한 다음 이 페이지로 돌아와 Telegram을 연결하세요.",
+        "setupMemberDescription": "워크스페이스 관리자에게 설정을 완료하고 Okou를 초기화해 달라고 요청한 다음 이 페이지로 돌아오세요.",
         "setupTitle": "계정 설정 완료",
         "successDescription": "Telegram에서 봇에게 메시지를 보내 대화를 시작하세요.",
         "successTitle": "Telegram에 연결되었습니다!"
@@ -3952,18 +3918,18 @@
   "desktopShellAuthorization": {
     "actionFailed": "권한을 업데이트하지 못했습니다.",
     "allow": "1시간 허용",
-    "approved": "Shell 접근 허용됨",
+    "approved": "허용됨",
     "deadline": "만료: {{date}}",
     "denied": "요청 거부됨",
     "deny": "거부",
     "description": "에이전트가 컴퓨터에서 Shell을 사용하려면 권한이 필요합니다.",
-    "details": "상세 정보 열기",
     "expired": "권한 만료됨",
     "loading": "권한을 불러오는 중…",
     "pending": "승인 대기 중",
     "revoke": "접근 취소",
     "revoked": "Shell 접근 취소됨",
-    "scope": "이 채팅과 컴퓨터에만 적용됩니다. 접근이 종료되어도 기존 터미널은 열린 상태로 유지됩니다.",
+    "scope": "이 채팅과 컴퓨터에만 적용됩니다",
+    "terminalNotice": "접근이 종료되어도 기존 터미널은 열린 상태로 유지됩니다.",
     "title": "Desktop Shell 접근",
     "unavailable": "권한을 사용할 수 없음",
     "waiting": "Run이 실행 중이거나 선택한 컴퓨터가 변경되면 승인할 수 없습니다."
@@ -4021,6 +3987,15 @@
     "previousPage": "이전 샘플 페이지",
     "title": "문서",
     "useNamed": "{{title}} 사용"
+  },
+  "featureGuide": {
+    "close": "새 기능 가이드 닫기",
+    "dismiss": "확인",
+    "label": "새로운 기능",
+    "next": "다음",
+    "preview": "미리 보기",
+    "previous": "이전",
+    "tryPrompt": "이 작업 시작하기"
   },
   "global": {
     "errors": {
@@ -4237,6 +4212,134 @@
         "teamCopy": "같은 워크스페이스에서 협업하세요.",
         "teamTitle": "팀원 초대"
       },
+      "outcomes": {
+        "accessibleLabel": "{{source}}에서 정리한 {{title}} 예시입니다. 모든 내용은 샘플 데이터입니다.",
+        "examples": {
+          "coaching": {
+            "context": "목요일 10:00 · 45분 세션",
+            "next": "다음 단계 설정",
+            "nextTime": "10분",
+            "practice": "새로운 기술 연습",
+            "practiceTime": "25분",
+            "review": "지난 세션 복습",
+            "reviewTime": "10분"
+          },
+          "consulting": {
+            "agenda": "범위와 일정",
+            "background": "배경",
+            "context": "Acme Studio · 목요일 10:00",
+            "discuss": "논의",
+            "expansion": "사업 확장 예정",
+            "goal": "목표",
+            "objective": "온보딩 개선"
+          },
+          "design": {
+            "brandGuide": "브랜드 가이드",
+            "clientBrief": "고객 브리프",
+            "deliverables": "제작물",
+            "direction": "시각적 방향",
+            "photos": "제품 사진",
+            "positioning": "친환경 소비자에게 “같은 케어, 더 적은 낭비”.",
+            "project": "리필 스킨케어 출시",
+            "scope": "랜딩 페이지 + 광고 3개",
+            "visuals": "깔끔한 제품 클로즈업"
+          },
+          "finance": {
+            "context": "10월 · 월말 검토",
+            "expenses": "지출",
+            "income": "수입",
+            "reconcile": "대사 필요",
+            "transactions": "거래 3건"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "매출 성장률",
+            "margin": "매출총이익률",
+            "metric": "지표",
+            "northstar": "Northstar",
+            "watch": "주목: 고객 집중도."
+          },
+          "marketing": {
+            "comparison": "이전 7일 대비",
+            "period": "최근 7일"
+          },
+          "operations": {
+            "agenda": "팀 안건 확인",
+            "context": "이번 주 · 우선순위 3개",
+            "friday": "금요일",
+            "quote": "공급업체 견적 검토",
+            "today": "오늘",
+            "tuesday": "화요일",
+            "update": "프로젝트 현황 공유"
+          },
+          "other": {
+            "brief": "공유된 브리프 검토",
+            "call": "내일 통화 확인",
+            "context": "최근 이메일에서",
+            "reply": "Alex에게 답장"
+          },
+          "research": {
+            "action": "안내가 있는 첫 작업 테스트",
+            "context": "고객 인터뷰 · 메모 5개",
+            "evidence": "근거",
+            "finding": "발견",
+            "insight": "설정에 너무 오래 걸림",
+            "interviews": "인터뷰 5건 중 3건",
+            "next": "다음"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "관심이 필요한 거래 2건",
+            "demo": "내일 데모",
+            "next": "다음: Acme에 후속 연락.",
+            "northstar": "Northstar",
+            "proposal": "제안 발송 완료"
+          },
+          "software": {
+            "context": "병합 2건 · 미해결 1건",
+            "issue": "CSV 내보내기 실패",
+            "search": "더 빠른 검색",
+            "signup": "간편한 가입"
+          }
+        },
+        "expandLabel": "연결 후 얻을 수 있는 결과 보기",
+        "industries": {
+          "coaching": {
+            "title": "세션 계획"
+          },
+          "consulting": {
+            "title": "고객 미팅 브리프"
+          },
+          "design": {
+            "title": "크리에이티브 브리프"
+          },
+          "finance": {
+            "title": "월말 결산 요약"
+          },
+          "investing": {
+            "title": "기업 비교"
+          },
+          "marketing": {
+            "title": "광고 성과 요약"
+          },
+          "operations": {
+            "title": "이번 주 할 일"
+          },
+          "other": {
+            "title": "다음 단계"
+          },
+          "research": {
+            "title": "리서치 요약"
+          },
+          "sales": {
+            "title": "영업 후속 조치"
+          },
+          "software": {
+            "title": "릴리스 요약"
+          }
+        },
+        "title": "자주 쓰는 도구로 일을 시작하세요"
+      },
       "prompt": {
         "connectorsDescription": "업무 도구를 연결하면 Okou가 업무 맥락을 이해하고 상황에 맞게 작업을 수행할 수 있어요. 나중에 연결해도 됩니다.",
         "connectorsTitle": "업무 도구 연결",
@@ -4308,6 +4411,12 @@
         "copy": "Okou는 업무를 알수록 더 똑똑해집니다. 매일 쓰는 도구를 연결하고 실제 업무에 기반한 작업으로 시작하세요.",
         "permissions": "Okou는 첫 작업을 맞춤화하기 위해 소량의 정보를 사용합니다. Agent가 무엇을 얼마나 오래 할 수 있는지는 직접 결정합니다.",
         "securityLink": "Okou의 데이터 보호 방식",
+        "skipDialog": {
+          "connect": "도구 연결하기",
+          "description": "자주 쓰는 도구를 연결해 보세요. Okou가 업무를 이해하고 더 알맞은 도움을 드릴 수 있어요. 나중에 연결해도 괜찮아요.",
+          "skip": "지금은 건너뛰기",
+          "title": "도구를 연결하면 Okou가 더 잘 도와드려요"
+        },
         "title": "업무 도구 연결"
       },
       "startingPrompt": {
@@ -5241,6 +5350,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "연결",
         "connectAccount": "계정 연결",
+        "creditsBalance": "{{value}} {{provider}} 크레딧",
+        "creditsLabel": "{{provider}} 크레딧",
+        "creditsUnlimited": "무제한",
         "disconnectAccount": "계정 연결 해제",
         "disconnectDescription": "Okou에서 계정을 제거합니다. 공급자 구독은 취소되지 않습니다.",
         "disconnecting": "연결 해제 중…",
@@ -5338,37 +5450,9 @@
       "timing": "변경 사항은 이후 실행에 적용됩니다. 실행 중이거나 이미 준비된 작업은 이전 설정을 유지할 수 있습니다.",
       "title": "기본 제공 도구",
       "tools": {
-        "data-search": {
-          "description": "직업 프로필을 보강하고 기업, 트래픽, 광고, 크리에이터 등 비즈니스 데이터를 조사합니다.",
-          "name": "고급 데이터 조사"
-        },
-        "finance": {
-          "description": "기업, 시세, 시장 데이터를 조회하세요.",
-          "name": "금융 데이터"
-        },
         "image-generation": {
           "description": "내장 모델로 이미지를 만듭니다.",
           "name": "이미지 생성"
-        },
-        "maps": {
-          "description": "장소, 주소, 경로를 찾으세요.",
-          "name": "지도 및 장소"
-        },
-        "people-search": {
-          "description": "공개된 전문가 프로필을 찾으세요.",
-          "name": "인물 검색"
-        },
-        "scrape": {
-          "description": "웹페이지의 내용을 읽고 추출하세요.",
-          "name": "페이지 추출"
-        },
-        "seo": {
-          "description": "검색 순위, 키워드, 백링크를 조사하세요.",
-          "name": "SEO 조사"
-        },
-        "social": {
-          "description": "공개 소셜 게시물을 조사하고 미디어를 수집하세요.",
-          "name": "소셜 조사"
         },
         "web-search": {
           "description": "웹에서 최신 정보를 찾으세요.",
@@ -5505,7 +5589,7 @@
         "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다.",
         "description": "내 시간대 기준 오전 7:00 전에 일일 우선순위를 받습니다.",
         "errorMessage": "Morning Brief 설정을 불러오거나 업데이트할 수 없습니다.",
-        "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
+        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
         "preparationFailed": "일시적으로 사용할 수 없습니다.",
         "preparing": "첫 모닝 브리프를 준비하고 있습니다. 언제든지 끌 수 있습니다.",
@@ -5514,7 +5598,7 @@
       "proactiveLearning": {
         "description": "밤에 활동을 검토하고 개인 기억과 이해를 갱신합니다.",
         "errorMessage": "이 설정을 불러오거나 업데이트하지 못했습니다.",
-        "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
+        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다.",
         "preparing": "워크플로를 준비하고 있습니다.",
@@ -5523,7 +5607,7 @@
       "proactivePlanningAction": {
         "description": "위임한 업무를 계획하고 실행하며, 입력이 필요할 때 알려드립니다.",
         "errorMessage": "이 설정을 불러오거나 업데이트하지 못했습니다.",
-        "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
+        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다.",
         "preparing": "워크플로를 준비하고 있습니다.",
@@ -5532,7 +5616,7 @@
       "proactiveSuggestions": {
         "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
         "errorMessage": "제안 설정을 불러오거나 업데이트하지 못했습니다.",
-        "missingDefaultAgent": "선제적 제안을 받으려면 사용 가능한 기본 Agent를 선택하세요.",
+        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "일시적으로 사용할 수 없습니다.",
         "preparing": "시간별 제안을 준비하고 있습니다. 언제든지 끌 수 있습니다.",

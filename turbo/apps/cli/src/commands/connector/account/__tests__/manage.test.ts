@@ -72,6 +72,8 @@ describe("connector account exact management", () => {
     ["set-default", "POST", "/default", builtinTarget, "builtin:github"],
     ["set-default", "POST", "/default", customTarget, `custom:${CUSTOM_ID}`],
     ["impact", "GET", "/deletion-impact", builtinTarget, "builtin:github"],
+    ["disconnect", "DELETE", "", builtinTarget, "builtin:github"],
+    ["disconnect", "DELETE", "", customTarget, `custom:${CUSTOM_ID}`],
     ["delete", "DELETE", "", customTarget, `custom:${CUSTOM_ID}`],
   ] as const)(
     "%s %s %s uses an exact target",
@@ -108,7 +110,7 @@ describe("connector account exact management", () => {
                     hasSibling: true,
                     token: SECRET,
                   }
-                : operation === "delete"
+                : method === "DELETE"
                   ? {
                       deletedConnectionId: ID,
                       resolvedSelectionCount: 2,
@@ -133,6 +135,13 @@ describe("connector account exact management", () => {
           : []),
       ]);
       expect(received).toBe(true);
+      if (method === "DELETE") {
+        expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
+          deletedConnectionId: ID,
+          resolvedSelectionCount: 2,
+          promotedDefaultConnectionId: OTHER_ID,
+        });
+      }
       expect(log.mock.calls.flat().join("\n")).not.toContain(SECRET);
       expect(error).not.toHaveBeenCalled();
     },

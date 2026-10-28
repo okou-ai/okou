@@ -1163,18 +1163,38 @@ async def test_reflection_method_firewall_without_managed_credentials_still_matc
     assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"
 
 
-async def test_non_reflection_method_with_managed_credentials_still_matches(
+@pytest.mark.parametrize("request_method", ["PROPFIND", "REPORT"])
+async def test_dav_method_with_managed_credentials_matches_explicit_permission(
     tmp_path,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
+    request_method,
 ):
-    reg_path = _write_github_firewall_registry(tmp_path)
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            api_entry={
+                "base": "https://api.github.com",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"}},
+                "permissions": [
+                    {"name": "dav.read", "rules": [f"{request_method} /webdav/resource"]}
+                ],
+            },
+            network_policy={
+                "allow": ["dav.read"],
+                "deny": [],
+                "ask": [],
+                "unknownPolicy": "deny",
+            },
+        ),
+    )
     flow = real_flow(
         with_response=False,
         client_ip="10.200.0.5",
         host="api.github.com",
-        method="PROPFIND",
+        method=request_method,
         path="/webdav/resource",
     )
 

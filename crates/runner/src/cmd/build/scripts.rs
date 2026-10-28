@@ -9,6 +9,8 @@ use nix::fcntl::Flock;
 
 use crate::error::{RunnerError, RunnerResult};
 
+use super::cleanup::TemplateCleanup;
+
 #[cfg(test)]
 mod process_tests;
 
@@ -84,6 +86,10 @@ impl RootfsScripts {
 
     pub(super) fn retain_template_lock(&mut self, guard: Arc<Flock<File>>) {
         self.template_lock = Some(guard);
+    }
+
+    pub(super) fn cleanup(&self) -> TemplateCleanup {
+        TemplateCleanup::new(Arc::clone(&self.primary_lock))
     }
 
     pub(super) async fn path(&mut self) -> RunnerResult<RootfsScriptDir> {
@@ -741,7 +747,7 @@ exit 18
             shell_quoted_var(TEMPLATE_BUILD_SCRIPT, "AGENT_BROWSER_VERSION")
                 .expect("build-template.sh should declare AGENT_BROWSER_VERSION");
         assert_eq!(
-            agent_browser_version, "0.38.1-vm0.1",
+            agent_browser_version, "0.39.4-vm0.1",
             "build-template.sh should pin the immutable vm0 agent-browser release"
         );
 
@@ -1264,23 +1270,82 @@ assert_check_error \
     }
 
     #[test]
-    fn verify_script_retries_and_surfaces_cleanup_failures() {
+    fn verify_script_retries_unmounts() {
         assert!(
             VERIFY_SCRIPT.contains("unmount_with_retries()"),
             "verify-rootfs.sh should retry unmount to avoid transient loop mount leaks"
         );
-        assert!(
-            VERIFY_SCRIPT.contains(r#"error: ${MODE} verification cleanup failed"#),
-            "verify-rootfs.sh should fail successful verification if cleanup fails"
+    }
+
+    #[tokio::test]
+    async fn verify_script_cleanup_preserves_or_updates_exit_status() {
+        let cleanup_start = VERIFY_SCRIPT
+            .find("unmount_with_retries() {")
+            .expect("verify-rootfs.sh should define unmount_with_retries");
+        let trap = "\ntrap cleanup EXIT\n";
+        let cleanup_end = VERIFY_SCRIPT
+            .find(trap)
+            .expect("verify-rootfs.sh should install the cleanup EXIT trap")
+            + trap.len();
+        let cleanup_script = &VERIFY_SCRIPT[cleanup_start..cleanup_end];
+        let script = format!(
+            r#"
+set -euo pipefail
+# Verify the real fixture is not mounted before installing the cleanup trap.
+# util-linux mountpoint returns 32 for a path that is not a mountpoint.
+mountpoint_status=0
+mountpoint -q "$MOUNT_DIR" || mountpoint_status=$?
+if [[ "$mountpoint_status" -ne 32 ]]; then
+  echo "expected a non-mountpoint fixture, got status $mountpoint_status" >&2
+  exit 99
+fi
+{cleanup_script}
+exit "$1"
+"#
         );
-        assert!(
-            VERIFY_SCRIPT.contains("if ! rmdir \"$MOUNT_DIR\""),
-            "verify-rootfs.sh should treat mount temp dir cleanup failure as a cleanup failure"
-        );
-        assert!(
-            VERIFY_SCRIPT.contains("exit \"$status\""),
-            "verify-rootfs.sh EXIT trap should return cleanup-adjusted status"
-        );
+
+        for (primary_status, cleanup_fails, expected_status) in
+            [(0, false, 0), (0, true, 1), (17, false, 17), (17, true, 17)]
+        {
+            let fixture = tempfile::tempdir().unwrap();
+            let mount_dir = fixture.path().join("mount");
+            std::fs::create_dir(&mount_dir).unwrap();
+            if cleanup_fails {
+                std::fs::write(mount_dir.join("keep"), b"prevent rmdir").unwrap();
+            }
+            let stderr_path = fixture.path().join("stderr");
+            let mut child = tokio::process::Command::new("bash")
+                .arg("-c")
+                .arg(&script)
+                .arg("verify-cleanup-fixture")
+                .arg(primary_status.to_string())
+                .env("MOUNT_DIR", &mount_dir)
+                .env("MODE", "rootfs")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(File::create(&stderr_path).unwrap())
+                .kill_on_drop(true)
+                .spawn()
+                .unwrap();
+            let status = match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
+                .await
+            {
+                Ok(status) => status.unwrap(),
+                Err(_) => {
+                    child.kill().await.unwrap();
+                    panic!(
+                        "verifier cleanup timed out: primary={primary_status}, cleanup_fails={cleanup_fails}"
+                    );
+                }
+            };
+            let stderr = std::fs::read_to_string(&stderr_path).unwrap();
+            assert_eq!(
+                status.code(),
+                Some(expected_status),
+                "primary={primary_status}, cleanup_fails={cleanup_fails}\nstderr:\n{stderr}"
+            );
+            assert_eq!(mount_dir.exists(), cleanup_fails);
+        }
     }
 
     #[test]

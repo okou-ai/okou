@@ -6,6 +6,16 @@
       "valid": true
     },
     {
+      "name": "DAV property discovery rule",
+      "rule": "PROPFIND /{principal}/calendars",
+      "valid": true
+    },
+    {
+      "name": "DAV collection query rule",
+      "rule": "REPORT /{principal}/calendars/{calendar}",
+      "valid": true
+    },
+    {
       "name": "query action rule",
       "rule": "POST / AWS sigv4=ec2 action=DescribeInstances",
       "valid": true
@@ -1014,20 +1024,35 @@
           "apis": [
             {
               "base": "https://{sub}.example.com//",
-              "auth": { "headers": { "Authorization": "Bearer token" } },
-              "permissions": [{ "name": "read", "rules": ["GET /foo"] }]
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /foo"]
+                }
+              ]
             }
           ]
         }
       ],
       "networkPolicies": {
-        "example": { "allow": ["read"], "deny": [], "unknownPolicy": "deny" }
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
       },
       "request": {
         "method": "GET",
         "url": "https://api.example.com/foo"
       },
-      "expected": { "kind": "no_match" }
+      "expected": {
+        "kind": "no_match"
+      }
     },
     {
       "name": "parameterized repeated root slash base selects the intended permission",
@@ -1037,14 +1062,27 @@
           "apis": [
             {
               "base": "https://{sub}.example.com//",
-              "auth": { "headers": { "Authorization": "Bearer token" } },
-              "permissions": [{ "name": "read", "rules": ["GET /foo"] }]
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /foo"]
+                }
+              ]
             }
           ]
         }
       ],
       "networkPolicies": {
-        "example": { "allow": ["read"], "deny": [], "unknownPolicy": "deny" }
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
       },
       "request": {
         "method": "GET",
@@ -1067,13 +1105,31 @@
           "apis": [
             {
               "base": "https://{sub}.example.com/",
-              "auth": { "headers": { "Authorization": "Bearer root-token" } },
-              "permissions": [{ "name": "root.read", "rules": ["GET //foo"] }]
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer root-token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "root.read",
+                  "rules": ["GET //foo"]
+                }
+              ]
             },
             {
               "base": "https://{sub}.example.com//",
-              "auth": { "headers": { "Authorization": "Bearer scoped-token" } },
-              "permissions": [{ "name": "read", "rules": ["GET /foo"] }]
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer scoped-token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /foo"]
+                }
+              ]
             }
           ]
         }
@@ -1141,7 +1197,11 @@
           "apis": [
             {
               "base": "https://api.{domain}",
-              "auth": { "headers": { "Authorization": "Bearer token" } }
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              }
             }
           ]
         }
@@ -2339,9 +2399,16 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer primary" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer primary"
+                }
+              },
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2351,9 +2418,16 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer auditor" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer auditor"
+                }
+              },
               "permissions": [
-                { "name": "audit-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "audit-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2393,9 +2467,16 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer auditor" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer auditor"
+                }
+              },
               "permissions": [
-                { "name": "audit-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "audit-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2405,9 +2486,16 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer primary" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer primary"
+                }
+              },
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2430,7 +2518,10 @@
       "request": {
         "method": "GET",
         "url": "https://api.example.com/items/123",
-        "connectorIntent": { "status": "present", "value": "primary" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "primary"
+        }
       },
       "expected": {
         "kind": "allow",
@@ -2449,9 +2540,16 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer primary" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer primary"
+                }
+              },
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2461,9 +2559,16 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer auditor" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer auditor"
+                }
+              },
               "permissions": [
-                { "name": "audit-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "audit-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2486,7 +2591,10 @@
       "request": {
         "method": "GET",
         "url": "https://api.example.com/items/123",
-        "connectorIntent": { "status": "present", "value": "auditor" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "auditor"
+        }
       },
       "expected": {
         "kind": "block",
@@ -2507,7 +2615,10 @@
               "base": "https://api.example.com",
               "auth": {},
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2519,7 +2630,10 @@
               "base": "https://api.example.com",
               "auth": {},
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2528,7 +2642,9 @@
       "request": {
         "method": "GET",
         "url": "https://api.example.com/items/123",
-        "connectorIntent": { "status": "malformed" }
+        "connectorIntent": {
+          "status": "malformed"
+        }
       },
       "expected": {
         "kind": "ambiguous",
@@ -2543,17 +2659,30 @@
       "firewalls": [
         {
           "name": "railway",
-          "apis": [{ "base": "https://backboard.example.com", "auth": {} }]
+          "apis": [
+            {
+              "base": "https://backboard.example.com",
+              "auth": {}
+            }
+          ]
         },
         {
           "name": "railway-project",
-          "apis": [{ "base": "https://backboard.example.com", "auth": {} }]
+          "apis": [
+            {
+              "base": "https://backboard.example.com",
+              "auth": {}
+            }
+          ]
         }
       ],
       "request": {
         "method": "POST",
         "url": "https://backboard.example.com",
-        "connectorIntent": { "status": "present", "value": "other" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "other"
+        }
       },
       "expected": {
         "kind": "ambiguous",
@@ -2571,16 +2700,30 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer first" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer first"
+                }
+              },
               "permissions": [
-                { "name": "first-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "first-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             },
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer second" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer second"
+                }
+              },
               "permissions": [
-                { "name": "second-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "second-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2615,14 +2758,25 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer route" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer route"
+                }
+              },
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             },
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer default" } }
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer default"
+                }
+              }
             }
           ]
         }
@@ -2656,7 +2810,11 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer alpha" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer alpha"
+                }
+              },
               "permissions": []
             }
           ]
@@ -2666,9 +2824,16 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer beta" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer beta"
+                }
+              },
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2691,7 +2856,10 @@
       "request": {
         "method": "GET",
         "url": "https://api.example.com/profile",
-        "connectorIntent": { "status": "present", "value": "beta" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "beta"
+        }
       },
       "expected": {
         "kind": "allow",
@@ -2708,14 +2876,25 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer default" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer default"
+                }
+              },
               "permissions": []
             },
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer route" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer route"
+                }
+              },
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2747,7 +2926,12 @@
       "firewalls": [
         {
           "name": "broad",
-          "apis": [{ "base": "https://api.example.com", "auth": {} }]
+          "apis": [
+            {
+              "base": "https://api.example.com",
+              "auth": {}
+            }
+          ]
         },
         {
           "name": "specific",
@@ -2756,7 +2940,10 @@
               "base": "https://api.example.com",
               "auth": {},
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2779,7 +2966,10 @@
       "request": {
         "method": "GET",
         "url": "https://api.example.com/items/123",
-        "connectorIntent": { "status": "present", "value": "broad" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "broad"
+        }
       },
       "expected": {
         "kind": "allow",
@@ -2800,7 +2990,10 @@
               "base": "https://api.example.com",
               "auth": {},
               "permissions": [
-                { "name": "items-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "items-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2817,7 +3010,10 @@
       "request": {
         "method": "GET",
         "url": "https://api.example.com/items/123",
-        "connectorIntent": { "status": "present", "value": "removed-owner" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "removed-owner"
+        }
       },
       "expected": {
         "kind": "block",
@@ -2833,17 +3029,30 @@
       "firewalls": [
         {
           "name": "alpha",
-          "apis": [{ "base": "https://api.example.com", "auth": {} }]
+          "apis": [
+            {
+              "base": "https://api.example.com",
+              "auth": {}
+            }
+          ]
         },
         {
           "name": "beta",
-          "apis": [{ "base": "https://api.example.com", "auth": {} }]
+          "apis": [
+            {
+              "base": "https://api.example.com",
+              "auth": {}
+            }
+          ]
         }
       ],
       "request": {
         "method": "POST",
         "url": "https://api.example.com/graphql",
-        "connectorIntent": { "status": "present", "value": "beta" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "beta"
+        }
       },
       "expected": {
         "kind": "allow",
@@ -2858,12 +3067,22 @@
         {
           "name": "custom_connector_00000000000040008000000000000001",
           "customConnectorId": "00000000-0000-4000-8000-000000000001",
-          "apis": [{ "base": "https://api.example.com", "auth": {} }]
+          "apis": [
+            {
+              "base": "https://api.example.com",
+              "auth": {}
+            }
+          ]
         },
         {
           "name": "custom_connector_00000000000040008000000000000002",
           "customConnectorId": "00000000-0000-4000-8000-000000000002",
-          "apis": [{ "base": "https://api.example.com", "auth": {} }]
+          "apis": [
+            {
+              "base": "https://api.example.com",
+              "auth": {}
+            }
+          ]
         }
       ],
       "request": {
@@ -2889,16 +3108,30 @@
           "apis": [
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer shared" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer shared"
+                }
+              },
               "permissions": [
-                { "name": "first-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "first-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             },
             {
               "base": "https://api.example.com",
-              "auth": { "headers": { "Authorization": "Bearer shared" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer shared"
+                }
+              },
               "permissions": [
-                { "name": "second-read", "rules": ["GET /items/{id}"] }
+                {
+                  "name": "second-read",
+                  "rules": ["GET /items/{id}"]
+                }
               ]
             }
           ]
@@ -2934,8 +3167,14 @@
           "apis": [
             {
               "base": "https://mcp.example.com/api/mcp",
-              "hostPolicy": { "kind": "publicDestination" },
-              "auth": { "headers": { "Authorization": "Bearer token" } },
+              "hostPolicy": {
+                "kind": "publicDestination"
+              },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
               "permissions": []
             }
           ]
@@ -3155,7 +3394,9 @@
         "method": "POST",
         "url": "https://mcp.example.com/api/other"
       },
-      "expected": { "kind": "no_match" }
+      "expected": {
+        "kind": "no_match"
+      }
     },
     {
       "name": "MCP exact endpoint does not match another host",
@@ -3183,7 +3424,9 @@
         "method": "POST",
         "url": "https://other.example.com/api/mcp"
       },
-      "expected": { "kind": "no_match" }
+      "expected": {
+        "kind": "no_match"
+      }
     },
     {
       "name": "MCP shared endpoint uses stable custom connector intent",
@@ -3194,7 +3437,11 @@
           "apis": [
             {
               "base": "https://mcp.example.com/api/mcp",
-              "auth": { "headers": { "Authorization": "Bearer first" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer first"
+                }
+              },
               "permissions": []
             }
           ]
@@ -3205,7 +3452,11 @@
           "apis": [
             {
               "base": "https://mcp.example.com/api/mcp",
-              "auth": { "headers": { "Authorization": "Bearer second" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer second"
+                }
+              },
               "permissions": []
             }
           ]
@@ -3248,7 +3499,11 @@
           "apis": [
             {
               "base": "https://mcp.example.com/api/mcp",
-              "auth": { "headers": { "Authorization": "Bearer builtin" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer builtin"
+                }
+              },
               "permissions": []
             }
           ]
@@ -3259,7 +3514,11 @@
           "apis": [
             {
               "base": "https://mcp.example.com/api/mcp",
-              "auth": { "headers": { "Authorization": "Bearer custom" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer custom"
+                }
+              },
               "permissions": []
             }
           ]
@@ -3282,7 +3541,10 @@
       "request": {
         "method": "POST",
         "url": "https://mcp.example.com/api/mcp",
-        "connectorIntent": { "status": "present", "value": "builtin-service" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "builtin-service"
+        }
       },
       "expected": {
         "kind": "allow",
@@ -3300,7 +3562,11 @@
           "apis": [
             {
               "base": "https://mcp.example.com/api/mcp",
-              "auth": { "headers": { "Authorization": "Bearer custom" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer custom"
+                }
+              },
               "permissions": []
             }
           ]
@@ -3317,7 +3583,10 @@
       "request": {
         "method": "POST",
         "url": "https://mcp.example.com/api/mcp",
-        "connectorIntent": { "status": "present", "value": "builtin-service" }
+        "connectorIntent": {
+          "status": "present",
+          "value": "builtin-service"
+        }
       },
       "expected": {
         "kind": "allow",
@@ -3334,7 +3603,11 @@
           "apis": [
             {
               "base": "https://mcp.example.com/api/mcp",
-              "auth": { "headers": { "Authorization": "Bearer builtin" } },
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer builtin"
+                }
+              },
               "permissions": []
             }
           ]
@@ -3351,13 +3624,168 @@
       "request": {
         "method": "POST",
         "url": "https://mcp.example.com/api/mcp",
-        "connectorIntent": { "status": "malformed" }
+        "connectorIntent": {
+          "status": "malformed"
+        }
       },
       "expected": {
         "kind": "allow",
         "firewallName": "builtin-service",
         "base": "https://mcp.example.com/api/mcp",
         "relativePath": "/"
+      }
+    },
+    {
+      "name": "DAV property discovery selects the read permission",
+      "firewalls": [
+        {
+          "name": "dav",
+          "apis": [
+            {
+              "base": "https://caldav.example.com",
+              "auth": {
+                "headers": {
+                  "Authorization": "Basic synthetic"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "calendar.read",
+                  "rules": [
+                    "PROPFIND /{principal}/calendars",
+                    "REPORT /{principal}/calendars/{calendar}"
+                  ]
+                },
+                {
+                  "name": "calendar.write",
+                  "rules": ["PUT /{principal}/calendars/{calendar}/{event}.ics"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "dav": {
+          "allow": ["calendar.read"],
+          "deny": [],
+          "unknownPolicy": "deny",
+          "ask": ["calendar.write"]
+        }
+      },
+      "request": {
+        "method": "PROPFIND",
+        "url": "https://caldav.example.com/123/calendars"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "dav",
+        "base": "https://caldav.example.com",
+        "relativePath": "/123/calendars",
+        "permission": "calendar.read",
+        "rule": "PROPFIND /{principal}/calendars"
+      }
+    },
+    {
+      "name": "DAV calendar query selects the read permission",
+      "firewalls": [
+        {
+          "name": "dav",
+          "apis": [
+            {
+              "base": "https://caldav.example.com",
+              "auth": {
+                "headers": {
+                  "Authorization": "Basic synthetic"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "calendar.read",
+                  "rules": [
+                    "PROPFIND /{principal}/calendars",
+                    "REPORT /{principal}/calendars/{calendar}"
+                  ]
+                },
+                {
+                  "name": "calendar.write",
+                  "rules": ["PUT /{principal}/calendars/{calendar}/{event}.ics"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "dav": {
+          "allow": ["calendar.read"],
+          "deny": [],
+          "unknownPolicy": "deny",
+          "ask": ["calendar.write"]
+        }
+      },
+      "request": {
+        "method": "REPORT",
+        "url": "https://caldav.example.com/123/calendars/home"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "dav",
+        "base": "https://caldav.example.com",
+        "relativePath": "/123/calendars/home",
+        "permission": "calendar.read",
+        "rule": "REPORT /{principal}/calendars/{calendar}"
+      }
+    },
+    {
+      "name": "DAV read access does not authorize event writes",
+      "firewalls": [
+        {
+          "name": "dav",
+          "apis": [
+            {
+              "base": "https://caldav.example.com",
+              "auth": {
+                "headers": {
+                  "Authorization": "Basic synthetic"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "calendar.read",
+                  "rules": [
+                    "PROPFIND /{principal}/calendars",
+                    "REPORT /{principal}/calendars/{calendar}"
+                  ]
+                },
+                {
+                  "name": "calendar.write",
+                  "rules": ["PUT /{principal}/calendars/{calendar}/{event}.ics"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "dav": {
+          "allow": ["calendar.read"],
+          "deny": [],
+          "unknownPolicy": "deny",
+          "ask": ["calendar.write"]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "https://caldav.example.com/123/calendars/home/event.ics"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "dav",
+        "base": "https://caldav.example.com",
+        "relativePath": "/123/calendars/home/event.ics",
+        "reason": "permission_denied",
+        "permissions": ["calendar.write"]
       }
     }
   ]

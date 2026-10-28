@@ -226,6 +226,7 @@ class BuildCacheTests(unittest.TestCase):
                 for compilation in ("true", "false", ""):
                     prepare = dependencies != "true" or compilation != "true"
                     needed = {
+                        "limit-compilation": compilation != "true",
                         "prepare": prepare,
                         "save-dependencies": dependencies != "true",
                         "verify-dependencies": dependencies != "true",
@@ -247,6 +248,44 @@ class BuildCacheTests(unittest.TestCase):
                             )
                         )
                         self.assertEqual(compare_literals(condition), needed[role])
+
+    def test_cache_lookups_can_skip_downloads_only_for_complete_warm_hits(self):
+        inputs = self.action["inputs"]
+        self.assertEqual(inputs["skip-restore-on-hit"]["default"], "false")
+        steps = {
+            step["id"]: step for step in self.action["runs"]["steps"] if "id" in step
+        }
+        for role in ("dependencies", "compilation"):
+            lookup = steps[f"lookup-{role}"]
+            self.assertTrue(lookup["with"]["lookup-only"])
+            self.assertNotIn("restore-keys", lookup["with"])
+        for skip in ("true", "false"):
+            for restore_compilation in ("true", "false"):
+                for dependencies in ("true", "false", ""):
+                    for compilation in ("true", "false", ""):
+                        restore = (
+                            skip != "true"
+                            or dependencies != "true"
+                            or (restore_compilation == "true" and compilation != "true")
+                        )
+                        values = {
+                            "inputs.skip-restore-on-hit": skip,
+                            "inputs.restore-compilation": restore_compilation,
+                            "steps.lookup-dependencies.outputs.cache-hit": dependencies,
+                            "steps.lookup-compilation.outputs.cache-hit": compilation,
+                        }
+                        for role in ("dependencies", "compilation"):
+                            condition = steps[role]["if"]
+                            for name, value in values.items():
+                                condition = condition.replace(name, repr(value))
+                            self.assertEqual(
+                                compare_literals(condition),
+                                restore
+                                and (
+                                    role != "compilation"
+                                    or restore_compilation == "true"
+                                ),
+                            )
 
     def test_producer_and_restore_paths_and_keys_match(self):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")

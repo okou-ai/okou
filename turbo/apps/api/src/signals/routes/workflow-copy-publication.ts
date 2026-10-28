@@ -1,23 +1,8 @@
 import { settle } from "../utils";
 import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { workflowAutomations as automations } from "@okouai/db/runtime/workflow-automation";
-import {
-  workflows,
-  workflowWebhookAutomations as hooks,
-  workflowUserAutomationThreads as bindings,
-} from "@okouai/db/schema/workflow";
-import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
 import { db$, writeDb$ } from "../external/db";
-import { workflowAutomationColumns } from "../services/autonomy-budget-schema.service";
-import { googleFormsAccountProjectionStatement } from "../services/google-forms-automation-account.service";
-import { consumeWorkflowAttachmentCandidateSql } from "../services/workflow-attachment-cleanup.service";
-import {
-  chatThreadCreatedEventSql as createdEventSql,
-  createdChatThreadFromRow,
-} from "../services/chat-thread-create.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   copySourcePlans,
   requireCopyTarget,
@@ -30,41 +15,53 @@ import {
   copyWebhooksQuery,
   copySourceResult,
   copyTransactionResult,
-  requirePreparedCopyUnchanged,
+  workflowCopyConflict,
   CopyPreparationConflict,
+  OFFICIAL_COPY_RECONFIGURE_MESSAGE,
   type WorkflowCopyInput,
 } from "./workflow-copy-source";
 import {
-  copyPublicationPlans,
-  requireCopySlugAvailable,
-  copyAutomationPlan,
-  requireCopiedRow,
+  copySlugConflict,
   copyConnectorSlugs,
   copyAccountReadPlan,
-  copyProjectionValues,
-  copyNotionInvalidation,
-  copyNeedsThread,
-  copyThreadColumns,
-  copyBindingConflict,
   type WorkflowCopyPublicationArgs as CopyArgs,
   type CopyWorkflowDatabaseResult as CopyResult,
 } from "./workflow-copy-publication-plans";
+import {
+  copiedAccountSelection,
+  type CopyAccountSnapshot,
+} from "./workflow-copy-account-publication";
+import {
+  workflowCopyPublicationSql,
+  copyPublicationResultSchema,
+} from "./workflow-copy-atomic-publication";
 export const readWorkflowCopySnapshot$ = command(
   async ({ get }, args: WorkflowCopyInput, signal: AbortSignal) => {
     const db = get(db$);
     const snapshotPromise = (async () => {
-      const p = copySourcePlans(args, "preparation");
-      const [target] = await db.select().from(p.target);
+      const p = copySourcePlans(args);
+      const parents = await db.select().from(p.parents);
+      const target = parents.find((row) => {
+        return row.id === args.targetAgentId;
+      });
       signal.throwIfAborted();
       requireCopyTarget(target, args.member);
       const [source] = await db.select().from(p.source);
       signal.throwIfAborted();
-      const sourceRow = requireCopySource(source, p.official);
+      const sourceRow = requireCopySource(source?.workflow, p.official);
+      if (!source) {
+        throw new Error("Workflow copy source observation is missing");
+      }
+      let acceptedReleaseId: string | null = null;
       let revision: OfficialWorkflowAcceptedRevision | null = null;
       if (p.official) {
         const [catalogRow] = await db.select().from(p.catalog);
         signal.throwIfAborted();
+        if (!catalogRow) {
+          throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
+        }
         const definition = requireCopyDefinition(catalogRow, p.definitionName);
+        acceptedReleaseId = catalogRow.releaseId;
         const query = copyRevisionQuery(definition);
         const [revisionRow] = await db.select().from(query);
         signal.throwIfAborted();
@@ -84,10 +81,22 @@ export const readWorkflowCopySnapshot$ = command(
         signal.throwIfAborted();
       }
       const webhooks = rows.length
-        ? await db.select().from(copyWebhooksQuery(rows, "preparation"))
+        ? await db.select().from(copyWebhooksQuery(rows))
         : [];
       signal.throwIfAborted();
-      const facts = { webhooks };
+      const facts = {
+        webhooks,
+        observation: {
+          workflowXmin: source.observedXmin,
+          parents: parents.map(({ id, xmin }) => {
+            return { id, xmin };
+          }),
+          automations: rows.map((row) => {
+            return { id: row.id, xmin: row.observedXmin };
+          }),
+          acceptedReleaseId,
+        },
+      };
       const current = copySourceResult(args, visible, m, rows, facts);
 
       return current;
@@ -103,127 +112,49 @@ export const readWorkflowCopySnapshot$ = command(
 export const commitWorkflowCopy$ = command(
   async ({ set }, args: CopyArgs, signal: AbortSignal): Promise<CopyResult> => {
     const db = set(writeDb$);
-    const p = copyPublicationPlans(args);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0044; new non-billing transactions are prohibited.
-    const publication = db.transaction(async (tx) => {
-      if (p.official) {
-        await tx.select().from(p.catalogLock);
-      }
-      // Preserve catalog -> parent Agent -> source row lock order.
-      await tx.select().from(p.parents);
-      const [target] = await tx.select().from(p.target);
-      requireCopyTarget(target, args.member);
-      const [locked] = await tx.select().from(p.source);
-      const sourceRow = requireCopySource(locked, p.official);
-      let revision: OfficialWorkflowAcceptedRevision | null = null;
-      if (p.official) {
-        const [catalogRow] = await tx.select().from(p.catalog);
-        const definition = requireCopyDefinition(catalogRow, p.definitionName);
-        const query = copyRevisionQuery(definition);
-        const [revisionRow] = await tx.select().from(query);
-        revision = requireCopyRevision(revisionRow);
-      }
-      // Official blueprint locks precede visibility; ordinary rows follow it.
-      let rows = revision ? await tx.select().from(p.automations) : [];
-      const m = revision
-        ? officialCopyMaterialization(sourceRow, revision, rows)
-        : null;
-      const [visibleRow] = await tx.select().from(p.visible);
-      const visible = requireCopyVisibility(visibleRow, args, p.official);
-      if (!revision) {
-        rows = await tx.select().from(p.automations);
-      }
-      const webhooks = rows.length
-        ? await tx.select().from(copyWebhooksQuery(rows))
-        : [];
-      const facts = { webhooks };
-      const current = copySourceResult(args, visible, m, rows, facts);
-
-      requirePreparedCopyUnchanged(current.source, args.source);
-      const [slugRow] = await tx.select().from(p.slug);
-      requireCopySlugAvailable(slugRow, current.source.sourceWorkflow.name);
-      if (args.cleanupJobId !== null) {
-        const { rowCount } = await tx.execute(
-          consumeWorkflowAttachmentCandidateSql(args.cleanupJobId),
-        );
-        if (rowCount !== 1) {
-          throw new CopyPreparationConflict(
-            "Workflow attachment preparation changed; retry the copy",
-          );
-        }
-      }
-      const [workflowRow] = await tx
-        .insert(workflows)
-        .values(p.workflow)
-        .returning(p.idColumns);
-      const inserted = requireCopiedRow(workflowRow, p.workflowError);
-      for (const automation of current.source.sourceAutomations) {
-        const c = copyAutomationPlan(args, automation);
-        const [row] = await tx
-          .insert(automations)
-          .values(c.values)
-          .returning(workflowAutomationColumns());
-        const copy = requireCopiedRow(row, p.automationError);
-        if (c.webhook) {
-          await tx
-            .insert(hooks)
-            .values({ ...c.webhook, automationId: copy.id });
-        }
-      }
-      const slugs = copyConnectorSlugs(current.source.sourceAutomations);
-      for (const slug of slugs) {
-        if (slug === "google-forms") {
-          await tx.execute(googleFormsAccountProjectionStatement(args));
-          signal.throwIfAborted();
-          continue;
-        }
-        const plan = copyAccountReadPlan(args, slug);
-        const projected = await tx.select(plan.columns).from(plan.source);
-        for (const row of projected) {
-          const values = copyProjectionValues(row, slug);
-          if (values) {
-            await tx
-              .update(automations)
-              .set(values)
-              .where(eq(automations.id, row.automation.id));
-            if (slug === "notion") {
-              const invalidation = copyNotionInvalidation(row.automation.id);
-              await tx
-                .update(notionWorkflowPendingEvents)
-                .set(invalidation.values)
-                .where(invalidation.condition);
-            }
-          }
-        }
-        signal.throwIfAborted();
-      }
-      // The shared user/org event sequence remains the final publication lock.
-      if (copyNeedsThread(current.source)) {
-        await tx
-          .insert(bindings)
-          .values(p.bindingValues)
-          .onConflictDoNothing(copyBindingConflict());
-        const [existing] = await tx.select().from(p.binding);
-        if (!existing?.chatThreadId) {
-          const plan = p.thread;
-          const [threadRow] = await tx
-            .with(...plan.defaults)
-            .insert(chatThreads)
-            .values(plan.values)
-            .onConflictDoNothing()
-            .returning(copyThreadColumns());
-          const created = requireCopiedRow(threadRow, p.threadError);
-          const thread = createdChatThreadFromRow(created, plan.values.agentId);
-          await tx.execute(createdEventSql({ orgId: args.orgId, thread }));
-          await tx
-            .update(bindings)
-            .set({ chatThreadId: thread.id, updatedAt: args.currentTime })
-            .where(p.bindingCondition);
-        }
-      }
+    const slugs = copyConnectorSlugs(args.source.sourceAutomations);
+    const projections: CopyAccountSnapshot[] = [];
+    for (const slug of slugs) {
+      const selection = copiedAccountSelection(args, slug);
+      const [account] = await db
+        .select(selection.columns)
+        .from(selection.source);
       signal.throwIfAborted();
-      return { kind: "ok" as const, inserted, accountConnectorSlugs: slugs };
-    });
-    return copyTransactionResult(await settle(publication, signal));
+      if (!account) {
+        throw new Error("Workflow copy account selection is missing");
+      }
+      const plan =
+        slug === "google-forms" ? null : copyAccountReadPlan(args, slug);
+      const rows = plan ? await db.select(plan.columns).from(plan.source) : [];
+      projections.push({ slug, connectorId: account.connectorId, rows });
+      signal.throwIfAborted();
+    }
+    const rows = parseRawRows(
+      copyPublicationResultSchema,
+      await db.execute(workflowCopyPublicationSql(args, projections)),
+    );
+    signal.throwIfAborted();
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Workflow copy publication result is missing");
+    }
+    if (!row.source_valid) {
+      return workflowCopyConflict();
+    }
+    if (row.slug_taken) {
+      return workflowCopyConflict(
+        copySlugConflict(args.source.sourceWorkflow.name),
+      );
+    }
+    if (!row.candidate_consumed) {
+      return workflowCopyConflict(
+        "Workflow attachment preparation changed; retry the copy",
+      );
+    }
+    return {
+      kind: "ok",
+      inserted: { id: args.targetWorkflowId },
+      accountConnectorSlugs: slugs,
+    };
   },
 );

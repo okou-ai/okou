@@ -4,6 +4,9 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BLANK_SANDBOX_STATUS_READER_COMMIT=febec8a3399be74b0f14a89cb9f42e39dd5ce69f
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
+# #43433 publishes each default Agent with its reference and never adopts an
+# existing custom Agent. Atomic configuration updates rely on that identity.
+readonly IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT=01d21f7c5857795104c27cd54e724f2ced2d683e
 # #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
@@ -29,6 +32,10 @@ readonly MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT=b220a504c5e633de162791f1216c4458
 # #42572 removed invoice-paid automation SQL before its dedicated tables retire.
 # Preserve the shared Stripe Connect deauthorization receiver from that release.
 readonly STRIPE_INVOICE_PAID_RETIREMENT_COMMIT=190cdfba6440b50469117758156616447d707b81
+# #43148 removed every citation-table reader and writer before its contraction.
+readonly RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT=26bacab4693d32e4a4453dce5c84e565d7129b9c
+# DAV catalog rules require #43517's API/Runner method support and rollout.
+readonly DAV_FIREWALL_READER_COMMIT=c8de6212dc54a5aae0d4658acf1afa6a35f939ab
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -107,6 +114,7 @@ readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/gue
 readonly DECODED_STORAGE_CAPACITY_READER_PATH=.github/rollback-floors/decoded-storage-capacity-reader
 readonly DATA_ROUTER_RESPONSE_ID_PATH=.github/rollback-floors/data-router-response-id
 readonly DESKTOP_MANIFEST_R2_READER_PATH=.github/rollback-floors/desktop-manifest-r2-reader
+readonly DATA_ROUTER_STATELESS_MCP_API_PATH=.github/rollback-floors/data-router-stateless-mcp-api
 readonly HOME_CACHE_CAPACITY_READER_PATH=.github/rollback-floors/home-cache-capacity-reader
 readonly WORKFLOW_ATTACHMENTS_DIRECT_PATH=.github/rollback-floors/workflow-attachments-direct
 readonly STORAGE_DEBUG_CONTRACTS_PATH=.github/rollback-floors/storage-debug-contracts
@@ -174,6 +182,10 @@ if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
 fi
 
+if ! git merge-base --is-ancestor "$IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates immutable default Agent identity: ${IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT}."
+fi
+
 if ! git merge-base --is-ancestor "$STRUCTURED_DISK_TELEMETRY_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the structured-only disk telemetry reader: ${STRUCTURED_DISK_TELEMETRY_READER_COMMIT}."
 fi
@@ -192,6 +204,14 @@ fi
 
 if ! git merge-base --is-ancestor "$STRIPE_INVOICE_PAID_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Stripe invoice-paid automation retirement: ${STRIPE_INVOICE_PAID_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Run output memory citation retirement: ${RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates DAV connector preparation: ${DAV_FIREWALL_READER_COMMIT}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
@@ -833,6 +853,22 @@ if ! git merge-base --is-ancestor "$desktop_manifest_r2_reader_commit" "$TARGET_
   fail "Rollback target predates the Desktop manifest R2 reader: ${desktop_manifest_r2_reader_commit}."
 fi
 
+# Router serves only stateless MCP 2026-07-28. #43447 moved every API request to
+# that revision; earlier APIs send envelope-less JSON-RPC that Router rejects,
+# so Run-end billing lookups would fail without retry.
+if ! data_router_stateless_mcp_api_commit=$(git show "origin/main:${DATA_ROUTER_STATELESS_MCP_API_PATH}"); then
+  fail "Cannot read the Data Router stateless MCP API rollback floor from main."
+fi
+if [[ ! "$data_router_stateless_mcp_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Data Router stateless MCP API rollback floor."
+fi
+if ! git merge-base --is-ancestor "$data_router_stateless_mcp_api_commit" origin/main; then
+  fail "Data Router stateless MCP API rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$data_router_stateless_mcp_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Data Router stateless MCP requests: ${data_router_stateless_mcp_api_commit}."
+fi
+
 # Larger Runner inventories remain reachable during independent API rollback.
 # Keep #43397's prepared receiver even if the selected Runner advertises less.
 if ! home_cache_capacity_reader_commit=$(git show "origin/main:${HOME_CACHE_CAPACITY_READER_PATH}"); then
@@ -881,6 +917,9 @@ runner_tag=$(runner_image_release_tag "$runner_version")
 runner_tag_commit=$(git rev-list -n 1 "$runner_tag" || true)
 if [ -z "$runner_tag_commit" ] || ! git merge-base --is-ancestor "$runner_tag_commit" "$TARGET_COMMIT"; then
   fail "Runner release ${runner_tag} is not reachable from ${TARGET_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates DAV firewall method support: ${DAV_FIREWALL_READER_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$BLANK_SANDBOX_STATUS_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the blank sandbox status reader: ${BLANK_SANDBOX_STATUS_READER_COMMIT}."

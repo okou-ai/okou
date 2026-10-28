@@ -7,7 +7,6 @@ struct ChatDetailView: View {
   let topContentInset: CGFloat
   let sidebar: SidebarInteraction?
   let mentionSource: ComposerMentionSource?
-  let connectorsEnabled: Bool
   private var thread: ChatThread { conversation.thread }
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -16,22 +15,18 @@ struct ChatDetailView: View {
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
-  @State private var messageToSelect: ChatMessage?
   @State private var usageDetails: UsageDetails?
-  @State private var selectionToQuote: ChatFeedbackSelection?
 
   private struct UsageDetails: Identifiable { let id: String }
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0,
-    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil,
-    connectorsEnabled: Bool = false
+    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil
   ) {
     self.conversation = conversation
     self.topContentInset = topContentInset
     self.sidebar = sidebar
     self.mentionSource = mentionSource
-    self.connectorsEnabled = connectorsEnabled
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -92,6 +87,7 @@ struct ChatDetailView: View {
       isLoadingHistory: conversation.isLoading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       rowsPresented: scrolling.rowsPresented,
+      quote: conversation.quote,
       refresh: {
         await conversation.refresh()
         await conversation.connectorActions.refreshKnown()
@@ -141,8 +137,6 @@ struct ChatDetailView: View {
       if let request { scrolling.reveal(request.position) }
     }
     .onDisappear {
-      selectionToQuote = nil
-      messageToSelect = nil
       scrolling.deactivate()
       conversation.connectorActions.cancel()
       conversation.setDetailVisible(false, owner: activityOwner)
@@ -162,21 +156,6 @@ struct ChatDetailView: View {
       )
     ) {
       MessageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
-    }
-    .sheet(
-      item: $messageToSelect,
-      onDismiss: {
-        if let selection = selectionToQuote { conversation.quote(selection) }
-        selectionToQuote = nil
-      }
-    ) { message in
-      MessageTextSelectionSheet(
-        text: message.copyText, message: message,
-        quote: message.role == .assistant
-          ? { selection in
-            selectionToQuote = selection
-            messageToSelect = nil
-          } : nil)
     }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .sheet(item: $usageDetails) { selection in
@@ -217,7 +196,7 @@ struct ChatDetailView: View {
             await scrolling.send()
           }
         }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
-        connectorSelection: connectorsEnabled ? conversation.modelSelection?.connectors : nil,
+        connectorSelection: conversation.modelSelection?.connectors,
         mentionSource: mentionSource,
         workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
         sendTransition: scrolling.sendTransition
@@ -333,12 +312,6 @@ struct ChatDetailView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-    .contextMenu {
-      if !message.copyText.isEmpty {
-        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.copyText }
-        Button("Select Text", systemImage: "text.cursor") { messageToSelect = message }
-      }
-    }
   }
 
   private var assistantAvatar: some View {

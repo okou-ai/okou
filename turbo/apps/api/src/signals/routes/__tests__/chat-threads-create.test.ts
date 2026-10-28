@@ -955,75 +955,96 @@ describe("POST /api/chat-threads", () => {
     expect(afterDisconnect.body.selections).toStrictEqual([]);
   });
 
-  it("rejects a required built-in account when deletion wins concurrent creation", async () => {
-    const fixture = await seedAgent();
-    const account = await connectorApi.connectManualGrant(
-      fixture.actor,
-      "openai",
-      "api-token",
-      { apiKey: "concurrent-create-key" },
-      fixture.agentId,
-    );
-    const token = await claimedToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const clientThreadId = randomUUID();
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const [, created] = await Promise.all([
-      accept(
-        connectorAccountsClient().delete({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { connectionId: account.id },
-          body: { target: { kind: "builtin", connectorSlug: "openai" } },
-        }),
-        [200],
-      ),
-      accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            clientThreadId,
-            agentId: fixture.agentId,
-            model: WORKSPACE_DEFAULT_MODEL,
-            connectorSelectionPolicy: "required",
-            connectorSelections: [
-              {
-                connectionId: account.id,
-                target: { kind: "builtin", connectorSlug: "openai" },
-              },
-            ],
-          },
-        }),
-        [201, 400],
-      ),
-    ]);
-    if (created.status === 400) {
-      expect(created.body.error.code).toBe("CONNECTOR_ACCOUNT_UNAVAILABLE");
-      await accept(
-        metadataClient().get({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: clientThreadId },
-        }),
-        [404],
+  it.each(["required", "legacy"] as const)(
+    "handles a built-in account deleted during chat creation (%s clients)",
+    async (policy) => {
+      const fixture = await seedAgent();
+      const creationPolicy =
+        policy === "required" ? { connectorSelectionPolicy: policy } : {};
+      const account = await connectorApi.connectManualGrant(
+        fixture.actor,
+        "openai",
+        "api-token",
+        { apiKey: "concurrent-create-key" },
+        fixture.agentId,
       );
-      await expect(
-        readCreatedThreadEvents(clientThreadId, token),
-      ).resolves.toHaveLength(0);
-    } else {
-      const selected = await accept(
-        connectorSelectionsClient().get({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: clientThreadId },
-        }),
-        [200],
-      );
-      expect(selected.body.selections).toStrictEqual([]);
-      await expect(
-        readCreatedThreadEvents(clientThreadId, token),
-      ).resolves.toHaveLength(1);
-    }
-  });
+      const token = await claimedToken({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+      });
+      const clientThreadId = randomUUID();
+      createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+      const [, created] = await Promise.all([
+        accept(
+          connectorAccountsClient().delete({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { connectionId: account.id },
+            body: { target: { kind: "builtin", connectorSlug: "openai" } },
+          }),
+          [200],
+        ),
+        accept(
+          threadsClient().create({
+            headers: { authorization: `Bearer ${token}` },
+            body: {
+              clientThreadId,
+              agentId: fixture.agentId,
+              model: WORKSPACE_DEFAULT_MODEL,
+              ...creationPolicy,
+              connectorSelections: [
+                {
+                  connectionId: account.id,
+                  target: { kind: "builtin", connectorSlug: "openai" },
+                },
+              ],
+            },
+          }),
+          [201, 400],
+        ),
+      ]);
+      if (created.status === 400) {
+        expect(created.body.error.code).toBe("CONNECTOR_ACCOUNT_UNAVAILABLE");
+        await accept(
+          metadataClient().get({
+            headers: { authorization: `Bearer ${token}` },
+            params: { id: clientThreadId },
+          }),
+          [404],
+        );
+        await expect(
+          readCreatedThreadEvents(clientThreadId, token),
+        ).resolves.toHaveLength(0);
+        const recovered = await accept(
+          threadsClient().create({
+            headers: { authorization: `Bearer ${token}` },
+            body: {
+              ...creationPolicy,
+              clientThreadId,
+              agentId: fixture.agentId,
+              model: WORKSPACE_DEFAULT_MODEL,
+            },
+          }),
+          [201],
+        );
+        expect(recovered.body.id).toBe(clientThreadId);
+        await expect(
+          readCreatedThreadEvents(clientThreadId, token),
+        ).resolves.toHaveLength(1);
+      } else {
+        const selected = await accept(
+          connectorSelectionsClient().get({
+            headers: { authorization: `Bearer ${token}` },
+            params: { id: clientThreadId },
+          }),
+          [200],
+        );
+        expect(selected.body.selections).toStrictEqual([]);
+        await expect(
+          readCreatedThreadEvents(clientThreadId, token),
+        ).resolves.toHaveLength(1);
+      }
+    },
+  );
 
   it.each(["required", "legacy"] as const)(
     "creates exact custom HTTP and MCP connector selections (%s clients)",
@@ -1258,7 +1279,7 @@ describe("POST /api/chat-threads", () => {
         ),
       ]);
       if (concurrentThread.status === 201) {
-        // Creation won; the later disconnect removes its saved preference.
+        // The chat committed; disconnect removes any saved preference.
         const afterConcurrentDelete = await accept(
           connectorSelectionsClient().get({
             headers: { authorization: `Bearer ${token}` },
@@ -1271,8 +1292,7 @@ describe("POST /api/chat-threads", () => {
           readCreatedThreadEvents(concurrentThreadId, token),
         ).resolves.toHaveLength(1);
       } else {
-        // Deletion won; initialization is fully rolled back and is recoverable.
-        expect(policy).toBe("required");
+        // Either client policy rejects creation if an account FK check fails.
         expect(concurrentThread.body.error.code).toBe(
           "CONNECTOR_ACCOUNT_UNAVAILABLE",
         );

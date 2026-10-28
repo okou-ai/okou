@@ -7,9 +7,8 @@ import XCTest
 @MainActor
 final class ChatCacheTests: XCTestCase {
   func testClosedCacheRejectsLateWritesAndANewConnectionRetainsCommittedHistory() async throws {
-    let directory = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let cache = ChatCache(scope: scope(), directory: directory)
+    let directory = CacheTestDirectory(owner: self)
+    let cache = directory.cache(scope: scope())
     try await cache.replaceHistory(
       threadID: "chat", rows: [event(1)],
       cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
@@ -20,20 +19,16 @@ final class ChatCacheTests: XCTestCase {
         cursor: ChatCacheCursor(eventID: event(2).id, seqID: 2), schemaVersion: 8)
       XCTFail("A retired connection must reject late work")
     } catch ChatCacheError.unavailable {}
-    let reopened = ChatCache(scope: scope(), directory: directory)
+    let reopened = directory.cache(scope: scope())
     let history = try await reopened.loadHistory(threadID: "chat")
     XCTAssertEqual(history?.rows, [event(1)])
     await reopened.close()
   }
 
   func testSharedCacheImportsThePrivateCacheWithoutReplacingNewerExtensionHistory() async throws {
-    let legacyRoot = temporaryDirectory()
-    let sharedRoot = temporaryDirectory()
-    defer {
-      try? FileManager.default.removeItem(at: legacyRoot)
-      try? FileManager.default.removeItem(at: sharedRoot)
-    }
-    let legacy = ChatCache(scope: scope(), directory: legacyRoot)
+    let legacyRoot = CacheTestDirectory(owner: self)
+    let sharedRoot = CacheTestDirectory(owner: self)
+    let legacy = legacyRoot.cache(scope: scope())
     try await legacy.replaceThreadList(
       snapshot: Data(#"{"chatThreads":[]}"#.utf8),
       cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
@@ -49,11 +44,11 @@ final class ChatCacheTests: XCTestCase {
     try await legacy.replaceHistory(
       threadID: "other", rows: [event(1)],
       cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
-    let extensionCache = ChatCache(scope: scope(), directory: sharedRoot)
+    let extensionCache = sharedRoot.cache(scope: scope())
     try await extensionCache.replaceHistory(
       threadID: "chat", rows: [event(1), event(2)],
       cursor: ChatCacheCursor(eventID: event(2).id, seqID: 2), schemaVersion: 8)
-    let app = ChatCache(scope: scope(), directory: sharedRoot, migratingFrom: legacyRoot)
+    let app = sharedRoot.cache(scope: scope(), migratingFrom: legacyRoot.url)
     let newest = try await app.loadHistory(threadID: "chat")
     XCTAssertEqual(newest?.rows, [event(1), event(2)])
     let imported = try await app.loadHistory(threadID: "other")
@@ -65,10 +60,9 @@ final class ChatCacheTests: XCTestCase {
   }
 
   func testOverlappingConnectionsCannotMoveHistoryOrListCursorsBackwards() async throws {
-    let directory = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let first = ChatCache(scope: scope(), directory: directory)
-    let second = ChatCache(scope: scope(), directory: directory)
+    let directory = CacheTestDirectory(owner: self)
+    let first = directory.cache(scope: scope())
+    let second = directory.cache(scope: scope())
     try await first.replaceHistory(
       threadID: "chat", rows: [event(1)],
       cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)

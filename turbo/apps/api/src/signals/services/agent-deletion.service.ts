@@ -17,10 +17,6 @@ import {
   agentDeletionIdentityCondition,
   agentDeletionAutomationCondition,
   agentDeletionThreadSequencesSql,
-  conversationReferenceBatches,
-  conversationBlobLockCondition,
-  conversationBlobReleaseValues,
-  conversationDeletionDatabaseError,
   type DeleteAgentArgs,
 } from "./agent-deletion-queries";
 import { conflict } from "../../lib/error";
@@ -31,6 +27,10 @@ import { agentPublicationFenceDeletionSql } from "./agent-lifecycle.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
   deletedRunHistoryReferences,
+  conversationReferenceBatches,
+  conversationBlobLockCondition,
+  conversationBlobReleaseValues,
+  conversationDeletionDatabaseError,
   logCommittedConversationDeletion,
 } from "./conversation-history-deletion.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";

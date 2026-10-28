@@ -27,6 +27,30 @@ export type ModelRequestObservation = {
   transportFailure?: PiModelTransportFailure;
 };
 
+/** Inspect the actual response before SDKs can turn a nested message into prose. */
+function opaqueBadRequestReason(
+  errorBody: string,
+  httpStatus: number,
+): KnownRunFailureReason | undefined {
+  if (httpStatus !== 400) return undefined;
+  try {
+    const body: unknown = JSON.parse(errorBody);
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      !Array.isArray(body) &&
+      Object.keys(body).length === 1 &&
+      "detail" in body &&
+      body.detail === "Bad Request"
+    ) {
+      return "provider_bad_request";
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 /** Decorate both native consumption paths without starting another stream pump. */
 export class ModelRequestEventStream extends AssistantMessageEventStream {
   private diagnosed = false;
@@ -41,6 +65,8 @@ export class ModelRequestEventStream extends AssistantMessageEventStream {
   private diagnose(message: AssistantMessage): AssistantMessage {
     if (!this.diagnosed && message.stopReason === "error") {
       this.diagnosed = true;
+      const { failureReason: responseReason, ...requestObservation } =
+        this.observation;
       const terminalReason = classifyProviderFailure(
         message.errorMessage ?? "",
         this.observation.httpStatus,
@@ -60,21 +86,32 @@ export class ModelRequestEventStream extends AssistantMessageEventStream {
               this.observation.httpStatus,
             )
           : undefined;
-      const observedReason = codeReason ?? this.observation.failureReason;
-      const failureReason =
+      // Opaque request rejection must not outrank any semantic failure evidence.
+      const observedReason =
+        codeReason ??
+        (responseReason === "provider_bad_request"
+          ? undefined
+          : responseReason);
+      const specificReason =
         terminalReason === "provider_queue_timeout" &&
         (observedReason === undefined ||
           observedReason === "provider_server_error" ||
           observedReason === "provider_overloaded")
           ? terminalReason
           : (observedReason ?? terminalReason);
+      const failureReason =
+        specificReason ??
+        (responseReason === "provider_bad_request" &&
+        message.api === "openai-codex-responses"
+          ? responseReason
+          : undefined);
       message.diagnostics = [
         ...(message.diagnostics ?? []),
         {
           type: "okou_model_request",
           timestamp: Date.now(),
           details: {
-            ...this.observation,
+            ...requestObservation,
             ...(failureReason ? { failureReason } : {}),
           },
         },
@@ -138,7 +175,9 @@ export function streamWithModelRequestDiagnostics(
     preserveProviderErrorStatus(
       guardPiUpstreamErrorBody(observedFetch),
       (status, body) => {
-        observation.failureReason = classifyProviderFailure(body, status);
+        observation.failureReason =
+          classifyProviderFailure(body, status) ??
+          opaqueBadRequestReason(body, status);
       },
     ),
   );

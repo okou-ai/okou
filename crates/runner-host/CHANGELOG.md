@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.45](https://github.com/okou-ai/okou/compare/runner-host-v0.9.44...runner-host-v0.9.45) (2026-10-28)
+
+## [0.9.44](https://github.com/okou-ai/okou/compare/runner-host-v0.9.43...runner-host-v0.9.44) (2026-10-28)
+
+
+### Bug Fixes
+
+* **runner-host:** retain base-dir locks through physical workspace gc deletion ([#43578](https://github.com/okou-ai/okou/issues/43578)) ([f03a62f](https://github.com/okou-ai/okou/commit/f03a62fe68119136605501cdbb9db4efd5fb00c2))
+* **runner:** retain service locks through physical version gc deletion ([#43571](https://github.com/okou-ai/okou/issues/43571)) ([16cc08b](https://github.com/okou-ai/okou/commit/16cc08b8c86cd8c20f1b6e65b601acfd7cc9cd4d))
+
+## [0.9.43](https://github.com/okou-ai/okou/compare/runner-host-v0.9.42...runner-host-v0.9.43) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-host:** retain gc lock custody through physical removal ([#43541](https://github.com/okou-ai/okou/issues/43541)) ([1a38580](https://github.com/okou-ai/okou/commit/1a3858059ececb7582b6231763a386a85d9922a9))
+
+## [0.9.42](https://github.com/okou-ai/okou/compare/runner-host-v0.9.41...runner-host-v0.9.42) (2026-10-27)
+
 ## [0.9.41](https://github.com/okou-ai/okou/compare/runner-host-v0.9.40...runner-host-v0.9.41) (2026-10-27)
 
 ## [0.9.40](https://github.com/okou-ai/okou/compare/runner-host-v0.9.39...runner-host-v0.9.40) (2026-10-27)

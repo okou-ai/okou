@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, HashSet};
+use std::fs::File;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 
+use nix::fcntl::Flock;
 use tracing::{info, warn};
 
 use crate::cmd::service;
@@ -21,15 +23,16 @@ use super::report::GcReport;
 
 type ServiceUninstallFuture<'a> = Pin<Box<dyn Future<Output = RunnerResult<()>> + 'a>>;
 type ServiceUninstallFn = for<'a> fn(&'a service::RunnerServiceUnit) -> ServiceUninstallFuture<'a>;
-type RemoveDirAllFuture<'a> = Pin<Box<dyn Future<Output = std::io::Result<()>> + 'a>>;
-type RemoveDirAllFn = for<'a> fn(&'a Path) -> RemoveDirAllFuture<'a>;
+type RemoveDirAllFuture<'a> =
+    Pin<Box<dyn Future<Output = (Flock<File>, std::io::Result<()>)> + 'a>>;
+type RemoveDirAllFn = for<'a> fn(&'a Path, Flock<File>) -> RemoveDirAllFuture<'a>;
 
 fn real_uninstall_service_unit(unit: &service::RunnerServiceUnit) -> ServiceUninstallFuture<'_> {
     Box::pin(service::uninstall_service_unit(unit))
 }
 
-fn real_remove_dir_all(path: &Path) -> RemoveDirAllFuture<'_> {
-    Box::pin(tokio::fs::remove_dir_all(path))
+fn real_remove_dir_all(path: &Path, lock: Flock<File>) -> RemoveDirAllFuture<'_> {
+    Box::pin(runner_host::gc::remove_dir_all_with_lock(path, lock))
 }
 
 /// Parse `v<major>.<minor>.<patch>` into a tuple for ordering. Returns `None`
@@ -507,15 +510,21 @@ async fn version_paths_are_removable(
     true
 }
 
-async fn remove_version_dir(path: &Path, remove_dir_all: RemoveDirAllFn) -> bool {
-    match remove_dir_all(path).await {
+async fn remove_version_dir(
+    path: &Path,
+    lock: Flock<File>,
+    remove_dir_all: RemoveDirAllFn,
+) -> (Flock<File>, bool) {
+    let (lock, result) = remove_dir_all(path, lock).await;
+    let removed = match result {
         Ok(()) => true,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
         Err(error) => {
             warn!("cannot remove {}: {error}", path.display());
             false
         }
-    }
+    };
+    (lock, removed)
 }
 
 #[cfg(test)]
@@ -533,18 +542,21 @@ fn failing_fake_uninstall_service_unit(
 }
 
 #[cfg(test)]
-fn failing_fake_remove_config_dir(path: &Path) -> RemoveDirAllFuture<'_> {
+fn failing_fake_remove_config_dir(path: &Path, lock: Flock<File>) -> RemoveDirAllFuture<'_> {
     Box::pin(async move {
         if path
             .parent()
             .and_then(Path::file_name)
             .is_some_and(|name| name == "runners")
         {
-            Err(std::io::Error::other(
-                "injected runner config removal failure",
-            ))
+            (
+                lock,
+                Err(std::io::Error::other(
+                    "injected runner config removal failure",
+                )),
+            )
         } else {
-            tokio::fs::remove_dir_all(path).await
+            runner_host::gc::remove_dir_all_with_lock(path, lock).await
         }
     })
 }
@@ -720,7 +732,7 @@ async fn gc_versions_with_analysis_and_operations(
         if dry_run {
             info!("[dry-run] would remove version {name}");
         } else {
-            let Some(service_lock) = service_lock.as_ref() else {
+            let Some(service_lock) = service_lock else {
                 warn!("version {name}: service lock missing before delete, skipping");
                 continue;
             };
@@ -735,11 +747,15 @@ async fn gc_versions_with_analysis_and_operations(
 
             // Remove credential-bearing config before its binary discovery
             // anchor. Failures leave the version visible for a later GC pass.
-            if !remove_version_dir(&version_config, remove_dir_all).await {
+            let (service_lock, config_removed) =
+                remove_version_dir(&version_config, service_lock, remove_dir_all).await;
+            if !config_removed {
                 continue;
             }
 
-            if !remove_version_dir(&version_bin, remove_dir_all).await {
+            let (service_lock, bin_removed) =
+                remove_version_dir(&version_bin, service_lock, remove_dir_all).await;
+            if !bin_removed {
                 continue;
             }
 

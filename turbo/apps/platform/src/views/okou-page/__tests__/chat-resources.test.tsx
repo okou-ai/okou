@@ -28,12 +28,14 @@ import {
 } from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
-const { setupOverflowResources, setupResources } =
+const { setupOverflowResources, setupResources, recordPreferenceUpdates } =
   createChatResourcesHelpers(context);
 
 test("Keep an empty chat closed through presses while it loads, then show its hint when pressed", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
+  const preferenceSaved = createDeferredPromise<void>(context.signal);
+  recordPreferenceUpdates(true, preferenceSaved.promise);
   mockArtifactConversation(context, {
     catalog: [],
     artifactRuns: () => {
@@ -74,6 +76,8 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
   });
   expect(resourceButton()).not.toHaveAttribute("aria-disabled");
   expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  // The saved preference is already on, so opening the empty hint must not
+  // wait for another preference save.
   click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
   await expect(
@@ -84,6 +88,8 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
       "Files and chats from this chat will show up here.",
     ),
   ).toBeInTheDocument();
+  expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+  preferenceSaved.resolve();
 });
 
 test("Draw a pressed panel only once its artifacts and related chats have answered", async () => {

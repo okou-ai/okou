@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.7.1",
+  "version": "2.8.6",
   "private": true,
   "type": "module",
   "exports": {
@@ -69,7 +69,9 @@
     "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts",
     "test:thread-predecessor-backfill": "tsx scripts/test-thread-predecessor-backfill.ts",
     "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts",
-    "test:workflow-attachments": "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts"
+    "test:run-output-memory-citation-retirement": "tsx scripts/test-run-output-memory-citation-retirement.ts",
+    "test:workflow-attachments": "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts",
+    "test:workflow-storage-retirement": "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",

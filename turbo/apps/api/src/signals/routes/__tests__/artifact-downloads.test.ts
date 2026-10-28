@@ -13,6 +13,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { expect, test } from "vitest";
@@ -34,6 +35,7 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -131,6 +133,14 @@ const siteFiles = Object.freeze([
 async function fixture() {
   const bdd = createBddApi(context);
   const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected an organization");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    { [FeatureSwitchKey.HostedSiteVisibility]: false },
+  );
   await createRunsApi(context).grantProEntitlement(actor);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");

@@ -48,6 +48,11 @@ export const iosNotificationsContract = c.router({
         .min(1)
         .max(Number.MAX_SAFE_INTEGER)
         .optional(),
+      badgeClearSequence: number()
+        .int()
+        .min(1)
+        .max(Number.MAX_SAFE_INTEGER)
+        .optional(),
       notifications: array(
         object({
           identifier: string().min(1).max(512),
@@ -59,6 +64,7 @@ export const iosNotificationsContract = c.router({
     responses: {
       200: object({
         unreadCount: number().int().nonnegative(),
+        badgeCount: number().int().nonnegative().optional(),
         removeIdentifiers: array(string()),
       }),
       400: apiErrorSchema,

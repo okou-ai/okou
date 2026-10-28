@@ -15,14 +15,15 @@ import {
   BrowserInputRequestError,
   withBrowserInputFieldPosition,
 } from "./browser-input-request-error";
+import {
+  BrowserCdpClient as CdpClient,
+  CDP_COMMAND_TIMEOUT_MS,
+} from "./browser-cdp";
 
 const AGENT_BROWSER_TIMEOUT_MS = 15_000;
 const AGENT_BROWSER_MAX_OUTPUT_BYTES = 256 * 1024;
 const BROWSER_CAPTURE_TIMEOUT_MS = 30_000;
-const CDP_CONNECT_TIMEOUT_MS = 5_000;
-const CDP_COMMAND_TIMEOUT_MS = 5_000;
 const CDP_CLEANUP_TIMEOUT_MS = 1_000;
-const CDP_MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_PAGE_TARGETS = 50;
 
 const SET_PAGE_MARKER_SCRIPT =
@@ -68,12 +69,6 @@ const agentBrowserMarkerResponseSchema = object({
   }).passthrough(),
 }).passthrough();
 
-const cdpResponseSchema = object({
-  id: number().int().positive(),
-  result: zUnknown().optional(),
-  error: zUnknown().optional(),
-}).passthrough();
-
 const cdpTargetsSchema = object({
   targetInfos: array(
     object({
@@ -104,12 +99,6 @@ const cdpNodeSchema = object({
     nodeName: string(),
   }).passthrough(),
 });
-
-interface PendingCommand {
-  readonly resolve: (value: unknown) => void;
-  readonly reject: (error: Error) => void;
-  readonly timer: ReturnType<typeof setTimeout>;
-}
 
 interface AttachedPage {
   readonly targetId: string;
@@ -292,173 +281,6 @@ function isHttpPage(url: string): boolean {
     return protocol === "http:" || protocol === "https:";
   } catch {
     return false;
-  }
-}
-
-function closeWebSocket(socket: WebSocket, code?: number): void {
-  if (
-    socket.readyState !== WebSocket.CONNECTING &&
-    socket.readyState !== WebSocket.OPEN
-  ) {
-    return;
-  }
-  try {
-    socket.close(code);
-  } catch {
-    // Closing a failed connection is best-effort; the command still rejects.
-  }
-}
-
-class CdpClient {
-  private nextId = 1;
-  private readonly pending = new Map<number, PendingCommand>();
-  private failed = false;
-
-  private constructor(
-    private readonly socket: WebSocket,
-    private readonly deadline: number,
-  ) {
-    socket.addEventListener("message", (event) => {
-      this.handleMessage(event);
-    });
-    socket.addEventListener("error", () => {
-      this.failAll();
-    });
-    socket.addEventListener("close", () => {
-      this.failAll();
-    });
-  }
-
-  static async connect(url: string, deadline: number): Promise<CdpClient> {
-    const connectTimeoutMs = boundedTimeout(CDP_CONNECT_TIMEOUT_MS, deadline);
-    let socket: WebSocket;
-    try {
-      socket = new WebSocket(url);
-    } catch {
-      throw browserConnectionError("Could not connect to the attached Browser");
-    }
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        closeWebSocket(socket);
-        reject(
-          browserTimeoutError("The Browser inspection connection timed out"),
-        );
-      }, connectTimeoutMs);
-      const cleanup = () => {
-        clearTimeout(timer);
-        socket.removeEventListener("open", onOpen);
-        socket.removeEventListener("error", onFailure);
-        socket.removeEventListener("close", onFailure);
-      };
-      const onOpen = () => {
-        cleanup();
-        resolve();
-      };
-      const onFailure = () => {
-        cleanup();
-        closeWebSocket(socket);
-        reject(
-          browserConnectionError("Could not connect to the attached Browser"),
-        );
-      };
-      socket.addEventListener("open", onOpen);
-      socket.addEventListener("error", onFailure);
-      socket.addEventListener("close", onFailure);
-    });
-    return new CdpClient(socket, deadline);
-  }
-
-  private handleMessage(event: MessageEvent): void {
-    if (
-      typeof event.data !== "string" ||
-      event.data.length > CDP_MAX_RESPONSE_BYTES
-    ) {
-      this.failAll();
-      return;
-    }
-    let raw: unknown;
-    try {
-      raw = JSON.parse(event.data);
-    } catch {
-      this.failAll();
-      return;
-    }
-    const response = cdpResponseSchema.safeParse(raw);
-    if (!response.success) {
-      return;
-    }
-    const pending = this.pending.get(response.data.id);
-    if (!pending) {
-      return;
-    }
-    clearTimeout(pending.timer);
-    this.pending.delete(response.data.id);
-    if (response.data.error !== undefined) {
-      pending.reject(
-        browserCaptureError("The Browser target changed during capture"),
-      );
-      return;
-    }
-    pending.resolve(response.data.result);
-  }
-
-  private failAll(): void {
-    if (this.failed) {
-      return;
-    }
-    this.failed = true;
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(
-        browserConnectionError("The Browser inspection connection closed"),
-      );
-    }
-    this.pending.clear();
-  }
-
-  async send(
-    method: string,
-    params: Readonly<Record<string, unknown>> = {},
-    sessionId?: string,
-    timeoutMs = CDP_COMMAND_TIMEOUT_MS,
-  ): Promise<unknown> {
-    if (this.failed || this.socket.readyState !== WebSocket.OPEN) {
-      throw browserConnectionError(
-        "The Browser inspection connection is closed",
-      );
-    }
-    const id = this.nextId;
-    this.nextId += 1;
-    return await new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(
-        () => {
-          this.pending.delete(id);
-          reject(browserTimeoutError("The Browser target did not respond"));
-        },
-        boundedTimeout(timeoutMs, this.deadline),
-      );
-      this.pending.set(id, { resolve, reject, timer });
-      try {
-        this.socket.send(
-          JSON.stringify({
-            id,
-            method,
-            params,
-            ...(sessionId ? { sessionId } : {}),
-          }),
-        );
-      } catch {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(browserConnectionError("Could not inspect the Browser target"));
-      }
-    });
-  }
-
-  close(): void {
-    this.failAll();
-    closeWebSocket(this.socket, 1000);
   }
 }
 
@@ -846,6 +668,15 @@ export async function captureBrowserInputTargets(
     client = await CdpClient.connect(
       agentBrowserCdpUrl(sessionName, deadline),
       deadline,
+      {
+        connection: browserConnectionError,
+        timeout: browserTimeoutError,
+        command: () => {
+          return browserCaptureError(
+            "The Browser target changed during capture",
+          );
+        },
+      },
     );
     pages = await attachPages(client);
     const page = await findMarkedPage(client, pages, pageMarker);

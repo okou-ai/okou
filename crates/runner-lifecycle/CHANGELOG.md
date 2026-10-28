@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.31](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.30...runner-lifecycle-v0.17.31) (2026-10-28)
+
+## [0.17.30](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.29...runner-lifecycle-v0.17.30) (2026-10-28)
+
+## [0.17.29](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.28...runner-lifecycle-v0.17.29) (2026-10-27)
+
+## [0.17.28](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.27...runner-lifecycle-v0.17.28) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner:** retain up to 4096 home caches ([#43450](https://github.com/okou-ai/okou/issues/43450)) ([a8acf68](https://github.com/okou-ai/okou/commit/a8acf680771ab83fdb7882311ccee1d497dc9493))
+
 ## [0.17.27](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.26...runner-lifecycle-v0.17.27) (2026-10-27)
 
 ## [0.17.26](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.25...runner-lifecycle-v0.17.26) (2026-10-27)

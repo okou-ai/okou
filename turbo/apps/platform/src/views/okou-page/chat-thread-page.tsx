@@ -24,11 +24,16 @@ import {
 } from "ccstate-react";
 import type { TFunction } from "i18next";
 import { equalArrays, equalSets } from "../../lib/equality.ts";
+import {
+  chatThreadDateDividers,
+  type ChatDateDivider,
+} from "../../lib/chat-thread-date-dividers.ts";
 import { useTranslation } from "react-i18next";
 import {
   formatAppNumber,
   formatChatTimestamp,
   formatLocalizedNumber,
+  resolvedAppLocale,
 } from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts";
@@ -3420,6 +3425,29 @@ function ChatThreadEventGroups({
   statusRow: RunStatusRow | undefined;
   statusRowGroupId: string | null;
 }) {
+  const { i18n: translation } = useTranslation();
+  const timelineEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadTimeline];
+  const timelineEvents = timelineEnabled
+    ? groups.flatMap((group) => {
+        const section = runWorkSectionForGroup(runWorkFolding, group);
+        if (!groupRendersContent(group, section)) {
+          return [];
+        }
+        if (group.role === "user") {
+          return group.events;
+        }
+        const firstVisibleEvent =
+          group.events.find(isRenderableAssistantEvent) ?? group.events[0];
+        return firstVisibleEvent === undefined ? [] : [firstVisibleEvent];
+      })
+    : [];
+  const dateDividers = timelineEnabled
+    ? chatThreadDateDividers(
+        timelineEvents,
+        translation.resolvedLanguage ?? translation.language,
+      )
+    : undefined;
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
@@ -3431,6 +3459,12 @@ function ChatThreadEventGroups({
     <>
       {groups.map((group, index) => {
         const runWorkSection = runWorkSectionForGroup(runWorkFolding, group);
+        const firstAssistantEvent =
+          group.events.find(isRenderableAssistantEvent) ?? group.events[0];
+        const assistantDate =
+          group.role === "assistant" && firstAssistantEvent !== undefined
+            ? dateDividers?.get(firstAssistantEvent.id)
+            : undefined;
         const stackFirstOnPrevious =
           previousVisibleGroup !== undefined &&
           previousVisibleGroup.role === "user" &&
@@ -3442,11 +3476,15 @@ function ChatThreadEventGroups({
           group.beginEventId === statusRowGroupId ? statusRow : undefined;
         return (
           <div key={groupKeys[index]} className="contents">
+            {assistantDate ? (
+              <ChatThreadDateDivider divider={assistantDate} />
+            ) : null}
             <SelectablePagedGroupRow
               group={group}
               thread={thread}
               modelChanges={modelChanges}
               stackFirstOnPrevious={stackFirstOnPrevious}
+              dateDividers={dateDividers}
               runWorkSection={createRunWorkSectionControl(
                 runWorkSection,
                 runWorkExpandedKeys,
@@ -3518,6 +3556,33 @@ const RUN_SECTION_LABEL_CLASS =
   "min-w-0 max-w-full shrink-0 break-words font-serif text-sm leading-5 italic text-muted-foreground/50";
 const RUN_SECTION_ROW_CLASS =
   "@[900px]:grid @[900px]:grid-cols-[36px_1fr] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+
+function ChatThreadDateDivider({ divider }: { divider: ChatDateDivider }) {
+  if (divider.label === null) {
+    return null;
+  }
+  return (
+    <div
+      role="separator"
+      aria-label={divider.label}
+      data-chat-date-divider
+      className="flex min-h-5 items-center gap-3"
+    >
+      <div aria-hidden className="h-px min-w-0 flex-1 bg-divider/40" />
+      <time
+        dateTime={divider.createdAt}
+        title={new Date(divider.createdAt).toLocaleDateString(
+          resolvedAppLocale(),
+          { dateStyle: "full" },
+        )}
+        className={cn(RUN_SECTION_LABEL_CLASS, "whitespace-nowrap")}
+      >
+        {divider.label}
+      </time>
+      <div aria-hidden className="h-px min-w-0 flex-1 bg-divider/40" />
+    </div>
+  );
+}
 
 function RunSectionDivider({
   label,
@@ -5503,6 +5568,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.providerServerErrorTitle;
     });
   },
+  provider_bad_request: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.genericTitle;
+    });
+  },
   response_connection_lost: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.connectionLostTitle;
@@ -5631,6 +5701,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   provider_queue_timeout: FAILURE_DESCRIPTIONS.capacity,
   codex_access_program_unavailable: FAILURE_DESCRIPTIONS.accessProgram,
   provider_server_error: FAILURE_DESCRIPTIONS.capacity,
+  provider_bad_request: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.transient;
+    });
+  },
   response_connection_lost: FAILURE_DESCRIPTIONS.capacity,
   safety_policy_refusal: FAILURE_DESCRIPTIONS.safety,
   reconnect_required: FAILURE_DESCRIPTIONS.providerConnection,
@@ -5672,6 +5747,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
     reason === "provider_image_too_large" ||
+    reason === "provider_bad_request" ||
     reason === "session_history_limit"
   ) {
     return AlertCircle;
@@ -5683,6 +5759,7 @@ function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
   return (
     reason !== "insufficient_credits" &&
     reason !== "input_too_large" &&
+    reason !== "provider_bad_request" &&
     reason !== "provider_image_too_large"
   );
 }
@@ -6191,6 +6268,7 @@ function PagedGroupRow({
   thread,
   modelChanges,
   stackFirstOnPrevious = false,
+  dateDividers,
   runWorkSection,
   statusRow,
   statusTailEvents,
@@ -6199,6 +6277,7 @@ function PagedGroupRow({
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
+  dateDividers?: ReadonlyMap<string, ChatDateDivider>;
   runWorkSection?: RunWorkSectionControl;
   statusRow?: RunStatusRow;
   statusTailEvents?: readonly EnrichedChatEvent[];
@@ -6210,6 +6289,7 @@ function PagedGroupRow({
         thread={thread}
         modelChanges={modelChanges}
         stackFirstOnPrevious={stackFirstOnPrevious}
+        dateDividers={dateDividers}
       />
     );
   }
@@ -6262,6 +6342,7 @@ function SelectablePagedGroupRow({
   thread,
   modelChanges,
   stackFirstOnPrevious,
+  dateDividers,
   runWorkSection,
   statusRow,
   statusTailEvents,
@@ -6279,6 +6360,7 @@ function SelectablePagedGroupRow({
       thread={thread}
       modelChanges={modelChanges}
       stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
+      dateDividers={dateDividers}
       runWorkSection={sharing ? undefined : runWorkSection}
       statusRow={sharing ? undefined : statusRow}
       statusTailEvents={sharing ? undefined : statusTailEvents}
@@ -6498,15 +6580,18 @@ function PagedUserGroup({
   thread,
   modelChanges,
   stackFirstOnPrevious = false,
+  dateDividers,
 }: {
   group: ChatEventGroup;
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
+  dateDividers?: ReadonlyMap<string, ChatDateDivider>;
 }) {
   return (
     <>
       {group.events.map((event, index) => {
+        const dateDivider = dateDividers?.get(event.id);
         const modelChange = modelChanges.get(event.id);
         const previousEvent = group.events[index - 1];
         // Anything the user sent back to back is one thing they said, so the
@@ -6516,6 +6601,7 @@ function PagedUserGroup({
         // that belongs between two messages — a model change, or a message that
         // renders as its own card rather than a bubble — ends the stack.
         const stackedOnPrevious =
+          dateDivider === undefined &&
           modelChange === undefined &&
           rendersUserBubble(event) &&
           (previousEvent !== undefined
@@ -6523,6 +6609,9 @@ function PagedUserGroup({
             : stackFirstOnPrevious);
         return (
           <div key={chatEventRenderKey(event)} className="contents">
+            {dateDivider ? (
+              <ChatThreadDateDivider divider={dateDivider} />
+            ) : null}
             {modelChange === undefined ? null : (
               <ModelChangeDividerRow change={modelChange} />
             )}

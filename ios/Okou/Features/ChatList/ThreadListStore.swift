@@ -10,7 +10,6 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
-  private(set) var canUseComposerConnectors = false
   private var archivingEnabled: Bool?
   var canArchiveChats: Bool { archivingEnabled == true }
   private(set) var canMuteChats = false
@@ -88,7 +87,8 @@ final class ThreadListStore {
       restoredNavigation = true
     }
     let revision = creationRevision
-    guard let cached = await sync.cachedThreadList(), !closed, !Task.isCancelled,
+    let sequence = hasLoadedThreads ? appliedThreadSequence : nil
+    guard let cached = await sync.cachedThreadList(newerThan: sequence), !closed, !Task.isCancelled,
       revision == creationRevision,
       !hasLoadedThreads || cached.cursor.seqID > appliedThreadSequence
     else { return }
@@ -169,7 +169,6 @@ final class ThreadListStore {
   }
 
   private func applySwitches(_ switches: SidebarFeatureSwitches) {
-    canUseComposerConnectors = switches.effectiveSwitches["iosComposerConnectors"] == true
     archivingEnabled = switches.effectiveSwitches["chatThreadArchiving"] == true
     canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true
   }

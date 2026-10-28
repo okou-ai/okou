@@ -1,5 +1,6 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { describe, expect, it } from "vitest";
 
@@ -11,6 +12,7 @@ import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fi
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
@@ -92,7 +94,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     ).resolves.toMatchObject({ isActive: true });
   });
 
-  it("gives concurrent publications of one preferred slug their own versions [HOST-A]", async () => {
+  it("gives concurrent publications distinct versions after resubmitting allocation conflicts [HOST-A]", async () => {
     const bdd = createBddApi(context);
     const api = createHostBddApi(context);
     const actor = bdd.user();
@@ -103,11 +105,23 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>concurrent</main>")],
     };
-    const results = await Promise.all(
+    const attempts = await Promise.all(
       Array.from({ length: 3 }, async () => {
-        return await api.prepareHostedSite(actor, body);
+        return await api.requestPrepareHostedSite(actor, body, [200, 409]);
       }),
     );
+    const results = [];
+    for (const attempt of attempts) {
+      if (attempt.status === 200) {
+        results.push(attempt.body);
+      } else {
+        expectApiError(attempt.body);
+        expect(attempt.body.error.message).toBe(
+          "Hosted site allocation changed. Retry publishing the same site.",
+        );
+        results.push(await api.prepareHostedSite(actor, body));
+      }
+    }
     expect(
       new Set(
         results.map((result) => {
@@ -117,6 +131,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     ).toBe(1);
     for (const result of results) {
       expect(result.publicSlug).toBe(body.site);
+      expect(result.visibility).toBe("private");
     }
     expect(
       new Set(
@@ -403,6 +418,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     if (!actor.orgId) {
       throw new Error("Expected hosted site actor to have an org");
     }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.HostedSiteVisibility]: false },
+    );
     // First test in the file: install the S3 boundary explicitly before any
     // host call (mock defaults only arrive in afterEach resets).
     const capture = api.captureHostedSitesS3();

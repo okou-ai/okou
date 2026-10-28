@@ -22,6 +22,7 @@ import {
   resetMockEmailSubscription,
 } from "./api-email-subscription.ts";
 import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
+import { apiFeatureGuidesHandlers } from "./api-feature-guides.ts";
 import { apiGetStartedHandlers } from "./api-get-started.ts";
 import { apiHalloweenHandlers } from "./api-halloween.ts";
 import { apiHostHandlers } from "./api-host.ts";
@@ -154,6 +155,7 @@ export const handlers = [
   ...apiFeatureSwitchesHandlers,
   ...apiGetStartedHandlers,
   ...apiHalloweenHandlers,
+  ...apiFeatureGuidesHandlers,
   ...apiRealtimeHandlers,
   ...apiUserPermissionGrantsHandlers,
   ...apiVoiceIoHandlers,

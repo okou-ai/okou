@@ -80,6 +80,7 @@ git -C "$work_dir/source" tag app-v0.1030.0
 printf '%s\n' "$reader_sha" > "$work_dir/source/.github/rollback-floors/telegram-settings-app"
 printf '%s\n' "$slack_reader_sha" > "$work_dir/source/.github/rollback-floors/slack-settings-app"
 printf '%s\n' "$connector_resource_split_sha" > "$work_dir/source/.github/rollback-floors/connector-resource-split"
+printf '%s\n' "$connector_resource_split_sha" > "$work_dir/source/.github/rollback-floors/data-router-stateless-mcp-app"
 printf '{"minimumSupportedVersion":"0.1029.3"}\n' > "$work_dir/source/turbo/apps/api/src/lib/web-client-compatibility.json"
 git -C "$work_dir/source" add .
 git -C "$work_dir/source" commit -qm 'fixture later main policy and unreleased API floor'
@@ -174,10 +175,13 @@ if "api.vercel.com" in url:
     if "/aliases/api.okou.ai?" in url:
         counts["alias"] = counts.get("alias",0)+1
         counts_path.write_text(json.dumps(counts))
-        if case in ("policy-changed", "slack-policy-changed", "connector-policy-changed") and counts["alias"] == 1:
+        if case in ("policy-changed", "slack-policy-changed", "connector-policy-changed", "data-router-policy-changed") and counts["alias"] == 1:
             source = root / "source"
             provider = "slack" if case == "slack-policy-changed" else "telegram"
-            floor_path = "connector-resource-split" if case == "connector-policy-changed" else f"{provider}-settings-app"
+            floor_path = {
+                "connector-policy-changed": "connector-resource-split",
+                "data-router-policy-changed": "data-router-stateless-mcp-app",
+            }.get(case, f"{provider}-settings-app")
             (source / f".github/rollback-floors/{floor_path}").write_text(policy+"\n")
             subprocess.run(["git","-C",str(source),"commit","-qam","fixture policy changes during validation"],check=True,stdout=subprocess.DEVNULL)
         answer({"alias":"api.okou.ai","projectId":"prj_fixture","deploymentId":"dpl_changed" if case == "api-changed" and counts["alias"] > 1 else "dpl_fixture"})
@@ -244,6 +248,9 @@ run_case slack-policy-changed fail 0
 git -C "$work_dir/source" reset -q --hard "$policy_sha"
 run_case connector-policy-changed fail 0
 grep -Fq 'App rollback policy changed during validation' "$work_dir/output"
+git -C "$work_dir/source" reset -q --hard "$policy_sha"
+run_case data-router-policy-changed fail 0
+grep -Fq 'App rollback policy changed during validation' "$work_dir/output"
 # Missing current-main policy must reject even when the checkout still has it.
 git -C "$work_dir/source" reset -q --hard "$policy_sha"
 git -C "$work_dir/source" rm -q .github/rollback-floors/telegram-settings-app
@@ -271,6 +278,25 @@ for scenario in missing-connector-policy invalid-connector-policy non-main-conne
   run_case "$scenario" fail 0
   grep -Fq 'Connector resource split' "$work_dir/output"
 done
+
+for scenario in missing-data-router-policy invalid-data-router-policy non-main-data-router-policy; do
+  git -C "$work_dir/source" reset -q --hard "$policy_sha"
+  case "$scenario" in
+    missing-data-router-policy) git -C "$work_dir/source" rm -q .github/rollback-floors/data-router-stateless-mcp-app ;;
+    invalid-data-router-policy) printf 'not-a-commit\n' > "$work_dir/source/.github/rollback-floors/data-router-stateless-mcp-app" ;;
+    non-main-data-router-policy) printf '%s\n' "$branch_sha" > "$work_dir/source/.github/rollback-floors/data-router-stateless-mcp-app" ;;
+  esac
+  git -C "$work_dir/source" commit -qam "fixture $scenario"
+  run_case "$scenario" fail 0
+  grep -Fq 'Data Router stateless MCP App rollback floor' "$work_dir/output"
+done
+
+# An App that still sends the envelope-less catalog request is not eligible.
+git -C "$work_dir/source" reset -q --hard "$policy_sha"
+printf '%s\n' "$target_sha" > "$work_dir/source/.github/rollback-floors/data-router-stateless-mcp-app"
+git -C "$work_dir/source" commit -qam 'fixture later Data Router stateless MCP floor'
+TARGET_COMMIT="$connector_resource_split_sha" run_case pre-data-router-stateless-mcp fail 0
+grep -Fq 'App artifact predates the Data Router stateless MCP catalog request' "$work_dir/output"
 
 # Descendants with valid releases and deployment evidence still cannot retire
 # either Telegram route or the registered authenticated bare Slack reader.

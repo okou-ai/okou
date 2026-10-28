@@ -1,0 +1,53 @@
+def ordinary_dictionary(flow):
+    meta = {}
+    return [meta.get("sandbox_run_id") for _ in [0, 1]]
+
+
+def empty_iterable(flow):
+    meta = {}
+    return [(meta.get("sandbox_run_id"), (meta := flow.metadata))[0] for _ in []]
+
+
+def single_iteration(flow):
+    meta = {}
+    return [(meta.get("sandbox_run_id"), (meta := flow.metadata))[0] for _ in [0]]
+
+
+def alias_killed_before_access(flow):
+    meta = flow.metadata
+    return [(meta := {}, meta.get("sandbox_run_id"), (meta := flow.metadata))[1]
+            for _ in [0, 1]]
+
+
+def target_stays_local(flow):
+    meta = flow.metadata
+    return [meta.get("sandbox_run_id") for meta in ({}, {})]
+
+
+def single_outer_empty_inner(flow):
+    meta = {}
+    return [None for _ in [0] if (meta.get("sandbox_run_id"), (meta := flow.metadata))[1]
+            for inner in []]
+
+
+def both_levels_single(flow):
+    meta = {}
+    return [(meta.get("sandbox_run_id"), (meta := flow.metadata))[0]
+            for _ in [0] for inner in [0]]
+
+
+def inner_target_rebinds(flow):
+    meta = flow.metadata
+    return [(meta.get("sandbox_run_id"), (other := flow.metadata))[0]
+            for _ in [0, 1] for meta in ({},)]
+
+
+def first_iterable_runs_once(flow):
+    meta = {}
+    return [(meta := flow.metadata) for _ in (meta.get("sandbox_run_id"), [0, 1])[1]]
+
+
+def nested_kill(flow):
+    meta = flow.metadata
+    return [([(meta := {}) for inner in [0]], meta.get("sandbox_run_id"))[1]
+            for _ in [0, 1]]

@@ -89,6 +89,7 @@ function OnboardingStepExplanation({
   trustPoints,
   footnote,
   supplement,
+  illustration,
 }: {
   readonly title: string;
   readonly description: string;
@@ -97,12 +98,15 @@ function OnboardingStepExplanation({
   readonly trustPoints?: readonly string[];
   readonly footnote?: ReactNode;
   readonly supplement?: ReactNode;
+  readonly illustration?: ReactNode;
 }) {
   const mobile = useMobileOnboarding();
   const body = mobile ? (mobileDescription ?? description) : description;
   return (
     <>
-      <h1 className="mt-12 text-[30px] max-sm:mt-2 max-sm:text-2xl font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
+      <h1
+        className={`${illustration ? "mt-8" : "mt-12"} text-[30px] max-sm:mt-2 max-sm:text-2xl font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]`}
+      >
         {mobile ? (mobileTitle ?? title) : title}
       </h1>
       {body ? (
@@ -110,9 +114,12 @@ function OnboardingStepExplanation({
           {body}
         </p>
       ) : null}
+      {illustration}
       {mobile ? null : <OnboardingTrustPoints points={trustPoints} />}
       {!mobile && footnote ? (
-        <p className="mt-4 text-base leading-[1.7] text-muted-foreground">
+        <p
+          className={`${illustration ? "mt-2" : "mt-4"} text-base leading-[1.7] text-muted-foreground`}
+        >
           {footnote}
         </p>
       ) : null}
@@ -129,6 +136,7 @@ function OnboardingStepExplanation({
 function OnboardingStepTopBar({
   current,
   total,
+  secondaryAction,
   secondaryLabel,
   onSecondary,
   secondaryDisabled,
@@ -137,6 +145,7 @@ function OnboardingStepTopBar({
 }: {
   readonly current: number;
   readonly total: number;
+  readonly secondaryAction?: ReactNode;
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly secondaryDisabled: boolean;
@@ -163,21 +172,22 @@ function OnboardingStepTopBar({
       <div className="min-w-0 flex-1 px-1">
         <OnboardingStepProgress current={current} total={total} />
       </div>
-      {secondaryLabel && onSecondary ? (
-        <Button
-          type="button"
-          size="lg"
-          variant="ghost"
-          className="px-3"
-          onClick={onSecondary}
-          disabled={secondaryDisabled}
-          aria-busy={secondaryBusy}
-        >
-          {secondaryLabel}
-        </Button>
-      ) : (
-        <span className="size-10 shrink-0" />
-      )}
+      {secondaryAction ??
+        (secondaryLabel && onSecondary ? (
+          <Button
+            type="button"
+            size="lg"
+            variant="quiet"
+            className="px-3"
+            onClick={onSecondary}
+            disabled={secondaryDisabled}
+            aria-busy={secondaryBusy}
+          >
+            {secondaryLabel}
+          </Button>
+        ) : (
+          <span className="size-10 shrink-0" />
+        ))}
     </div>
   );
 }
@@ -193,6 +203,7 @@ function OnboardingStepActions({
   onPrimary,
   primaryDisabled,
   primaryBusy,
+  secondaryAction,
   secondaryLabel,
   onSecondary,
   secondaryDisabled,
@@ -204,6 +215,7 @@ function OnboardingStepActions({
   readonly onPrimary: () => void;
   readonly primaryDisabled: boolean;
   readonly primaryBusy: boolean;
+  readonly secondaryAction?: ReactNode;
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly secondaryDisabled: boolean;
@@ -230,11 +242,13 @@ function OnboardingStepActions({
         <span className="max-sm:hidden" />
       )}
       <div className="flex items-center gap-2 max-sm:flex-1">
-        {secondaryLabel && onSecondary ? (
+        {secondaryAction ? (
+          <div className="max-sm:hidden">{secondaryAction}</div>
+        ) : secondaryLabel && onSecondary ? (
           <Button
             type="button"
             size="lg"
-            variant="ghost"
+            variant="quiet"
             onClick={onSecondary}
             disabled={secondaryDisabled}
             aria-busy={secondaryBusy}
@@ -279,6 +293,7 @@ interface OnboardingStepLayoutProps {
   readonly onPrimary: () => void;
   readonly primaryDisabled?: boolean;
   readonly primaryBusy?: boolean;
+  readonly secondaryAction?: ReactNode;
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly onBack?: () => void;
@@ -287,6 +302,8 @@ interface OnboardingStepLayoutProps {
   readonly footnote?: ReactNode;
   /** A block closing the explanation, below everything else it says. */
   readonly supplement?: ReactNode;
+  /** An example of the step's outcome, between its introduction and trust copy. */
+  readonly illustration?: ReactNode;
   readonly contentAlign?: "center" | "start";
   readonly children: ReactNode;
 }
@@ -304,12 +321,14 @@ export function OnboardingStepLayout({
   onPrimary,
   primaryDisabled = false,
   primaryBusy = false,
+  secondaryAction,
   secondaryLabel,
   onSecondary,
   onBack,
   trustPoints,
   footnote,
   supplement,
+  illustration,
   contentAlign = "center",
   children,
 }: OnboardingStepLayoutProps) {
@@ -324,7 +343,7 @@ export function OnboardingStepLayout({
         return $.onboarding.common.skip;
       })
     : secondaryLabel;
-  const secondaryAction = canSkipPreview
+  const secondaryHandler = canSkipPreview
     ? () => {
         detach(skipPreview(pageSignal), Reason.DomCallback);
       }
@@ -348,15 +367,18 @@ export function OnboardingStepLayout({
         <OnboardingStepTopBar
           current={currentStep}
           total={totalSteps}
+          secondaryAction={canSkipPreview ? undefined : secondaryAction}
           secondaryLabel={secondaryActionLabel}
-          onSecondary={secondaryAction}
+          onSecondary={secondaryHandler}
           secondaryDisabled={canSkipPreview && (skipping || primaryBusy)}
           secondaryBusy={skipping}
           onBack={onBack}
         />
         {/* The rail is 3.5rem wide, so account for half of it in each track:
             the sheet begins at the viewport's actual midpoint. */}
-        <div className="w-full min-w-0 px-6 pt-8 pb-6 max-sm:px-5 max-sm:pt-2 max-sm:pb-0 lg:overflow-y-auto lg:px-10 lg:pt-28 lg:pb-10">
+        <div
+          className={`w-full min-w-0 px-6 pt-8 pb-6 max-sm:px-5 max-sm:pt-2 max-sm:pb-0 lg:overflow-y-auto lg:px-10 ${illustration ? "lg:pt-24" : "lg:pt-28"} lg:pb-10`}
+        >
           <div className="lg:mx-auto lg:w-full lg:max-w-[480px]">
             <div className="max-sm:hidden">
               <OnboardingStepProgress
@@ -372,6 +394,7 @@ export function OnboardingStepLayout({
               trustPoints={trustPoints}
               footnote={footnote}
               supplement={supplement}
+              illustration={illustration}
             />
           </div>
         </div>
@@ -397,8 +420,9 @@ export function OnboardingStepLayout({
             onPrimary={onPrimary}
             primaryDisabled={primaryDisabled || skipping}
             primaryBusy={primaryBusy}
+            secondaryAction={canSkipPreview ? undefined : secondaryAction}
             secondaryLabel={secondaryActionLabel}
-            onSecondary={secondaryAction}
+            onSecondary={secondaryHandler}
             secondaryDisabled={canSkipPreview && (skipping || primaryBusy)}
             secondaryBusy={skipping}
             onBack={onBack}

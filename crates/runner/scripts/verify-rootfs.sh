@@ -523,7 +523,7 @@ else
     template_contamination=1
   fi
   if [[ -f "$env_path" ]] \
-      && grep -Eq '^(NODE_EXTRA_CA_CERTS|SSL_CERT_FILE|REQUESTS_CA_BUNDLE|CARGO_HTTP_CAINFO)=' "$env_path"; then
+      && grep -Eq '^(NODE_EXTRA_CA_CERTS|AGENT_BROWSER_USE_SYSTEM_CA|SSL_CERT_FILE|REQUESTS_CA_BUNDLE|CARGO_HTTP_CAINFO)=' "$env_path"; then
     errors+=("template contains rootfs-only environment CA settings")
     template_contamination=1
   fi

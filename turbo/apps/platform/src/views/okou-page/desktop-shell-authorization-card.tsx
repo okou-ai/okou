@@ -1,9 +1,9 @@
 import type { DesktopShellAuthorization } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Terminal, Loader2 } from "lucide-react";
+import { Check, Clock, Terminal, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Badge, Button, cn } from "@okouai/ui";
 import { i18n } from "../../i18n/index.ts";
 import { resolvedAppLocale } from "../../i18n/format.ts";
 import type { DesktopShellAuthorizationSignals } from "../../signals/chat-page/desktop-shell-authorization-block.ts";
@@ -14,17 +14,12 @@ import { ChatCard } from "./components/chat-card.tsx";
 function authorizationStatus(data: DesktopShellAuthorization): string {
   switch (data.status) {
     case "pending": {
-      if (data.approvalBlockedReason === "run_unavailable") {
-        return i18n.t(($) => {
-          return $.desktopShellAuthorization.unavailable;
-        });
-      }
       return data.approvalBlockedReason === null
         ? i18n.t(($) => {
             return $.desktopShellAuthorization.pending;
           })
         : i18n.t(($) => {
-            return $.desktopShellAuthorization.waiting;
+            return $.desktopShellAuthorization.unavailable;
           });
     }
     case "approved": {
@@ -67,6 +62,24 @@ function AuthorizationStatus({
       : t(($) => {
           return $.desktopShellAuthorization.unavailable;
         });
+  return (
+    <Badge
+      className="max-w-[45%] shrink-0 text-[11px] font-medium text-muted-foreground"
+      aria-live="polite"
+    >
+      {loading ? <Loader2 className="animate-spin" /> : null}
+      {data?.status === "approved" ? <Check /> : null}
+      <span className="min-w-0 break-words">{status}</span>
+    </Badge>
+  );
+}
+
+function AuthorizationMetadata({
+  data,
+}: {
+  data: DesktopShellAuthorization | null;
+}) {
+  const { t } = useTranslation();
   const deadline =
     data?.status === "approved"
       ? data.grantExpiresAt
@@ -74,16 +87,23 @@ function AuthorizationStatus({
         ? data.requestExpiresAt
         : null;
   return (
-    <div className="min-h-16 text-xs text-muted-foreground" aria-live="polite">
-      <p>{status}</p>
+    <div className="min-w-0 text-xs leading-5 text-muted-foreground">
       {deadline && (
-        <p>
-          {t(
-            ($) => {
-              return $.desktopShellAuthorization.deadline;
-            },
-            { date: new Date(deadline).toLocaleString(resolvedAppLocale()) },
-          )}
+        <p className="flex items-start gap-1.5">
+          <Clock size={12} className="mt-1 shrink-0" aria-hidden />
+          <span>
+            {t(
+              ($) => {
+                return $.desktopShellAuthorization.deadline;
+              },
+              {
+                date: new Date(deadline).toLocaleString(resolvedAppLocale(), {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }),
+              },
+            )}
+          </span>
         </p>
       )}
       <p>
@@ -98,11 +118,9 @@ function AuthorizationStatus({
 function AuthorizationActions({
   signals,
   data,
-  loading,
 }: {
   signals: DesktopShellAuthorizationSignals;
   data: DesktopShellAuthorization | null;
-  loading: boolean;
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
@@ -112,24 +130,12 @@ function AuthorizationActions({
     data?.status === "pending" && data.approvalBlockedReason !== null;
   const failed = action.state === "hasError";
   return (
-    <>
-      {loading && <Loader2 size={16} className="animate-spin" />}
+    <div className="ml-auto flex min-h-8 flex-wrap items-center justify-end gap-2">
       {data?.status === "pending" && (
         <>
           <Button
             size="sm"
-            disabled={busy || blocked || failed}
-            onClick={() => {
-              detach(act("approve", signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.desktopShellAuthorization.allow;
-            })}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
+            variant="neutral"
             disabled={busy || failed}
             onClick={() => {
               detach(act("deny", signal), Reason.DomCallback);
@@ -139,12 +145,24 @@ function AuthorizationActions({
               return $.desktopShellAuthorization.deny;
             })}
           </Button>
+          <Button
+            size="sm"
+            className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
+            disabled={busy || blocked || failed}
+            onClick={() => {
+              detach(act("approve", signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.desktopShellAuthorization.allow;
+            })}
+          </Button>
         </>
       )}
       {data?.status === "approved" && (
         <Button
           size="sm"
-          variant="outline"
+          variant="quiet"
           disabled={busy || failed}
           onClick={() => {
             detach(act("revoke", signal), Reason.DomCallback);
@@ -162,7 +180,7 @@ function AuthorizationActions({
           })}
         </p>
       )}
-    </>
+    </div>
   );
 }
 
@@ -180,53 +198,69 @@ export function DesktopShellAuthorizationCard({
   return (
     <ChatCard
       data-testid="desktop-shell-authorization-card"
-      className={
-        standalone
-          ? "flex w-full flex-col gap-3 p-4"
-          : "flex h-72 w-full flex-col justify-between gap-3 p-3 @[640px]:h-64"
-      }
+      className={cn(
+        "flex w-full flex-col gap-3 p-4",
+        !standalone &&
+          "h-[272px] @[320px]:h-60 @[480px]:h-[212px] @[640px]:h-50",
+      )}
     >
-      <div className="flex min-w-0 items-start gap-3">
-        <Terminal size={22} className="mt-1 shrink-0" />
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
+          <Terminal size={22} aria-hidden />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[0.9375rem] font-medium leading-5">
             {t(($) => {
               return $.desktopShellAuthorization.title;
             })}
           </div>
-          <div className="truncate text-sm text-muted-foreground">
+          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
             {data?.computerName ??
               t(($) => {
                 return $.desktopShellAuthorization.scope;
               })}
           </div>
-          <p
-            className={
-              standalone ? "mt-1 text-sm" : "mt-1 line-clamp-2 text-sm"
-            }
-          >
-            {data?.reason ??
-              t(($) => {
-                return $.desktopShellAuthorization.description;
-              })}
-          </p>
         </div>
+        <AuthorizationStatus data={data} loading={loading} />
       </div>
-      <AuthorizationStatus data={data} loading={loading} />
-      <div className="flex min-h-9 flex-wrap items-center gap-2">
-        <AuthorizationActions signals={signals} data={data} loading={loading} />
-        {!standalone && (
-          <a
-            href={signals.originalUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-muted-foreground underline"
-          >
-            {t(($) => {
-              return $.desktopShellAuthorization.details;
-            })}
-          </a>
+      <div
+        className={cn(
+          "min-h-0 overflow-y-auto",
+          !standalone && "flex-1 @[640px]:pl-13",
         )}
+      >
+        <p className="break-words text-sm leading-5">
+          {data?.reason ??
+            t(($) => {
+              return $.desktopShellAuthorization.description;
+            })}
+        </p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {t(($) => {
+            return $.desktopShellAuthorization.terminalNotice;
+          })}
+        </p>
+        {data?.status === "pending" &&
+          data.approvalBlockedReason !== null &&
+          data.approvalBlockedReason !== "run_unavailable" && (
+            <p
+              className="mt-1 text-xs leading-5 text-muted-foreground"
+              aria-live="polite"
+            >
+              {t(($) => {
+                return $.desktopShellAuthorization.waiting;
+              })}
+            </p>
+          )}
+      </div>
+      <div
+        className={cn(
+          "mt-auto flex flex-wrap items-end justify-between gap-3",
+          !standalone && "@[640px]:pl-13",
+        )}
+      >
+        <AuthorizationMetadata data={data} />
+        <AuthorizationActions signals={signals} data={data} />
       </div>
     </ChatCard>
   );

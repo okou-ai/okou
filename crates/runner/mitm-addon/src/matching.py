@@ -79,6 +79,8 @@ _VALID_RULE_METHODS = frozenset(
         "DELETE",
         "HEAD",
         "OPTIONS",
+        "PROPFIND",
+        "REPORT",
         "ANY",
     )
 )

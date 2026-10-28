@@ -1107,12 +1107,24 @@ impl AgentBootstrapInputs {
                 .race(run_pre_spawn_phase(cancel, &owner, async {
                     // Storage reconciliation already finished. Prepare from
                     // captured inputs within this timed, cancellable owner.
-                    let files = prepare_required_agent_files(
-                        context,
-                        &mut self.user_env_map,
-                        &self.run_payload,
-                    )?;
-                    let instructions = super::storage::AgentInstructionSource::prepare(context)?;
+                    let preparation_started = Instant::now();
+                    let prepared = (|| {
+                        let files = prepare_required_agent_files(
+                            context,
+                            &mut self.user_env_map,
+                            &self.run_payload,
+                        )?;
+                        let instructions =
+                            super::storage::AgentInstructionSource::prepare(context)?;
+                        RunnerResult::Ok((files, instructions))
+                    })();
+                    telemetry.record(
+                        "runner_bootstrap_file_prepare",
+                        preparation_started.elapsed(),
+                        prepared.is_ok(),
+                        None,
+                    );
+                    let (files, instructions) = prepared?;
                     let batch = instructions
                         .as_ref()
                         .and_then(|source| files.batch_with(source.entry()));
@@ -1120,19 +1132,28 @@ impl AgentBootstrapInputs {
                         // Bootstrap files now exist before required helpers.
                         // A failed batch can leave a prefix, but never applies
                         // its source or crosses the Agent spawn boundary.
-                        sandbox.write_private_files(&batch).await?;
+                        super::storage::publish_bootstrap_files(sandbox, &batch, telemetry).await?;
                         if let Some(source) = &instructions {
-                            source.apply(sandbox, context).await?;
+                            source.apply(sandbox, context, telemetry).await?;
                         }
-                        super::storage::apply_workflow_skill_documents(sandbox, context).await?;
+                        super::storage::apply_workflow_skill_documents(sandbox, context, telemetry)
+                            .await?;
                     } else {
                         // Retain the original grouping outside batch admission;
                         // never retry an uncertain combined mutation separately.
                         if let Some(source) = &instructions {
-                            source.publish_and_apply(sandbox, context).await?;
+                            source
+                                .publish_and_apply(sandbox, context, telemetry)
+                                .await?;
                         }
-                        super::storage::apply_workflow_skill_documents(sandbox, context).await?;
-                        sandbox.write_private_files(&files.entries()).await?;
+                        super::storage::apply_workflow_skill_documents(sandbox, context, telemetry)
+                            .await?;
+                        super::storage::publish_bootstrap_files(
+                            sandbox,
+                            &files.entries(),
+                            telemetry,
+                        )
+                        .await?;
                     }
                     RunnerResult::Ok(files.into_paths())
                 }))

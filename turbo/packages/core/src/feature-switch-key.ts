@@ -5,7 +5,8 @@
  */
 export enum FeatureSwitchKey {
   HalloweenQuiz = "halloweenQuiz",
-  IosComposerConnectors = "iosComposerConnectors",
+  FeatureGuides = "featureGuides",
+  OnboardingSourceOutcomes = "onboardingSourceOutcomes",
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
   HostedSiteVisibility = "hostedSiteVisibility",
@@ -25,6 +26,7 @@ export enum FeatureSwitchKey {
   NeonConnector = "neonConnector",
   NetSuiteConnector = "netSuiteConnector",
   GarminConnectConnector = "garminConnectConnector",
+  ICloudConnector = "icloudConnector",
   RedditConnector = "redditConnector",
   SupabaseConnector = "supabaseConnector",
   WebflowConnector = "webflowConnector",
@@ -60,12 +62,12 @@ export enum FeatureSwitchKey {
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
-  BrowserCdpViewer = "browserCdpViewer",
   BrowserSharedOwner = "browserSharedOwner",
   AgentSuggestion = "agentSuggestion",
   ProactiveAgent = "proactiveAgent",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
   ChatReplyNameLine = "chatReplyNameLine",
+  ChatThreadTimeline = "chatThreadTimeline",
   UnifiedChatWorkspace = "unifiedChatWorkspace",
 }

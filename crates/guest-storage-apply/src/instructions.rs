@@ -36,26 +36,10 @@ pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> 
 
 /// Replace only SKILL.md after attachment reconciliation, rejecting symlink parents.
 pub fn apply_workflow_skill(home: &Path, mount: &Path, source: &Path) -> bool {
-    let Ok(relative) = mount.strip_prefix(home) else {
+    let Some(relative) = workflow_skill_relative_mount(home, mount) else {
         return false;
     };
-    let Some(relative) = relative.to_str() else {
-        return false;
-    };
-    let Some(name) = [".claude/skills/", ".codex/skills/", ".pi/agent/skills/"]
-        .iter()
-        .find_map(|prefix| relative.strip_prefix(prefix))
-    else {
-        return false;
-    };
-    if name.len() < 2
-        || name.len() > 64
-        || name.starts_with('-')
-        || name.ends_with('-')
-        || !name
-            .bytes()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
-        || !existing_instruction_dir_is_safe(home)
+    if !existing_instruction_dir_is_safe(home)
         || !matches!(
             lstat_instruction_path_state(source),
             InstructionPathState::RegularFile
@@ -71,6 +55,48 @@ pub fn apply_workflow_skill(home: &Path, mount: &Path, source: &Path) -> bool {
         }
     }
     copy_instruction_file_atomically(source, &target.join("SKILL.md"), io::copy).is_ok()
+}
+
+fn workflow_skill_relative_mount<'a>(home: &Path, mount: &'a Path) -> Option<&'a str> {
+    let relative = mount.strip_prefix(home).ok()?.to_str()?;
+    let name = [".claude/skills/", ".codex/skills/", ".pi/agent/skills/"]
+        .iter()
+        .find_map(|prefix| relative.strip_prefix(prefix))?;
+    ((2..=64).contains(&name.len())
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-'))
+    .then_some(relative)
+}
+
+/// Apply bounded Workflow metadata in order after validating all source identities.
+///
+/// Replaces only SKILL.md and removes each consumed private source. The first
+/// application or removal failure stops later entries; earlier changes remain.
+pub fn apply_workflow_skill_documents(home: &Path, runtime_dir: &Path, input: &[u8]) -> bool {
+    let Ok(entries) = guest_contracts::workflow_documents::decode(input, runtime_dir) else {
+        return false;
+    };
+    if entries
+        .iter()
+        .any(|entry| workflow_skill_relative_mount(home, Path::new(&entry.mount_path)).is_none())
+    {
+        return false;
+    }
+    for entry in entries {
+        let source = Path::new(&entry.source);
+        let applied = apply_workflow_skill(home, Path::new(&entry.mount_path), source);
+        let removed = match fs::remove_file(source) {
+            Ok(()) => true,
+            Err(error) => error.kind() == io::ErrorKind::NotFound,
+        };
+        if !applied || !removed {
+            return false;
+        }
+    }
+    true
 }
 
 #[derive(Debug, PartialEq, Eq)]

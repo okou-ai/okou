@@ -542,7 +542,6 @@
         "label": "Comment il sonne"
       },
       "visibility": {
-        "defaultDescription": "L’agent par défaut de l’espace de travail doit rester public pour tous ses membres.",
         "description": "Visible par tous dans cet espace de travail.",
         "label": "Rendre public"
       }

@@ -31,7 +31,7 @@ import { replaceUserTemplatePackage$ } from "../services/user-template-repackage
 import { templateArtifactBucket } from "../services/private-artifact-storage.service";
 import {
   presentationTemplatePreviewPresignedUrlCacheKey,
-  resolvePresentationTemplatePreviewPresignedUrls,
+  resolvePresentationTemplatePreviewPresignedUrls$,
   type PresentationTemplatePreviewPresignedUrlRequest,
 } from "../services/system-storage-presigned-url-cache.service";
 import { loadUserDisplayNames$ } from "../services/user-profile-directory.service";
@@ -220,15 +220,13 @@ const ownerDisplayNameFor$ = command(
 /** One cover URL, for the summary shapes that carry a cover and nothing else. */
 const coverUrlFor$ = command(
   async (
-    { get, set },
+    { set },
     args: { readonly row: UserTemplateRow; readonly orgId: string },
   ): Promise<string | null> => {
     const coverAsset = userTemplatePreviewAssetsForRow(args)[0];
-    const urlsByCacheKey = await get(
-      resolvePresentationTemplatePreviewPresignedUrls({
-        db: set(writeDb$),
-        requests: coverAsset === undefined ? [] : [coverAsset.request],
-      }),
+    const urlsByCacheKey = await set(
+      resolvePresentationTemplatePreviewPresignedUrls$,
+      { requests: coverAsset === undefined ? [] : [coverAsset.request] },
     );
     return coverAsset === undefined
       ? null
@@ -319,15 +317,15 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       ] as const;
     }),
   );
-  const urlsByCacheKey = await get(
-    resolvePresentationTemplatePreviewPresignedUrls({
-      db: set(writeDb$),
+  const urlsByCacheKey = await set(
+    resolvePresentationTemplatePreviewPresignedUrls$,
+    {
       requests: [...previewAssetsByTemplateId.values()].flatMap((assets) => {
         return assets.map((asset) => {
           return asset.request;
         });
       }),
-    }),
+    },
   );
   signal.throwIfAborted();
   const ownerNames = await set(ownerDisplayNames$, rows, signal);
@@ -381,16 +379,16 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     orgId: auth.orgId,
   });
   const sourceRequest = userTemplateSourceRequest({ row, orgId: auth.orgId });
-  const urlsByCacheKey = await get(
-    resolvePresentationTemplatePreviewPresignedUrls({
-      db: set(writeDb$),
+  const urlsByCacheKey = await set(
+    resolvePresentationTemplatePreviewPresignedUrls$,
+    {
       requests: [
         ...previewAssets.map((asset) => {
           return asset.request;
         }),
         sourceRequest,
       ],
-    }),
+    },
   );
   signal.throwIfAborted();
   const resolvedPreviewAssets = resolvedUserTemplatePreviewAssets(
@@ -466,13 +464,13 @@ const resolvePreviewUrlsInner$ = command(
       previewAssetIds: bodyResult.data.previewAssetIds,
       orgId: auth.orgId,
     });
-    const urlsByCacheKey = await get(
-      resolvePresentationTemplatePreviewPresignedUrls({
-        db: set(writeDb$),
+    const urlsByCacheKey = await set(
+      resolvePresentationTemplatePreviewPresignedUrls$,
+      {
         requests: assets.map((asset) => {
           return asset.request;
         }),
-      }),
+      },
     );
     signal.throwIfAborted();
     return {

@@ -112,6 +112,7 @@ async function fixture(
     site: `slack-report-${randomUUID().slice(0, 8)}`,
     artifactKind: "hosted-site",
     spaFallback: false,
+    visibility: "public",
     files: [hostedTextFile("/index.html", html)],
   });
   const completed = await host.completeHostedSite(actor, prepared.deploymentId);

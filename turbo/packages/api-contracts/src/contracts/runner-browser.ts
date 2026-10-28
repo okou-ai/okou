@@ -41,7 +41,7 @@ const actionSchema = discriminatedUnion("kind", [
     providerSessionId: uuid(),
     timeoutAt: iso.datetime(),
   }),
-  strictObject({ kind: literal("admit"), ...windowIdentity }),
+  strictObject({ kind: literal("admit"), ...instanceIdentity }),
   strictObject({ kind: literal("renew"), ...windowIdentity }),
   strictObject({
     kind: literal("retire"),

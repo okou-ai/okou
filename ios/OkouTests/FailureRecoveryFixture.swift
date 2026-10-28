@@ -23,6 +23,7 @@ final class FailureRecoveryFixture: Sendable {
     var resetOutcome = "reset"
     var resetKeys: [String] = []
     var resetGate: ModelResponseGate?
+    var resetRequested: (@Sendable () -> Void)?
     var accountGate: ModelResponseGate?
     var accountRequested: (@Sendable () -> Void)?
     var accountStatus = 200
@@ -153,10 +154,11 @@ final class FailureRecoveryFixture: Sendable {
         if path.hasSuffix("/subscription-reset") {
           let body = try XCTUnwrap(
             JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: String])
-          let gate = state.value.withLock { value in
+          let (gate, requested) = state.value.withLock { value in
             value.resetKeys.append(body["idempotencyKey"]!)
-            return value.resetGate
+            return (value.resetGate, value.resetRequested)
           }
+          requested?()
           if let gate { await gate.wait() }
           return state.value.withLock { value in
             value.resetOutcome == "failure"

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.11.30](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.29...runner-provider-v0.11.30) (2026-10-28)
+
+
+### Bug Fixes
+
+* **runner-provider:** retain ably connect task custody ([#43635](https://github.com/okou-ai/okou/issues/43635)) ([ca7e2c4](https://github.com/okou-ai/okou/commit/ca7e2c43a90837015d5448b5648fed49711d363e))
+
+## [0.11.29](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.28...runner-provider-v0.11.29) (2026-10-28)
+
+## [0.11.28](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.27...runner-provider-v0.11.28) (2026-10-27)
+
+## [0.11.27](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.26...runner-provider-v0.11.27) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-provider:** retain catalog lock through physical publication ([#43502](https://github.com/okou-ai/okou/issues/43502)) ([f474ce2](https://github.com/okou-ai/okou/commit/f474ce2cc2f05903b532ac9bb59b1a0913862478))
+* **runner:** retain newer pending connector sync generations ([#43454](https://github.com/okou-ai/okou/issues/43454)) ([b5c327c](https://github.com/okou-ai/okou/commit/b5c327cda684d35511abb22494a840d102d0048c))
+
 ## [0.11.26](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.25...runner-provider-v0.11.26) (2026-10-27)
 
 ## [0.11.25](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.24...runner-provider-v0.11.25) (2026-10-27)

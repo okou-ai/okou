@@ -4,7 +4,6 @@ import { and, eq, inArray, not, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 
-import type { Db } from "../external/db";
 import {
   gmailAutomationProjectionColumns,
   gmailAutomationProjectionConfig,
@@ -14,7 +13,6 @@ import {
   googleCalendarAutomationProjectionColumns,
   googleCalendarAutomationProjectionCondition,
 } from "./google-calendar-automation-account.service";
-import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import {
   googleMeetAutomationProjectionColumns,
   googleMeetAutomationProjectionCondition,
@@ -23,15 +21,7 @@ import {
   notionAutomationProjectionColumns,
   notionAutomationProjectionCondition,
   notionAutomationProjectionValues,
-  notionAutomationPendingEventsScope,
-  notionPendingEventsSkipWrite,
 } from "./notion-automation-account.service";
-
-import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
-import {
-  workflowAutomationDefaultAccountReadPlan,
-  workflowAutomationSelectedAccountReadPlan,
-} from "./workflow-automation-account.service";
 
 export type ProjectedAutomation =
   | Pick<
@@ -42,48 +32,6 @@ export type ProjectedAutomation =
       typeof workflowAutomations.$inferSelect,
       "id" | "workflowId" | "eventConnectorId"
     >;
-
-type RowProjectionConnector =
-  "gmail" | "google-calendar" | "google-meet" | "notion";
-
-export function workflowAutomationReprojectionColumns(
-  connectorSlug: RowProjectionConnector,
-) {
-  switch (connectorSlug) {
-    case "gmail": {
-      return gmailAutomationProjectionColumns();
-    }
-    case "google-calendar": {
-      return googleCalendarAutomationProjectionColumns();
-    }
-    case "google-meet": {
-      return googleMeetAutomationProjectionColumns();
-    }
-    case "notion": {
-      return notionAutomationProjectionColumns();
-    }
-  }
-}
-
-export function workflowAutomationReprojectionCondition(
-  args: { readonly orgId: string; readonly userId: string },
-  connectorSlug: RowProjectionConnector,
-) {
-  switch (connectorSlug) {
-    case "gmail": {
-      return gmailAutomationProjectionCondition(args);
-    }
-    case "google-calendar": {
-      return googleCalendarAutomationProjectionCondition(args);
-    }
-    case "google-meet": {
-      return googleMeetAutomationProjectionCondition(args);
-    }
-    case "notion": {
-      return notionAutomationProjectionCondition(args);
-    }
-  }
-}
 
 export interface PreparedDefaultAccountProjection {
   readonly id: string;
@@ -192,110 +140,4 @@ export function workflowAutomationProjectionValues(
     return { eventConnectorId, eventConfig };
   }
   return { eventConnectorId };
-}
-
-export async function reprojectWorkflowAutomationsForOwner(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (
-    args.target.kind !== "builtin" ||
-    !isWorkflowAutomationAccountConnectorSlug(args.target.connectorSlug)
-  ) {
-    return;
-  }
-  const connectorSlug = args.target.connectorSlug;
-  switch (connectorSlug) {
-    case "gmail":
-    case "google-calendar":
-    case "google-meet":
-    case "notion": {
-      const projectionDb = db;
-      const projectionArgs = args;
-      await (async () => {
-        const automations: ProjectedAutomation[] = await projectionDb
-          .select(workflowAutomationReprojectionColumns(connectorSlug))
-          .from(workflowAutomations)
-          .where(
-            workflowAutomationReprojectionCondition(
-              projectionArgs,
-              connectorSlug,
-            ),
-          );
-
-        for (const automation of automations) {
-          const workflowScope = {
-            ...projectionArgs,
-            workflowId: automation.workflowId,
-          };
-          const eventConnectorId = await (async () => {
-            const accountScope = {
-              ...workflowScope,
-              connectorSlug,
-            };
-            return await (async () => {
-              const selected =
-                workflowAutomationSelectedAccountReadPlan(accountScope);
-              const [selection] = await projectionDb
-                .select(selected.columns)
-                .from(selected.from)
-                .innerJoin(selected.join.table, selected.join.on)
-                .where(selected.where)
-                .limit(selected.limit);
-              if (selection) {
-                return selection.connectorId;
-              }
-              const fallback =
-                workflowAutomationDefaultAccountReadPlan(accountScope);
-              const [defaultAccount] = await projectionDb
-                .select(fallback.columns)
-                .from(fallback.from)
-                .where(fallback.where)
-                .limit(fallback.limit);
-              return defaultAccount?.connectorId ?? null;
-            })();
-          })();
-          const values = workflowAutomationProjectionValues(
-            automation,
-            eventConnectorId,
-            connectorSlug,
-          );
-          if (values === null) {
-            continue;
-          }
-          await projectionDb
-            .update(workflowAutomations)
-            .set(values)
-            .where(eq(workflowAutomations.id, automation.id));
-          if (connectorSlug === "notion") {
-            const pendingEventDb = projectionDb;
-            const scope = notionAutomationPendingEventsScope(automation.id);
-            await (async () => {
-              const write = notionPendingEventsSkipWrite(
-                scope.condition,
-                scope.reason,
-              );
-              await pendingEventDb
-                .update(write.table)
-                .set(write.values)
-                .where(write.where);
-            })();
-          }
-        }
-      })();
-      signal.throwIfAborted();
-      return;
-    }
-    case "google-forms": {
-      await db.execute(googleFormsAccountProjectionStatement(args));
-      signal.throwIfAborted();
-      return;
-    }
-  }
-  return connectorSlug satisfies never;
 }

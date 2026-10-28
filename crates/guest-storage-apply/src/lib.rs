@@ -61,6 +61,7 @@ pub mod input_telemetry;
 mod instructions;
 pub use instructions::apply_agent_instructions;
 pub use instructions::apply_workflow_skill;
+pub use instructions::apply_workflow_skill_documents;
 mod manifest;
 mod path;
 mod plan;

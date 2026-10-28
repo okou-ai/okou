@@ -634,10 +634,8 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
       invoice: invoice.id,
     };
     sessions.set(session.id, completed);
-    await postStripeEvent("checkout.session.completed", {
-      object: "checkout.session",
-      ...completed,
-    });
+    // The paid invoice binds and funds this public Checkout. Event ordering
+    // and completion replays have separate subscription lifecycle coverage.
     await postStripeEvent("invoice.paid", { object: "invoice", ...invoice });
   }
 
@@ -772,36 +770,45 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     expect(recharge.amount_paid).toBe(600);
     await postStripeEvent("invoice.paid", { object: "invoice", ...recharge });
     await accept(
-      config.update({ headers: billingHeaders, body: { enabled: false } }),
+      config.update({ headers: adminHeaders, body: { enabled: false } }),
       [200],
     );
-    // Prime and observe both CLI roles before the debit changes membership.
-    // The idempotent admin update and independent observations retain disabled
-    // recharge while proving both callers' original write authority.
-    const [disabled, startingBalance, memberCredits, memberUpdate] =
-      await Promise.all([
-        owner.run(async () => {
-          await accept(
-            config.update({ headers: adminHeaders, body: { enabled: false } }),
-            [200],
-          );
-          return await accept(config.get({ headers: adminHeaders }), [200]);
-        }),
-        owner.run(() => {
-          return accept(status.get({ headers: billingHeaders }), [200]);
-        }),
-        owner.run(() => {
-          return accept(credits.get({ headers: memberHeaders }), [200]);
-        }),
-        owner.run(() => {
-          return accept(
-            config.update({ headers: memberHeaders, body: { enabled: false } }),
-            [403],
-          );
-        }),
-      ]);
+    // The real admin CLI disables recharge above, proving its write authority.
+    // Read back that state independently and observe the member's original
+    // authority before the debit changes membership.
+    const [
+      disabled,
+      startingBalance,
+      adminCredits,
+      memberCredits,
+      memberUpdate,
+    ] = await Promise.all([
+      owner.run(() => {
+        return accept(config.get({ headers: adminHeaders }), [200]);
+      }),
+      owner.run(() => {
+        return accept(status.get({ headers: billingHeaders }), [200]);
+      }),
+      owner.run(() => {
+        return accept(credits.get({ headers: adminHeaders }), [200]);
+      }),
+      owner.run(() => {
+        return accept(credits.get({ headers: memberHeaders }), [200]);
+      }),
+      owner.run(() => {
+        return accept(
+          config.update({ headers: memberHeaders, body: { enabled: false } }),
+          [403],
+        );
+      }),
+    ]);
     expect(disabled.body).toMatchObject({ enabled: false });
     expect(startingBalance.body.credits).toBe(5005);
+    expect(adminCredits.body).toMatchObject({
+      totalCredits: 21_400,
+      purchasedCredits: 20_000,
+      bonusCredits: 1400,
+    });
     expect(memberCredits.body).toMatchObject({
       totalCredits: 0,
       purchasedCredits: 0,

@@ -103,6 +103,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let phaseChanged: (ScrollPhase) -> Void
   let metricsChanged: (ConversationCollectionMetrics) -> Void
   let rowsPresented: (String?) -> Void
+  var quote: ((ChatFeedbackSelection) -> Void)? = nil
   let refresh: () async -> Void
   @ViewBuilder let content: (ConversationCollectionRow, ConversationScrollAnchor?) -> Content
 
@@ -199,7 +200,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.bottomEdgeEffect.isHidden = true
     collection.keyboardDismissMode = .interactive
     collection.selfSizingInvalidation = .disabled
-    collection.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "message")
+    collection.register(MessageSelectionCell.self, forCellWithReuseIdentifier: "message")
     collection.delegate = self
     source.sendTransition?.attach(collection)
     source.sendTransition?.didBegin = { [weak self] in
@@ -241,6 +242,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       let cell = collection.dequeueReusableCell(withReuseIdentifier: "message", for: index)
       guard let row = self.displayedRows[id], let measurement = self.measurements[id] else {
         preconditionFailure("Every displayed conversation row must have a measurement")
+      }
+      if let cell = cell as? MessageSelectionCell {
+        cell.message = row.message
+        cell.quote = self.source.quote
       }
       cell.clipsToBounds = true
       let content = self.source.content(row, self.source.anchor)

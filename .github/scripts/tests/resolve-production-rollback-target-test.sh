@@ -19,6 +19,7 @@ decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-st
 data_router_response_id_floor=$(<"${repo_root}/.github/rollback-floors/data-router-response-id")
 connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
+data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
 cat >"${fake_bin}/git" <<'SH'
@@ -28,7 +29,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "7171717171717171717171717171717171717171" ]; then
+    if [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
+      [ "${MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7171717171717171717171717171717171717171" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_WORKFLOW_ATTACHMENT_RUNNER_VALID:-1}" = "1" ]
       else
@@ -45,6 +48,12 @@ case "${1:-}" in
         [ "${MOCK_HOME_CACHE_CAPACITY_READER_ON_MAIN:-1}" = "1" ]
       else
         [ "${MOCK_HOME_CACHE_CAPACITY_READER_TARGET_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_DATA_ROUTER_STATELESS_MCP_API_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_DATA_ROUTER_STATELESS_MCP_API_TARGET_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -96,6 +105,14 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STATE_WSS_INGRESS_FREE_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "190cdfba6440b50469117758156616447d707b81" ]; then
       [ "${MOCK_STRIPE_INVOICE_PAID_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "26bacab4693d32e4a4453dce5c84e565d7129b9c" ]; then
+      [ "${MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "c8de6212dc54a5aae0d4658acf1afa6a35f939ab" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_DAV_RUNNER_READER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_DAV_API_READER_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "b610ff61043274157618e3925b13a66dc56ef84b" ]; then
       [ "${MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
@@ -311,6 +328,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_DATA_ROUTER_RESPONSE_ID_COMMIT-$MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/data-router-stateless-mcp-api" ]; then
+      [ "${MOCK_DATA_ROUTER_STATELESS_MCP_API_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_DATA_ROUTER_STATELESS_MCP_API_COMMIT-$MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/desktop-manifest-r2-reader" ]; then
       [ "${MOCK_DESKTOP_MANIFEST_R2_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR"
@@ -413,6 +435,7 @@ run_resolver() {
     MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR="$data_router_response_id_floor" \
     MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR="$connector_diagnostic_targets_floor" \
     MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR="$desktop_manifest_r2_reader_floor" \
+    MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
@@ -430,6 +453,34 @@ assert_failure() {
   fi
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
+
+# Publishing DAV catalog rules must not make either independently selected
+# rollback artifact unable to read the catalog or bypass the iCloud rollout.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates DAV connector preparation" \
+  run_resolver "${tmp_dir}/dav-api-reader.output" MOCK_DAV_API_READER_VALID=0
+[ ! -s "${tmp_dir}/dav-api-reader.output" ] || fail "pre-DAV API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-DAV API must fail before provider or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates DAV firewall method support" \
+  run_resolver "${tmp_dir}/dav-runner-reader.output" MOCK_DAV_RUNNER_READER_VALID=0
+[ ! -s "${tmp_dir}/dav-runner-reader.output" ] || fail "pre-DAV Runner must not publish outputs"
+if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "pre-DAV Runner must fail before Runner artifact or host access"
+fi
+
+# Outgoing configuration requests must not overlap a rollback that can adopt
+# already-visible custom Agents as the workspace default.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates immutable default Agent identity" \
+  run_resolver "${tmp_dir}/immutable-default-agent.output" MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID=0
+[ ! -s "${tmp_dir}/immutable-default-agent.output" ] || fail "mutable default Agent API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "mutable default Agent API must fail before provider or host access"
+fi
 
 # The prepared API reader is required even when the rollback selects an older
 # Runner, because a larger current Runner may still own claimed/finalizing work.
@@ -493,6 +544,21 @@ for desktop_manifest_case in \
   [ ! -s "${tmp_dir}/desktop-manifest-r2-reader.output" ] || fail "unsupported Desktop manifest reader must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Desktop manifest R2 policy must reject before provider or host access"
+  fi
+done
+
+# APIs before #43447 send envelope-less JSON-RPC that Router no longer serves.
+for data_router_mcp_case in \
+  "MOCK_DATA_ROUTER_STATELESS_MCP_API_AVAILABLE=0|Cannot read the Data Router stateless MCP API rollback floor from main" \
+  "MOCK_DATA_ROUTER_STATELESS_MCP_API_COMMIT=not-a-commit|Missing or invalid Data Router stateless MCP API rollback floor" \
+  "MOCK_DATA_ROUTER_STATELESS_MCP_API_ON_MAIN=0|Data Router stateless MCP API rollback floor is not on main" \
+  "MOCK_DATA_ROUTER_STATELESS_MCP_API_TARGET_VALID=0|Rollback target predates the Data Router stateless MCP requests"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${data_router_mcp_case#*|}" \
+    run_resolver "${tmp_dir}/data-router-stateless-mcp.output" "${data_router_mcp_case%%|*}"
+  [ ! -s "${tmp_dir}/data-router-stateless-mcp.output" ] || fail "pre-stateless Data Router API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Data Router stateless MCP policy must reject before provider or host access"
   fi
 done
 
@@ -1836,6 +1902,14 @@ assert_failure "Rollback target predates the Stripe invoice-paid automation reti
 [ ! -s "${tmp_dir}/stripe-invoice-paid-floor.output" ] || fail "table-dependent API must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Stripe invoice-paid retirement must reject before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Run output memory citation retirement" \
+  run_resolver "${tmp_dir}/memory-citation-floor.output" MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/memory-citation-floor.output" ] || fail "citation-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Run output memory citation retirement must reject before artifact or host access"
 fi
 
 assert_failure "Cannot resolve the merged direct Workflow attachment runtime" \

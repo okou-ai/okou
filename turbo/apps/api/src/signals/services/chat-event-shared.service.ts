@@ -1,4 +1,11 @@
-import { chatEventAppendResultSchema } from "./chat-event-append.service";
+import {
+  serializeChatFollowupsContent,
+  type ChatRecommendedFollowup,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatEventAppendResultSchema,
+  chatEventCommandResultSchema,
+} from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -23,8 +30,11 @@ import {
   publishChatThreadReadCursorUpdatedSafely,
 } from "../external/realtime";
 import { nowDate } from "../../lib/time";
-import { assistantEventIdForRunEvent } from "./assistant-event-id";
-import { chatEventsInsertSql } from "./chat-event.service";
+import {
+  assistantEventIdForRunEvent,
+  followupsEventIdForRun,
+} from "./assistant-event-id";
+import { chatEventInsertSql, chatEventsInsertSql } from "./chat-event.service";
 import {
   chatEventTypeIn,
   runOwnedChatEventCondition,
@@ -134,6 +144,65 @@ interface ChatThreadTouchOptions {
   /** External notification delivery consumes unread state for the whole thread. */
   readonly markRead?: boolean;
 }
+
+export const insertRecommendedFollowupsEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly followups: readonly ChatRecommendedFollowup[];
+      readonly markRead: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    const inserted =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await set(writeDb$).execute(
+          chatEventInsertSql(
+            {
+              id: followupsEventIdForRun(args.runId),
+              chatThreadId: args.threadId,
+              eventType: "output.followups",
+              content: serializeChatFollowupsContent(args.followups),
+              runId: args.runId,
+            },
+            "id",
+          ),
+        ),
+      )[0] ?? null;
+
+    signal.throwIfAborted();
+    if (!inserted) {
+      return false;
+    }
+
+    if (args.markRead) {
+      await set(
+        touchChatThreadLastMessageAtIndependently$,
+        args.threadId,
+        {
+          touchedAt: inserted.createdAt,
+          orgId: args.orgId,
+          markRead: true,
+        },
+        signal,
+      );
+    }
+    await publishChatThreadMessageCreatedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+      threadId: args.threadId,
+      syncThroughSeqId: inserted.seqId,
+    });
+    signal.throwIfAborted();
+    return true;
+  },
+);
 
 const appendThreadTouchEvent$ = command(
   async (

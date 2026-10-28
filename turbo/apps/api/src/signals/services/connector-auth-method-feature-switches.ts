@@ -21,6 +21,7 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "expensify\0api-token": FeatureSwitchKey.ExpensifyConnector,
   "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
+  "icloud\0app-password": FeatureSwitchKey.ICloudConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "neon\0oauth": FeatureSwitchKey.NeonConnector,
   "netsuite\0api-token": FeatureSwitchKey.NetSuiteConnector,

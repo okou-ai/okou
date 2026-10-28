@@ -1,9 +1,3 @@
-import { QueryBuilder } from "drizzle-orm/pg-core";
-import { memberRewardWalletQuery } from "./get-started-member-reward";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { slackRewardWalletEntitlement } from "./slack-installation-reward";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -35,9 +29,16 @@ import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/sch
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
-import { object, uuid } from "zod";
+import { boolean, literal, object, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { safeSqlStateCode } from "../../lib/pg-errors";
+import { contextProjectionSchema } from "./context-rowset";
+import { connectorConnectionSelection } from "./connector-connection-write.service";
+import {
+  deviceAuthTokenPublicationSql,
+  deviceAuthRejectedPublicationSql,
+} from "./builtin-device-auth-publication";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -59,19 +60,15 @@ import {
 } from "./connector-action-resolver.service";
 import {
   type PreparedBuiltinConnectorTokenConnection,
+  type PreparedBuiltinTokenPublication,
   type CommittedBuiltinConnectorTokenConnection,
   readBuiltinConnectorById$,
   connectorConnectionWriteRejection,
-  commitBuiltinConnectorTokenConnection,
+  committedBuiltinTokenConnection,
+  prepareBuiltinConnectorTokenPublication$,
   finalizeBuiltinConnectorTokenConnection$,
   prepareBuiltinConnectorTokenConnection$,
-  builtinConnectorTokenMutationValues,
 } from "./connector-data.service";
-import {
-  connectorConnectionMutationReadPlan,
-  connectorConnectionMutationReadResult,
-  type ConnectorConnectionMutationArgs,
-} from "./connector-connection-write.service";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
 import { normalizeDeviceAuthStartOptionsWithMethod } from "./connector-catalog-form-fields.service";
 import {
@@ -671,18 +668,6 @@ type CompleteClaimedSessionArgs = PollClaimedSessionArgs & {
   readonly result: OAuthDeviceAuthCompleteResultBase;
 };
 
-function completedDeviceAuthClaimCondition(
-  sessionId: string,
-  claimStartedAt: Date,
-) {
-  const sessions = builtinConnectorOauthDeviceAuthorizationSessions;
-  return and(
-    eq(sessions.id, sessionId),
-    eq(sessions.status, "polling"),
-    eq(sessions.updatedAt, claimStartedAt),
-  );
-}
-
 function deviceAuthRejection(
   args: CompleteClaimedSessionArgs,
   result: {
@@ -702,20 +687,6 @@ function deviceAuthRejection(
     },
     nowDate(),
   );
-}
-
-function deviceAuthSessionQuery(sessionId: string) {
-  const sessions = builtinConnectorOauthDeviceAuthorizationSessions;
-  return new QueryBuilder()
-    .select({
-      ...deviceAuthSessionSelection,
-      accountMutation:
-        deviceAuthSessionSelection.accountMutation.as("account_mutation"),
-    })
-    .from(sessions)
-    .where(eq(sessions.id, sessionId))
-    .limit(1)
-    .as("device_auth_session");
 }
 
 const finalizeDeviceAuthConnection$ = command(
@@ -742,119 +713,125 @@ const finalizeDeviceAuthConnection$ = command(
   },
 );
 
-function deviceAuthCompletion(
-  args: CompleteClaimedSessionArgs,
-  result: CommittedBuiltinConnectorTokenConnection,
-) {
-  const completedAt = nowDate();
-  return {
-    values: {
-      status: "complete" as const,
-      completedConnectorId: result.connectorRow.id,
-      updatedAt: completedAt,
-      completedAt,
-    },
-    condition: completedDeviceAuthClaimCondition(
-      args.session.id,
-      args.claimStartedAt,
-    ),
-  };
-}
-
 type CommitDeviceAuthArgs = CompleteClaimedSessionArgs & {
   readonly prepared: PreparedBuiltinConnectorTokenConnection;
 };
 
-const completeClaimedSession$ = command(
-  async ({ set }, args: CommitDeviceAuthArgs, signal: AbortSignal) => {
-    const { session, claimStartedAt, prepared } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0084; new non-billing transactions are prohibited.
-    const result = await set(writeDb$).transaction(async (tx) => {
-      const sessions = builtinConnectorOauthDeviceAuthorizationSessions;
-      const sessionQuery = deviceAuthSessionQuery(session.id);
-      const [insertedWallet] = await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({ orgId: prepared.orgId })
-        .onConflictDoNothing()
-        .returning({ orgId: orgMetadata.orgId });
-      await tx.select().from(memberRewardWalletQuery(prepared.orgId));
-      if (insertedWallet) {
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(slackRewardWalletEntitlement(prepared.orgId))
-          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-      }
-      const mutationReadDb = tx;
-      const mutationReadArgs: ConnectorConnectionMutationArgs =
-        builtinConnectorTokenMutationValues(prepared);
-      const resolution = await (async () => {
-        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
-        for (;;) {
-          const rows = await mutationReadDb
-            .select(read.columns)
-            .from(read.from)
-            .where(read.where)
-            .orderBy(...read.orderBy)
-            .limit(read.limit);
-          const result = connectorConnectionMutationReadResult(
-            mutationReadArgs,
-            read,
-            rows,
-          );
-          if (result.kind === "resolved") {
-            return result.resolution;
-          }
-          read = result.read;
-        }
-      })();
-      signal.throwIfAborted();
-      // Keep the exact polling claim through credential persistence and completion.
-      // A replacement session or reclaimed provider poll must not publish credentials.
-      const [retainedClaim] = await tx
-        .update(sessions)
-        .set({ status: "polling" })
-        .where(retainedDeviceAuthClaimCondition(session, claimStartedAt))
-        .returning({ id: sessions.id });
-      signal.throwIfAborted();
-      if (!retainedClaim) {
-        const [currentSession] = await tx.select().from(sessionQuery);
-        signal.throwIfAborted();
-        return lostDeviceAuthClaimResponse(currentSession, session);
-      }
-      const connectionResult = await commitBuiltinConnectorTokenConnection(
-        { ...prepared, db: tx, resolution },
-        signal,
+const devicePublicationRow = object({
+  connector: contextProjectionSchema(connectorConnectionSelection()).nullable(),
+  claimed: boolean(),
+  complete: literal(1),
+}).strict();
+
+const deviceRejectionRow = object({ rejected: boolean() }).strict();
+
+const rejectDeviceAuthConnection$ = command(
+  async (
+    { set },
+    args: CommitDeviceAuthArgs,
+    status: Parameters<typeof connectorConnectionWriteRejection>[0],
+    signal: AbortSignal,
+  ): Promise<PollSuccess> => {
+    const mutation = deviceAuthRejection(args, { status });
+    const db = set(writeDb$);
+    const query = deviceAuthRejectedPublicationSql(
+      args.prepared.orgId,
+      mutation.values,
+      retainedDeviceAuthClaimCondition(args.session, args.claimStartedAt),
+    );
+    signal.throwIfAborted();
+    const rows = parseRawRows(deviceRejectionRow, await db.execute(query));
+    signal.throwIfAborted();
+    const [row] = rows;
+    if (rows.length !== 1 || !row) {
+      throw new Error(
+        "Device authorization rejection returned an invalid result",
       );
-      if (connectionResult.status !== "connected") {
-        const mutation = deviceAuthRejection(args, connectionResult);
-        const [terminalSession] = await tx
-          .update(sessions)
-          .set(mutation.values)
-          .where(mutation.condition)
-          .returning(deviceAuthSessionSelection);
-        signal.throwIfAborted();
-        if (terminalSession) {
-          const body = terminalErrorBody(terminalSession);
-          return { status: 200 as const, body };
-        }
-        const [currentSession] = await tx.select().from(sessionQuery);
-        signal.throwIfAborted();
-        return lostDeviceAuthClaimResponse(currentSession, session);
-      }
-      const completed = deviceAuthCompletion(args, connectionResult);
-      const [completedSession] = await tx
-        .update(sessions)
-        .set(completed.values)
-        .where(completed.condition)
-        .returning({ id: sessions.id });
-      signal.throwIfAborted();
-      if (!completedSession) {
+    }
+    if (!row.rejected) {
+      return await set(claimNoLongerCurrentResponse$, args.session, signal);
+    }
+    return {
+      status: 200,
+      body: {
+        status: mutation.values.status,
+        errorCode: mutation.values.errorCode,
+        errorMessage: mutation.values.errorMessage,
+      },
+    };
+  },
+);
+
+/** Complete finite atomic publication before recording post-commit cancellation. */
+const publishDeviceAuthConnection$ = command(
+  async (
+    { set },
+    args: CommitDeviceAuthArgs,
+    publication: PreparedBuiltinTokenPublication,
+  ) => {
+    const db = set(writeDb$);
+    const query = deviceAuthTokenPublicationSql(
+      publication.publication,
+      retainedDeviceAuthClaimCondition(args.session, args.claimStartedAt),
+      nowDate(),
+    );
+    const outcome = await settle(
+      (async () => {
+        return parseRawRows(devicePublicationRow, await db.execute(query));
+      })(),
+    );
+    if (!outcome.ok) {
+      if (safeSqlStateCode(outcome.error) === "22012") {
         throw new Error(
-          "Retained OAuth device authorization claim disappeared",
+          "Connector account, automation or device claim changed while connecting; start authorization again",
+          { cause: outcome.error },
         );
       }
-      return connectionResult;
-    });
+      throw outcome.error;
+    }
+    const [row] = outcome.value;
+    if (outcome.value.length !== 1 || !row) {
+      throw new Error(
+        "Device authorization publication returned an invalid result",
+      );
+    }
+    if (!row.claimed) {
+      return null;
+    }
+    if (row.connector === null) {
+      throw new Error("Completed device authorization has no connector");
+    }
+    return committedBuiltinTokenConnection(
+      row.connector,
+      publication.existing,
+      publication.cleanup,
+    );
+  },
+);
+
+const completeClaimedSession$ = command(
+  async ({ set }, args: CommitDeviceAuthArgs, signal: AbortSignal) => {
+    const publication = await set(
+      prepareBuiltinConnectorTokenPublication$,
+      args.prepared,
+      signal,
+    );
+    signal.throwIfAborted();
+    const result =
+      publication.kind === "rejected"
+        ? await set(
+            rejectDeviceAuthConnection$,
+            args,
+            publication.result.status,
+            signal,
+          )
+        : await set(publishDeviceAuthConnection$, args, publication);
+    if (result === null) {
+      return {
+        result: await set(claimNoLongerCurrentResponse$, args.session, signal),
+        postCommitAbort: null,
+      };
+    }
     if (signal.aborted) {
       return { result, postCommitAbort: signal.reason };
     }

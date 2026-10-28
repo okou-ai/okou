@@ -1352,9 +1352,6 @@
     "cardTitle": "云端浏览器",
     "close": "关闭实时浏览器",
     "documentTitle": "实时浏览器",
-    "fitAction": "适应",
-    "fitWindow": "让浏览器适应窗口",
-    "iframeTitle": "实时浏览器：{{name}}",
     "notFound": "未找到浏览器",
     "open": "打开 {{name}} 浏览器",
     "openAction": "打开",
@@ -1468,40 +1465,8 @@
           "name": "邀请你的团队",
           "unit": "每位成员"
         },
-        "notEligible": "不符合条件",
         "pendingState": "{{amount}} 待发放",
-        "rejected": {
-          "alreadyRedeemed": "帖子已被使用",
-          "authorAlreadyRewarded": "该账号已领取过奖励",
-          "authorUnavailable": "无法确认作者",
-          "officialAccount": "{{assistantName}} 官方帖子不计入",
-          "postMustMention": "需要提到 {{assistantName}}"
-        },
         "rewardsNote": "奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
-        "share": {
-          "action": "分享",
-          "description": "发帖后把链接贴过来",
-          "name": "分享到 X"
-        },
-        "shareDialog": {
-          "description": "提交一条公开帖子供审核。每人只能成功领取一次奖励。",
-          "helper": "帖子必须是公开的，并且提到 {{assistantName}}。",
-          "inputLabel": "帖子链接",
-          "openX": "打开 X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "不用再做什么，积分会自己到账。",
-          "reviewDone": "知道了",
-          "reviewExplain": "只要帖子是公开的并且提到了 {{assistantName}}，奖励就会自动发放。如果有问题，这一步会带着原因重新打开。",
-          "reviewOpenPost": "打开帖子",
-          "reviewPending": "通常一小时内",
-          "reviewTime": "审核通常一小时内完成。",
-          "reviewTitle": "帖子已经在审核了",
-          "stepPaste": "把链接贴回来",
-          "stepWrite": "写这条帖子",
-          "submit": "提交",
-          "title": "在 X 上分享 {{assistantName}}",
-          "writingPrompt": "用自己的话写下你实际用 {{assistantName}} 尝试过的事。"
-        },
         "slack": {
           "action": "添加",
           "description": "团队日常办公的地方",
@@ -1555,10 +1520,11 @@
       "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
-      "customDirection": "自己指定方向",
-      "customDirectionDescription": "带上完整背景，继续追问或补充你的要求",
-      "customPrepared": "已加入输入框",
-      "customPreparedDescription": "在上方补充要求，发送后开启新对话",
+      "customDirection": "我想……",
+      "customDirectionDescription": "提个问题，或说说你想做什么。",
+      "customPlaceholder": "你有什么想法？",
+      "customPrepared": "接着说……",
+      "customPreparedDescription": "在上方输入消息，然后发送。",
       "dismiss": "忽略",
       "label": "建议",
       "next": "下一条建议",
@@ -3611,8 +3577,8 @@
         "manageConnection": "管理已连接账号",
         "open": "打开 Telegram",
         "openSetup": "打开设置流程",
-        "setupDescription": "在设置中选择默认智能体，然后返回此页面连接 Telegram。",
-        "setupMemberDescription": "请让工作区管理员选择默认智能体，然后返回此页面。",
+        "setupDescription": "请完成工作区设置以初始化 Okou，然后返回此页面连接 Telegram。",
+        "setupMemberDescription": "请让工作区管理员完成设置并初始化 Okou，然后返回此页面。",
         "setupTitle": "完成账号设置",
         "successDescription": "在 Telegram 中向机器人发送消息，即可开始聊天。",
         "successTitle": "已连接到 Telegram！"
@@ -3952,18 +3918,18 @@
   "desktopShellAuthorization": {
     "actionFailed": "无法更新授权。",
     "allow": "允许 1 小时",
-    "approved": "已允许使用 Shell",
+    "approved": "已授权",
     "deadline": "到期时间：{{date}}",
     "denied": "已拒绝申请",
     "deny": "拒绝",
     "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
-    "details": "查看详情",
     "expired": "授权已到期",
     "loading": "正在加载授权…",
     "pending": "等待批准",
     "revoke": "撤销授权",
     "revoked": "已撤销 Shell 授权",
-    "scope": "仅限当前 Chat 和电脑。授权结束后，已有终端仍保持打开。",
+    "scope": "仅限当前 Chat 和电脑",
+    "terminalNotice": "授权结束后，已有终端仍保持打开。",
     "title": "Desktop Shell 授权",
     "unavailable": "授权不可用",
     "waiting": "Run 仍在运行或已切换电脑，暂时无法批准。"
@@ -4021,6 +3987,15 @@
     "previousPage": "上一页样张",
     "title": "文档",
     "useNamed": "使用 {{title}}"
+  },
+  "featureGuide": {
+    "close": "关闭新功能指南",
+    "dismiss": "知道了",
+    "label": "新功能",
+    "next": "下一步",
+    "preview": "预览",
+    "previous": "上一步",
+    "tryPrompt": "试试这个任务"
   },
   "global": {
     "errors": {
@@ -4237,6 +4212,134 @@
         "teamCopy": "在同一个工作区协作。",
         "teamTitle": "邀请同事"
       },
+      "outcomes": {
+        "accessibleLabel": "基于 {{source}} 整理的{{title}}示意，内容均为示例数据。",
+        "examples": {
+          "coaching": {
+            "context": "周四 10:00 · 45 分钟课程",
+            "next": "确定下一步",
+            "nextTime": "10 分钟",
+            "practice": "练习新技能",
+            "practiceTime": "25 分钟",
+            "review": "回顾上次课程",
+            "reviewTime": "10 分钟"
+          },
+          "consulting": {
+            "agenda": "范围与时间安排",
+            "background": "背景",
+            "context": "Acme Studio · 周四 10:00",
+            "discuss": "讨论",
+            "expansion": "计划拓展业务",
+            "goal": "目标",
+            "objective": "改善新用户引导"
+          },
+          "design": {
+            "brandGuide": "品牌规范",
+            "clientBrief": "客户 brief",
+            "deliverables": "交付物",
+            "direction": "视觉方向",
+            "photos": "产品照片",
+            "positioning": "面向环保消费者，传达“同样护理，更少浪费”。",
+            "project": "补充装护肤品上市",
+            "scope": "落地页 + 3 张广告素材",
+            "visuals": "简洁的产品特写"
+          },
+          "finance": {
+            "context": "10 月 · 月结复盘",
+            "expenses": "支出",
+            "income": "收入",
+            "reconcile": "待对账",
+            "transactions": "3 笔交易"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "营收增长",
+            "margin": "毛利率",
+            "metric": "指标",
+            "northstar": "Northstar",
+            "watch": "关注：客户集中度。"
+          },
+          "marketing": {
+            "comparison": "对比此前 7 天",
+            "period": "最近 7 天"
+          },
+          "operations": {
+            "agenda": "确认团队议程",
+            "context": "本周 · 3 项重点",
+            "friday": "周五",
+            "quote": "审核供应商报价",
+            "today": "今天",
+            "tuesday": "周二",
+            "update": "发送项目进展"
+          },
+          "other": {
+            "brief": "查看共享简报",
+            "call": "确认明天的通话",
+            "context": "来自近期邮件",
+            "reply": "回复 Alex"
+          },
+          "research": {
+            "action": "测试有引导的首个任务",
+            "context": "客户访谈 · 5 份笔记",
+            "evidence": "依据",
+            "finding": "发现",
+            "insight": "配置过程耗时过长",
+            "interviews": "5 次访谈中有 3 次提及",
+            "next": "下一步"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 个商机需要关注",
+            "demo": "明天演示",
+            "next": "下一步：跟进 Acme。",
+            "northstar": "Northstar",
+            "proposal": "方案已发送"
+          },
+          "software": {
+            "context": "2 项已合并 · 1 个待解决问题",
+            "issue": "CSV 导出失败",
+            "search": "提升搜索速度",
+            "signup": "简化注册流程"
+          }
+        },
+        "expandLabel": "看看连接后能获得什么",
+        "industries": {
+          "coaching": {
+            "title": "课程准备计划"
+          },
+          "consulting": {
+            "title": "客户会前简报"
+          },
+          "design": {
+            "title": "创意简报"
+          },
+          "finance": {
+            "title": "月结概览"
+          },
+          "investing": {
+            "title": "公司研究对比"
+          },
+          "marketing": {
+            "title": "广告表现简报"
+          },
+          "operations": {
+            "title": "本周工作计划"
+          },
+          "other": {
+            "title": "下一步行动"
+          },
+          "research": {
+            "title": "研究要点摘要"
+          },
+          "sales": {
+            "title": "客户跟进摘要"
+          },
+          "software": {
+            "title": "版本进展摘要"
+          }
+        },
+        "title": "让常用工具帮你完成工作"
+      },
       "prompt": {
         "connectorsDescription": "连接这些工具，让 Okou 更了解你的工作场景，更有针对性地帮你完成任务。也可以稍后再连接。",
         "connectorsTitle": "连接你的工作工具",
@@ -4308,6 +4411,12 @@
         "copy": "Okou 越了解你的工作，就越聪明。连接一个你每天在用的工具，从一项基于真实工作的任务开始。",
         "permissions": "Okou 会参考少量信息为你定制第一项任务；Agent 能做什么、授权多久，都由你决定。",
         "securityLink": "了解 Okou 如何保护你的数据",
+        "skipDialog": {
+          "connect": "继续连接",
+          "description": "建议先连接常用工具，让 Okou 更了解你的工作，提供更贴合需求的帮助。你也可以稍后再连接。",
+          "skip": "仍然跳过",
+          "title": "连接工具，让 Okou 更懂你的工作"
+        },
         "title": "连接一个工作工具"
       },
       "startingPrompt": {
@@ -5241,6 +5350,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "连接",
         "connectAccount": "连接账号",
+        "creditsBalance": "{{value}} {{provider}} 积分",
+        "creditsLabel": "{{provider}} 积分",
+        "creditsUnlimited": "不限量",
         "disconnectAccount": "断开账号连接",
         "disconnectDescription": "这会把账号从 Okou 中移除，但不会取消你在该服务商处的订阅。",
         "disconnecting": "正在断开…",
@@ -5338,37 +5450,9 @@
       "timing": "修改对之后的运行生效。正在运行和已准备好的任务可能仍沿用原来的设置。",
       "title": "内置工具",
       "tools": {
-        "data-search": {
-          "description": "补充职业资料，研究公司、流量、广告、创作者及其他商业数据。",
-          "name": "高级数据研究"
-        },
-        "finance": {
-          "description": "查询公司、行情和市场数据。",
-          "name": "金融数据"
-        },
         "image-generation": {
           "description": "用内置模型生成图片。",
           "name": "图片生成"
-        },
-        "maps": {
-          "description": "查找地点、地址和路线。",
-          "name": "地图与地点"
-        },
-        "people-search": {
-          "description": "查找公开的职业资料。",
-          "name": "人物搜索"
-        },
-        "scrape": {
-          "description": "读取并提取网页内容。",
-          "name": "网页内容提取"
-        },
-        "seo": {
-          "description": "研究搜索排名、关键词和外链。",
-          "name": "SEO 研究"
-        },
-        "social": {
-          "description": "研究公开的社交内容并收集素材。",
-          "name": "社交研究"
         },
         "web-search": {
           "description": "在网上查找最新信息。",
@@ -5505,7 +5589,7 @@
         "conflict": "晨报的安装状态不一致，暂时无法使用。",
         "description": "每天早上 7:00 前（按你的时区）接收当日重点。",
         "errorMessage": "晨报设置无法加载或更新。",
-        "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
+        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
         "preparationFailed": "暂时无法运行。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
@@ -5514,7 +5598,7 @@
       "proactiveLearning": {
         "description": "夜间回顾你的信息和工作，整理个人记忆、更新理解。",
         "errorMessage": "无法加载或更新此设置。",
-        "missingDefaultAgent": "请先选择可用的默认 Agent。",
+        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "此工作流暂不可用。",
         "preparing": "正在准备此工作流。",
@@ -5523,7 +5607,7 @@
       "proactivePlanningAction": {
         "description": "在你交办的范围内规划并推进任务，需要你处理时提醒你。",
         "errorMessage": "无法加载或更新此设置。",
-        "missingDefaultAgent": "请先选择可用的默认 Agent。",
+        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "此工作流暂不可用。",
         "preparing": "正在准备此工作流。",
@@ -5532,7 +5616,7 @@
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
         "errorMessage": "无法加载或更新主动建议设置。",
-        "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
+        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "暂时无法运行。",
         "preparing": "正在准备每小时建议，你可以随时关闭。",

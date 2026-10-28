@@ -23,6 +23,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
   private var terminating = false
   private var menuRefreshPending = false
   private var lockDescriptor: Int32 = -1
+  private lazy var checkForUpdatesItem = item(
+    "Check for Updates...", action: #selector(checkForUpdates), enabled: false)
+  private lazy var developerToolsItem = item(
+    "Developer Tools", action: #selector(toggleDeveloper))
+  private lazy var mainMenu = makeMainMenu()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     let diagnosticRun =
@@ -160,6 +165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     let item = NSToolbarItem(itemIdentifier: itemIdentifier)
     item.label = "Okou"
     item.view = container
+    // Keep the decorative wordmark off the toolbar's automatic Liquid Glass background.
+    item.isBordered = false
     return item
   }
   func windowDidUpdate(_ notification: Notification) {
@@ -329,19 +336,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     menu.addItem(item("Quit Okou", action: #selector(quit)))
     statusItem?.menu = menu
 
+    updateMainMenu()
+  }
+  private func updateMainMenu() {
+    let main = mainMenu
+    let canCheckForUpdates = updater?.canCheckForUpdates == true
+    if checkForUpdatesItem.isEnabled != canCheckForUpdates {
+      checkForUpdatesItem.isEnabled = canCheckForUpdates
+    }
+    let developerToolsHidden = !model.developerToolsAvailable
+    if developerToolsItem.isHidden != developerToolsHidden {
+      developerToolsItem.isHidden = developerToolsHidden
+    }
+    let developerToolsState: NSControl.StateValue = model.developerToolsEnabled ? .on : .off
+    if developerToolsItem.state != developerToolsState {
+      developerToolsItem.state = developerToolsState
+    }
+    // Replacing the main menu makes AppKit re-read input sources for its shortcuts.
+    // Permission polls and heartbeats only need to update the existing menu items.
+    if NSApplication.shared.mainMenu !== main {
+      NSApplication.shared.mainMenu = main
+    }
+  }
+  private func makeMainMenu() -> NSMenu {
     let main = NSMenu()
     let app = NSMenu()
     app.autoenablesItems = false
     app.addItem(item("About Okou", action: #selector(about)))
-    app.addItem(
-      item(
-        "Check for Updates...", action: #selector(checkForUpdates),
-        enabled: updater?.canCheckForUpdates == true))
-    if model.developerToolsAvailable {
-      let developer = item("Developer Tools", action: #selector(toggleDeveloper))
-      developer.state = model.developerToolsEnabled ? .on : .off
-      app.addItem(developer)
-    }
+    app.addItem(checkForUpdatesItem)
+    developerToolsItem.isHidden = true
+    app.addItem(developerToolsItem)
     app.addItem(.separator())
     app.addItem(item("Quit Okou", action: #selector(quit), key: "q"))
     let application = NSMenuItem(title: "Okou", action: nil, keyEquivalent: "")
@@ -367,7 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     let windows = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
     windows.submenu = windowMenu
     main.addItem(windows)
-    NSApplication.shared.mainMenu = main
+    return main
   }
   @objc private func signIn() {
     showWindow()

@@ -1352,9 +1352,6 @@
     "cardTitle": "クラウドブラウザ",
     "close": "ライブブラウザを閉じる",
     "documentTitle": "ライブブラウザ",
-    "fitAction": "合わせる",
-    "fitWindow": "ブラウザをウィンドウに合わせる",
-    "iframeTitle": "ライブブラウザ: {{name}}",
     "notFound": "ブラウザが見つかりません",
     "open": "{{name}} ブラウザを開きます",
     "openAction": "開く",
@@ -1468,40 +1465,8 @@
           "name": "チームを招待",
           "unit": "メンバーごと"
         },
-        "notEligible": "対象外",
         "pendingState": "{{amount}} 件承諾待ち",
-        "rejected": {
-          "alreadyRedeemed": "投稿は使用済み",
-          "authorAlreadyRewarded": "このアカウントは報酬受取済み",
-          "authorUnavailable": "投稿者を確認できません",
-          "officialAccount": "{{assistantName}} 公式の投稿は対象外",
-          "postMustMention": "{{assistantName}} に触れる必要あり"
-        },
         "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
-        "share": {
-          "action": "シェア",
-          "description": "投稿して、リンクを貼り付け",
-          "name": "X でシェア"
-        },
-        "shareDialog": {
-          "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
-          "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
-          "inputLabel": "投稿のリンク",
-          "openX": "X を開く",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "あとは何もありません。クレジットは自動で届きます。",
-          "reviewDone": "完了",
-          "reviewExplain": "投稿が公開されていて{{assistantName}}に触れていれば、報酬は自動で付与されます。問題があれば、このステップが理由付きで再び開きます。",
-          "reviewOpenPost": "投稿を開く",
-          "reviewPending": "通常は1時間以内",
-          "reviewTime": "確認はたいてい1時間以内に終わります。",
-          "reviewTitle": "投稿を確認しています",
-          "stepPaste": "リンクを貼る",
-          "stepWrite": "投稿を書く",
-          "submit": "送信",
-          "title": "{{assistantName}} を X でシェア",
-          "writingPrompt": "{{assistantName}}で実際に試したことを、自分の言葉で書いてください。"
-        },
         "slack": {
           "action": "追加",
           "description": "チームがすでに使っている場所へ",
@@ -1555,10 +1520,11 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "customDirection": "自分で方向を指定",
-      "customDirectionDescription": "背景を引き継いで追加の質問や要望を入力",
-      "customPrepared": "入力欄に追加しました",
-      "customPreparedDescription": "上で要望を入力し、送信すると新しいチャットが始まります",
+      "customDirection": "こんなことがしたい…",
+      "customDirectionDescription": "質問や、やりたいことを入力できます。",
+      "customPlaceholder": "どんなことを考えていますか？",
+      "customPrepared": "続きをどうぞ…",
+      "customPreparedDescription": "上にメッセージを入力して送信してください。",
       "dismiss": "非表示にする",
       "label": "提案",
       "next": "次の提案",
@@ -3611,8 +3577,8 @@
         "manageConnection": "接続済みアカウントを管理",
         "open": "Telegram を開く",
         "openSetup": "セットアップを開く",
-        "setupDescription": "セットアップで既定のエージェントを選び、このページに戻って Telegram を接続してください。",
-        "setupMemberDescription": "ワークスペース管理者に既定のエージェントの選択を依頼し、このページに戻ってください。",
+        "setupDescription": "ワークスペースの設定を完了して Okou を初期化してから、このページに戻って Telegram を接続してください。",
+        "setupMemberDescription": "ワークスペースの管理者に設定の完了と Okou の初期化を依頼してから、このページに戻ってください。",
         "setupTitle": "アカウント設定を完了",
         "successDescription": "Telegram でボットにメッセージを送信すると、チャットを始められます。",
         "successTitle": "Telegram に接続しました!"
@@ -3952,18 +3918,18 @@
   "desktopShellAuthorization": {
     "actionFailed": "承認を更新できませんでした。",
     "allow": "1 時間許可",
-    "approved": "Shell へのアクセスを許可しました",
+    "approved": "許可済み",
     "deadline": "有効期限：{{date}}",
     "denied": "リクエストを拒否しました",
     "deny": "拒否",
     "description": "エージェントがコンピュータ上で Shell を使用するには許可が必要です。",
-    "details": "詳細を開く",
     "expired": "承認の有効期限が切れました",
     "loading": "承認を読み込み中…",
     "pending": "承認待ち",
     "revoke": "アクセスを取り消す",
     "revoked": "Shell へのアクセスを取り消しました",
-    "scope": "このチャットとコンピュータのみ。アクセス終了後も既存のターミナルは開いたままです。",
+    "scope": "このチャットとコンピュータのみ",
+    "terminalNotice": "アクセス終了後も既存のターミナルは開いたままです。",
     "title": "Desktop Shell へのアクセス",
     "unavailable": "承認を利用できません",
     "waiting": "Run の実行中、または選択したコンピュータが変更された場合は承認できません。"
@@ -4021,6 +3987,15 @@
     "previousPage": "前のサンプルページ",
     "title": "ドキュメント",
     "useNamed": "{{title}} を使用"
+  },
+  "featureGuide": {
+    "close": "新機能ガイドを閉じる",
+    "dismiss": "わかりました",
+    "label": "新機能",
+    "next": "次へ",
+    "preview": "プレビュー",
+    "previous": "前へ",
+    "tryPrompt": "このタスクを試す"
   },
   "global": {
     "errors": {
@@ -4237,6 +4212,134 @@
         "teamCopy": "同じワークスペースで共同作業。",
         "teamTitle": "メンバーを招待"
       },
+      "outcomes": {
+        "accessibleLabel": "{{source}} から作成する {{title}} のイメージ。内容はすべてサンプルです。",
+        "examples": {
+          "coaching": {
+            "context": "木曜 10:00 · 45分間",
+            "next": "次のステップを決める",
+            "nextTime": "10分",
+            "practice": "新しいスキルを練習",
+            "practiceTime": "25分",
+            "review": "前回を振り返る",
+            "reviewTime": "10分"
+          },
+          "consulting": {
+            "agenda": "範囲とスケジュール",
+            "background": "背景",
+            "context": "Acme Studio · 木曜 10:00",
+            "discuss": "議題",
+            "expansion": "事業拡大を計画",
+            "goal": "目標",
+            "objective": "導入体験を改善"
+          },
+          "design": {
+            "brandGuide": "ブランド指針",
+            "clientBrief": "顧客の要件",
+            "deliverables": "制作物",
+            "direction": "ビジュアル方針",
+            "photos": "商品写真",
+            "positioning": "環境を意識する人へ「同じケアで、ごみを減らす」。",
+            "project": "詰め替えスキンケア発売",
+            "scope": "LPと広告3点",
+            "visuals": "すっきりした商品アップ"
+          },
+          "finance": {
+            "context": "10月 · 月次レビュー",
+            "expenses": "支出",
+            "income": "収入",
+            "reconcile": "要照合",
+            "transactions": "3件の取引"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "売上成長率",
+            "margin": "粗利益率",
+            "metric": "指標",
+            "northstar": "Northstar",
+            "watch": "注目：顧客の集中度。"
+          },
+          "marketing": {
+            "comparison": "前の7日間と比較",
+            "period": "直近7日間"
+          },
+          "operations": {
+            "agenda": "チームの議題を確認",
+            "context": "今週の優先事項3件",
+            "friday": "金曜",
+            "quote": "仕入先の見積もりを確認",
+            "today": "今日",
+            "tuesday": "火曜",
+            "update": "進捗を共有"
+          },
+          "other": {
+            "brief": "共有された概要を確認",
+            "call": "明日の通話を確認",
+            "context": "最近のメールから",
+            "reply": "Alexに返信"
+          },
+          "research": {
+            "action": "初回タスクのガイドを試す",
+            "context": "顧客インタビュー · メモ5件",
+            "evidence": "根拠",
+            "finding": "発見",
+            "insight": "設定に時間がかかる",
+            "interviews": "5件中3件で言及",
+            "next": "次"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "対応が必要な商談2件",
+            "demo": "明日デモ",
+            "next": "次：Acmeにフォローアップ。",
+            "northstar": "Northstar",
+            "proposal": "提案送付済み"
+          },
+          "software": {
+            "context": "マージ済み2件 · 未解決1件",
+            "issue": "CSV出力に失敗",
+            "search": "検索を高速化",
+            "signup": "登録を簡単に"
+          }
+        },
+        "expandLabel": "接続後にできることの例を見る",
+        "industries": {
+          "coaching": {
+            "title": "セッション計画"
+          },
+          "consulting": {
+            "title": "顧客ミーティング資料"
+          },
+          "design": {
+            "title": "クリエイティブブリーフ"
+          },
+          "finance": {
+            "title": "月次決算サマリー"
+          },
+          "investing": {
+            "title": "企業比較"
+          },
+          "marketing": {
+            "title": "広告レポート"
+          },
+          "operations": {
+            "title": "今週の仕事"
+          },
+          "other": {
+            "title": "次のステップ"
+          },
+          "research": {
+            "title": "調査ダイジェスト"
+          },
+          "sales": {
+            "title": "商談フォローアップ"
+          },
+          "software": {
+            "title": "リリースサマリー"
+          }
+        },
+        "title": "いつものツールを仕事の力に"
+      },
       "prompt": {
         "connectorsDescription": "ツールを接続すると、Okou が仕事の状況を理解し、あなたに合った方法でタスクを進められます。後から接続することもできます。",
         "connectorsTitle": "仕事で使うツールを接続",
@@ -4308,6 +4411,12 @@
         "copy": "Okou はあなたの仕事を知るほど賢くなります。毎日使うツールを接続して、実際の仕事に基づいたタスクから始めましょう。",
         "permissions": "Okou は最初のタスクを最適化するために少量の情報を使います。Agent に何をどのくらいの期間任せるかは、あなたが決められます。",
         "securityLink": "Okouのデータ保護について",
+        "skipDialog": {
+          "connect": "ツールを接続",
+          "description": "普段使うツールを接続すると、Okou があなたの仕事を理解し、より的確にサポートできます。接続は後からでもできます。",
+          "skip": "今はスキップ",
+          "title": "ツールとつなげて、Okou をもっと便利に"
+        },
         "title": "仕事のツールを接続"
       },
       "startingPrompt": {
@@ -5241,6 +5350,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "接続",
         "connectAccount": "アカウントを接続",
+        "creditsBalance": "{{provider}} クレジット {{value}}",
+        "creditsLabel": "{{provider}} クレジット",
+        "creditsUnlimited": "無制限",
         "disconnectAccount": "アカウントの接続を解除",
         "disconnectDescription": "このアカウントをOkouから削除します。プロバイダーとのサブスクリプションは解約されません。",
         "disconnecting": "接続を解除中…",
@@ -5338,37 +5450,9 @@
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
       "title": "組み込みツール",
       "tools": {
-        "data-search": {
-          "description": "職業プロフィールを補完し、企業、トラフィック、広告、クリエイターなどのビジネスデータを調査します。",
-          "name": "高度なデータ調査"
-        },
-        "finance": {
-          "description": "企業、株価、市場データを調べます。",
-          "name": "金融データ"
-        },
         "image-generation": {
           "description": "組み込みモデルで画像を生成します。",
           "name": "画像生成"
-        },
-        "maps": {
-          "description": "場所、住所、経路を検索します。",
-          "name": "地図と場所"
-        },
-        "people-search": {
-          "description": "公開されている職業プロフィールを検索します。",
-          "name": "人物検索"
-        },
-        "scrape": {
-          "description": "ウェブページの内容を読み取り、抽出します。",
-          "name": "ページ抽出"
-        },
-        "seo": {
-          "description": "検索順位、キーワード、被リンクを調べます。",
-          "name": "SEO 調査"
-        },
-        "social": {
-          "description": "公開投稿を調べ、メディアを収集します。",
-          "name": "ソーシャル調査"
         },
         "web-search": {
           "description": "ウェブで最新の情報を検索します。",
@@ -5505,7 +5589,7 @@
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。",
         "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "errorMessage": "Morning Brief の設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
+        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
@@ -5514,7 +5598,7 @@
       "proactiveLearning": {
         "description": "夜間に活動を振り返り、個人の記憶と理解を更新します。",
         "errorMessage": "設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
+        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
@@ -5523,7 +5607,7 @@
       "proactivePlanningAction": {
         "description": "依頼された作業を計画・実行し、あなたの対応が必要なときに通知します。",
         "errorMessage": "設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
+        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
@@ -5532,7 +5616,7 @@
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
         "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
-        "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
+        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",

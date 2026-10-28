@@ -1,5 +1,74 @@
 # Changelog
 
+## [1.8.35](https://github.com/okou-ai/okou/compare/host-worker-v1.8.34...host-worker-v1.8.35) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.2
+
+## [1.8.34](https://github.com/okou-ai/okou/compare/host-worker-v1.8.33...host-worker-v1.8.34) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.15.0
+    * @okouai/core bumped to 8.796.1
+
+## [1.8.33](https://github.com/okou-ai/okou/compare/host-worker-v1.8.32...host-worker-v1.8.33) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.0
+
+## [1.8.32](https://github.com/okou-ai/okou/compare/host-worker-v1.8.31...host-worker-v1.8.32) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.2
+    * @okouai/core bumped to 8.795.1
+
+## [1.8.31](https://github.com/okou-ai/okou/compare/host-worker-v1.8.30...host-worker-v1.8.31) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.1
+    * @okouai/core bumped to 8.795.0
+
+## [1.8.30](https://github.com/okou-ai/okou/compare/host-worker-v1.8.29...host-worker-v1.8.30) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.0
+    * @okouai/core bumped to 8.794.1
+
+## [1.8.29](https://github.com/okou-ai/okou/compare/host-worker-v1.8.28...host-worker-v1.8.29) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.13.0
+    * @okouai/core bumped to 8.794.0
+    * @okouai/ui bumped to 1.18.5
+
 ## [1.8.28](https://github.com/okou-ai/okou/compare/host-worker-v1.8.27...host-worker-v1.8.28) (2026-10-27)
 
 

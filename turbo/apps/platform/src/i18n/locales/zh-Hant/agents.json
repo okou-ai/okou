@@ -542,7 +542,6 @@
         "label": "說話風格"
       },
       "visibility": {
-        "defaultDescription": "工作區的預設智能體必須對所有工作區成員保持公開。",
         "description": "這個工作區裡的所有人都可見。",
         "label": "設為公開"
       }

@@ -480,15 +480,31 @@ async fn actual_guest_rpc_shutdown(reset_on_close: bool, without_ssh: bool, canc
 
 #[tokio::test]
 async fn five_second_failure_and_cancelled_waiter_retain_real_sdk_fds_and_four_slots() {
+    five_second_failure_and_cancelled_waiter(false).await;
+}
+
+#[tokio::test]
+async fn five_second_failure_and_cancelled_waiter_retain_fds_and_slots_when_sockets_reset() {
+    five_second_failure_and_cancelled_waiter(true).await;
+}
+
+async fn five_second_failure_and_cancelled_waiter(reset_on_close: bool) {
     let cache = Cache::new();
     let retiring = cache.register(RunId::new_v4());
     let other = cache.register(RunId::new_v4());
     let mut held = Vec::new();
     for _ in 0..3 {
-        let http = Http::new(vec![9; 2048]).await;
+        let http = Http::new(vec![9; 2048])
+            .await
+            .named("retiring registration");
         let mut gate = Blocking::new().await;
         let fd: Fd = Arc::new(Mutex::new(None));
-        let (work, _body) = http_work(http.address, Some(gate.address), Arc::clone(&fd));
+        let (work, _body) = http_work_with_reset(
+            http.address,
+            Some(gate.address),
+            Arc::clone(&fd),
+            reset_on_close,
+        );
         let node = retiring
             .lookup(uuid::Uuid::new_v4())
             .unwrap()
@@ -499,8 +515,9 @@ async fn five_second_failure_and_cancelled_waiter_retain_real_sdk_fds_and_four_s
         held.push((node, http, gate, fd));
     }
     let bytes: Vec<_> = (0..65536).map(|index| (index % 239) as u8).collect();
-    let b = Http::new(bytes.clone()).await;
-    let (work, body) = http_work(b.address, None, Arc::new(Mutex::new(None)));
+    let b = Http::new(bytes.clone()).await.named("other registration");
+    let (work, body) =
+        http_work_with_reset(b.address, None, Arc::new(Mutex::new(None)), reset_on_close);
     let b_node = other
         .lookup(uuid::Uuid::new_v4())
         .unwrap()
@@ -563,7 +580,11 @@ async fn five_second_failure_and_cancelled_waiter_retain_real_sdk_fds_and_four_s
         let (number, inode) = fd.lock().unwrap().clone().unwrap();
         bounded(node.physical()).await.unwrap();
         drop(node);
-        http.finish().await;
+        // Physical retirement closes the socket; a graceful TCP FIN is not required.
+        let closure = http.finish_closed().await;
+        if reset_on_close {
+            assert_eq!(closure, SocketClosure::Reset, "retiring registration");
+        }
         assert_ne!(
             std::fs::read_link(format!("/proc/self/fd/{number}")).ok(),
             Some(inode)
@@ -574,8 +595,9 @@ async fn five_second_failure_and_cancelled_waiter_retain_real_sdk_fds_and_four_s
         Err(Failure::CleanupTimedOut)
     );
     // A fresh exact registration can start only after actual physical joins free capacity.
-    let c = Http::new(vec![3; 1024]).await;
-    let (work, body) = http_work(c.address, None, Arc::new(Mutex::new(None)));
+    let c = Http::new(vec![3; 1024]).await.named("fresh registration");
+    let (work, body) =
+        http_work_with_reset(c.address, None, Arc::new(Mutex::new(None)), reset_on_close);
     let c_node = next
         .lookup(uuid::Uuid::new_v4())
         .unwrap()
@@ -589,6 +611,10 @@ async fn five_second_failure_and_cancelled_waiter_retain_real_sdk_fds_and_four_s
     other.close();
     bounded(other.shutdown_native()).await.unwrap();
     drop((b_node, c_node));
-    b.finish().await;
-    c.finish().await;
+    let other_closure = b.finish_closed().await;
+    let fresh_closure = c.finish_closed().await;
+    if reset_on_close {
+        assert_eq!(other_closure, SocketClosure::Reset, "other registration");
+        assert_eq!(fresh_closure, SocketClosure::Reset, "fresh registration");
+    }
 }

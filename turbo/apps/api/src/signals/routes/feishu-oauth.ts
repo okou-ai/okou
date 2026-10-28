@@ -1,25 +1,8 @@
-import { isIntegrationManagedCustomConnectorProviderAdapter as isManagedAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
-import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "../services/get-started-rewards.service";
 import {
-  completedGetStartedQuestSql,
-  memberRewardWalletQuery,
-} from "../services/get-started-member-reward";
-import { slackRewardWalletEntitlement } from "../services/slack-installation-reward";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
-import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
-import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import {
-  ConnectorConnectionWriteLostError,
-  connectorConnectionSelection,
-  existingConnectorConnectionSelection,
-} from "../services/connector-connection-write.service";
-import { FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF } from "../services/feishu-custom-connector-permissions";
+  feishuOAuthPublicationRow,
+  feishuOAuthPublicationSql,
+} from "./feishu-oauth-publication";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { decryptPersistentSecretValue } from "../services/crypto.utils";
 import {
   FEISHU_PLATFORMS,
@@ -27,11 +10,10 @@ import {
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
 import { command, computed } from "ccstate";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { connectors } from "@okouai/db/schema/connector";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -48,7 +30,6 @@ import {
   fetchFeishuUserInfo,
   type FeishuUserInfo,
 } from "../external/feishu-client";
-import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import {
   claimCustomConnectorOAuthState$,
@@ -61,12 +42,9 @@ import {
   isCustomConnectorCustomOAuthStateContext,
   decryptCustomConnectorOAuth2Credentials,
   exchangeCustomConnectorOAuth2Code,
-  customConnectorOAuth2CredentialContractReadPlan,
-  customConnectorOAuth2CredentialContractFromRows as contractFromRows,
   parseValidCustomConnectorOAuthState,
   startCustomConnectorOAuth2$,
   encryptTokenValues,
-  connectionTokenRows,
   type CustomConnectorCustomOAuthStateContext,
   type CustomConnectorOAuthTokenResult,
 } from "../services/custom-connector-oauth2.service";
@@ -90,13 +68,6 @@ import {
   verifyFeishuOAuthState,
 } from "../services/feishu-oauth-state";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import {
-  customConnectorDefinitionSelection,
-  customConnectorDefinitionJoin,
-  customConnectorDefinitionWhere,
-  customConnectorDefinitions,
-  userCustomConnectorGrantAgentReadPlan,
-} from "../services/user-connectors.service";
 import { publishConnectorRuntimeSyncWakeups$ } from "../services/connector-runtime-wakeup.service";
 import {
   getCustomConnectorById,
@@ -390,280 +361,6 @@ type PreparedFeishuTokens = Awaited<ReturnType<typeof prepareFeishuTokens>>;
 function prepareFeishuTokens(args: PersistFeishuOAuthConnectionArgs) {
   return settleIncludingAbort(encryptTokenValues(args));
 }
-const members = feishuOrgConnections;
-const accounts = connectors;
-const grants = userCustomConnectors;
-const definitions = orgCustomConnectors;
-const configs = orgCustomConnectorOauthConfigs;
-const wallets = orgMetadataCanonicalWrites;
-const entitlements = orgPlanEntitlements;
-const bindings = customConnectorAccountOauthBindings;
-const builtinBindings = builtinConnectorAccountOauthBindings;
-const installations = feishuOrgInstallations;
-
-type FeishuOAuthMember = Pick<
-  typeof members.$inferSelect,
-  "id" | "userId" | "dmWelcomeSent" | "connectorId"
->;
-function feishuOAuthPlan(args: PersistFeishuOAuthConnectionArgs) {
-  const scope = {
-    orgId: args.state.orgId,
-    userId: args.state.userId,
-    agentId: args.installation.defaultAgentId,
-  };
-  const ref = {
-    orgId: scope.orgId,
-    connectorId: args.connector.id,
-    storageVersion: args.connector.storageVersion,
-    authMode: "oauth" as const,
-  };
-  const grantScope = and(
-    eq(grants.orgId, scope.orgId),
-    eq(grants.userId, scope.userId),
-    eq(grants.agentId, scope.agentId),
-  );
-  return {
-    scope,
-    ref,
-    agent: userCustomConnectorGrantAgentReadPlan(scope),
-    contract: customConnectorOAuth2CredentialContractReadPlan(ref),
-    memberColumns: {
-      id: members.id,
-      userId: members.userId,
-      dmWelcomeSent: members.dmWelcomeSent,
-      connectorId: members.connectorId,
-    },
-    memberWhere: and(
-      eq(members.installationId, args.state.installationId),
-      eq(members.feishuOpenId, args.userInfo.openId),
-    ),
-    memberValues: {
-      installationId: args.state.installationId,
-      feishuOpenId: args.userInfo.openId,
-      userId: scope.userId,
-      feishuUserName: args.userInfo.name,
-    },
-    memberConflict: { target: [members.feishuOpenId, members.installationId] },
-    memberReturn: { id: members.id, dmWelcomeSent: members.dmWelcomeSent },
-    oldMembers: and(
-      eq(members.installationId, args.state.installationId),
-      eq(members.userId, scope.userId),
-      ne(members.feishuOpenId, args.userInfo.openId),
-    ),
-    installationWhere: eq(installations.id, args.state.installationId),
-    wallet: { orgId: scope.orgId },
-    walletReturn: { orgId: orgMetadata.orgId },
-    entitlement() {
-      return slackRewardWalletEntitlement(scope.orgId);
-    },
-    entitlementConflict: { target: entitlements.orgId },
-    grantScope,
-    grantColumns: {
-      customConnectorId: grants.customConnectorId,
-      permissionNames: grants.permissionNames,
-    },
-    definitionColumns: customConnectorDefinitionSelection(),
-    definitionJoin: customConnectorDefinitionJoin(),
-    definitionWhere: customConnectorDefinitionWhere({
-      orgId: scope.orgId,
-      connectorIds: [args.connector.id],
-    }),
-    grantConflict: {
-      target: [
-        grants.orgId,
-        grants.userId,
-        grants.agentId,
-        grants.customConnectorId,
-      ],
-      set: { permissionNames: sql`excluded.permission_names` },
-    },
-  };
-}
-function feishuMemberIdentity(args: PersistFeishuOAuthConnectionArgs) {
-  return { feishuUserName: args.userInfo.name, updatedAt: nowDate() };
-}
-function feishuPersistedMember(
-  row: Pick<FeishuOAuthMember, "id" | "dmWelcomeSent"> | undefined,
-  connectorId: string | null,
-) {
-  return row
-    ? {
-        connected: true as const,
-        connectionId: row.id,
-        memberConnectorId: connectorId,
-        shouldNotify: !row.dmWelcomeSent,
-      }
-    : { connected: false as const };
-}
-function requireFeishuGrantAgent(agent: unknown) {
-  if (!agent) {
-    throw new Error(
-      "Failed to authorize Feishu custom connector: agentNotFound",
-    );
-  }
-}
-function feishuOAuthAccountPlan(
-  args: PersistFeishuOAuthConnectionArgs,
-  memberConnectorId: string | null,
-) {
-  const account = memberConnectorId
-    ? { intent: "reconnect" as const, connectionId: memberConnectorId }
-    : args.state.accountMutation;
-  const owner = and(
-    eq(accounts.orgId, args.state.orgId),
-    eq(accounts.userId, args.state.userId),
-    eq(accounts.customConnectorId, args.connector.id),
-  );
-  return {
-    account,
-    owner,
-    columns: existingConnectorConnectionSelection(),
-    condition:
-      account.intent === "reconnect"
-        ? and(eq(accounts.id, account.connectionId), owner)
-        : owner,
-  };
-}
-function feishuOAuthAccountWrite(
-  args: PersistFeishuOAuthConnectionArgs,
-  plan: ReturnType<typeof feishuOAuthAccountPlan>,
-  existing: { readonly id: string } | undefined,
-  allowSiblings: boolean,
-) {
-  if (
-    (plan.account.intent === "reconnect" && !existing) ||
-    (plan.account.intent !== "reconnect" && existing && !allowSiblings)
-  ) {
-    throw new Error("Feishu connector account could not be selected");
-  }
-  const values = {
-    authMethod: "oauth",
-    automaticAuthType: null,
-    storageVersion: args.connector.storageVersion,
-    externalId: args.token.userInfo?.id ?? null,
-    externalUsername: args.token.userInfo?.username ?? null,
-    externalEmail: args.token.userInfo?.email ?? null,
-    oauthScopes:
-      args.token.scopes === null ? null : JSON.stringify(args.token.scopes),
-    oauthGrantedScopes: null,
-    tokenExpiresAt: args.token.expiresAt,
-    needsReconnect: false,
-    reconnectReason: null,
-  };
-  return {
-    update: { ...values, updatedAt: sql`clock_timestamp()` },
-    insert: {
-      orgId: args.state.orgId,
-      userId: args.state.userId,
-      displayName:
-        plan.account.intent === "add"
-          ? (plan.account.displayName ?? null)
-          : null,
-      connectorSlug: null,
-      customConnectorId: args.connector.id,
-      ...values,
-    },
-    conflict: {
-      target: [accounts.orgId, accounts.userId, accounts.customConnectorId],
-      where: sql`${accounts.customConnectorId} IS NOT NULL AND ${accounts.isDefault} = true`,
-    },
-    columns: connectorConnectionSelection(),
-    updateWhere: existing
-      ? and(plan.owner, eq(accounts.id, existing.id))
-      : plan.owner,
-  };
-}
-function requireFeishuAccount<T>(
-  row: T | undefined,
-  reason: "missing" | "sibling-disabled" | "insert",
-): T {
-  if (row) {
-    return row;
-  }
-  if (reason === "insert") {
-    throw new Error("Failed to write Custom connector connection");
-  }
-  throw new ConnectorConnectionWriteLostError(reason);
-}
-function feishuTokenRows(
-  args: PersistFeishuOAuthConnectionArgs,
-  connectionId: string,
-  prepared: PreparedFeishuTokens,
-) {
-  if (!prepared.ok) {
-    throw prepared.error;
-  }
-  return connectionTokenRows({
-    ...args.state,
-    connectionId,
-    encrypted: prepared.value,
-  });
-}
-function feishuGrantValues(
-  args: PersistFeishuOAuthConnectionArgs,
-  previous: readonly {
-    readonly customConnectorId: string;
-    readonly permissionNames: readonly string[];
-  }[],
-  rows: Parameters<typeof customConnectorDefinitions>[0],
-) {
-  const id = args.connector.id;
-  const definitions = customConnectorDefinitions(rows, [id]);
-  if (definitions.missingIds.length > 0) {
-    throw new Error(
-      "Failed to authorize Feishu custom connector: customConnectorsNotFound",
-    );
-  }
-  const existing = previous.find((row) => {
-    return row.customConnectorId === id;
-  });
-  const bundle = definitions.permissionBundleRefs.get(id) ?? null;
-  if (
-    !existing &&
-    bundle !== null &&
-    bundle !== FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF
-  ) {
-    throw new Error(
-      "Failed to authorize Feishu custom connector: customConnectorPermissionSelectionRequired",
-    );
-  }
-  return {
-    orgId: args.state.orgId,
-    userId: args.state.userId,
-    agentId: args.installation.defaultAgentId,
-    customConnectorId: id,
-    permissionNames: [...(existing?.permissionNames ?? [])],
-  };
-}
-function feishuLinkedAccountValues(args: PersistFeishuOAuthConnectionArgs) {
-  return {
-    externalId: args.userInfo.openId,
-    externalUsername: args.userInfo.name,
-    updatedAt: nowDate(),
-  };
-}
-function feishuConnectionQuest(args: PersistFeishuOAuthConnectionArgs) {
-  return completedGetStartedQuestSql(
-    {
-      orgId: args.state.orgId,
-      userId: args.state.userId,
-      questKey: "connector",
-      sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
-    },
-    nowDate(),
-  );
-}
-function feishuTenantValues(args: PersistFeishuOAuthConnectionArgs) {
-  return { feishuTenantKey: args.userInfo.tenantKey, updatedAt: nowDate() };
-}
-
-function accountInsertValues(
-  write: ReturnType<typeof feishuOAuthAccountWrite>,
-  isDefault: boolean,
-) {
-  return { ...write.insert, isDefault };
-}
-
 const persistFeishuOAuthConnection$ = command(
   async function persistFeishuOAuthConnection(
     { set },
@@ -671,130 +368,39 @@ const persistFeishuOAuthConnection$ = command(
     prepared: PreparedFeishuTokens,
     signal: AbortSignal,
   ): Promise<PersistFeishuOAuthConnectionResult> {
-    const p = feishuOAuthPlan(args);
-    // Identity ownership, wallet/quest initialization, credentials and agent
-    // grants must commit together; validation failures roll back every write.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0018; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(async (tx) => {
-      const a = p.agent;
-      const aq = tx.select(a.columns).from(a.from).where(a.where);
-      const [agent] = await aq.for("update").limit(1);
-      signal.throwIfAborted();
-      requireFeishuGrantAgent(agent);
-      const c = p.contract;
-      const cq = tx
-        .select(c.columns)
-        .from(c.from)
-        .leftJoin(c.join.table, c.join.on);
-      const contractQuery = cq
-        .where(c.where)
-        .for("update", { of: c.from })
-        .limit(1);
-      contractFromRows(await contractQuery, p.ref);
-      signal.throwIfAborted();
-      const mq = tx.select(p.memberColumns).from(members).where(p.memberWhere);
-      const [existing] = await mq.limit(1);
-      signal.throwIfAborted();
-      if (existing && existing.userId !== args.state.userId) {
-        return { connected: false };
-      }
-      let member;
-      if (existing) {
-        const values = feishuMemberIdentity(args);
-        await tx.update(members).set(values).where(eq(members.id, existing.id));
-        member = feishuPersistedMember(existing, existing.connectorId);
-      } else {
-        const insert = tx.insert(members).values(p.memberValues);
-        const [created] = await insert
-          .onConflictDoNothing(p.memberConflict)
-          .returning(p.memberReturn);
-        signal.throwIfAborted();
-        member = feishuPersistedMember(created, null);
-      }
-      if (!member.connected) {
-        return member;
-      }
-      await tx.delete(members).where(p.oldMembers);
-      signal.throwIfAborted();
-      if (!prepared.ok) {
-        throw prepared.error;
-      }
-      const wq = tx.insert(wallets).values(p.wallet).onConflictDoNothing();
-      const [insertedWallet] = await wq.returning(p.walletReturn);
-      await tx.select().from(memberRewardWalletQuery(args.state.orgId));
-      if (insertedWallet) {
-        const ent = tx.insert(entitlements).values(p.entitlement());
-        await ent.onConflictDoNothing(p.entitlementConflict);
-      }
-      const contract = contractFromRows(await contractQuery, p.ref);
-      signal.throwIfAborted();
-      const ap = feishuOAuthAccountPlan(args, member.memberConnectorId);
-      const q = tx.select(ap.columns).from(accounts).where(ap.condition);
-      const rows =
-        ap.account.intent === "reconnect"
-          ? await q.limit(1)
-          : await q.orderBy(accounts.id).limit(2);
-      signal.throwIfAborted();
-      const siblings = !isManagedAdapter(contract.providerAdapter);
-      const w = feishuOAuthAccountWrite(args, ap, rows[0], siblings);
-      let stored;
-      if (ap.account.intent === "reconnect") {
-        const update = tx.update(accounts).set(w.update).where(w.updateWhere);
-        const [updated] = await update.returning(w.columns);
-        stored = requireFeishuAccount(updated, "missing");
-      } else {
-        const insert = tx.insert(accounts).values(accountInsertValues(w, true));
-        const [created] = await insert
-          .onConflictDoNothing(w.conflict)
-          .returning(w.columns);
-        if (created || !siblings) {
-          stored = requireFeishuAccount(created, "sibling-disabled");
-        } else {
-          const sibling = tx
-            .insert(accounts)
-            .values(accountInsertValues(w, false));
-          const [createdSibling] = await sibling.returning(w.columns);
-          stored = requireFeishuAccount(createdSibling, "insert");
-        }
-      }
-      signal.throwIfAborted();
-      const id = stored.id;
-      await tx.delete(secrets).where(eq(secrets.connectorId, id));
-      signal.throwIfAborted();
-      await tx.delete(variables).where(eq(variables.connectorId, id));
-      signal.throwIfAborted();
-      const builtin = eq(builtinBindings.connectorAccountId, id);
-      await tx.delete(builtinBindings).where(builtin);
-      await tx.insert(secrets).values(feishuTokenRows(args, id, prepared));
-      await tx.delete(bindings).where(eq(bindings.connectorAccountId, id));
-      signal.throwIfAborted();
-      await tx.execute(feishuConnectionQuest(args));
-      signal.throwIfAborted();
-      const linked = { connectorId: id, updatedAt: nowDate() };
-      const memberWhere = eq(members.id, member.connectionId);
-      await tx.update(members).set(linked).where(memberWhere);
-      const identity = feishuLinkedAccountValues(args);
-      await tx.update(accounts).set(identity).where(eq(accounts.id, id));
-      signal.throwIfAborted();
-      if (!args.installation.tenantKey && args.userInfo.tenantKey) {
-        const tq = tx.update(installations).set(feishuTenantValues(args));
-        await tq.where(p.installationWhere);
-      }
-      const agentRead = tx.select(a.columns).from(a.from).where(a.where);
-      const [grantAgent] = await agentRead.limit(1);
-      requireFeishuGrantAgent(grantAgent);
-      const gq = tx.select(p.grantColumns).from(grants);
-      const previous = await gq.where(p.grantScope);
-      const dq = tx.select(p.definitionColumns).from(definitions);
-      const definitionsRows = await dq
-        .leftJoin(configs, p.definitionJoin)
-        .where(p.definitionWhere);
-      const values = feishuGrantValues(args, previous, definitionsRows);
-      const grant = tx.insert(grants).values(values);
-      await grant.onConflictDoUpdate(p.grantConflict);
-      signal.throwIfAborted();
-      return member;
-    });
+    const db = set(writeDb$);
+    signal.throwIfAborted();
+    const [result] = parseRawRows(
+      feishuOAuthPublicationRow,
+      await db.execute(
+        feishuOAuthPublicationSql(args, prepared.ok ? prepared.value : null),
+      ),
+    );
+    signal.throwIfAborted();
+    if (!result?.agent) {
+      throw new Error(
+        "Failed to authorize Feishu custom connector: agentNotFound",
+      );
+    }
+    if (!result.credentialContract) {
+      throw new Error(
+        "Custom connector credential contract changed during OAuth connection",
+      );
+    }
+    if (result.foreignOwner) {
+      return { connected: false };
+    }
+    if (!prepared.ok) {
+      throw prepared.error;
+    }
+    if (!result.definitionEnabled) {
+      throw new Error(
+        "Failed to authorize Feishu custom connector: customConnectorsNotFound",
+      );
+    }
+    return result.member
+      ? { connected: true, ...result.member }
+      : { connected: false };
   },
 );
 

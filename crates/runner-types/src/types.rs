@@ -372,7 +372,7 @@ impl FirewallPermission {
 }
 
 const VALID_FIREWALL_RULE_METHODS: &[&str] = &[
-    "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "ANY",
+    "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "PROPFIND", "REPORT", "ANY",
 ];
 const AWS_RULE_SEPARATOR: &str = " AWS ";
 

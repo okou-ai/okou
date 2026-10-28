@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
 
 import { Command, InvalidArgumentError, Option } from "commander";
-import { array, boolean, literal, object, string } from "zod";
+import type { BrowserSession } from "@okouai/api-contracts/contracts/browser";
+import { array, boolean, literal, number, object, string } from "zod";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { BrowserCdpClient } from "./browser-cdp";
 
 export const DEFAULT_AGENT_BROWSER_SESSION = "okou-browser";
 const tabIdSchema = string().regex(/^t[1-9]\d*$/u);
@@ -13,12 +15,26 @@ const tabListSchema = object({
     tabs: array(
       object({
         tabId: tabIdSchema,
+        targetId: string().min(1),
         url: string(),
         active: boolean(),
       }),
     ),
   }),
 });
+const nativeWindowSchema = object({
+  windowId: number().int().nonnegative().safe(),
+});
+const targetInventorySchema = object({
+  targetInfos: array(object({ targetId: string().min(1) })),
+});
+
+type DriverTab = {
+  readonly tabId: string;
+  readonly targetId: string;
+  readonly url: string;
+  readonly active: boolean;
+};
 
 type SafeTab = {
   readonly id: string;
@@ -64,6 +80,117 @@ function runAgentBrowser(session: string, args: readonly string[]): string {
   return result.stdout;
 }
 
+function driverJson(session: string, args: readonly string[]): unknown {
+  try {
+    return JSON.parse(runAgentBrowser(session, args));
+  } catch {
+    throw new Error(
+      "Could not inspect the attached Browser safely; run `okou browser use`.",
+    );
+  }
+}
+
+class BrowserWindowLookupError extends Error {}
+
+async function windowConnection(cdpUrl: string): Promise<BrowserCdpClient> {
+  return await BrowserCdpClient.connect(
+    cdpUrl,
+    Date.now() + 30_000,
+    {
+      connection: (message) => {
+        return new Error(message);
+      },
+      timeout: (message) => {
+        return new Error(message);
+      },
+      command: () => {
+        return new BrowserWindowLookupError(
+          "Could not resolve the Browser tab's native window",
+        );
+      },
+    },
+    1024 * 1024,
+  );
+}
+
+async function nativeWindow(
+  client: BrowserCdpClient,
+  targetId: string,
+): Promise<number | null> {
+  let result: unknown;
+  try {
+    result = await client.send("Browser.getWindowForTarget", { targetId });
+  } catch (error) {
+    if (error instanceof BrowserWindowLookupError) {
+      // Native error messages vary across Chrome versions. Confirm a missing
+      // reference against Chrome instead of hiding provider/permission failures.
+      const inventory = targetInventorySchema.safeParse(
+        await client.send("Target.getTargets"),
+      );
+      if (!inventory.success) {
+        throw new Error("The Browser returned incompatible target information");
+      }
+      if (
+        !inventory.data.targetInfos.some((target) => {
+          return target.targetId === targetId;
+        })
+      ) {
+        return null;
+      }
+    }
+    throw error;
+  }
+  const parsed = nativeWindowSchema.safeParse(result);
+  if (!parsed.success) {
+    throw new Error(
+      "The Browser returned incompatible native window information",
+    );
+  }
+  return parsed.data.windowId;
+}
+
+export async function bindBrowserWindow(
+  browser: BrowserSession,
+  cdpUrl: string,
+  session: string,
+): Promise<void> {
+  const window = browser.window;
+  if (!window) {
+    return;
+  }
+  const client = await windowConnection(cdpUrl);
+  try {
+    const tabs = [...driverTabs(session)].sort((left, right) => {
+      return Number(right.active) - Number(left.active);
+    });
+    let lookupFailure: BrowserWindowLookupError | undefined;
+    for (const target of tabs) {
+      let windowId: number | null;
+      try {
+        windowId = await nativeWindow(client, target.targetId);
+      } catch (error) {
+        if (!(error instanceof BrowserWindowLookupError)) {
+          throw error;
+        }
+        lookupFailure ??= error;
+        continue;
+      }
+      if (windowId === window.primaryWindowId) {
+        runAgentBrowser(session, ["--pin-tab", "tab", target.targetId]);
+        return;
+      }
+    }
+    throw (
+      lookupFailure ??
+      new Error(
+        "This chat's Browser window has no available tab; reconnect explicitly",
+      )
+    );
+  } finally {
+    client.close();
+  }
+}
+
 function safeOrigin(rawUrl: string): string {
   try {
     const url = new URL(rawUrl);
@@ -75,36 +202,33 @@ function safeOrigin(rawUrl: string): string {
   }
 }
 
-function listTabs(session: string): readonly SafeTab[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(runAgentBrowser(session, ["tab", "list", "--json"]));
-  } catch {
-    throw new Error(
-      "Could not read Browser tabs safely; retry after `okou browser use`.",
-    );
-  }
-  const list = tabListSchema.safeParse(parsed);
+function driverTabs(session: string): readonly DriverTab[] {
+  const list = tabListSchema.safeParse(
+    driverJson(session, ["tab", "list", "--json"]),
+  );
   if (!list.success) {
     throw new Error(
       "Could not read Browser tabs safely; retry after `okou browser use`.",
     );
   }
-  return list.data.data.tabs.map((tab) => {
-    return { id: tab.tabId, origin: safeOrigin(tab.url), active: tab.active };
-  });
+  return list.data.data.tabs;
 }
 
-function printTabs(tabs: readonly SafeTab[], json: boolean): void {
+function safeTab(tab: DriverTab): SafeTab {
+  return { id: tab.tabId, origin: safeOrigin(tab.url), active: tab.active };
+}
+
+function printTabs(tabs: readonly DriverTab[], json: boolean): void {
+  const safe = tabs.map(safeTab);
   if (json) {
-    console.log(JSON.stringify({ tabs }));
+    console.log(JSON.stringify({ tabs: safe }));
     return;
   }
   if (tabs.length === 0) {
     console.log("No Browser tabs found.");
     return;
   }
-  for (const tab of tabs) {
+  for (const tab of safe) {
     console.log(`${tab.id}${tab.active ? " (selected)" : ""} ${tab.origin}`);
   }
 }
@@ -129,7 +253,8 @@ const listCommand = new Command()
   .option("--json", "Print safe machine-readable tab metadata")
   .action(
     withErrorHandler(async (options: TabOptions) => {
-      printTabs(listTabs(tabSession(options)), options.json === true);
+      const session = tabSession(options);
+      printTabs(driverTabs(session), options.json === true);
     }),
   );
 
@@ -142,10 +267,12 @@ const selectCommand = new Command()
   .action(
     withErrorHandler(async (id: string, options: TabOptions) => {
       const session = tabSession(options);
-      runAgentBrowser(session, ["tab", parseTabId(id)]);
-      const tab = listTabs(session).find((item) => {
-        return item.id === id && item.active;
+      const parsedId = parseTabId(id);
+      runAgentBrowser(session, ["tab", parsedId]);
+      const selected = driverTabs(session).find((item) => {
+        return item.tabId === parsedId && item.active;
       });
+      const tab = selected ? safeTab(selected) : undefined;
       if (!tab) {
         throw new Error(
           "Browser tab selection could not be verified; inspect tabs again.",

@@ -219,13 +219,13 @@ public struct APIClient: Sendable {
 
   public static func decoder() -> JSONDecoder {
     let decoder = JSONDecoder()
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    let formatters = Mutex((fractional, ISO8601DateFormatter()))
+    let fractionalStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    let wholeStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: false)
+    let formatters = Mutex<(ISO8601DateFormatter, ISO8601DateFormatter)?>(nil)
     decoder.dateDecodingStrategy = .custom { decoder in
       let value = try decoder.singleValueContainer().decode(String.self)
-      // Reuse parsers across snapshot rows; the decoding closure can run concurrently.
-      if let date = formatters.withLock({ $0.0.date(from: value) ?? $0.1.date(from: value) }) {
+      let style = value.contains(".") ? fractionalStyle : wholeStyle
+      if value.hasSuffix("Z"), let date = try? style.parse(value) {
         return date
       }
       // The list snapshot SQL serializes UTC timestamp-without-timezone columns directly.
@@ -233,9 +233,20 @@ public struct APIClient: Sendable {
         of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?$"#,
         options: .regularExpression
       ) != nil,
-        let date = try? Date.ISO8601FormatStyle(includingFractionalSeconds: value.contains("."))
-          .parse(value + "Z")
+        let date = try? style.parse(value + "Z")
       {
+        return date
+      }
+      // Preserve other supported timezone spellings without initializing ICU for
+      // the common UTC formats. The decoding closure can run concurrently.
+      if let date = formatters.withLock({ parsers in
+        if parsers == nil {
+          let fractional = ISO8601DateFormatter()
+          fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+          parsers = (fractional, ISO8601DateFormatter())
+        }
+        return parsers?.0.date(from: value) ?? parsers?.1.date(from: value)
+      }) {
         return date
       }
       throw DecodingError.dataCorrupted(

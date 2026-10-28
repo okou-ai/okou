@@ -1376,9 +1376,6 @@
     "cardTitle": "Navigateur cloud",
     "close": "Fermer le navigateur en direct",
     "documentTitle": "Navigateur en direct",
-    "fitAction": "Adapter",
-    "fitWindow": "Adapter le navigateur à la fenêtre",
-    "iframeTitle": "Navigateur en direct : {{name}}",
     "notFound": "Navigateur introuvable",
     "open": "Ouvrir le navigateur {{name}}",
     "openAction": "Ouvrir",
@@ -1493,40 +1490,8 @@
           "name": "Invitez votre équipe",
           "unit": "par membre"
         },
-        "notEligible": "Non éligible",
         "pendingState": "{{amount}} en attente",
-        "rejected": {
-          "alreadyRedeemed": "Publication déjà utilisée",
-          "authorAlreadyRewarded": "Compte déjà récompensé",
-          "authorUnavailable": "Auteur non vérifiable",
-          "officialAccount": "Les publications officielles de {{assistantName}} ne comptent pas",
-          "postMustMention": "Doit mentionner {{assistantName}}"
-        },
         "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
-        "share": {
-          "action": "Partager",
-          "description": "Publiez, puis collez le lien",
-          "name": "Partager sur X"
-        },
-        "shareDialog": {
-          "description": "Envoyez une publication publique pour vérification. Une récompense validée par personne.",
-          "helper": "La publication doit être publique et mentionner {{assistantName}}.",
-          "inputLabel": "Lien de la publication",
-          "openX": "Ouvrir X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "Rien de plus à faire : les crédits arrivent tout seuls.",
-          "reviewDone": "Terminé",
-          "reviewExplain": "Si la publication est publique et mentionne {{assistantName}}, la récompense est accordée automatiquement. Si quelque chose ne va pas, cette étape se rouvre avec le motif.",
-          "reviewOpenPost": "Ouvrir la publication",
-          "reviewPending": "Généralement en moins d'une heure",
-          "reviewTime": "La vérification se termine généralement en moins d'une heure.",
-          "reviewTitle": "Votre publication est en cours de vérification",
-          "stepPaste": "Collez le lien",
-          "stepWrite": "Rédigez la publication",
-          "submit": "Envoyer",
-          "title": "Partager {{assistantName}} sur X",
-          "writingPrompt": "Racontez avec vos propres mots quelque chose que vous avez réellement essayé avec {{assistantName}}."
-        },
         "slack": {
           "action": "Ajouter",
           "description": "Là où votre équipe travaille déjà",
@@ -1580,10 +1545,11 @@
       "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
-      "customDirection": "Choisir votre propre direction",
-      "customDirectionDescription": "Reprendre le contexte complet pour poser une question ou préciser votre demande",
-      "customPrepared": "Ajouté à votre message",
-      "customPreparedDescription": "Précisez votre demande ci-dessus, puis envoyez pour ouvrir une nouvelle discussion",
+      "customDirection": "J’aimerais…",
+      "customDirectionDescription": "Posez une question ou décrivez ce que vous aimeriez faire.",
+      "customPlaceholder": "Qu’avez-vous en tête ?",
+      "customPrepared": "Continuez…",
+      "customPreparedDescription": "Ajoutez votre message ci-dessus, puis envoyez-le.",
       "dismiss": "Ignorer",
       "label": "Suggestions",
       "next": "Suggestion suivante",
@@ -3680,8 +3646,8 @@
         "manageConnection": "Gérer le compte connecté",
         "open": "Ouvrir Telegram",
         "openSetup": "Ouvrir la configuration",
-        "setupDescription": "Choisissez un agent par défaut dans la configuration, puis revenez ici pour connecter Telegram.",
-        "setupMemberDescription": "Demandez à un administrateur de l’espace de travail de choisir un agent par défaut, puis revenez ici.",
+        "setupDescription": "Terminez la configuration de l’espace de travail pour initialiser Okou, puis revenez ici pour connecter Telegram.",
+        "setupMemberDescription": "Demandez à un administrateur de terminer la configuration de l’espace de travail et d’initialiser Okou, puis revenez ici.",
         "setupTitle": "Terminer la configuration du compte",
         "successDescription": "Envoyez un message au bot dans Telegram pour commencer à discuter.",
         "successTitle": "Connecté à Telegram !"
@@ -4021,18 +3987,18 @@
   "desktopShellAuthorization": {
     "actionFailed": "Impossible de mettre à jour l’autorisation.",
     "allow": "Autoriser pendant 1 heure",
-    "approved": "Accès à Shell autorisé",
+    "approved": "Autorisé",
     "deadline": "Expire le {{date}}",
     "denied": "Demande refusée",
     "deny": "Refuser",
     "description": "L’agent a besoin d’une autorisation pour utiliser Shell sur votre ordinateur.",
-    "details": "Ouvrir les détails",
     "expired": "Autorisation expirée",
     "loading": "Chargement de l’autorisation…",
     "pending": "Prête à être approuvée",
     "revoke": "Révoquer l’accès",
     "revoked": "Accès à Shell révoqué",
-    "scope": "Uniquement ce chat et cet ordinateur. Les terminaux existants restent ouverts à la fin de l’accès.",
+    "scope": "Uniquement ce chat et cet ordinateur",
+    "terminalNotice": "Les terminaux existants restent ouverts à la fin de l’accès.",
     "title": "Accès à Desktop Shell",
     "unavailable": "Autorisation indisponible",
     "waiting": "L’approbation est indisponible pendant un Run actif ou si l’ordinateur sélectionné a changé."
@@ -4090,6 +4056,15 @@
     "previousPage": "Page d’exemple précédente",
     "title": "Document",
     "useNamed": "Utiliser {{title}}"
+  },
+  "featureGuide": {
+    "close": "Fermer le guide des nouveautés",
+    "dismiss": "J’ai compris",
+    "label": "Nouveautés",
+    "next": "Suivant",
+    "preview": "Aperçu",
+    "previous": "Précédent",
+    "tryPrompt": "Essayer cette tâche"
   },
   "global": {
     "errors": {
@@ -4306,6 +4281,134 @@
         "teamCopy": "Travaillez dans le même espace.",
         "teamTitle": "Invitez un collègue"
       },
+      "outcomes": {
+        "accessibleLabel": "Exemple de {{title}} préparé à partir de {{source}}. Toutes les données sont fictives.",
+        "examples": {
+          "coaching": {
+            "context": "Jeu. 10:00 · séance de 45 min",
+            "next": "Définir la suite",
+            "nextTime": "10 min",
+            "practice": "Pratiquer la nouvelle compétence",
+            "practiceTime": "25 min",
+            "review": "Revoir la séance précédente",
+            "reviewTime": "10 min"
+          },
+          "consulting": {
+            "agenda": "Périmètre et calendrier",
+            "background": "Contexte",
+            "context": "Acme Studio · jeu. 10:00",
+            "discuss": "À discuter",
+            "expansion": "Expansion prévue",
+            "goal": "Objectif",
+            "objective": "Améliorer l’accueil"
+          },
+          "design": {
+            "brandGuide": "Charte de marque",
+            "clientBrief": "Brief client",
+            "deliverables": "Livrables",
+            "direction": "Direction visuelle",
+            "photos": "Photos produit",
+            "positioning": "« Même soin. Moins de déchets. » pour un public écoresponsable.",
+            "project": "Lancement de soins rechargeables",
+            "scope": "Page de destination + 3 pubs",
+            "visuals": "Gros plans épurés du produit"
+          },
+          "finance": {
+            "context": "Octobre · bilan mensuel",
+            "expenses": "Dépenses",
+            "income": "Recettes",
+            "reconcile": "À rapprocher",
+            "transactions": "3 transactions"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "Croissance du CA",
+            "margin": "Marge brute",
+            "metric": "Indicateur",
+            "northstar": "Northstar",
+            "watch": "À surveiller : concentration clients."
+          },
+          "marketing": {
+            "comparison": "vs 7 jours précédents",
+            "period": "7 derniers jours"
+          },
+          "operations": {
+            "agenda": "Confirmer l’ordre du jour",
+            "context": "Cette semaine · 3 priorités",
+            "friday": "Ven.",
+            "quote": "Examiner le devis fournisseur",
+            "today": "Aujourd’hui",
+            "tuesday": "Mar.",
+            "update": "Envoyer l’avancement du projet"
+          },
+          "other": {
+            "brief": "Lire le brief partagé",
+            "call": "Confirmer l’appel de demain",
+            "context": "À partir des e-mails récents",
+            "reply": "Répondre à Alex"
+          },
+          "research": {
+            "action": "Tester une première tâche guidée",
+            "context": "Entretiens clients · 5 notes",
+            "evidence": "Preuve",
+            "finding": "Constat",
+            "insight": "Configuration trop longue",
+            "interviews": "3 entretiens sur 5",
+            "next": "Suite"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 opportunités à suivre",
+            "demo": "Démo demain",
+            "next": "Ensuite : relancer Acme.",
+            "northstar": "Northstar",
+            "proposal": "Proposition envoyée"
+          },
+          "software": {
+            "context": "2 fusions · 1 problème ouvert",
+            "issue": "Échec de l’export CSV",
+            "search": "Recherche plus rapide",
+            "signup": "Inscription simplifiée"
+          }
+        },
+        "expandLabel": "Voir un exemple de résultat",
+        "industries": {
+          "coaching": {
+            "title": "Plan de séance"
+          },
+          "consulting": {
+            "title": "Brief de rendez-vous"
+          },
+          "design": {
+            "title": "Brief créatif"
+          },
+          "finance": {
+            "title": "Bilan mensuel"
+          },
+          "investing": {
+            "title": "Comparaison d’entreprises"
+          },
+          "marketing": {
+            "title": "Bilan des campagnes"
+          },
+          "operations": {
+            "title": "Cette semaine"
+          },
+          "other": {
+            "title": "Prochaines étapes"
+          },
+          "research": {
+            "title": "Synthèse de recherche"
+          },
+          "sales": {
+            "title": "Suivi commercial"
+          },
+          "software": {
+            "title": "Bilan de version"
+          }
+        },
+        "title": "Faites travailler vos outils du quotidien"
+      },
       "prompt": {
         "connectorsDescription": "Connectez vos outils pour qu’Okou comprenne votre travail et réalise les tâches en fonction de vos besoins. Vous pouvez aussi le faire plus tard.",
         "connectorsTitle": "Connectez vos outils de travail",
@@ -4379,6 +4482,12 @@
         "copy": "Plus Okou connaît votre travail, plus il devient intelligent. Connectez un outil que vous utilisez chaque jour pour commencer par une tâche tirée de votre vrai travail.",
         "permissions": "Okou utilise un petit échantillon pour adapter votre première tâche. Vous décidez de ce que les Agents peuvent faire et pour combien de temps.",
         "securityLink": "Comment Okou protège vos données",
+        "skipDialog": {
+          "connect": "Connecter un outil",
+          "description": "Nous vous recommandons de connecter vos outils pour qu’Okou comprenne votre travail et vous apporte une aide plus adaptée. Vous pouvez aussi les connecter plus tard.",
+          "skip": "Passer pour le moment",
+          "title": "Okou vous aide mieux avec vos outils"
+        },
         "title": "Connecter un outil de travail"
       },
       "startingPrompt": {
@@ -5317,6 +5426,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "Connecter",
         "connectAccount": "Connecter un compte",
+        "creditsBalance": "{{value}} crédits {{provider}}",
+        "creditsLabel": "Crédits {{provider}}",
+        "creditsUnlimited": "Illimité",
         "disconnectAccount": "Déconnecter le compte",
         "disconnectDescription": "Cette action supprime le compte d’Okou. Elle n’annule pas votre abonnement auprès du fournisseur.",
         "disconnecting": "Déconnexion…",
@@ -5417,37 +5529,9 @@
       "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
       "title": "Outils intégrés",
       "tools": {
-        "data-search": {
-          "description": "Enrichissez les profils professionnels et étudiez les entreprises, le trafic, les publicités, les créateurs et d’autres données commerciales.",
-          "name": "Recherche de données avancée"
-        },
-        "finance": {
-          "description": "Consultez les entreprises, les cours et les données de marché.",
-          "name": "Données financières"
-        },
         "image-generation": {
           "description": "Créez des images avec les modèles intégrés.",
           "name": "Génération d’images"
-        },
-        "maps": {
-          "description": "Trouvez des lieux, des adresses et des itinéraires.",
-          "name": "Cartes et lieux"
-        },
-        "people-search": {
-          "description": "Trouvez des profils professionnels publics.",
-          "name": "Recherche de personnes"
-        },
-        "scrape": {
-          "description": "Lisez et extrayez le contenu de pages web.",
-          "name": "Extraction de pages"
-        },
-        "seo": {
-          "description": "Analysez les classements, les mots-clés et les liens entrants.",
-          "name": "Recherche SEO"
-        },
-        "social": {
-          "description": "Analysez des publications publiques et collectez des médias.",
-          "name": "Recherche sur les réseaux sociaux"
         },
         "web-search": {
           "description": "Trouvez des informations actuelles sur le web.",
@@ -5585,7 +5669,7 @@
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent.",
         "description": "Vos priorités quotidiennes avant 7 h dans votre fuseau horaire.",
         "errorMessage": "Les paramètres de Morning Brief n'ont pas pu être chargés ou mis à jour.",
-        "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
+        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "preparationFailed": "Temporairement indisponible.",
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",
@@ -5594,7 +5678,7 @@
       "proactiveLearning": {
         "description": "Passe en revue votre activité la nuit et améliore la mémoire personnelle.",
         "errorMessage": "Impossible de charger ou modifier ce réglage.",
-        "missingDefaultAgent": "Choisissez un Agent par défaut disponible.",
+        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Ce workflow est temporairement indisponible.",
         "preparing": "Préparation de ce workflow.",
@@ -5603,7 +5687,7 @@
       "proactivePlanningAction": {
         "description": "Planifie et réalise le travail que vous déléguez et vous prévient lorsque votre intervention est nécessaire.",
         "errorMessage": "Impossible de charger ou modifier ce réglage.",
-        "missingDefaultAgent": "Choisissez un Agent par défaut disponible.",
+        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Ce workflow est temporairement indisponible.",
         "preparing": "Préparation de ce workflow.",
@@ -5612,7 +5696,7 @@
       "proactiveSuggestions": {
         "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
         "errorMessage": "Impossible de charger ou de modifier ces paramètres.",
-        "missingDefaultAgent": "Choisissez un Agent par défaut disponible pour recevoir des suggestions proactives.",
+        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Temporairement indisponible.",
         "preparing": "Préparation des suggestions horaires. Vous pouvez les désactiver à tout moment.",

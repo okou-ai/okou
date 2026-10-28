@@ -13,6 +13,7 @@ import {
 } from "../services/browser-owner.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { createRunnerBrowserAllocation } from "../services/browser-owner-profile.service";
+import { createRunnerBrowserAdmission } from "../services/browser-owner-window.service";
 import { BrowserUseProviderError } from "../services/browser-use.service";
 import { settle } from "../utils";
 
@@ -37,6 +38,11 @@ const readAction$ = computed(async (get) => {
 });
 const browserRead$ = createRunnerBrowserRead(owner$, readAction$);
 const allocation$ = createRunnerBrowserAllocation(owner$);
+const admissionAction$ = computed(async (get) => {
+  const input = await get(controlInput$);
+  return input?.action.kind === "admit" ? input.action : null;
+});
+const admission$ = createRunnerBrowserAdmission(owner$, admissionAction$);
 
 const officialRunnerError$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -105,8 +111,15 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     return { status: 200 as const, body: result };
   }
-  if (body.data.action.kind === "allocate") {
-    const result = await settle(set(allocation$, signal));
+  if (
+    body.data.action.kind === "allocate" ||
+    body.data.action.kind === "admit"
+  ) {
+    const result = await settle(
+      body.data.action.kind === "allocate"
+        ? set(allocation$, signal)
+        : set(admission$, signal),
+    );
     signal.throwIfAborted();
     if (!result.ok) {
       if (result.error instanceof BrowserUseProviderError) {
@@ -115,7 +128,10 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
           body: {
             error: {
               code: result.error.code,
-              message: "Managed browser provider profile is unavailable",
+              message:
+                body.data.action.kind === "allocate"
+                  ? "Managed browser provider profile is unavailable"
+                  : "Managed browser provider window is unavailable",
             },
           },
         };

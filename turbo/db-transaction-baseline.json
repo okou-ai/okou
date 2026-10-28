@@ -2,29 +2,14 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0011",
-      "file": "turbo/apps/api/src/signals/routes/agents.ts",
-      "owner": "updateAgentInner$"
-    },
-    {
       "id": "TX-0012",
       "file": "turbo/apps/api/src/signals/routes/agents.ts",
       "owner": "updateAgentMetadataInner$"
     },
     {
-      "id": "TX-0018",
-      "file": "turbo/apps/api/src/signals/routes/feishu-oauth.ts",
-      "owner": "persistFeishuOAuthConnection"
-    },
-    {
       "id": "TX-0019",
       "file": "turbo/apps/api/src/signals/routes/integrations-agentphone.ts",
       "owner": "sendAgentPhoneVerificationText$"
-    },
-    {
-      "id": "TX-0044",
-      "file": "turbo/apps/api/src/signals/routes/workflow-copy-publication.ts",
-      "owner": "commitWorkflowCopy$"
     },
     {
       "id": "TX-0047",
@@ -37,19 +22,9 @@
       "owner": "claimExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0084",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
-      "owner": "completeClaimedSession$"
-    },
-    {
       "id": "TX-0095",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "createChatThread$"
-    },
-    {
-      "id": "TX-0096",
-      "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
-      "owner": "createChatThread$/thread"
     },
     {
       "id": "TX-0097",
@@ -62,34 +37,14 @@
       "owner": "deleteBuiltinConnectorLocalState$"
     },
     {
-      "id": "TX-0119",
-      "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
-      "owner": "upsertBuiltinConnectorTokenConnection$"
-    },
-    {
       "id": "TX-0130",
       "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
       "owner": "projectThread"
     },
     {
-      "id": "TX-0141",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "storeCustomConnectorOAuth2Connection"
-    },
-    {
       "id": "TX-0148",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "deleteCustomConnectorAccount$"
-    },
-    {
-      "id": "TX-0164",
-      "file": "turbo/apps/api/src/signals/services/feishu-dispatch.service.ts",
-      "owner": "handleDisconnectCommand"
-    },
-    {
-      "id": "TX-0169",
-      "file": "turbo/apps/api/src/signals/services/host.service.ts",
-      "owner": "createHostedSiteDeployment$"
     },
     {
       "id": "TX-0170",
@@ -102,19 +57,9 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0218",
-      "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
-      "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
-    },
-    {
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"
-    },
-    {
-      "id": "TX-0247",
-      "file": "turbo/apps/api/src/signals/services/slack-installation-write.service.ts",
-      "owner": "commitSlackInstallation$"
     },
     {
       "id": "TX-0248",
@@ -152,16 +97,6 @@
       "owner": "applyVisibleAgentGrantRows"
     },
     {
-      "id": "TX-0325",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishAtomPlanInvoice$"
-    },
-    {
-      "id": "TX-0329",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishLegacyPlanSubscription$"
-    },
-    {
       "id": "TX-0333",
       "file": "turbo/apps/api/src/signals/services/workflow-automation-run.service.ts",
       "owner": "commitWorkflowInput$"
@@ -170,11 +105,6 @@
       "id": "TX-0342",
       "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
       "owner": "deleteWorkflowRows$"
-    },
-    {
-      "id": "TX-0356",
-      "file": "turbo/packages/db/scripts/billing-attribution.ts",
-      "owner": "<module>"
     },
     {
       "id": "TX-0357",
