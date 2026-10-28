@@ -490,27 +490,49 @@ mod tests {
     #[test]
     fn home_cache_snapshot_upsert_caps_states() {
         let snapshot = HomeCacheStateSnapshot::new();
-        for index in 0..=MAX_HELD_HOME_STATES {
-            snapshot.upsert_home_cache_state(
-                format!("sess-{index:04}:vm0/default"),
-                HeldHomeState {
-                    reuse_key: format!("sess-{index:04}"),
-                    last_completed_at: timestamp_for_index(index),
-                    home_caches: vec![home_cache("vm0/default")],
-                },
-            );
-        }
+        // Load a full snapshot once instead of reprojecting every setup upsert.
+        let inventory = HomeCacheInventory {
+            entries: (0..MAX_HELD_HOME_STATES)
+                .map(|index| {
+                    (
+                        format!("sess-{index:04}:vm0/default"),
+                        held_home_state(
+                            &format!("sess-{index:04}"),
+                            &timestamp_for_index(index),
+                            &["vm0/default"],
+                        ),
+                    )
+                })
+                .collect(),
+            ..Default::default()
+        };
+        snapshot.finish_home_cache_refresh(snapshot.begin_home_cache_refresh(), inventory);
+        assert_eq!(
+            snapshot.loaded_home_cache_snapshot().states.len(),
+            MAX_HELD_HOME_STATES
+        );
+        let source = home_cache("vm0/default").source_run_id;
+        assert!(snapshot.contains_source_home("sess-0000", "vm0/default", source));
 
-        // Observe stored state directly; the current view applies its own cap.
+        let newest = format!("sess-{MAX_HELD_HOME_STATES:04}");
+        snapshot.upsert_home_cache_state(
+            format!("{newest}:vm0/default"),
+            held_home_state(
+                &newest,
+                &timestamp_for_index(MAX_HELD_HOME_STATES),
+                &["vm0/default"],
+            ),
+        );
+
+        // Check the stored projection as well as physical readiness below.
         let states = snapshot.loaded_home_cache_snapshot().states;
 
         assert_eq!(states.len(), MAX_HELD_HOME_STATES);
         assert!(!states.iter().any(|state| state.reuse_key == "sess-0000"));
-        assert!(
-            states
-                .iter()
-                .any(|state| state.reuse_key == format!("sess-{MAX_HELD_HOME_STATES:04}"))
-        );
+        assert!(states.iter().any(|state| state.reuse_key == newest));
+        // Readiness sees physical entries, independently of the capped projection.
+        assert!(!snapshot.contains_source_home("sess-0000", "vm0/default", source));
+        assert!(snapshot.contains_source_home(&newest, "vm0/default", source));
     }
 
     #[test]
