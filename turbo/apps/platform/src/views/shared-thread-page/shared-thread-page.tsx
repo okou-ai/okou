@@ -1,3 +1,9 @@
+import { useLoadableSet } from "ccstate-react/experimental";
+import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
+import { SharedThreadShareMenu } from "../okou-page/shared-thread-share-menu.tsx";
+import { ResourceAccessCard } from "../components/resource-access-card.tsx";
+import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import type {
   SharedMessage,
   SharedMessageAttachment,
@@ -73,6 +79,7 @@ export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
 
 export type SharedDisplayThread = Omit<SharedThreadResponse, "messages"> & {
   readonly messages: readonly SharedDisplayMessage[];
+  readonly visibility?: SharedThreadVisibilitySignals;
   readonly richContent?: SharedThreadRichContentSignals;
   readonly artifactPreview?: PublicArtifactPreviewSignals;
 };
@@ -445,7 +452,9 @@ function SharedThreadHeader({
   signInUrl,
   signUpUrl,
   title,
+  visibility,
 }: {
+  readonly visibility?: SharedThreadVisibilitySignals;
   readonly brandName: BrandName;
   readonly homeUrl: string;
   readonly shareUrl: string | null;
@@ -472,7 +481,9 @@ function SharedThreadHeader({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {shareUrl !== null ? (
+        {visibility ? (
+          <SharedThreadShareMenu session={visibility} />
+        ) : shareUrl !== null ? (
           <Button
             showTooltip
             type="button"
@@ -577,15 +588,65 @@ function SharedThreadTranscript({
   );
 }
 
-function SharedThreadNotFound() {
+function SharedThreadNotFound({
+  signInUrl,
+}: {
+  readonly signInUrl: string | null;
+}) {
   const { t } = useTranslation();
+  const user = useLastResolved(currentUserInfo$);
+  const [switchState, switchAccount] = useLoadableSet(openClerkAddAccount$);
+  const signal = useGet(pageSignal$);
   return (
-    <main className="flex min-h-0 flex-1 items-center justify-center px-6 py-16 text-center">
-      <h1 className="text-lg font-semibold text-foreground">
-        {t(($) => {
-          return $.sharedThread.notFoundTitle;
+    <main className="min-h-0 flex-1 overflow-y-auto">
+      <ResourceAccessCard
+        title={t(($) => {
+          return $.sharedThread.accessTitle;
         })}
-      </h1>
+        description={
+          user
+            ? t(($) => {
+                return $.artifacts.access.signedInDescription;
+              })
+            : t(($) => {
+                return $.artifacts.access.description;
+              })
+        }
+        help={t(($) => {
+          return $.artifacts.access.help;
+        })}
+        email={user?.primaryEmailAddress?.emailAddress}
+        error={
+          switchState.state === "hasError"
+            ? t(($) => {
+                return $.artifacts.access.switchAccountFailed;
+              })
+            : undefined
+        }
+      >
+        {signInUrl ? (
+          <a href={signInUrl} className={buttonVariants({ size: "sm" })}>
+            {t(($) => {
+              return $.sharedThread.signIn;
+            })}
+          </a>
+        ) : (
+          <Button
+            size="sm"
+            disabled={switchState.state === "loading"}
+            onClick={() => {
+              detach(
+                switchAccount(window.location.href, signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {t(($) => {
+              return $.artifacts.access.switchAccount;
+            })}
+          </Button>
+        )}
+      </ResourceAccessCard>
     </main>
   );
 }
@@ -631,9 +692,15 @@ export function SharedThreadPage({
     );
   }
   const signInUrl = new URL("/sign-in", `${homeUrl}/`);
-  signInUrl.searchParams.set("redirect_url", handoffUrl.toString());
+  signInUrl.searchParams.set(
+    "redirect_url",
+    sharedThread ? handoffUrl.toString() : window.location.href,
+  );
   const signUpUrl = new URL("/sign-up", `${homeUrl}/`);
-  signUpUrl.searchParams.set("redirect_url", handoffUrl.toString());
+  signUpUrl.searchParams.set(
+    "redirect_url",
+    sharedThread ? handoffUrl.toString() : window.location.href,
+  );
   const signInHref = viewerSignedIn ? null : signInUrl.toString();
   const signUpHref = viewerSignedIn ? null : signUpUrl.toString();
 
@@ -650,6 +717,7 @@ export function SharedThreadPage({
           signInUrl={signInHref}
           signUpUrl={signUpHref}
           title={sharedThread?.title ?? null}
+          visibility={sharedThread?.visibility}
         />
         {sharedThread ? (
           <>
@@ -665,7 +733,7 @@ export function SharedThreadPage({
             />
           </>
         ) : (
-          <SharedThreadNotFound />
+          <SharedThreadNotFound signInUrl={signInHref} />
         )}
       </WorkspaceInset>
       {sharedThread?.artifactPreview ? (

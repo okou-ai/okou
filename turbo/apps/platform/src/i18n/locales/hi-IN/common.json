@@ -620,7 +620,8 @@
       "organizationOptionUnnamed": "आपके संगठन में कोई भी व्यक्ति",
       "permissionsUpdated": "पहुँच अपडेट हो गई",
       "publicAccess": "सार्वजनिक ऐक्सेस",
-      "publicOption": "लिंक वाला कोई भी व्यक्ति"
+      "publicOption": "लिंक वाला कोई भी व्यक्ति",
+      "updateFailed": "पहुँच अपडेट नहीं हो सकी"
     },
     "sidebar": {
       "openSharedConversation": "साझा बातचीत खोलें",
@@ -2260,7 +2261,8 @@
       "shareLink": "साझा बातचीत का लिंक",
       "shareLinkCopied": "साझा लिंक कॉपी किया गया",
       "start": "संदेश शेयर करें",
-      "tooLarge": "शेयर करने के लिए कम संदेश चुनें"
+      "tooLarge": "शेयर करने के लिए कम संदेश चुनें",
+      "visibilityDescription": "चुनें कि यह बातचीत कौन देख सकता है। केवल आप ही पहुँच बदल सकते हैं।"
     },
     "shortcuts": {
       "number": "संख्या"
@@ -5924,6 +5926,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "आप यह बातचीत नहीं देख सकते",
     "handoffDescription": "{{assistantName}} संदर्भ को एक नई चैट में ले जाता है",
     "handoffPrompt": "इस साझा बातचीत को मेरे साथ जारी रखें: {{url}}",
     "makeConversationYours": "इस बातचीत को अपना बनाएं",

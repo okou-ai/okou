@@ -636,7 +636,8 @@
       "organizationOptionUnnamed": "Cualquier persona de tu organización",
       "permissionsUpdated": "Acceso actualizado",
       "publicAccess": "Acceso público",
-      "publicOption": "Cualquier persona con el enlace"
+      "publicOption": "Cualquier persona con el enlace",
+      "updateFailed": "No se pudo actualizar el acceso"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversación compartida",
@@ -2304,7 +2305,8 @@
       "shareLink": "Enlace de conversación compartida",
       "shareLinkCopied": "Enlace para compartir copiado",
       "start": "Compartir mensajes",
-      "tooLarge": "Selecciona menos mensajes para compartir"
+      "tooLarge": "Selecciona menos mensajes para compartir",
+      "visibilityDescription": "Elige quién puede ver esta conversación. Solo tú puedes cambiar el acceso."
     },
     "shortcuts": {
       "number": "Número"
@@ -5987,6 +5989,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "No puedes ver esta conversación",
     "handoffDescription": "{{assistantName}} lleva el contexto a un chat nuevo",
     "handoffPrompt": "Continúa esta conversación compartida conmigo: {{url}}",
     "makeConversationYours": "Haz tuya esta conversación",
