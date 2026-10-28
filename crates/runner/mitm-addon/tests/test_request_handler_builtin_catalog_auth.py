@@ -352,8 +352,10 @@ async def test_builtin_static_headers_follow_catalog_across_mcp_requests_and_pro
         assert endpoint.request_count == 1
         requested = endpoint.requests[0].json_body()
         assert requested["authHeaders"] == configured_headers
-        assert requested["matchedFirewall"]["sourceId"] == _SOURCE_ID
-        assert requested["matchedFirewall"]["connectorSlug"] == _BUILTIN
+        matched = requested["matchedFirewall"]
+        assert isinstance(matched, dict)
+        assert matched["sourceId"] == _SOURCE_ID
+        assert matched["connectorSlug"] == _BUILTIN
 
         changed = _firewall(_BUILTIN, oauth=True)
         changed["apis"][0].pop("id")
