@@ -355,7 +355,7 @@ export async function fetchCodexUsageMetadata(
     >;
   },
   signal: AbortSignal,
-): Promise<CodexUsageMetadata | null> {
+): Promise<CodexUsageMetadata> {
   const detailsWaiter = new AbortController();
   const detailsSignal = AbortSignal.any([signal, detailsWaiter.signal]);
   const [response, resetCreditExpiry] = await Promise.all([

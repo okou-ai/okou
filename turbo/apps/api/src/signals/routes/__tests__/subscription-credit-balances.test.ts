@@ -29,7 +29,8 @@ function app() {
 }
 
 async function connectedAccounts() {
-  const actor = createBddApi(context).user();
+  const orgId = `org_credits_${randomUUID()}`;
+  const actor = { ...createBddApi(context).user({ orgId }), orgId };
   const externalAccounts = [
     { accountId: `credits-${randomUUID()}`, balance: "1250.5000" },
     { accountId: `credits-${randomUUID()}`, balance: "0.0000" },
