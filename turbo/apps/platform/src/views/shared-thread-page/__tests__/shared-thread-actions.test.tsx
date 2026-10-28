@@ -1,3 +1,8 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  sharedThreadVisibilityContract,
+  type SharedThreadAudience,
+} from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -181,4 +186,46 @@ test("A visitor can copy the public conversation link", async () => {
     ]);
   });
   await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+});
+
+test("The creator can manage visibility after reopening a shared conversation", async () => {
+  let audience: SharedThreadAudience = "organization";
+  const revision = "30000000-0000-4000-8000-000000000703";
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(200, sharedThread());
+  });
+  context.mocks.api(sharedThreadVisibilityContract.get, ({ respond }) => {
+    return respond(200, {
+      id: SHARED_THREAD_ID,
+      audience,
+      revision,
+      organization: { id: "org_owner", name: "Original workspace" },
+    });
+  });
+  context.mocks.api(
+    sharedThreadVisibilityContract.update,
+    ({ body, respond }) => {
+      audience = body.audience;
+      return respond(200, {
+        id: SHARED_THREAD_ID,
+        audience,
+        revision,
+        organization: { id: "org_owner", name: "Original workspace" },
+      });
+    },
+  );
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "user_owner", fullName: "Owner" } },
+    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
+  });
+  click(getButtonByName("Share"));
+  await expect(
+    screen.findByRole("radio", { name: "Anyone at Original workspace" }),
+  ).resolves.toBeChecked();
+  click(screen.getByRole("radio", { name: "Only me" }));
+  await waitFor(() => {
+    expect(screen.getByRole("radio", { name: "Only me" })).toBeChecked();
+  });
+  expect(audience).toBe("private");
 });

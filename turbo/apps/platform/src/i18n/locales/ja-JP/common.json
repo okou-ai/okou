@@ -619,7 +619,8 @@
       "organizationOptionUnnamed": "組織内の全員",
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
-      "publicOption": "リンクを知っている全員"
+      "publicOption": "リンクを知っている全員",
+      "updateFailed": "アクセス権を更新できませんでした"
     },
     "sidebar": {
       "openSharedConversation": "共有された会話を開く",
@@ -2238,7 +2239,8 @@
       "shareLink": "共有された会話のリンク",
       "shareLinkCopied": "共有リンクをコピーしました",
       "start": "メッセージを共有",
-      "tooLarge": "共有するメッセージを減らしてください"
+      "tooLarge": "共有するメッセージを減らしてください",
+      "visibilityDescription": "この会話を閲覧できる人を選択します。アクセス権を変更できるのはあなただけです。"
     },
     "shortcuts": {
       "number": "番号"
@@ -5885,6 +5887,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "この会話を閲覧できません",
     "handoffDescription": "{{assistantName}} がコンテキストを新しいチャットに引き継ぎます",
     "handoffPrompt": "この共有された会話を私と続けてください: {{url}}",
     "makeConversationYours": "この会話を自分のものに",

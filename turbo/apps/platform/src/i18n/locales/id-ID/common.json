@@ -619,7 +619,8 @@
       "organizationOptionUnnamed": "Siapa pun di organisasi Anda",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
-      "publicOption": "Siapa pun yang memiliki tautan"
+      "publicOption": "Siapa pun yang memiliki tautan",
+      "updateFailed": "Tidak dapat memperbarui akses"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",
@@ -2238,7 +2239,8 @@
       "shareLink": "Tautan percakapan yang dibagikan",
       "shareLinkCopied": "Tautan berbagi disalin",
       "start": "Bagikan pesan",
-      "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan"
+      "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan",
+      "visibilityDescription": "Pilih siapa yang dapat melihat percakapan ini. Hanya Anda yang dapat mengubah akses."
     },
     "shortcuts": {
       "number": "nomor"
@@ -5885,6 +5887,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "Anda tidak dapat melihat percakapan ini",
     "handoffDescription": "{{assistantName}} membawa konteks ke percakapan baru",
     "handoffPrompt": "Lanjutkan percakapan yang dibagikan ini dengan saya: {{url}}",
     "makeConversationYours": "Jadikan percakapan ini milik Anda",

@@ -619,7 +619,8 @@
       "organizationOptionUnnamed": "조직 내 모든 사용자",
       "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
       "publicAccess": "공개 액세스",
-      "publicOption": "링크가 있는 모든 사람"
+      "publicOption": "링크가 있는 모든 사람",
+      "updateFailed": "액세스 권한을 업데이트할 수 없습니다"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -2238,7 +2239,8 @@
       "shareLink": "공유된 대화 링크",
       "shareLinkCopied": "공유 링크 복사됨",
       "start": "메시지 공유",
-      "tooLarge": "공유할 메시지를 더 적게 선택하세요"
+      "tooLarge": "공유할 메시지를 더 적게 선택하세요",
+      "visibilityDescription": "이 대화를 볼 수 있는 사람을 선택하세요. 액세스 권한은 본인만 변경할 수 있습니다."
     },
     "shortcuts": {
       "number": "번호"
@@ -5885,6 +5887,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "이 대화를 볼 수 없습니다",
     "handoffDescription": "{{assistantName}}가 컨텍스트를 새 채팅으로 가져갑니다",
     "handoffPrompt": "이 공유 대화를 저와 계속하세요: {{url}}",
     "makeConversationYours": "이 대화를 내 것으로",

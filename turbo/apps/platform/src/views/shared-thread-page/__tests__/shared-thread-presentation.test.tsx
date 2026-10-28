@@ -10,6 +10,7 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getLinkByName,
+  linksByName,
   setupSharedThreadPage,
   sharedThread,
 } from "./shared-thread-test-helpers.ts";
@@ -29,9 +30,13 @@ test("A missing public conversation uses the Okou presentation", async () => {
 
   await expect(
     screen.findByRole("heading", {
-      name: "Shared conversation not found",
+      name: "You can’t view this conversation",
     }),
   ).resolves.toBeInTheDocument();
+  for (const link of linksByName("Sign in")) {
+    const url = new URL(link.getAttribute("href")!);
+    expect(url.searchParams.get("redirect_url")).toBe(window.location.href);
+  }
   const brandLink = getLinkByName("Okou");
   expect(brandLink).toHaveAttribute("href", "https://app.okou.ai");
   expect(getLinkByName("Sign up")).toHaveAttribute(

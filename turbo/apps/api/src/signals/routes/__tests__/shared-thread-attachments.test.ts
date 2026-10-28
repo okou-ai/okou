@@ -1,3 +1,11 @@
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  sharedThreadVisibilityContract,
+  type SharedThreadAudience,
+} from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
+import { artifactDownloadRoutes } from "../artifact-downloads";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import type { UserMessageInputPart } from "@okouai/api-contracts/contracts/chat-threads";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
@@ -21,6 +29,7 @@ import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
 const bdd = createBddApi(context);
+const device = createAuthDeviceSupportApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const mocks = createRouteMocks(context);
@@ -31,6 +40,7 @@ const api = () => {
     routes: [
       ...sharedThreadRoutes,
       ...artifactReferenceRoutes,
+      ...artifactDownloadRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
       ...webFileUrlRoutes,
@@ -43,7 +53,12 @@ async function fixture() {
   const actor = bdd.user();
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
-      data: [{ publicUserData: { userId: actor.userId } }],
+      data: [
+        {
+          publicUserData: { userId: actor.userId },
+          organization: { id: actor.orgId, name: "Owner workspace" },
+        },
+      ],
       totalCount: 1,
     },
   );
@@ -118,16 +133,24 @@ async function fixture() {
     }
     return { threadId: sent.threadId, eventId: event.id };
   }
-  function share(message: {
-    readonly threadId: string;
-    readonly eventId: string;
-  }) {
+  function share(
+    message: {
+      readonly threadId: string;
+      readonly eventId: string;
+    },
+    audience?: SharedThreadAudience,
+  ) {
     mocks.clerk.session(actor.userId, actor.orgId);
-    return api()(sharedThreadsContract).create({
-      headers,
-      params: { threadId: message.threadId },
-      body: { eventIds: [message.eventId] },
-    });
+    const request = { headers, params: { threadId: message.threadId } };
+    return audience === undefined
+      ? api()(sharedThreadsContract).create({
+          ...request,
+          body: { eventIds: [message.eventId] },
+        })
+      : api()(sharedThreadVisibilityContract).create({
+          ...request,
+          body: { eventIds: [message.eventId], audience },
+        });
   }
   async function expectNoShare(threadId: string) {
     expect(
@@ -332,3 +355,139 @@ test.each(["missing source", "copy failure"])(
     await f.expectNoShare(message.threadId);
   },
 );
+
+test.each(["private", "public"] as const)(
+  "a visibility-managed share protects copies of %s attachments",
+  async (scope) => {
+    const f = await fixture();
+    const file = await f.upload(
+      "confidential.pdf",
+      "application/pdf",
+      "confidential attachment",
+      scope,
+    );
+    const message = await f.send([file.part]);
+    await device.updateFeatureSwitches(f.actor, {
+      [FeatureSwitchKey.SharedThreadVisibility]: true,
+    });
+    const created = await accept(f.share(message, "private"), [201]);
+    const id = created.body.id;
+    const owner = await accept(
+      api()(sharedThreadsContract).get({ headers, params: { id } }),
+      [200],
+    );
+    const url = owner.body.messages[0]?.attachments?.[0]?.url;
+    if (!url) {
+      throw new Error("Expected a protected attachment reference");
+    }
+    const reference = new URL(url).pathname.slice("/artifacts/".length);
+    await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [404],
+    );
+    const resolved = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference },
+      }),
+      [200],
+    );
+    await expect((await fetch(resolved.body.url)).text()).resolves.toBe(
+      "confidential attachment",
+    );
+    await accept(
+      api()(artifactDownloadsContract).download({
+        headers,
+        params: { reference },
+      }),
+      [200],
+    );
+    const stranger = bdd.user();
+    mocks.clerk.session(stranger.userId, stranger.orgId);
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference },
+      }),
+      [404],
+    );
+    await accept(
+      api()(artifactDownloadsContract).download({
+        headers,
+        params: { reference },
+      }),
+      [404],
+    );
+    mocks.clerk.session(f.actor.userId, f.actor.orgId);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            publicUserData: { userId: f.actor.userId },
+            organization: { id: f.actor.orgId, name: "Owner workspace" },
+          },
+        ],
+      },
+    );
+    const status = await accept(
+      api()(sharedThreadVisibilityContract).get({ headers, params: { id } }),
+      [200],
+    );
+    const published = await accept(
+      api()(sharedThreadVisibilityContract).update({
+        headers,
+        params: { id },
+        body: { audience: "public", expectedRevision: status.body.revision },
+      }),
+      [200],
+    );
+    const publicFile = await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [200],
+    );
+    await expect((await fetch(publicFile.body.url)).text()).resolves.toBe(
+      "confidential attachment",
+    );
+    await accept(
+      api()(sharedThreadVisibilityContract).update({
+        headers,
+        params: { id },
+        body: {
+          audience: "private",
+          expectedRevision: published.body.revision,
+        },
+      }),
+      [200],
+    );
+    await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [404],
+    );
+  },
+);
+
+test("asks for a new share before restricting legacy public attachment copies", async () => {
+  const f = await fixture();
+  const file = await f.upload(
+    "legacy.pdf",
+    "application/pdf",
+    "legacy public attachment",
+    "public",
+  );
+  const message = await f.send([file.part]);
+  const created = await accept(f.share(message), [201]);
+  const id = created.body.id;
+  await device.updateFeatureSwitches(f.actor, {
+    [FeatureSwitchKey.SharedThreadVisibility]: true,
+  });
+  const rejected = await accept(
+    api()(sharedThreadVisibilityContract).update({
+      headers,
+      params: { id: id.toUpperCase() },
+      body: { audience: "private", expectedRevision: null },
+    }),
+    [400],
+  );
+  expect(rejected.body.error.message).toContain("Create a new share");
+  await accept(api()(sharedThreadsContract).get({ params: { id } }), [200]);
+});

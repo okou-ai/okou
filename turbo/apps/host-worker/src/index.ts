@@ -28,6 +28,7 @@ import {
 import {
   sharedThreadArtifactPolicyKey,
   sharedThreadArtifactPolicySchema,
+  sharedThreadPolicyAudience,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 import {
   serveArtifactThumbnail,
@@ -636,10 +637,7 @@ async function serveGrantedArtifactDelivery(
     response.ok &&
     !response.headers.get("Content-Type")?.toLowerCase().startsWith("text/html")
   )
-    response.headers.set(
-      "Cache-Control",
-      "private, max-age=31536000, immutable",
-    );
+    response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 
@@ -1446,7 +1444,8 @@ async function readSharedThreadResource(
     !parsed.success ||
     parsed.data.threadId !== record.threadId ||
     parsed.data.publicBrand !== record.publicBrand ||
-    parsed.data.status !== "active"
+    parsed.data.status !== "active" ||
+    sharedThreadPolicyAudience(parsed.data) !== "public"
   )
     return null;
   const target = parsed.data.resources[record.publicToken];

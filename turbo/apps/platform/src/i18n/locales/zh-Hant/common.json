@@ -619,7 +619,8 @@
       "organizationOptionUnnamed": "組織內的所有成員",
       "permissionsUpdated": "訪問權限已更新",
       "publicAccess": "公開訪問",
-      "publicOption": "知道連結的所有人"
+      "publicOption": "知道連結的所有人",
+      "updateFailed": "無法更新存取權限"
     },
     "sidebar": {
       "openSharedConversation": "開啟分享的對話",
@@ -2238,7 +2239,8 @@
       "shareLink": "分享對話連結",
       "shareLinkCopied": "分享連結已複製",
       "start": "分享訊息",
-      "tooLarge": "選擇的訊息過多，請減少後再分享"
+      "tooLarge": "選擇的訊息過多，請減少後再分享",
+      "visibilityDescription": "選擇誰可以查看此對話，只有你能修改權限。"
     },
     "shortcuts": {
       "number": "數字"
@@ -5885,6 +5887,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "你無法查看此對話",
     "handoffDescription": "{{assistantName}} 會把上下文帶進新的對話",
     "handoffPrompt": "和我一起繼續這段分享的對話：{{url}}",
     "makeConversationYours": "把這段對話變成你自己的",
