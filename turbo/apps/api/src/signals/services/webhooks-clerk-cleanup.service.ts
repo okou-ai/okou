@@ -1,3 +1,4 @@
+import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { agents } from "@okouai/db/schema/agent";
@@ -232,6 +233,7 @@ function queueFallbackStripeSubscriptionCleanup(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const owner = { kind: "organization", orgId } as const;
+    await set(deleteTeamsOwnerAccounts$, owner, signal);
     await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
@@ -251,6 +253,7 @@ export const cleanupClerkDeletedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const owner = { kind: "user", userId } as const;
     await set(deleteFeatureGuideReceipts$, userId, signal);
+    await set(deleteTeamsOwnerAccounts$, owner, signal);
     await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);

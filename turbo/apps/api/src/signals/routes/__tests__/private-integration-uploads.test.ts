@@ -72,13 +72,14 @@ test.each(integrations)(
     });
     installSharedThreadStorage(context);
     const headers = { authorization: "Bearer clerk-session" };
-    const initialized = await accept(
-      setupApp({ context, routes })(contract).init({
-        headers,
-        body: { filename: "notes.txt", contentType: "text/plain", length: 12 },
-      }),
-      [200],
-    );
+    const initialized = await setupApp({ context, routes })(contract).init({
+      headers,
+      body: { filename: "notes.txt", contentType: "text/plain", length: 12 },
+    });
+    expect(initialized.status).toBe(200);
+    if (initialized.status !== 200) {
+      throw new Error("Expected an initialized private upload");
+    }
     const { uploadId, uploadUrl, fileUrl } = initialized.body;
     expect(uploadUrl).toContain("/test-private-artifacts/private-artifacts/");
     expect(fileUrl).toMatch(

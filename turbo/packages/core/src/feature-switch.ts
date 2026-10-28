@@ -68,6 +68,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Teams workspace identity",
+    description:
+      "Connect your Microsoft Teams identity independently of bot installation and use it in shared conversations.",
+    enabled: false,
+  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",
