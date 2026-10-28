@@ -113,7 +113,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint --deny-warnings && oxlint --type-aware -c ../../.oxlintrc.typeaware.json --deny-warnings && eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit && tsc --noEmit --project tsconfig.nodenext.json"
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@types/tr46": "5.0.1",

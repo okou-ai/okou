@@ -4,7 +4,7 @@ import {
   hasBaseUrlParams,
   validateAuthBaseUrl,
   validateBaseUrl,
-} from "./firewall-types.js";
+} from "./firewall-types";
 import {
   AWS_PREDICATE_VALUE_RE,
   AWS_QUERY_KEY_RE,
@@ -13,12 +13,9 @@ import {
   AWS_S3_PERMISSION_HEADER_NAMES,
   isSensitiveAwsDiagnosticQueryKey,
   parseRuleRemainder,
-} from "./firewall-expander.js";
-import {
-  hasRawWhitespace,
-  hasUnsafeUrlCodepoint,
-} from "./firewall-url-utils.js";
-import { parseSegment, splitPathSegments } from "./segment-parser.js";
+} from "./firewall-expander";
+import { hasRawWhitespace, hasUnsafeUrlCodepoint } from "./firewall-url-utils";
+import { parseSegment, splitPathSegments } from "./segment-parser";
 
 type SegmentParseResult = ReturnType<typeof parseSegment>;
 type MatchableSegment = Exclude<SegmentParseResult, { kind: "error" }>;

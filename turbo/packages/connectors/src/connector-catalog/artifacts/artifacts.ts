@@ -16,12 +16,12 @@ import {
   connectorCatalogVersionSchema,
   connectorSlugSchema,
   privateNameSchema,
-} from "./common.js";
+} from "./common";
 import {
   firewallCategoriesSchema,
   firewallConfigSchema,
   firewallPolicyValueSchema,
-} from "./firewall.js";
+} from "./firewall";
 import {
   catalogSourceSchema,
   connectorAccessSourceSchema,
@@ -36,8 +36,8 @@ import {
   automaticGrantSourceSchema,
   connectorMcpSchema,
   validateConnectorProtocolSemantics,
-} from "./source.js";
-import { isConnectorCatalogIconKey } from "./icon.js";
+} from "./source";
+import { isConnectorCatalogIconKey } from "./icon";
 
 export const SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION = 4;
 export const CONNECTOR_CATALOG_ACTIVE_KEY = `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/active.json`;

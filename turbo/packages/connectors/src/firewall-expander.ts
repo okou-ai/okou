@@ -4,12 +4,9 @@ import {
   validateAuthBaseUrl,
   validateBaseUrlHostPolicy,
   validateBaseUrl,
-} from "./firewall-types.js";
-import {
-  hasRawWhitespace,
-  hasUnsafeUrlCodepoint,
-} from "./firewall-url-utils.js";
-import { parseSegment, splitPathSegments } from "./segment-parser.js";
+} from "./firewall-types";
+import { hasRawWhitespace, hasUnsafeUrlCodepoint } from "./firewall-url-utils";
+import { parseSegment, splitPathSegments } from "./segment-parser";
 
 const VALID_RULE_METHODS = new Set([
   "GET",

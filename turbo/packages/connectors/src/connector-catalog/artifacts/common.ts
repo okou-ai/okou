@@ -1,6 +1,6 @@
 import { string } from "zod";
 
-import { connectorSlugSchema } from "../../connector-identity.js";
+import { connectorSlugSchema } from "../../connector-identity";
 
 export { connectorSlugSchema };
 

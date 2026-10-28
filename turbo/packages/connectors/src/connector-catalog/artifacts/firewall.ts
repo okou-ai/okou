@@ -5,8 +5,8 @@ import {
   validateAuthBaseUrl,
   validateBaseUrl,
   validateBaseUrlHostPolicy,
-} from "../../firewall-types.js";
-import { collectAndValidatePermissions } from "../../firewall-expander.js";
+} from "../../firewall-types";
+import { collectAndValidatePermissions } from "../../firewall-expander";
 import {
   array,
   boolean,
@@ -19,8 +19,8 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { connectorSlugSchema, privateNameSchema } from "./common.js";
-import { ConnectorCatalogRelationshipError } from "./relationship-error.js";
+import { connectorSlugSchema, privateNameSchema } from "./common";
+import { ConnectorCatalogRelationshipError } from "./relationship-error";
 
 const TEMPLATE_REFERENCE_PATTERN = /\b(secrets|vars)\.([A-Z][A-Z0-9_]*)\b/gu;
 const DIRECT_TEMPLATE_PATTERN =

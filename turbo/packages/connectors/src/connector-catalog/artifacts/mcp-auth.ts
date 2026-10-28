@@ -1,4 +1,4 @@
-import type { FirewallApi } from "../../firewall-contracts.js";
+import type { FirewallApi } from "../../firewall-contracts";
 
 export const AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME =
   "MCP_ACCESS_TOKEN";

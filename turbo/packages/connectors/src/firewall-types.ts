@@ -1,7 +1,7 @@
 import {
   canonicalizeFirewallDnsHostname,
   FIREWALL_HOSTNAME_POLICY_VERSION,
-} from "./firewall-hostname-policy.js";
+} from "./firewall-hostname-policy";
 import {
   firewallBaseHostPolicySchema,
   type FirewallApi,
@@ -9,15 +9,12 @@ import {
   type FirewallConfig,
   type FirewallPolicyValue,
   type Firewalls,
-} from "./firewall-contracts.js";
-import {
-  hasRawWhitespace,
-  hasUnsafeUrlCodepoint,
-} from "./firewall-url-utils.js";
-import { PUBLIC_DESTINATION_ADDRESS_POLICY } from "./public-destination-policy.js";
-import { parseSegment, splitPathSegments } from "./segment-parser.js";
+} from "./firewall-contracts";
+import { hasRawWhitespace, hasUnsafeUrlCodepoint } from "./firewall-url-utils";
+import { PUBLIC_DESTINATION_ADDRESS_POLICY } from "./public-destination-policy";
+import { parseSegment, splitPathSegments } from "./segment-parser";
 
-export { normalizeFirewallFixedHost } from "./firewall-url-utils.js";
+export { normalizeFirewallFixedHost } from "./firewall-url-utils";
 
 export {
   executionFirewallBuiltinEntrySchema,
@@ -52,7 +49,7 @@ export {
   type NetworkPolicies,
   type NetworkPolicy,
   type PermissionNamesOf,
-} from "./firewall-contracts.js";
+} from "./firewall-contracts";
 
 const HOST_DOT_EQUIVALENT_PATTERN = /[\u3002\uff0e\uff61]/g;
 const DNS_HOST_FORBIDDEN_ASCII_CHARS = new Set(["<", ">", "[", "]", "^", "|"]);

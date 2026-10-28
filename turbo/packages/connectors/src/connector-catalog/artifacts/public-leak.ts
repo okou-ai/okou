@@ -2,12 +2,12 @@ import type {
   ConnectorCatalogArtifact,
   ConnectorCatalogArtifactConnector,
   ConnectorCatalogAuthMethod,
-} from "./artifacts.js";
+} from "./artifacts";
 import {
   isPrivateTokenLikeKey,
   privateTokenMatches,
-} from "./private-token-patterns.js";
-import { deriveConnectorCatalogFirewallPermissions } from "./relationships.js";
+} from "./private-token-patterns";
+import { deriveConnectorCatalogFirewallPermissions } from "./relationships";
 
 const forbiddenPublicPropertyNamePattern =
   /^(access|client|clientId|clientIdEnv|clientSecret|clientSecretEnv|envBindings|featureFlag|inputs|objectKey|outputs|platformSecrets|privateName|refreshableSecrets|revoke|r2Key|scopes|secret|secrets|showExperimentalLabel|skillRef|sourcePath|storage|storageName|storageVersionPrefix|variables|valueRef|versionId)$/u;

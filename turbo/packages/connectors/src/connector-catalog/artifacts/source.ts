@@ -12,10 +12,10 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { connectorAuthMethodIdSchema } from "../../connector-identity.js";
+import { connectorAuthMethodIdSchema } from "../../connector-identity";
 
-import { connectorCatalogVersionSchema, privateNameSchema } from "./common.js";
-import { ConnectorCatalogRelationshipError } from "./relationship-error.js";
+import { connectorCatalogVersionSchema, privateNameSchema } from "./common";
+import { ConnectorCatalogRelationshipError } from "./relationship-error";
 
 export const publicFieldIdSchema = string().regex(/^[a-z][a-zA-Z0-9]*$/u);
 export const internalOptionNameSchema = string().regex(
