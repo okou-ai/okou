@@ -12,6 +12,7 @@ import { command } from "ccstate";
 import {
   and,
   asc,
+  desc,
   eq,
   exists,
   isNotNull,
@@ -22,6 +23,8 @@ import {
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
+import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import { chatEventTypeIn } from "./chat-event-type.service";
 
 const log = logger("callback:chat");
 
@@ -48,6 +51,28 @@ export const loadTerminalChatCallbackLocator$ = command(
     return run;
   },
 );
+
+export function canonicalDeliveryEventReadPlan(runId: string) {
+  return {
+    columns: { id: chatEvents.id },
+    condition: and(
+      eq(chatEvents.runId, runId),
+      chatEventTypeIn(["output.message"]),
+      isNotNull(canonicalChatEventContent()),
+      isNotNull(chatEvents.runEventSequenceNumber),
+    ),
+    order: desc(chatEvents.runEventSequenceNumber),
+    limit: 1,
+  };
+}
+
+export function integrationCompletionFallbackReadPlan(eventId: string) {
+  return {
+    columns: { id: chatEvents.id },
+    condition: eq(chatEvents.id, eventId),
+    limit: 1,
+  };
+}
 
 export function runLifecycleMarkerReadPlan(
   runId: string,

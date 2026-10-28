@@ -27,7 +27,7 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { object, string, type infer as zInfer } from "zod";
 
 import type { Tx } from "../../lib/db-types";
@@ -57,7 +57,6 @@ import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-
 import { integrationCompletionFallbackEventIdForRun } from "./assistant-event-id";
 import { releaseThreadBrowsersForRun$ } from "./browser.service";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import {
   loadCompletedRunOutput$,
   type CompletedRunOutput,
@@ -72,8 +71,10 @@ import {
   touchChatThreadLastMessageAtIndependently$,
   type InsertAssistantEventsInput,
 } from "./chat-event-shared.service";
-import { chatEventTypeIn } from "./chat-event-type.service";
-import { chatEventInsertSql } from "./chat-event.service";
+import {
+  chatEventInsertSql,
+  integrationCompletionFallbackInsertSql,
+} from "./chat-event.service";
 import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
@@ -86,6 +87,8 @@ import type {
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
 import {
+  canonicalDeliveryEventReadPlan,
+  integrationCompletionFallbackReadPlan,
   loadTerminalChatCallback$,
   loadTerminalChatCallbackLocator$,
   requireSourceChatCallback$,
@@ -1089,72 +1092,6 @@ const insertAssistantErrorEvent$ = command(
 
 type ChatCallbackTransaction = Db | Tx;
 
-interface CanonicalDeliveryEvent {
-  readonly id: string;
-}
-
-async function loadCanonicalDeliveryEvent(
-  db: ChatCallbackTransaction,
-  runId: string,
-  enabled: boolean,
-): Promise<CanonicalDeliveryEvent | undefined> {
-  if (!enabled) {
-    return undefined;
-  }
-  const [event] = await db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.runId, runId),
-        chatEventTypeIn(["output.message"]),
-        isNotNull(canonicalChatEventContent()),
-        isNotNull(chatEvents.runEventSequenceNumber),
-      ),
-    )
-    .orderBy(desc(chatEvents.runEventSequenceNumber))
-    .limit(1);
-  return event;
-}
-
-async function insertIntegrationCompletionFallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly threadId: string;
-  readonly createdAt: Date;
-}): Promise<CanonicalDeliveryEvent> {
-  const eventId = integrationCompletionFallbackEventIdForRun(args.runId);
-  const inserted =
-    parseRawRows(
-      chatEventCommandResultSchema,
-      await args.db.execute(
-        chatEventInsertSql(
-          {
-            id: eventId,
-            chatThreadId: args.threadId,
-            eventType: "output.message",
-            content: "Task completed successfully.",
-            runId: args.runId,
-            createdAt: args.createdAt,
-          },
-          "id",
-        ),
-      ),
-    )[0] ?? null;
-  if (inserted) {
-    return { id: inserted.id };
-  }
-  const [existing] = await args.db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(eq(chatEvents.id, eventId))
-    .limit(1);
-  if (!existing) {
-    throw new Error("Failed to persist integration completion fallback");
-  }
-  return existing;
-}
-
 interface RunLifecycleMarkerArgs {
   readonly db: Db;
   readonly runId: string;
@@ -1330,18 +1267,50 @@ export async function insertRunLifecycleMarkerProjection(args: {
   (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
 > {
   const { input } = args;
-  let deliveryEvent = await loadCanonicalDeliveryEvent(
-    args.tx,
-    input.runId,
-    hasExternalNotificationDeliveryChannel(input),
-  );
+  const canonicalDatabase = args.tx;
+  const canonicalRunId = input.runId;
+  const canonicalReadEnabled = hasExternalNotificationDeliveryChannel(input);
+  let deliveryEvent = await (async () => {
+    if (!canonicalReadEnabled) {
+      return undefined;
+    }
+    const plan = canonicalDeliveryEventReadPlan(canonicalRunId);
+    const query = canonicalDatabase.select(plan.columns).from(chatEvents);
+    const [event] = await query
+      .where(plan.condition)
+      .orderBy(plan.order)
+      .limit(plan.limit);
+    return event;
+  })();
   if (!deliveryEvent && requiresIntegrationCompletionFallback(input)) {
-    deliveryEvent = await insertIntegrationCompletionFallback({
-      db: args.tx,
+    const fallbackDatabase = args.tx;
+    const fallbackInput = {
       runId: input.runId,
       threadId: input.threadId,
       createdAt: args.markerCreatedAt,
-    });
+    };
+    deliveryEvent = await (async () => {
+      const eventId = integrationCompletionFallbackEventIdForRun(
+        fallbackInput.runId,
+      );
+      const inserted =
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await fallbackDatabase.execute(
+            integrationCompletionFallbackInsertSql(eventId, fallbackInput),
+          ),
+        )[0] ?? null;
+      if (inserted) {
+        return { id: inserted.id };
+      }
+      const plan = integrationCompletionFallbackReadPlan(eventId);
+      const query = fallbackDatabase.select(plan.columns).from(chatEvents);
+      const [existing] = await query.where(plan.condition).limit(plan.limit);
+      if (!existing) {
+        throw new Error("Failed to persist integration completion fallback");
+      }
+      return existing;
+    })();
   }
   const marker =
     parseRawRows(
