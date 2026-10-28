@@ -176,6 +176,28 @@ native ZIP behind deployment of its appcast route. Native releases use the
 canonical API's channel/blocked-version selection; the legacy Squirrel feed
 always returns the retained migration hop.
 
+Release builds generate the app and Computer Use helper dSYMs into the sibling
+`dSYMs/` directory, outside the distributed app. Canonical artifacts retain them
+in `okou-dsyms.tar.gz`; the manifest binds both archives to the same commit,
+version, size and SHA-256. Promotion checks binary/dSYM UUIDs before and after
+signing and against the published ZIP and mounted DMG, including retained assets
+on a rerun. Sentry upload targets the `desktop` project and waits for processing;
+missing symbols, UUID mismatches and upload failures block update publication.
+
+To check saved symbols locally, use the app and dSYMs from the same build:
+
+```bash
+python3 desktop/scripts/debug_symbols.py \
+  --app desktop/out/Okou-darwin-arm64/Okou.app \
+  --symbols desktop/out/Okou-darwin-arm64/dSYMs
+python3 desktop/scripts/debug_symbols_test.py
+```
+
+`--zip` and `--dmg` also verify packaged binaries. `--upload` requires the pinned
+Sentry CLI and `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT`; it uploads
+only the verified DWARF files, without source bundles. Historical releases need
+UUID-matched symbols; rebuilding an old commit does not establish that match.
+
 ## Session authentication
 
 Native Desktop uses the Clerk SDK's current session token for registration,

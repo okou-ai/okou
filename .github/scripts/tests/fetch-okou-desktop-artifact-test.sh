@@ -9,7 +9,8 @@ trap 'rm -rf "$tmp_dir"' EXIT
 source_dir="${tmp_dir}/source"
 mkdir -p "$source_dir" "${tmp_dir}/bin"
 printf 'okou archive\n' > "$source_dir/okou-app.tar.gz"
-printf '{"version":1,"okouArchive":{"path":"okou-app.tar.gz"}}\n' > "$source_dir/manifest.json"
+printf 'debug symbols\n' > "$source_dir/okou-dsyms.tar.gz"
+printf '{"version":2,"okouArchive":{"path":"okou-app.tar.gz"},"debugSymbolsArchive":{"path":"okou-dsyms.tar.gz"}}\n' > "$source_dir/manifest.json"
 printf '{"version":1}\n' > "$source_dir/ready.json"
 
 cat > "${tmp_dir}/bin/aws" <<'EOF'
@@ -36,6 +37,10 @@ if [[ "$filename" == "okou-app.tar.gz" && "${MOCK_ARCHIVE_PRESENT:-true}" != "tr
   echo "fatal error: An error occurred (404) when calling HeadObject" >&2
   exit 1
 fi
+if [[ "$filename" == "okou-dsyms.tar.gz" && "${MOCK_SYMBOLS_PRESENT:-true}" != "true" ]]; then
+  echo "fatal error: An error occurred (404) when calling HeadObject" >&2
+  exit 1
+fi
 
 cp "$MOCK_SOURCE_DIR/$filename" "$destination"
 EOF
@@ -52,10 +57,26 @@ mkdir -p "$destination"
 MOCK_AWS_LOG="${tmp_dir}/fetch.log" \
   bash "$script" "$r2_endpoint" "$artifact_uri" "$destination"
 cmp "$source_dir/okou-app.tar.gz" "$destination/okou-app.tar.gz"
+cmp "$source_dir/okou-dsyms.tar.gz" "$destination/okou-dsyms.tar.gz"
 cmp "$source_dir/manifest.json" "$destination/manifest.json"
 cmp "$source_dir/ready.json" "$destination/ready.json"
-if (( "$(grep -c 's3 cp' "${tmp_dir}/fetch.log")" != 3 )); then
-  echo "Expected exactly three Desktop artifact object copies" >&2
+if (( "$(grep -c 's3 cp' "${tmp_dir}/fetch.log")" != 4 )); then
+  echo "Expected exactly four Desktop artifact object copies" >&2
+  exit 1
+fi
+
+missing_symbols_destination="${tmp_dir}/missing-symbols"
+mkdir -p "$missing_symbols_destination"
+if MOCK_SYMBOLS_PRESENT=false \
+  MOCK_AWS_LOG="${tmp_dir}/missing-symbols.log" \
+  bash "$script" "$r2_endpoint" "$artifact_uri" "$missing_symbols_destination" \
+    >/dev/null 2>&1; then
+  echo "Expected missing Desktop symbols to fail" >&2
+  exit 1
+fi
+test ! -e "$missing_symbols_destination/okou-dsyms.tar.gz"
+if (( "$(grep -c 's3 cp' "${tmp_dir}/missing-symbols.log")" != 4 )); then
+  echo "Expected missing symbols to fail without retrying" >&2
   exit 1
 fi
 if grep -q -- '--recursive' "${tmp_dir}/fetch.log"; then

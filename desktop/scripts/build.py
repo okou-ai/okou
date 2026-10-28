@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from debug_symbols import verify_symbols
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -101,6 +103,15 @@ def build(version, development, output):
         "@executable_path/../Frameworks",
         helper,
     )
+    symbols = app.parent / "dSYMs"
+    if symbols.exists():
+        shutil.rmtree(symbols)
+    symbols.mkdir()
+    for source in (
+        ROOT / f".build-app/Build/Products/Release/{name}.app.dSYM",
+        Path(helper_bin) / "computer-use-helper.dSYM",
+    ):
+        run("ditto", source, symbols / source.name)
     return app
 
 
@@ -297,7 +308,11 @@ def main():
         else build(args.version, args.development, output)
     )
     if not args.verify_only:
+        # Promotion must use the symbols from the canonical build, never
+        # regenerate them after signing or rebuild the release binaries.
+        verify_symbols(app, app.parent / "dSYMs")
         sign(app, args.sign)
+        verify_symbols(app, app.parent / "dSYMs")
     verify(app, args.version, args.development)
     if args.package:
         package(app, args.sign, args.notary_profile, args.notarize, output)

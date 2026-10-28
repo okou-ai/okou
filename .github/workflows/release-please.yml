@@ -542,6 +542,9 @@ jobs:
       OKOU_RELEASE_TAG: okou-desktop-v${{ needs.release-please.outputs.desktop_version }}
       RELEASE_TARGET: ${{ needs.release-please.outputs.release_target }}
       OKOU_DESKTOP_SIGNING_IDENTITY: "Developer ID Application: Max & Zoe, Inc. (C5UWSXYB67)"
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+      SENTRY_PROJECT: desktop
       MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
       MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
@@ -625,8 +628,9 @@ jobs:
           artifact_uri="s3://${R2_BUCKET_NAME}/okou-desktop/${ARTIFACT_SHA}"
           ready_key="okou-desktop/${ARTIFACT_SHA}/ready.json"
           artifact_dir="$(mktemp -d)"
+          trap 'rm -rf "$artifact_dir"' EXIT
           okou_package_dir="$PWD/desktop/out/Okou-darwin-arm64"
-          error_log="$(mktemp)"
+          error_log="$artifact_dir/head.err"
 
           for attempt in $(seq 1 60); do
             set +e
@@ -665,12 +669,16 @@ jobs:
           rm -rf "$okou_package_dir"
           mkdir -p "$okou_package_dir"
           tar -xzf "$artifact_dir/okou-app.tar.gz" -C "$okou_package_dir"
+          tar -xzf "$artifact_dir/okou-dsyms.tar.gz" -C "$okou_package_dir"
           okou_app_dir="$okou_package_dir/Okou.app"
           if [ ! -d "$okou_app_dir" ]; then
             echo "Canonical Desktop artifact did not contain Okou.app" >&2
             exit 1
           fi
+          python3 desktop/scripts/debug_symbols.py \
+            --app "$okou_app_dir" --symbols "$okou_package_dir/dSYMs"
           echo "okou_app_dir=$okou_app_dir" >> "$GITHUB_OUTPUT"
+          echo "symbols_dir=$okou_package_dir/dSYMs" >> "$GITHUB_OUTPUT"
 
       - name: Validate macOS release secrets
         run: |
@@ -681,7 +689,10 @@ jobs:
             MACOS_KEYCHAIN_PASSWORD \
             APP_STORE_CONNECT_API_KEY_BASE64 \
             APP_STORE_CONNECT_API_KEY_ID \
-            APP_STORE_CONNECT_API_ISSUER_ID
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            SENTRY_AUTH_TOKEN \
+            SENTRY_ORG \
+            SENTRY_PROJECT
           do
             if [ -z "${!name}" ]; then
               echo "::error::${name} is required for signed Desktop releases"
@@ -692,6 +703,13 @@ jobs:
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
+
+      - name: Install Sentry CLI
+        run: |
+          # Match the Sentry CLI version pinned in turbo/pnpm-lock.yaml.
+          npm install --prefix "$RUNNER_TEMP/desktop-sentry-cli" \
+            --ignore-scripts --no-audit --no-fund @sentry/cli@2.58.5
+          echo "$RUNNER_TEMP/desktop-sentry-cli/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Import Developer ID certificate
         id: signing-certificate
@@ -762,6 +780,8 @@ jobs:
           python3 desktop/scripts/build.py --app "$mount/Okou.app" --verify-only
           codesign --verify --deep --strict "$mount/Okou.app"
           xcrun stapler validate "$mount/Okou.app"
+          python3 desktop/scripts/debug_symbols.py \
+            --app "$mount/Okou.app" --symbols "${{ steps.desktop-app.outputs.symbols_dir }}"
           install_dir="$RUNNER_TEMP/okou-native-install-smoke"
           mkdir -p "$install_dir"
           ditto "$mount/Okou.app" "$install_dir/Okou.app"
@@ -772,6 +792,8 @@ jobs:
           python3 desktop/scripts/build.py --app "$zip_dir/Okou.app" --verify-only
           codesign --verify --deep --strict "$zip_dir/Okou.app"
           xcrun stapler validate "$zip_dir/Okou.app"
+          python3 desktop/scripts/debug_symbols.py \
+            --app "$zip_dir/Okou.app" --symbols "${{ steps.desktop-app.outputs.symbols_dir }}"
 
       - name: Upload Desktop artifacts to GitHub Releases
         env:
@@ -810,6 +832,26 @@ jobs:
                 --repo "${{ github.repository }}"
             fi
           done
+
+      - name: Verify published Desktop UUIDs and upload dSYMs to Sentry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          published_dir="$(mktemp -d)"
+          trap 'rm -rf "$published_dir"' EXIT
+          # Read back the actual versioned assets, including ones retained on
+          # a rerun, before uploading the canonical build's matching symbols.
+          gh release download "$OKOU_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "Okou-darwin-arm64-$DESKTOP_VERSION.zip" \
+            --pattern "Okou-darwin-arm64-$DESKTOP_VERSION.dmg" \
+            --dir "$published_dir"
+          python3 desktop/scripts/debug_symbols.py \
+            --app "${{ steps.desktop-app.outputs.okou_app_dir }}" \
+            --symbols "${{ steps.desktop-app.outputs.symbols_dir }}" \
+            --zip "$published_dir/Okou-darwin-arm64-$DESKTOP_VERSION.zip" \
+            --dmg "$published_dir/Okou-darwin-arm64-$DESKTOP_VERSION.dmg" \
+            --upload
 
       - name: Calculate duration
         id: duration
