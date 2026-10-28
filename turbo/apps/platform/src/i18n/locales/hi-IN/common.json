@@ -1688,17 +1688,14 @@
       "customDollarAmount": "कस्टम डॉलर राशि",
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
       "proCard": {
-        "automations": "दोहराए जाने वाले काम स्वचालित करें",
-        "bonusCreditsLabel": "बोनस क्रेडिट",
+        "bonusCreditsToday": "बोनस क्रेडिट आज",
+        "description": "Pro के साथ आगे बढ़ें: एक साथ 3 टास्क चलाएँ और दोहराए जाने वाले काम अपने आप करवाएँ।",
         "noTasksLeft": "आपके मुफ़्त टास्क खत्म हो गए हैं",
-        "parallelTasks": "एक साथ 3 टास्क",
         "priceUnavailable": "मौजूदा कीमतों के लिए प्लान देखें",
-        "research": "गहराई से शोध करें",
         "tasksLeft_one": "अधिकतम {{count}} टास्क बाकी",
         "tasksLeft_other": "अधिकतम {{count}} टास्क बाकी",
         "title": "Pro के साथ और काम करें",
-        "upgradeNow": "अभी अपग्रेड करें",
-        "upgradeToday": "आज अपग्रेड करें"
+        "upgradeNow": "अभी अपग्रेड करें"
       },
       "redirecting": "पुनर्निर्देशन...",
       "upgradeToContinue": "{{assistantName}} के साथ चैट जारी रखने के लिए प्रो में अपग्रेड करें।",

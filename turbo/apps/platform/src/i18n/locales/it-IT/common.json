@@ -1716,18 +1716,15 @@
       "customDollarAmount": "Importo in dollari personalizzato",
       "outOfCredits": "Hai esaurito i crediti",
       "proCard": {
-        "automations": "Automatizza attività ripetitive",
-        "bonusCreditsLabel": "crediti bonus",
+        "bonusCreditsToday": "crediti bonus oggi",
+        "description": "Continua con Pro: esegui 3 attività alla volta e automatizza il lavoro ripetitivo.",
         "noTasksLeft": "Hai esaurito le attività gratuite",
-        "parallelTasks": "3 attività alla volta",
         "priceUnavailable": "Consulta i piani per i prezzi attuali",
-        "research": "Ricerche approfondite",
         "tasksLeft_one": "Fino a {{count}} attività rimasta",
         "tasksLeft_many": "Fino a {{count}} attività rimaste",
         "tasksLeft_other": "Fino a {{count}} attività rimaste",
         "title": "Fai di più con Pro",
-        "upgradeNow": "Passa a Pro ora",
-        "upgradeToday": "Passa a Pro oggi"
+        "upgradeNow": "Passa a Pro ora"
       },
       "redirecting": "Reindirizzamento...",
       "upgradeToContinue": "Esegui l'upgrade a Pro per continuare a chattare con {{assistantName}}.",

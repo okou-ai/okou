@@ -1716,18 +1716,15 @@
       "customDollarAmount": "Cantidad personalizada en dólares",
       "outOfCredits": "Se te han acabado los créditos",
       "proCard": {
-        "automations": "Automatiza tareas repetitivas",
-        "bonusCreditsLabel": "créditos extra",
+        "bonusCreditsToday": "créditos extra hoy",
+        "description": "Sigue con Pro: ejecuta 3 tareas a la vez y automatiza el trabajo repetitivo.",
         "noTasksLeft": "No te quedan tareas gratuitas",
-        "parallelTasks": "3 tareas a la vez",
         "priceUnavailable": "Consulta los precios actuales de los planes",
-        "research": "Investiga a fondo",
         "tasksLeft_one": "Te queda hasta {{count}} tarea",
         "tasksLeft_many": "Te quedan hasta {{count}} tareas",
         "tasksLeft_other": "Te quedan hasta {{count}} tareas",
         "title": "Haz más con Pro",
-        "upgradeNow": "Mejorar plan ahora",
-        "upgradeToday": "Mejora tu plan hoy"
+        "upgradeNow": "Mejorar plan ahora"
       },
       "redirecting": "Redirigiendo...",
       "upgradeToContinue": "Actualiza a Pro para seguir charlando con {{assistantName}}.",

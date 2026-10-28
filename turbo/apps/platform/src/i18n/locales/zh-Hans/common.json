@@ -1684,16 +1684,13 @@
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
       "proCard": {
-        "automations": "自动处理重复工作",
-        "bonusCreditsLabel": "奖励积分",
+        "bonusCreditsToday": "奖励积分，今天升级即赠",
+        "description": "用 Pro 继续完成更多：3 个任务并行，重复工作自动处理。",
         "noTasksLeft": "免费任务次数已用完",
-        "parallelTasks": "3 个任务并行",
         "priceUnavailable": "查看套餐及最新价格",
-        "research": "更深入的研究",
         "tasksLeft_other": "最多还可完成 {{count}} 个任务",
         "title": "用 Pro 完成更多工作",
-        "upgradeNow": "立即升级",
-        "upgradeToday": "今天升级即赠"
+        "upgradeNow": "立即升级"
       },
       "redirecting": "正在跳转…",
       "upgradeToContinue": "升级到 Pro，继续和 {{assistantName}} 对话。",

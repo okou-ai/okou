@@ -1688,17 +1688,14 @@
       "customDollarAmount": "Benutzerdefinierter Dollarbetrag",
       "outOfCredits": "Ihre Credits sind aufgebraucht",
       "proCard": {
-        "automations": "Routinearbeit automatisieren",
-        "bonusCreditsLabel": "Bonus-Credits",
+        "bonusCreditsToday": "Bonus-Credits heute",
+        "description": "Mit Pro geht es weiter: 3 Aufgaben gleichzeitig erledigen und Routinearbeit automatisieren.",
         "noTasksLeft": "Keine kostenlosen Aufgaben mehr übrig",
-        "parallelTasks": "3 Aufgaben gleichzeitig",
         "priceUnavailable": "Aktuelle Preise in den Tarifen ansehen",
-        "research": "Gründlicher recherchieren",
         "tasksLeft_one": "Noch bis zu {{count}} Aufgabe",
         "tasksLeft_other": "Noch bis zu {{count}} Aufgaben",
         "title": "Mehr erledigen mit Pro",
-        "upgradeNow": "Jetzt upgraden",
-        "upgradeToday": "Heute upgraden"
+        "upgradeNow": "Jetzt upgraden"
       },
       "redirecting": "Weiterleitung...",
       "upgradeToContinue": "Führen Sie ein Upgrade auf Pro durch, um weiterhin mit {{assistantName}} chatten zu können.",
