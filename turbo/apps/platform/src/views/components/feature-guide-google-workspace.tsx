@@ -1,7 +1,5 @@
 import { ArrowRight, UsersRound } from "lucide-react";
-import { BrandGoogleDocs } from "@okouai/ui/components/icons/google-docs-icon";
-import { BrandGoogleSheets } from "@okouai/ui/components/icons/google-sheets-icon";
-import { cn } from "@okouai/ui/lib/utils";
+import { BrandGoogleDocs, BrandGoogleSheets, cn } from "@okouai/ui";
 import {
   platformOkouWordmarkDarkImg,
   platformOkouWordmarkLightImg,
