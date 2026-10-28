@@ -30,9 +30,9 @@ pub(crate) use runner_host::service::{
 };
 
 use drain_override::remove_drain_restart_override;
-use drain_override_cleanup::{DrainOverrideReloadPolicy, reconcile_drain_restart_override_removal};
+use drain_override_cleanup::reconcile_drain_restart_override_removal;
 use gate::{ActiveJobsGateOps, check_active_jobs_gate};
-use reload::{SystemdReloadRequirement, coordinate_systemd_reload};
+use reload::{SystemdReloadPolicy, SystemdReloadRequirement, coordinate_systemd_reload};
 use runner_host::service::{
     BoundedSystemctlQuery, all_units_pattern, is_unit_active_bounded_query, journalctl_logs_status,
     read_unit_config_path_bounded, run_systemctl,
@@ -324,7 +324,7 @@ async fn start(args: ServiceRunArgs) -> RunnerResult<()> {
     )?;
     validate_systemd_path("current executable path", &exe_path)?;
     validate_systemd_path("config path", &config_path)?;
-    reconcile_drain_restart_override_removal(&unit, DrainOverrideReloadPolicy::Unbounded).await?;
+    reconcile_drain_restart_override_removal(&unit, SystemdReloadPolicy::Unbounded).await?;
 
     let unit_for_start = unit.clone();
     with_service_activation_image_artifacts(
@@ -410,6 +410,7 @@ pub(crate) async fn uninstall_service_unit(unit: &RunnerServiceUnit) -> RunnerRe
     coordinate_systemd_reload(
         unit,
         SystemdReloadRequirement::dirty().with_drain_override(false),
+        SystemdReloadPolicy::Unbounded,
     )
     .await?;
 
