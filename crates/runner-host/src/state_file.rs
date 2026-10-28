@@ -227,6 +227,11 @@ fn validate_owner_uid(
 /// exposing partial contents through the target path. The file and parent
 /// directory are not fsynced, so this does not provide a crash-durability
 /// guarantee. Non-Unix builds use `tokio::fs::write` as a weaker fallback.
+///
+/// Unix staging keeps a cleanup owner even if the opening or writing observer
+/// is cancelled. Its Drop performs a synchronous best-effort unlink. This does
+/// not retain caller-owned locks or cancel an already submitted rename; the
+/// caller must still account for uncertain publication after cancellation.
 pub async fn write_private_atomic(path: &Path, content: &[u8]) -> HostResult<()> {
     crate::host_file::write_private_atomic(path, content, "state file")
         .await

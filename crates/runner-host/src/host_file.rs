@@ -241,21 +241,72 @@ pub(crate) async fn write_private_atomic(
     content: &[u8],
     context: &str,
 ) -> io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+
     let tmp = private_staging_path(path, context)?;
+    let open_context = context.to_owned();
+    let PrivateAtomicStaging { file, mut cleanup } =
+        tokio::task::spawn_blocking(move || PrivateAtomicStaging::create(tmp, &open_context))
+            .await
+            .map_err(|error| {
+                wrap_io(
+                    io::Error::other(error),
+                    format!("create {context} staging for {}", path.display()),
+                )
+            })??;
+    let mut file = tokio::fs::File::from_std(file);
+    file.write_all(content)
+        .await
+        .map_err(|e| wrap_io(e, format!("write {context} {}", cleanup.path.display())))?;
+    file.flush()
+        .await
+        .map_err(|e| wrap_io(e, format!("flush {context} {}", cleanup.path.display())))?;
+    drop(file);
+    tokio::fs::rename(&cleanup.path, path)
+        .await
+        .map_err(|e| wrap_io(e, format!("rename {context} {}", path.display())))?;
+    cleanup.armed = false;
+    Ok(())
+}
 
-    let result = async {
-        write_private_new(&tmp, content, context).await?;
+#[cfg(unix)]
+struct PrivateAtomicStaging {
+    file: File,
+    cleanup: PrivateStagingCleanup,
+}
 
-        let renamed = tokio::fs::rename(&tmp, path).await;
-        renamed.map_err(|e| wrap_io(e, format!("rename {context} {}", path.display())))?;
-        Ok(())
+#[cfg(unix)]
+impl PrivateAtomicStaging {
+    fn create(path: PathBuf, context: &str) -> io::Result<Self> {
+        let file = File::options()
+            .write(true)
+            .create_new(true)
+            .mode(PRIVATE_FILE_MODE)
+            .open(&path)
+            .map_err(|e| wrap_io(e, format!("open {context} {}", path.display())))?;
+        // Begin custody in the physical open, not its cancellable observer.
+        // A failed exclusive create never owns the existing path.
+        let cleanup = PrivateStagingCleanup { path, armed: true };
+        chmod_private_file_fd(&file, &cleanup.path, context)?;
+        Ok(Self { file, cleanup })
     }
-    .await;
+}
 
-    if result.is_err() {
-        let _ = tokio::fs::remove_file(&tmp).await;
+#[cfg(unix)]
+struct PrivateStagingCleanup {
+    path: PathBuf,
+    armed: bool,
+}
+
+#[cfg(unix)]
+impl Drop for PrivateStagingCleanup {
+    fn drop(&mut self) {
+        if self.armed {
+            // A synchronous best-effort unlink also retires a lost open result
+            // without needing another runtime task. It never removes the target.
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
-    result
 }
 
 #[cfg(unix)]
@@ -287,27 +338,18 @@ pub(crate) fn write_private_atomic_blocking(
 ) -> io::Result<()> {
     use std::io::Write;
 
-    let tmp = private_staging_path(path, context)?;
-    let result = (|| {
-        let mut file = File::options()
-            .write(true)
-            .create_new(true)
-            .mode(PRIVATE_FILE_MODE)
-            .open(&tmp)
-            .map_err(|e| wrap_io(e, format!("open {context} {}", tmp.display())))?;
-        chmod_private_file_fd(&file, &tmp, context)?;
-        file.write_all(content)
-            .map_err(|e| wrap_io(e, format!("write {context} {}", tmp.display())))?;
-        file.flush()
-            .map_err(|e| wrap_io(e, format!("flush {context} {}", tmp.display())))?;
-        std::fs::rename(&tmp, path)
-            .map_err(|e| wrap_io(e, format!("rename {context} {}", path.display())))?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    result
+    let PrivateAtomicStaging {
+        mut file,
+        mut cleanup,
+    } = PrivateAtomicStaging::create(private_staging_path(path, context)?, context)?;
+    file.write_all(content)
+        .map_err(|e| wrap_io(e, format!("write {context} {}", cleanup.path.display())))?;
+    file.flush()
+        .map_err(|e| wrap_io(e, format!("flush {context} {}", cleanup.path.display())))?;
+    std::fs::rename(&cleanup.path, path)
+        .map_err(|e| wrap_io(e, format!("rename {context} {}", path.display())))?;
+    cleanup.armed = false;
+    Ok(())
 }
 
 #[cfg(not(unix))]
