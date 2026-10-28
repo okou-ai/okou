@@ -88,6 +88,20 @@ function requiredButtonNamed(name: string): HTMLElement {
   return button;
 }
 
+function requiredRadioNamed(name: string): HTMLElement {
+  const group = screen.getByRole("radiogroup", { name: "Who can access" });
+  const radio = queryAllByRoleFast("radio", group).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
+  });
+  if (!radio) {
+    throw new Error(`Radio not found: ${name}`);
+  }
+  return radio;
+}
+
 function selectionActionButtons(): HTMLElement[] {
   return queryAllByRoleFast("button").filter((button) => {
     return ["c", "q", "f"].includes(
@@ -1012,14 +1026,8 @@ test("Select an audience before creating a share and change it after creation", 
     },
   );
   click(requiredButtonNamed("Who can access"));
-  expect(screen.getByRole("radio", { name: "Only me" })).toBeChecked();
-  const organization = screen.getAllByRole("radio").find((radio) => {
-    return radio.textContent?.includes("Anyone at");
-  });
-  if (!organization) {
-    throw new Error("Expected workspace permission choice");
-  }
-  click(organization);
+  expect(requiredRadioNamed("Only me")).toBeChecked();
+  click(requiredRadioNamed("Anyone at Default Org"));
   await userEvent.keyboard("{Escape}");
   click(within(answerGroup).getByText("Select message group"));
   click(requiredButtonNamed("Share"));
@@ -1035,12 +1043,12 @@ test("Select an audience before creating a share and change it after creation", 
     throw new Error("Expected the conversation share menu");
   }
   click(manage);
-  await screen.findByRole("radio", { name: "Anyone at Acme" });
-  click(screen.getByRole("radio", { name: "Anyone with the link" }));
   await waitFor(() => {
-    expect(
-      screen.getByRole("radio", { name: "Anyone with the link" }),
-    ).toBeChecked();
+    expect(requiredRadioNamed("Anyone at Acme")).toBeChecked();
+  });
+  click(requiredRadioNamed("Anyone with the link"));
+  await waitFor(() => {
+    expect(requiredRadioNamed("Anyone with the link")).toBeChecked();
   });
   expect(updates).toStrictEqual(["public"]);
 });
@@ -1080,9 +1088,9 @@ test("A message share starts private and exposes its access controls", async () 
   click(requiredButtonNamed("Share message"));
   await screen.findByRole("textbox", { name: "Shared conversation link" });
   expect(requests).toStrictEqual(["private"]);
-  await expect(
-    screen.findByRole("radio", { name: "Only me" }),
-  ).resolves.toBeChecked();
+  await waitFor(() => {
+    expect(requiredRadioNamed("Only me")).toBeChecked();
+  });
   expect(screen.queryByText("0 selected")).not.toBeInTheDocument();
 });
 

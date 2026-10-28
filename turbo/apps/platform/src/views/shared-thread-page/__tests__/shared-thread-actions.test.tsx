@@ -32,6 +32,20 @@ function getButtonByName(name: string): HTMLElement {
   return button;
 }
 
+function getRadioByName(name: string): HTMLElement {
+  const group = screen.getByRole("radiogroup", { name: "Who can access" });
+  const radio = queryAllByRoleFast("radio", group).find((candidate) => {
+    return (
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name
+    );
+  });
+  if (!radio) {
+    throw new Error(`Expected radio named "${name}"`);
+  }
+  return radio;
+}
+
 test("A visitor can continue a shared idea in Platform", async () => {
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(200, sharedThread());
@@ -220,12 +234,12 @@ test("The creator can manage visibility after reopening a shared conversation", 
     featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
   });
   click(getButtonByName("Share"));
-  await expect(
-    screen.findByRole("radio", { name: "Anyone at Original workspace" }),
-  ).resolves.toBeChecked();
-  click(screen.getByRole("radio", { name: "Only me" }));
   await waitFor(() => {
-    expect(screen.getByRole("radio", { name: "Only me" })).toBeChecked();
+    expect(getRadioByName("Anyone at Original workspace")).toBeChecked();
+  });
+  click(getRadioByName("Only me"));
+  await waitFor(() => {
+    expect(getRadioByName("Only me")).toBeChecked();
   });
   expect(audience).toBe("private");
 });
