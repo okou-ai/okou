@@ -246,6 +246,11 @@ byte events: zero observed data does not prove that the server sent nothing.
 These client-side observations can locate a stalled transfer or script but
 cannot alone distinguish a Worker stall from a remote edge/transport failure.
 Page-state capture has its own one-second deadline and can be unavailable.
+The bounded `network.responseHeaders` list separately retains the first 64 CDP
+`responseReceivedExtraInfo` events as request ID, status and elapsed time, with
+`omittedResponseHeaders` for overflow. Chromium can expose these before its
+ordinary response event for an unfinished script. No raw headers are retained.
+Redirects reuse IDs, so these events are not assigned a guessed redirect hop.
 The preview-only Worker entry adds `x-okou-preview-build-sha` to eligible
 same-origin `/sign-in` HTML navigation responses. Its value comes from the
 unique canonical source-SHA meta declaration in the immutable bundled shell,
@@ -270,10 +275,30 @@ contract; changing or removing it requires review of its producer and observer.
 
 These reports exclude URL queries/fragments/userinfo, headers other than the
 validated cf-ray and preview-build identifiers, cookies, payloads,
-raw console/error text, screenshots and raw traces. Successful sign-in writes
-no report; diagnostic failure preserves the original sign-in error and does not
-retry authentication or increase its deadlines. This evidence diagnoses future
-recurrences; it does not establish or fix an underlying provider/network outage.
+raw console/error text, screenshots and raw traces. Healthy sign-in writes no
+report. Runner credential preparation opts into initial-navigation recovery:
+if a main-frame GET document or same-origin application JS under
+`/okou-app/assets/` has no browser-observed response for five seconds, it may
+replace that navigation up to twice. Navigation waits, evidence capture and
+replacement share the original 30-second navigation budget. A local blank
+document stops the old load before navigating to the sign-in URL again.
+Responded transfers, explicit HTTP/network failures, and page closure/crash do
+not trigger recovery. This policy describes observed response absence, not
+whether a transport connection opened.
+Recovery also consults the early CDP header evidence, conservatively treating
+matching redacted URLs/redirect IDs as responded. Unavailable, interrupted or
+truncated observation disables retries; the ordinary bounded navigation still
+must succeed.
+
+Before each replacement, an attempt-labelled `.navigation-N.json` report freezes
+the stalled state before intentional cancellation. Recovered attempts retain
+these reports even if sign-in then succeeds; a final failure also keeps the
+normal per-account report. Each report includes `navigationAttempt`. Diagnostic
+failure preserves the original sign-in error or recovery decision. The retry
+boundary ends before any email/OTP submission: onboarding, Stripe checkout and
+token issuance are never replayed. Other shared sign-in consumers retain their
+existing navigation behavior. This recovery does not increase authentication or
+CI deadlines, nor establish or fix an underlying provider/network outage.
 
 Use a different organization-scoped connector slug in each file that can run in
 parallel. Assert sandbox-visible output and Okou-owned telemetry; do not treat an

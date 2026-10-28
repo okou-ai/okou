@@ -12,6 +12,10 @@ import {
   safeNetworkUrl,
   startRunnerNetworkDiagnostics,
 } from "./runner-network-diagnostics";
+import {
+  navigateToRunnerSignIn,
+  type RunnerSignInNavigationOptions,
+} from "./runner-sign-in-navigation";
 
 const MAX_REQUESTS = 64;
 const MAX_MILESTONES = 32;
@@ -72,6 +76,7 @@ export async function signInRunnerWithDiagnostics(
   options: ClerkEmailCodeSignInOptions & {
     readonly diagnosticPath: string;
     readonly expectedAppBuildSha?: string;
+    readonly navigationRetry?: RunnerSignInNavigationOptions;
   },
 ): Promise<string> {
   const started = performance.now();
@@ -161,10 +166,68 @@ export async function signInRunnerWithDiagnostics(
     appOrigin: new URL(appUrl).origin,
     expected: expectedAppBuild(options.expectedAppBuildSha),
   };
-  const network = await startRunnerNetworkDiagnostics(page, elapsed, build);
+  let network = await startRunnerNetworkDiagnostics(page, elapsed, build);
+  let navigationAttempt = 1;
+  const saveDiagnostics = async (path: string) => {
+    try {
+      const report = {
+        expectedAppBuild: build.expected,
+        appOrigin: build.appOrigin,
+        elapsedMs: elapsed(),
+        navigationAttempt,
+        route: safeNetworkUrl(page.url()),
+        closed,
+        crashed,
+        pageErrors,
+        milestones: [...milestones],
+        omittedMilestones,
+        requests: [...requests.values()].map((request) => ({ ...request })),
+        omittedRequests,
+        network: network.freeze(),
+        pageState: await capturePageState(page),
+      };
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, `${JSON.stringify(report, null, 2)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    } catch {
+      // Diagnostics must not replace the authentication failure or recovery.
+      console.error("Unable to save runner sign-in diagnostics");
+    }
+  };
   try {
     try {
-      return await signInWithClerkEmailCode(page, email, appUrl, options);
+      const navigationRetry = options.navigationRetry;
+      return await signInWithClerkEmailCode(page, email, appUrl, {
+        ...options,
+        navigateToSignIn: navigationRetry
+          ? (url) =>
+              navigateToRunnerSignIn(
+                page,
+                url,
+                navigationRetry,
+                async (attempt) => {
+                  await saveDiagnostics(
+                    `${options.diagnosticPath}.navigation-${attempt}.json`,
+                  );
+                  await network.dispose();
+                  requests.clear();
+                  milestones.length = 0;
+                  omittedRequests = 0;
+                  omittedMilestones = 0;
+                  pageErrors = 0;
+                  navigationAttempt = attempt + 1;
+                  network = await startRunnerNetworkDiagnostics(
+                    page,
+                    elapsed,
+                    build,
+                  );
+                },
+                () => network.responseHeaders(),
+              )
+          : options.navigateToSignIn,
+      });
     } finally {
       // Freeze the failure evidence before best-effort capture or caller cleanup.
       network.freeze();
@@ -180,35 +243,7 @@ export async function signInRunnerWithDiagnostics(
       page.off("close", onClose);
     }
   } catch (error: unknown) {
-    try {
-      const report = {
-        expectedAppBuild: build.expected,
-        appOrigin: build.appOrigin,
-        elapsedMs: elapsed(),
-        route: safeNetworkUrl(page.url()),
-        closed,
-        crashed,
-        pageErrors,
-        milestones,
-        omittedMilestones,
-        requests: [...requests.values()],
-        omittedRequests,
-        network: network.freeze(),
-        pageState: await capturePageState(page),
-      };
-      await mkdir(dirname(options.diagnosticPath), { recursive: true });
-      await writeFile(
-        options.diagnosticPath,
-        `${JSON.stringify(report, null, 2)}\n`,
-        {
-          encoding: "utf8",
-          mode: 0o600,
-        },
-      );
-    } catch {
-      // Diagnostics must not replace the actual authentication failure.
-      console.error("Unable to save runner sign-in diagnostics");
-    }
+    await saveDiagnostics(options.diagnosticPath);
     throw error;
   } finally {
     await network.dispose();

@@ -23,6 +23,7 @@ export async function expectClerkTestInstance(page: Page): Promise<void> {
 
 export interface ClerkEmailCodeSignInOptions {
   readonly activeOrganizationId: string;
+  readonly navigateToSignIn?: (url: string) => Promise<void>;
 }
 
 export async function signInWithClerkEmailCode(
@@ -32,7 +33,11 @@ export async function signInWithClerkEmailCode(
   options: ClerkEmailCodeSignInOptions,
 ): Promise<string> {
   const signInUrl = new URL("/sign-in", appUrl);
-  await page.goto(signInUrl.toString(), { waitUntil: "domcontentloaded" });
+  if (options.navigateToSignIn) {
+    await options.navigateToSignIn(signInUrl.toString());
+  } else {
+    await page.goto(signInUrl.toString(), { waitUntil: "domcontentloaded" });
+  }
   const signInFormDeadline = performance.now() + 30_000;
   // Await the shared runtime before the form so a terminal failure does not
   // become an unrelated email-input timeout. Both waits retain one deadline.

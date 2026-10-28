@@ -18,11 +18,13 @@ import { gzipSync } from "node:zlib";
 import { chromium, errors } from "@playwright/test";
 
 import { signInRunnerWithDiagnostics } from "./runner-sign-in";
+import type { RunnerSignInNavigationOptions } from "./runner-sign-in-navigation";
 
 async function fixture(
   context: TestContext,
   handler: RequestListener,
   expectedAppBuildSha?: string,
+  navigationRetry?: RunnerSignInNavigationOptions,
 ) {
   const directory = await mkdtemp(join(tmpdir(), "runner-sign-in-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
@@ -56,6 +58,7 @@ async function fixture(
         activeOrganizationId: "org_fixture",
         diagnosticPath,
         expectedAppBuildSha,
+        navigationRetry,
       },
     );
   return { appUrl, page, directory, diagnosticPath, signIn };
@@ -372,6 +375,168 @@ test("successful runner sign-in returns its token without a diagnostic artifact"
   assert.equal(await signIn(), "token-secret");
   assert.deepEqual(await readdir(join(directory, "sign-in")), []);
   await assert.rejects(() => stat(diagnosticPath), { code: "ENOENT" });
+});
+
+function signInDocument(script = "", failVerification = false) {
+  // Supply the external Clerk UI/runtime, but drive the real helper and browser.
+  // Requests make completed authentication submissions observable to the peer.
+  return `<!doctype html>
+    ${script}
+    <form>
+      <label>Email address <input name="email" type="email"></label>
+      <button>Continue</button>
+    </form>
+    <input id="code" hidden aria-label="Enter verification code">
+    <script>
+      window.__okouClerkBootstrap = { runtime: Promise.resolve() };
+      window.Clerk = {
+        loaded: true,
+        organization: { id: 'org_fixture' },
+        client: { signIn: { firstFactorVerification: {
+          strategy: 'email_code', status: 'unverified'
+        } } }
+      };
+      document.querySelector('form').onsubmit = async event => {
+        event.preventDefault();
+        await fetch('/email', { method: 'POST', body: new FormData(event.target) });
+        document.getElementById('code').hidden = false;
+        if (${failVerification}) {
+          Object.defineProperty(window.Clerk.client.signIn, 'firstFactorVerification', {
+            get() { throw new Error('verification-fixture-failure'); }
+          });
+        }
+      };
+      document.getElementById('code').oninput = async event => {
+        if (event.target.value !== '424242') return;
+        await fetch('/verify', { method: 'POST', body: event.target.value });
+        window.Clerk.session = { getToken: async () => 'token-secret' };
+        history.replaceState(null, '', '/ready');
+      };
+    </script>`;
+}
+
+for (const resource of ["document", "script"]) {
+  test(`runner sign-in recovers an unresponsive ${resource} and retains pre-retry evidence`, async (context) => {
+    let documents = 0;
+    let scripts = 0;
+    let emails = 0;
+    let verifications = 0;
+    const { appUrl, diagnosticPath, signIn } = await fixture(
+      context,
+      (request, response) => {
+        if (request.url === "/sign-in") {
+          documents++;
+          if (resource === "document" && documents === 1) return;
+          response.writeHead(200, {
+            "content-type": "text/html",
+            "x-okou-preview-build-sha": expectedSha,
+            "set-cookie": "private=header-secret",
+          });
+          response.end(
+            signInDocument(
+              resource === "script"
+                ? '<script defer src="/okou-app/assets/entry.js?query-secret"></script>'
+                : "",
+            ),
+          );
+        } else if (request.url?.startsWith("/okou-app/assets/entry.js")) {
+          scripts++;
+          if (scripts === 1) return;
+          response.writeHead(200, { "content-type": "text/javascript" }).end();
+        } else if (request.url === "/email") {
+          emails++;
+          response.writeHead(204).end();
+        } else if (request.url === "/verify") {
+          verifications++;
+          response.writeHead(204).end();
+        } else {
+          response.writeHead(404).end();
+        }
+      },
+      expectedSha,
+      { noResponseTimeoutMs: 150, timeoutMs: 5_000 },
+    );
+    assert.equal(await signIn(), "token-secret");
+    assert.equal(documents, 2);
+    assert.equal(emails, 1);
+    assert.equal(verifications, 1);
+    const retryPath = `${diagnosticPath}.navigation-1.json`;
+    const report = await readFile(retryPath, "utf8");
+    const transfer = networkRequests(report).find(
+      (request) =>
+        request.url ===
+        (resource === "document"
+          ? `${appUrl}/sign-in`
+          : `${appUrl}/okou-app/assets/entry.js`),
+    );
+    assert.ok(transfer);
+    assert.equal(transfer.outcome, "pending");
+    assert.equal(transfer.status, undefined);
+    assert.equal(transfer.dataEvents, 0);
+    assert.match(report, /"navigationAttempt": 1/u);
+    assert.doesNotMatch(report, /secret|ERR_ABORTED|\?/u);
+    assert.equal((await stat(retryPath)).mode & 0o777, 0o600);
+    await assert.rejects(() => stat(diagnosticPath), { code: "ENOENT" });
+  });
+}
+
+test("runner navigation recovery survives an unavailable diagnostic path", async (context) => {
+  let documents = 0;
+  const { page, appUrl, directory } = await fixture(
+    context,
+    (request, response) => {
+      if (request.url === "/sign-in") {
+        documents++;
+        if (documents === 1) return;
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(signInDocument());
+      } else {
+        response.writeHead(204).end();
+      }
+    },
+  );
+  const blockedDirectory = join(directory, "not-a-directory");
+  await writeFile(blockedDirectory, "fixture");
+  const token = await signInRunnerWithDiagnostics(
+    page,
+    "email-secret+clerk_test@example.com",
+    appUrl,
+    {
+      activeOrganizationId: "org_fixture",
+      diagnosticPath: join(blockedDirectory, "runner.json"),
+      navigationRetry: { noResponseTimeoutMs: 150, timeoutMs: 5_000 },
+    },
+  );
+  assert.equal(token, "token-secret");
+  assert.equal(documents, 2);
+});
+
+test("runner sign-in does not replay authentication after navigation succeeds", async (context) => {
+  let documents = 0;
+  let emails = 0;
+  const { diagnosticPath, signIn } = await fixture(
+    context,
+    (request, response) => {
+      if (request.url === "/sign-in") {
+        documents++;
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(signInDocument("", true));
+      } else if (request.url === "/email") {
+        emails++;
+        response.writeHead(204).end();
+      } else {
+        response.writeHead(404).end();
+      }
+    },
+    undefined,
+    { noResponseTimeoutMs: 150, timeoutMs: 5_000 },
+  );
+  await assert.rejects(signIn, /verification-fixture-failure/u);
+  assert.equal(documents, 1);
+  assert.equal(emails, 1);
+  const report = await readFile(diagnosticPath, "utf8");
+  assert.match(report, /"event": "domcontentloaded"/u);
+  assert.doesNotMatch(report, /verification-fixture-failure|email-secret/u);
 });
 
 const expectedSha = "0123456789abcdef0123456789abcdef01234567";

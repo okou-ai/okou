@@ -147,15 +147,24 @@ interface ResponseMetadata {
 }
 
 interface NetworkDiagnostics {
+  responseHeaders(): ReadonlyMap<string, number> | undefined;
   freeze():
     | {
         kind: "observed";
         interrupted: boolean;
         requests: readonly TransferObservation[];
         omittedRequests: number;
+        responseHeaders: readonly ResponseHeadersObservation[];
+        omittedResponseHeaders: number;
       }
     | { kind: "unavailable"; reason: "setup-failed" | "setup-deadline" };
   dispose(): Promise<void>;
+}
+
+interface ResponseHeadersObservation {
+  readonly requestId: string;
+  readonly status: number;
+  readonly elapsedMs: number;
 }
 
 // Keep the same URL boundary for Playwright and CDP evidence.
@@ -242,6 +251,8 @@ function observeNetwork(
 ): NetworkDiagnostics {
   const requests: TransferObservation[] = [];
   const active = new Map<string, TransferObservation>();
+  const responseHeaders: ResponseHeadersObservation[] = [];
+  let omittedResponseHeaders = 0;
   let recording = true;
   let interrupted = false;
   let omittedRequests = 0;
@@ -289,6 +300,20 @@ function observeNetwork(
     requests.push(observation);
     active.set(event.requestId, observation);
   });
+  session.on("Network.responseReceivedExtraInfo", (event) => {
+    if (!recording) return;
+    // Chromium can expose wire headers here before responseReceived, notably
+    // for an unfinished script. Keep only status/timing, never raw headers.
+    if (responseHeaders.length >= MAX_REQUESTS) {
+      omittedResponseHeaders++;
+      return;
+    }
+    responseHeaders.push({
+      requestId: event.requestId,
+      status: event.statusCode,
+      elapsedMs: elapsed(),
+    });
+  });
   session.on("Network.responseReceived", (event) => {
     const observation = observationFor(event.requestId);
     if (observation)
@@ -327,9 +352,41 @@ function observeNetwork(
   });
 
   return {
+    responseHeaders() {
+      if (
+        !recording ||
+        interrupted ||
+        omittedRequests ||
+        omittedResponseHeaders
+      ) {
+        return undefined;
+      }
+      const statuses = new Map<string, number>();
+      for (const headers of responseHeaders) {
+        // Redirect hops reuse request IDs, and queries are intentionally
+        // redacted. Conservatively treat every matching URL as responded;
+        // never guess a hop or retry a possibly responding request.
+        for (const request of requests) {
+          if (
+            request.requestId === headers.requestId &&
+            (!statuses.has(request.url) || headers.status >= 400)
+          ) {
+            statuses.set(request.url, headers.status);
+          }
+        }
+      }
+      return statuses;
+    },
     freeze() {
       recording = false;
-      return { kind: "observed", interrupted, requests, omittedRequests };
+      return {
+        kind: "observed",
+        interrupted,
+        requests,
+        omittedRequests,
+        responseHeaders,
+        omittedResponseHeaders,
+      };
     },
     async dispose() {
       recording = false;
@@ -344,6 +401,7 @@ function unavailable(
   reason: "setup-failed" | "setup-deadline",
 ): NetworkDiagnostics {
   return {
+    responseHeaders: () => undefined,
     freeze: () => ({ kind: "unavailable", reason }),
     dispose: async () => {},
   };

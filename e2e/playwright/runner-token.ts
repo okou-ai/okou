@@ -160,6 +160,7 @@ async function provisionRunnerCredential(
       {
         activeOrganizationId: target.organizationId,
         expectedAppBuildSha: options.expectedAppBuildSha,
+        navigationRetry: { noResponseTimeoutMs: 5_000, timeoutMs: 30_000 },
         diagnosticPath: join(
           outputDirectory,
           "e2e-runner-sign-in-diagnostics",
