@@ -50,6 +50,7 @@ class ArchiveProofTests(unittest.TestCase):
             "CFBundleSupportedPlatforms": ["iPhoneOS"],
             "ClerkKeychainAccessGroup": "C5UWSXYB67.ai.okou.ios",
             "NotificationAppGroup": "group.ai.okou.ios",
+            "SentryDSN": "https://public@o1.ingest.us.sentry.io/42",
         }
         write_plist(self.app / "Info.plist", self.info)
         write_plist(
@@ -193,6 +194,16 @@ class ArchiveProofTests(unittest.TestCase):
         self.assertEqual(extension_info["CFBundleVersion"], "42")
         self.assertEqual(app_info["CFBundleVersion"], "42")
         self.assertEqual(archive_info["ApplicationProperties"]["CFBundleVersion"], "42")
+
+    def test_prepare_requires_shared_crash_reporting_configuration(self):
+        for dsn in ("", "https://public@o1.ingest.us.sentry.io/99"):
+            with self.subTest(dsn=dsn):
+                write_plist(
+                    self.extension / "Info.plist",
+                    {**self.extension_info, "SentryDSN": dsn},
+                )
+                self.assertIn("Sentry DSN", self.invoke("prepare", success=False))
+                self.assertFalse(self.destination.exists())
 
     def test_prepare_rejects_teamless_runtime_keychain_identity(self):
         write_plist(

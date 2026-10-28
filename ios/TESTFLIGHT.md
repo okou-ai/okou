@@ -69,6 +69,20 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    Manager permission required to assign builds to testing groups. API private
    keys can only be downloaded once; retain a secure backup and never log them.
 
+6. Use the Sentry Apple iOS project `ios` in the existing `okou` organization.
+   Set the repository variable `SENTRY_PROJECT_IOS=ios`; publication uses the
+   existing `SENTRY_ORG` variable and production `SENTRY_AUTH_TOKEN` secret.
+   The token must allow debug-file uploads to this project. The public DSN in
+   `Config/Release.xcconfig` is tracked with the archive inputs and shared by the
+   main app and notification extension. Never put the upload token in Xcode
+   configuration, the application bundle, or the unsigned archive.
+
+   Debug builds have no DSN by default, and XCTest hosts do not start Sentry.
+   Release reports use `okou-ios@<marketing-version>` and the exported
+   `CFBundleVersion` as their distribution. The two processes are identified by
+   their bundle IDs. Crash reporting excludes automatic breadcrumbs, network
+   error capture, logs, screenshots, view hierarchies, and performance tracing.
+
 The repository declares `ITSAppUsesNonExemptEncryption=false`: the app's
 networking uses OS TLS, Clerk uses system Security/CryptoKit, and Ably's optional
 cipher implementation uses system CommonCrypto. Re-evaluate the declaration if
@@ -102,7 +116,13 @@ required for the final archive.
   the same release source. Re-running the whole release-please workflow may no
   longer report a newly created release, so prefer **Re-run failed jobs**. Never
   change a published release tag to recover a failed upload.
-- dSYMs are retained as private workflow artifacts for 90 days. Signing material
+- Before App Store Connect preparation, the publishing job verifies the app and
+  extension Mach-O UUIDs against their exact archive dSYMs, uploads both to Sentry,
+  and waits for processing. Missing configuration, mismatched symbols, or an
+  upload/processing failure stops publication. Uploads are idempotent by debug ID;
+  rerunning the failed job can reuse symbols already present in Sentry. The
+  publishing job never recompiles the archive or uploads symbols from another build.
+- dSYMs are also retained as private workflow artifacts for 90 days. Signing material
   lives in a temporary keychain and temporary files and is removed when the
   publishing script exits. Renew the certificate/profile before expiration.
 - Signing/export maps each bundle to its own provisioning profile. Do not pass `PROVISIONING_PROFILE_SPECIFIER` as a
@@ -135,6 +155,7 @@ release's publication or device acceptance.
 node --test ios/scripts/testflight.test.mjs
 python3 ios/scripts/archive-promotion.test.py
 python3 ios/scripts/archive-proof.test.py
+python3 ios/scripts/upload-sentry-symbols.test.py
 bash .github/scripts/tests/ios-testflight-workflow-test.sh
 ```
 

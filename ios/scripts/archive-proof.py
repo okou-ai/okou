@@ -73,6 +73,8 @@ def validate_archive(archive, version):
     }
     if extension_info.get("NSExtension") != expected_extension:
         raise ValueError("Expected a notification service extension")
+    if not info.get("SentryDSN") or extension_info.get("SentryDSN") != info["SentryDSN"]:
+        raise ValueError("Release bundles must use the same nonempty Sentry DSN")
     for bundle_info in (info, extension_info):
         if (
             bundle_info.get("ClerkKeychainAccessGroup") != "C5UWSXYB67.ai.okou.ios"
