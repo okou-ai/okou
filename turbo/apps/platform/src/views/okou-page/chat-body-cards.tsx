@@ -81,6 +81,11 @@ import { WalletActionCard } from "./wallet-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
 import { SubscriptionResetCard } from "./subscription-reset-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
+import { ProUpgradeCard } from "./pro-upgrade-card.tsx";
+import {
+  billingStatusAsync$,
+  memberUsagePackOptionsAsync$,
+} from "../../signals/okou-page/billing.ts";
 
 type ChatImagePreviewLinkProps = {
   alt: string;
@@ -743,10 +748,15 @@ function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const open = useSet(signals.open$);
+  const billing = useLastLoadable(billingStatusAsync$);
 
   const handleClick = () => {
     detach(open(pageSignal), Reason.DomCallback);
   };
+
+  if (billing.state === "hasData" && billing.data.tier === "limited-free-1") {
+    return <FreePlanUpgradeCard onUpgrade={handleClick} />;
+  }
 
   return (
     <ChatCard
@@ -780,6 +790,26 @@ function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
         })}
       </Button>
     </ChatCard>
+  );
+}
+
+function FreePlanUpgradeCard({ onUpgrade }: { onUpgrade: () => void }) {
+  const catalog = useLastLoadable(memberUsagePackOptionsAsync$);
+  const paidPrices =
+    catalog.state === "hasData"
+      ? catalog.data
+          .filter((option) => {
+            return option.usagePackUsd > 0;
+          })
+          .map((option) => {
+            return option.priceUsd;
+          })
+      : [];
+  const monthlyPriceUsd =
+    paidPrices.length > 0 ? Math.min(...paidPrices) : undefined;
+
+  return (
+    <ProUpgradeCard onUpgrade={onUpgrade} monthlyPriceUsd={monthlyPriceUsd} />
   );
 }
 

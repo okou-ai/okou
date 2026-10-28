@@ -1687,6 +1687,14 @@
       "customAmountError": "Enter between $1 and $10,000",
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
+      "proCard": {
+        "noTasksLeft": "You have no free tasks left",
+        "priceUnavailable": "See plans for current pricing",
+        "tasksLeft_one": "You have up to {{count}} task left",
+        "tasksLeft_other": "You have up to {{count}} tasks left",
+        "title": "Do more with Pro",
+        "upgradeBonus": "Upgrade today to earn an extra {{credits}} credits"
+      },
       "redirecting": "Redirecting...",
       "upgradeToContinue": "Upgrade to Pro to keep chatting with {{assistantName}}.",
       "upgradeToPro": "Upgrade to Pro",

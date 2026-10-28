@@ -1683,6 +1683,13 @@
       "customAmountError": "请输入 $1 到 $10,000 之间的金额",
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
+      "proCard": {
+        "noTasksLeft": "免费任务次数已用完",
+        "priceUnavailable": "查看套餐及最新价格",
+        "tasksLeft_other": "你最多还可完成 {{count}} 个任务",
+        "title": "用 Pro 完成更多工作",
+        "upgradeBonus": "今天升级，额外获得 {{credits}} credits"
+      },
       "redirecting": "正在跳转…",
       "upgradeToContinue": "升级到 Pro，继续和 {{assistantName}} 对话。",
       "upgradeToPro": "升级到 Pro",

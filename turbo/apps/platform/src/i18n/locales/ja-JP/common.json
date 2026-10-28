@@ -1683,6 +1683,13 @@
       "customAmountError": "1 ドルから 10,000 ドルの間で入力してください",
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
+      "proCard": {
+        "noTasksLeft": "無料タスクを使い切りました",
+        "priceUnavailable": "プランで最新の料金を確認",
+        "tasksLeft_other": "あと最大 {{count}} 件のタスクを実行できます",
+        "title": "Pro でもっとできる",
+        "upgradeBonus": "今日アップグレードすると {{credits}} クレジットを追加獲得"
+      },
       "redirecting": "リダイレクト中...",
       "upgradeToContinue": "{{assistantName}} とチャットを続けるには、Pro にアップグレードしてください。",
       "upgradeToPro": "プロにアップグレード",

@@ -1683,6 +1683,13 @@
       "customAmountError": "Masukkan antara $1 dan $10.000",
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
+      "proCard": {
+        "noTasksLeft": "Tugas gratis Anda sudah habis",
+        "priceUnavailable": "Lihat paket untuk harga terbaru",
+        "tasksLeft_other": "Anda masih dapat menjalankan hingga {{count}} tugas",
+        "title": "Lakukan lebih banyak dengan Pro",
+        "upgradeBonus": "Upgrade hari ini untuk mendapatkan tambahan {{credits}} kredit"
+      },
       "redirecting": "Mengarahkan...",
       "upgradeToContinue": "Upgrade ke Pro agar tetap bisa mengobrol dengan {{assistantName}}.",
       "upgradeToPro": "Upgrade ke Pro",
