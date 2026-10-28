@@ -512,7 +512,7 @@ mod tests {
             MAX_HELD_HOME_STATES
         );
         let source = home_cache("vm0/default").source_run_id;
-        assert!(snapshot.contains_source_home("sess-0000", "vm0/default", source));
+        assert!(snapshot.has_source_home_hint("sess-0000", "vm0/default", source));
 
         let newest = format!("sess-{MAX_HELD_HOME_STATES:04}");
         snapshot.upsert_home_cache_state(
@@ -531,8 +531,8 @@ mod tests {
         assert!(!states.iter().any(|state| state.reuse_key == "sess-0000"));
         assert!(states.iter().any(|state| state.reuse_key == newest));
         // Readiness sees physical entries, independently of the capped projection.
-        assert!(!snapshot.contains_source_home("sess-0000", "vm0/default", source));
-        assert!(snapshot.contains_source_home(&newest, "vm0/default", source));
+        assert!(!snapshot.has_source_home_hint("sess-0000", "vm0/default", source));
+        assert!(snapshot.has_source_home_hint(&newest, "vm0/default", source));
     }
 
     #[test]
