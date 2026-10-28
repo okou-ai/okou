@@ -1,4 +1,6 @@
 #include "Shared.xcconfig"
+// Public client configuration is part of the immutable archive's tracked inputs.
+OKOU_SENTRY_DSN = https:/$()/ea1ddbb2d84b24bcc913b0bb4edb07f4@o4510583739777024.ingest.us.sentry.io/4512331881512960
 SWIFT_COMPILATION_MODE = wholemodule
 SWIFT_OPTIMIZATION_LEVEL = -O
 DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
