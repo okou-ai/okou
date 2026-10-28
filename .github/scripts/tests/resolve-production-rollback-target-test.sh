@@ -98,6 +98,8 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STATE_WSS_INGRESS_FREE_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "190cdfba6440b50469117758156616447d707b81" ]; then
       [ "${MOCK_STRIPE_INVOICE_PAID_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "26bacab4693d32e4a4453dce5c84e565d7129b9c" ]; then
+      [ "${MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "b610ff61043274157618e3925b13a66dc56ef84b" ]; then
       [ "${MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
@@ -1848,6 +1850,14 @@ assert_failure "Rollback target predates the Stripe invoice-paid automation reti
 [ ! -s "${tmp_dir}/stripe-invoice-paid-floor.output" ] || fail "table-dependent API must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Stripe invoice-paid retirement must reject before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Run output memory citation retirement" \
+  run_resolver "${tmp_dir}/memory-citation-floor.output" MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/memory-citation-floor.output" ] || fail "citation-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Run output memory citation retirement must reject before artifact or host access"
 fi
 
 assert_failure "Cannot resolve the merged direct Workflow attachment runtime" \
