@@ -25,13 +25,16 @@ import {
   tryFeatureGuidePrompt$,
 } from "../../signals/feature-guides.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { GoogleWorkspaceGuideIllustration } from "./feature-guide-google-workspace.tsx";
 
 function GuideMedia({
   media,
   selection,
+  featureId,
 }: {
   readonly media: FeatureGuideMedia;
   readonly selection: FeatureGuideSnapshot["selection"];
+  readonly featureId: string;
 }) {
   const { t } = useTranslation();
   const stepIndex = useGet(selection.stepIndex$);
@@ -66,6 +69,9 @@ function GuideMedia({
   }
   return (
     <div className="flex flex-col gap-4 rounded-xl bg-gray-50 p-4 sm:p-5">
+      {featureId === "google-workspace-export" && (
+        <GoogleWorkspaceGuideIllustration stepIndex={stepIndex} />
+      )}
       {step.imageUrl && (
         <img
           src={step.imageUrl}
@@ -188,6 +194,7 @@ function GuideContents({
           key={activeItem.featureId}
           media={activeItem.media}
           selection={snapshot.selection}
+          featureId={activeItem.featureId}
         />
       )}
       <DialogFooter>
