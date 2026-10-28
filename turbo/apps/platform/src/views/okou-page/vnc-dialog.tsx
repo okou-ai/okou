@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import {
@@ -250,6 +251,8 @@ function useSaveBlocked(dialog: VncDialogState) {
 }
 
 interface VncFormProps {
+  readonly enabledFields: ReactNode;
+  readonly disabledFields: ReactNode;
   readonly dialog: VncDialogState;
   readonly saveAction: typeof saveVnc$;
   readonly inline?: boolean;
@@ -662,6 +665,8 @@ function useVncFormSubmission(
 }
 
 function VncForm({
+  enabledFields,
+  disabledFields,
   dialog,
   saveAction,
   inline = false,
@@ -723,11 +728,7 @@ function VncForm({
         }}
       >
         <DialogBody className={guided ? "-m-1 grid gap-4 p-1" : "grid gap-4"}>
-          <VncFormFields
-            dialog={dialog}
-            inline={inline}
-            disabled={fieldsDisabled}
-          />
+          {fieldsDisabled ? disabledFields : enabledFields}
           {!saving && (
             <VncSaveNotice step={inlineCreate ? setup?.vncStep : undefined} />
           )}
@@ -827,6 +828,12 @@ export function VncDialog({
   }
   return (
     <VncForm
+      enabledFields={
+        <VncFormFields dialog={dialog} inline={inline} disabled={false} />
+      }
+      disabledFields={
+        <VncFormFields dialog={dialog} inline={inline} disabled />
+      }
       key={dialog.creationId}
       dialog={dialog}
       saveAction={saveAction}
