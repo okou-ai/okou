@@ -2229,12 +2229,12 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
-      "emptyDescription": "I file e le chat di questa chat compariranno qui.",
-      "emptyTitle": "Ancora nessuna risorsa",
-      "loadFailed": "Impossibile caricare le risorse",
-      "loading": "Caricamento risorse",
+      "emptyDescription": "File, siti web e altri artefatti creati in questa chat compariranno qui.",
+      "emptyTitle": "Ancora nessun artefatto",
+      "loadFailed": "Impossibile caricare gli artefatti",
+      "loading": "Caricamento artefatti",
       "showMore": "Mostra altro",
-      "title": "Risorse della chat"
+      "title": "Artefatti e chat"
     },
     "run": {
       "collapseWorkHistory": "Comprimi la cronologia lavorativa",

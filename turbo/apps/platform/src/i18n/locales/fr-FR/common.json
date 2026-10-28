@@ -2229,12 +2229,12 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "emptyDescription": "Les fichiers et discussions de ce chat apparaîtront ici.",
-      "emptyTitle": "Aucune ressource pour l’instant",
-      "loadFailed": "Impossible de charger les ressources",
-      "loading": "Chargement des ressources",
+      "emptyDescription": "Les fichiers, sites Web et autres artéfacts créés dans ce chat apparaîtront ici.",
+      "emptyTitle": "Aucun artéfact pour l’instant",
+      "loadFailed": "Impossible de charger les artéfacts",
+      "loading": "Chargement des artéfacts",
       "showMore": "Afficher plus",
-      "title": "Ressources du chat"
+      "title": "Artéfacts et discussions"
     },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",

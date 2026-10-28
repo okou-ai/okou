@@ -2229,12 +2229,12 @@
     "resources": {
       "collapse": "Recolher",
       "copyLink": "Copiar link",
-      "emptyDescription": "Os arquivos e chats desta conversa aparecerão aqui.",
-      "emptyTitle": "Nenhum recurso ainda",
-      "loadFailed": "Não foi possível carregar os recursos",
-      "loading": "Carregando recursos",
+      "emptyDescription": "Arquivos, sites e outros artefatos criados nesta conversa aparecerão aqui.",
+      "emptyTitle": "Nenhum artefato ainda",
+      "loadFailed": "Não foi possível carregar os artefatos",
+      "loading": "Carregando artefatos",
       "showMore": "Mostrar mais",
-      "title": "Recursos da conversa"
+      "title": "Artefatos e chats"
     },
     "run": {
       "collapseWorkHistory": "Recolher histórico de trabalho",

@@ -153,7 +153,7 @@ function ThreadArtifactsPanel({
 }) {
   const { t } = useTranslation();
   const title = t(($) => {
-    return $.chat.resources.title;
+    return $.artifacts.sidebar.panelTitle;
   });
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);

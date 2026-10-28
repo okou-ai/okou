@@ -79,7 +79,7 @@ async function setupResourceNavigation() {
     path: `/chats/${current.id}`,
     ...workspace.pageOptions,
   });
-  await screen.findByRole("region", { name: "Resources" });
+  await screen.findByRole("region", { name: "Artifacts and chats" });
   await screen.findByRole("textbox", { name: "Message" });
   return { current, newer, user: userEvent.setup() };
 }
@@ -194,7 +194,7 @@ test.each(["messages", "artifacts"])(
       path: `/chats/${first.id}`,
     });
     const previousPanel = await screen.findByRole("region", {
-      name: "Resources",
+      name: "Artifacts and chats",
     });
     await within(previousPanel).findByText("first.pdf");
     const next = queryAllByRoleFast("link").find((link) => {
@@ -347,7 +347,7 @@ test.each([
       expect(pathname()).toBe(`/chats/${newer.id}`);
       expect(document.title).toBe("Newer resources chat | Okou");
     });
-    await screen.findByRole("region", { name: "Resources" });
+    await screen.findByRole("region", { name: "Artifacts and chats" });
     await user.click(composer());
     await user.keyboard(next);
     await waitFor(() => {

@@ -2182,12 +2182,12 @@
     "resources": {
       "collapse": "收合",
       "copyLink": "複製連結",
-      "emptyDescription": "這個對話的檔案和關聯對話會顯示在這裡。",
-      "emptyTitle": "還沒有資源",
-      "loadFailed": "無法載入聊天資源",
-      "loading": "正在載入資源",
+      "emptyDescription": "這個對話裡生成的檔案、網站等成果會顯示在這裡。",
+      "emptyTitle": "還沒有成果",
+      "loadFailed": "無法載入成果",
+      "loading": "正在載入成果",
       "showMore": "顯示更多",
-      "title": "聊天資源"
+      "title": "成果和聊天"
     },
     "run": {
       "collapseWorkHistory": "收起工作記錄",

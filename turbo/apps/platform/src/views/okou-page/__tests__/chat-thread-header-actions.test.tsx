@@ -241,7 +241,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   ).toStrictEqual([
     "Share messages",
     "Manage emails",
-    "Resources",
+    "Artifacts and chats",
     "More actions",
   ]);
   expect(buttonNamed("Open menu")).toBeInTheDocument();

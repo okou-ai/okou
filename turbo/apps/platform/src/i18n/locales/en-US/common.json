@@ -2190,12 +2190,12 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "emptyDescription": "Files and chats from this chat will show up here.",
-      "emptyTitle": "No resources yet",
-      "loadFailed": "Could not load resources",
-      "loading": "Loading resources",
+      "emptyDescription": "Files, websites, and other artifacts made in this chat will show up here.",
+      "emptyTitle": "No artifacts yet",
+      "loadFailed": "Could not load artifacts",
+      "loading": "Loading artifacts",
       "showMore": "Show more",
-      "title": "Resources"
+      "title": "Artifacts and chats"
     },
     "run": {
       "collapseWorkHistory": "Collapse work history",

@@ -40,8 +40,10 @@ export async function openResourceArtifact(
   title: string,
   container: ParentNode = document.body,
 ) {
-  click(buttonNamed("Resources", container));
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  click(buttonNamed("Artifacts and chats", container));
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   const label = await within(resources).findByText(title);
   const artifact = label.closest("button");
   if (!artifact) {
