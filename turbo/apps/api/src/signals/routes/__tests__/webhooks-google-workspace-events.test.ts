@@ -434,9 +434,12 @@ async function connectGoogleMeet(
   if (!state) {
     throw new Error("Expected Google Meet OAuth state");
   }
-  await connectors.completeOauthCallback("google-meet", {
+  const callback = await connectors.completeOauthCallbackResult("google-meet", {
     code: `google-meet-code-${accountKey}`,
     state,
+  });
+  expect(callback.body, JSON.stringify(callback.body)).toMatchObject({
+    status: "success",
   });
   const accounts = await connectors.listBuiltinConnectorAccounts(
     actor,
@@ -1128,6 +1131,9 @@ describe("Google Workspace Events subscription lifecycle", () => {
       watchStates: 1,
       dispatched: 1,
     });
+    // The push acknowledges enqueueing; finish its run launch before changing
+    // the connector accounts that project onto the same automation.
+    await flushWaitUntilForTest();
 
     const deletedLast = await accept(
       connectorAccountsClient().delete({
