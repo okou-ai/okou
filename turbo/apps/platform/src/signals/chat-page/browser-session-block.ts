@@ -94,6 +94,12 @@ async function fetchBrowserSession(
   return response.status === 200 ? response.body.browser : null;
 }
 
+function activeBrowserLiveUrl(session: BrowserSession | null): string | null {
+  return session?.status === "active" && session.liveUrl
+    ? session.liveUrl
+    : null;
+}
+
 interface BrowserMutationSignalContext {
   readonly descriptor: BrowserSessionDescriptor;
   readonly sessionOverride$: State<BrowserSession | null | undefined>;
@@ -224,9 +230,20 @@ export function createBrowserSessionSignals(
     });
   });
 
+  // Lease responses publish fresh session data without changing the provider.
+  // Keep the resolved identity synchronous so equal URLs suppress refetches.
+  const fetchedViewerLiveUrl$ = computed(async (get) => {
+    return activeBrowserLiveUrl(await get(session$));
+  });
+  const viewerLiveUrl$ = computed((get) => {
+    const override = get(sessionOverride$);
+    return override === undefined
+      ? get(fetchedViewerLiveUrl$)
+      : activeBrowserLiveUrl(override);
+  });
   const viewerConnection$ = computed(async (get) => {
-    const session = await get(session$);
-    if (session?.status !== "active" || !session.liveUrl) {
+    const liveUrl = await get(viewerLiveUrl$);
+    if (!liveUrl) {
       return null;
     }
     const response = await accept(
@@ -236,7 +253,7 @@ export function createBrowserSessionSignals(
       [200, 409],
     );
     return response.status === 200
-      ? { cdpUrl: response.body.cdpUrl, liveUrl: session.liveUrl }
+      ? { cdpUrl: response.body.cdpUrl, liveUrl }
       : null;
   });
 
