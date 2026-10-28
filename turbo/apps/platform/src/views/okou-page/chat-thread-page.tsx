@@ -141,7 +141,11 @@ import {
   modelCatalog$,
   type ModelCatalog,
 } from "../../signals/external/model-catalog.ts";
-import { emptyChatImg, thinkingSpinnerImg } from "./platform-assets.ts";
+import {
+  emptyChatImg,
+  thinkingBrandMotionImg,
+  thinkingSpinnerImg,
+} from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   ChatThreadMutedButton,
@@ -4494,6 +4498,8 @@ function ThinkingLabel({
 }
 
 function ThinkingLoader() {
+  const brandMotion =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThinkingBrandMotion];
   return (
     <span
       aria-hidden
@@ -4501,11 +4507,15 @@ function ThinkingLoader() {
       className="inline-flex size-4 shrink-0 items-center justify-center"
     >
       <img
-        src={thinkingSpinnerImg}
+        src={brandMotion ? thinkingBrandMotionImg : thinkingSpinnerImg}
         alt=""
         // The 48px asset has a 4px inset. A 17px canvas makes its visible
         // mark match the perceived size of the 16px line icons.
-        className="size-[17px] max-w-none shrink-0 animate-spin [animation-duration:1.4s] will-change-transform motion-reduce:animate-none"
+        className={cn(
+          "size-[17px] max-w-none shrink-0",
+          !brandMotion &&
+            "animate-spin [animation-duration:1.4s] will-change-transform motion-reduce:animate-none",
+        )}
       />
     </span>
   );
