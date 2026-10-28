@@ -218,8 +218,10 @@ The single Playwright chat smoke owns its account; no unused global account is
 created. Failed checkouts report HTTP status, request ID, and Retry-After for
 runner account preparation, and the chat smoke retains a trace on failure.
 
-Runner credential sign-in failures upload `runner-e2e-sign-in-diagnostics` for
-one day, separately from payment diagnostics and credentials. This upload is
+Runner credential sign-in diagnostics upload `runner-e2e-sign-in-diagnostics` for
+one day, including stalled-attempt reports when preparation recovers. The upload
+always runs and ignores missing files after healthy success. It stays separate
+from payment diagnostics and credentials. This upload is
 best-effort: upload failure does not change the original test result; credential
 generation and token upload still must succeed. Each account's
 JSON report records document milestones, the first 64 requests (origin/path,

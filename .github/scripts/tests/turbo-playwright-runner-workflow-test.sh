@@ -232,12 +232,12 @@ sign_in_diagnostic_upload = account_prepare.fetch("steps").find do |step|
   step.dig("with", "path") == "/tmp/e2e-runner-sign-in-diagnostics"
 end
 raise "missing runner E2E sign-in diagnostic upload" unless sign_in_diagnostic_upload
-unless sign_in_diagnostic_upload.fetch("if") == "failure()" &&
+unless sign_in_diagnostic_upload.fetch("if") == "always()" &&
     sign_in_diagnostic_upload["continue-on-error"] == true &&
     sign_in_diagnostic_upload.dig("with", "path") == "/tmp/e2e-runner-sign-in-diagnostics" &&
     sign_in_diagnostic_upload.dig("with", "if-no-files-found") == "ignore" &&
     sign_in_diagnostic_upload.dig("with", "retention-days") == 1
-  raise "runner E2E sign-in diagnostics must be best-effort, failure-only, isolated from tokens, and short-lived"
+  raise "runner E2E sign-in diagnostics must retain recovered attempts, remain best-effort, isolated from tokens, and short-lived"
 end
 
 diagnostic_upload_step = account_prepare.fetch("steps").find do |step|
