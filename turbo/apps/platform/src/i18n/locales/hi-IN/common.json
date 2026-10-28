@@ -1690,10 +1690,10 @@
       "proCard": {
         "bonusCreditsNow": "बोनस क्रेडिट · अभी",
         "description": "Pro के साथ आगे बढ़ें: एक साथ 3 टास्क चलाएँ और दोहराए जाने वाले काम अपने आप करवाएँ।",
-        "noTasksLeft": "आपके मुफ़्त टास्क खत्म हो गए हैं",
+        "estimateBasis": "Okou पर टास्क के सामान्य उपयोग के आधार पर अनुमान।",
+        "estimatedTasksLeft_one": "{{count}} से कम टास्क बचे हैं",
+        "estimatedTasksLeft_other": "{{count}} से कम टास्क बचे हैं",
         "priceUnavailable": "मौजूदा कीमतों के लिए प्लान देखें",
-        "tasksLeft_one": "अधिकतम {{count}} टास्क बाकी",
-        "tasksLeft_other": "अधिकतम {{count}} टास्क बाकी",
         "title": "Pro के साथ और काम करें",
         "upgradeNow": "अभी अपग्रेड करें"
       },

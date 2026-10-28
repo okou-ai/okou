@@ -8,8 +8,9 @@ import { proUpgradeSceneImg } from "./platform-assets.ts";
 interface ProUpgradeCardProps {
   readonly onUpgrade: () => void;
   readonly monthlyPriceUsd?: number;
-  // Only supply these when a trusted quota/campaign source confirms them.
-  readonly remainingTasks?: number;
+  // Supply a positive estimate bound derived from credits and typical task usage.
+  readonly estimatedTasksUpperBound?: number;
+  // Only supply when a trusted campaign source confirms eligibility.
   readonly bonusCredits?: number;
 }
 
@@ -17,10 +18,12 @@ interface ProUpgradeCardProps {
 export function ProUpgradeCard({
   onUpgrade,
   monthlyPriceUsd,
-  remainingTasks,
+  estimatedTasksUpperBound,
   bonusCredits,
 }: ProUpgradeCardProps) {
   const { t } = useTranslation();
+  const hasTaskEstimate =
+    estimatedTasksUpperBound !== undefined && estimatedTasksUpperBound > 0;
   return (
     <ChatCard
       data-testid="plan-upgrade-card"
@@ -40,22 +43,25 @@ export function ProUpgradeCard({
       <div className="flex min-w-0 flex-1 flex-col justify-center p-5 @[640px]:p-7">
         <div>
           <h3 className="text-xl font-semibold tracking-tight text-foreground @[640px]:text-2xl">
-            {remainingTasks === undefined
-              ? t(($) => {
+            {hasTaskEstimate
+              ? t(
+                  ($) => {
+                    return $.chat.billing.proCard.estimatedTasksLeft;
+                  },
+                  { count: estimatedTasksUpperBound },
+                )
+              : t(($) => {
                   return $.chat.billing.proCard.title;
-                })
-              : remainingTasks === 0
-                ? t(($) => {
-                    return $.chat.billing.proCard.noTasksLeft;
-                  })
-                : t(
-                    ($) => {
-                      return $.chat.billing.proCard.tasksLeft;
-                    },
-                    { count: remainingTasks },
-                  )}
+                })}
           </h3>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            {hasTaskEstimate && (
+              <>
+                {t(($) => {
+                  return $.chat.billing.proCard.estimateBasis;
+                })}{" "}
+              </>
+            )}
             {t(($) => {
               return $.chat.billing.proCard.description;
             })}

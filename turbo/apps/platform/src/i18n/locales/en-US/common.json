@@ -1690,10 +1690,10 @@
       "proCard": {
         "bonusCreditsNow": "bonus credits · Just now",
         "description": "Keep going with Pro: run 3 tasks at once and automate repeat work.",
-        "noTasksLeft": "You have no free tasks left",
+        "estimateBasis": "Estimated from typical task usage on Okou.",
+        "estimatedTasksLeft_one": "Fewer than {{count}} task left",
+        "estimatedTasksLeft_other": "Fewer than {{count}} tasks left",
         "priceUnavailable": "See plans for current pricing",
-        "tasksLeft_one": "Up to {{count}} task left",
-        "tasksLeft_other": "Up to {{count}} tasks left",
         "title": "Do more with Pro",
         "upgradeNow": "Upgrade now"
       },

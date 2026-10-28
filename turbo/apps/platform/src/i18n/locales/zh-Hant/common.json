@@ -1686,9 +1686,9 @@
       "proCard": {
         "bonusCreditsNow": "獎勵點數 · 就現在",
         "description": "用 Pro 繼續完成更多：3 個任務並行，重複工作自動處理。",
-        "noTasksLeft": "免費任務次數已用完",
+        "estimateBasis": "根據 Okou 平台的典型任務用量估算。",
+        "estimatedTasksLeft_other": "預計還能完成不到 {{count}} 個任務",
         "priceUnavailable": "查看方案及最新價格",
-        "tasksLeft_other": "最多還可完成 {{count}} 個任務",
         "title": "用 Pro 完成更多工作",
         "upgradeNow": "立即升級"
       },

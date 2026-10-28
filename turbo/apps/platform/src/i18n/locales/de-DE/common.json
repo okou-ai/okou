@@ -1690,10 +1690,10 @@
       "proCard": {
         "bonusCreditsNow": "Bonus-Credits · Jetzt gleich",
         "description": "Mit Pro geht es weiter: 3 Aufgaben gleichzeitig erledigen und Routinearbeit automatisieren.",
-        "noTasksLeft": "Keine kostenlosen Aufgaben mehr übrig",
+        "estimateBasis": "Geschätzt anhand der typischen Aufgabennutzung auf Okou.",
+        "estimatedTasksLeft_one": "Weniger als {{count}} Aufgabe übrig",
+        "estimatedTasksLeft_other": "Weniger als {{count}} Aufgaben übrig",
         "priceUnavailable": "Aktuelle Preise in den Tarifen ansehen",
-        "tasksLeft_one": "Noch bis zu {{count}} Aufgabe",
-        "tasksLeft_other": "Noch bis zu {{count}} Aufgaben",
         "title": "Mehr erledigen mit Pro",
         "upgradeNow": "Jetzt upgraden"
       },

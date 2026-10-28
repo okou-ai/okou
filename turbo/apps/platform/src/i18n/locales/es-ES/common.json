@@ -1718,11 +1718,11 @@
       "proCard": {
         "bonusCreditsNow": "créditos extra · Ahora mismo",
         "description": "Sigue con Pro: ejecuta 3 tareas a la vez y automatiza el trabajo repetitivo.",
-        "noTasksLeft": "No te quedan tareas gratuitas",
+        "estimateBasis": "Estimación basada en el consumo habitual de las tareas en Okou.",
+        "estimatedTasksLeft_one": "Queda menos de {{count}} tarea",
+        "estimatedTasksLeft_many": "Quedan menos de {{count}} tareas",
+        "estimatedTasksLeft_other": "Quedan menos de {{count}} tareas",
         "priceUnavailable": "Consulta los precios actuales de los planes",
-        "tasksLeft_one": "Te queda hasta {{count}} tarea",
-        "tasksLeft_many": "Te quedan hasta {{count}} tareas",
-        "tasksLeft_other": "Te quedan hasta {{count}} tareas",
         "title": "Haz más con Pro",
         "upgradeNow": "Mejorar plan ahora"
       },
