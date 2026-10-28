@@ -536,6 +536,16 @@
       "kindIcon": "Artéfact {{kind}}",
       "loading": "Chargement des artéfacts"
     },
+    "deletion": {
+      "cancel": "Annuler",
+      "delete": "Supprimer",
+      "deleting": "Suppression…",
+      "description": "Cet artefact sera supprimé et ses liens Okou seront désactivés. Les copies déjà téléchargées ou enregistrées dans d’autres services seront conservées.",
+      "hostedDescription": "Ce site et toutes ses versions publiées seront mis hors ligne. Les copies enregistrées dans d’autres services seront conservées.",
+      "menu": "Plus d’actions pour {{title}}",
+      "sharedDescription": "Retirez cette conversation enregistrée de vos artefacts. La conversation originale et son lien de partage resteront accessibles.",
+      "title": "Supprimer {{title}} ?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

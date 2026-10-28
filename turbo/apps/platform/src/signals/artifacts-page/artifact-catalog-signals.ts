@@ -1,18 +1,19 @@
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { downloadAttachment$ } from "../attachment-download.ts";
 import { createArtifactCatalogSidebarSignals } from "./artifact-catalog-sidebar.ts";
 import {
   artifactCatalogContract,
   type ArtifactCatalogKind,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { downloadAttachment$ } from "../attachment-download.ts";
 import { isTextPreviewKind } from "../text-preview.ts";
 import {
   closeLightboxWithDialogExit$,
   openAudioLightbox$,
   openDocumentLightbox$,
   openImageLightbox$,
+  openFileLightbox$,
   openVideoLightbox$,
 } from "../okou-page/attachment-chips.ts";
 import {
@@ -205,7 +206,10 @@ export const openArtifact$ = command(
     }
 
     const preview = artifactDetailPreview(detail);
-    if (preview.kind === "file") {
+    if (
+      preview.kind === "file" &&
+      !get(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion]
+    ) {
       await set(
         downloadAttachment$,
         { filename: preview.filename, url: preview.url },
@@ -226,12 +230,17 @@ export const openArtifact$ = command(
       return;
     }
     const base = {
+      catalogArtifactId: detail.id,
       filename: preview.filename,
       preview: previewSignals,
       showSizeInSubtitle: false,
       splitViewAvailable: false,
       url: preview.url,
     };
+    if (preview.kind === "file") {
+      set(openFileLightbox$, base);
+      return;
+    }
     if (preview.kind === "image") {
       set(openImageLightbox$, base);
       return;

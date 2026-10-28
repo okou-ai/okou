@@ -520,6 +520,16 @@
       "kindIcon": "{{kind}}成果",
       "loading": "正在加载成果"
     },
+    "deletion": {
+      "cancel": "取消",
+      "delete": "删除",
+      "deleting": "正在删除…",
+      "description": "删除此作品并停用其 Okou 链接。已下载或保存到其他服务的副本会保留。",
+      "hostedDescription": "此网站及其所有已发布版本将下线。保存到其他服务的副本会保留。",
+      "menu": "{{title}}的更多操作",
+      "sharedDescription": "从你的作品中移除此收藏对话。原始对话及其分享链接仍可访问。",
+      "title": "删除{{title}}？"
+    },
     "fileBadges": {
       "artwork": "美术",
       "audio": "音频",

@@ -520,6 +520,16 @@
       "kindIcon": "{{kind}} 아티팩트",
       "loading": "아티팩트 로딩 중"
     },
+    "deletion": {
+      "cancel": "취소",
+      "delete": "삭제",
+      "deleting": "삭제 중…",
+      "description": "이 작업물을 삭제하고 Okou 링크를 비활성화합니다. 이미 다운로드했거나 다른 서비스에 저장한 사본은 유지됩니다.",
+      "hostedDescription": "이 웹사이트와 게시된 모든 버전을 오프라인으로 전환합니다. 다른 서비스에 저장한 사본은 유지됩니다.",
+      "menu": "{{title}} 추가 작업",
+      "sharedDescription": "저장한 대화를 작업물에서 제거합니다. 원본 대화와 공유 링크는 계속 사용할 수 있습니다.",
+      "title": "{{title}}을(를) 삭제할까요?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",
