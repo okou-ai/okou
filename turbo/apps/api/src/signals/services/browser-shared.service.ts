@@ -745,7 +745,7 @@ const publishSharedMetadata$ = command(
         targetWhere: sql`${browserSessions.status} IN ('creating', 'active', 'resuming', 'stopping')`,
         set: {
           runId: owner.runId,
-          name: input.name ?? previous?.name ?? "browser",
+          name: input.name ?? browserSessions.name,
           status: "active",
           browserThreadProfileId: null,
           browserProfileId: null,

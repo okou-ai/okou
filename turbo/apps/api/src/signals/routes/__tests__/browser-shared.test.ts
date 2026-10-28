@@ -391,7 +391,7 @@ describe("shared Browser public consumers", () => {
     });
   });
 
-  it("preserves a preview published while an earlier first open is still resolving", async () => {
+  it("preserves a named Browser and its preview while an earlier first open is still resolving", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       nativeCommands(f);
@@ -419,7 +419,14 @@ describe("shared Browser public consumers", () => {
             throw new Error("The first open never reached its provider read");
           }),
         ]);
-        await use(a);
+        const named = await accept(
+          client().create({
+            headers: runHeaders(a),
+            body: { name: "Trip planning", proxyCountryCode: null },
+          }),
+          [201],
+        );
+        expect(named.body.browser.name).toBe("Trip planning");
         await accept(
           client().close({
             headers,
@@ -450,6 +457,7 @@ describe("shared Browser public consumers", () => {
         [200],
       );
       expect(latest.body.browser.screenshotUrl).toBe(published.value);
+      expect(latest.body.browser.name).toBe("Trip planning");
     });
   });
 
