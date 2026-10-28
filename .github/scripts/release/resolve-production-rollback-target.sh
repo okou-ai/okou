@@ -32,6 +32,8 @@ readonly MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT=b220a504c5e633de162791f1216c4458
 # #42572 removed invoice-paid automation SQL before its dedicated tables retire.
 # Preserve the shared Stripe Connect deauthorization receiver from that release.
 readonly STRIPE_INVOICE_PAID_RETIREMENT_COMMIT=190cdfba6440b50469117758156616447d707b81
+# #43148 removed every citation-table reader and writer before its contraction.
+readonly RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT=26bacab4693d32e4a4453dce5c84e565d7129b9c
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -199,6 +201,10 @@ fi
 
 if ! git merge-base --is-ancestor "$STRIPE_INVOICE_PAID_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Stripe invoice-paid automation retirement: ${STRIPE_INVOICE_PAID_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Run output memory citation retirement: ${RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
