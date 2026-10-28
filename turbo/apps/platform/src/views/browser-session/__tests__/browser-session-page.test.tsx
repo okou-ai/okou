@@ -92,7 +92,7 @@ async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
     screen.findByDisplayValue("https://example.com"),
   ).resolves.toBeEnabled();
   expect(screen.getByLabelText("New tab")).toBeInTheDocument();
-  expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
+  expect(screen.queryByTitle("Cloud browser: booking")).not.toBeInTheDocument();
   const sizingMenu = await openViewerSizingMenu();
   expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
     "aria-checked",
@@ -147,7 +147,7 @@ test("An active browser shows a private live viewer", async () => {
 
   await setupPage({ context, path: `/browsers/${THREAD_ID}` });
 
-  const viewer = await screen.findByTitle("Live browser: booking");
+  const viewer = await screen.findByTitle("Cloud browser: booking");
   expect(viewer).toHaveAttribute(
     "src",
     "https://viewer.example/live?token=private",
@@ -206,7 +206,7 @@ test("A reclaimed connection shows an unavailable state without opening the prov
   await expect(
     screen.findByText("Browser unavailable"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
+  expect(screen.queryByTitle("Cloud browser: booking")).not.toBeInTheDocument();
 });
 
 test("A replacement browser detaches the previous viewer while its connection loads", async () => {
@@ -256,7 +256,7 @@ test("A replacement browser detaches the previous viewer while its connection lo
   await waitFor(() => {
     expect(previousViewer).not.toBeInTheDocument();
   });
-  expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
+  expect(screen.queryByTitle("Cloud browser: booking")).not.toBeInTheDocument();
   releaseConnection.resolve();
   await expect(
     screen.findByText("Browser unavailable"),
@@ -306,7 +306,7 @@ test("A user can restart a reclaimed browser", async () => {
   click(getButton("Start browser"));
 
   await expect(
-    screen.findByTitle("Live browser: booking"),
+    screen.findByTitle("Cloud browser: booking"),
   ).resolves.toBeVisible();
   expect(startCount).toBe(1);
   expect(screen.queryByText("Browser not live")).toBeNull();

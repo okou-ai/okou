@@ -1408,9 +1408,51 @@ function latestAssistantTextCreatedAtFromRaw(
   return undefined;
 }
 
+/**
+ * The newest Run that any thread event names, live or finished. Input carries
+ * its Run once one consumes it, so a new message moves this on before its
+ * Run produces output.
+ */
+function latestRunIdFromRaw(
+  raw: readonly ChatEventProjectionEntry[],
+): string | null {
+  for (let index = raw.length - 1; index >= 0; index--) {
+    const event = raw[index]!.event;
+    if ("runId" in event && typeof event.runId === "string") {
+      return event.runId;
+    }
+  }
+  return null;
+}
+
+/** The newest Run while nothing has ended or interrupted it yet. */
+function liveRunIdFromRaw(
+  raw: readonly ChatEventProjectionEntry[],
+): string | null {
+  const runId = latestRunIdFromRaw(raw);
+  if (runId === null) {
+    return null;
+  }
+  const ended = raw.some(({ event }) => {
+    return (
+      (isInterruptControlEvent(event) && event.interruptsRunId === runId) ||
+      ("runId" in event &&
+        event.runId === runId &&
+        isChatRunTerminalEventType(event.eventType))
+    );
+  });
+  return ended ? null : runId;
+}
+
 function createLatestEventSignals(
   rawEvents$: Computed<ChatEventProjectionEntry[]>,
 ) {
+  const latestRunId$ = computed((get): string | null => {
+    return latestRunIdFromRaw(get(rawEvents$));
+  });
+  const liveRunId$ = computed((get): string | null => {
+    return liveRunIdFromRaw(get(rawEvents$));
+  });
   const latestRunFinishCreatedAt$ = computed(
     (get): Promise<string | undefined> => {
       return Promise.resolve(latestRunFinishCreatedAtFromRaw(get(rawEvents$)));
@@ -1424,6 +1466,8 @@ function createLatestEventSignals(
     },
   );
   return {
+    latestRunId$,
+    liveRunId$,
     latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$,
   };
@@ -3472,6 +3516,8 @@ function createThinkingIndicatorSignals() {
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
+    latestRunId$: events.latestRunId$,
+    liveRunId$: events.liveRunId$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,

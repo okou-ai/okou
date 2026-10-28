@@ -1351,12 +1351,18 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "URL दर्ज करें",
+    "blankPage": {
+      "description": "{{assistantName}} काम करते समय यहां पेज खोलता है। खुद ब्राउज़ करने के लिए ऊपर URL दर्ज करें।",
+      "title": "अभी कुछ नहीं खुला है"
+    },
+    "blankTabTitle": "नया टैब",
     "cardTitle": "क्लाउड ब्राउज़र",
-    "close": "लाइव ब्राउज़र बंद करें",
-    "documentTitle": "लाइव ब्राउज़र",
+    "close": "क्लाउड ब्राउज़र बंद करें",
+    "documentTitle": "क्लाउड ब्राउज़र",
     "fitAction": "फ़िट करें",
     "fitWindow": "ब्राउज़र को विंडो में फ़िट करें",
-    "iframeTitle": "लाइव ब्राउज़र: {{name}}",
+    "iframeTitle": "क्लाउड ब्राउज़र: {{name}}",
     "notFound": "ब्राउज़र नहीं मिला",
     "open": "{{name}} ब्राउज़र खोलें",
     "openAction": "खुला",
@@ -1367,14 +1373,19 @@
       "startDescription": "शुरू करने पर उपलब्ध होने पर सहेजी गई लॉगिन प्रोफ़ाइल और स्टोरेज पुनर्स्थापित होते हैं, और संभव होने पर सहेजे गए टैब फिर से खुलते हैं।",
       "starting": "शुरू हो रहा है…"
     },
-    "reclaimHint_one": "जब यह पैनल खुला होता है तो {{assistantName}} इस ब्राउज़र को रखता है, और {{formattedCount}} निष्क्रिय मिनट के बाद इसे पुनः प्राप्त करता है।",
-    "reclaimHint_other": "जब यह पैनल खुला होता है तो {{assistantName}} इस ब्राउज़र को रखता है, और {{formattedCount}} निष्क्रिय मिनटों के बाद इसे पुनः प्राप्त करता है।",
+    "presence": {
+      "agentWorking": "{{assistantName}} काम कर रहा है",
+      "handBack": "वापस सौंपें",
+      "handBackMessage": "मैंने ब्राउज़र में काम पूरा कर लिया है। कृपया जारी रखें।",
+      "memberInControl": "नियंत्रण आपके पास है",
+      "takeOver": "नियंत्रण लें"
+    },
     "status": {
       "live": "रहना",
       "starting": "प्रारंभ",
       "stopped": "रुक गया"
     },
-    "title": "लाइव ब्राउज़र",
+    "title": "क्लाउड ब्राउज़र",
     "unavailable": {
       "description": "यह ब्राउज़र इस चैट से संबंधित नहीं है या हटा दिया गया है.",
       "title": "ब्राउज़र अनुपलब्ध"

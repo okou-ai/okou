@@ -1373,12 +1373,18 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Inserisci un URL",
+    "blankPage": {
+      "description": "{{assistantName}} apre qui le pagine mentre lavora. Inserisci un URL qui sopra per navigare da solo.",
+      "title": "Ancora niente di aperto"
+    },
+    "blankTabTitle": "Nuova scheda",
     "cardTitle": "Browser cloud",
-    "close": "Chiudi il browser live",
-    "documentTitle": "Browser in tempo reale",
+    "close": "Chiudi il browser cloud",
+    "documentTitle": "Browser cloud",
     "fitAction": "Adatta",
     "fitWindow": "Adatta il browser alla finestra",
-    "iframeTitle": "Browser live: {{name}}",
+    "iframeTitle": "Browser cloud: {{name}}",
     "notFound": "Browser non trovato",
     "open": "Apri il browser {{name}}",
     "openAction": "Aperto",
@@ -1389,15 +1395,19 @@
       "startDescription": "L'avvio ripristina il profilo di accesso e lo spazio di archiviazione salvati quando disponibili e riapre le schede salvate quando possibile.",
       "starting": "Avvio…"
     },
-    "reclaimHint_one": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuto di inattività.",
-    "reclaimHint_many": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
-    "reclaimHint_other": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
+    "presence": {
+      "agentWorking": "{{assistantName}} sta lavorando",
+      "handBack": "Restituisci",
+      "handBackMessage": "Ho finito nel browser. Continua pure.",
+      "memberInControl": "Hai il controllo",
+      "takeOver": "Prendi il controllo"
+    },
     "status": {
       "live": "Attivo",
       "starting": "Avvio",
       "stopped": "Arrestato"
     },
-    "title": "Browser in tempo reale",
+    "title": "Browser cloud",
     "unavailable": {
       "description": "Questo browser non appartiene a questa chat o è stato rimosso.",
       "title": "Browser non disponibile"

@@ -21,7 +21,7 @@ import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
 const context = testContext();
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000901";
-const LIVE_BROWSER_TITLE = "Live browser: research";
+const LIVE_BROWSER_TITLE = "Cloud browser: research";
 
 function liveBrowserSession(
   overrides: Partial<BrowserSession> = {},
@@ -224,7 +224,7 @@ function buttonByName(
 }
 
 function liveBrowserSidebar(): HTMLElement {
-  return screen.getByRole("complementary", { name: "Live browser" });
+  return screen.getByRole("complementary", { name: "Cloud browser" });
 }
 
 function visibleViewerMenu(
@@ -438,7 +438,7 @@ test("Start and close a browser from the thread sidebar", async () => {
 
   click(buttonByName("Open browser"));
   const sidebar = await screen.findByRole("complementary", {
-    name: "Live browser",
+    name: "Cloud browser",
   });
   expect(within(sidebar).getByText("Browser not live")).toBeVisible();
   const start = buttonByName("Start browser", sidebar);
@@ -447,7 +447,7 @@ test("Start and close a browser from the thread sidebar", async () => {
   click(start);
   await expect(screen.findByTitle(LIVE_BROWSER_TITLE)).resolves.toBeVisible();
 
-  click(buttonByName("Close live browser", liveBrowserSidebar()));
+  click(buttonByName("Close cloud browser", liveBrowserSidebar()));
   await waitFor(() => {
     expect(screen.queryByTitle(LIVE_BROWSER_TITLE)).toBeNull();
   });
@@ -484,13 +484,68 @@ test("Open a stopped browser card and offer a new session", async () => {
   }
   expect(card).toHaveTextContent("Stopped");
   expect(
-    screen.queryByRole("complementary", { name: "Live browser" }),
+    screen.queryByRole("complementary", { name: "Cloud browser" }),
   ).toBeNull();
   click(card);
 
   const sidebar = await screen.findByRole("complementary", {
-    name: "Live browser",
+    name: "Cloud browser",
   });
   expect(within(sidebar).getByText("Browser not live")).toBeVisible();
   expect(buttonByName("Start browser", sidebar)).toBeEnabled();
+});
+
+test("Take over the cloud browser from a working run and hand it back through the composer", async () => {
+  mockWideScreen();
+  context.mocks.browser.userAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  );
+  mockBrowserApi(liveBrowserSession());
+  const cdpUrl = "wss://cdp.browser-use.com/sidebar";
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  const runId = "navigation-browser-live-run";
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Browser navigation",
+    chatEvents: [
+      {
+        id: "navigation-browser-live-user",
+        role: "user",
+        content: "Book a table for two",
+        runId,
+        seqId: 1,
+        createdAt: "2026-09-01T12:00:00.000Z",
+      },
+    ],
+    activeRunIds: [runId],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
+  });
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByDisplayValue("https://example.com");
+
+  await expect(
+    within(sidebar).findByText(/is working$/u),
+  ).resolves.toBeVisible();
+  click(buttonByName("Take over", sidebar));
+  await expect(
+    within(sidebar).findByText("You're in control"),
+  ).resolves.toBeVisible();
+
+  click(buttonByName("Hand back", sidebar));
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "I'm done in the browser. Please continue.",
+    );
+  });
+  expect(within(sidebar).queryByText("You're in control")).toBeNull();
 });

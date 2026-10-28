@@ -442,10 +442,10 @@ test("Follow suspension and resumption in the live browser panel", async () => {
   click(card);
 
   const sidebar = await screen.findByRole("complementary", {
-    name: "Live browser",
+    name: "Cloud browser",
   });
   expect(sidebar).toBeVisible();
-  expect(screen.getByTitle("Live browser: Research")).toHaveAttribute(
+  expect(screen.getByTitle("Cloud browser: Research")).toHaveAttribute(
     "src",
     ACTIVE_BROWSER_URL,
   );
@@ -467,7 +467,7 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       "Stopped",
     );
   });
-  expect(screen.queryByTitle("Live browser: Research")).toBeNull();
+  expect(screen.queryByTitle("Cloud browser: Research")).toBeNull();
   await expect(
     screen.findByTestId("browser-session-panel-screenshot"),
   ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);
@@ -485,7 +485,7 @@ test("Follow suspension and resumption in the live browser panel", async () => {
     expect(screen.getByText("Live")).toBeVisible();
   });
   await expect(
-    screen.findByTitle("Live browser: Research"),
+    screen.findByTitle("Cloud browser: Research"),
   ).resolves.toHaveAttribute("src", RESUMED_BROWSER_URL);
   expect(screen.queryByTestId("browser-session-panel-screenshot")).toBeNull();
 });
@@ -1740,6 +1740,6 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
   const browserCard = await findButton("Open Research browser");
   click(browserCard);
   await expect(
-    screen.findByRole("complementary", { name: "Live browser" }),
+    screen.findByRole("complementary", { name: "Cloud browser" }),
   ).resolves.toBeVisible();
 });

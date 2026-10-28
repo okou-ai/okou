@@ -1373,12 +1373,18 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Digite uma URL",
+    "blankPage": {
+      "description": "{{assistantName}} abre páginas aqui enquanto trabalha. Digite uma URL acima para navegar por conta própria.",
+      "title": "Nada aberto ainda"
+    },
+    "blankTabTitle": "Nova guia",
     "cardTitle": "Navegador na nuvem",
-    "close": "Fechar navegador ao vivo",
-    "documentTitle": "Navegador ao vivo",
+    "close": "Fechar navegador na nuvem",
+    "documentTitle": "Navegador na nuvem",
     "fitAction": "Ajustar",
     "fitWindow": "Ajustar navegador à janela",
-    "iframeTitle": "Navegador ao vivo: {{name}}",
+    "iframeTitle": "Navegador na nuvem: {{name}}",
     "notFound": "Navegador não encontrado",
     "open": "Abrir o navegador {{name}}",
     "openAction": "Abrir",
@@ -1389,15 +1395,19 @@
       "startDescription": "Ao iniciar, o perfil de login e o armazenamento salvos são restaurados quando disponíveis, e as abas salvas são reabertas quando possível.",
       "starting": "Iniciando…"
     },
-    "reclaimHint_one": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minuto de inatividade.",
-    "reclaimHint_many": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
-    "reclaimHint_other": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
+    "presence": {
+      "agentWorking": "{{assistantName}} está trabalhando",
+      "handBack": "Devolver",
+      "handBackMessage": "Terminei no navegador. Pode continuar.",
+      "memberInControl": "Você está no controle",
+      "takeOver": "Assumir"
+    },
     "status": {
       "live": "Ao vivo",
       "starting": "Iniciando",
       "stopped": "Parado"
     },
-    "title": "Navegador ao vivo",
+    "title": "Navegador na nuvem",
     "unavailable": {
       "description": "Este navegador não pertence a este chat ou foi removido.",
       "title": "Navegador indisponível"

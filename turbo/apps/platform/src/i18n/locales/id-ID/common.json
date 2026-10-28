@@ -1349,12 +1349,18 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Masukkan URL",
+    "blankPage": {
+      "description": "{{assistantName}} membuka halaman di sini saat bekerja. Masukkan URL di atas untuk menjelajah sendiri.",
+      "title": "Belum ada yang dibuka"
+    },
+    "blankTabTitle": "Tab baru",
     "cardTitle": "Browser cloud",
-    "close": "Tutup browser live",
-    "documentTitle": "Browser live",
+    "close": "Tutup browser cloud",
+    "documentTitle": "Browser cloud",
     "fitAction": "Sesuaikan",
     "fitWindow": "Sesuaikan browser ke jendela",
-    "iframeTitle": "Browser live: {{name}}",
+    "iframeTitle": "Browser cloud: {{name}}",
     "notFound": "Browser tidak ditemukan",
     "open": "Buka browser {{name}}",
     "openAction": "Buka",
@@ -1365,14 +1371,19 @@
       "startDescription": "Memulai akan memulihkan profil login dan penyimpanan yang tersimpan jika tersedia, serta membuka kembali tab yang tersimpan jika memungkinkan.",
       "starting": "Memulai…"
     },
-    "reclaimHint_one": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
-    "reclaimHint_other": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
+    "presence": {
+      "agentWorking": "{{assistantName}} sedang bekerja",
+      "handBack": "Serahkan kembali",
+      "handBackMessage": "Saya sudah selesai di browser. Silakan lanjutkan.",
+      "memberInControl": "Anda yang mengendalikan",
+      "takeOver": "Ambil alih"
+    },
     "status": {
       "live": "Live",
       "starting": "Memulai",
       "stopped": "Berhenti"
     },
-    "title": "Browser live",
+    "title": "Browser cloud",
     "unavailable": {
       "description": "Browser ini bukan milik chat ini atau telah dihapus.",
       "title": "Browser tidak tersedia"

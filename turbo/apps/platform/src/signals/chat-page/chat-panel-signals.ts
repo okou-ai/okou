@@ -74,6 +74,8 @@ export interface MessageListSignals {
   readonly catchUp$: Command<Promise<void>, [AbortSignal]>;
   readonly scroll: ReturnType<typeof createChatThreadScrollSignals>;
   readonly sidebar: ThreadSidebarSignals;
+  readonly latestRunId$: Computed<string | null>;
+  readonly liveRunId$: Computed<string | null>;
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
@@ -207,6 +209,10 @@ export interface ChatPanelSignals {
     [ChatClipboardPayload, AbortSignal]
   >;
   // -- Paged events (sole rendering path) ----------------------------------
+  /** The newest Run any thread event names, live or finished. */
+  readonly latestRunId$: Computed<string | null>;
+  /** The newest Run until it ends or is interrupted. */
+  readonly liveRunId$: Computed<string | null>;
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly initialEventsReady$: Computed<boolean>;

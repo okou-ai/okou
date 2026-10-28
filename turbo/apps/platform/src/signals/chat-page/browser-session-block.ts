@@ -1,5 +1,4 @@
 import {
-  BROWSER_IDLE_LEASE_MINUTES,
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
@@ -15,8 +14,6 @@ import {
   type State,
 } from "ccstate";
 
-import { formatAppNumber } from "../../i18n/format.ts";
-import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -50,6 +47,12 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   >;
   readonly viewerWindowSizeSync$: Computed<WindowSizeSync>;
   readonly setViewerWindowSizeSync$: Command<void, [WindowSizeSync]>;
+  /**
+   * The Run the member stopped to take over this browser. Control returns to
+   * the agent as soon as a newer Run starts.
+   */
+  readonly takeoverRunId$: Computed<string | null>;
+  readonly setTakeoverRunId$: Command<void, [string | null]>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -369,6 +372,20 @@ function createBrowserSessionSubscriptionSignals(
   return { subscribe$ };
 }
 
+function createTakeoverSignals(): Pick<
+  BrowserSessionSignals,
+  "takeoverRunId$" | "setTakeoverRunId$"
+> {
+  const internalTakeoverRunId$ = state<string | null>(null);
+  const takeoverRunId$ = computed((get) => {
+    return get(internalTakeoverRunId$);
+  });
+  const setTakeoverRunId$ = command(({ set }, runId: string | null) => {
+    set(internalTakeoverRunId$, runId);
+  });
+  return { takeoverRunId$, setTakeoverRunId$ };
+}
+
 export function createBrowserSessionSignals(
   threadId: string,
 ): BrowserSessionSignals {
@@ -486,6 +503,7 @@ export function createBrowserSessionSignals(
     viewerConnection$,
     viewerWindowSizeSync$,
     setViewerWindowSizeSync$,
+    ...createTakeoverSignals(),
     ...startSignals,
     ...closeSignals,
     reload$,
@@ -496,20 +514,4 @@ export function createBrowserSessionSignals(
     ...subscriptionSignals,
     keepAliveRef$,
   };
-}
-
-export function browserSessionReclaimHint(
-  session: BrowserSession,
-): string | null {
-  return session.status === "active"
-    ? i18n.t(
-        ($) => {
-          return $.browserSession.reclaimHint;
-        },
-        {
-          count: BROWSER_IDLE_LEASE_MINUTES,
-          formattedCount: formatAppNumber(BROWSER_IDLE_LEASE_MINUTES),
-        },
-      )
-    : null;
 }
