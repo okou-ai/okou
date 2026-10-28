@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use clap::Args;
 use tokio::signal::unix::{Signal, SignalKind, signal};
+use tokio_util::task::AbortOnDropHandle;
 use uuid::Uuid;
 
 use crate::error::{RunnerError, RunnerResult};
@@ -207,7 +208,9 @@ struct DelayedActiveInput {
 
 struct ActiveInputProducer {
     stop: tokio_util::sync::CancellationToken,
-    task: tokio::task::JoinHandle<()>,
+    // Retain abort custody if submit or its stop observer is dropped. An
+    // accepted blocking queue publication can still finish under its own lock.
+    task: AbortOnDropHandle<()>,
 }
 
 impl ActiveInputProducer {
@@ -249,7 +252,10 @@ impl ActiveInputProducer {
                 }
             }
         });
-        Some(Self { stop, task })
+        Some(Self {
+            stop,
+            task: AbortOnDropHandle::new(task),
+        })
     }
 
     async fn stop(self) {
