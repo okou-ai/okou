@@ -72,6 +72,8 @@ import {
   type InsertAssistantEventsInput,
 } from "./chat-event-shared.service";
 import {
+  assistantErrorEventInsertSql,
+  assistantErrorEventType,
   chatEventInsertSql,
   integrationCompletionFallbackInsertSql,
 } from "./chat-event.service";
@@ -891,7 +893,6 @@ async function publishAssistantErrorEventSignals(args: {
 }
 
 interface AssistantErrorEventArgs {
-  readonly db: Db;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -910,149 +911,174 @@ interface AssistantErrorEventArgs {
   readonly sourceCallbackId: string;
 }
 
-async function insertAssistantErrorEventTransaction(
-  tx: ChatCallbackTransaction,
-  input: AssistantErrorEventArgs,
-  displayErrorMessage: string,
-): Promise<
-  (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
-> {
-  const insertedEvent =
-    parseRawRows(
-      chatEventCommandResultSchema,
-      await tx.execute(
-        chatEventInsertSql(
-          {
-            chatThreadId: input.threadId,
-            eventType:
-              input.lifecycleEvent === "failed"
-                ? "run.failed"
-                : "run.cancelled",
-            content: displayErrorMessage,
-            runId: input.runId,
-            error: displayErrorMessage,
-            ...(input.lifecycleEvent === "failed" &&
-            input.failureReason !== null
-              ? { failureReason: input.failureReason }
-              : {}),
-          },
-          "run-lifecycle",
-        ),
-      ),
-    )[0] ?? null;
-  const event =
-    insertedEvent ??
-    (await (async () => {
-      const runId = input.runId;
-      const eventType =
-        input.lifecycleEvent === "failed" ? "run.failed" : "run.cancelled";
-      const plan = runLifecycleMarkerReadPlan(runId, eventType);
-      const query = tx.select(plan.columns).from(chatEvents);
-      const [marker] = await query.where(plan.condition).limit(plan.limit);
-      return marker;
-    })());
-  if (!event) {
-    return null;
-  }
-  const slackDeliveryCallbackId = input.slackDelivery
-    ? await insertSlackChatDeliveryCallback({
-        db: tx,
-        runId: input.runId,
-        sourceCallbackId: input.sourceCallbackId,
-        target: input.slackDelivery,
-        chatEventId: event.id,
-      })
-    : undefined;
-  const feishuDeliveryCallbackId = input.feishuDelivery
-    ? await insertChatDeliveryCallback({
-        db: tx,
-        runId: input.runId,
-        sourceCallbackId: input.sourceCallbackId,
-        ...feishuChatDeliveryFields(input.feishuDelivery, event.id),
-      })
-    : undefined;
-  const teamsDeliveryCallbackId = input.teamsDelivery
-    ? await insertChatDeliveryCallback({
-        db: tx,
-        runId: input.runId,
-        sourceCallbackId: input.sourceCallbackId,
-        ...teamsChatDeliveryFields(input.teamsDelivery, event.id),
-      })
-    : undefined;
-  const discordTarget = input.discordDelivery;
-  const discordReply =
-    discordTarget && insertedEvent
-      ? await (async () => {
-          const [run] = await tx
-            .select(discordReplyRunSelection)
-            .from(agentRuns)
-            .where(eq(agentRuns.id, input.runId))
-            .limit(1);
-          return discordReplyRequest({
-            run,
-            target: discordTarget,
-            chatEventId: event.id,
-          });
-        })()
-      : undefined;
-  const wechatDeliveryCallbackId = input.wechatDelivery
-    ? await insertChatDeliveryCallback({
-        db: tx,
-        runId: input.runId,
-        sourceCallbackId: input.sourceCallbackId,
-        internalKind: "wechat:chat",
-        chatEventId: event.id,
-        payload: {
-          userId: input.userId,
-          orgId: input.orgId,
-          chatThreadId: input.threadId,
-          target: input.wechatDelivery,
-          chatEventId: event.id,
-        },
-      })
-    : undefined;
-  const telegramDeliveryCallbackId = input.telegramDelivery
-    ? await insertChatDeliveryCallback({
-        db: tx,
-        runId: input.runId,
-        sourceCallbackId: input.sourceCallbackId,
-        ...telegramChatDeliveryFields(input.telegramDelivery, event.id),
-      })
-    : undefined;
-  const agentphoneDeliveryCallbackId = input.agentphoneDelivery
-    ? await insertChatDeliveryCallback({
-        db: tx,
-        runId: input.runId,
-        sourceCallbackId: input.sourceCallbackId,
-        ...agentPhoneChatDeliveryFields(input.agentphoneDelivery, event.id),
-      })
-    : undefined;
+type AssistantErrorEventProjection = RunLifecycleDeliveryCallbacks & {
+  readonly markerInserted: boolean;
+};
+
+function assistantErrorEventTouchOptions(args: AssistantErrorEventArgs) {
   return {
-    markerInserted: insertedEvent !== null,
-    slackDeliveryCallbackId,
-    feishuDeliveryCallbackId,
-    teamsDeliveryCallbackId,
-    discordReply,
-    wechatDeliveryCallbackId,
-    telegramDeliveryCallbackId,
-    agentphoneDeliveryCallbackId,
+    orgId: args.orgId,
+    unarchive:
+      args.lifecycleEvent === "failed" &&
+      !hasExternalNotificationDeliveryChannel(args),
+    markRead:
+      args.lifecycleEvent === "failed" &&
+      hasExternalNotificationDeliveryChannel(args),
+  };
+}
+
+function assistantErrorEventResult(
+  displayErrorMessage: string,
+  inserted: AssistantErrorEventProjection,
+): FailedChatCallbackResult {
+  return {
+    displayErrorMessage,
+    outcome: inserted.markerInserted ? "written" : "replayed",
+    slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
+    feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
+    teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
+    discordReply: inserted.discordReply,
+    wechatDeliveryCallbackId: inserted.wechatDeliveryCallbackId,
+    telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
+    agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
+  };
+}
+
+function assistantErrorWechatCallbackValues(
+  input: AssistantErrorEventArgs,
+  target: WechatDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    runId: input.runId,
+    sourceCallbackId: input.sourceCallbackId,
+    internalKind: "wechat:chat" as const,
+    chatEventId,
+    payload: {
+      userId: input.userId,
+      orgId: input.orgId,
+      chatThreadId: input.threadId,
+      target,
+      chatEventId,
+    },
   };
 }
 
 const insertAssistantErrorEvent$ = command(
   async (
     { set },
-    args: Omit<AssistantErrorEventArgs, "db">,
+    args: AssistantErrorEventArgs,
     signal: AbortSignal,
   ): Promise<FailedChatCallbackResult> => {
     const database = set(writeDb$);
     const { displayErrorMessage } = args;
     signal.throwIfAborted();
-    const inserted = await insertAssistantErrorEventTransaction(
-      database,
-      { ...args, db: database },
-      displayErrorMessage,
-    );
+    const input = { ...args };
+    const inserted =
+      await (async (): Promise<AssistantErrorEventProjection | null> => {
+        const insertedEvent =
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await database.execute(
+              assistantErrorEventInsertSql(input, displayErrorMessage),
+            ),
+          )[0] ?? null;
+        const event =
+          insertedEvent ??
+          (await (async () => {
+            const runId = input.runId;
+            const eventType = assistantErrorEventType(input.lifecycleEvent);
+            const plan = runLifecycleMarkerReadPlan(runId, eventType);
+            const query = database.select(plan.columns).from(chatEvents);
+            const [marker] = await query
+              .where(plan.condition)
+              .limit(plan.limit);
+            return marker;
+          })());
+        if (!event) {
+          return null;
+        }
+        const slackDeliveryCallbackId = input.slackDelivery
+          ? await insertSlackChatDeliveryCallback({
+              db: database,
+              runId: input.runId,
+              sourceCallbackId: input.sourceCallbackId,
+              target: input.slackDelivery,
+              chatEventId: event.id,
+            })
+          : undefined;
+        const feishuDeliveryCallbackId = input.feishuDelivery
+          ? await insertChatDeliveryCallback({
+              db: database,
+              runId: input.runId,
+              sourceCallbackId: input.sourceCallbackId,
+              ...feishuChatDeliveryFields(input.feishuDelivery, event.id),
+            })
+          : undefined;
+        const teamsDeliveryCallbackId = input.teamsDelivery
+          ? await insertChatDeliveryCallback({
+              db: database,
+              runId: input.runId,
+              sourceCallbackId: input.sourceCallbackId,
+              ...teamsChatDeliveryFields(input.teamsDelivery, event.id),
+            })
+          : undefined;
+        const discordTarget = input.discordDelivery;
+        const discordReply =
+          discordTarget && insertedEvent
+            ? await (async () => {
+                const [run] = await database
+                  .select(discordReplyRunSelection)
+                  .from(agentRuns)
+                  .where(eq(agentRuns.id, input.runId))
+                  .limit(1);
+                return discordReplyRequest({
+                  run,
+                  target: discordTarget,
+                  chatEventId: event.id,
+                });
+              })()
+            : undefined;
+        const wechatDeliveryCallbackId = input.wechatDelivery
+          ? await insertChatDeliveryCallback({
+              db: database,
+              ...assistantErrorWechatCallbackValues(
+                input,
+                input.wechatDelivery,
+                event.id,
+              ),
+            })
+          : undefined;
+        const telegramDeliveryCallbackId = input.telegramDelivery
+          ? await insertChatDeliveryCallback({
+              db: database,
+              runId: input.runId,
+              sourceCallbackId: input.sourceCallbackId,
+              ...telegramChatDeliveryFields(input.telegramDelivery, event.id),
+            })
+          : undefined;
+        const agentphoneDeliveryCallbackId = input.agentphoneDelivery
+          ? await insertChatDeliveryCallback({
+              db: database,
+              runId: input.runId,
+              sourceCallbackId: input.sourceCallbackId,
+              ...agentPhoneChatDeliveryFields(
+                input.agentphoneDelivery,
+                event.id,
+              ),
+            })
+          : undefined;
+        return {
+          markerInserted: insertedEvent !== null,
+          slackDeliveryCallbackId,
+          feishuDeliveryCallbackId,
+          teamsDeliveryCallbackId,
+          discordReply,
+          wechatDeliveryCallbackId,
+          telegramDeliveryCallbackId,
+          agentphoneDeliveryCallbackId,
+        };
+      })();
     signal.throwIfAborted();
     if (!inserted) {
       return { outcome: "duplicate" };
@@ -1063,30 +1089,12 @@ const insertAssistantErrorEvent$ = command(
     await set(
       touchChatThreadLastMessageAtIndependently$,
       args.threadId,
-      {
-        orgId: args.orgId,
-        unarchive:
-          args.lifecycleEvent === "failed" &&
-          !hasExternalNotificationDeliveryChannel(args),
-        markRead:
-          args.lifecycleEvent === "failed" &&
-          hasExternalNotificationDeliveryChannel(args),
-      },
+      assistantErrorEventTouchOptions(args),
       signal,
     );
     await publishAssistantErrorEventSignals(args);
     signal.throwIfAborted();
-    return {
-      displayErrorMessage,
-      outcome: inserted.markerInserted ? "written" : "replayed",
-      slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
-      feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
-      teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
-      discordReply: inserted.discordReply,
-      wechatDeliveryCallbackId: inserted.wechatDeliveryCallbackId,
-      telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
-      agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
-    };
+    return assistantErrorEventResult(displayErrorMessage, inserted);
   },
 );
 

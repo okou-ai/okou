@@ -816,6 +816,36 @@ export function chatEventInsertSql(
   );
 }
 
+export function assistantErrorEventType(
+  lifecycleEvent: "failed" | "cancelled",
+): "run.failed" | "run.cancelled" {
+  return lifecycleEvent === "failed" ? "run.failed" : "run.cancelled";
+}
+
+export function assistantErrorEventInsertSql(
+  input: {
+    readonly threadId: string;
+    readonly lifecycleEvent: "failed" | "cancelled";
+    readonly runId: string;
+    readonly failureReason: RunFailureReasonToken | null;
+  },
+  displayErrorMessage: string,
+): SQL {
+  return chatEventInsertSql(
+    {
+      chatThreadId: input.threadId,
+      eventType: assistantErrorEventType(input.lifecycleEvent),
+      content: displayErrorMessage,
+      runId: input.runId,
+      error: displayErrorMessage,
+      ...(input.lifecycleEvent === "failed" && input.failureReason !== null
+        ? { failureReason: input.failureReason }
+        : {}),
+    },
+    "run-lifecycle",
+  );
+}
+
 export function integrationCompletionFallbackInsertSql(
   eventId: string,
   input: {
