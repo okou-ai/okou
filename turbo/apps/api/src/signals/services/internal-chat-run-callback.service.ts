@@ -1278,9 +1278,7 @@ function runLifecycleMarkerTouchOptions(
   };
 }
 
-function runLifecycleMarkerResult(
-  inserted: RunLifecycleMarkerProjection,
-): {
+function runLifecycleMarkerResult(inserted: RunLifecycleMarkerProjection): {
   readonly outcome: "written" | "replayed";
 } & RunLifecycleDeliveryCallbacks {
   return {
