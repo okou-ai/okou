@@ -108,9 +108,7 @@ type AgentMentionAvatarsSyncCommand = Command<Promise<void>, [AbortSignal]>;
 
 interface ComposerWorkflowNames {
   readonly sync$: WorkflowNamesSyncCommand;
-  /** Latches the workflow list once the draft has any text. */
-  readonly request$: Command<boolean, []>;
-  /** Requests the list for the draft and syncs its names when newly latched. */
+  /** Syncs an empty-to-text edit before its input is published to the draft. */
   readonly syncForInput$: Command<void, [AbortSignal]>;
 }
 
@@ -235,7 +233,7 @@ export interface WorkflowComposerSignals {
     Promise<ComposerChatThreadSuggestionResult>
   >;
   readonly agentId$: Computed<Promise<string | null>>;
-  /** Null until the draft first has text. */
+  /** Null while the draft has no text. */
   readonly workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>;
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
@@ -315,43 +313,30 @@ export interface ComposerTemplateAttachment {
 function createComposerAgentResources<T extends AgentIdValue>(
   editor: Editor,
   agentIdSource$: Computed<T>,
+  hasInput$: Computed<boolean>,
 ) {
   const agentId$ = computed(async (get): Promise<string | null> => {
     return await get(agentIdSource$);
   });
   const allWorkflows$ = createComposerWorkflows(agentId$);
-  // The workflow list is only needed for `/` tokens. An untouched composer
-  // does not request it; the first keystroke does, so the list is usually
-  // ready by the time a `/` opens the menu.
-  const workflowsRequested$ = state(false);
+  // Empty drafts do not need workflows. The underlying computed retains its
+  // request and result when the draft is cleared and later edited again.
   const workflows$ = computed((get) => {
-    return get(workflowsRequested$) ? get(allWorkflows$) : null;
+    return get(hasInput$) ? get(allWorkflows$) : null;
   });
-  const sync$ = createSyncWorkflowNamesCommand(editor, agentId$, workflows$);
-  const request$ = command(({ get, set }): boolean => {
-    if (
-      get(workflowsRequested$) ||
-      workflowComposerDocToString(editor).trim() === ""
-    ) {
-      return false;
-    }
-    set(workflowsRequested$, true);
-    return true;
-  });
-  const syncForInput$ = command(({ set }, mountSignal: AbortSignal): void => {
-    if (set(request$)) {
-      detach(
-        set(sync$, mountSignal, mountSignal),
-        Reason.Daemon,
-        "composer workflow names",
-      );
-    }
-  });
-  const workflowNames: ComposerWorkflowNames = {
-    sync$,
-    request$,
-    syncForInput$,
-  };
+  const sync$ = createSyncWorkflowNamesCommand(editor, agentId$, allWorkflows$);
+  const syncForInput$ = command(
+    ({ get, set }, mountSignal: AbortSignal): void => {
+      if (!get(hasInput$)) {
+        detach(
+          set(sync$, mountSignal, mountSignal),
+          Reason.Daemon,
+          "composer workflow names",
+        );
+      }
+    },
+  );
+  const workflowNames: ComposerWorkflowNames = { sync$, syncForInput$ };
   return { agentId$, workflows$, workflowNames };
 }
 
@@ -2034,7 +2019,7 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
 function createSyncWorkflowNamesCommand(
   editor: Editor,
   agentId$: Computed<Promise<string | null>>,
-  workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>,
+  workflows$: Computed<Promise<readonly ComposerWorkflow[]>>,
 ): WorkflowNamesSyncCommand {
   const resetWorkflowNamesSyncSignal$ = resetSignal();
   return command(
@@ -2043,7 +2028,12 @@ function createSyncWorkflowNamesCommand(
       mountSignal: AbortSignal,
       signal: AbortSignal,
     ): Promise<void> => {
-      if (mountSignal.aborted) {
+      // Programmatic draft changes synchronize the editor before publishing
+      // draft.input$, so the mounted document owns this demand check.
+      if (
+        mountSignal.aborted ||
+        workflowComposerDocToString(editor).trim() === ""
+      ) {
         return;
       }
       signal.throwIfAborted();
@@ -2057,7 +2047,7 @@ function createSyncWorkflowNamesCommand(
         get(workflows$),
       ]);
       signal.throwIfAborted();
-      if (syncSignal.aborted || workflows === null) {
+      if (syncSignal.aborted) {
         return;
       }
       const workflowNames = buildComposerSlashWorkflows({
@@ -2458,8 +2448,8 @@ function createMountEditorCommand({
         runtime.replaceFeedbackItems(
           feedbackItemsFromWorkflowComposer(updatedEditor),
         );
-        set(draft.setInput$, workflowComposerDocToString(updatedEditor));
         set(workflowNames.syncForInput$, signal);
+        set(draft.setInput$, workflowComposerDocToString(updatedEditor));
         set(
           draft.setEditorDocument$,
           createEditorDocumentSnapshot(updatedEditor.state.doc),
@@ -2521,7 +2511,6 @@ function createMountEditorCommand({
       );
       set(legacyTemplateAttachment.sync$);
       set(templateSelection.sync$);
-      set(workflowNames.request$);
       editor.mount(element);
       mountLocalizationListener(editor, runtime, signal);
       set(mountComposition$, signal);
@@ -3395,6 +3384,7 @@ export function createWorkflowComposerSignals<
   const { agentId$, workflows$, workflowNames } = createComposerAgentResources(
     editor,
     agentIdSource$,
+    draft.hasInput$,
   );
   const syncAgentMentionAvatars$ = createSyncAgentMentionAvatarsCommand(
     agentMentionAvatarRuntime,
