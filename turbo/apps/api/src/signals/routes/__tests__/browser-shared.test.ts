@@ -205,10 +205,10 @@ describe("shared Browser public consumers", () => {
           if (!window) {
             throw new Error("Expected the replacement shared window");
           }
+          f.provider.native.targets.clear();
           accepted(
             await a.request({ kind: "retire", ...window, reason: "closed" }),
           );
-          f.provider.native.targets.clear();
           accepted(await a.request({ kind: "completeWindowClose", ...window }));
         } else {
           const [providerSessionId] = f.provider.sessionIds;
@@ -446,14 +446,15 @@ describe("shared Browser public consumers", () => {
         client().close({ headers, params: { threadId: a.threadId }, body: {} }),
         [200],
       );
-      accepted(
-        await a.request({ kind: "retire", ...window, reason: "closed" }),
-      );
+      // Native closure must leave recovery dependent on the sidebar capture.
       for (const [id, target] of f.provider.native.targets) {
         if (target.windowId === window.primaryWindowId) {
           f.provider.native.targets.delete(id);
         }
       }
+      accepted(
+        await a.request({ kind: "retire", ...window, reason: "closed" }),
+      );
       accepted(await a.request({ kind: "completeWindowClose", ...window }));
       const resumed = await use(a);
       expect(resumed.browser.window?.instanceId).toBe(window.instanceId);
@@ -767,10 +768,10 @@ describe("shared Browser capture publication and admission", () => {
           page.url = "about:blank";
         }
         await accept(client().close({ headers, params, body: {} }), [200]);
+        f.provider.native.targets.delete(page.targetId);
         accepted(
           await a.request({ kind: "retire", ...window, reason: "closed" }),
         );
-        f.provider.native.targets.delete(page.targetId);
         accepted(await a.request({ kind: "completeWindowClose", ...window }));
         const reopened = await use(a);
         expect(reopened.browser.window?.primaryWindowId).not.toBe(
@@ -832,14 +833,14 @@ describe("shared Browser capture publication and admission", () => {
         client().close({ headers, params: { threadId: a.threadId }, body: {} }),
         [200],
       );
-      accepted(
-        await a.request({ kind: "retire", ...window, reason: "closed" }),
-      );
       for (const [id, target] of f.provider.native.targets) {
         if (target.windowId === window.primaryWindowId) {
           f.provider.native.targets.delete(id);
         }
       }
+      accepted(
+        await a.request({ kind: "retire", ...window, reason: "closed" }),
+      );
       accepted(await a.request({ kind: "completeWindowClose", ...window }));
       const both = createDeferredPromise<void>(context.signal);
       let arrivals = 0;
@@ -1172,14 +1173,16 @@ describe("shared Browser capture publication and admission", () => {
         if (!joined.ok) {
           throw joined.error;
         }
-        accepted(
-          await a.request({ kind: "retire", ...window, reason: "closed" }),
-        );
+        // Retire an already closed native window so it cannot re-save newer
+        // URLs and mask a stale concurrent sidebar snapshot publication.
         for (const [id, target] of f.provider.native.targets) {
           if (target.windowId === window.primaryWindowId) {
             f.provider.native.targets.delete(id);
           }
         }
+        accepted(
+          await a.request({ kind: "retire", ...window, reason: "closed" }),
+        );
         accepted(await a.request({ kind: "completeWindowClose", ...window }));
         const reopened = await use(a);
         expect(reopened.browser.window?.instanceId).toBe(window.instanceId);
@@ -1291,14 +1294,14 @@ describe("shared Browser capture publication and admission", () => {
           }),
           [200],
         );
-        accepted(
-          await a.request({ kind: "retire", ...window, reason: "closed" }),
-        );
         for (const [id, target] of f.provider.native.targets) {
           if (target.windowId === window.primaryWindowId) {
             f.provider.native.targets.delete(id);
           }
         }
+        accepted(
+          await a.request({ kind: "retire", ...window, reason: "closed" }),
+        );
         accepted(await a.request({ kind: "completeWindowClose", ...window }));
         if (entry === "runner") {
           accepted(
