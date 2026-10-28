@@ -60,7 +60,7 @@ export function BrowserPresence({
         <div
           aria-hidden
           data-browser-presence="agent"
-          className="absolute inset-0 ring-2 ring-primary/60 ring-inset shadow-[inset_0_0_32px_hsl(var(--primary)/0.16)]"
+          className="absolute inset-0 shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.4),inset_0_0_28px_hsl(var(--primary)/0.3)]"
         />
         <div role="status" className={PILL_CLASS_NAME}>
           <span
@@ -85,7 +85,7 @@ export function BrowserPresence({
                 "take over the cloud browser",
               );
             }}
-            className="shrink-0 rounded-full"
+            className="shrink-0 rounded-full text-[13px]"
           >
             <Hand />
             {t(($) => {
@@ -125,7 +125,7 @@ export function BrowserPresence({
             );
             setTakeoverRunId(null);
           }}
-          className="shrink-0 rounded-full"
+          className="shrink-0 rounded-full text-[13px]"
         >
           {t(($) => {
             return $.browserSession.presence.handBack;
