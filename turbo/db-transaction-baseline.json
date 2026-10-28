@@ -7,11 +7,6 @@
       "owner": "updateAgentMetadataInner$"
     },
     {
-      "id": "TX-0019",
-      "file": "turbo/apps/api/src/signals/routes/integrations-agentphone.ts",
-      "owner": "sendAgentPhoneVerificationText$"
-    },
-    {
       "id": "TX-0047",
       "file": "turbo/apps/api/src/signals/services/agent-deletion.service.ts",
       "owner": "deleteAgentRows$"
