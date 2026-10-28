@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.20.3](https://github.com/okou-ai/okou/compare/api-v2.20.2...api-v2.20.3) (2026-10-28)
+
+
+### Refactoring
+
+* **api:** localize terminal delivery callback registration ([#43673](https://github.com/okou-ai/okou/issues/43673)) ([4f09fc6](https://github.com/okou-ai/okou/commit/4f09fc66da38072bd2ac33ed9fd8fad319ec8dcf))
+* **browser:** roll out okou viewer and remove feature switch ([#43671](https://github.com/okou-ai/okou/issues/43671)) ([97e8ca7](https://github.com/okou-ai/okou/commit/97e8ca71f4d6ac0cd015de589eb5d8179a96bddd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.2
+    * @okouai/db bumped to 2.8.6
+    * @okouai/pi-agent-runtime bumped to 1.51.12
+
 ## [2.20.2](https://github.com/okou-ai/okou/compare/api-v2.20.1...api-v2.20.2) (2026-10-28)
 
 
