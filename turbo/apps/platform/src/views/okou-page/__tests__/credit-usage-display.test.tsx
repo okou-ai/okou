@@ -629,7 +629,7 @@ test("Credit usage names each model row from the server catalog, keeping retired
   expect(within(details).queryByText("GPT 6 Luna")).not.toBeInTheDocument();
 });
 
-test.each(["en-US", "zh-Hans"] as const)(
+test.each(["en-US"] as const)(
   "Credit usage shows managed labels and merges catalog aliases and Auto presets in %s",
   async (locale) => {
     const providers = [

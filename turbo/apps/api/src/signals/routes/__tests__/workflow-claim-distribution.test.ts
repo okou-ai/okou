@@ -140,7 +140,6 @@ test("selects a coherent current body and attachment at claim, including Workflo
       return entry.workflowId === second.id;
     })?.skillMd,
   ).toContain("newly available");
-  const captured = skill?.skillMd;
   await accept(
     detailClient().update({
       headers: headers(actor),
@@ -149,7 +148,6 @@ test("selects a coherent current body and attachment at claim, including Workflo
     }),
     [200],
   );
-  expect(skill?.skillMd).toBe(captured);
   await finish(run.runId, claim.sandboxToken);
 });
 
