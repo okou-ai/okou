@@ -135,6 +135,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private struct PreparedRows {
     let rows: [ConversationCollectionRow]
     let measurements: [String: Measurement]
+    var estimatedIDs: Set<String> = []
   }
 
   private struct ObservedHeight {
@@ -149,6 +150,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
   private var source: ConversationCollectionView<Content>
   private var measurements: [String: Measurement] = [:]
+  private var estimatedIDs = Set<String>()
+  private var nearbyPreparation: Task<Void, Never>?
+  private var nearbyPreparationID = UUID()
+  private var schedulesNearbyPreparation = false
   private var displayedRows: [String: ConversationCollectionRow] = [:]
   private var displayedWidth: CGFloat = 0
   private var displayedCategory = UIContentSizeCategory.unspecified
@@ -241,25 +246,39 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       guard let self else { return nil }
       let cell = collection.dequeueReusableCell(withReuseIdentifier: "message", for: index)
       guard let row = self.displayedRows[id], let measurement = self.measurements[id] else {
-        preconditionFailure("Every displayed conversation row must have a measurement")
+        preconditionFailure("Every displayed conversation row must have a presentation size")
       }
+      let isEstimated = self.estimatedIDs.contains(id)
       if let cell = cell as? MessageSelectionCell {
-        cell.message = row.message
-        cell.quote = self.source.quote
+        cell.representedRowID = row.id
+        cell.message = isEstimated ? nil : row.message
+        cell.quote = isEstimated ? nil : self.source.quote
       }
       cell.clipsToBounds = true
       let content = self.source.content(row, self.source.anchor)
+      // Keep the hosting configuration type stable when an estimate becomes measured.
       cell.contentConfiguration = UIHostingConfiguration {
-        content
-          .fixedSize(horizontal: false, vertical: true)
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: { [weak self] height in
-            self?.observeHeight(
-              height, row: row, width: measurement.width, category: measurement.category)
-          }
-          .frame(height: measurement.height, alignment: .topLeading)
+        if isEstimated {
+          // Never clip real message content into an estimated-height cell.
+          ProgressView()
+            .frame(width: measurement.width, height: measurement.height)
+            .accessibilityLabel("Loading message")
+        } else {
+          content
+            .id(row.id)
+            .frame(width: measurement.width, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) {
+              $0.size.height
+            } action: { [weak self, weak cell] height in
+              guard (cell as? MessageSelectionCell)?.representedRowID == row.id else { return }
+              self?.observeHeight(
+                height, row: row, width: measurement.width, category: measurement.category)
+            }
+            .frame(height: measurement.height, alignment: .topLeading)
+        }
       }.margins(.all, 0)
+      if isEstimated { self.scheduleNearbyMeasurements() }
       return cell
     }
     source.anchor.isPresentedMarker = { [weak self] marker in
@@ -286,6 +305,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       publishViewportChange()
     }
     prepareRowsIfNeeded()
+    scheduleNearbyMeasurements()
     source.sendTransition?.layoutDidChange()
     publishMetrics()
   }
@@ -342,6 +362,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     stopLoading()
     preparation?.cancel()
     preparation = nil
+    nearbyPreparation?.cancel()
+    nearbyPreparation = nil
+    nearbyPreparationID = UUID()
     refreshTask?.cancel()
     refreshTask = nil
     for task in resizeTasks.values { task.cancel() }
@@ -404,7 +427,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private func prepareRowsIfNeeded() {
     defer { updateLoading() }
-    guard !stopped, collection.bounds.width > 0 else { return }
+    guard !stopped, view.window != nil, collection.bounds.width > 0 else { return }
     let width = collection.bounds.width
     let category = traitCollection.preferredContentSizeCategory
     guard requestedRows != source.rows || requestedWidth != width || requestedCategory != category
@@ -412,6 +435,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     requestedRows = source.rows
     requestedWidth = width
     requestedCategory = category
+    nearbyPreparation?.cancel()
+    nearbyPreparation = nil
+    nearbyPreparationID = UUID()
     preparation?.cancel()
     preparation = nil
     let generation = UUID()
@@ -420,7 +446,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let rows = source.rows
     var preparedMeasurements: [String: Measurement] = [:]
     for row in rows {
-      if let measured = measurements[row.id], measured.row == row, measured.width == width,
+      if !estimatedIDs.contains(row.id),
+        let measured = measurements[row.id], measured.row == row, measured.width == width,
         measured.category == category
       {
         preparedMeasurements[row.id] = measured
@@ -430,7 +457,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         preparedMeasurements[row.id] = measured
       }
     }
-    let missing = rows.filter { preparedMeasurements[$0.id] == nil }
+    var missing = rows.filter { preparedMeasurements[$0.id] == nil }
     let validIDs = Set(rows.map(\.id)).subtracting(missing.map(\.id))
     for id in resizeTasks.keys where !validIDs.contains(id) {
       resizeTasks.removeValue(forKey: id)?.cancel()
@@ -439,9 +466,13 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     observedHeights = observedHeights.filter { validIDs.contains($0.key) }
     // Measure the outgoing literal text without mounting temporary SwiftUI trees
     // on the send's first animation frames. Other rows keep their hosted measurement.
+    let outgoing = missing.filter { row in
+      row.id == source.sendTransition?.messageID || row.id == "conversation-bottom"
+    }
     let measuresImmediately =
       source.sendTransition?.hidesBubbleID != nil
-      && missing.allSatisfy { row in
+      && !outgoing.isEmpty
+      && outgoing.allSatisfy { row in
         switch row {
         case .message(let message, _, _, _, _, _):
           message.id == source.sendTransition?.messageID
@@ -453,13 +484,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         }
       }
     if measuresImmediately {
-      for (row, height) in zip(missing, measureImmediately(missing, width: width)) {
+      for (row, height) in zip(outgoing, measureImmediately(outgoing, width: width)) {
         preparedMeasurements[row.id] = Measurement(
           row: row, width: width, category: category, height: height)
       }
-      preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
-      applyPreparedRows()
-      return
+      // Unvisited history must not disable the outgoing text animation's fast path.
+      missing.removeAll { preparedMeasurements[$0.id] != nil }
     }
     if missing.isEmpty {
       preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
@@ -468,24 +498,144 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
     preparation = Task { [weak self] in
       guard let self else { return }
-      // Four temporary hosts at a time bound retained views even in an expanded history.
-      for start in stride(from: 0, to: missing.count, by: 4) {
-        let batch = Array(missing[start..<min(start + 4, missing.count)])
+      let position = source.anchor.preservedPosition ?? captureReadingPosition()
+      let target = pendingScroll?.0 ?? (source.followsBottom ? nil : position?.messageID)
+      let backwards = pendingScroll?.1 == .bottom || (pendingScroll == nil && source.followsBottom)
+      var index =
+        target.flatMap { id in rows.firstIndex { $0.id == id } }
+        ?? (backwards ? rows.count - 1 : 0)
+      let viewportHeight = max(
+        1,
+        collection.bounds.height
+          - collection.adjustedContentInset.top - collection.adjustedContentInset.bottom)
+      let requiredHeight = viewportHeight + (backwards ? 0 : max(0, -(position?.offset ?? 0)))
+      var coveredHeight: CGFloat = 0
+      // Prepare only the landing viewport before publishing the whole render window.
+      // Four hosts still bound live SwiftUI measurement work.
+      while rows.indices.contains(index), coveredHeight < requiredHeight {
+        var batch: [ConversationCollectionRow] = []
+        while rows.indices.contains(index), batch.count < 4, coveredHeight < requiredHeight {
+          let row = rows[index]
+          index += backwards ? -1 : 1
+          if let measured = preparedMeasurements[row.id] {
+            coveredHeight += measured.height
+          } else {
+            batch.append(row)
+          }
+        }
         for row in batch {
           if let message = row.message { _ = await source.markdown.content(for: message.text) }
           guard !Task.isCancelled, preparationID == generation else { return }
         }
-        let heights = await measure(batch, width: width)
-        guard !Task.isCancelled, preparationID == generation else { return }
-        for (row, height) in zip(batch, heights) {
-          preparedMeasurements[row.id] = Measurement(
-            row: row, width: width, category: category, height: height)
+        if !batch.isEmpty {
+          let heights = await measure(batch, width: width)
+          guard !Task.isCancelled, preparationID == generation else { return }
+          for (row, height) in zip(batch, heights) {
+            preparedMeasurements[row.id] = Measurement(
+              row: row, width: width, category: category, height: height)
+            coveredHeight += height
+          }
         }
+      }
+      let estimates = Set(rows.filter { preparedMeasurements[$0.id] == nil }.map(\.id))
+      for row in rows where estimates.contains(row.id) {
+        preparedMeasurements[row.id] = Measurement(
+          row: row, width: width, category: category, height: estimatedHeight(row, width: width))
       }
       guard !Task.isCancelled, preparationID == generation, !stopped else { return }
       preparation = nil
-      preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
+      preparedRows = PreparedRows(
+        rows: rows, measurements: preparedMeasurements, estimatedIDs: estimates)
       applyPreparedRows()
+    }
+  }
+
+  private func estimatedHeight(_ row: ConversationCollectionRow, width: CGFloat) -> CGFloat {
+    switch row {
+    case .message(let message, let avatar, let spacing, _, _, _):
+      let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
+      let contentWidth = message.role == .user ? (width - 40) * 0.85 - 28 : width - 46
+      let perLine = max(1, contentWidth / (font.pointSize * 0.52))
+      let lines = max(1, ceil(CGFloat(message.text.utf16.count) / perLine))
+      return pixelHeight(
+        lines * font.lineHeight + spacing
+          + (message.role == .user ? 28 : (avatar ? 36 : 0))
+          + CGFloat(message.attachments.count) * 160)
+    case .work(_, _, let avatar, let spacing): return pixelHeight(spacing + (avatar ? 68 : 32))
+    case .failure(_, _, let spacing): return pixelHeight(spacing + 140)
+    case .footer(let state, let avatar):
+      return pixelHeight(45 + (state.isActive ? (avatar ? 84 : 48) : 0))
+    case .earlier: return 44
+    case .followups: return 160
+    case .usage: return 56
+    }
+  }
+
+  private func scheduleNearbyMeasurements() {
+    guard !stopped, !schedulesNearbyPreparation else { return }
+    schedulesNearbyPreparation = true
+    // Cell/scroll callbacks can run inside layout. Start measurement outside that pass.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      schedulesNearbyPreparation = false
+      // Pending snapshots may contain newer row revisions than the presented cells.
+      guard !stopped, !appliesRows, preparedRows == nil,
+        preparation == nil, nearbyPreparation == nil,
+        displayedWidth == collection.bounds.width,
+        displayedCategory == traitCollection.preferredContentSizeCategory
+      else { return }
+      let pendingEstimates = estimatedIDs
+      guard !pendingEstimates.isEmpty else { return }
+      let viewport = collection.bounds.inset(by: collection.adjustedContentInset)
+      let nearby = viewport.insetBy(dx: 0, dy: -max(1, viewport.height))
+      let attributes = layout.layoutAttributesForElements(in: nearby) ?? []
+      let rows = attributes.filter { attributes in
+        attributes.representedElementCategory == .cell
+          && dataSource.itemIdentifier(for: attributes.indexPath).map(pendingEstimates.contains)
+            == true
+      }.sorted { left, right in
+        func distance(_ frame: CGRect) -> CGFloat {
+          max(0, max(viewport.minY - frame.maxY, frame.minY - viewport.maxY))
+        }
+        let lhs = distance(left.frame)
+        let rhs = distance(right.frame)
+        return lhs == rhs ? left.indexPath.item < right.indexPath.item : lhs < rhs
+      }.prefix(4).compactMap { attributes in
+        dataSource.itemIdentifier(for: attributes.indexPath).flatMap { displayedRows[$0] }
+      }
+      guard !rows.isEmpty else { return }
+      let generation = preparationID
+      let taskID = UUID()
+      let width = displayedWidth
+      let category = displayedCategory
+      nearbyPreparationID = taskID
+      nearbyPreparation = Task { [weak self] in
+        guard let self else { return }
+        defer {
+          if nearbyPreparationID == taskID {
+            nearbyPreparation = nil
+            scheduleNearbyMeasurements()
+          }
+        }
+        for row in rows {
+          if let message = row.message { _ = await source.markdown.content(for: message.text) }
+          guard !Task.isCancelled, preparationID == generation else { return }
+        }
+        let heights = await measure(rows, width: width)
+        guard !Task.isCancelled, !stopped, preparationID == generation else { return }
+        var updated = preparedRows?.measurements ?? measurements
+        var remaining = preparedRows?.estimatedIDs ?? estimatedIDs
+        for (row, height) in zip(rows, heights) {
+          guard displayedRows[row.id] == row, remaining.contains(row.id) else { continue }
+          let value = Measurement(row: row, width: width, category: category, height: height)
+          updated[row.id] = value
+          remaining.remove(row.id)
+          source.measurements.store(value)
+        }
+        preparedRows = PreparedRows(
+          rows: requestedRows, measurements: updated, estimatedIDs: remaining)
+        applyPreparedRows()
+      }
     }
   }
 
@@ -602,21 +752,26 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     if !source.followsBottom, let position { source.anchor.preserve(position) }
     let oldIDs = Set(dataSource.snapshot().itemIdentifiers)
     var updatedMeasurements = prepared.measurements
+    var updatedEstimates = prepared.estimatedIDs
     for row in rows {
-      if let current = measurements[row.id], let prepared = updatedMeasurements[row.id],
+      if !estimatedIDs.contains(row.id), let current = measurements[row.id],
+        let prepared = updatedMeasurements[row.id],
         current.row == prepared.row, current.width == prepared.width,
         current.category == prepared.category
       {
         updatedMeasurements[row.id] = current
+        updatedEstimates.remove(row.id)
       }
     }
     let changed = rows.filter {
       oldIDs.contains($0.id)
-        && (displayedRows[$0.id] != $0 || measurements[$0.id] != updatedMeasurements[$0.id])
+        && (displayedRows[$0.id] != $0 || measurements[$0.id] != updatedMeasurements[$0.id]
+          || estimatedIDs.contains($0.id) != updatedEstimates.contains($0.id))
     }.map(\.id)
     for row in rows { displayedRows[row.id] = row }
     measurements = updatedMeasurements
-    for row in rows {
+    estimatedIDs = updatedEstimates
+    for row in rows where !estimatedIDs.contains(row.id) {
       if let measurement = measurements[row.id] { source.measurements.store(measurement) }
     }
     displayedWidth = requestedWidth
@@ -630,8 +785,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       appliesRows = false
       displayedRows = displayedRows.filter { ids.contains($0.key) }
       measurements = measurements.filter { ids.contains($0.key) }
+      estimatedIDs.formIntersection(ids)
       collection.layoutIfNeeded()
       updateLoading()
+      scheduleNearbyMeasurements()
       let firstItemID = rows.first(where: { $0.readingContentTopSpacing != nil })?.id
       DispatchQueue.main.async { [weak self] in
         guard let self, !stopped else { return }
@@ -744,7 +901,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     sizeForItemAt indexPath: IndexPath
   ) -> CGSize {
     guard let id = dataSource.itemIdentifier(for: indexPath), let measurement = measurements[id]
-    else { preconditionFailure("Every collection item must have a measured conversation row") }
+    else { preconditionFailure("Every collection item must have a conversation presentation size") }
     return CGSize(width: collectionView.bounds.width, height: measurement.height)
   }
 
@@ -757,6 +914,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     source.sendTransition?.preserveOffset()
+    scheduleNearbyMeasurements()
     publishMetrics()
   }
 
@@ -771,6 +929,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     animatesScroll = false
     applyPreparedRows()
     applyObservedHeights()
+    scheduleNearbyMeasurements()
     publishMetrics()
     DispatchQueue.main.async { [weak self] in
       guard let self, !stopped, source.sendTransition?.isActive != true else { return }
@@ -808,7 +967,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     _ height: CGFloat, row: ConversationCollectionRow, width: CGFloat,
     category: UIContentSizeCategory
   ) {
-    guard !stopped, height.isFinite, height > 0, width == collection.bounds.width,
+    guard !stopped, !estimatedIDs.contains(row.id),
+      height.isFinite, height > 0, width == collection.bounds.width,
       let measurement = measurements[row.id], measurement.row == row, measurement.width == width,
       measurement.category == category
     else { return }
