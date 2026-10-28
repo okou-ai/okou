@@ -19,6 +19,8 @@ observed_sha=unavailable
 report() {
   local exit_status=$?
   trap - EXIT
+  # Reporting needs only variables. Release credentials before any fallible I/O.
+  rm -rf "$work_dir"
   if [ "$exit_status" -ne 0 ]; then
     echo "::warning::API Worker rollback: $worker_detail The canonical Vercel API rollback is not blocked."
   fi
@@ -36,7 +38,6 @@ report() {
       printf "* Version: \`%s\`\n* Deployment: \`%s\`\n* Observed SHA: \`%s\`\n" "$version_id" "$deployment_id" "$observed_sha"
     } >> "$GITHUB_STEP_SUMMARY"
   fi
-  rm -rf "$work_dir"
   exit "$exit_status"
 }
 trap 'report' EXIT

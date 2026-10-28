@@ -368,8 +368,9 @@ cp "$5" "$COMMENT_FILE"
     assert.match(body, /Canonical Vercel API \| success/);
     assert.match(body, /API Worker \(non-blocking\) \| failed/);
     assert.ok(body.includes("5".repeat(40)));
-    assert.ok(
-      body.includes("https://github.com/okou-ai/okou/actions/runs/123"),
+    assert.equal(
+      body.trimEnd().split("\n").at(-1),
+      "[Workflow logs](https://github.com/okou-ai/okou/actions/runs/123)",
     );
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });

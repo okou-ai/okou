@@ -168,6 +168,15 @@ for scenario in stale-sha unhealthy; do
   [ "$(wc -l < "$work_dir/sleeps")" -eq 5 ]
 done
 
+# A full/unwritable reporting sink must not retain the private token file.
+export SCENARIO=missing-version
+export GITHUB_OUTPUT=/dev/full
+status=0
+bash "$script" > "$work_dir/log" 2>&1 || status=$?
+[ "$status" -ne 0 ]
+header=$(< "$work_dir/header-path")
+[ ! -e "$header" ]
+
 echo 'API Worker paired rollback process tests passed'
 # Workflow policy and notification consumer tests use only Node built-ins.
 node --test "$script_dir/../api-worker-workflow.test.cjs"
