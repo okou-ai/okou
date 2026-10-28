@@ -28,10 +28,11 @@ describe("native owner Browser window admission", () => {
         const instance = await allocate(chat);
         const discoveryUrl = `https://cdp.browser-use.com/${randomUUID()}`;
         const reached = createDeferredPromise<void>(context.signal);
-        const deadline = new AbortController();
+        const cancelled = createDeferredPromise<void>(context.signal);
         async function withhold(request: Request) {
           reached.resolve();
           await once(request.signal, "abort", { signal: context.signal });
+          cancelled.resolve();
         }
         server.use(
           http.get(
@@ -58,9 +59,6 @@ describe("native owner Browser window admission", () => {
             });
           }),
         );
-        context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-          return milliseconds === 15_000 ? deadline.signal : undefined;
-        });
         const admission = settleIncludingAbort(
           f.owned.run(() => {
             return chat.control({
@@ -70,11 +68,12 @@ describe("native owner Browser window admission", () => {
           }),
         );
         const checks = await settleIncludingAbort(async () => {
-          await reached.promise;
-          deadline.abort(
-            new DOMException("Owned provider deadline", "TimeoutError"),
-          );
-          await expect(admission).resolves.toMatchObject({
+          const [result] = await Promise.all([
+            admission,
+            reached.promise,
+            cancelled.promise,
+          ]);
+          expect(result).toMatchObject({
             ok: true,
             value: {
               status: 503,
@@ -86,13 +85,14 @@ describe("native owner Browser window admission", () => {
           ).toBeNull();
           expect(f.provider.native.created).toHaveLength(0);
         });
-        deadline.abort();
         await admission;
         if (!checks.ok) {
           throw checks.error;
         }
       });
     },
+    // Exercise the real 15-second deadline with setup and cleanup headroom.
+    30_000,
   );
 
   it.each([
@@ -461,27 +461,21 @@ describe("native owner Browser window admission", () => {
       await f.owned.run(async () => {
         const chat = await f.start();
         const instance = await allocate(chat);
-        if (failure === "disconnect") {
-          f.provider.native.createReply = "disconnect";
-        } else {
-          const deadline = new AbortController();
-          context.mocks.abortSignal.timeout.mockImplementation(
-            (milliseconds) => {
-              return milliseconds === 15_000 ? deadline.signal : undefined;
-            },
-          );
-          f.provider.native.createReply = "withhold";
-          f.provider.native.beforeCreateReply = () => {
-            deadline.abort(
-              new DOMException("Owned native deadline", "TimeoutError"),
-            );
-          };
-        }
-        const result = await chat.control({
-          kind: "admit",
-          instanceId: instance.id,
-        });
-        context.mocks.abortSignal.timeout.mockReset();
+        const reached = createDeferredPromise<void>(context.signal);
+        const closed = createDeferredPromise<void>(context.signal);
+        f.provider.native.createReply =
+          failure === "disconnect" ? "disconnect" : "withhold";
+        f.provider.native.beforeCreateReply = () => {
+          reached.resolve();
+        };
+        f.provider.native.onSocketClose = () => {
+          closed.resolve();
+        };
+        const [result] = await Promise.all([
+          chat.control({ kind: "admit", instanceId: instance.id }),
+          reached.promise,
+          closed.promise,
+        ]);
         expect(result.status).toBe(failure === "disconnect" ? 502 : 503);
         expect(result.body).toMatchObject({
           error: {
@@ -499,6 +493,7 @@ describe("native owner Browser window admission", () => {
         expect(f.provider.native.closed).toHaveLength(0);
       });
     },
+    30_000,
   );
 
   it("rejects admission without creating native targets when the owner switch is off", async () => {
