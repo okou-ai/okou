@@ -27,6 +27,7 @@ import { inferMimetype } from "../../lib/mimetype";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import {
+  isAgentPhoneApiError,
   sendAgentPhoneMessage,
   sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
@@ -78,10 +79,8 @@ const SIGNATURE_PREFIX = "sha256=";
 const MAX_CONTEXT_MESSAGES = 10;
 const AGENTPHONE_SMS_MMS_SLASH_COMMAND_RISK_MESSAGE =
   "Note: SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.";
-const AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE =
-  "To connect this phone number, message this number directly in a 1:1 iMessage conversation.";
 const AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE =
-  "Only the linked sender can use account commands in a group. Message this number directly to connect or manage your link.";
+  "Only the linked sender can disconnect their account in a group. Message this number directly to manage your link.";
 const AGENTPHONE_CHAT_MESSAGE_ID_NAMESPACE =
   "3208d609-59a7-4b0e-9c3b-3db20e9c924f";
 
@@ -170,14 +169,11 @@ function shouldIgnoreAgentPhoneGroupMessage(
   return isAgentPhoneGroupEvent(event) && !event.mentioned;
 }
 
-function isAgentPhoneGroupAccountCommand(
+function isAgentPhoneGroupDisconnectCommand(
   event: AgentPhoneMessageEvent,
   commandName: string | undefined,
 ): boolean {
-  return (
-    isAgentPhoneGroupEvent(event) &&
-    (commandName === "connect" || commandName === "disconnect")
-  );
+  return isAgentPhoneGroupEvent(event) && commandName === "disconnect";
 }
 
 function normalizeHandleForConnect(handle: string): string {
@@ -958,27 +954,58 @@ const sendConnectPrompt$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const body = formatConnectPrompt(event);
+    if (isAgentPhoneGroupEvent(event)) {
+      // The signed link proves ownership of the sender's handle. Deliver it
+      // privately, without replying to a message from the group conversation.
+      const recipient = {
+        agentphoneAgentId: event.agentphoneAgentId,
+        toNumber: normalizeAgentPhoneHandle(event.fromNumber, event.channel),
+      };
+      const sent = await settle(
+        sendAgentPhoneMessage(
+          {
+            ...recipient,
+            body,
+          },
+          signal,
+        ),
+        signal,
+      );
+      let groupNotice =
+        "Please message this number directly to get your connection link.";
+      if (sent.ok) {
+        groupNotice = `I've sent you a private connection link. Open it and click Connect to link your number to ${BRAND_PRESENTATION.brandName}, then mention me here to start chatting.`;
+      } else if (
+        isAgentPhoneApiError(sent.error) &&
+        sent.error.status === 422 &&
+        sent.error.code === "CONVERSATION_CONTENT_RESTRICTED"
+      ) {
+        // Only a confirmed content rejection permits another send. A timeout
+        // or server error can leave the first message's outcome unknown.
+        const greeting = await settle(
+          sendAgentPhoneMessage(
+            {
+              ...recipient,
+              body: `Hi, I'm ${BRAND_PRESENTATION.brandName}. You mentioned me in the group. Reply to this message and I'll send you a private link to connect your account.`,
+            },
+            signal,
+          ),
+          signal,
+        );
+        if (greeting.ok) {
+          groupNotice =
+            "I've sent you a private message. Please reply there so I can send you your connection link.";
+        }
+      }
+      await set(sendAgentPhoneText$, event, groupNotice, signal);
+      return;
+    }
     await set(
       sendAgentPhoneText$,
       event,
       options?.slashCommand
         ? appendAgentPhoneSlashCommandRiskWarning(body, event.channel)
         : body,
-      signal,
-    );
-  },
-);
-
-const sendGroupConnectInDmPrompt$ = command(
-  async (
-    { set },
-    event: AgentPhoneMessageEvent,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(
-      sendAgentPhoneText$,
-      event,
-      AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE,
       signal,
     );
   },
@@ -1010,7 +1037,7 @@ const blockUnauthorizedGroupAccountCommand$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     if (
-      !isAgentPhoneGroupAccountCommand(args.event, args.commandText) ||
+      !isAgentPhoneGroupDisconnectCommand(args.event, args.commandText) ||
       args.userLink
     ) {
       return false;
@@ -1466,11 +1493,6 @@ export const handleAgentPhoneMessage$ = command(
 
     const userLink = params.userLink;
     if (!userLink) {
-      if (isAgentPhoneGroupEvent(params.event)) {
-        await set(sendGroupConnectInDmPrompt$, params.event, signal);
-        return;
-      }
-
       await set(sendConnectPrompt$, params.event, undefined, signal);
       return;
     }
