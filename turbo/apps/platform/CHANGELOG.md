@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1077.5](https://github.com/okou-ai/okou/compare/app-v0.1077.4...app-v0.1077.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **platform:** add google fonts for multilingual glyph fallback ([#44032](https://github.com/okou-ai/okou/issues/44032)) ([da406b7](https://github.com/okou-ai/okou/commit/da406b7b5e8059f5db906c417f24552650f921b6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.800.6
+
 ## [0.1077.4](https://github.com/okou-ai/okou/compare/app-v0.1077.3...app-v0.1077.4) (2026-10-29)
 
 

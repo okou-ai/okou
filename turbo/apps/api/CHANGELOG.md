@@ -9,6 +9,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.25.3](https://github.com/okou-ai/okou/compare/api-v2.25.2...api-v2.25.3) (2026-10-29)
+
+
+### Refactoring
+
+* remove outlook chat mail feature switch ([#44040](https://github.com/okou-ai/okou/issues/44040)) ([685f0d1](https://github.com/okou-ai/okou/commit/685f0d10e07c044f9987fa5e0a4552f3241a196b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.800.6
+    * @okouai/db bumped to 2.11.5
+    * @okouai/pi-agent-runtime bumped to 1.51.25
+
 ## [2.25.2](https://github.com/okou-ai/okou/compare/api-v2.25.1...api-v2.25.2) (2026-10-29)
 
 

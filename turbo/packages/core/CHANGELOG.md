@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.800.6](https://github.com/okou-ai/okou/compare/core-v8.800.5...core-v8.800.6) (2026-10-29)
+
+
+### Refactoring
+
+* remove outlook chat mail feature switch ([#44040](https://github.com/okou-ai/okou/issues/44040)) ([685f0d1](https://github.com/okou-ai/okou/commit/685f0d10e07c044f9987fa5e0a4552f3241a196b))
+
 ## [8.800.5](https://github.com/okou-ai/okou/compare/core-v8.800.4...core-v8.800.5) (2026-10-29)
 
 

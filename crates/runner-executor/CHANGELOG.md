@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.16.3...runner-executor-v0.16.4) (2026-10-29)
+
+
+### Refactoring
+
+* remove outlook chat mail feature switch ([#44040](https://github.com/okou-ai/okou/issues/44040)) ([685f0d1](https://github.com/okou-ai/okou/commit/685f0d10e07c044f9987fa5e0a4552f3241a196b))
+
 ## [0.16.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.16.2...runner-executor-v0.16.3) (2026-10-29)
 
 ## [0.16.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.16.1...runner-executor-v0.16.2) (2026-10-29)
