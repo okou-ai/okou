@@ -7164,7 +7164,7 @@
       "expires": "连接码在 10 分钟后过期。保持此页面打开以查看连接结果。",
       "instructions": "打开 WhatsApp 或扫描二维码，将连接码发送给 Okou 即可绑定账号。",
       "loading": "正在生成连接码…",
-      "markets": "支持欧洲经济区、巴西和土耳其的 WhatsApp 号码。",
+      "markets": "WhatsApp 的可用性受 Meta 政策限制。",
       "name": "WhatsApp",
       "open": "打开 WhatsApp",
       "options": "WhatsApp 选项",

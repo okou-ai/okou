@@ -21,6 +21,7 @@ import {
   createAgentPhoneBddApi,
   AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
+  uniquePhoneHandle,
 } from "./helpers/api-bdd-agentphone";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
@@ -515,7 +516,46 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     );
   });
 
-  it("does not bind unsupported markets or group messages", async () => {
+  it.each([undefined, "", "   "])(
+    "connects and sends to any country when the prefix allowlist is %s",
+    async (prefixes) => {
+      mockEnv("WHATSAPP_ALLOWED_COUNTRY_PREFIXES", prefixes);
+      const setup = await configure();
+      const phone = await connect(setup, uniquePhoneHandle());
+      setup.sends.length = 0;
+      await accept(
+        client().sendMessage({
+          headers: headers(setup.actor),
+          body: { text: "Your report is ready" },
+        }),
+        [200],
+      );
+      expect(setup.sends).toHaveLength(1);
+      expect(setup.sends[0]).toMatchObject({
+        channel: "whatsapp",
+        to_number: phone,
+        body: "Your report is ready",
+      });
+    },
+  );
+
+  it("applies the configured country prefixes to outbound sends", async () => {
+    const setup = await configure();
+    await connect(setup, uniquePhoneHandle());
+    setup.sends.length = 0;
+    mockEnv("WHATSAPP_ALLOWED_COUNTRY_PREFIXES", "+49");
+    await accept(
+      client().sendMessage({
+        headers: headers(setup.actor),
+        body: { text: "Your report is ready" },
+      }),
+      [404],
+    );
+    expect(setup.sends).toHaveLength(0);
+  });
+
+  it("enforces configured country prefixes and does not bind group messages", async () => {
+    mockEnv("WHATSAPP_ALLOWED_COUNTRY_PREFIXES", " +49, +55, +90 ");
     const setup = await configure();
     const code = await accept(
       client().createLinkCode({ headers: headers(setup.actor) }),

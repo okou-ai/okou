@@ -999,4 +999,26 @@ done
 assert_env_value "$production_api_env_file" OKOU_DATA_ROUTER_URL "https://data.okou.ai/mcp"
 assert_env_value "$production_api_env_file" OKOU_DATA_TOKEN "github-data-router-token"
 
+assert_env_value "$success_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES ""
+assert_env_value "$production_api_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES ""
+assert_env_key_absent "$production_web_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES
+for whatsapp_environment in preview production; do
+  for whatsapp_app in api web; do
+    whatsapp_dir="$(mktemp -d)"
+    TEMP_DIRS+=("$whatsapp_dir")
+    run_switch_action \
+      "$whatsapp_dir" \
+      "$whatsapp_app" \
+      "$whatsapp_environment" \
+      '{"WHATSAPP_ALLOWED_COUNTRY_PREFIXES":"+1,+49"}' \
+      > "${whatsapp_dir}/output"
+    whatsapp_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${whatsapp_dir}/github-output")"
+    if [[ "$whatsapp_app" == "api" ]]; then
+      assert_env_value "$whatsapp_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES "+1,+49"
+    else
+      assert_env_key_absent "$whatsapp_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES
+    fi
+  done
+done
+
 echo "web-api-env-action-test: ok"
