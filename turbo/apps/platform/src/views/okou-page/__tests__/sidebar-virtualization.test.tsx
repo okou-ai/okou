@@ -127,7 +127,9 @@ test("Restore the mobile chat-list scroll position after reopening the sidebar",
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
   }, threadCount);
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: "/agents" });
+  const agentCard = await screen.findByText("Nova");
+  expect(agentCard).toBeInTheDocument();
   click(screen.getByLabelText("Open menu"));
   const drawer = screen.getByLabelText("Sidebar", {
     selector: '[role="dialog"]',
