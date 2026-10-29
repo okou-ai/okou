@@ -139,8 +139,8 @@ export function BrowserSessionUnavailable() {
 }
 
 /**
- * Map the viewer's supported palette variables onto the app tokens so the
- * browser reads as part of the panel.
+ * Keep the public viewer theme bound to live app semantics, including palette
+ * changes that do not change the light/dark color scheme.
  */
 function okouViewerStyle(): CdpViewerStyle {
   const stateLayer = (alpha: string) => {
@@ -154,13 +154,30 @@ function okouViewerStyle(): CdpViewerStyle {
     "--cdpv-radius": 0,
     "--cdpv-background": "hsl(var(--background))",
     "--cdpv-tab-background": "hsl(var(--background))",
-    "--cdpv-address-background": stateLayer("--state-selected-alpha"),
+    "--cdpv-tab-selected-background": "hsl(var(--background))",
+    "--cdpv-address-background": "hsl(var(--input))",
     "--cdpv-stage-background": "hsl(var(--background))",
     "--cdpv-foreground": "hsl(var(--foreground))",
     "--cdpv-muted": "hsl(var(--muted-foreground))",
     "--cdpv-border": "hsl(var(--divider))",
-    "--cdpv-accent": "hsl(var(--primary))",
-    "--cdpv-on-accent": "hsl(var(--primary-foreground))",
+    // Use the same neutral filled actions as other standalone app panels.
+    "--cdpv-accent": "hsl(var(--foreground))",
+    "--cdpv-on-accent": "hsl(var(--background))",
+    "--cdpv-primary-hover-background": "var(--color-foreground-hover)",
+    "--cdpv-hover": stateLayer("--state-hover-alpha"),
+    "--cdpv-option-selected-background": stateLayer("--state-selected-alpha"),
+    "--cdpv-focus": "hsl(var(--ring))",
+    "--cdpv-error": "hsl(var(--destructive))",
+    // Diagnostics overlay remote pixels, so their tinted surface stays opaque.
+    "--cdpv-error-background":
+      "color-mix(in srgb, hsl(var(--background)), hsl(var(--destructive)) var(--state-selected-alpha))",
+    "--cdpv-popup-background": "hsl(var(--popover))",
+    "--cdpv-popup-foreground": "hsl(var(--popover-foreground))",
+    "--cdpv-popup-shadow": "var(--surface-shadow)",
+    "--cdpv-loading-shadow": "var(--surface-shadow)",
+    // Match the shared Button/Input/menu disabled strength, including busy work.
+    "--cdpv-disabled-opacity": 0.5,
+    "--cdpv-busy-opacity": 0.5,
   };
 }
 
