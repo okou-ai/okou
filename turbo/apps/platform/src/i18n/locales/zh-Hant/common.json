@@ -655,7 +655,6 @@
       "label": "網站網址",
       "loadFailed": "無法載入網站設定",
       "oldUrlWarning": "舊網址將失效，請更新已分享的連結。",
-      "published": "已發佈",
       "save": "儲存",
       "saveFailed": "無法儲存。此地址可能已被使用或變更。",
       "taken": "此網址已被使用",

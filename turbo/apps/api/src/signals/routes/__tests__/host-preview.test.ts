@@ -37,7 +37,6 @@ import {
   okouTokenFromClaim,
 } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const host = createHostBddApi(context);
@@ -196,16 +195,12 @@ describe("sandbox hosted previews", () => {
     if (!owner.orgId) {
       throw new Error("Expected an organization");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...owner, orgId: owner.orgId },
-      { [FeatureSwitchKey.HostedSiteVisibility]: false },
-    );
     previewStorage();
     const prepared = await host.prepareHostedSite(owner, {
       site: "sproutpop-launch-deck-p9jk",
       artifactKind: "presentation-html",
       spaFallback: false,
+      visibility: "public",
       files: [hostedTextFile("/index.html", "<main>Welcome example</main>")],
     });
     await host.completeHostedSite(owner, prepared.deploymentId);
@@ -225,20 +220,15 @@ describe("sandbox hosted previews", () => {
         "https://static.vm0.io/vm0/welcome-thread/2026-10-26-previews/sproutpop-a826bd3d2831.png",
     });
     mocks.clerk.session(owner.userId, owner.orgId);
-    await accept(
-      setupAppWithRoutes({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.HostedSiteVisibility]: true } },
-      }),
+    const policy = await accept(
+      api.siteVisibility({ headers, params: { siteId: prepared.siteId } }),
       [200],
     );
     await accept(
       api.updateSiteVisibility({
         headers,
         params: { siteId: prepared.siteId },
-        body: { visibility: "private", expectedRevision: null },
+        body: { visibility: "private", expectedRevision: policy.body.revision },
       }),
       [200],
     );
@@ -318,7 +308,7 @@ describe("sandbox hosted previews", () => {
     },
   );
 
-  it("resolves published covers with visibility settings disabled and authorizes them through the current Site policy", async () => {
+  it("resolves published covers and authorizes them through the current Site policy", async () => {
     const owner = createBddApi(context).user();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
@@ -327,23 +317,13 @@ describe("sandbox hosted previews", () => {
     const headers = { authorization: "Bearer clerk-session" };
     const mocks = createRouteMocks(context);
     mocks.clerk.session(actor.userId, actor.orgId);
-    const features = setupAppWithRoutes({
-      context,
-      routes: featureSwitchesRoutes,
-    })(featureSwitchesContract);
-    await accept(
-      features.update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.HostedSiteVisibility]: false } },
-      }),
-      [200],
-    );
     previewStorage();
     const bytes = png;
     const prepared = await host.prepareHostedSite(actor, {
       site: `cover-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site",
       spaFallback: false,
+      visibility: "public",
       files: [hostedTextFile("/index.html", "<main>Website</main>")],
       preview: preview(bytes),
     });
@@ -371,18 +351,15 @@ describe("sandbox hosted previews", () => {
     expect((await accept(api.sitePreview(request), [200])).body).toStrictEqual(
       first.body,
     );
-    await accept(
-      features.update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.HostedSiteVisibility]: true } },
-      }),
+    const policy = await accept(
+      api.siteVisibility({ headers, params: { siteId: prepared.siteId } }),
       [200],
     );
     await accept(
       api.updateSiteVisibility({
         headers,
         params: { siteId: prepared.siteId },
-        body: { visibility: "private", expectedRevision: null },
+        body: { visibility: "private", expectedRevision: policy.body.revision },
       }),
       [200],
     );

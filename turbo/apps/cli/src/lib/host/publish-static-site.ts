@@ -19,7 +19,7 @@ interface PublishStaticSiteProgress {
 }
 
 interface PublishStaticSiteResult {
-  readonly visibility?: HostedSiteCliVisibility;
+  readonly visibility: HostedSiteCliVisibility;
   readonly title: string;
   readonly siteId: string;
   readonly deploymentId: string;
@@ -179,7 +179,7 @@ function publicationResult(
   completed: HostedSiteCompleteResponse,
   fileCount: number,
   size: number,
-): Omit<PublishStaticSiteResult, "title"> {
+): Omit<PublishStaticSiteResult, "title" | "visibility"> {
   return {
     siteId: completed.siteId,
     deploymentId: completed.deploymentId,

@@ -258,7 +258,7 @@ type PrepareDeploymentResult =
       readonly status: "ok";
       readonly body: {
         readonly siteId: string;
-        readonly visibility?: HostedSiteVisibility;
+        readonly visibility: HostedSiteVisibility;
         readonly deploymentId: string;
         readonly publicSlug: string;
         readonly url: string;
@@ -699,7 +699,7 @@ const createHostedSiteDeployment$ = command(
 export const prepareHostedSiteDeployment$ = command(
   async (
     { get, set },
-    args: PrepareDeploymentArgs & { readonly visibilityEnabled: boolean },
+    args: PrepareDeploymentArgs,
     signal: AbortSignal,
   ): Promise<PrepareDeploymentResult> => {
     const hostedR2 = hostedR2Config();
@@ -753,20 +753,18 @@ export const prepareHostedSiteDeployment$ = command(
     const publicSlug = siteAndDeployment.site.publicSlug;
     const url = siteAndDeployment.deployment.url;
 
-    const visibility = args.visibilityEnabled
-      ? await set(
-          prepareHostedSiteVisibility$,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            siteId: siteAndDeployment.site.id,
-            visibility: args.body.visibility,
-            unpublished: siteAndDeployment.site.activeDeploymentId === null,
-          },
-          signal,
-        )
-      : undefined;
-    if (visibility && visibility.status !== "ok") {
+    const visibility = await set(
+      prepareHostedSiteVisibility$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        siteId: siteAndDeployment.site.id,
+        visibility: args.body.visibility,
+        unpublished: siteAndDeployment.site.activeDeploymentId === null,
+      },
+      signal,
+    );
+    if (visibility.status !== "ok") {
       return visibility;
     }
 
@@ -815,9 +813,7 @@ export const prepareHostedSiteDeployment$ = command(
       status: "ok",
       body: {
         siteId: siteAndDeployment.site.id,
-        ...(visibility === undefined
-          ? {}
-          : { visibility: visibility.visibility }),
+        visibility: visibility.visibility,
         ...(args.body.title === undefined
           ? {}
           : { title: artifact?.title ?? args.body.title }),

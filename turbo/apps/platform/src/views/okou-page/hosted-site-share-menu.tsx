@@ -1,7 +1,6 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { Check, Globe, Loader2, Pencil, Share2 } from "lucide-react";
+import { Check, Loader2, Pencil, Share2 } from "lucide-react";
 import {
   Button,
   Input,
@@ -15,7 +14,6 @@ import { useTranslation } from "react-i18next";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   getHostedSiteShareScope,
   type HostedSiteShareSession,
@@ -32,61 +30,6 @@ interface ShareButtonProps {
   readonly ariaLabel: string;
   readonly className?: string;
   readonly iconSize?: number;
-}
-
-/**
- * The published address is the menu's title. It is plain text rather than a
- * boxed field because a box is for typing, and the site opens from it. The
- * scheme says nothing the reader needs; the subdomain is the part they chose
- * and the part that tells two sites apart, so it gives way first while the
- * domain stays readable.
- */
-function SiteAddress({ link }: { readonly link: string }) {
-  const address = link.replace(/^https?:\/\//u, "");
-  const dot = address.indexOf(".");
-  return (
-    <a
-      href={link}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex max-w-full font-medium text-foreground underline-offset-4 hover:underline"
-    >
-      <span className="truncate">
-        {dot > 0 ? address.slice(0, dot) : address}
-      </span>
-      {dot > 0 && (
-        <span className="shrink-0 text-muted-foreground">
-          {address.slice(dot)}
-        </span>
-      )}
-    </a>
-  );
-}
-
-function SiteStatus({
-  link,
-  loading,
-}: {
-  readonly link: string | null;
-  readonly loading: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex items-start gap-2 text-sm">
-      <Globe size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        {link !== null && <SiteAddress link={link} />}
-        {loading && <Skeleton className="h-5 w-40 rounded" />}
-        <p className="text-xs text-muted-foreground">
-          <span>
-            {t(($) => {
-              return $.artifacts.siteUrl.published;
-            })}
-          </span>
-        </p>
-      </div>
-    </div>
-  );
 }
 
 function HostedSiteBannerSetting({
@@ -486,12 +429,9 @@ function HostedSiteShareBody({
   // settled actions instead of a loading frame.
   const details = useLoadable(session.details$);
   const editing = useGet(session.editing$);
-  const switches = useGet(featureSwitch$);
-  const visibilityEnabled = switches[FeatureSwitchKey.HostedSiteVisibility];
-  const showPermissions = visibilityEnabled && !editing;
+  const showPermissions = !editing;
   return (
     <div className={showPermissions ? "p-1.5" : "p-4"}>
-      {!visibilityEnabled && <SiteStatus link={link} loading={loading} />}
       {showPermissions && <HostedSitePermissions session={session} />}
       <div className={cn(showPermissions && "px-2")}>
         {showPermissions && <HostedSiteBannerSetting session={session} />}

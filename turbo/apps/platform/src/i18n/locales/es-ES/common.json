@@ -672,7 +672,6 @@
       "label": "URL del sitio",
       "loadFailed": "No se pudo cargar la configuración del sitio",
       "oldUrlWarning": "La URL anterior dejará de funcionar. Actualiza los enlaces compartidos.",
-      "published": "Publicado",
       "save": "Guardar",
       "saveFailed": "No se pudo guardar. Es posible que la dirección esté ocupada o haya cambiado.",
       "taken": "Esta dirección ya está en uso",

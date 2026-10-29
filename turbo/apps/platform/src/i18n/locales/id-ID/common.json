@@ -655,7 +655,6 @@
       "label": "URL situs",
       "loadFailed": "Tidak dapat memuat pengaturan situs",
       "oldUrlWarning": "URL lama tidak akan berfungsi. Perbarui tautan yang telah dibagikan.",
-      "published": "Dipublikasikan",
       "save": "Simpan",
       "saveFailed": "Tidak dapat menyimpan. Alamat mungkin sudah digunakan atau berubah.",
       "taken": "Alamat ini sudah digunakan",

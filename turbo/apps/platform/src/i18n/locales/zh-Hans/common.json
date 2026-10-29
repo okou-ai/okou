@@ -655,7 +655,6 @@
       "label": "网站网址",
       "loadFailed": "无法加载网站设置",
       "oldUrlWarning": "旧网址将失效，请更新已分享的链接。",
-      "published": "已发布",
       "save": "保存",
       "saveFailed": "无法保存。此地址可能已被占用或更改。",
       "taken": "该网址已被占用",

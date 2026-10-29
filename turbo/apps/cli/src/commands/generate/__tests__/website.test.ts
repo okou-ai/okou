@@ -105,15 +105,13 @@ describe("okou generate website command", () => {
     expect(stdout).toContain(
       "okou host ./generated/mockups/clearpath-demo --site clearpath-demo --title 'Clearpath' --spa --preview ./generated/previews/clearpath-demo.png --json\n",
     );
-    expect(stdout).not.toContain("Hosted websites are public:");
-    expect(stdout).not.toContain("--visibility");
     expect(stdout).not.toContain(
       "supporting generated media at its default visibility",
     );
     expect(stdout).not.toContain("okou web upload-file -f <file>");
   });
 
-  it("provides a direct host command without file-upload or visibility guidance", async () => {
+  it("provides a direct host command with default-private guidance", async () => {
     await generateCommand.parseAsync([
       "node",
       "cli",
@@ -133,7 +131,6 @@ describe("okou generate website command", () => {
     expect(stdout).not.toContain(
       "do not make supporting media public separately",
     );
-    expect(stdout).not.toContain("Hosted websites are public:");
     const imageWorkflow = stdout.split("\n").find((line) => {
       return line.startsWith("- Image workflow:");
     });
@@ -156,11 +153,7 @@ describe("okou generate website command", () => {
     expect(stdout).toContain("https://static.okou.io/html-resources/");
   });
 
-  it("explains default-private hosting when hosted-site visibility is enabled", async () => {
-    vi.stubEnv(
-      "OKOU_TOKEN",
-      buildRunToken(["host:write", "host-visibility:write"]),
-    );
+  it("explains default-private hosting", async () => {
     await generateCommand.parseAsync([
       "node",
       "okou",
@@ -170,7 +163,6 @@ describe("okou generate website command", () => {
     ]);
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain("New hosted sites default to only-me");
-    expect(stdout).not.toContain("Hosted sites are public");
   });
 
   it("should emit the image batch workflow exactly once", async () => {

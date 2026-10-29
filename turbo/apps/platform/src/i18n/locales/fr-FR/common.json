@@ -672,7 +672,6 @@
       "label": "URL du site",
       "loadFailed": "Impossible de charger les paramètres du site",
       "oldUrlWarning": "L’ancienne URL ne fonctionnera plus. Mettez à jour les liens partagés.",
-      "published": "Publié",
       "save": "Enregistrer",
       "saveFailed": "Impossible d’enregistrer. Cette adresse est peut-être déjà utilisée ou a changé.",
       "taken": "Cette adresse est déjà prise",
