@@ -172,6 +172,20 @@ test("validates addresses and hides other owners' websites", async () => {
     }),
     [404],
   );
+  const unchanged = await accept(
+    client(owner).siteUrl({
+      headers,
+      params: { publicSlug: name },
+      query: { hostname: `${name}.okou.app` },
+    }),
+    [200],
+  );
+  expect(unchanged.body).toMatchObject({
+    siteId: prepared.siteId,
+    publicSlug: name,
+    url: `https://${name}.okou.app`,
+    isActive: true,
+  });
 });
 
 test("rejects stale edits and reserves previous published names for their owner", async () => {
