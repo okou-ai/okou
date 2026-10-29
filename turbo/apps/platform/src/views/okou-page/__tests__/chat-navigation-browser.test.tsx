@@ -150,7 +150,10 @@ function mockWideScreen(): void {
   });
 }
 
-function openConversation(chatEvents: MockChatEventInput[]): Promise<void> {
+function openConversation(
+  chatEvents: MockChatEventInput[],
+  refined = false,
+): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
@@ -160,6 +163,7 @@ function openConversation(chatEvents: MockChatEventInput[]): Promise<void> {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: refined },
   });
 }
 
@@ -340,7 +344,7 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
 test("Start and close a browser from the thread sidebar", async () => {
   mockWideScreen();
   const browser = mockBrowserApi(null);
-  await openConversation(completedConversationEvents());
+  await openConversation(completedConversationEvents(), true);
   await expectConversationReady();
 
   click(buttonByName("Open browser"));
@@ -436,27 +440,29 @@ test("Take over the cloud browser from a working run and hand it back through th
   click(buttonByName("Open browser"));
   const sidebar = liveBrowserSidebar();
   await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  expect(
+    within(viewer).getByLabelText("Open this browser in a new page"),
+  ).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
   await expect(
-    within(sidebar).findByText(/is working$/u),
+    within(viewer).findByText(/is working$/u),
   ).resolves.toBeInTheDocument();
 
-  click(buttonByName("Take over", sidebar));
+  click(buttonByName("Take over", viewer));
   await expect(
-    within(sidebar).findByText("You're in control"),
+    within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
 
-  click(buttonByName("Hand back", sidebar));
+  click(buttonByName("Hand back", viewer));
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
       "I'm done in the browser. Please continue.",
     );
   });
   expect(within(sidebar).queryByText("You're in control")).toBeNull();
-  expect(
-    within(sidebar).getByLabelText("Open this browser in a new page"),
-  ).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
-
-  click(buttonByName("Close cloud browser", sidebar));
+  click(buttonByName("Close cloud browser", viewer));
   await waitFor(() => {
     expect(sidebar).not.toBeInTheDocument();
   });

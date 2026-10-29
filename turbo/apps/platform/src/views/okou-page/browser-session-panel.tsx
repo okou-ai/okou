@@ -154,7 +154,7 @@ function okouViewerStyle(): CdpViewerStyle {
     "--cdpv-radius": 0,
     "--cdpv-background": "hsl(var(--background))",
     "--cdpv-tab-background": "hsl(var(--background))",
-    "--cdpv-tab-selected-background": "hsl(var(--background))",
+    "--cdpv-tab-selected-background": stateLayer("--state-selected-alpha"),
     "--cdpv-address-background": "hsl(var(--input))",
     "--cdpv-stage-background": "hsl(var(--background))",
     "--cdpv-foreground": "hsl(var(--foreground))",
@@ -167,6 +167,9 @@ function okouViewerStyle(): CdpViewerStyle {
     "--cdpv-hover": stateLayer("--state-hover-alpha"),
     "--cdpv-option-selected-background": stateLayer("--state-selected-alpha"),
     "--cdpv-focus": "hsl(var(--ring))",
+    "--cdpv-control-radius": "var(--radius)",
+    "--cdpv-address-radius": "var(--radius)",
+    "--cdpv-stage-focus-width": "1px",
     "--cdpv-error": "hsl(var(--destructive))",
     // Diagnostics overlay remote pixels, so their tinted surface stays opaque.
     "--cdpv-error-background":
@@ -240,7 +243,7 @@ function BrowserCdpViewer({
   }
   return (
     <>
-      {actions ? <PanelActions actions={actions} /> : null}
+      {!refined && actions ? <PanelActions actions={actions} /> : null}
       <div
         key={instanceId ?? liveUrl}
         data-browser-session-cdp-viewer
@@ -257,10 +260,13 @@ function BrowserCdpViewer({
           onCaptureChange={setCapture}
           extensions={[browserUse()]}
           colorScheme={theme}
+          tabStyle={refined ? "floating" : "attached"}
+          toolbarEnd={refined ? actions : undefined}
+          stageOverlay={refined ? overlay : undefined}
           className="w-full flex-1"
           style={refined ? okouViewerStyle() : { height: "100%", minHeight: 0 }}
         />
-        {overlay ? (
+        {!refined && overlay ? (
           <div className="pointer-events-none absolute inset-0 z-10">
             {overlay}
           </div>
