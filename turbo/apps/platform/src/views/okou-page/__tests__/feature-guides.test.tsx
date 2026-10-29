@@ -223,7 +223,10 @@ test("shows a Discord image, hides single-feature navigation, and opens setup wi
   if (!connect) {
     throw new Error("Expected a Discord setup link");
   }
-  expect(connect).toHaveAttribute("href", "/settings/discord");
+  expect(connect).toHaveAttribute(
+    "href",
+    "/settings/discord?featureGuidePreview=1",
+  );
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Meta>}");
   await user.click(connect);
@@ -244,7 +247,7 @@ test.each([
     action: "open-artifacts",
     title: "Delete artifacts you no longer need",
     label: "Manage your artifacts",
-    href: "/artifacts",
+    href: "/artifacts?featureGuidePreview=1",
     destinationRole: "heading",
     destinationName: "Artifacts",
   },
@@ -253,13 +256,14 @@ test.each([
     action: "open-chats",
     title: "Choose who can view a shared chat",
     label: "Open your chats",
-    href: "/",
+    href: "/?featureGuidePreview=1",
     destinationRole: "textbox",
     destinationName: "Message",
   },
 ] as const)(
   "opens $target from the feature guide text link",
   async (example) => {
+    let seen = false;
     const navigationEdition: FeatureGuideEdition = {
       ...edition,
       content: {
@@ -279,8 +283,15 @@ test.each([
         ],
       },
     };
-    context.mocks.api(featureGuidesContract.current, ({ respond }) => {
-      return respond(200, { edition: navigationEdition, preview: true });
+    context.mocks.api(featureGuidesContract.current, ({ query, respond }) => {
+      return respond(200, {
+        edition: navigationEdition,
+        preview: query?.preview === "1",
+      });
+    });
+    context.mocks.api(featureGuidesContract.seen, ({ respond }) => {
+      seen = true;
+      return respond(200, { seen: true });
     });
     await setupPage({
       context,
@@ -313,6 +324,7 @@ test.each([
         name: example.destinationName,
       }),
     ).resolves.toBeInTheDocument();
+    expect(seen).toBeFalsy();
   },
 );
 

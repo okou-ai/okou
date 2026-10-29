@@ -258,6 +258,15 @@ function GuideContents({
       {activeItem.action ? (
         <Link
           pathname={FEATURE_GUIDE_ACTION_ROUTES[activeItem.action.type]}
+          options={
+            snapshot.preview
+              ? {
+                  searchParams: new URLSearchParams({
+                    featureGuidePreview: "1",
+                  }),
+                }
+              : undefined
+          }
           className="inline-flex min-h-8 w-fit items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
           onClick={(event) => {
             if (shouldHandleLinkClick(event)) {
