@@ -57,8 +57,11 @@ export function OnboardingOutputFormats({
   });
 
   return (
-    <section className="mt-6" aria-labelledby="onboarding-output-formats-title">
-      <div className="mb-2 flex items-center justify-between gap-2">
+    <section
+      className="@container mt-6"
+      aria-labelledby="onboarding-output-formats-title"
+    >
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <h3
           id="onboarding-output-formats-title"
           className="text-sm font-medium text-muted-foreground"
@@ -70,6 +73,7 @@ export function OnboardingOutputFormats({
             type="button"
             variant="quiet"
             size="xs"
+            className="shrink-0 max-sm:min-h-11"
             disabled={disabled}
             onClick={() => {
               selectOutput(text, promptKey, null, "");
@@ -83,7 +87,7 @@ export function OnboardingOutputFormats({
         aria-labelledby="onboarding-output-formats-title"
         value={output ? [output.format] : []}
         disabled={disabled}
-        className="grid grid-cols-2 gap-2"
+        className="grid grid-cols-1 items-stretch gap-2 @min-[18rem]:grid-cols-2"
         onValueChange={(values) => {
           const format = values[0];
           if (format) {
@@ -103,10 +107,12 @@ export function OnboardingOutputFormats({
               key={format}
               value={format}
               disabled={tooLong}
-              className="h-10 min-w-0 justify-start gap-2 rounded-lg px-3 text-sm"
+              className="h-auto min-h-10 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left text-sm leading-5 whitespace-normal max-sm:min-h-11"
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
-              {copy.options[format].label}
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                {copy.options[format].label}
+              </span>
             </Toggle>
           );
         })}
