@@ -25,7 +25,7 @@ const STARTED_AT = Date.parse("2026-07-24T10:00:00.000Z");
 const EXTENSION_ID = randomUUID();
 const createBrowserSchema = object({
   profileId: uuid(),
-  extensionIds: array(uuid()).max(3).optional(),
+  extensionIds: array(uuid()).length(1),
 });
 
 function client() {
@@ -205,24 +205,20 @@ describe("Browser extensions", () => {
     });
   });
 
-  it.each([
-    { name: "switch off", enabled: false, id: EXTENSION_ID },
-    { name: "missing configuration", enabled: true, id: undefined },
-    { name: "blank configuration", enabled: true, id: " " },
-  ])("omits extensions for $name", async ({ enabled, id }) => {
-    mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", id);
+  it("installs the required extension with legacy Browser ownership", async () => {
+    mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", EXTENSION_ID);
     const provider = providerFixture();
     provider.completeInstallation();
     const { owned, actor, startRun } = await browserOwner();
     await owned.run(async () => {
       await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: enabled,
+        [FeatureSwitchKey.BrowserSharedOwner]: false,
       });
       const headers = await startRun();
       const started = await accept(client().use({ headers, body: {} }), [200]);
       expect(started.body.browser.status).toBe("active");
       expect(provider.requests).toHaveLength(1);
-      expect(provider.requests[0]).not.toHaveProperty("extensionIds");
+      expect(provider.requests[0]?.extensionIds).toStrictEqual([EXTENSION_ID]);
     });
   });
 

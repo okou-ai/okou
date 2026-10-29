@@ -239,7 +239,6 @@ async function fixture(t) {
     GITHUB_VARIABLES_TOKEN: "variables-fixture-token",
     OKOU_BROWSER_USE_API_KEY: "provider-fixture-key",
     RELEASE_TARGET: source,
-    BROWSER_EXTENSION_RELEASE_CREATED: "true",
     BROWSER_EXTENSION_VERSION: version,
     BROWSER_EXTENSION_TAG: `browser-extension-v${version}`,
     EXTENSION_ARTIFACT_DIR: artifacts,
@@ -249,14 +248,17 @@ async function fixture(t) {
     state,
     archive,
     output,
-    async run(overrides = {}) {
+    async run() {
       await writeFile(output, "");
-      return run(t, publication, { ...env, ...overrides });
+      return run(t, publication, env);
     },
     async outputs() {
       return readOutputs(output);
     },
-    async apiEnvironment() {
+    async apiEnvironment({
+      extensionReleased = true,
+      configuredId = oldId,
+    } = {}) {
       const step = readWorkflow().jobs["promote-api-production"].steps.find(
         (step) => step.id === "browser-extension-env",
       );
@@ -266,11 +268,16 @@ async function fixture(t) {
         cwd: root,
         env: {
           ...process.env,
+          GH_TOKEN: "",
+          GITHUB_VARIABLES_TOKEN: "",
           REPO_VARS_JSON: JSON.stringify({
-            [variable]: oldId,
+            [variable]: configuredId,
             OTHER: "retained",
           }),
-          BROWSER_EXTENSION_ID: (await readOutputs(output)).extension_id,
+          BROWSER_EXTENSION_RELEASE_CREATED: String(extensionReleased),
+          BROWSER_EXTENSION_ID: extensionReleased
+            ? (await readOutputs(output)).extension_id
+            : "",
           GITHUB_OUTPUT: file,
         },
         signal: t.signal,
@@ -374,23 +381,15 @@ test("artifact tampering is rejected before publication", async (t) => {
   assert.equal(f.state.writes, 0);
 });
 
-test("an API-only release reads the current optional ID rather than its queued vars snapshot", async (t) => {
+test("an API-only release preserves its required configuration without publication credentials", async (t) => {
   const f = await fixture(t);
-  for (const current of [newId, ""]) {
-    f.state.current = current;
-    assert.equal(
-      (await f.run({ BROWSER_EXTENSION_RELEASE_CREATED: "false" })).code,
-      0,
-    );
-    assert.deepEqual(await f.apiEnvironment(), {
-      [variable]: current,
-      OTHER: "retained",
-    });
-  }
-  assert.equal(f.state.uploads, 0);
+  assert.deepEqual(
+    await f.apiEnvironment({ extensionReleased: false, configuredId: newId }),
+    { [variable]: newId, OTHER: "retained" },
+  );
 });
 
-test("the API production gate rejects failed, cancelled and skipped extension publication", () => {
+test("the API production gate requires publication only when an extension is released", () => {
   const workflow = readWorkflow();
   const job = workflow.jobs["promote-api-production"];
   assert.ok(job.needs.includes("publish-browser-extension"));
@@ -416,17 +415,45 @@ test("the API production gate rejects failed, cancelled and skipped extension pu
       );
     assert.equal(Function(`return (${expression});`)(), expected);
   }
-  for (const result of ["success", "failure", "cancelled", "skipped"]) {
-    const condition = job.if
-      .replaceAll("always()", "true")
-      .replaceAll("failure()", String(result === "failure"))
-      .replaceAll("cancelled()", String(result === "cancelled"))
-      .replaceAll(
-        "needs.publish-browser-extension.result",
-        JSON.stringify(result),
-      )
-      .replaceAll("needs.release-please.outputs.releases_created", "'true'");
-    assert.equal(Function(`return (${condition});`)(), result === "success");
+  for (const released of [false, true]) {
+    for (const extension of [false, true]) {
+      const publication = workflow.jobs["publish-browser-extension"].if
+        .slice(3, -2)
+        .replaceAll(
+          "needs.release-please.outputs.releases_created",
+          JSON.stringify(String(released)),
+        )
+        .replaceAll(
+          "needs.release-please.outputs.browser_extension_release_created",
+          JSON.stringify(String(extension)),
+        );
+      assert.equal(
+        Function(`return (${publication});`)(),
+        released && extension,
+      );
+      for (const result of ["success", "failure", "cancelled", "skipped"]) {
+        const condition = job.if
+          .replaceAll("always()", "true")
+          .replaceAll("failure()", String(result === "failure"))
+          .replaceAll("cancelled()", String(result === "cancelled"))
+          .replaceAll(
+            "needs.publish-browser-extension.result",
+            JSON.stringify(result),
+          )
+          .replaceAll(
+            "needs.release-please.outputs.releases_created",
+            JSON.stringify(String(released)),
+          )
+          .replaceAll(
+            "needs.release-please.outputs.browser_extension_release_created",
+            JSON.stringify(String(extension)),
+          );
+        const expected =
+          released &&
+          (result === "success" || (!extension && result === "skipped"));
+        assert.equal(Function(`return (${condition});`)(), expected);
+      }
+    }
   }
   const renderer = job.steps.find((step) => {
     return step.id === "api-production-env";

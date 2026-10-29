@@ -3874,7 +3874,6 @@ export async function createBrowserUseSession(
     readonly profileId: string;
     readonly proxyCountryCode: string | null;
     readonly timeoutMinutes: number;
-    readonly extensionId?: string;
     readonly instanceId?: string;
   },
   signal: AbortSignal,
@@ -3891,7 +3890,7 @@ export async function createBrowserUseSession(
         browserScreenHeight: BROWSER_INITIAL_SCREEN_HEIGHT,
         allowResizing: true,
         enableRecording: false,
-        extensionIds: args.extensionId ? [args.extensionId] : undefined,
+        extensionIds: [env("OKOU_BROWSER_USE_EXTENSION_ID")],
         metadata: args.instanceId
           ? { okouInstanceId: args.instanceId }
           : undefined,

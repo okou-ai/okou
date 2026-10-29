@@ -8756,6 +8756,7 @@ describe("okou browser route", () => {
           browserScreenHeight: literal(900),
           allowResizing: literal(true),
           enableRecording: literal(false),
+          extensionIds: array(uuid()).length(1),
         }).parse(body).profileId;
       }),
     ).toStrictEqual(expect.arrayContaining([...profileIds]));

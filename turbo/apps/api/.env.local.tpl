@@ -137,10 +137,9 @@ GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL=op://Development/gmail/GMAIL_PUBSUB_PUSH
 GOOGLE_ADS_DEVELOPER_TOKEN=op://Development/google/GOOGLE_ADS_DEVELOPER_TOKEN
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=op://Development/google/GOOGLE_ADS_LOGIN_CUSTOMER_ID
 
-# Optional: Managed browser provider (Browser Use)
+# Managed browser provider (Browser Use)
 OKOU_BROWSER_USE_API_KEY=op://Development/browser-use/OKOU_BROWSER_USE_API_KEY
-# Optional: one uploaded extension UUID. Installed when
-# BrowserSharedOwner is enabled, during new Browser instance creation only.
+# Required: one uploaded extension UUID, installed on every new managed Browser.
 OKOU_BROWSER_USE_EXTENSION_ID=
 
 # Optional: Steam Web API

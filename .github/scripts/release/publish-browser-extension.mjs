@@ -88,17 +88,6 @@ async function github(
   return json(response, "GitHub");
 }
 
-async function readVariable() {
-  const result = await github(`${root}/actions/variables/${variable}`, {
-    missing: true,
-    variables: true,
-  });
-  if (result === null || result.value === "") return "";
-  if (typeof result.value !== "string" || !uuid.test(result.value))
-    throw new Error("Invalid configured extension ID");
-  return result.value;
-}
-
 async function asset(release, name, body, contentType = "application/json") {
   const url = new URL(release.upload_url.split("{")[0]);
   if (
@@ -306,16 +295,16 @@ async function publish() {
       },
     );
   }
-  if ((await readVariable()) !== extensionId)
+  const configured = await github(`${root}/actions/variables/${variable}`, {
+    variables: true,
+  });
+  if (configured.value !== extensionId)
     throw new Error("Published GitHub Variable could not be confirmed");
   return extensionId;
 }
 
 try {
-  const extensionId =
-    process.env.BROWSER_EXTENSION_RELEASE_CREATED === "true"
-      ? await publish()
-      : await readVariable();
+  const extensionId = await publish();
   await appendFile(required("GITHUB_OUTPUT"), `extension_id=${extensionId}\n`);
 } catch (error) {
   console.error(

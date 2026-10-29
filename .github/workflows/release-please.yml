@@ -403,7 +403,7 @@ jobs:
 
   publish-browser-extension:
     needs: release-please
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    if: ${{ needs.release-please.outputs.releases_created == 'true' && needs.release-please.outputs.browser_extension_release_created == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -436,16 +436,14 @@ jobs:
           OKOU_CI_APP_PRIVATE_KEY: ${{ steps.private-key.outputs.private-key }}
         run: node .github/scripts/release/browser-extension-variable-token.mjs
       - name: Package selected extension release
-        if: ${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}
         run: pnpm --dir turbo --filter @okouai/browser-extension build
-      - name: Publish extension and resolve current configuration
+      - name: Publish extension and verify configuration
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_VARIABLES_TOKEN: ${{ steps.variables-token.outputs.token }}
           OKOU_BROWSER_USE_API_KEY: ${{ secrets.OKOU_BROWSER_USE_API_KEY }}
           RELEASE_TARGET: ${{ needs.release-please.outputs.release_target }}
-          BROWSER_EXTENSION_RELEASE_CREATED: ${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}
           BROWSER_EXTENSION_VERSION: ${{ needs.release-please.outputs.browser_extension_version }}
           BROWSER_EXTENSION_TAG: ${{ needs.release-please.outputs.browser_extension_tag }}
         run: node .github/scripts/release/publish-browser-extension.mjs
@@ -1242,7 +1240,9 @@ jobs:
     if: >-
       always() &&
       !failure() && !cancelled() &&
-      needs.publish-browser-extension.result == 'success' &&
+      (needs.publish-browser-extension.result == 'success' ||
+       (needs.release-please.outputs.browser_extension_release_created != 'true' &&
+        needs.publish-browser-extension.result == 'skipped')) &&
       needs.release-please.outputs.releases_created == 'true'
     runs-on: ubuntu-latest
     container:
@@ -1311,15 +1311,20 @@ jobs:
           doppler-project: vm0
           doppler-config: prd
 
-      - name: Use the verified extension ID in API variables
+      - name: Resolve extension configuration for API deployment
         id: browser-extension-env
         shell: bash
         env:
           REPO_VARS_JSON: ${{ toJSON(vars) }}
+          BROWSER_EXTENSION_RELEASE_CREATED: ${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}
           BROWSER_EXTENSION_ID: ${{ needs.publish-browser-extension.outputs.extension_id }}
         run: |
           set -euo pipefail
-          variables=$(jq -c --arg id "$BROWSER_EXTENSION_ID" '.OKOU_BROWSER_USE_EXTENSION_ID = $id' <<< "$REPO_VARS_JSON")
+          if [[ "$BROWSER_EXTENSION_RELEASE_CREATED" == 'true' ]]; then
+            variables=$(jq -c --arg id "$BROWSER_EXTENSION_ID" '.OKOU_BROWSER_USE_EXTENSION_ID = $id' <<< "$REPO_VARS_JSON")
+          else
+            variables=$REPO_VARS_JSON
+          fi
           printf 'json=%s\n' "$variables" >> "$GITHUB_OUTPUT"
 
       - name: Resolve API production environment
