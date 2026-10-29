@@ -233,9 +233,8 @@ export function createSharedBrowserFixtures(context: TestContext) {
 
   async function renew(chat: Chat) {
     const result = await accept(
-      client().leaseByThread({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: chat.threadId },
+      client().lease({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
         body: {},
       }),
       [200],

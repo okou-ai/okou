@@ -1,8 +1,9 @@
 import {
   browserContract,
   type BrowserSession,
+  type BrowserViewerActivity,
 } from "@okouai/api-contracts/contracts/browser";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
@@ -242,6 +243,45 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   click(buttonByName("Browser menu", viewer));
   await waitFor(() => {
     expect(updatedSizingMenu).not.toBeInTheDocument();
+  });
+});
+
+test("The shared conversation sidebar leases only its selected-page interaction", async () => {
+  mockWideScreen();
+  const session: BrowserSession = {
+    ...liveBrowserSession(),
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
+  };
+  mockBrowserApi(session);
+  mockBrowserCdp(context, "wss://cdp.browser-use.com/sidebar", {
+    streaming: true,
+  });
+  const bodies: unknown[] = [];
+  const evidence = context.mocks.deferred<BrowserViewerActivity | undefined>();
+  context.mocks.api(browserContract.leaseByThread, ({ body, respond }) => {
+    bodies.push(body);
+    evidence.resolve(body.viewerActivity);
+    return respond(200, { browser: session });
+  });
+  await openConversation([]);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  expect(bodies).toStrictEqual([]);
+  fireEvent.wheel(within(sidebar).getByLabelText("Live browser view"), {
+    deltaY: 20,
+  });
+  await expect(evidence.promise).resolves.toStrictEqual({
+    instanceId: session.window?.instanceId,
+    pageTargetId: "example-page",
   });
 });
 

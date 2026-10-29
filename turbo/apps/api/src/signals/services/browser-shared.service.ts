@@ -21,6 +21,7 @@ import {
   BROWSER_PROVIDER_TIMEOUT_MINUTES,
   BROWSER_SCREEN_WIDTH,
   type BrowserSession,
+  type BrowserViewerActivity,
 } from "@okouai/api-contracts/contracts/browser";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -75,6 +76,7 @@ import {
   sharedBrowserLifetime,
 } from "./browser-shared-snapshot.service";
 import { reconcileSharedBrowsers$ } from "./browser-shared-reconcile.service";
+import { renewSharedBrowserViewer$ } from "./browser-shared-viewer.service";
 
 interface SharedBrowserInput {
   readonly orgId: string;
@@ -83,6 +85,8 @@ interface SharedBrowserInput {
   readonly chatThreadId?: string;
   readonly name?: string;
   readonly aspectRatio?: number;
+  // Undefined is explicit Run activity; null is an unattributed viewer heartbeat.
+  readonly viewerActivity?: BrowserViewerActivity | null;
 }
 type Result<T> =
   { readonly kind: "ok"; readonly value: T } | BrowserServiceError;
@@ -942,6 +946,13 @@ function sharedBrowserLease(
         return missing();
       }
       const window = view.window;
+      const activity = ctx.mode.input.viewerActivity;
+      if (
+        activity === null ||
+        (activity && activity.instanceId !== view.profile.instanceId)
+      ) {
+        return unavailable();
+      }
       const health = await settleIncludingAbort(async () => {
         if (!view.profile.providerSessionId) {
           return null;
@@ -952,14 +963,15 @@ function sharedBrowserLease(
         );
         return session?.status === "active" &&
           session.cdpUrl &&
-          (await provider(
-            browserUseWindowExists(
-              session.cdpUrl,
-              window.primaryWindowId,
+          (activity ||
+            (await provider(
+              browserUseWindowExists(
+                session.cdpUrl,
+                window.primaryWindowId,
+                signal,
+              ),
               signal,
-            ),
-            signal,
-          ))
+            )))
           ? session
           : null;
       });
@@ -971,17 +983,39 @@ function sharedBrowserLease(
         await set(reconcileSharedBrowsers$, ctx.owner, signal);
         return unavailable();
       }
-      const result = await set(
-        controlBrowserOwner$,
-        ctx.owner,
-        {
-          kind: "renew",
-          instanceId: view.profile.instanceId,
-          primaryWindowId: view.window.primaryWindowId,
-        },
-        signal,
-      );
-      if (result.outcome !== "accepted" || !result.window) {
+      const cdpUrl = health.value.cdpUrl;
+      if (!cdpUrl) {
+        return unavailable();
+      }
+      const renewed = await settleIncludingAbort(async () => {
+        if (activity) {
+          return await set(
+            renewSharedBrowserViewer$,
+            {
+              owner: ctx.owner,
+              cdpUrl,
+              activity,
+            },
+            signal,
+          );
+        }
+        const result = await set(
+          controlBrowserOwner$,
+          ctx.owner,
+          {
+            kind: "renew",
+            instanceId: view.profile.instanceId,
+            primaryWindowId: window.primaryWindowId,
+          },
+          signal,
+        );
+        return result.outcome === "accepted" ? (result.window ?? null) : null;
+      });
+      signal.throwIfAborted();
+      if (!renewed.ok) {
+        return errorResult(renewed.error);
+      }
+      if (!renewed.value) {
         return unavailable();
       }
       const browser = presentation(
@@ -989,7 +1023,10 @@ function sharedBrowserLease(
         view.profile,
         {
           ...view.window,
-          expiresAt: result.window.expiresAt,
+          expiresAt:
+            renewed.value.chatThreadId === ctx.owner.chatThreadId
+              ? renewed.value.expiresAt
+              : window.expiresAt,
         },
         health.value,
         await set(loadBrowserScreenshotUrl$, ctx.owner.chatThreadId, signal),

@@ -60,6 +60,13 @@ export const browserWindowContextSchema = object({
 
 export type BrowserWindowContext = zInfer<typeof browserWindowContextSchema>;
 
+const browserViewerActivitySchema = object({
+  instanceId: uuid(),
+  pageTargetId: string().min(1).max(256),
+}).strict();
+
+export type BrowserViewerActivity = zInfer<typeof browserViewerActivitySchema>;
+
 export const browserSessionSchema = object({
   threadId: uuid(),
   name: string().min(1).max(64),
@@ -192,7 +199,7 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/lease",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: object({}),
+    body: object({ viewerActivity: browserViewerActivitySchema.optional() }),
     responses: {
       200: browserResponseSchema,
       ...commonErrorResponses,

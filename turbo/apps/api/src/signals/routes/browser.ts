@@ -156,6 +156,16 @@ const leaseBrowserInner$ = command(
 
 const leaseByThreadParams$ = pathParamsOf(browserContract.leaseByThread);
 const leaseByThreadBody$ = bodyResultOf(browserContract.leaseByThread);
+const sharedViewerInput$ = computed(async (get) => {
+  const body = await get(leaseByThreadBody$);
+  return body.ok
+    ? {
+        ...(await get(sharedThreadInput$)),
+        viewerActivity: body.data.viewerActivity ?? null,
+      }
+    : null;
+});
+const sharedViewer = createSharedBrowserGraph(sharedViewerInput$);
 const leaseBrowserByThreadInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const body = await get(leaseByThreadBody$);
@@ -164,7 +174,7 @@ const leaseBrowserByThreadInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
-    const shared = await set(sharedThread.lease$, signal);
+    const shared = await set(sharedViewer.lease$, signal);
     if (shared) {
       return shared.kind === "error"
         ? errorResponse(shared)

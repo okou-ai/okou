@@ -2,16 +2,36 @@ import { number, object, string } from "zod";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 
 /** A test-owned external CDP browser; the installed viewer runs normally. */
-export function mockBrowserCdp(context: TestContext, cdpUrl: string): void {
+export function mockBrowserCdp(
+  context: TestContext,
+  cdpUrl: string,
+  options: {
+    readonly streaming?: boolean;
+    readonly targets?: readonly {
+      readonly targetId: string;
+      readonly title: string;
+      readonly url: string;
+    }[];
+  } = {},
+) {
   context.mocks.browser.canvasRendering();
   context.mocks.browser.uint8ArrayFromBase64();
-  context.mocks.browser.webSocket((data, url) => {
+  if (options.streaming) {
+    context.mocks.browser.imageBitmap(1440, 900);
+  }
+  const targets = options.targets ?? [
+    { targetId: "example-page", title: "Example", url: "https://example.com" },
+  ];
+  const socket = context.mocks.browser.webSocket((data, url) => {
     if (url !== cdpUrl) {
       throw new Error("Unexpected viewer endpoint");
     }
-    const request = object({ id: number().optional(), method: string() }).parse(
-      JSON.parse(data),
-    );
+    const request = object({
+      id: number().optional(),
+      method: string(),
+      sessionId: string().optional(),
+      params: object({ targetId: string().optional() }).loose().optional(),
+    }).parse(JSON.parse(data));
     if (request.id === undefined) {
       return null;
     }
@@ -19,20 +39,46 @@ export function mockBrowserCdp(context: TestContext, cdpUrl: string): void {
     switch (request.method) {
       case "Target.getTargets": {
         result = {
-          targetInfos: [
-            {
-              targetId: "example-page",
+          targetInfos: targets.map((target) => {
+            return {
+              ...target,
               type: "page",
-              title: "Example",
-              url: "https://example.com",
               attached: false,
-            },
-          ],
+            };
+          }),
         };
         break;
       }
       case "Target.attachToTarget": {
-        result = { sessionId: "example-session" };
+        result = {
+          sessionId: `${request.params?.targetId ?? "example-page"}-session`,
+        };
+        break;
+      }
+      case "Page.startScreencast": {
+        if (options.streaming) {
+          queueMicrotask(() => {
+            socket.receive(
+              cdpUrl,
+              JSON.stringify({
+                method: "Page.screencastFrame",
+                sessionId: request.sessionId,
+                params: {
+                  data: "AAAA",
+                  sessionId: 1,
+                  metadata: {
+                    offsetTop: 0,
+                    pageScaleFactor: 1,
+                    deviceWidth: 1440,
+                    deviceHeight: 900,
+                    scrollOffsetX: 0,
+                    scrollOffsetY: 0,
+                  },
+                },
+              }),
+            );
+          });
+        }
         break;
       }
       case "Page.getFrameTree": {
@@ -80,4 +126,5 @@ export function mockBrowserCdp(context: TestContext, cdpUrl: string): void {
     }
     return JSON.stringify({ id: request.id, result });
   });
+  return socket;
 }

@@ -341,9 +341,8 @@ describe("server-owned shared Browser recovery", () => {
       );
       f.provider.native.targets.delete(page.targetId);
       mockNow(START + MINUTE);
-      const lease = await client().leaseByThread({
-        headers,
-        params: { threadId: a.threadId },
+      const lease = await client().lease({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(a.claim)}` },
         body: {},
       });
       expect(lease.status).toBe(409);

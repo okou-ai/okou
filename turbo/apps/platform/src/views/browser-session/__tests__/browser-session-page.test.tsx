@@ -1,10 +1,18 @@
 import {
   browserContract,
   type BrowserSession,
+  type BrowserViewerActivity,
 } from "@okouai/api-contracts/contracts/browser";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 import {
   click,
@@ -16,6 +24,7 @@ import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
 
 const context = testContext();
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
+const INSTANCE_ID = "22222222-2222-4222-8222-222222222222";
 
 function browserSession(
   overrides: Partial<BrowserSession> = {},
@@ -200,57 +209,76 @@ test("A reclaimed connection shows an unavailable state", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("A replacement browser detaches the previous viewer while its connection loads", async () => {
-  let currentSession = browserSession();
-  let replacing = false;
-  const connectionStarted = context.mocks.deferred<void>();
-  const releaseConnection = context.mocks.deferred<void>();
-  const cdpUrl = "wss://cdp.browser-use.com/original";
-  mockBrowserCdp(context, cdpUrl);
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser: currentSession });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
-    return respond(200, { browser: currentSession });
-  });
-  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
-    if (!replacing) {
-      return respond(200, { cdpUrl });
-    }
-    connectionStarted.resolve();
-    await releaseConnection.promise;
-    return respond(409, {
-      error: { code: "BROWSER_NOT_LIVE", message: "Browser is no longer live" },
+test.each(["url", "instance"] as const)(
+  "A replacement browser %s detaches the previous viewer while its connection loads",
+  async (identity) => {
+    let currentSession = browserSession(
+      identity === "instance"
+        ? { window: { instanceId: INSTANCE_ID, primaryWindowId: 0 } }
+        : {},
+    );
+    let replacing = false;
+    const connectionStarted = context.mocks.deferred<void>();
+    const releaseConnection = context.mocks.deferred<void>();
+    const cdpUrl = "wss://cdp.browser-use.com/original";
+    mockBrowserCdp(context, cdpUrl);
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return respond(200, { browser: currentSession });
     });
-  });
-  await setupPage({
-    context,
-    path: `/browsers/${THREAD_ID}`,
-  });
-  await expect(
-    screen.findByDisplayValue("https://example.com"),
-  ).resolves.toBeEnabled();
-  const previousViewer = screen.getByRole("region", {
-    name: "Remote browser viewer",
-  });
-  currentSession = browserSession({
-    liveUrl: "https://viewer.example/live?token=replacement",
-  });
-  replacing = true;
-  act(() => {
-    context.mocks.ably.trigger("browserSessionChanged", {
-      threadId: THREAD_ID,
+    context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+      return respond(200, { browser: currentSession });
     });
-  });
-  await connectionStarted.promise;
-  await waitFor(() => {
-    expect(previousViewer).not.toBeInTheDocument();
-  });
-  releaseConnection.resolve();
-  await expect(
-    screen.findByText("Browser unavailable"),
-  ).resolves.toBeInTheDocument();
-});
+    context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+      if (!replacing) {
+        return respond(200, { cdpUrl });
+      }
+      connectionStarted.resolve();
+      await releaseConnection.promise;
+      return respond(409, {
+        error: {
+          code: "BROWSER_NOT_LIVE",
+          message: "Browser is no longer live",
+        },
+      });
+    });
+    await setupPage({
+      context,
+      path: `/browsers/${THREAD_ID}`,
+    });
+    await expect(
+      screen.findByDisplayValue("https://example.com"),
+    ).resolves.toBeEnabled();
+    const previousViewer = screen.getByRole("region", {
+      name: "Remote browser viewer",
+    });
+    currentSession = browserSession(
+      identity === "instance"
+        ? {
+            window: {
+              instanceId: "33333333-3333-4333-8333-333333333333",
+              primaryWindowId: 0,
+            },
+          }
+        : {
+            liveUrl: "https://viewer.example/live?token=replacement",
+          },
+    );
+    replacing = true;
+    act(() => {
+      context.mocks.ably.trigger("browserSessionChanged", {
+        threadId: THREAD_ID,
+      });
+    });
+    await connectionStarted.promise;
+    await waitFor(() => {
+      expect(previousViewer).not.toBeInTheDocument();
+    });
+    releaseConnection.resolve();
+    await expect(
+      screen.findByText("Browser unavailable"),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 test("An inaccessible conversation has no browser page", async () => {
   mockBrowserSession(null);
@@ -304,4 +332,251 @@ test("A user can restart a reclaimed browser", async () => {
   ).resolves.toBeEnabled();
   expect(startCount).toBe(1);
   expect(screen.queryByText("Browser not live")).toBeNull();
+});
+
+async function expectStreamingViewer(): Promise<void> {
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+}
+
+function mockSharedViewer() {
+  const session = browserSession({
+    window: { instanceId: INSTANCE_ID, primaryWindowId: 0 },
+  });
+  const cdpUrl = "wss://cdp.browser-use.com/shared-viewer";
+  const socket = mockBrowserCdp(context, cdpUrl, {
+    streaming: true,
+    targets: [
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+      },
+      {
+        targetId: "other-chat-page",
+        title: "Other chat",
+        url: "https://other.example.com",
+      },
+    ],
+  });
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  return { session, socket };
+}
+
+test("An idle shared viewer renews only after actual selected-page input", async () => {
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const evidence = context.mocks.deferred<BrowserViewerActivity | undefined>();
+  const bodies: unknown[] = [];
+  context.mocks.api(browserContract.leaseByThread, ({ body, respond }) => {
+    bodies.push(body);
+    evidence.resolve(body.viewerActivity);
+    return respond(200, { browser: session });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  expect(bodies).toStrictEqual([]);
+  fireEvent.wheel(screen.getByLabelText("Live browser view"), { deltaY: 20 });
+  await expect(evidence.promise).resolves.toStrictEqual({
+    instanceId: INSTANCE_ID,
+    pageTargetId: "example-page",
+  });
+});
+
+test("The standalone route uses the selected other-chat page for renewal", async () => {
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const evidence = context.mocks.deferred<BrowserViewerActivity | undefined>();
+  context.mocks.api(
+    browserContract.leaseByThread,
+    ({ params, body, respond }) => {
+      expect(params.threadId).toBe(THREAD_ID);
+      evidence.resolve(body.viewerActivity);
+      return respond(200, { browser: session });
+    },
+  );
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  const tab = queryAllByRoleFast("tab").find((candidate) => {
+    return candidate.getAttribute("aria-label") === "Other chat";
+  });
+  if (!tab) {
+    throw new Error("Expected the other chat's page tab");
+  }
+  click(tab);
+  await waitFor(() => {
+    expect(tab).toHaveAttribute("aria-selected", "true");
+  });
+  await expectStreamingViewer();
+  fireEvent.wheel(screen.getByLabelText("Live browser view"), { deltaY: 20 });
+  await expect(evidence.promise).resolves.toStrictEqual({
+    instanceId: INSTANCE_ID,
+    pageTargetId: "other-chat-page",
+  });
+});
+
+test("Switching pages cancels queued activity and immediately leases fresh input on the new target", async () => {
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  const first = context.mocks.deferred<void>();
+  const selected = context.mocks.deferred<BrowserViewerActivity | undefined>();
+  context.mocks.api(browserContract.leaseByThread, ({ body, respond }) => {
+    if (body.viewerActivity?.pageTargetId === "other-chat-page") {
+      selected.resolve(body.viewerActivity);
+    } else {
+      first.resolve();
+    }
+    return respond(200, { browser: session });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  fireEvent.wheel(screen.getByLabelText("Live browser view"), { deltaY: 20 });
+  await first.promise;
+  fireEvent.wheel(screen.getByLabelText("Live browser view"), { deltaY: 20 });
+  const tab = queryAllByRoleFast("tab").find((candidate) => {
+    return candidate.getAttribute("aria-label") === "Other chat";
+  });
+  if (!tab) {
+    throw new Error("Expected the other chat's page tab");
+  }
+  click(tab);
+  await waitFor(() => {
+    expect(tab).toHaveAttribute("aria-selected", "true");
+  });
+  await expectStreamingViewer();
+  fireEvent.wheel(screen.getByLabelText("Live browser view"), { deltaY: 20 });
+  await expect(selected.promise).resolves.toStrictEqual({
+    instanceId: INSTANCE_ID,
+    pageTargetId: "other-chat-page",
+  });
+});
+
+async function interruptSharedRenewal(
+  replacement: "target" | "instance" | "unmount" | "disconnect",
+): Promise<void> {
+  const { session, socket } = mockSharedViewer();
+  let currentSession = session;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  const entered = context.mocks.deferred<void>();
+  const cancelled = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const finished = context.mocks.deferred<void>();
+  context.mocks.api(
+    browserContract.leaseByThread,
+    async ({ request, respond }) => {
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          cancelled.resolve();
+        },
+        { once: true },
+      );
+      entered.resolve();
+      await release.promise;
+      finished.resolve();
+      return respond(200, {
+        browser: browserSession({ status: "suspended", liveUrl: null }),
+      });
+    },
+  );
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  fireEvent.wheel(screen.getByLabelText("Live browser view"), { deltaY: 20 });
+  await entered.promise;
+  if (replacement === "target") {
+    const tab = queryAllByRoleFast("tab").find((candidate) => {
+      return candidate.getAttribute("aria-label") === "Other chat";
+    });
+    if (!tab) {
+      throw new Error("Expected the other chat's page tab");
+    }
+    click(tab);
+  } else if (replacement === "disconnect") {
+    act(() => {
+      socket.disconnect("wss://cdp.browser-use.com/shared-viewer");
+    });
+  } else {
+    currentSession =
+      replacement === "unmount"
+        ? browserSession({ status: "suspended", liveUrl: null })
+        : browserSession({
+            window: {
+              instanceId: "33333333-3333-4333-8333-333333333333",
+              primaryWindowId: 0,
+            },
+          });
+    act(() => {
+      context.mocks.ably.trigger("browserSessionChanged", {
+        threadId: THREAD_ID,
+      });
+    });
+  }
+  await cancelled.promise;
+  release.resolve();
+  await finished.promise;
+}
+
+test.each(["target", "instance"] as const)(
+  "Shared viewer %s replacement cancels an outstanding renewal",
+  async (replacement) => {
+    await interruptSharedRenewal(replacement);
+    await expectStreamingViewer();
+    expect(screen.queryByText("Browser not live")).toBeNull();
+  },
+);
+
+test("Unmounting a shared viewer cancels its outstanding renewal", async () => {
+  await interruptSharedRenewal("unmount");
+  await expect(
+    screen.findByText("Browser not live"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Disconnecting a shared viewer cancels its outstanding renewal", async () => {
+  await interruptSharedRenewal("disconnect");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  });
+});
+
+test("A shared viewer keeps address editing usable after its first successful renewal", async () => {
+  const { session } = mockSharedViewer();
+  mockBrowserSession(session);
+  let connectionAvailable = true;
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return connectionAvailable
+      ? respond(200, { cdpUrl: "wss://cdp.browser-use.com/shared-viewer" })
+      : respond(409, {
+          error: {
+            code: "BROWSER_NOT_LIVE",
+            message: "Connection lookup temporarily unavailable",
+          },
+        });
+  });
+  const entered = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const finished = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    entered.resolve();
+    await release.promise;
+    connectionAvailable = false;
+    finished.resolve();
+    return respond(200, { browser: session });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  await userEvent.click(screen.getByLabelText("Remote page address"));
+  await entered.promise;
+  release.resolve();
+  await finished.promise;
+  await userEvent.keyboard("{End}x");
+  expect(screen.getByLabelText("Remote page address")).toHaveFocus();
+  expect(screen.getByLabelText("Remote page address")).toHaveValue(
+    "https://example.comx",
+  );
 });
