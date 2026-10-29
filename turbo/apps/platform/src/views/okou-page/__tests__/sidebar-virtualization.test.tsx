@@ -163,7 +163,7 @@ test("Keep the chat viewport keyboard-focusable only while a conversation is ope
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
   }, threadCount);
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: "/agents" });
   const sidebar = await screen.findByTestId("chat-list-column");
   const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
   const first = await within(viewport).findByText("History 1");

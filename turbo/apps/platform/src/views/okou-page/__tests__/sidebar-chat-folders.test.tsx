@@ -166,7 +166,7 @@ async function prepare(initial?: ChatFolderCatalog, enabled = true) {
   mockFolders(initial);
   await setupSidebarPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: "/agents",
     auth: staffAuth(),
     featureSwitches: { [FeatureSwitchKey.ChatThreadFolders]: enabled },
   });
