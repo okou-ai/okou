@@ -126,6 +126,7 @@ export class BrowserRuntime {
     this.actions = runtimeActions(this.controller, this.native, this.focus);
     this.observe(canvas, toolbar, tabs, resized, signal);
     this.controller.setWindowSizeSync(mode);
+    signal.throwIfAborted();
     acquired = true;
     signal.addEventListener(
       "abort",

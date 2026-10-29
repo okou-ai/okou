@@ -101,8 +101,6 @@ export function createBrowserViewerSignals(
         return;
       }
       const runtime = acquired.value;
-      set(internalRuntime$, runtime);
-      set(model.bind$, runtime.actions);
       signal.addEventListener(
         "abort",
         () => {
@@ -114,6 +112,10 @@ export function createBrowserViewerSignals(
         },
         { once: true },
       );
+      set(internalRuntime$, runtime);
+      signal.throwIfAborted();
+      set(model.bind$, runtime.actions);
+      signal.throwIfAborted();
       runtime.start();
     }),
   );

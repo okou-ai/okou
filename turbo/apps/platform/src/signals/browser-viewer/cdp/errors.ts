@@ -51,7 +51,7 @@ export function validateConfiguration(url: string, windowId?: number): void {
   ) {
     throw new CdpFault(
       "configuration",
-      "cdpUrl must be an absolute ws:// or wss:// browser debugger URL.",
+      "cdpUrl must be an absolute browser debugger WebSocket URL.",
     );
   }
   if (windowId !== undefined && !Number.isSafeInteger(windowId)) {
