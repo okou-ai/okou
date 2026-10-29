@@ -330,6 +330,10 @@ export function createBrowserSessionSignals(
           if (response.status === 200) {
             const currentSession = await get(session$);
             signal.throwIfAborted();
+            // Shared admission can replace the legacy lifetime during IO.
+            if (currentSession?.window) {
+              return true;
+            }
             set(
               leaseOverride$,
               currentSession

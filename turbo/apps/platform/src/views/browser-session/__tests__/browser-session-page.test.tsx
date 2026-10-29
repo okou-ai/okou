@@ -663,3 +663,60 @@ test("A shared viewer keeps address editing usable after its first successful re
     "https://example.comx",
   );
 });
+
+test("A late legacy heartbeat preserves a newly loaded shared viewer", async () => {
+  const legacy = browserSession();
+  let currentSession = legacy;
+  const cdpUrl = "wss://cdp.browser-use.com/cutover";
+  mockBrowserCdp(context, cdpUrl, { streaming: true });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  const entered = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const finished = context.mocks.deferred<void>();
+  context.mocks.api(
+    browserContract.leaseByThread,
+    async ({ body, respond }) => {
+      if (body.viewerActivity) {
+        return respond(200, { browser: currentSession });
+      }
+      if (!entered.settled()) {
+        entered.resolve();
+      }
+      await release.promise;
+      if (!finished.settled()) {
+        finished.resolve();
+      }
+      return respond(200, { browser: { ...legacy, liveUrl: null } });
+    },
+  );
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await expectStreamingViewer();
+  await entered.promise;
+  const previousInput = screen.getByLabelText("Remote browser input");
+  currentSession = browserSession({
+    liveUrl: "https://viewer.example/live?token=shared-replacement",
+    window: { instanceId: INSTANCE_ID, primaryWindowId: 0 },
+  });
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId: THREAD_ID,
+    });
+  });
+  await waitFor(() => {
+    expect(previousInput).not.toBeInTheDocument();
+  });
+  await expectStreamingViewer();
+  release.resolve();
+  await finished.promise;
+  await userEvent.click(screen.getByLabelText("Remote page address"));
+  await userEvent.keyboard("{End}x");
+  expect(screen.getByLabelText("Remote page address")).toHaveFocus();
+  expect(screen.getByLabelText("Remote page address")).toHaveValue(
+    "https://example.comx",
+  );
+});
