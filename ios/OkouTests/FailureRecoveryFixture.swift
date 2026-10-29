@@ -182,7 +182,7 @@ final class FailureRecoveryFixture: Sendable {
               value.rows.append(
                 Self.row(
                   seq, type: "run.failed",
-                  payload: #"{"error":"Unavailable","failureReason":"provider_server_error"}"))
+                  payload: #"{"error":"Unavailable","failureReason":"provider_server_error"}"#))
               value.lastID = Self.id(seq)
             }
           }
