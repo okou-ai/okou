@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1077.2](https://github.com/okou-ai/okou/compare/app-v0.1077.1...app-v0.1077.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** refine halloween result layout and actions ([#43847](https://github.com/okou-ai/okou/issues/43847)) ([325ece7](https://github.com/okou-ai/okou/commit/325ece78cd7d768c8cf88cb501079c85050d2ab0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.20.0
+    * @okouai/core bumped to 8.800.3
+
 ## [0.1077.1](https://github.com/okou-ai/okou/compare/app-v0.1077.0...app-v0.1077.1) (2026-10-29)
 
 
