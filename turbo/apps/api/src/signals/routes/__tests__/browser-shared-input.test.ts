@@ -9,17 +9,17 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserUserActionRoutes } from "../browser-user-actions";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
-  createRunnerBrowserFixtures,
+  createSharedBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/runner-browser-fixture";
+} from "./helpers/browser-shared-fixture";
 
 const context = testContext();
-const { fixture, allocate, admit, accepted } =
-  createRunnerBrowserFixtures(context);
+const { fixture, open, view, renew } = createSharedBrowserFixtures(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function client() {
@@ -33,10 +33,20 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
     [FeatureSwitchKey.BrowserNativeInput]: true,
   });
   const a = await f.start();
-  const instance = await allocate(a);
-  const aWindow = await admit(a, instance.id, 0);
+  installBrowserWindowContentCommands(f.provider.native);
+  const first = await open(a);
+  const aWindow = first.window;
+  f.provider.native.windowIds.splice(0, f.provider.native.windowIds.length, 17);
   const b = await f.start();
-  const bWindow = await admit(b, instance.id, 17);
+  const bWindow = (await open(b)).window;
+  if (!aWindow || !bWindow) {
+    throw new Error("Expected assigned native windows");
+  }
+  const instance = {
+    id: aWindow.instanceId,
+    providerProfileId: f.provider.createdIds[0],
+    providerSessionId: [...f.provider.sessionIds][0],
+  };
   const aPage = f.provider.native.created[0];
   const bPage = f.provider.native.created[1];
   if (!aPage || !bPage) {
@@ -114,11 +124,16 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
     }
     return { result: { value: true } };
   }
+  installBrowserWindowContentCommands(f.provider.native);
+  const content = f.provider.native.command;
+  if (!content) {
+    throw new Error("Expected external native content commands");
+  }
   f.provider.native.command = (command) => {
     const targetId =
-      command.sessionId?.replace(/^input-/u, "") ?? aPage.targetId;
+      command.sessionId?.replace(/^page-/u, "") ?? aPage.targetId;
     if (command.method === "Target.attachToTarget") {
-      return { sessionId: `input-${String(command.params.targetId)}` };
+      return content(command);
     }
     if (command.method === "Page.getFrameTree") {
       return {
@@ -141,6 +156,9 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
     }
     if (command.method === "Runtime.callFunctionOn") {
       return executeControl(command, targetId);
+    }
+    if (command.method === "Runtime.evaluate") {
+      return content(command);
     }
     return {};
   };
@@ -196,16 +214,16 @@ describe("shared-window native Browser input", () => {
       // Different API instances can arrive with an older captured timestamp.
       mockNow(START + MINUTE);
       await accept(client().preflight({ headers, params, body: {} }), [200]);
-      expect(
-        accepted(await s.a.request({ kind: "inspect" })).window?.expiresAt,
-      ).toBe(START + 12 * MINUTE);
+      expect(Date.parse(String((await view(s.a)).idleExpiresAt))).toBe(
+        START + 12 * MINUTE,
+      );
       await s.request();
-      expect(
-        accepted(await s.a.request({ kind: "inspect" })).window?.expiresAt,
-      ).toBe(START + 12 * MINUTE);
-      expect(
-        accepted(await s.b.request({ kind: "inspect" })).window?.expiresAt,
-      ).toBe(START + 10 * MINUTE);
+      expect(Date.parse(String((await view(s.a)).idleExpiresAt))).toBe(
+        START + 12 * MINUTE,
+      );
+      expect(Date.parse(String((await view(s.b)).idleExpiresAt))).toBe(
+        START + 10 * MINUTE,
+      );
     });
   });
 
@@ -235,9 +253,7 @@ describe("shared-window native Browser input", () => {
       expect(
         (await accept(client().get({ headers, params }), [200])).body.state,
       ).toBe("succeeded");
-      expect(
-        accepted(await s.b.request({ kind: "inspect" })).window,
-      ).toMatchObject({ state: "active", primaryWindowId: 17 });
+      expect((await view(s.b)).window).toMatchObject({ primaryWindowId: 17 });
     });
   });
 
@@ -280,18 +296,16 @@ describe("shared-window native Browser input", () => {
     await f.owned.run(async () => {
       const s = await scenario(f);
       mockNow(START + 9 * MINUTE);
-      accepted(await s.b.request({ kind: "renew", ...s.bWindow }));
+      await renew(s.b);
       s.state.afterInspection = () => {
         mockNow(START + 11 * MINUTE);
       };
       expect((await s.create()).status).toBe(404);
       s.state.afterInspection = undefined;
-      expect(
-        accepted(await s.a.request({ kind: "inspect" })).window?.expiresAt,
-      ).toBe(START + 10 * MINUTE);
-      expect(
-        accepted(await s.b.request({ kind: "inspect" })).window?.expiresAt,
-      ).toBe(START + 19 * MINUTE);
+      expect((await view(s.a)).status).toBe("suspended");
+      expect(Date.parse(String((await view(s.b)).idleExpiresAt))).toBe(
+        START + 19 * MINUTE,
+      );
       expect(s.state.writes).toBe(0);
     });
   });
@@ -302,23 +316,16 @@ describe("shared-window native Browser input", () => {
       const s = await scenario(f);
       const params = await s.request();
       mockNow(START + 9 * MINUTE);
-      accepted(await s.b.request({ kind: "renew", ...s.bWindow }));
+      await renew(s.b);
       mockNow(START + 11 * MINUTE);
       expect(
         (await client().preflight({ headers, params, body: {} })).status,
       ).toBe(410);
       expect((await s.create()).status).toBe(409);
-      accepted(
-        await s.a.request({ kind: "retire", ...s.aWindow, reason: "expired" }),
-      );
-      f.provider.native.targets.delete(s.aPage.targetId);
-      accepted(
-        await s.a.request({ kind: "completeWindowClose", ...s.aWindow }),
-      );
-      const replacement = accepted(
-        await s.a.request({ kind: "admit", instanceId: s.instance.id }),
-      );
-      const page = f.provider.native.created.at(-1);
+      const replacement = await open(s.a);
+      const page = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === replacement.window?.primaryWindowId;
+      });
       if (!page || !replacement.window) {
         throw new Error("Expected a replacement native window");
       }
@@ -347,9 +354,9 @@ describe("shared-window native Browser input", () => {
       ).toBe("succeeded");
       expect(s.state.values.get(page.targetId)).toBe("fresh-value");
       expect(s.state.values.has(s.bPage.targetId)).toBeFalsy();
-      expect(
-        accepted(await s.b.request({ kind: "inspect" })).window?.expiresAt,
-      ).toBe(START + 19 * MINUTE);
+      expect(Date.parse(String((await view(s.b)).idleExpiresAt))).toBe(
+        START + 19 * MINUTE,
+      );
     });
   });
 
@@ -396,10 +403,15 @@ describe("shared-window native Browser input", () => {
       const params = await s.request();
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
+      let hold = true;
       server.use(
         http.get(
           `${PROVIDER_URL}/browsers/${s.instance.providerSessionId}`,
           async () => {
+            if (!hold) {
+              return;
+            }
+            hold = false;
             entered.resolve();
             await release.promise;
             return HttpResponse.json({
@@ -436,9 +448,10 @@ describe("shared-window native Browser input", () => {
             throw new Error("The apply never reached its provider read");
           }),
         ]);
-        accepted(
-          await s.a.request({ kind: "retire", ...s.aWindow, reason: "closed" }),
-        );
+        mockNow(START + 9 * MINUTE);
+        await renew(s.b);
+        mockNow(START + 11 * MINUTE);
+        await open(s.a);
       });
       if (!release.settled()) {
         release.resolve();
@@ -539,37 +552,13 @@ describe("shared-window native Browser input", () => {
     await f.owned.run(async () => {
       const s = await scenario(f);
       const params = await s.request();
-      for (const [chat, window] of [
-        [s.a, s.aWindow],
-        [s.b, s.bWindow],
-      ] as const) {
-        accepted(
-          await chat.request({ kind: "retire", ...window, reason: "closed" }),
-        );
-        for (const [id, target] of f.provider.native.targets) {
-          if (target.windowId === window.primaryWindowId) {
-            f.provider.native.targets.delete(id);
-          }
-        }
-        accepted(
-          await chat.request({ kind: "completeWindowClose", ...window }),
-        );
-      }
-      accepted(
-        await s.a.request({ kind: "beginStop", instanceId: s.instance.id }),
-      );
-      f.provider.native.targets.clear();
-      if (s.instance.providerSessionId) {
-        f.provider.sessionIds.delete(s.instance.providerSessionId);
-      }
-      accepted(
-        await s.a.request({ kind: "completeStop", instanceId: s.instance.id }),
-      );
-      const next = await allocate(s.a);
-      expect(next.id).not.toBe(s.instance.id);
-      expect(next.providerProfileId).toBe(s.instance.providerProfileId);
-      await admit(s.a, next.id, 0);
-      const page = f.provider.native.created.at(-1);
+      mockNow(START + 11 * MINUTE);
+      const next = await open(s.a);
+      expect(next.window?.instanceId).not.toBe(s.instance.id);
+      expect(f.provider.createdIds).toHaveLength(1);
+      const page = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === 0;
+      });
       if (!page) {
         throw new Error("Expected the new instance's page");
       }
@@ -684,13 +673,12 @@ describe("shared-window native Browser input", () => {
     await f.owned.run(async () => {
       const s = await scenario(f);
       const params = await s.request();
-      accepted(
-        await s.a.request({ kind: "retire", ...s.aWindow, reason: "closed" }),
-      );
+      mockNow(START + 9 * MINUTE);
+      await renew(s.b);
+      mockNow(START + 11 * MINUTE);
+      await open(s.a);
       expect((await client().get({ headers, params })).status).toBe(410);
-      expect(
-        accepted(await s.b.request({ kind: "inspect" })).window?.state,
-      ).toBe("active");
+      expect((await view(s.b)).status).toBe("active");
       expect(s.state.writes).toBe(0);
     });
   });
