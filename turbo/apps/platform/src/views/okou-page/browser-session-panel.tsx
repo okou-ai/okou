@@ -1,8 +1,7 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { CdpViewer, type CdpViewerStyle } from "cdp-viewer";
-import { browserUse } from "cdp-viewer/extensions/browser-use";
-import { AppWindow, AppWindowMac, Globe, Loader2, Play } from "lucide-react";
+import { BrowserViewer } from "../browser-viewer/browser-viewer.tsx";
+import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
@@ -14,7 +13,6 @@ import {
 } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { theme$ } from "../../signals/theme.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
@@ -141,52 +139,6 @@ export function BrowserSessionUnavailable() {
   );
 }
 
-/**
- * Keep the public viewer theme bound to live app semantics, including palette
- * changes that do not change the light/dark color scheme.
- */
-function okouViewerStyle(): CdpViewerStyle {
-  const stateLayer = (alpha: string) => {
-    return `hsl(var(--state-layer) / var(${alpha}))`;
-  };
-  return {
-    height: "100%",
-    minHeight: 0,
-    fontFamily: "inherit",
-    border: 0,
-    "--cdpv-radius": 0,
-    "--cdpv-background": "hsl(var(--background))",
-    "--cdpv-tab-background": "hsl(var(--background))",
-    "--cdpv-tab-selected-background": stateLayer("--state-selected-alpha"),
-    "--cdpv-address-background": "hsl(var(--input))",
-    "--cdpv-stage-background": "hsl(var(--background))",
-    "--cdpv-foreground": "hsl(var(--foreground))",
-    "--cdpv-muted": "hsl(var(--muted-foreground))",
-    "--cdpv-border": "hsl(var(--divider))",
-    // Use the same neutral filled actions as other standalone app panels.
-    "--cdpv-accent": "hsl(var(--foreground))",
-    "--cdpv-on-accent": "hsl(var(--background))",
-    "--cdpv-primary-hover-background": "var(--color-foreground-hover)",
-    "--cdpv-hover": stateLayer("--state-hover-alpha"),
-    "--cdpv-option-selected-background": stateLayer("--state-selected-alpha"),
-    "--cdpv-focus": "hsl(var(--ring))",
-    "--cdpv-control-radius": "var(--radius)",
-    "--cdpv-address-radius": "var(--radius)",
-    "--cdpv-stage-focus-width": "1px",
-    "--cdpv-error": "hsl(var(--destructive))",
-    // Diagnostics overlay remote pixels, so their tinted surface stays opaque.
-    "--cdpv-error-background":
-      "color-mix(in srgb, hsl(var(--background)), hsl(var(--destructive)) var(--state-selected-alpha))",
-    "--cdpv-popup-background": "hsl(var(--popover))",
-    "--cdpv-popup-foreground": "hsl(var(--popover-foreground))",
-    "--cdpv-popup-shadow": "var(--surface-shadow)",
-    "--cdpv-loading-shadow": "var(--surface-shadow)",
-    // Match the shared Button/Input/menu disabled strength, including busy work.
-    "--cdpv-disabled-opacity": 0.5,
-    "--cdpv-busy-opacity": 0.5,
-  };
-}
-
 function PanelActions({ actions }: { readonly actions: ReactNode }) {
   if (!actions) {
     return null;
@@ -194,25 +146,6 @@ function PanelActions({ actions }: { readonly actions: ReactNode }) {
   return (
     <div className="flex h-11 shrink-0 items-center justify-end gap-0.5 px-1.5">
       {actions}
-    </div>
-  );
-}
-
-function BrowserBlankPage() {
-  const { t } = useTranslation();
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-8 pb-10 text-center">
-      <Globe size={20} aria-hidden className="text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium text-foreground">
-        {t(($) => {
-          return $.browserSession.blankPage.title;
-        })}
-      </p>
-      <p className="mt-1 max-w-72 text-xs leading-5 text-muted-foreground">
-        {t(($) => {
-          return $.browserSession.blankPage.description;
-        })}
-      </p>
     </div>
   );
 }
@@ -235,13 +168,7 @@ function BrowserCdpViewer({
   readonly actions: ReactNode;
   readonly overlay: ReactNode;
 }) {
-  const { t } = useTranslation();
   const connection = useLastLoadable(signals.viewerConnection$);
-  const windowSizeSync = useGet(signals.viewerWindowSizeSync$);
-  const setWindowSizeSync = useSet(signals.setViewerWindowSizeSync$);
-  const capture = useGet(signals.viewerCapture$);
-  const setCapture = useSet(signals.setViewerCapture$);
-  const theme = useGet(theme$);
   // Keep the stream during lease refreshes, but never reuse an endpoint from a
   // previous provider instance while its replacement connection is loading.
   const connecting =
@@ -275,41 +202,18 @@ function BrowserCdpViewer({
         data-browser-session-cdp-viewer
         className="relative isolate flex min-h-0 flex-1"
       >
-        <CdpViewer
-          cdpUrl={connection.data.cdpUrl}
-          windowId={windowId}
-          interactive
-          showSettingsMenu
-          windowSizeSync={windowSizeSync}
-          onWindowSizeSyncChange={setWindowSizeSync}
-          capture={capture}
-          onCaptureChange={setCapture}
-          extensions={[browserUse()]}
-          colorScheme={theme}
-          {...(refined
-            ? {
-                tabStyle: "floating",
-                toolbarEnd: actions ?? undefined,
-                stageOverlay: overlay ?? undefined,
-                blankPage: <BrowserBlankPage />,
-                labels: {
-                  addressPlaceholder: t(($) => {
-                    return $.browserSession.addressPlaceholder;
-                  }),
-                  blankTabTitle: t(($) => {
-                    return $.browserSession.blankTabTitle;
-                  }),
-                },
-              }
-            : {})}
-          className="w-full flex-1"
-          style={refined ? okouViewerStyle() : { height: "100%", minHeight: 0 }}
+        <BrowserViewer
+          signals={signals.viewer}
+          connectionKey={
+            (instanceId ?? liveUrl) +
+            ":" +
+            (windowId ?? "") +
+            ":" +
+            connection.data.cdpUrl
+          }
+          actions={refined ? actions : null}
+          presence={overlay}
         />
-        {!refined && overlay ? (
-          <div className="pointer-events-none absolute inset-0 z-10">
-            {overlay}
-          </div>
-        ) : null}
       </div>
     </>
   );

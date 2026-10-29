@@ -785,9 +785,6 @@ importers:
       ccstate-react:
         specifier: ^6.1.0
         version: 6.1.0(@types/react@19.2.14)(react@19.2.6)
-      cdp-viewer:
-        specifier: github:okou-ai/cdp-viewer#102cf1d33d17fe876b2401af0ae8eac29f7315c5
-        version: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/102cf1d33d17fe876b2401af0ae8eac29f7315c5(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -936,6 +933,9 @@ importers:
       acorn:
         specifier: ^8.16.0
         version: 8.16.0
+      devtools-protocol:
+        specifier: 0.0.1721602
+        version: 0.0.1721602
       eslint:
         specifier: ^9.34.0
         version: 9.39.4(jiti@2.7.0)
@@ -1777,35 +1777,8 @@ packages:
       date-fns:
         optional: true
 
-  '@base-ui/react@1.9.0':
-    resolution: {integrity: sha512-S8CSYosASBKtpL8SWUfS78rFElfLijiCgA7oHOK22jCJ95FULsYyKwBNFOgudt0RA+/7yNc7F81bOvQnRgbBiQ==}
-    engines: {node: '>=14.0.0'}
-    peerDependencies:
-      '@date-fns/tz': ^1.2.0
-      '@types/react': ^17 || ^18 || ^19
-      date-fns: ^4.0.0
-      react: ^17 || ^18 || ^19
-      react-dom: ^17 || ^18 || ^19
-    peerDependenciesMeta:
-      '@date-fns/tz':
-        optional: true
-      '@types/react':
-        optional: true
-      date-fns:
-        optional: true
-
   '@base-ui/utils@0.3.2':
     resolution: {integrity: sha512-oWy1aq/I2GmYjpl4PhEAhzflF8VPGKgZeq0xAWTbfD5KBWyxcN0ZP2+WHSUm/5Z6lVMBDLReLcoXwSYoRc/zNQ==}
-    peerDependencies:
-      '@types/react': ^17 || ^18 || ^19
-      react: ^17 || ^18 || ^19
-      react-dom: ^17 || ^18 || ^19
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-
-  '@base-ui/utils@0.5.0':
-    resolution: {integrity: sha512-dYGGcEttjkYiMoa5nHm8vLaJ2UcuTWxo3BFAwOYXeRg/q7UVVvA6cacEIXEs3FgBfK1CGtW1ptElqs7wsx+t9A==}
     peerDependencies:
       '@types/react': ^17 || ^18 || ^19
       react: ^17 || ^18 || ^19
@@ -5996,14 +5969,6 @@ packages:
   ccstate@6.1.0:
     resolution: {integrity: sha512-p7FFf8dJDsLFORC/xwOnJ70RO0M8ix9JI95utUJBPo4lIAlZ/XIkGLDztY6ciCrH92jrln1uKk2OSUzemLcHiA==}
 
-  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/102cf1d33d17fe876b2401af0ae8eac29f7315c5:
-    resolution: {gitHosted: true, integrity: sha512-xLmXKxDeZ4ACTwsI/5+mKKdLcBGVZKQnGRIB50VxRuMLevFPgyj5rKrxMim3DhwtGfJ260KbavHUm4VLTiuDzA==, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/102cf1d33d17fe876b2401af0ae8eac29f7315c5}
-    version: 0.0.0
-    engines: {node: '>=22.12.0'}
-    peerDependencies:
-      react: ^19.0.0
-      react-dom: ^19.0.0
-
   cfb@1.2.2:
     resolution: {integrity: sha512-KfdUZsSOw19/ObEWasvBP/Ac4reZvAGauZhs6S/gqNhXhI7cKwvlH7ulj+dOEYnca4bm4SGo8C1bTAQvnTjgQA==}
     engines: {node: '>=0.8'}
@@ -7784,15 +7749,6 @@ packages:
       '@types/react':
         optional: true
 
-  lucide-react@1.59.0:
-    resolution: {integrity: sha512-5qgMyyCPU6OvnKpLS2t693+ZtiqA8oaSweWoUows0BLFKFf6V75m4+CptpmohZHpD5IuOVIBXHBBiv2vpLJmtw==}
-    peerDependencies:
-      '@types/react': '*'
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
     hasBin: true
@@ -8748,9 +8704,6 @@ packages:
 
   reselect@5.2.0:
     resolution: {integrity: sha512-AgZ3UOZm3YndfrJ4OYjgrT7bmCm/1iqkjvEfH/oYjzh6PD2qw4QuT3jjnXIrpdt4MTpMXclMT3lXbmRY+XRakw==}
-
-  reselect@5.3.0:
-    resolution: {integrity: sha512-XGoLeRAVzUTcJ1qkxPQhDJyIZ5d6zzZD9nT7AEZOaaU9UbWclhycElmhO+VD5bFeLuzhPBaOV2oXC8uG35ZSpg==}
 
   resend@6.12.4:
     resolution: {integrity: sha512-lRpJ2Hxd+ht+JPDm97juRcUp9HOMuZyxaRFRFmc9Tx8iNWiei94Dx9v6SWufgKk2667C/uCeKKspMotOHSpCSg==}
@@ -10334,18 +10287,6 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.14
 
-  '@base-ui/react@1.9.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
-    dependencies:
-      '@babel/runtime': 7.29.7
-      '@base-ui/utils': 0.5.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@floating-ui/react-dom': 2.1.9(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@floating-ui/utils': 0.2.12
-      react: 19.2.6
-      react-dom: 19.2.6(react@19.2.6)
-      use-sync-external-store: 1.7.0(react@19.2.6)
-    optionalDependencies:
-      '@types/react': 19.2.14
-
   '@base-ui/utils@0.3.2(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@babel/runtime': 7.29.7
@@ -10353,17 +10294,6 @@ snapshots:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       reselect: 5.2.0
-      use-sync-external-store: 1.7.0(react@19.2.6)
-    optionalDependencies:
-      '@types/react': 19.2.14
-
-  '@base-ui/utils@0.5.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
-    dependencies:
-      '@babel/runtime': 7.29.7
-      '@floating-ui/utils': 0.2.12
-      react: 19.2.6
-      react-dom: 19.2.6(react@19.2.6)
-      reselect: 5.3.0
       use-sync-external-store: 1.7.0(react@19.2.6)
     optionalDependencies:
       '@types/react': 19.2.14
@@ -14245,20 +14175,6 @@ snapshots:
 
   ccstate@6.1.0: {}
 
-  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/102cf1d33d17fe876b2401af0ae8eac29f7315c5(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
-    dependencies:
-      '@base-ui/react': 1.9.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      ccstate: 6.1.0
-      devtools-protocol: 0.0.1721602
-      lucide-react: 1.59.0(@types/react@19.2.14)(react@19.2.6)
-      react: 19.2.6
-      react-dom: 19.2.6(react@19.2.6)
-      signal-timers: 1.0.5
-    transitivePeerDependencies:
-      - '@date-fns/tz'
-      - '@types/react'
-      - date-fns
-
   cfb@1.2.2:
     dependencies:
       adler-32: 1.3.1
@@ -16158,12 +16074,6 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.14
 
-  lucide-react@1.59.0(@types/react@19.2.14)(react@19.2.6):
-    dependencies:
-      react: 19.2.6
-    optionalDependencies:
-      '@types/react': 19.2.14
-
   lz-string@1.5.0: {}
 
   magic-string@0.30.21:
@@ -17390,8 +17300,6 @@ snapshots:
   require-main-filename@2.0.0: {}
 
   reselect@5.2.0: {}
-
-  reselect@5.3.0: {}
 
   resend@6.12.4:
     dependencies:

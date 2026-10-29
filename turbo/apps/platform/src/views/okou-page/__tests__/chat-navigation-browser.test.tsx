@@ -82,7 +82,7 @@ function mockBrowserApi(
   });
   const cdpUrl = "wss://cdp.browser-use.com/sidebar";
   mockBrowserCdp(context, cdpUrl, {
-    streaming: initialSession?.window !== undefined,
+    streaming: true,
     ...(initialSession?.window
       ? {
           targets: [
@@ -208,30 +208,27 @@ function liveBrowserSidebar(): HTMLElement {
 }
 
 function visibleViewerMenu(
-  viewer: HTMLElement,
+  _viewer: HTMLElement,
   name: string,
 ): Promise<HTMLElement> {
-  return waitFor(() => {
-    const menus = Array.from(
-      viewer.querySelectorAll<HTMLElement>('[role="menu"]'),
-    ).filter((menu) => {
-      return menu.getAttribute("aria-label") === name;
-    });
-    const [menu] = menus;
-    if (!menu || menus.length !== 1) {
-      throw new Error(`Expected one viewer menu named "${name}"`);
-    }
-    expect(menu).toBeVisible();
-    expect(menu.closest('[aria-hidden="true"], [hidden], [inert]')).toBeNull();
-    return menu;
+  return screen.findByRole("menu", { name });
+}
+
+function menuRadio(menu: HTMLElement, name: string): HTMLElement {
+  const item = queryAllByRoleFast("menuitemradio", menu).find((candidate) => {
+    return candidate.textContent?.trim() === name;
   });
+  if (!item) {
+    throw new Error("Missing browser option: " + name);
+  }
+  return item;
 }
 
 async function openViewerSizingMenu(viewer: HTMLElement): Promise<HTMLElement> {
-  click(buttonByName("Browser menu", viewer));
-  const menu = await visibleViewerMenu(viewer, "Browser menu");
-  click(within(menu).getByText("Fit to this viewer"));
-  return visibleViewerMenu(viewer, "Fit to this viewer");
+  click(buttonByName("Browser settings", viewer));
+  const menu = await visibleViewerMenu(viewer, "Browser settings");
+  click(within(menu).getByText("Window size"));
+  return visibleViewerMenu(viewer, "Window size");
 }
 
 test("The embedded Okou viewer retains its sizing preference when the menu reopens", async () => {
@@ -247,24 +244,27 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   const address = await within(sidebar).findByDisplayValue(
     "https://example.com",
   );
-  expect(address).toBeEnabled();
+  await waitFor(() => {
+    expect(address).toBeEnabled();
+  });
   const viewer = within(sidebar).getByRole("region", {
     name: "Remote browser viewer",
   });
   const sizingMenu = await openViewerSizingMenu(viewer);
-  expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
+  expect(menuRadio(sizingMenu, "Follow panel")).toHaveAttribute(
     "aria-checked",
     "true",
   );
-  click(within(sizingMenu).getByText("Do not sync automatically"));
+  click(menuRadio(sizingMenu, "Off"));
   await waitFor(() => {
     expect(sizingMenu).not.toBeInTheDocument();
   });
   const updatedSizingMenu = await openViewerSizingMenu(viewer);
-  expect(
-    within(updatedSizingMenu).getByText("Do not sync automatically"),
-  ).toHaveAttribute("aria-checked", "true");
-  click(buttonByName("Browser menu", viewer));
+  expect(menuRadio(updatedSizingMenu, "Off")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  click(buttonByName("Browser settings", viewer));
   await waitFor(() => {
     expect(updatedSizingMenu).not.toBeInTheDocument();
   });

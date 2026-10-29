@@ -1,28 +1,94 @@
-import { number, object, string } from "zod";
+import { array, number, object, string, unknown } from "zod";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 
-/** A test-owned external CDP browser; the installed viewer runs normally. */
+interface BrowserTarget {
+  readonly targetId: string;
+  title: string;
+  url: string;
+  readonly windowId?: number;
+}
+
+const requestSchema = object({
+  id: number().optional(),
+  method: string(),
+  sessionId: string().optional(),
+  params: object({ targetId: string().optional() }).loose().optional(),
+});
+type BrowserRequest = ReturnType<typeof requestSchema.parse>;
+type BrowserResponse =
+  | { readonly result: unknown }
+  | { readonly error: { readonly code: number; readonly message: string } };
+
+/** A test-owned external CDP browser; the Platform viewer runs normally. */
 export function mockBrowserCdp(
   context: TestContext,
   cdpUrl: string,
   options: {
     readonly streaming?: boolean;
-    readonly targets?: readonly {
-      readonly targetId: string;
-      readonly title: string;
-      readonly url: string;
-      readonly windowId?: number;
-    }[];
+    readonly targets?: readonly BrowserTarget[];
+    readonly unavailableTargets?: readonly string[];
   } = {},
 ) {
   context.mocks.browser.canvasRendering();
   context.mocks.browser.uint8ArrayFromBase64();
-  if (options.streaming) {
-    context.mocks.browser.imageBitmap(1440, 900);
+  const bitmap =
+    options.streaming === false
+      ? null
+      : context.mocks.browser.imageBitmap(1440, 900);
+  const viewport = { width: 1440, height: 900 };
+  const targets: BrowserTarget[] = (
+    options.targets ?? [
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+      },
+    ]
+  ).map((target) => {
+    return { ...target };
+  });
+  let created = 0;
+  const input: { method: string; params: unknown; sessionId?: string }[] = [];
+  const detached: string[] = [];
+  const captures: unknown[] = [];
+  const heldReplies = new Map<string, (response: string) => void>();
+
+  function event(method: string, params: unknown, sessionId?: string) {
+    socket.receive(cdpUrl, JSON.stringify({ method, params, sessionId }));
   }
-  const targets = options.targets ?? [
-    { targetId: "example-page", title: "Example", url: "https://example.com" },
-  ];
+
+  function frame(data: string, sessionId = "example-page-session") {
+    event(
+      "Page.screencastFrame",
+      {
+        data,
+        sessionId: 1,
+        metadata: {
+          timestamp: 2,
+          offsetTop: 0,
+          pageScaleFactor: 1,
+          deviceWidth: viewport.width,
+          deviceHeight: viewport.height,
+          scrollOffsetX: 0,
+          scrollOffsetY: 0,
+        },
+      },
+      sessionId,
+    );
+  }
+
+  function addTarget(url: string, windowId?: number) {
+    const target = {
+      targetId: `created-${++created}`,
+      title: "about:blank",
+      url,
+      windowId,
+    };
+    targets.push(target);
+    event("Target.targetCreated", { targetInfo: { ...target, type: "page" } });
+    return target;
+  }
+
   function targetForSession(sessionId: string | undefined) {
     const target = targets.find((candidate) => {
       return `${candidate.targetId}-session` === sessionId;
@@ -32,80 +98,133 @@ export function mockBrowserCdp(
     }
     return target;
   }
-  const socket = context.mocks.browser.webSocket((data, url) => {
-    if (url !== cdpUrl) {
-      throw new Error("Unexpected viewer endpoint");
-    }
-    const request = object({
-      id: number().optional(),
-      method: string(),
-      sessionId: string().optional(),
-      params: object({ targetId: string().optional() }).loose().optional(),
-    }).parse(JSON.parse(data));
-    if (request.id === undefined) {
-      return null;
-    }
-    let result: unknown = {};
+
+  function targetResult(request: BrowserRequest): unknown {
     switch (request.method) {
       case "Target.getTargets": {
-        result = {
+        return {
           targetInfos: targets.map((target) => {
-            return {
-              ...target,
-              type: "page",
-              attached: false,
-            };
+            return { ...target, type: "page", attached: false };
           }),
         };
-        break;
+      }
+      case "Target.createTarget": {
+        const { url } = object({ url: string() }).parse(request.params);
+        return { targetId: addTarget(url).targetId };
+      }
+      case "Target.closeTarget": {
+        const index = targets.findIndex((target) => {
+          return target.targetId === request.params?.targetId;
+        });
+        if (index === -1) {
+          throw new Error("Unknown tab to close");
+        }
+        const target = targets.splice(index, 1)[0]!;
+        event("Target.targetDestroyed", { targetId: target.targetId });
+        return { success: true };
+      }
+      case "Target.detachFromTarget": {
+        detached.push(
+          object({ sessionId: string() }).parse(request.params).sessionId,
+        );
+        return {};
       }
       case "Target.attachToTarget": {
-        result = {
+        return {
           sessionId: `${request.params?.targetId ?? "example-page"}-session`,
         };
-        break;
       }
-      case "Browser.getWindowForTarget": {
-        const target = targets.find((candidate) => {
-          return candidate.targetId === request.params?.targetId;
+      default: {
+        return {};
+      }
+    }
+  }
+
+  function browserResponse(request: BrowserRequest): BrowserResponse {
+    if (request.method === "Browser.getWindowForTarget") {
+      const target = targets.find((candidate) => {
+        return candidate.targetId === request.params?.targetId;
+      });
+      if (!target || options.unavailableTargets?.includes(target.targetId)) {
+        return {
+          error: { code: -32_000, message: "No target with given id found" },
+        };
+      }
+      return {
+        result: {
+          windowId: target.windowId ?? 0,
+          bounds: { ...viewport, windowState: "normal" },
+        },
+      };
+    }
+    if (request.method === "Browser.setContentsSize") {
+      const size = object({ width: number(), height: number() }).parse(
+        request.params,
+      );
+      viewport.width = size.width;
+      viewport.height = size.height;
+      bitmap?.resize(size.width, size.height);
+    }
+    return { result: {} };
+  }
+
+  function runtimeResult(request: BrowserRequest): unknown {
+    if (request.method === "Runtime.callFunctionOn") {
+      const params = object({
+        arguments: array(object({ value: unknown() })).optional(),
+      }).parse(request.params);
+      const url = params.arguments?.[0]?.value;
+      if (typeof url === "string" && url.startsWith("about:blank#cdpv-")) {
+        addTarget(url, targetForSession(request.sessionId).windowId);
+        return { result: { type: "boolean", value: true } };
+      }
+    } else if (request.method === "Runtime.evaluate") {
+      const { expression } = object({ expression: string() }).parse(
+        request.params,
+      );
+      return {
+        result: expression.includes("const fence =")
+          ? { type: "object", value: { fence: 1000, now: 1001 } }
+          : expression.includes("devicePixelRatio")
+            ? { type: "object", value: { ...viewport, dpr: 1 } }
+            : { type: "undefined" },
+      };
+    }
+    return {};
+  }
+
+  function pageResult(request: BrowserRequest): unknown {
+    switch (request.method) {
+      case "Page.createIsolatedWorld": {
+        return { executionContextId: 1 };
+      }
+      case "Page.navigate": {
+        const { url } = object({ url: string() }).parse(request.params);
+        const target = targetForSession(request.sessionId);
+        target.url = url;
+        target.title = url === "about:blank" ? url : new URL(url).hostname;
+        event(
+          "Page.frameNavigated",
+          { frame: { id: "example-frame", loaderId: "navigated-loader", url } },
+          request.sessionId,
+        );
+        event("Target.targetInfoChanged", {
+          targetInfo: { ...target, type: "page" },
         });
-        if (!target) {
-          return JSON.stringify({
-            id: request.id,
-            error: { code: -32_000, message: "No target with given id found" },
-          });
-        }
-        result = { windowId: target.windowId ?? 0 };
-        break;
+        event("Page.loadEventFired", { timestamp: 2 }, request.sessionId);
+        return { frameId: "example-frame" };
       }
       case "Page.startScreencast": {
-        if (options.streaming) {
+        captures.push(request.params);
+        if (options.streaming !== false) {
           queueMicrotask(() => {
-            socket.receive(
-              cdpUrl,
-              JSON.stringify({
-                method: "Page.screencastFrame",
-                sessionId: request.sessionId,
-                params: {
-                  data: "AAAA",
-                  sessionId: 1,
-                  metadata: {
-                    offsetTop: 0,
-                    pageScaleFactor: 1,
-                    deviceWidth: 1440,
-                    deviceHeight: 900,
-                    scrollOffsetX: 0,
-                    scrollOffsetY: 0,
-                  },
-                },
-              }),
-            );
+            frame("AAAA", request.sessionId);
           });
         }
-        break;
+        return {};
       }
       case "Page.getFrameTree": {
-        result = {
+        return {
           frameTree: {
             frame: {
               id: "example-frame",
@@ -114,26 +233,28 @@ export function mockBrowserCdp(
             },
           },
         };
-        break;
       }
       case "Page.getLayoutMetrics": {
-        result = {
+        return {
+          visualViewport: {
+            clientWidth: viewport.width,
+            clientHeight: viewport.height,
+          },
           cssVisualViewport: {
             offsetX: 0,
             offsetY: 0,
             pageX: 0,
             pageY: 0,
-            clientWidth: 1440,
-            clientHeight: 900,
+            clientWidth: viewport.width,
+            clientHeight: viewport.height,
             scale: 1,
             zoom: 1,
           },
         };
-        break;
       }
       case "Page.getNavigationHistory": {
         const target = targetForSession(request.sessionId);
-        result = {
+        return {
           currentIndex: 0,
           entries: [
             {
@@ -145,9 +266,81 @@ export function mockBrowserCdp(
             },
           ],
         };
-        break;
+      }
+      default: {
+        return {};
       }
     }
-    return JSON.stringify({ id: request.id, result });
+  }
+
+  function respond(request: BrowserRequest): BrowserResponse {
+    switch (request.method.split(".")[0]) {
+      case "Target": {
+        return { result: targetResult(request) };
+      }
+      case "Browser": {
+        return browserResponse(request);
+      }
+      case "Runtime": {
+        return { result: runtimeResult(request) };
+      }
+      case "Page": {
+        return { result: pageResult(request) };
+      }
+      case "Input": {
+        if (
+          [
+            "Input.insertText",
+            "Input.dispatchKeyEvent",
+            "Input.imeSetComposition",
+          ].includes(request.method)
+        ) {
+          input.push({
+            method: request.method,
+            params: request.params,
+            sessionId: request.sessionId,
+          });
+        }
+      }
+    }
+    return { result: {} };
+  }
+
+  const socket = context.mocks.browser.webSocket((data, url) => {
+    if (url !== cdpUrl) {
+      throw new Error("Unexpected viewer endpoint");
+    }
+    const request = requestSchema.parse(JSON.parse(data));
+    if (request.id === undefined) {
+      return null;
+    }
+    const response = JSON.stringify({ id: request.id, ...respond(request) });
+    const held = heldReplies.get(request.method);
+    if (held) {
+      heldReplies.delete(request.method);
+      held(response);
+      return null;
+    }
+    return response;
   });
+
+  return {
+    event,
+    frame,
+    targets,
+    input,
+    detached,
+    captures,
+    viewport,
+    holdNext(method: string) {
+      const response = context.mocks.deferred<string>();
+      heldReplies.set(method, response.resolve);
+      return {
+        received: response.promise,
+        async release() {
+          socket.receive(cdpUrl, await response.promise);
+        },
+      };
+    },
+  };
 }

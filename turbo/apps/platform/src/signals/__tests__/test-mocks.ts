@@ -593,8 +593,14 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           "visibilityState",
           visibilityState,
         );
+        const hiddenDescriptor = defineWindowProperty(
+          document,
+          "hidden",
+          visibilityState === "hidden",
+        );
         restoreOnAbort(getSignal(), () => {
           restoreWindowProperty(document, "visibilityState", descriptor);
+          restoreWindowProperty(document, "hidden", hiddenDescriptor);
         });
         return {
           changeTo(nextVisibilityState): void {
@@ -602,6 +608,11 @@ export function createTestMocks(getSignal: () => AbortSignal) {
               document,
               "visibilityState",
               nextVisibilityState,
+            );
+            defineWindowProperty(
+              document,
+              "hidden",
+              nextVisibilityState === "hidden",
             );
             document.dispatchEvent(new Event("visibilitychange"));
           },
@@ -657,7 +668,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       canvasRendering: (): CanvasRenderingMock => {
         return mockCanvasRendering(getSignal());
       },
-      imageBitmap: (width: number, height: number): void => {
+      imageBitmap: (width: number, height: number) => {
         const descriptor = defineWindowProperty(
           globalThis,
           "createImageBitmap",
@@ -668,6 +679,12 @@ export function createTestMocks(getSignal: () => AbortSignal) {
         restoreOnAbort(getSignal(), () => {
           restoreWindowProperty(globalThis, "createImageBitmap", descriptor);
         });
+        return {
+          resize(nextWidth: number, nextHeight: number) {
+            width = nextWidth;
+            height = nextHeight;
+          },
+        };
       },
       uint8ArrayFromBase64: (): void => {
         // The viewer requires this browser API, which the test runtime lacks.

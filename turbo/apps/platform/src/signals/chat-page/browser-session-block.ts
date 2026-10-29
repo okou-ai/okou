@@ -4,7 +4,10 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
-import type { ViewerCaptureOptions, WindowSizeSync } from "cdp-viewer";
+import {
+  createBrowserViewerSignals,
+  type BrowserViewerSignals,
+} from "../browser-viewer/browser-viewer.ts";
 import {
   command,
   computed,
@@ -48,10 +51,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
       readonly cdpUrl: string;
     } | null>
   >;
-  readonly viewerWindowSizeSync$: Computed<WindowSizeSync>;
-  readonly setViewerWindowSizeSync$: Command<void, [WindowSizeSync]>;
-  readonly viewerCapture$: Computed<ViewerCaptureOptions>;
-  readonly setViewerCapture$: Command<void, [ViewerCaptureOptions]>;
+  readonly viewer: BrowserViewerSignals;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -212,39 +212,6 @@ function createBrowserSessionSubscriptionSignals(
   return { subscribe$ };
 }
 
-function createViewerSettingsSignals(): Pick<
-  BrowserSessionSignals,
-  | "viewerWindowSizeSync$"
-  | "setViewerWindowSizeSync$"
-  | "viewerCapture$"
-  | "setViewerCapture$"
-> {
-  const internalViewerWindowSizeSync$ = state<WindowSizeSync>("live");
-  const viewerWindowSizeSync$ = computed((get) => {
-    return get(internalViewerWindowSizeSync$);
-  });
-  const setViewerWindowSizeSync$ = command(({ set }, mode: WindowSizeSync) => {
-    set(internalViewerWindowSizeSync$, mode);
-  });
-  const internalViewerCapture$ = state<ViewerCaptureOptions>({
-    format: "webp",
-  });
-  const viewerCapture$ = computed((get) => {
-    return get(internalViewerCapture$);
-  });
-  const setViewerCapture$ = command(
-    ({ set }, capture: ViewerCaptureOptions) => {
-      set(internalViewerCapture$, capture);
-    },
-  );
-  return {
-    viewerWindowSizeSync$,
-    setViewerWindowSizeSync$,
-    viewerCapture$,
-    setViewerCapture$,
-  };
-}
-
 function createBrowserSessionKeepAliveSignals(
   descriptor: BrowserSessionDescriptor,
   session$: BrowserSessionSignals["session$"],
@@ -366,6 +333,18 @@ export function createBrowserSessionSignals(
       : null;
   });
 
+  const browserConnection$ = computed(async (get) => {
+    const connection = await get(viewerConnection$);
+    return connection
+      ? {
+          cdpUrl: connection.cdpUrl,
+          ...(connection.windowId === null
+            ? {}
+            : { windowId: connection.windowId }),
+        }
+      : null;
+  });
+  const viewer = createBrowserViewerSignals(browserConnection$);
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,
@@ -392,7 +371,7 @@ export function createBrowserSessionSignals(
     session$,
     panelSession$: session$,
     viewerConnection$,
-    ...createViewerSettingsSignals(),
+    viewer,
     ...startSignals,
     ...closeSignals,
     reload$,

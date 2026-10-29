@@ -451,9 +451,11 @@ test("Follow suspension and resumption in the live browser panel", async () => {
     name: "Cloud browser",
   });
   expect(sidebar).toBeVisible();
-  await expect(
-    within(sidebar).findByDisplayValue("https://example.com"),
-  ).resolves.toBeEnabled();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByDisplayValue("https://example.com"),
+    ).toBeEnabled();
+  });
   expect(screen.getByTestId("browser-session-thumbnail")).toHaveAttribute(
     "src",
     INITIAL_SCREENSHOT_URL,
@@ -491,9 +493,11 @@ test("Follow suspension and resumption in the live browser panel", async () => {
   await waitFor(() => {
     expect(screen.getByText("Live")).toBeVisible();
   });
-  await expect(
-    within(sidebar).findByDisplayValue("https://example.com"),
-  ).resolves.toBeEnabled();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByDisplayValue("https://example.com"),
+    ).toBeEnabled();
+  });
   expect(screen.queryByTestId("browser-session-panel-screenshot")).toBeNull();
 });
 
