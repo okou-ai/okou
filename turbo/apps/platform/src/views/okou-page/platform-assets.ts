@@ -31,6 +31,9 @@ export const emptySearchImg = pageAssetUrl(
 );
 export const thinkingSpinnerImg =
   "https://static.okou.io/public/okou-thinking-mark-orange-6fda41f32ba4.svg";
+export const thinkingBrandMotionImg = pageAssetUrl(
+  "assets/okou-thinking-mark-textured-dd139799c2a2.svg",
+);
 export const computerUseIllustrationImg = pageAssetUrl(
   "assets/computer-use-illustration-eecea534a3ac.png?v=568fa471",
 );

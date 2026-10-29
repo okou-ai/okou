@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import chalk from "chalk";
+import { listPresentationRunbookPackages } from "@okouai/core/resource-registry";
 import { createGenerateCommand } from "../index";
 import { presentationCommand } from "../presentation";
 
@@ -30,7 +31,7 @@ describe("okou generate presentation command", () => {
     vi.unstubAllEnvs();
   });
 
-  it("should print direct authoring instructions for presentation", async () => {
+  it("guides source-aware template selection before authoring", async () => {
     await generateCommand.parseAsync([
       "node",
       "cli",
@@ -45,11 +46,29 @@ describe("okou generate presentation command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain("# Okou generate presentation");
-    expect(stdout).toContain("direct HTML presentation authoring packet");
+    expect(stdout).toContain(
+      "Select a built-in presentation template from the catalog below",
+    );
     expect(stdout).toContain("API migration plan");
-    expect(stdout).toContain("Selected template: agent decides");
     expect(stdout).toContain("Slide count: 10");
-    expect(stdout).toContain("Use a fixed 1920x1080 slide canvas");
+    expect(stdout).toContain(
+      "Before choosing a template, planning slides, or launching workers, read the user's request and supplied source text and inspect important charts and images",
+    );
+    expect(stdout).toContain(
+      "Distinguish content sources from visual references and explicitly required templates",
+    );
+    expect(stdout).toContain(
+      "based only on tone, audience fit, and visual preferences",
+    );
+    expect(stdout).toContain(
+      "The scenarios in each description are examples, not subject restrictions",
+    );
+    expect(stdout).toContain(
+      "When visual preferences are unspecified, choose a broadly suitable, understated style consistent with the audience and context",
+    );
+    expect(stdout).toContain(
+      "Keep the choice internal: do not announce the selected template or ask the user to choose or confirm one",
+    );
     expect(stdout).toContain(
       "Keep all slides and visible content in index.html; render the first slide without JavaScript",
     );
@@ -57,20 +76,17 @@ describe("okou generate presentation command", () => {
       "okou generate image-batch start <manifest.tsv> <state-dir>",
     );
     expect(stdout).toContain("okou generate image-batch wait <state-dir>");
-    expect(stdout).toContain("Produce exactly the requested slide count");
-    expect(stdout).toContain("make an internal slide plan");
     expect(stdout).toContain(
-      "Adapt the selected template to the requested slide count",
+      "Pull only the selected package once: `okou resource pull <Package from the catalog> --dir ./generated/resources`",
     );
     expect(stdout).toContain(
-      "Use selected template references only for structure, layout devices, spacing, and visual language",
+      "Read SKILL.md in the source directory printed by the pull command fully",
     );
     expect(stdout).toContain(
-      "Derive every presentation image/media choice from the user's requested topic",
+      "Follow that package's authoring, worker startup, layout and verification workflow",
     );
-    expect(stdout).toContain("Vary slide forms across the deck");
     expect(stdout).toContain(
-      "Check that shapes, charts, images, or decorative graphics do not cover readable text",
+      "Preserve the requested slide count and substantive content",
     );
     expect(stdout).toContain(
       "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --title 'API Migration Plan' --artifact-kind presentation-html --preview ./generated/previews/cover.png --json\n",
@@ -80,8 +96,40 @@ describe("okou generate presentation command", () => {
     );
   });
 
+  it("provides every built-in candidate with its style and pullable package", async () => {
+    await createGenerateCommand().parseAsync([
+      "node",
+      "cli",
+      "presentation",
+      "--prompt",
+      "Explain the attached research to a general business audience",
+    ]);
+
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    const candidates = [
+      ...stdout.matchAll(/^### .+ \((template:[^)]+)\)$/gm),
+    ].map((match) => {
+      return match[1];
+    });
+    const templates = listPresentationRunbookPackages();
+    expect(candidates).toEqual(
+      templates.map((template) => {
+        return template.templateId;
+      }),
+    );
+    for (const template of templates) {
+      expect(stdout).toContain(template.description);
+      expect(stdout).toContain(
+        `Package: ${template.resourceId}; default color system: ${template.defaultColorSystem}`,
+      );
+    }
+    expect(stdout).toContain("Calm, scholarly and cultivated");
+    expect(stdout).toContain("Exuberant, irreverent and loud");
+    expect(stdout).toContain("Rational, composed and businesslike");
+  });
+
   it.each([
-    { label: "direct authoring", templateArgs: [] },
+    { label: "automatic selection", templateArgs: [] },
     {
       label: "template authoring",
       templateArgs: ["--template", "html-ppt-playful-launch"],

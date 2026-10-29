@@ -3,8 +3,31 @@ import { useTranslation } from "react-i18next";
 import { ArrowUpRight } from "lucide-react";
 import { BrandSlack, cn } from "@okouai/ui";
 import type { UserMessageRenderPart } from "../../signals/chat-page/chat-event.ts";
+import { WhatsappMark } from "./components/whatsapp-mark.tsx";
 import { DiscordMark } from "./components/discord-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
+
+type ExternalSourcePart = Extract<
+  UserMessageRenderPart,
+  { type: "source"; kind: "external" }
+>["part"];
+type ExternalSourceKind = ExternalSourcePart["kind"] | "whatsapp";
+
+function sourceKindForPart(part: ExternalSourcePart): ExternalSourceKind {
+  if (
+    part.kind === "agentphone" &&
+    /^https:\/\/wa\.me\/\d+$/u.test(part.href ?? "")
+  ) {
+    return "whatsapp";
+  }
+  if (
+    part.kind === "feishu" &&
+    part.href?.startsWith("https://applink.larksuite.com/") === true
+  ) {
+    return "lark";
+  }
+  return part.kind;
+}
 
 const annotationIconImgs = {
   wechat: settingsIconAssetUrl("wechat"),
@@ -41,6 +64,7 @@ function sourceMessageLinkText(
   >["part"],
 ) {
   const opensChat =
+    sourceKindForPart(part) === "whatsapp" ||
     part.kind === "feishu" ||
     part.kind === "lark" ||
     (part.kind === "telegram" &&
@@ -48,7 +72,7 @@ function sourceMessageLinkText(
     (part.kind === "teams" &&
       part.href?.startsWith("https://teams.microsoft.com/l/chat/") === true);
   const openLabel =
-    part.kind === "agentphone"
+    part.kind === "agentphone" && sourceKindForPart(part) !== "whatsapp"
       ? t(($) => {
           return $.chat.origins.openMessages;
         })
@@ -64,12 +88,14 @@ function sourceMessageLinkText(
 
 function sourceMessageLabel(
   t: TFunction<"common">,
-  kind: Extract<
-    UserMessageRenderPart,
-    { type: "source"; kind: "external" }
-  >["part"]["kind"],
+  kind: ExternalSourceKind,
 ): string {
   switch (kind) {
+    case "whatsapp": {
+      return t(($) => {
+        return $.works.whatsapp.name;
+      });
+    }
     case "wechat": {
       return t(($) => {
         return $.chat.origins.wechat;
@@ -121,15 +147,14 @@ function sourceMessageLabel(
 function SourceMessageIcon({
   sourceKind,
 }: {
-  readonly sourceKind: Extract<
-    UserMessageRenderPart,
-    { type: "source"; kind: "external" }
-  >["part"]["kind"];
+  readonly sourceKind: ExternalSourceKind;
 }) {
   return (
     <>
       {" "}
-      {sourceKind === "slack" ? (
+      {sourceKind === "whatsapp" ? (
+        <WhatsappMark size={15} className="shrink-0" />
+      ) : sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
       ) : sourceKind === "discord" ? (
         <DiscordMark size={15} />
@@ -157,13 +182,7 @@ export function ExternalSourceMessageAnnotation({
   readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
-  // Historical messages used "feishu" for both platforms; their link can
-  // identify Lark. New messages already carry the canonical source kind.
-  const sourceKind =
-    part.kind === "feishu" &&
-    part.href?.startsWith("https://applink.larksuite.com/") === true
-      ? "lark"
-      : part.kind;
+  const sourceKind = sourceKindForPart(part);
   const sourceLabel = sourceMessageLabel(t, sourceKind);
   const href = sourceMessageHref(part);
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);

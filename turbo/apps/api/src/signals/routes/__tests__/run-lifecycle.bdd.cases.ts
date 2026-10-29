@@ -3261,15 +3261,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               heartbeatGeneration: 1,
             },
             tier: exactSource ? "exactSandbox" : "reusableSandbox",
-            ...(exactSource ? { finalizingSourceRunId: first.runId } : {}),
+            ...(exactSource ? { predecessorRunId: first.runId } : {}),
             expiresAt: expect.any(String),
           });
         },
       );
 
       it("prefers a recent same-generation predecessor before its producer heartbeat arrives", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3306,7 +3306,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ],
         });
 
-        const successorCreatedAt = sourceCompletedAt + 100;
+        const successorCreatedAt = predecessorCompletedAt + 100;
         mockNow(successorCreatedAt);
         context.mocks.ably.publish.mockClear();
         const successor = await sendChatRunMessage(actor, {
@@ -3318,8 +3318,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor" as const,
-          finalizingSourceRunId: first.runId,
-          expiresAt: new Date(sourceCompletedAt + 1500).toISOString(),
+          predecessorRunId: first.runId,
+          expiresAt: new Date(predecessorCompletedAt + 1500).toISOString(),
         };
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
           "job",
@@ -3347,7 +3347,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           finalizingPreference,
         );
 
-        mockNow(sourceCompletedAt + 1601);
+        mockNow(predecessorCompletedAt + 1601);
         const genericPoll = await api.requestPollRunner(
           true,
           {
@@ -3391,8 +3391,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("shares a fixed telemetry-close deadline between Ably and repeated producer polls", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3414,7 +3414,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           admittableProfiles: ["vm0/default"],
         });
 
-        const successorCreatedAt = sourceCompletedAt + 2094;
+        const successorCreatedAt = predecessorCompletedAt + 2094;
         mockNow(successorCreatedAt);
         context.mocks.ably.publish.mockClear();
         const successor = await sendChatRunMessage(actor, {
@@ -3426,7 +3426,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor" as const,
-          finalizingSourceRunId: first.runId,
+          predecessorRunId: first.runId,
           expiresAt: new Date(
             successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
           ).toISOString(),
@@ -3548,8 +3548,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("requires a current exact producer tuple and process generation beyond the bridge", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3589,7 +3589,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ],
         });
 
-        const successorCreatedAt = sourceCompletedAt + 2100;
+        const successorCreatedAt = predecessorCompletedAt + 2100;
         mockNow(successorCreatedAt);
         context.mocks.ably.publish.mockClear();
         const successor = await sendChatRunMessage(actor, {
@@ -3631,7 +3631,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference",
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor",
-          finalizingSourceRunId: first.runId,
+          predecessorRunId: first.runId,
           expiresAt: new Date(
             successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
           ).toISOString(),
@@ -3688,8 +3688,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("prefers the previous Run's ready sandbox over its finalizing producer", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3728,7 +3728,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ],
         });
 
-        const successorCreatedAt = sourceCompletedAt + 100;
+        const successorCreatedAt = predecessorCompletedAt + 100;
         mockNow(successorCreatedAt);
         context.mocks.ably.publish.mockClear();
         const successor = await sendChatRunMessage(actor, {
@@ -3740,7 +3740,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: exactRunnerIdentity,
           tier: "exactSandbox" as const,
-          finalizingSourceRunId: first.runId,
+          predecessorRunId: first.runId,
           expiresAt: new Date(successorCreatedAt + 1000).toISOString(),
         };
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
@@ -3770,8 +3770,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("does not prefer a predecessor after its runner generation restarts", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3789,7 +3789,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           admittableProfiles: [],
         });
 
-        mockNow(sourceCompletedAt + 100);
+        mockNow(predecessorCompletedAt + 100);
         const successor = await sendChatRunMessage(actor, {
           agentId,
           threadId: first.threadId,
@@ -4205,7 +4205,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             heartbeatGeneration: 1,
           },
           tier: "exactSandbox",
-          finalizingSourceRunId: first.runId,
+          predecessorRunId: first.runId,
           expiresAt: expect.any(String),
         });
         await api.requestCancelRun(actor, protectedFollowUp.runId, [200]);
@@ -6116,6 +6116,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           displayName: "BDD No Auth HTTP Runtime",
           prefixTemplates: [
             `https://{{variables.region}}.${rand}.no-auth.example.test/v1/`,
+            `http://{{variables.region}}.${rand}.no-auth.example.test:8080/v1/`,
           ],
           fields: [
             {
@@ -6187,6 +6188,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).toMatchObject([
           {
             base: `https://us-east.${rand}.no-auth.example.test/v1/`,
+            auth: { headers: {}, query: {} },
+          },
+          {
+            base: `http://us-east.${rand}.no-auth.example.test:8080/v1/`,
             auth: { headers: {}, query: {} },
           },
         ]);
@@ -6514,6 +6519,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               slug,
               displayName: "BDD Internal API",
               prefixTemplates: [
+                "http://{{variables.tenant}}.internal.example.com:8080/api/",
                 "https://{{variables.tenant}}.internal.example.com/api/",
               ],
               fields: [
@@ -6536,7 +6542,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                   valueTemplate: "Bearer {{secrets.secret}}",
                 },
               ],
-              queryInjections: [],
+              queryInjections: [
+                { name: "api_key", valueTemplate: "{{secrets.secret}}" },
+              ],
               authMode: "manual",
             });
           });
@@ -6578,12 +6586,26 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
           const secretKey = `CUSTOM_${custom.id.replaceAll("-", "")}_S_SECRET`;
           const customApis = inlineFirewallApis(claim.firewalls, internalName);
-          expect(customApis[0]?.base).toBe(
-            "https://acme.internal.example.com/api/",
-          );
-          expect(customApis[0]?.auth?.headers?.Authorization).toBe(
-            `Bearer \${{ secrets.${secretKey} }}`,
-          );
+          expect(customApis).toMatchObject([
+            {
+              base: "http://acme.internal.example.com:8080/api/",
+              auth: {
+                headers: {
+                  Authorization: `Bearer \${{ secrets.${secretKey} }}`,
+                },
+                query: { api_key: `\${{ secrets.${secretKey} }}` },
+              },
+            },
+            {
+              base: "https://acme.internal.example.com/api/",
+              auth: {
+                headers: {
+                  Authorization: `Bearer \${{ secrets.${secretKey} }}`,
+                },
+                query: { api_key: `\${{ secrets.${secretKey} }}` },
+              },
+            },
+          ]);
           expect(claim.networkPolicies?.[internalName]?.unknownPolicy).toBe(
             "allow",
           );
@@ -6628,6 +6650,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               fw.encryptedSecretsBody({}),
             );
           expect(initialApi.id).toBe(`${internalName}:0`);
+          expect(initialApi.base).toBe(
+            "http://acme.internal.example.com:8080/api/",
+          );
           expect(initialAvailable.firewall.customConnectorId).toBe(custom.id);
           expect(initialAvailable.networkPolicy.unknownPolicy).toBe("allow");
           const initialCurrentAuth = await own(() => {
@@ -6639,6 +6664,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(initialCurrentAuth.body).toMatchObject({
             headers: { Authorization: "Bearer custom-secret-value" },
+            query: { api_key: "custom-secret-value" },
             expiresAt: null,
           });
 
@@ -6730,6 +6756,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(currentUpdatedAuth.body).toMatchObject({
             headers: { Authorization: "Bearer updated-custom-secret-value" },
+            query: { api_key: "updated-custom-secret-value" },
             expiresAt: null,
           });
 
@@ -6774,6 +6801,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(recoveredAuth.body).toMatchObject({
             headers: { Authorization: "Bearer recovered-custom-secret-value" },
+            query: { api_key: "recovered-custom-secret-value" },
             expiresAt: null,
           });
 
@@ -6893,7 +6921,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return connectors.updateCustomConnector(actor, custom.id, {
               displayName: "BDD Internal API Updated",
               prefixTemplates: [
-                "https://{{variables.tenant}}.internal.example.com/v2/",
+                "http://{{variables.tenant}}.internal.example.com:8080/v2/",
               ],
               fields: custom.fields,
               headerInjections: [
@@ -11214,7 +11242,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "okou teams message send --help",
           "okou telegram message send --help",
           "okou phone message --help",
-          "Email from web chat: use the Gmail skill",
+          "Gmail email from web chat: use the Gmail skill",
           "okou mail link <gmail-draft-id>",
         ]) {
           expect(appendSystemPrompt).toContain(toolHint);
@@ -11293,6 +11321,46 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
         const cancelled = await api.readRun(actor, run.runId);
         expect(cancelled.status).toBe("cancelled");
+      });
+
+      it("advertises Outlook draft review only while the rollout is enabled", async () => {
+        const api = createRunsApi(context);
+        const connectors = createConnectorBddApi(context);
+        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const disabled = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "prepare an email",
+        });
+        const disabledRun = await api.readRun(actor, disabled.runId);
+        expect(disabledRun.appendSystemPrompt).not.toContain(
+          "Outlook email from web chat",
+        );
+        expect(disabledRun.appendSystemPrompt).toContain(
+          "Gmail email from web chat: use the Gmail skill",
+        );
+        await api.requestCancelRun(actor, disabled.runId, [200]);
+
+        await connectors.updateFeatureSwitches(actor, {
+          [FeatureSwitchKey.OutlookChatMail]: true,
+        });
+        const enabled = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "prepare an Outlook email",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(enabled.runId);
+        expect(claim.featureFlags).toMatchObject({ outlookChatMail: true });
+        for (const hint of [
+          "Outlook email from web chat",
+          "X-Okou-Connector-Intent: outlook-mail",
+          'Prefer: IdType="ImmutableId"',
+          "okou mail link <outlook-message-id> --provider outlook",
+          "Never call `sendMail`",
+          "PATCH /me/messages/<draft-id>",
+        ]) {
+          expect(claim.appendSystemPrompt).toContain(hint);
+        }
+        await api.requestCancelRun(actor, enabled.runId, [200]);
       });
 
       it("appends the restricted explicit content policy last", async () => {

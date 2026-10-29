@@ -136,15 +136,22 @@ describe("okou connector custom create", () => {
     return path;
   }
 
-  it("creates only the API connector definition", async () => {
-    const definitionPath = writeDefinition(manualDefinition());
+  it("creates only the API connector definition with HTTP and HTTPS prefixes", async () => {
+    const definition = {
+      ...manualDefinition(),
+      prefixTemplates: [
+        "http://api.acme.example:8080/v1/",
+        "https://api.acme.example/v1/",
+      ],
+    };
+    const definitionPath = writeDefinition(definition);
     let createBody: unknown;
     const created = customConnector({
       id: CONNECTOR_ID,
-      displayName: "Acme API",
-      prefixTemplates: ["https://api.acme.example/v1/"],
-      fields: [...manualDefinition().fields],
-      headerInjections: [...manualDefinition().headerInjections],
+      displayName: definition.displayName,
+      prefixTemplates: definition.prefixTemplates,
+      fields: [...definition.fields],
+      headerInjections: [...definition.headerInjections],
     });
     server.use(
       http.post(
@@ -164,7 +171,7 @@ describe("okou connector custom create", () => {
       definitionPath,
     ]);
 
-    expect(createBody).toStrictEqual(manualDefinition());
+    expect(createBody).toStrictEqual(definition);
     expect(createBody).not.toHaveProperty("values");
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain('Custom connector "Acme API" created');
@@ -431,7 +438,11 @@ describe("okou connector custom create", () => {
     expect(createHelp).toContain("Bearer {{secrets.secret}}");
     expect(createHelp).toContain('"authMode": "oauth"');
     expect(createHelp).toContain("Bearer {{oauth.access_token}}");
-    expect(createHelp).toContain("endpoint for MCP");
+    expect(createHelp).toContain(
+      "HTTP API prefixes accept http:// or https://",
+    );
+    expect(createHelp).toContain("HTTP or HTTPS");
+    expect(createHelp).toContain("HTTPS endpoint for MCP");
     expect(createHelp).toContain("Never ask");
     expect(createHelp).toContain("end-user access token or refresh token");
     expect(createHelp).toContain("does not store a");

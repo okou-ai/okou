@@ -9,6 +9,107 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.1](https://github.com/okou-ai/okou/compare/api-v2.22.0...api-v2.22.1) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.1
+    * @okouai/core bumped to 8.799.1
+    * @okouai/db bumped to 2.10.1
+    * @okouai/pi-agent-runtime bumped to 1.51.16
+
+## [2.22.0](https://github.com/okou-ai/okou/compare/api-v2.21.1...api-v2.22.0) (2026-10-29)
+
+
+### Features
+
+* add whatsapp integration through agentphone ([#43656](https://github.com/okou-ai/okou/issues/43656)) ([a7306f0](https://github.com/okou-ai/okou/commit/a7306f0da51d3d9b00064ceae121fd002b3b64ed))
+
+
+### Refactoring
+
+* **api:** localize agent visibility validation reads ([#43801](https://github.com/okou-ai/okou/issues/43801)) ([1b26f11](https://github.com/okou-ai/okou/commit/1b26f11336350b4152aeed42cd273737df506550))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.0
+    * @okouai/core bumped to 8.799.0
+    * @okouai/db bumped to 2.10.0
+    * @okouai/pi-agent-runtime bumped to 1.51.15
+
+## [2.21.1](https://github.com/okou-ai/okou/compare/api-v2.21.0...api-v2.21.1) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.798.0
+    * @okouai/db bumped to 2.9.1
+    * @okouai/pi-agent-runtime bumped to 1.51.14
+
+## [2.21.0](https://github.com/okou-ai/okou/compare/api-v2.20.3...api-v2.21.0) (2026-10-29)
+
+
+### Features
+
+* add shared conversation visibility controls ([#43707](https://github.com/okou-ai/okou/issues/43707)) ([eb74ccc](https://github.com/okou-ai/okou/commit/eb74ccccd7aec24c2f29f1711a9b9f56decfe945))
+* **api:** add automatic continuation for busy chats ([#43725](https://github.com/okou-ai/okou/issues/43725)) ([e8a7e7e](https://github.com/okou-ai/okou/commit/e8a7e7e2127e2321a7c9919b04fe25ef47f0e6ac))
+* **app:** add in-app halloween quiz and participant review ([#43223](https://github.com/okou-ai/okou/issues/43223)) ([7311d2f](https://github.com/okou-ai/okou/commit/7311d2fa1557cd8eb079a7f73b388dd489c94f31))
+* **artifacts:** add deletion from catalog and chat previews ([#43708](https://github.com/okou-ai/okou/issues/43708)) ([61f19e3](https://github.com/okou-ai/okou/commit/61f19e3b89855ddcdcdfa2e6635c5b6224c237f1))
+* **browser:** integrate shared owner browser consumers ([#43563](https://github.com/okou-ai/okou/issues/43563)) ([219d686](https://github.com/okou-ai/okou/commit/219d6860ce0e31ace746aea7eb88c1298c67fe09))
+* **connector:** support http custom api connectors ([#43736](https://github.com/okou-ai/okou/issues/43736)) ([78bcdb5](https://github.com/okou-ai/okou/commit/78bcdb51732ba11746f1807da98189458f7aa5ab))
+* introduce discord in the feature guide ([#43734](https://github.com/okou-ai/okou/issues/43734)) ([2495c4c](https://github.com/okou-ai/okou/commit/2495c4c82ccca5a82bb1261615c8822d5795a92e))
+* prepare feature guide data and modal framework ([#43663](https://github.com/okou-ai/okou/issues/43663)) ([529e7dc](https://github.com/okou-ai/okou/commit/529e7dcdda27f1262f281ea399df57741f317152))
+* support outlook mail review in chat ([#43751](https://github.com/okou-ai/okou/issues/43751)) ([d4a01db](https://github.com/okou-ai/okou/commit/d4a01dbac178e4d112e2e88aeb9a515aeb5560d9))
+* **teams:** separate account identity from bot installation ([#43730](https://github.com/okou-ai/okou/issues/43730)) ([9a65fcc](https://github.com/okou-ai/okou/commit/9a65fcc9237e91f7e05213bfc5d37d9572098454))
+
+
+### Bug Fixes
+
+* align agentphone connection flow with slack ([#43735](https://github.com/okou-ai/okou/issues/43735)) ([8981509](https://github.com/okou-ai/okou/commit/898150923631a8d1e5ccac17e5eb76819391fafe))
+* **api:** accept ancestor mcp oauth resources ([#43732](https://github.com/okou-ai/okou/issues/43732)) ([df7028c](https://github.com/okou-ai/okou/commit/df7028c5d9fbc487ebe28371ef1643a59a636db4))
+* **api:** add phone account switching and workspace-aware credit errors ([#43704](https://github.com/okou-ai/okou/issues/43704)) ([e1178d4](https://github.com/okou-ai/okou/commit/e1178d447c3757ea95b91a454e1f7521ae9f95b3))
+* **api:** bind dcr reauthorization credentials to their issuer ([#43750](https://github.com/okou-ai/okou/issues/43750)) ([c0b14df](https://github.com/okou-ai/okou/commit/c0b14df56dc8f03a6ce45c4c6334dfa9d773132e))
+* **artifacts:** preserve web upload creating threads ([#43741](https://github.com/okou-ai/okou/issues/43741)) ([4e088a8](https://github.com/okou-ai/okou/commit/4e088a84978f3410eeb9876e9ea734ffec4d31c3))
+* **runner:** unify predecessor home discovery and bounded routing ([#43655](https://github.com/okou-ai/okou/issues/43655)) ([2c512a7](https://github.com/okou-ai/okou/commit/2c512a7542a0adbf22d72e278dc8acdd52a10a6c))
+
+
+### Refactoring
+
+* **api:** commit workflow inputs atomically ([#43757](https://github.com/okou-ai/okou/issues/43757)) ([66b3ab1](https://github.com/okou-ai/okou/commit/66b3ab1d6ffa9200e5b90eb1f02c29e5db47ed9b))
+* **api:** initialize chat threads atomically ([#43699](https://github.com/okou-ai/okou/issues/43699)) ([3c30893](https://github.com/okou-ai/okou/commit/3c30893572d8839de3e5856f94b8d8b0e790bad9))
+* **api:** localize chat event retention ownership ([#43779](https://github.com/okou-ai/okou/issues/43779)) ([199dd2c](https://github.com/okou-ai/okou/commit/199dd2ca88f1c53814b4a5d3c6f66371db6801f4))
+* **api:** localize per-thread snapshot archive reads ([#43700](https://github.com/okou-ai/okou/issues/43700)) ([016244e](https://github.com/okou-ai/okou/commit/016244ee5ee239bf90e1babde828fbb0dee726dd))
+* **api:** localize sidebar snapshot candidate and prune ownership ([#43786](https://github.com/okou-ai/okou/issues/43786)) ([fbb11ec](https://github.com/okou-ai/okou/commit/fbb11ec5c406ff514eb39935d73ad02388aabe8c))
+* **api:** localize sidebar snapshot projection and publication ownership ([#43792](https://github.com/okou-ai/okou/issues/43792)) ([9d05442](https://github.com/okou-ai/okou/commit/9d05442e56a4e4469f398120ed5e31e916b827e2))
+* **api:** localize snapshot candidate scan ownership ([#43766](https://github.com/okou-ai/okou/issues/43766)) ([ac91112](https://github.com/okou-ai/okou/commit/ac91112a945a7d6b32bec853f473729a7b99f0ea))
+* **api:** publish pending launches atomically ([#43793](https://github.com/okou-ai/okou/issues/43793)) ([3663851](https://github.com/okou-ai/okou/commit/366385132053a10d6367ec65ddbf34146fb5cb1a))
+* **api:** reserve phone verification cooldowns atomically ([#43778](https://github.com/okou-ai/okou/issues/43778)) ([930260b](https://github.com/okou-ai/okou/commit/930260bfba06e8ab06d5d7843172886d2717e2c1))
+* remove expired deployment compatibility ([#43797](https://github.com/okou-ai/okou/issues/43797)) ([94389e2](https://github.com/okou-ai/okou/commit/94389e2203aaa62408b780156c2cf8f9a9cc5414))
+* remove slack workspace identity feature switch ([#43717](https://github.com/okou-ai/okou/issues/43717)) ([63323e7](https://github.com/okou-ai/okou/commit/63323e79be903c6316e5052d9c3c54cc9f543db9))
+
+
+### Performance Improvements
+
+* prepare metadata-only workflow claims and downloads ([#43667](https://github.com/okou-ai/okou/issues/43667)) ([6fd2905](https://github.com/okou-ai/okou/commit/6fd29050029b5a521f75d0500e9876a11649afe6)) [#43642](https://github.com/okou-ai/okou/issues/43642)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.16.0
+    * @okouai/core bumped to 8.797.0
+    * @okouai/db bumped to 2.9.0
+    * @okouai/pi-agent-runtime bumped to 1.51.13
+
 ## [2.20.3](https://github.com/okou-ai/okou/compare/api-v2.20.2...api-v2.20.3) (2026-10-28)
 
 

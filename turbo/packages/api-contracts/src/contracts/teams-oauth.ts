@@ -1,4 +1,4 @@
-import { object, string, type infer as zInfer } from "zod";
+import { object, string, enum as zEnum, type infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 
@@ -15,6 +15,7 @@ const jsonErrorSchema = object({ error: string() });
 
 export const teamsOauthConnectQuerySchema = object({
   connectState: string().optional(),
+  flow: zEnum(["connect", "install"]).optional(),
   orgId: string().optional(),
   userId: string().optional(),
   prompt: string().optional(),

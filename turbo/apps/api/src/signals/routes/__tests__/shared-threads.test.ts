@@ -1,3 +1,8 @@
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { sharedThreadVisibilityContract } from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
+import { array, string, object } from "zod";
 import {
   mockGoogleText,
   VERTEX_TEXT_URL,
@@ -24,6 +29,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
+const device = createAuthDeviceSupportApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const routeMocks = createRouteMocks(context);
@@ -142,9 +148,7 @@ async function expectSharedSnapshot(
   expect(shared.headers.get("cache-control")).toBe("no-store");
   const meta = await accept(client().meta({ params: { id } }), [200]);
   expect(meta.body).toStrictEqual({ title });
-  expect(meta.headers.get("cache-control")).toBe(
-    "public, max-age=31536000, s-maxage=31536000, immutable",
-  );
+  expect(meta.headers.get("cache-control")).toBe("no-store");
   const catalog = await chat.listArtifactCatalog(fixture.actor, {
     kind: "shared-thread",
     chatThreadId: fixture.threadId,
@@ -491,5 +495,246 @@ describe("client-generated shared-thread IDs", () => {
     expect(response.body.error.code).toBe("CONFLICT");
     await expectSharedSnapshot(owner, existing.body.id, "Shared conversation");
     await expectNoShare(intruder);
+  });
+});
+
+function conversationMembers(actor: ApiTestUser) {
+  const organization = { id: actor.orgId, name: "Original workspace" };
+  const members = new Set([actor.userId]);
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+    (input) => {
+      const request = object({
+        organizationId: string(),
+        userId: array(string()),
+      }).parse(input);
+      return Promise.resolve({
+        data:
+          request.organizationId === actor.orgId
+            ? request.userId
+                .filter((id) => {
+                  return members.has(id);
+                })
+                .map((id) => {
+                  return {
+                    publicUserData: { userId: id },
+                    organization,
+                    role: "org:member",
+                  };
+                })
+            : [],
+        totalCount: members.size,
+      });
+    },
+  );
+  return members;
+}
+
+function visibilityClient() {
+  return setupApp({ context, routes: sharedThreadRoutes })(
+    sharedThreadVisibilityContract,
+  );
+}
+
+describe("conversation share visibility", () => {
+  it("creates a private snapshot without publishing its content or title", async () => {
+    const f = await prepareShare();
+    installSharedThreadStorage(context);
+    conversationMembers(f.actor);
+    await device.updateFeatureSwitches(f.actor, {
+      [FeatureSwitchKey.SharedThreadVisibility]: true,
+    });
+    const created = await accept(
+      visibilityClient().create({
+        ...requestBody(f),
+        body: {
+          eventIds: [f.eventId],
+          id: randomUUID().toUpperCase(),
+          audience: "private",
+        },
+      }),
+      [201],
+    );
+    const id = created.body.id;
+    const anonymous = await accept(client().get({ params: { id } }), [404]);
+    expect(JSON.stringify(anonymous.body)).not.toContain(f.content);
+    expect(anonymous.headers.get("cache-control")).toBe("no-store");
+    const meta = await accept(client().meta({ params: { id } }), [404]);
+    expect(meta.headers.get("cache-control")).toBe("no-store");
+    const ownerView = await accept(
+      client().get({ params: { id }, headers: authenticate(f.actor) }),
+      [200],
+    );
+    expect(ownerView.body.messages[0]?.content).toBe(f.content);
+    const stranger = bdd.user();
+    await accept(
+      client().get({ params: { id }, headers: authenticate(stranger) }),
+      [404],
+    );
+    await accept(
+      visibilityClient().get({
+        params: { id },
+        headers: authenticate(stranger),
+      }),
+      [403, 404],
+    );
+  });
+
+  it("changes an existing text-only link and checks membership in its original workspace on every read", async () => {
+    const f = await prepareShare();
+    installSharedThreadStorage(context);
+    const members = conversationMembers(f.actor);
+    const created = await accept(client().create(requestBody(f)), [201]);
+    const id = created.body.id;
+    await device.updateFeatureSwitches(f.actor, {
+      [FeatureSwitchKey.SharedThreadVisibility]: true,
+    });
+    const status = await accept(
+      visibilityClient().get({
+        params: { id },
+        headers: authenticate(f.actor),
+      }),
+      [200],
+    );
+    expect(status.body.audience).toBe("public");
+    const updated = await accept(
+      visibilityClient().update({
+        params: { id: id.toUpperCase() },
+        headers: authenticate(f.actor),
+        body: {
+          audience: "organization",
+          expectedRevision: status.body.revision,
+        },
+      }),
+      [200],
+    );
+    expect(updated.body.organization).toStrictEqual({
+      id: f.actor.orgId,
+      name: "Original workspace",
+    });
+    await accept(client().get({ params: { id } }), [404]);
+    await accept(client().meta({ params: { id } }), [404]);
+    const recipient = bdd.user();
+    members.add(recipient.userId);
+    const received = await accept(
+      client().get({ params: { id }, headers: authenticate(recipient) }),
+      [200],
+    );
+    expect(received.body.messages[0]?.content).toBe(f.content);
+    members.delete(recipient.userId);
+    await accept(
+      client().get({ params: { id }, headers: authenticate(recipient) }),
+      [404],
+    );
+    const privateResult = await accept(
+      visibilityClient().update({
+        params: { id },
+        headers: authenticate(f.actor),
+        body: { audience: "private", expectedRevision: updated.body.revision },
+      }),
+      [200],
+    );
+    members.add(recipient.userId);
+    await accept(
+      client().get({ params: { id }, headers: authenticate(recipient) }),
+      [404],
+    );
+    await accept(
+      visibilityClient().update({
+        params: { id },
+        headers: authenticate(f.actor),
+        body: {
+          audience: "public",
+          expectedRevision: privateResult.body.revision,
+        },
+      }),
+      [200],
+    );
+    const publicView = await accept(client().get({ params: { id } }), [200]);
+    expect(publicView.body.messages).toStrictEqual(received.body.messages);
+  });
+
+  it("rejects stale edits and keeps restrictions when visibility management is disabled", async () => {
+    const f = await prepareShare();
+    installSharedThreadStorage(context);
+    conversationMembers(f.actor);
+    await device.updateFeatureSwitches(f.actor, {
+      [FeatureSwitchKey.SharedThreadVisibility]: true,
+    });
+    const created = await accept(
+      visibilityClient().create({
+        ...requestBody(f),
+        body: { eventIds: [f.eventId], audience: "organization" },
+      }),
+      [201],
+    );
+    const id = created.body.id;
+    const status = await accept(
+      visibilityClient().get({
+        params: { id },
+        headers: authenticate(f.actor),
+      }),
+      [200],
+    );
+    const next = await accept(
+      visibilityClient().update({
+        params: { id },
+        headers: authenticate(f.actor),
+        body: { audience: "private", expectedRevision: status.body.revision },
+      }),
+      [200],
+    );
+    await accept(
+      visibilityClient().update({
+        params: { id },
+        headers: authenticate(f.actor),
+        body: { audience: "public", expectedRevision: status.body.revision },
+      }),
+      [409],
+    );
+    const other = bdd.user();
+    await device.updateFeatureSwitches(other, {
+      [FeatureSwitchKey.SharedThreadVisibility]: true,
+    });
+    await accept(
+      visibilityClient().update({
+        params: { id },
+        headers: authenticate(other),
+        body: { audience: "public", expectedRevision: next.body.revision },
+      }),
+      [404],
+    );
+    routeMocks.clerk.session(f.actor.userId, other.orgId);
+    await accept(
+      visibilityClient().update({
+        params: { id },
+        headers: { authorization: "Bearer clerk-session" },
+        body: { audience: "public", expectedRevision: next.body.revision },
+      }),
+      [403, 404],
+    );
+    await device.updateFeatureSwitches(f.actor, {
+      [FeatureSwitchKey.SharedThreadVisibility]: false,
+    });
+    await accept(
+      visibilityClient().update({
+        params: { id },
+        headers: authenticate(f.actor),
+        body: { audience: "public", expectedRevision: next.body.revision },
+      }),
+      [403],
+    );
+    await accept(
+      visibilityClient().create({
+        ...requestBody(f),
+        body: { eventIds: [f.eventId], audience: "private" },
+      }),
+      [403],
+    );
+    await accept(client().get({ params: { id } }), [404]);
+    const ownerView = await accept(
+      client().get({ params: { id }, headers: authenticate(f.actor) }),
+      [200],
+    );
+    expect(ownerView.body.messages[0]?.content).toBe(f.content);
   });
 });

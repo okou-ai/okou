@@ -19,6 +19,7 @@ import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
 import type { HeaderAutomationSignals } from "./header-automation-menu.ts";
 import type { ThreadSidebarSignals } from "./thread-sidebar.ts";
 import type { BrowserSessionSignals } from "./browser-session-block.ts";
+import type { BrowserPresenceSignals } from "./browser-presence.ts";
 import type { EditorDocumentSnapshot } from "../okou-page/user-message-document-codec.ts";
 import type {
   createChatThreadScrollSignals,
@@ -74,6 +75,8 @@ export interface MessageListSignals {
   readonly catchUp$: Command<Promise<void>, [AbortSignal]>;
   readonly scroll: ReturnType<typeof createChatThreadScrollSignals>;
   readonly sidebar: ThreadSidebarSignals;
+  readonly latestRunId$: Computed<string | null>;
+  readonly liveRunId$: Computed<string | null>;
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
@@ -216,6 +219,7 @@ export interface ChatPanelSignals {
   readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
   readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;
   readonly browserSessionSignals: BrowserSessionSignals;
+  readonly browserPresence: BrowserPresenceSignals;
   readonly hasEvents$: Computed<Promise<boolean>>;
   readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
   readonly runFinished$: Computed<Promise<boolean>>;

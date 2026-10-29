@@ -53,25 +53,53 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatThinkingBrandMotion]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Chat thinking brand motion",
+    description:
+      "Use a textured, breathing brand mark with subtle scaling, sheen, and cycling brand colors in chat thinking states.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.HalloweenQuiz]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Halloween quiz",
+    description:
+      "Open the 2026 Halloween quiz from the animated chat home dialog and associate results with your account.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.FeatureGuides]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Feature guides",
+    description: "Show published product updates once per user and edition.",
+    enabled: false,
+  },
   [FeatureSwitchKey.OnboardingSourceOutcomes]: {
     maintainer: "ming@okou.ai",
     displayName: "Onboarding source outcomes",
     description:
       "Show industry-specific examples of work prepared from connected tools.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SlackWorkspaceIdentity]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Slack workspace identity",
-    description:
-      "Connect your Slack identity independently of bot installation and use it in shared channels.",
     enabled: true,
+  },
+  [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Teams workspace identity",
+    description:
+      "Connect your Microsoft Teams identity independently of bot installation and use it in shared conversations.",
+    enabled: false,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",
     description: "Approve up to 20 connector permissions together.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  // Visibility checks remain enforced independently of this management gate.
+  [FeatureSwitchKey.SharedThreadVisibility]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Conversation share visibility",
+    description: "Choose who can view a shared conversation.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -105,6 +133,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Set up and manage remote connections and private networks step by step.",
     enabled: true,
   },
+  [FeatureSwitchKey.OutlookChatMail]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Outlook chat mail",
+    description: "Review Outlook drafts and confirm sending from chat.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ThreadEmailManager]: {
     maintainer: "yuma@okou.ai",
     displayName: "Thread email manager",
@@ -117,6 +151,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
+  },
+  [FeatureSwitchKey.ArtifactDeletion]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Artifact deletion",
+    description: "Delete owned artifacts and withdraw their Okou links.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
@@ -139,12 +180,20 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
     enabled: false,
   },
+  [FeatureSwitchKey.CloudBrowserPanel]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Cloud browser panel",
+    description:
+      "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatThreadTimeline]: {
     maintainer: "yuma@okou.ai",
     displayName: "Chat timeline",
     description:
       "Separate chat history by day, with Today shown only alongside Yesterday.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
@@ -285,8 +334,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "iCloud Calendar and Contacts",
     description:
       "Connect iCloud calendars and contacts with an app-specific password.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
@@ -426,12 +474,26 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.WhatsappIntegration]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Connect WhatsApp to Okou through the shared AgentPhone number.",
+    enabled: false,
+  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",
     description:
       "Show the Feishu direct-message integration and Works page entry point.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.AutoContinueBusyChats]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Auto-continue busy chats",
+    description:
+      "Continue chats interrupted by a busy model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"],
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",

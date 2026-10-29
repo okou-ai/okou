@@ -1,3 +1,8 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  sharedThreadVisibilityContract,
+  type SharedThreadAudience,
+} from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -25,6 +30,20 @@ function getButtonByName(name: string): HTMLElement {
     throw new Error(`Expected button named "${name}"`);
   }
   return button;
+}
+
+function getRadioByName(name: string): HTMLElement {
+  const group = screen.getByRole("radiogroup", { name: "Who can access" });
+  const radio = queryAllByRoleFast("radio", group).find((candidate) => {
+    return (
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name
+    );
+  });
+  if (!radio) {
+    throw new Error(`Expected radio named "${name}"`);
+  }
+  return radio;
 }
 
 test("A visitor can continue a shared idea in Platform", async () => {
@@ -181,4 +200,46 @@ test("A visitor can copy the public conversation link", async () => {
     ]);
   });
   await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+});
+
+test("The creator can manage visibility after reopening a shared conversation", async () => {
+  let audience: SharedThreadAudience = "organization";
+  const revision = "30000000-0000-4000-8000-000000000703";
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(200, sharedThread());
+  });
+  context.mocks.api(sharedThreadVisibilityContract.get, ({ respond }) => {
+    return respond(200, {
+      id: SHARED_THREAD_ID,
+      audience,
+      revision,
+      organization: { id: "org_owner", name: "Original workspace" },
+    });
+  });
+  context.mocks.api(
+    sharedThreadVisibilityContract.update,
+    ({ body, respond }) => {
+      audience = body.audience;
+      return respond(200, {
+        id: SHARED_THREAD_ID,
+        audience,
+        revision,
+        organization: { id: "org_owner", name: "Original workspace" },
+      });
+    },
+  );
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "user_owner", fullName: "Owner" } },
+    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
+  });
+  click(getButtonByName("Share"));
+  await waitFor(() => {
+    expect(getRadioByName("Anyone at Original workspace")).toBeChecked();
+  });
+  click(getRadioByName("Only me"));
+  await waitFor(() => {
+    expect(getRadioByName("Only me")).toBeChecked();
+  });
+  expect(audience).toBe("private");
 });

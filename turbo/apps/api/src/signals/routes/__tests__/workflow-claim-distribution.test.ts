@@ -2,8 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { onTestFinished } from "vitest";
 import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
+import {
+  runnersJobClaimContract,
+  runnersWorkflowDownloadContract,
+} from "@okouai/api-contracts/contracts/runners";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
+import { workflowSkillDocumentSchema } from "@okouai/api-contracts/contracts/workflow-attachments";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
@@ -102,7 +106,7 @@ async function finish(runId: string, sandboxToken: string) {
   );
 }
 
-test("selects a coherent current body and attachment at claim, including Workflows added while queued", async () => {
+test("claims identities and reads current content later, including Workflows added while queued", async () => {
   const { actor, agent, group, s3 } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId, {
     files: [{ path: "reference.md", content: "old attachment" }],
@@ -125,22 +129,42 @@ test("selects a coherent current body and attachment at claim, including Workflo
   const second = await createWorkflow(actor, agent.agentId, {
     instruction: "newly available",
   });
-  const expectedArchive = s3.writes.at(-1)!.body;
   await runs.heartbeatRunner(group);
   const claim = await runs.claimRunnerJob(run.runId);
   const skill = claim.storageManifest?.workflowSkills?.find((entry) => {
     return entry.workflowId === workflow.id;
   });
-  expect(skill?.skillMd).toContain("claim-selected body");
-  expect(skill?.attachments?.archiveSha256).toBe(
+  expect(skill).toStrictEqual({
+    workflowId: workflow.id,
+    mountPath: expect.stringContaining("/skills/"),
+  });
+  await accept(
+    detailClient().update({
+      headers: headers(actor),
+      params: { workflowId: workflow.id },
+      body: {
+        instruction: "download-selected body",
+        files: [
+          { path: "reference.md", content: "download-selected attachment" },
+        ],
+      },
+    }),
+    [200],
+  );
+  const expectedArchive = s3.writes.at(-1)!.body;
+  const downloaded = await runs.downloadWorkflow(
+    run.runId,
+    workflow.id,
+    claim.sandboxToken,
+  );
+  expect(downloaded.skillMd).toContain("download-selected body");
+  expect(downloaded.attachments?.archiveSha256).toBe(
     createHash("sha256").update(expectedArchive).digest("hex"),
   );
   expect(
-    claim.storageManifest?.workflowSkills?.find((entry) => {
-      return entry.workflowId === second.id;
-    })?.skillMd,
+    (await runs.downloadWorkflow(run.runId, second.id, claim.sandboxToken))
+      .skillMd,
   ).toContain("newly available");
-  const captured = skill?.skillMd;
   await accept(
     detailClient().update({
       headers: headers(actor),
@@ -149,7 +173,10 @@ test("selects a coherent current body and attachment at claim, including Workflo
     }),
     [200],
   );
-  expect(skill?.skillMd).toBe(captured);
+  expect(
+    (await runs.downloadWorkflow(run.runId, workflow.id, claim.sandboxToken))
+      .skillMd,
+  ).toContain("later body");
   await finish(run.runId, claim.sandboxToken);
 });
 
@@ -162,7 +189,7 @@ test("re-evaluates private/public precedence without exposing another member's p
     instruction: "public body",
   });
   const other = bdd.user({ orgId: actor.orgId });
-  await createWorkflow(other, agent.agentId, {
+  const foreignPrivate = await createWorkflow(other, agent.agentId, {
     instruction: "foreign private body",
   });
   const run = await runs.createThreadRun(actor, {
@@ -185,6 +212,25 @@ test("re-evaluates private/public precedence without exposing another member's p
       return entry.workflowId === publicWorkflow.id;
     }),
   ).toBeFalsy();
+  const denied = await accept(
+    setupApp({ context, routes: runnersRoutes })(
+      runnersWorkflowDownloadContract,
+    ).get({
+      params: { runId: run.runId, workflowId: foreignPrivate.id },
+      headers: { authorization: `Bearer ${claim.sandboxToken}` },
+    }),
+    [404],
+  );
+  expect(denied.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+  expect(
+    (
+      await runs.downloadWorkflow(
+        run.runId,
+        privateWorkflow.id,
+        claim.sandboxToken,
+      )
+    ).skillMd,
+  ).toContain("private body");
   await finish(run.runId, claim.sandboxToken);
 });
 
@@ -280,22 +326,179 @@ test("leaves a job pending for a preceding Runner and lets the document reader c
   await finish(run.runId, claim.sandboxToken);
 });
 
-test("delivers a large non-ASCII instruction without truncating the claim document", async () => {
+test("keeps a large non-ASCII instruction out of claim and downloads it without truncation", async () => {
   const { actor, agent, group } = await fixture();
   const instruction = "指令\n".repeat(800_000);
-  await createWorkflow(actor, agent.agentId, { instruction });
+  const workflow = await createWorkflow(actor, agent.agentId, { instruction });
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
   const claim = await runs.claimRunnerJob(run.runId);
-  const skill = claim.storageManifest?.workflowSkills?.[0];
-  expect(skill?.skillMd.endsWith(`${instruction.trim()}\n`)).toBeTruthy();
-  expect(Buffer.byteLength(skill?.skillMd ?? "")).toBeGreaterThan(
-    4.5 * 1024 * 1024,
+  expect(
+    Buffer.byteLength(JSON.stringify(claim.storageManifest?.workflowSkills)),
+  ).toBeLessThan(256);
+  const skill = await runs.downloadWorkflow(
+    run.runId,
+    workflow.id,
+    claim.sandboxToken,
+  );
+  expect(skill.skillMd.endsWith(`${instruction.trim()}\n`)).toBeTruthy();
+  expect(Buffer.byteLength(skill.skillMd)).toBeGreaterThan(4.5 * 1024 * 1024);
+  await finish(run.runId, claim.sandboxToken);
+});
+
+test("serves outgoing and download readers together and retains outgoing claim attachments until completion", async () => {
+  await setupApp({
+    context,
+    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
+    isolatePg: true,
+  });
+  const { actor, agent, group, s3 } = await fixture();
+  const workflow = await createWorkflow(actor, agent.agentId, {
+    files: [{ path: "reference.md", content: "outgoing attachment" }],
+  });
+  const oldKey = s3.writes.at(-1)!.key;
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Capability handoff",
+  });
+  await runs.heartbeatRunner(group);
+  const oldClaim = await runs.claimRunnerJob(run.runId, {}, undefined, "1");
+  const outgoing = workflowSkillDocumentSchema.parse(
+    oldClaim.storageManifest?.workflowSkills?.[0],
+  );
+  expect(outgoing.skillMd).toContain("original body");
+  expect(outgoing.attachments?.archiveSha256).toBe(
+    createHash("sha256").update(s3.objects.get(oldKey)!).digest("hex"),
+  );
+  await accept(
+    detailClient().update({
+      headers: headers(actor),
+      params: { workflowId: workflow.id },
+      body: {
+        instruction: "download reader body",
+        files: [{ path: "reference.md", content: "current attachment" }],
+      },
+    }),
+    [200],
+  );
+  const clock = now();
+  mockNow(clock - 86_400_000);
+  await sweep();
+  mockNow(clock);
+  expect(s3.objects.has(oldKey)).toBeTruthy();
+  await finish(run.runId, oldClaim.sandboxToken);
+  await sweep();
+  expect(s3.objects.has(oldKey)).toBeFalsy();
+
+  const currentRun = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Use the download reader",
+  });
+  const claimed = await runs.claimRunnerJob(currentRun.runId);
+  expect(claimed.storageManifest?.workflowSkills).toStrictEqual([
+    { workflowId: workflow.id, mountPath: outgoing.mountPath },
+  ]);
+  expect(
+    (
+      await runs.downloadWorkflow(
+        currentRun.runId,
+        workflow.id,
+        claimed.sandboxToken,
+      )
+    ).skillMd,
+  ).toContain("download reader body");
+  await finish(currentRun.runId, claimed.sandboxToken);
+});
+
+test("reads authoritative empty text and denies foreign, deleted and ended Run downloads", async () => {
+  const { actor, agent, group } = await fixture();
+  const workflow = await createWorkflow(actor, agent.agentId);
+  const otherAgent = await bdd.createAgent(actor, {
+    displayName: "Another Workflow owner",
+  });
+  const foreignWorkflow = await createWorkflow(actor, otherAgent.agentId);
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Current download authorization",
+  });
+  await runs.heartbeatRunner(group);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const client = setupApp({ context, routes: runnersRoutes })(
+    runnersWorkflowDownloadContract,
+  );
+  const auth = { authorization: `Bearer ${claim.sandboxToken}` };
+  await accept(
+    client.get({
+      headers: auth,
+      params: { runId: run.runId, workflowId: foreignWorkflow.id },
+    }),
+    [404],
+  );
+  await accept(
+    client.get({
+      headers: auth,
+      params: { runId: randomUUID(), workflowId: workflow.id },
+    }),
+    [404],
+  );
+  await accept(
+    client.get({
+      headers: {},
+      params: { runId: run.runId, workflowId: workflow.id },
+    }),
+    [401],
+  );
+  await accept(
+    detailClient().update({
+      headers: headers(actor),
+      params: { workflowId: workflow.id },
+      body: { instruction: "", files: [] },
+    }),
+    [200],
+  );
+  const empty = await accept(
+    client.get({
+      headers: auth,
+      params: { runId: run.runId, workflowId: workflow.id },
+    }),
+    [200],
+  );
+  expect(empty.body).toStrictEqual({
+    workflowId: workflow.id,
+    skillMd: `---\nname: ${workflow.name}\ndescription: ${workflow.name}\n---\n`,
+    attachments: null,
+  });
+  await accept(
+    detailClient().delete({
+      headers: headers(actor),
+      params: { workflowId: workflow.id },
+    }),
+    [204],
+  );
+  await accept(
+    client.get({
+      headers: auth,
+      params: { runId: run.runId, workflowId: workflow.id },
+    }),
+    [404],
+  );
+  const survivingWorkflow = await createWorkflow(actor, agent.agentId);
+  await runs.downloadWorkflow(
+    run.runId,
+    survivingWorkflow.id,
+    claim.sandboxToken,
   );
   await finish(run.runId, claim.sandboxToken);
+  await accept(
+    client.get({
+      headers: auth,
+      params: { runId: run.runId, workflowId: survivingWorkflow.id },
+    }),
+    [404],
+  );
 });
 
 test("leaves durable cleanup queued until the deployment cleanup gate is enabled", async () => {
@@ -355,7 +558,7 @@ test("bounds repeated cleanup provider failures and preserves the undeleted pack
   expect(s3.objects.has(key)).toBeTruthy();
 });
 
-test("retains retired packages for a pending claim, then binds only its selected current package", async () => {
+test("retains retired packages for pending work and downloads the current package after claim", async () => {
   await setupApp({
     context,
     routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
@@ -386,16 +589,57 @@ test("retains retired packages for a pending claim, then binds only its selected
   expect(s3.objects.has(oldKey)).toBeTruthy();
   await runs.heartbeatRunner(group);
   const claim = await runs.claimRunnerJob(run.runId);
-  const selected = claim.storageManifest?.workflowSkills?.find((entry) => {
-    return entry.workflowId === workflow.id;
-  });
-  expect(selected?.attachments?.archiveSha256).toBe(
+  const selected = await runs.downloadWorkflow(
+    run.runId,
+    workflow.id,
+    claim.sandboxToken,
+  );
+  expect(selected.attachments?.archiveSha256).toBe(
     createHash("sha256").update(s3.objects.get(currentKey)!).digest("hex"),
   );
   await sweep();
   expect(s3.objects.has(oldKey)).toBeFalsy();
   expect(s3.objects.has(currentKey)).toBeTruthy();
   await finish(run.runId, claim.sandboxToken);
+});
+
+test("downloads authoritative empty attachments after a clear and releases the retired package", async () => {
+  await setupApp({
+    context,
+    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
+    isolatePg: true,
+  });
+  const { actor, agent, group, s3 } = await fixture();
+  const workflow = await createWorkflow(actor, agent.agentId, {
+    files: [{ path: "keep.md", content: "claimed attachment" }],
+  });
+  const oldKey = s3.writes[0]!.key;
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Use workflows",
+  });
+  await runs.heartbeatRunner(group);
+  const claim = await runs.claimRunnerJob(run.runId);
+  expect(
+    (await runs.downloadWorkflow(run.runId, workflow.id, claim.sandboxToken))
+      .attachments,
+  ).not.toBeNull();
+  await accept(
+    detailClient().update({
+      headers: headers(actor),
+      params: { workflowId: workflow.id },
+      body: { files: [] },
+    }),
+    [200],
+  );
+  expect(
+    (await runs.downloadWorkflow(run.runId, workflow.id, claim.sandboxToken))
+      .attachments,
+  ).toBeNull();
+  await sweep();
+  expect(s3.objects.has(oldKey)).toBeFalsy();
+  await finish(run.runId, claim.sandboxToken);
+  await bdd.deleteAgent(actor, agent.agentId);
 });
 
 test("retains claimed attachments through rejected completion, cancellation and clock skew until Runner acknowledgement", async () => {
@@ -414,7 +658,7 @@ test("retains claimed attachments through rejected completion, cancellation and 
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.claimRunnerJob(run.runId, {}, undefined, "1");
   await accept(
     detailClient().update({
       headers: headers(actor),

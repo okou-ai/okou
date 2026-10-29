@@ -874,6 +874,31 @@ export type IntegrationsTeamsDownloadFileContract =
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
 const teamsUploadInitBodySchema = object({
+  canonical: object({
+    operationId: string().uuid(),
+    checksumSha256: string().regex(/^[a-f0-9]{64}$/u),
+    conversationId: string().min(1).optional(),
+    user: string().min(1).optional(),
+    activityId: string().min(1).optional(),
+    text: string().max(4000).optional(),
+  })
+    .refine(
+      (value) => {
+        return Boolean(value.conversationId) !== Boolean(value.user);
+      },
+      {
+        message: "Exactly one of conversationId or user is required",
+      },
+    )
+    .refine(
+      (value) => {
+        return !(value.user && value.activityId);
+      },
+      {
+        message: "activityId can only be used with conversationId",
+      },
+    )
+    .optional(),
   filename: string().min(1, "Filename is required").max(255),
   contentType: string().min(1, "Content type is required").max(200),
   length: number().int().positive("File length must be a positive integer"),
@@ -882,6 +907,8 @@ const teamsUploadInitBodySchema = object({
 export type TeamsUploadInitBody = zInfer<typeof teamsUploadInitBodySchema>;
 
 const teamsUploadInitResponseSchema = object({
+  operationId: string().uuid().optional(),
+  uploadRequired: boolean().optional(),
   uploadId: string().uuid(),
   uploadUrl: string(),
   fileUrl: string(),
@@ -906,6 +933,9 @@ export const integrationsTeamsUploadInitContract = c.router({
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      502: apiErrorSchema,
     },
     summary: "Get a pre-signed upload URL for Microsoft Teams file delivery",
   },
@@ -978,6 +1008,7 @@ export const integrationsTelegramUploadCompleteContract = c.router({
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
 const teamsUploadCompleteBodySchema = object({
+  operationId: string().uuid().optional(),
   uploadId: string().uuid("Upload ID must be a UUID"),
   conversationId: string().min(1, "Conversation ID is required").optional(),
   user: string().min(1, "Teams user ID is required").optional(),
@@ -1033,6 +1064,7 @@ export const integrationsTeamsUploadCompleteContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       502: apiErrorSchema,
     },
     summary:

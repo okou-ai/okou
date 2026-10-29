@@ -6,6 +6,8 @@ import {
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
+import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
+import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
@@ -14,8 +16,39 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 
-export type AgentPhoneChannel = "imessage" | "sms" | "mms";
+export type AgentPhoneChannel = "imessage" | "sms" | "mms" | "whatsapp";
 export type AgentPhoneUserLink = typeof agentphoneUserLinks.$inferSelect;
+
+export function agentPhoneRouteLinkColumn(channel?: AgentPhoneChannel) {
+  return channel === "whatsapp"
+    ? agentphoneChatThreadRoutes.whatsappUserLinkId
+    : agentphoneChatThreadRoutes.agentphoneUserLinkId;
+}
+
+export function agentPhoneUserLinksForChannel(channel: AgentPhoneChannel) {
+  return channel === "whatsapp" ? whatsappUserLinks : agentphoneUserLinks;
+}
+
+export function agentPhoneMessageLinkColumn(channel: AgentPhoneChannel) {
+  return channel === "whatsapp"
+    ? agentphoneMessages.whatsappUserLinkId
+    : agentphoneMessages.agentphoneUserLinkId;
+}
+
+export function agentPhoneReplyChunks(
+  body: string,
+  channel: AgentPhoneChannel,
+): readonly string[] {
+  if (channel !== "whatsapp") {
+    return [body];
+  }
+  const characters = Array.from(body);
+  const chunks: string[] = [];
+  for (let offset = 0; offset < characters.length; offset += 4096) {
+    chunks.push(characters.slice(offset, offset + 4096).join(""));
+  }
+  return chunks.length ? chunks : [body];
+}
 
 /** AgentPhone requires to_number for every send. Group replies use the
  * provider's group id; a member's handle would create a separate DM. */
@@ -52,7 +85,12 @@ export function isAgentPhoneMentionText(value: string): boolean {
 }
 
 export function isAgentPhoneChannel(value: string): value is AgentPhoneChannel {
-  return value === "imessage" || value === "sms" || value === "mms";
+  return (
+    value === "imessage" ||
+    value === "sms" ||
+    value === "mms" ||
+    value === "whatsapp"
+  );
 }
 
 export function normalizeAgentPhoneHandle(
@@ -199,7 +237,14 @@ export const storeOutboundAgentPhoneMessage$ = command(
         conversationId: params.conversationId,
         groupId: params.groupId ?? null,
         agentphoneAgentId: params.agentphoneAgentId,
-        agentphoneUserLinkId: params.userLinkId ?? null,
+        agentphoneUserLinkId:
+          params.userChannel === "whatsapp"
+            ? null
+            : (params.userLinkId ?? null),
+        whatsappUserLinkId:
+          params.userChannel === "whatsapp"
+            ? (params.userLinkId ?? null)
+            : null,
         phoneHandle: normalizeAgentPhoneHandle(
           params.phoneHandle,
           params.userChannel,

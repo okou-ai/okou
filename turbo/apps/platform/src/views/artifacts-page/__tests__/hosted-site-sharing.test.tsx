@@ -326,20 +326,25 @@ test("A settings failure disables copying an unknown address", async () => {
   expect(queryButtonByName("Customize URL")).toBeUndefined();
 });
 
-test("other people's sites offer Published and copying without URL editing", async () => {
-  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Website not found" },
+test.each([false, true])(
+  "Share directly copies other people's site links when only URL editing is enabled (sidebar: %s)",
+  async (sidebar) => {
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Website not found" },
+      });
     });
-  });
-  await openSite();
-  await openShare();
-  await waitFor(() => {
-    expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
-  });
-  expect(queryButtonByName("Customize URL")).toBeUndefined();
-  expect(queryAllByRoleFast("radio")).toHaveLength(0);
-});
+    await openSite({ sidebar });
+    const label = sidebar ? "Share artifact" : "Share";
+    click(getButtonByName(label));
+    await screen.findByText("Link copied");
+    expect(clipboard.writes).toStrictEqual([site.url]);
+    expect(
+      screen.queryByRole("dialog", { name: label }),
+    ).not.toBeInTheDocument();
+  },
+);
 
 test("the disabled switch retains the existing share link", async () => {
   await openSite({ urlEditing: false });
@@ -727,25 +732,49 @@ test("a failed visibility save preserves the last confirmed audience", async () 
   await expectPermission("Only me");
 });
 
-test("non-owners can copy a website link without permission controls", async () => {
+test.each([false, true])(
+  "Share directly copies non-owners' website links without a settings popover (sidebar: %s)",
+  async (sidebar) => {
+    mockSiteAlias();
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Published website not found" },
+      });
+    });
+    await openSite({ urlEditing: false, visibility: true, sidebar });
+    const label = sidebar ? "Share artifact" : "Share";
+    click(getButtonByName(label));
+    await screen.findByText("Link copied");
+    expect(clipboard.writes).toStrictEqual([site.url]);
+    expect(
+      screen.queryByRole("dialog", { name: label }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("a pending Share copies the link once permissions resolve without owner settings", async () => {
   mockSiteAlias();
+  const requested = createDeferredPromise<void>(context.signal);
+  const response = createDeferredPromise<void>(context.signal);
   const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
+    requested.resolve();
+    await response.promise;
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Published website not found" },
     });
   });
   await openSite({ urlEditing: false, visibility: true });
+  await requested.promise;
   await openShare();
-  const menu = await screen.findByRole("dialog", { name: "Share" });
-  await waitFor(() => {
-    expect(within(menu).queryByText("Who can access")).not.toBeInTheDocument();
-  });
-  expect(queryAllByRoleFast("radio", menu)).toHaveLength(0);
-  click(getButtonByName("Copy link", menu));
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([site.url]);
-  });
+  await screen.findByRole("status", { name: "Loading permissions" });
+  response.resolve();
+  await screen.findByText("Link copied");
+  expect(clipboard.writes).toStrictEqual([site.url]);
+  expect(
+    screen.queryByRole("dialog", { name: "Share" }),
+  ).not.toBeInTheDocument();
 });
 
 test("rapid permission choices settle on the latest audience using the refreshed revision", async () => {

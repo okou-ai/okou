@@ -575,7 +575,11 @@ test("Authorize visible agents only for the first manual account", async () => {
     }),
   );
   const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
-  await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-test");
+  const tokenInput = within(dialog).getByPlaceholderText("public-xaat");
+  expect(tokenInput).toHaveAttribute("type", "password");
+  expect(tokenInput).toHaveAttribute("autocomplete", "off");
+  expect(tokenInput.closest("form")).toHaveAttribute("autocomplete", "off");
+  await fill(tokenInput, "xaat-test");
 
   click(getConnectorAction("button", "Save", dialog));
 

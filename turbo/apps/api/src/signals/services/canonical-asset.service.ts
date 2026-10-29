@@ -6,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/link-layout";
 import type {
   CanonicalAssetDeliveryDestination,
+  CanonicalAssetTeamsDeliveryDestination,
   CanonicalAssetDiscordDeliveryDestination,
   CanonicalAssetWechatDeliveryDestination,
   CanonicalAssetProvenance,
@@ -1200,6 +1201,11 @@ interface CanonicalPublicationFileArgs {
 type PrepareCanonicalPublishedAssetArgs = CanonicalPublicationFileArgs &
   (
     | {
+        readonly provider: "teams";
+        readonly runId: string;
+        readonly destination: CanonicalAssetTeamsDeliveryDestination;
+      }
+    | {
         readonly provider: "slack";
         readonly runId: string;
         readonly destination: CanonicalAssetSlackDeliveryDestination;
@@ -1301,19 +1307,44 @@ const ensureCanonicalPublishedAsset$ = command(
   },
 );
 
+function sameTeamsDeliveryDestination(
+  stored: CanonicalAssetDeliveryDestination,
+  requested: CanonicalAssetDeliveryDestination,
+): boolean {
+  return (
+    stored.provider === "teams" &&
+    requested.provider === "teams" &&
+    stored.tenantId === requested.tenantId &&
+    stored.conversationId === requested.conversationId &&
+    stored.activityId === requested.activityId &&
+    stored.text === requested.text &&
+    stored.source === requested.source
+  );
+}
+
+function sameWechatDeliveryDestination(
+  stored: CanonicalAssetDeliveryDestination,
+  requested: CanonicalAssetDeliveryDestination,
+): boolean {
+  return (
+    stored.provider === "wechat" &&
+    requested.provider === "wechat" &&
+    stored.connectionId === requested.connectionId &&
+    stored.generation === requested.generation &&
+    stored.channelId === requested.channelId &&
+    stored.comment === requested.comment
+  );
+}
+
 function sameCanonicalDeliveryDestination(
   stored: CanonicalAssetDeliveryDestination,
   requested: CanonicalAssetDeliveryDestination,
 ): boolean {
+  if (stored.provider === "teams" || requested.provider === "teams") {
+    return sameTeamsDeliveryDestination(stored, requested);
+  }
   if (stored.provider === "wechat" || requested.provider === "wechat") {
-    return (
-      stored.provider === "wechat" &&
-      requested.provider === "wechat" &&
-      stored.connectionId === requested.connectionId &&
-      stored.generation === requested.generation &&
-      stored.channelId === requested.channelId &&
-      stored.comment === requested.comment
-    );
+    return sameWechatDeliveryDestination(stored, requested);
   }
   if (stored.provider === "discord" || requested.provider === "discord") {
     return (
@@ -1350,7 +1381,9 @@ const ensureCanonicalDelivery$ = command(
         operationId: args.operationId,
         status: "pending",
         destination: args.destination,
-        ...(args.provider === "discord" || args.provider === "wechat"
+        ...(args.provider === "discord" ||
+        args.provider === "wechat" ||
+        args.provider === "teams"
           ? {
               providerState: { provider: args.provider, attempt: null },
             }

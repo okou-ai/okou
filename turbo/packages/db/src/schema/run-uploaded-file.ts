@@ -112,6 +112,7 @@ export const runUploadedFiles = pgTable(
     ).$type<CanonicalAssetMaterializationError>(),
     idempotencyScope: text("idempotency_scope"),
     idempotencyKey: text("idempotency_key"),
+    deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

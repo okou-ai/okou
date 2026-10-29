@@ -135,24 +135,25 @@ function ConnectionHeading({ page }: PageProps) {
   const { t } = useTranslation();
   const { data } = page;
   if (page.success) {
-    const body = data.botName
-      ? t(
-          ($) => {
-            return $.connectors.providerConnect.teams.successDescription;
-          },
-          {
-            team:
-              data.teamName ??
-              data.tenantName ??
-              t(($) => {
-                return $.connectors.providerConnect.teams.providerName;
-              }),
-            botName: data.botName,
-          },
-        )
-      : t(($) => {
-          return $.connectors.providerConnect.teams.connectedDescription;
-        });
+    const body =
+      data.workspaceIdentity !== true && data.botName
+        ? t(
+            ($) => {
+              return $.connectors.providerConnect.teams.successDescription;
+            },
+            {
+              team:
+                data.teamName ??
+                data.tenantName ??
+                t(($) => {
+                  return $.connectors.providerConnect.teams.providerName;
+                }),
+              botName: data.botName,
+            },
+          )
+        : t(($) => {
+            return $.connectors.providerConnect.teams.connectedDescription;
+          });
     return (
       <CenterText
         title={t(($) => {
@@ -254,9 +255,10 @@ function BindingAndInstallActions({
   const installMatches = page.target === "none" || page.target === "match";
   return (
     <>
-      {pending && installMatches && data.isAdmin && data.installUrl && (
-        <TeamsInstallLink url={data.installUrl} />
-      )}
+      {((pending && installMatches) ||
+        (data.workspaceIdentity === true && !data.isInstalled)) &&
+        data.isAdmin &&
+        data.installUrl && <TeamsInstallLink url={data.installUrl} />}
       {!page.success && page.canBind && !pending && (
         <ConnectSubmitButton connecting={connecting} onConnect={onConnect} />
       )}
@@ -271,7 +273,7 @@ function AuthorizationHelp({ page }: PageProps) {
   const oauthUrl = teamsConnectUrl(data.connectUrl);
   const canAuthorize =
     !page.success &&
-    (!pending || !data.installUrl) &&
+    (data.workspaceIdentity === true || !pending || !data.installUrl) &&
     oauthUrl &&
     page.target !== "orgMismatch";
   return (
@@ -288,13 +290,18 @@ function AuthorizationHelp({ page }: PageProps) {
           })}
         </Button>
       )}
-      {!data.isInstalled && !data.isAdmin && (
-        <p role="status" className="text-center text-sm text-muted-foreground">
-          {t(($) => {
-            return $.works.teams.adminInstall;
-          })}
-        </p>
-      )}
+      {data.workspaceIdentity !== true &&
+        !data.isInstalled &&
+        !data.isAdmin && (
+          <p
+            role="status"
+            className="text-center text-sm text-muted-foreground"
+          >
+            {t(($) => {
+              return $.works.teams.adminInstall;
+            })}
+          </p>
+        )}
       {!page.success &&
         data.isAdmin &&
         !canAuthorize &&

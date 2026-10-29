@@ -234,36 +234,6 @@ export function assembleWorkflowObservation(
   };
 }
 
-export function lockedInstallationMatches(
-  expected: ResolvedOfficialWorkflowRunDefinition,
-  row: {
-    readonly id: string;
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly name: string;
-    readonly visibility: string;
-    readonly ownerUserId: string;
-    readonly officialDefinitionName: string | null;
-    readonly officialInstallationState: string | null;
-  },
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string | null;
-  },
-): boolean {
-  return (
-    row.id === expected.workflowId &&
-    row.orgId === args.orgId &&
-    row.agentId === args.agentId &&
-    row.name === expected.workflowName &&
-    row.visibility === "private" &&
-    row.ownerUserId === args.userId &&
-    row.officialDefinitionName === expected.name &&
-    row.officialInstallationState === "installed"
-  );
-}
-
 export function exactMountsMatch(
   observation: OfficialWorkflowRunObservation,
   mounts: readonly PersistedStorageMount[] | undefined,

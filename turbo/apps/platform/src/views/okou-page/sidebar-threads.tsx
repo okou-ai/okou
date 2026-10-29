@@ -106,7 +106,7 @@ import { Link } from "../router/link.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ThreadPinMoveMenuItems } from "./sidebar-thread-reorder.tsx";
 import { ChatThreadMenuShortcut } from "./chat-thread-menu-shortcut.tsx";
-import { equalArrays } from "../../lib/equality.ts";
+import { equalArrays, equalSets } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -1206,7 +1206,9 @@ function useNewChatAction() {
 
 function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
   const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
-  const unreadAgentIds = useLastResolved(unreadAgentIds$);
+  const unreadAgentIds = useLastResolved(unreadAgentIds$, {
+    equalityFn: equalSets,
+  });
   const [markReadLoadable, markAgentThreadsRead] = useLoadableSet(
     markAgentThreadsRead$,
   );
@@ -1408,6 +1410,42 @@ function useChatThreadsFilteredTitleLabel() {
   );
 }
 
+function NewChatThreadButton() {
+  const { t } = useTranslation();
+  const newChatAction = useNewChatAction();
+  const newChatLabel = t(($) => {
+    return $.chat.newChat;
+  });
+
+  return (
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              onClick={() => {
+                newChatAction.onSelect("main");
+              }}
+              disabled={newChatAction.disabled}
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={newChatLabel}
+            >
+              <Plus size={18} />
+            </Button>
+          }
+        />
+        <TooltipContent side="bottom">
+          <p className="text-xs">{newChatLabel}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function ChatThreadsTitle({
   showMarkAllRead,
   contentId,
@@ -1417,12 +1455,7 @@ function ChatThreadsTitle({
   contentId: string;
   collapsible: boolean;
 }) {
-  const { t } = useTranslation();
   const titleLabel = useChatThreadsFilteredTitleLabel();
-  const newChatAction = useNewChatAction();
-  const newChatLabel = t(($) => {
-    return $.chat.newChat;
-  });
   const setCollapsed = useSet(setSessionListCollapsed$);
   const collapsed = useGet(sessionListCollapsed$);
 
@@ -1453,31 +1486,7 @@ function ChatThreadsTitle({
         </span>
       )}
       <div className="flex items-center gap-0.5">
-        <TooltipProvider delay={200}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  onClick={() => {
-                    newChatAction.onSelect("main");
-                  }}
-                  disabled={newChatAction.disabled}
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                  className="shrink-0"
-                  aria-label={newChatLabel}
-                >
-                  <Plus size={18} />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">
-              <p className="text-xs">{newChatLabel}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <NewChatThreadButton />
         <ChatThreadsListMenu showMarkAllRead={showMarkAllRead} />
       </div>
     </div>

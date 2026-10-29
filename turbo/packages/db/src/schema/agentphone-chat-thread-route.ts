@@ -1,4 +1,5 @@
 import {
+  check,
   index,
   pgTable,
   timestamp,
@@ -6,6 +7,8 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { whatsappUserLinks } from "./whatsapp";
 
 import { agentphoneUserLinks } from "./agentphone-user-link";
 import { chatThreads } from "./chat-thread";
@@ -18,14 +21,18 @@ export const agentphoneChatThreadRoutes = pgTable(
   "agentphone_chat_thread_routes",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    agentphoneUserLinkId: uuid("agentphone_user_link_id")
-      .notNull()
-      .references(
-        () => {
-          return agentphoneUserLinks.id;
-        },
-        { onDelete: "cascade" },
-      ),
+    agentphoneUserLinkId: uuid("agentphone_user_link_id").references(
+      () => {
+        return agentphoneUserLinks.id;
+      },
+      { onDelete: "cascade" },
+    ),
+    whatsappUserLinkId: uuid("whatsapp_user_link_id").references(
+      () => {
+        return whatsappUserLinks.id;
+      },
+      { onDelete: "cascade" },
+    ),
     rootMessageId: varchar("root_message_id", { length: 255 }).notNull(),
     conversationId: varchar("conversation_id", { length: 255 }),
     chatThreadId: uuid("chat_thread_id")
@@ -40,6 +47,14 @@ export const agentphoneChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
+      check(
+        "chk_agentphone_chat_route_one_link",
+        sql`num_nonnulls(${table.agentphoneUserLinkId}, ${table.whatsappUserLinkId}) = 1`,
+      ),
+      uniqueIndex("idx_agentphone_chat_routes_whatsapp_root").on(
+        table.whatsappUserLinkId,
+        table.rootMessageId,
+      ),
       index("idx_agentphone_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex("idx_agentphone_chat_thread_routes_link_root").on(
         table.agentphoneUserLinkId,

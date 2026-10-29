@@ -1,5 +1,7 @@
 import { createHmac, randomInt } from "node:crypto";
 
+import { whatsappConnectionCodes } from "@okouai/db/schema/whatsapp";
+import { linkWhatsappIdentity$ } from "./whatsapp-link.service";
 import { agentphoneConnectionCodes } from "@okouai/db/schema/agentphone-connection-code";
 import { and, eq } from "drizzle-orm";
 
@@ -54,15 +56,22 @@ export function isAgentPhoneConnectionCodeMessage(value: string): boolean {
   return normalizeAgentPhoneConnectionCode(value) !== null;
 }
 
-function hashAgentPhoneConnectionCode(code: string, secret: string): string {
+function hashAgentPhoneConnectionCode(
+  code: string,
+  secret: string,
+  channel?: AgentPhoneChannel,
+): string {
   return createHmac("sha256", secret)
-    .update(`${AGENTPHONE_CONNECTION_CODE_HASH_DOMAIN}:${code}`)
+    .update(
+      `${channel === "whatsapp" ? "whatsapp-connection-code:v1" : AGENTPHONE_CONNECTION_CODE_HASH_DOMAIN}:${code}`,
+    )
     .digest("hex");
 }
 
 function generateFreshAgentPhoneConnectionCode(
   secret: string,
   currentCodeHash?: string,
+  channel?: AgentPhoneChannel,
 ): { readonly code: string; readonly codeHash: string } {
   for (
     let attempt = 0;
@@ -70,7 +79,7 @@ function generateFreshAgentPhoneConnectionCode(
     attempt += 1
   ) {
     const code = generateAgentPhoneConnectionCode();
-    const codeHash = hashAgentPhoneConnectionCode(code, secret);
+    const codeHash = hashAgentPhoneConnectionCode(code, secret, channel);
     if (codeHash !== currentCodeHash) {
       return { code, codeHash };
     }
@@ -86,25 +95,26 @@ export const createAgentPhoneConnectionCode$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly secret: string;
+      readonly channel?: AgentPhoneChannel;
     },
     signal: AbortSignal,
   ): Promise<AgentPhoneConnectionCode> => {
     const db = set(writeDb$);
+    const codes =
+      args.channel === "whatsapp"
+        ? whatsappConnectionCodes
+        : agentphoneConnectionCodes;
     const [currentCode] = await db
-      .select({ codeHash: agentphoneConnectionCodes.codeHash })
-      .from(agentphoneConnectionCodes)
-      .where(
-        and(
-          eq(agentphoneConnectionCodes.userId, args.userId),
-          eq(agentphoneConnectionCodes.orgId, args.orgId),
-        ),
-      )
+      .select({ codeHash: codes.codeHash })
+      .from(codes)
+      .where(and(eq(codes.userId, args.userId), eq(codes.orgId, args.orgId)))
       .limit(1);
     signal.throwIfAborted();
 
     const { code, codeHash } = generateFreshAgentPhoneConnectionCode(
       args.secret,
       currentCode?.codeHash,
+      args.channel,
     );
 
     const createdAt = nowDate();
@@ -112,7 +122,7 @@ export const createAgentPhoneConnectionCode$ = command(
       createdAt.getTime() + AGENTPHONE_CONNECTION_CODE_TTL_MS,
     );
     await db
-      .insert(agentphoneConnectionCodes)
+      .insert(codes)
       .values({
         codeHash,
         userId: args.userId,
@@ -122,10 +132,7 @@ export const createAgentPhoneConnectionCode$ = command(
         updatedAt: createdAt,
       })
       .onConflictDoUpdate({
-        target: [
-          agentphoneConnectionCodes.userId,
-          agentphoneConnectionCodes.orgId,
-        ],
+        target: [codes.userId, codes.orgId],
         set: {
           codeHash,
           expiresAt,
@@ -156,18 +163,35 @@ export const consumeAgentPhoneConnectionCode$ = command(
     if (!normalizedCode) {
       return { kind: "not-code" };
     }
-    const result = await set(
-      linkAgentPhoneIdentity$,
-      {
-        source: {
-          kind: "code",
-          codeHash: hashAgentPhoneConnectionCode(normalizedCode, args.secret),
-        },
-        phoneHandle: args.phoneHandle,
-        channel: args.channel,
-      },
-      signal,
-    );
+    const result =
+      args.channel === "whatsapp"
+        ? await set(
+            linkWhatsappIdentity$,
+            {
+              codeHash: hashAgentPhoneConnectionCode(
+                normalizedCode,
+                args.secret,
+                args.channel,
+              ),
+              phoneHandle: args.phoneHandle,
+            },
+            signal,
+          )
+        : await set(
+            linkAgentPhoneIdentity$,
+            {
+              source: {
+                kind: "code",
+                codeHash: hashAgentPhoneConnectionCode(
+                  normalizedCode,
+                  args.secret,
+                ),
+              },
+              phoneHandle: args.phoneHandle,
+              channel: args.channel,
+            },
+            signal,
+          );
     if (result.kind !== "linked") {
       return result;
     }

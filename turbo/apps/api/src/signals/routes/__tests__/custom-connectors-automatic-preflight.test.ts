@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { number, object, string, union } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -23,6 +26,7 @@ const connectors = createConnectorBddApi(context);
 async function fixture(
   registration: "cimd" | "dcr" | "none",
   endpoint?: string,
+  resource?: string,
 ) {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
@@ -30,6 +34,7 @@ async function fixture(
   const provider = mockAutomaticMcpOAuthProvider(context, {
     registration,
     ...(endpoint === undefined ? {} : { endpoint }),
+    ...(resource === undefined ? {} : { resource }),
     ...(registration === "none" ? { authentication: "none" } : {}),
   });
   const bdd = createBddApi(context);
@@ -78,6 +83,82 @@ async function complete(authorizationUrl: string, issuer: string) {
 }
 
 describe("Automatic custom connector preflight", () => {
+  it.each([
+    {
+      registration: "cimd",
+      resource: "https://automatic-mcp.example.test/tenant",
+    },
+    { registration: "dcr", resource: "https://automatic-mcp.example.test" },
+  ] as const)(
+    "connects $registration with a parent resource and preserves the transport query",
+    async ({ registration, resource }) => {
+      const endpoint =
+        "https://automatic-mcp.example.test/tenant/mcp?profile=full";
+      const { actor, connector, provider } = await fixture(
+        registration,
+        endpoint,
+        resource,
+      );
+      onTestFinished(async () => {
+        await connectors.deleteCustomConnector(actor, connector.id);
+      });
+      const authorization = await connectors.startCustomConnectorOAuth2(
+        actor,
+        connector.id,
+      );
+      expect(new URL(authorization).searchParams.get("resource")).toBe(
+        resource,
+      );
+      await complete(authorization, provider.issuer);
+      await expect(
+        connectors.listCustomConnectorAccounts(actor, connector.id),
+      ).resolves.toMatchObject([
+        { connectionStatus: "connected", oauthScopes: ["read", "write"] },
+      ]);
+      expect(provider.tokenBodies[0]?.get("resource")).toBe(resource);
+      expect(new Set(provider.endpointRequests)).toStrictEqual(
+        new Set([endpoint]),
+      );
+    },
+  );
+
+  it.each([
+    "https://foreign-mcp.example.test/",
+    "https://automatic-mcp.example.test:8443/tenant",
+    "https://automatic-mcp.example.test/ten",
+    "https://automatic-mcp.example.test/other",
+    "https://automatic-mcp.example.test/tenant/mcp/child",
+    "https://automatic-mcp.example.test/tenant#fragment",
+    "https://automatic-mcp.example.test/tenant#",
+    "https://user:password@automatic-mcp.example.test/tenant",
+  ])(
+    "rejects an incompatible protected resource %s before granting an account",
+    async (resource) => {
+      const { actor, connector, provider } = await fixture(
+        "cimd",
+        "https://automatic-mcp.example.test/tenant/mcp",
+        resource,
+      );
+      onTestFinished(async () => {
+        await connectors.deleteCustomConnector(actor, connector.id);
+      });
+      const rejected = await connectors.requestStartCustomConnectorOAuth2(
+        actor,
+        connector.id,
+        [400],
+      );
+      expect(rejected.body).toMatchObject({
+        error: {
+          code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID,
+        },
+      });
+      await expect(
+        connectors.listCustomConnectorAccounts(actor, connector.id),
+      ).resolves.toStrictEqual([]);
+      expect(provider.tokenBodies).toHaveLength(0);
+    },
+  );
+
   it("preserves endpoint queries through OAuth discovery and connection", async () => {
     const endpoint =
       "https://automatic-mcp.example.test/server?hl=en&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b";

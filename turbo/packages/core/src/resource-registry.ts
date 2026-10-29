@@ -3122,7 +3122,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "carnival",
     name: "Playful Launch Presentation",
     description:
-      "15-slot HTML presentation structure for product and service launches with oversized headlines, color-field rhythm, recurring motifs, and required media slots.",
+      "Cheerful, upbeat and welcoming. Suits consumer launches, community introductions and events for audiences drawn to bold optimism. Oversized headings, broad colour fields, circular imagery and starburst accents.",
   },
   {
     templateId: "template:html-ppt-bloom-pitch",
@@ -3130,7 +3130,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "carnival",
     name: "Bloom Pitch Presentation",
     description:
-      "15-slot playful investor-pitch presentation structure with oversized headlines, colour-field dividers, organic visuals, stat stacks, quote cards, and pricing cards.",
+      "Optimistic, personable and enterprising. Suits founder stories and investor pitches seeking a friendly, ambitious impression. Rounded typography, organic flourishes, generous whitespace and alternating colour fields.",
   },
   {
     templateId: "template:html-ppt-blueprint-academy",
@@ -3138,7 +3138,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "forest_editorial",
     name: "Blueprint Academy Presentation",
     description:
-      "15-slot academic education presentation structure with blueprint grids, wire diagrams, matted photos, goal cards, process spines, stats, testimonials, and contact slides.",
+      "Calm, scholarly and cultivated. Suits teaching, research explanations and institutional introductions for audiences who value a measured academic atmosphere. Serif headings, fine grids, line drawings and matted photographs.",
   },
   {
     templateId: "template:html-ppt-botane-organic",
@@ -3146,7 +3146,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "mauve_dusk",
     name: "Botane Organic Presentation",
     description:
-      "15-slot organic wellness deck with colour-block panels, circular media, side titles, icon cycles, and donut stats.",
+      "Gentle, intimate and nurturing. Suits wellness, sustainability and lifestyle stories for audiences seeking a natural, thoughtful feel. Editorial serif headings, soft colour fields, circular imagery and quiet spacing.",
   },
   {
     templateId: "template:html-ppt-business-data",
@@ -3154,7 +3154,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "berry_pop",
     name: "Business Data Presentation",
     description:
-      "15-slot HTML presentation structure for metric-led business reports with big numbers, stat strips, bars, rings, photo squares, and dark/accent proof slides.",
+      "Polished, approachable and energetic. Suits operating reviews and business updates for teams and stakeholders who prefer a bright, contemporary corporate style. Clean whitespace, oversized figures, photo panels and vivid accent bands.",
   },
   {
     templateId: "template:html-ppt-crayon",
@@ -3162,7 +3162,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "prism",
     name: "Crayon Presentation",
     description:
-      "Light 15-slot playful education deck with peripheral blobs, multi-colour marker titles, doodle sparks, colour-block cards, burst stats, quote cards, and rounded pricing cards.",
+      "Playful, handmade and curious. Suits children, families and participatory learning or workshop audiences. Rounded lettering, marker-like highlights, loose blobs and doodle accents create a cheerful classroom feel.",
   },
   {
     templateId: "template:html-ppt-creative-agency",
@@ -3170,7 +3170,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "coral_studio",
     name: "Creative Agency Presentation",
     description:
-      "Minimal modern 15-slot agency deck with generous whitespace, foliage sprigs, B&W photo blocks, sharp rectangles, team grids, icon services, process spine, and a big-stat impact band.",
+      "Assured, understated and tasteful. Suits portfolios, brand narratives and creative pitches for design-conscious clients. Generous whitespace, crisp typography, monochrome photography and sparse botanical accents.",
   },
   {
     templateId: "template:html-ppt-data-report",
@@ -3178,7 +3178,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "prism",
     name: "Data Report Presentation",
     description:
-      "Chart-led 15-page data report variant with saturated colour grounds, sharp outlines, frameless numbers, stacked/combo/area/line/doughnut/pie/bar/bubble charts, and data-first summary pages.",
+      "Bold, assertive and analytical. Suits reports and research findings for stakeholders who welcome an expressive, contemporary presentation. Large clean headings, saturated colour fields, crisp geometry and minimal ornament.",
   },
   {
     templateId: "template:html-ppt-editorial-magazine",
@@ -3186,7 +3186,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "warm_sand",
     name: "Editorial Magazine Presentation",
     description:
-      "Restrained 15-slot magazine deck with masthead cover, dotted TOC, colour-block dividers, two-column editorial pages, roman/italic titles, running footer, stat boxes, quote rows, and editorial table.",
+      "Refined, reflective and literary. Suits trend reports, cultural stories and brand narratives for audiences who enjoy a magazine aesthetic. Serif and italic headlines, fine rules, slim marginalia and paper-like grounds.",
   },
   {
     templateId: "template:html-ppt-landing-consulting",
@@ -3194,7 +3194,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "pop_art",
     name: "Landing Consulting Presentation",
     description:
-      "Consulting deck dressed like a landing page, with persistent nav chrome, two-tone display titles, dashed circuit wires, marker emphasis, speech-bubble callouts, square photo blocks, frameless stats, and CTA rhythm.",
+      "Sharp, contemporary and persuasive. Suits consulting proposals and transformation stories for business audiences drawn to a digital brand aesthetic. Web-like navigation, strong light-dark contrast, marker highlights and conversational callouts.",
   },
   {
     templateId: "template:html-ppt-lumina",
@@ -3202,7 +3202,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "prism",
     name: "Lumina Presentation",
     description:
-      "Sticker-tag creative studio deck with brush-letter title accents, asterisk punctuation, frame-edge chrome, sharp colour cells, photo blocks, stat bands, and agency-style 15-slot rhythm.",
+      "Expressive, eclectic and art-directed. Suits creative studios, campaigns and events for visually adventurous audiences. Mixed brush-letter accents, sticker labels, asterisks, photographic cut-ins and thin framing rules.",
   },
   {
     templateId: "template:html-ppt-meridian",
@@ -3210,7 +3210,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "slate_corporate",
     name: "Meridian Presentation",
     description:
-      "15-slot professional data-agency presentation structure with flat nav chrome, sharp blocks, index numbers, stat matrices, bar charts, service blocks, and executive close.",
+      "Rational, composed and businesslike. Suits strategy briefings and professional-services presentations for stakeholders who prefer orderly, restrained corporate design. Aligned rectangular modules, compact navigation, bold headings and controlled accents.",
   },
   {
     templateId: "template:html-ppt-mosaic-geometric",
@@ -3218,7 +3218,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "carnival",
     name: "Mosaic Geometric Presentation",
     description:
-      "Bold modular geometric 15-slot pitch deck with Bauhaus mosaic tile clusters, dotted TOC, chapter dividers, framed icon services, process spine, gallery grid, segmented pie, burst stats, quote rows, and price cards.",
+      "Playful, orderly and graphic. Suits creative-business stories, exhibitions and cultural events for audiences drawn to geometric design. Bauhaus-like tile clusters, repeated shapes and vivid flat colour fields.",
   },
   {
     templateId: "template:html-ppt-neo-brutalism",
@@ -3226,7 +3226,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "mono_ink",
     name: "Neo Brutalism Presentation",
     description:
-      "Bold 15-slot brutalist business-plan deck with persistent nav chrome, CTA pairs, numbered circles, arch cards, and heavy framed content blocks.",
+      "Direct, punchy and unconventional. Suits startup narratives, product launches and challenger brands for audiences who appreciate a deliberately raw digital aesthetic. Heavy outlines, offset shadows, browser-like navigation and emphatic frames.",
   },
   {
     templateId: "template:html-ppt-nocturne",
@@ -3234,7 +3234,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "midnight_mono",
     name: "Nocturne Presentation",
     description:
-      "Dark 15-slot data-keynote deck with rounded chart devices, frameless hero numbers, bento metrics, and clear text/data alternation.",
+      "Dramatic, focused and futuristic. Suits innovation keynotes and technology stories for audiences seeking a polished stage presence. Dark grounds, luminous accents, sweeping circular motifs and rounded modules.",
   },
   {
     templateId: "template:html-ppt-pixel-glitch",
@@ -3242,7 +3242,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "bauhaus_primary",
     name: "Pixel Glitch Presentation",
     description:
-      "15-slot Y2K creative-studio presentation structure with pixel trails, glitch titles, sharp dividers, image blocks, ring charts, process spines, and bold proof pages.",
+      "Experimental, nostalgic and digitally playful. Suits gaming, music and internet-culture stories for audiences drawn to Y2K aesthetics. Stepped pixel trails, offset lettering, sharp frames and bold colour accents.",
   },
   {
     templateId: "template:html-ppt-playful-pop",
@@ -3250,7 +3250,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "pop_art",
     name: "Playful Pop Presentation",
     description:
-      "Loud 15-slot playful brand deck with neon-on-dark Pop Art colour, overlapping offset-shadow cards, organic blobs, corner dot grids, burst rosettes, pill chips, icon quads, process spine, photo gallery, quotes, and pricing.",
+      "Exuberant, irreverent and loud. Suits entertainment, social products and youth-oriented brands for audiences seeking Pop Art energy. Neon-on-dark contrast, overlapping shadowed frames, blobs, dot grids and burst motifs.",
   },
   {
     templateId: "template:html-ppt-prospectus",
@@ -3258,7 +3258,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "slate_corporate",
     name: "Prospectus Presentation",
     description:
-      "15-slot corporate landing-page business-plan structure with persistent nav, colour-field stages, diagonal arrows, CTA clusters, flat charts, gantt timelines, and pricing tiers.",
+      "Authoritative, steady and forward-looking. Suits business plans and fundraising proposals for investors and partners who expect a formal corporate presence. Broad colour fields, large headlines, slim navigation and directional arrows.",
   },
   {
     templateId: "template:html-ppt-schoolhouse",
@@ -3266,7 +3266,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "bauhaus_primary",
     name: "Schoolhouse Presentation",
     description:
-      "15-slot retro school-poster presentation structure with paper stages, stamp badges, index cards, ruled rows, stat bands, quote cards, and membership tiers.",
+      "Nostalgic, friendly and practical. Suits school communities, course introductions and workshops for audiences drawn to a printed-poster aesthetic. Paper-like grounds, stamp badges, outlined note cards and ruled rows.",
   },
   {
     templateId: "template:html-ppt-sticker-scrapbook",
@@ -3274,7 +3274,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "prism",
     name: "Sticker Scrapbook Presentation",
     description:
-      "15-slot vibrant scrapbook presentation structure with sticker seals, spiral pads, agenda cards, doodle dividers, photo grids, stat stickers, quote cards, and pricing cards.",
+      "Celebratory, informal and communal. Suits event recaps, travel stories and community programs for audiences seeking a personal scrapbook feel. Notebook frames, sticker seals, star doodles and bright colour blocks.",
   },
   {
     templateId: "template:html-ppt-strata",
@@ -3282,7 +3282,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "mono_ink",
     name: "Strata Presentation",
     description:
-      "15-slot Swiss-minimal agency presentation structure with giant caps, asterisk dividers, tile ramps, mono photo grids, frameless stats, quote cards, and pricing cards.",
+      "Rigorous, confident and design-led. Suits brand strategy, architecture and creative viewpoints for design-literate audiences. Giant uppercase typography, stark contrast, geometric tile ramps and sparse asterisks evoke Swiss minimalism.",
   },
   {
     templateId: "template:html-ppt-taped-consulting",
@@ -3290,7 +3290,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "slate_corporate",
     name: "Taped Consulting Presentation",
     description:
-      "15-slot consulting presentation structure with taped photo clusters, inset frames, feature rows, process spines, big-number proof, quote cards, and pricing cards.",
+      "Trustworthy, warm and consultative. Suits board updates, consulting cases and recommendation decks for professional audiences who value a human touch. Taped photo clusters, inset frames and editorial text balance formal structure with warmth.",
   },
   {
     templateId: "template:html-ppt-vantage",
@@ -3298,7 +3298,7 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
     defaultColorSystem: "slate_corporate",
     name: "Vantage Presentation",
     description:
-      "15-slot business-proposal presentation structure with two-tone headings, corner indexes, square-pair motifs, split panels, frameless numbers, donut charts, and milestone lines.",
+      "Decisive, polished and commercially focused. Suits proposals, executive briefings and sales pitches for clients and decision-makers who prefer a crisp business style. Strong vertical splits, two-tone headings, paired-square motifs and corner indexes.",
   },
 ];
 

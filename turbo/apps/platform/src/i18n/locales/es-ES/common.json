@@ -536,6 +536,16 @@
       "kindIcon": "{{kind}} artefacto",
       "loading": "Cargando artefactos"
     },
+    "deletion": {
+      "cancel": "Cancelar",
+      "delete": "Eliminar",
+      "deleting": "Eliminando…",
+      "description": "Se eliminará el artefacto y se desactivarán sus enlaces de Okou. Las copias ya descargadas o guardadas en otros servicios se conservarán.",
+      "hostedDescription": "El sitio web y todas sus versiones publicadas dejarán de estar disponibles. Las copias guardadas en otros servicios se conservarán.",
+      "menu": "Más acciones para {{title}}",
+      "sharedDescription": "Elimina esta conversación guardada de tus artefactos. La conversación original y su enlace compartido seguirán disponibles.",
+      "title": "¿Eliminar {{title}}?"
+    },
     "fileBadges": {
       "artwork": "ARTE",
       "audio": "AUD",
@@ -636,7 +646,8 @@
       "organizationOptionUnnamed": "Cualquier persona de tu organización",
       "permissionsUpdated": "Acceso actualizado",
       "publicAccess": "Acceso público",
-      "publicOption": "Cualquier persona con el enlace"
+      "publicOption": "Cualquier persona con el enlace",
+      "updateFailed": "No se pudo actualizar el acceso"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversación compartida",
@@ -1373,9 +1384,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Introduce una URL",
+    "blankPage": {
+      "description": "{{assistantName}} abre páginas aquí mientras trabaja. Introduce una URL arriba para navegar por tu cuenta.",
+      "title": "Aún no hay nada abierto"
+    },
+    "blankTabTitle": "Nueva pestaña",
     "cardTitle": "Navegador en la nube",
-    "close": "Cerrar el navegador en vivo",
-    "documentTitle": "Navegador en vivo",
+    "close": "Cerrar el navegador en la nube",
+    "documentTitle": "Navegador en la nube",
     "notFound": "Navegador no encontrado",
     "open": "Abrir navegador de {{name}}",
     "openAction": "Abrir",
@@ -1386,6 +1403,13 @@
       "startDescription": "Al iniciar, se restauran el perfil de inicio de sesión y el almacenamiento guardados cuando están disponibles, y se vuelven a abrir las pestañas guardadas cuando es posible.",
       "starting": "Iniciando…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} está trabajando",
+      "handBack": "Devolver el control",
+      "handBackMessage": "He terminado en el navegador. Continúa, por favor.",
+      "memberInControl": "Tienes el control",
+      "takeOver": "Tomar el control"
+    },
     "reclaimHint_one": "{{assistantName}} mantiene este navegador mientras este panel está abierto y lo recupera tras {{formattedCount}} minuto de reposo.",
     "reclaimHint_many": "{{assistantName}} mantiene este navegador mientras este panel está abierto y lo recupera tras {{formattedCount}} minutos de reposo.",
     "reclaimHint_other": "{{assistantName}} mantiene este navegador mientras este panel está abierto y lo recupera tras {{formattedCount}} minutos de reposo.",
@@ -1394,7 +1418,7 @@
       "starting": "Iniciando",
       "stopped": "Detenido"
     },
-    "title": "Navegador en vivo",
+    "title": "Navegador en la nube",
     "unavailable": {
       "description": "Este navegador no pertenece a este chat ni ha sido eliminado.",
       "title": "Navegador no disponible"
@@ -2085,6 +2109,7 @@
         "open": "Gestionar correos",
         "openEmail": "Abrir correo: {{subject}}",
         "result": "{{succeeded}} completados · {{failed}} fallidos",
+        "resultAwaiting": "{{succeeded}} completados · {{failed}} fallidos · {{awaitingConfirmation}} Esperando confirmación de envío",
         "search": "Buscar por asunto o remitente",
         "selectAll": "Seleccionar todo",
         "selected": "{{quantity}} seleccionados",
@@ -2100,16 +2125,19 @@
       "noSubject": "(Sin asunto)",
       "noSubjectPlain": "Sin asunto",
       "openEmail": "Abrir correo {{status}}: {{subject}}",
-      "openInGmail": "Abrir en Gmail",
+      "openInProvider": "Abrir en {{provider}}",
       "recipientsLine": "para {{recipients}}",
-      "reconnectDescription": "Ya no tienes permiso para acceder a este correo. Vuelve a conectar Gmail para continuar.",
-      "reconnectGmail": "Reconectar Gmail",
+      "reconnectDescription": "Ya no tienes permiso para acceder a este correo. Vuelve a conectar {{provider}} para continuar.",
       "reconnecting": "Volviendo a conectar...",
-      "reconnectToAccess": "Reconectar Gmail para acceder al correo electrónico: {{subject}}",
+      "reconnectProvider": "Reconectar {{provider}}",
+      "reconnectToAccess": "Reconectar {{provider}} para acceder al correo electrónico: {{subject}}",
+      "refreshStatus": "Actualizar estado",
+      "sendingDescription": "Outlook aún no ha confirmado el envío. Actualiza el estado o compruébalo en Outlook antes de continuar.",
       "sentToast": "Correo electrónico enviado",
       "status": {
         "deleted": "Eliminado",
         "draft": "Borrador",
+        "sending": "Esperando confirmación de envío",
         "sent": "Enviado"
       },
       "toRecipients": "Para: {{recipients}}",
@@ -2222,12 +2250,12 @@
     "resources": {
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
-      "emptyDescription": "Los archivos y chats de este chat aparecerán aquí.",
-      "emptyTitle": "Aún no hay recursos",
-      "loadFailed": "No se pudieron cargar los recursos",
-      "loading": "Cargando recursos",
+      "emptyDescription": "Los archivos, sitios web y otros artefactos creados en este chat aparecerán aquí.",
+      "emptyTitle": "Aún no hay artefactos",
+      "loadFailed": "No se pudieron cargar los artefactos",
+      "loading": "Cargando artefactos",
       "showMore": "Mostrar más",
-      "title": "Recursos del chat"
+      "title": "Artefactos y chats"
     },
     "run": {
       "collapseWorkHistory": "Contraer el historial de trabajo",
@@ -2298,7 +2326,8 @@
       "shareLink": "Enlace de conversación compartida",
       "shareLinkCopied": "Enlace para compartir copiado",
       "start": "Compartir mensajes",
-      "tooLarge": "Selecciona menos mensajes para compartir"
+      "tooLarge": "Selecciona menos mensajes para compartir",
+      "visibilityDescription": "Elige quién puede ver esta conversación. Solo tú puedes cambiar el acceso."
     },
     "shortcuts": {
       "number": "Número"
@@ -3529,7 +3558,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Volviendo a {{brandName}}",
         "connectDescription": "Vincula este número de teléfono a tu cuenta de {{brandName}} para poder interactuar con {{assistantName}} a través de mensajes de texto.",
         "connectTitle": "Conectar número de teléfono",
         "documentTitle": "Conectar mensajes",
@@ -3539,9 +3567,16 @@
         "invalidSignature": "La firma en este enlace no es válida.",
         "invalidTimestamp": "La marca de tiempo de este enlace no es válida.",
         "invalidTitle": "El enlace de conexión es inválido",
+        "keepPhone": "Mantener {{phone}}",
+        "phoneInUseDescription": "Este número está conectado a otra cuenta u organización de Okou. Desconéctalo allí antes de volver a intentarlo.",
+        "phoneInUseTitle": "Número de teléfono ya conectado",
+        "phoneMismatchDescription": "Tu cuenta de Okou usa actualmente {{currentPhone}} en esta organización. ¿Cambiar a {{requestedPhone}}, el número que abrió este enlace?",
+        "phoneMismatchTitle": "¿Cambiar de número de teléfono?",
         "risk": "Las respuestas SMS y MMS pueden no entregarse de forma fiable. Para una experiencia fiable, utiliza iMessage con este número.",
         "successDescription": "{{phone}} está conectado. Envía un mensaje de texto para empezar a chatear con {{assistantName}}.",
-        "successTitle": "Número de teléfono conectado"
+        "successTitle": "Número de teléfono conectado",
+        "switchPhone": "Cambiar a {{phone}}",
+        "unavailable": "La conexión telefónica no está disponible en este momento."
       },
       "common": {
         "backToSettings": "Volver a los ajustes",
@@ -4063,6 +4098,15 @@
     "previousPage": "Página de ejemplo anterior",
     "title": "Documento",
     "useNamed": "Usar {{title}}"
+  },
+  "featureGuide": {
+    "close": "Cerrar guía de novedades",
+    "dismiss": "Entendido",
+    "label": "Novedades",
+    "next": "Siguiente",
+    "preview": "Vista previa",
+    "previous": "Anterior",
+    "tryPrompt": "Probar esta tarea"
   },
   "global": {
     "errors": {
@@ -5972,6 +6016,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "No puedes ver esta conversación",
     "handoffDescription": "{{assistantName}} lleva el contexto a un chat nuevo",
     "handoffPrompt": "Continúa esta conversación compartida conmigo: {{url}}",
     "makeConversationYours": "Haz tuya esta conversación",
@@ -7204,6 +7249,23 @@
       "verify": "Verificar",
       "waiting": "Esperando a que escanees…",
       "workspaceLabel": "Espacio de trabajo"
+    },
+    "whatsapp": {
+      "codeError": "No se pudo crear el código de conexión. Inténtalo de nuevo.",
+      "connect": "Conectar WhatsApp",
+      "connected": "WhatsApp conectado",
+      "description": "Chatea con Okou directamente desde WhatsApp",
+      "disconnected": "WhatsApp desconectado",
+      "expires": "Este código caduca en 10 minutos. Mantén esta página abierta para ver cuándo se conecta tu cuenta.",
+      "instructions": "Abre WhatsApp o escanea el código QR y envía el código de conexión para vincular tu cuenta.",
+      "loading": "Creando tu código de conexión…",
+      "markets": "Disponible para números de WhatsApp del Espacio Económico Europeo, Brasil y Turquía.",
+      "name": "WhatsApp",
+      "open": "Abrir WhatsApp",
+      "options": "Opciones de WhatsApp",
+      "qrTitle": "Escanea para conectar WhatsApp",
+      "regenerate": "Generar un nuevo código",
+      "unavailable": "WhatsApp aún no está configurado"
     }
   }
 }

@@ -3,10 +3,13 @@ import {
   threadMailSummarySchema,
   mailDraftSchema,
   mailDraftStatusSchema,
-  type MailAttachment,
+  mailProviderSchema,
   type MailDraft,
   type MailDraftStatus,
+  type MailAttachment,
   type MailInlineImage,
+  type MailProvider,
+  type LinkMailDraftInput,
   type ThreadMailSummary,
 } from "@okouai/api-contracts/contracts/mail";
 import {
@@ -62,6 +65,21 @@ import {
   connectorRuntimeSlugSelectionReadPlan,
   connectorRuntimeSlugSelectionFromRows,
 } from "./connector-catalog-slug-source.service";
+
+import {
+  OutlookAuthorizationError,
+  OutlookRequestError,
+  outlookGetMessage,
+  outlookHasRequiredMailScopes,
+  outlookGetAttachment,
+  outlookSendDraft,
+  outlookDeleteDraft,
+  type OutlookMailValue,
+} from "./outlook-mail";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import type { MailDetails, MailDraftValue } from "./mail-details";
 
 const L = logger("api:mail-draft");
 
@@ -128,7 +146,7 @@ const gmailAttachmentResourceSchema = object({
 });
 
 interface MailConnection extends BuiltinConnectorCredentialConnection {
-  readonly connectorSlug: "gmail";
+  readonly connectorSlug: "gmail" | "outlook-mail";
   readonly externalEmail: string;
   readonly externalUsername: string | null;
   readonly scopesReady: boolean;
@@ -165,20 +183,24 @@ export type MailDraftLinkMutationResult =
 type MailDraftAttachmentResult =
   MailDraftAttachmentSuccess | MailDraftErrorResult;
 
-const reconnectMailError = Object.freeze({
-  kind: "conflict" as const,
-  message: "Reconnect Gmail before continuing",
-});
+function reconnectMailError(provider: MailProvider): MailDraftErrorResult {
+  return {
+    kind: "conflict",
+    message: `Reconnect ${provider === "gmail" ? "Gmail" : "Outlook"} before continuing`,
+  };
+}
 
 interface MailDraftRow {
+  readonly provider: MailProvider;
+  readonly webLink: string | null;
   readonly id: string;
   readonly agentId: string;
   readonly chatThreadId: string;
   readonly connectorId: string | null;
-  readonly gmailDraftId: string;
-  readonly gmailThreadId: string;
-  readonly gmailMessageId: string;
-  readonly sentGmailMessageId: string | null;
+  readonly draftId: string;
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly sentMessageId: string | null;
   readonly status: MailDraftStatus;
   readonly senderName: string | null;
   readonly senderAddress: string;
@@ -189,6 +211,10 @@ interface MailDraftRow {
 }
 
 interface StoredMailDraftRow {
+  readonly provider: MailProvider;
+  readonly outlookMessageId: string | null;
+  readonly outlookConversationId: string | null;
+  readonly outlookWebLink: string | null;
   readonly id: string;
   readonly agentId: string;
   readonly chatThreadId: string;
@@ -217,29 +243,6 @@ interface MailAccessTokenFailure {
 }
 
 type MailAccessTokenResult = MailAccessTokenSuccess | MailAccessTokenFailure;
-
-interface MailDetails {
-  readonly from: string;
-  readonly fromName?: string;
-  readonly to: readonly string[];
-  readonly cc: readonly string[];
-  readonly bcc: readonly string[];
-  readonly subject: string;
-  readonly body: string;
-  readonly bodyHtml?: string;
-  readonly inlineImages?: readonly MailInlineImage[];
-  readonly replyTo?: string;
-  readonly inReplyTo?: string;
-  readonly references: readonly string[];
-  readonly attachments: readonly MailAttachment[];
-}
-
-interface GmailDraftValue {
-  readonly draftId: string;
-  readonly messageId: string;
-  readonly threadId: string;
-  readonly details: MailDetails;
-}
 
 interface GmailSentValue {
   readonly messageId: string;
@@ -273,10 +276,48 @@ function okResult(mailDraftId: string, mailDraft: MailDraft): MailDraftResult {
   };
 }
 
+const loadMailCatalog$ = command(
+  async (
+    { set },
+    provider: MailProvider,
+  ): Promise<ConnectorRuntimeSelection> => {
+    const db = set(writeDb$);
+    const plan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: [provider === "gmail" ? "gmail" : "outlook-mail"],
+    });
+    return connectorRuntimeSlugSelectionFromRows(
+      plan.selection,
+      await db
+        .select(plan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, plan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
+  },
+);
+
+async function mailGetProviderDraft(
+  args: {
+    readonly provider: MailProvider;
+    readonly draftId: string;
+    readonly accessToken: string;
+    readonly fallbackSender: {
+      readonly address: string;
+      readonly name: string | null;
+    };
+  },
+  signal: AbortSignal,
+): Promise<MailDraftValue | OutlookMailValue | null> {
+  return args.provider === "outlook"
+    ? await outlookGetMessage({ ...args, messageId: args.draftId }, signal)
+    : await gmailGetDraft({ ...args, gmailDraftId: args.draftId }, signal);
+}
+
 const loadMailConnections$ = command(
   async (
     { set },
     args: {
+      readonly connectorSlug?: "gmail" | "outlook-mail";
       readonly snapshot: ConnectorRuntimeSelection;
       readonly orgId: string;
       readonly userId: string;
@@ -316,7 +357,10 @@ const loadMailConnections$ = command(
           eq(userBuiltinConnectors.orgId, args.orgId),
           eq(userBuiltinConnectors.userId, args.userId),
           eq(userBuiltinConnectors.agentId, args.agentId),
-          eq(userBuiltinConnectors.connectorSlug, "gmail"),
+          eq(
+            userBuiltinConnectors.connectorSlug,
+            args.connectorSlug ?? "gmail",
+          ),
           args.sourceId
             ? eq(connectors.id, args.sourceId)
             : eq(connectors.isDefault, true),
@@ -324,7 +368,11 @@ const loadMailConnections$ = command(
       );
 
     return rows.flatMap((row): MailConnection[] => {
-      if (row.connectorSlug !== "gmail" || !row.externalEmail) {
+      if (
+        (row.connectorSlug !== "gmail" &&
+          row.connectorSlug !== "outlook-mail") ||
+        !row.externalEmail
+      ) {
         return [];
       }
       const accessResult = resolveBuiltinConnectorCredentialAccess({
@@ -362,10 +410,12 @@ const loadMailConnections$ = command(
           storageVersion: access.storageVersion,
           scopesReady:
             oauthScopes === null ||
-            connectorAuthMethodHasRequiredScopes(
-              runtimeMethod.method,
-              oauthScopes,
-            ),
+            (row.connectorSlug === "outlook-mail"
+              ? outlookHasRequiredMailScopes(oauthScopes)
+              : connectorAuthMethodHasRequiredScopes(
+                  runtimeMethod.method,
+                  oauthScopes,
+                )),
           tokenExpiresAt: row.tokenExpiresAt,
         },
       ];
@@ -375,7 +425,7 @@ const loadMailConnections$ = command(
 
 interface OwnedMailThreadContext {
   readonly agentId: string;
-  readonly gmailConnectorId: string | null;
+  readonly connectorId: string | null;
 }
 
 const loadOwnedMailThreadContext$ = command(
@@ -385,13 +435,14 @@ const loadOwnedMailThreadContext$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly threadId: string;
+      readonly provider?: MailProvider;
     },
   ): Promise<OwnedMailThreadContext | null> => {
     const db = set(writeDb$);
     const [row] = await db
       .select({
         agentId: agents.id,
-        gmailConnectorId: chatThreadConnectorSelections.connectorId,
+        connectorId: chatThreadConnectorSelections.connectorId,
       })
       .from(chatThreads)
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
@@ -399,7 +450,10 @@ const loadOwnedMailThreadContext$ = command(
         chatThreadConnectorSelections,
         and(
           eq(chatThreadConnectorSelections.chatThreadId, chatThreads.id),
-          eq(chatThreadConnectorSelections.connectorSlug, "gmail"),
+          eq(
+            chatThreadConnectorSelections.connectorSlug,
+            args.provider === "outlook" ? "outlook-mail" : "gmail",
+          ),
         ),
       )
       .where(
@@ -430,6 +484,10 @@ const loadOwnedMailDraft$ = command(
         agentId: agents.id,
         chatThreadId: chatThreads.id,
         connectorId: mailDrafts.connectorId,
+        provider: mailDrafts.provider,
+        outlookMessageId: mailDrafts.outlookMessageId,
+        outlookConversationId: mailDrafts.outlookConversationId,
+        outlookWebLink: mailDrafts.outlookWebLink,
         gmailDraftId: mailDrafts.gmailDraftId,
         gmailThreadId: mailDrafts.gmailThreadId,
         gmailMessageId: mailDrafts.gmailMessageId,
@@ -472,6 +530,7 @@ export const listThreadMail$ = command(
     if (!thread) {
       return null;
     }
+    const outlookEnabled = await set(requireOutlookChatMail$, args, signal);
     const rows = await set(writeDb$)
       .select({
         mailDraftId: mailDrafts.id,
@@ -484,7 +543,8 @@ export const listThreadMail$ = command(
       .where(
         and(
           eq(mailDrafts.chatThreadId, args.threadId),
-          inArray(mailDrafts.status, ["draft", "sent"]),
+          outlookEnabled ? undefined : eq(mailDrafts.provider, "gmail"),
+          inArray(mailDrafts.status, ["draft", "sending", "sent"]),
         ),
       )
       .orderBy(desc(mailDrafts.createdAt), desc(mailDrafts.id));
@@ -501,36 +561,79 @@ export const listThreadMail$ = command(
 function mailDraftRow(
   row: StoredMailDraftRow | undefined,
 ): MailDraftRow | null {
-  if (
-    !row?.gmailDraftId ||
-    !row.gmailThreadId ||
-    !row.gmailMessageId ||
-    !row.senderAddress ||
-    row.subject === null
-  ) {
+  if (!row || !row.senderAddress || row.subject === null) {
     return null;
   }
   const status = mailDraftStatusSchema.safeParse(row.status);
   if (!status.success) {
     return null;
   }
+  const provider = mailProviderSchema.parse(row.provider);
+  const draftId =
+    provider === "gmail" ? row.gmailDraftId : row.outlookMessageId;
+  const threadId =
+    provider === "gmail" ? row.gmailThreadId : row.outlookConversationId;
+  const messageId =
+    provider === "gmail" ? row.gmailMessageId : row.outlookMessageId;
+  if (!draftId || !threadId || !messageId) {
+    return null;
+  }
   return {
     ...row,
-    gmailDraftId: row.gmailDraftId,
-    gmailThreadId: row.gmailThreadId,
-    gmailMessageId: row.gmailMessageId,
+    provider,
+    draftId,
+    threadId,
+    messageId,
+    sentMessageId:
+      provider === "gmail"
+        ? row.sentGmailMessageId
+        : status.data === "sent"
+          ? messageId
+          : null,
+    webLink: row.outlookWebLink,
     status: status.data,
     senderAddress: row.senderAddress,
     subject: row.subject,
   };
 }
 
+function mailIdentityValues(provider: MailProvider, mail: MailDraftValue) {
+  return provider === "gmail"
+    ? {
+        gmailDraftId: mail.draftId,
+        gmailThreadId: mail.threadId,
+        gmailMessageId: mail.messageId,
+      }
+    : {
+        outlookMessageId: mail.messageId,
+        outlookConversationId: mail.threadId,
+        outlookWebLink: mail.webLink ?? null,
+      };
+}
+
+const requireOutlookChatMail$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    return isFeatureEnabled(FeatureSwitchKey.OutlookChatMail, context);
+  },
+);
+
 const loadLinkedDraft$ = command(
   async (
     { set },
     args: {
       readonly connectorId: string;
-      readonly gmailDraftId: string;
+      readonly draftId: string;
+      readonly provider: MailProvider;
     },
   ): Promise<{ readonly id: string; readonly chatThreadId: string } | null> => {
     const db = set(writeDb$);
@@ -540,7 +643,9 @@ const loadLinkedDraft$ = command(
       .where(
         and(
           eq(mailDrafts.connectorId, args.connectorId),
-          eq(mailDrafts.gmailDraftId, args.gmailDraftId),
+          args.provider === "gmail"
+            ? eq(mailDrafts.gmailDraftId, args.draftId)
+            : eq(mailDrafts.outlookMessageId, args.draftId),
         ),
       )
       .limit(1);
@@ -561,14 +666,28 @@ const resolveMailAccessToken$ = command(
     signal: AbortSignal,
   ): Promise<MailAccessTokenResult> => {
     if (args.connection.needsReconnect || !args.connection.scopesReady) {
-      return { kind: "error", message: "Reconnect Gmail before continuing" };
+      return {
+        kind: "error",
+        message:
+          args.connection.connectorSlug === "gmail"
+            ? "Reconnect Gmail before continuing"
+            : "Reconnect Outlook before continuing",
+      };
     }
     const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
       args.connection,
-      GMAIL_ACCESS_TOKEN_ENV,
+      args.connection.connectorSlug === "gmail"
+        ? GMAIL_ACCESS_TOKEN_ENV
+        : "OUTLOOK_MAIL_TOKEN",
     );
     if (accessTokenValueRef === null) {
-      return { kind: "error", message: "Reconnect Gmail before continuing" };
+      return {
+        kind: "error",
+        message:
+          args.connection.connectorSlug === "gmail"
+            ? "Reconnect Gmail before continuing"
+            : "Reconnect Outlook before continuing",
+      };
     }
     const values = await set(
       loadBuiltinConnectorCredentialValues$,
@@ -593,7 +712,10 @@ const resolveMailAccessToken$ = command(
         connection: args.connection,
         orgId: args.orgId,
         userId: args.userId,
-        runtimeEnvironmentName: GMAIL_ACCESS_TOKEN_ENV,
+        runtimeEnvironmentName:
+          args.connection.connectorSlug === "gmail"
+            ? GMAIL_ACCESS_TOKEN_ENV
+            : "OUTLOOK_MAIL_TOKEN",
         persist: {
           defaultExpiresInMs: DEFAULT_ACCESS_TOKEN_EXPIRES_IN_MS,
         },
@@ -601,11 +723,23 @@ const resolveMailAccessToken$ = command(
       signal,
     );
     if (refreshed.kind === "configuration-unavailable") {
-      return { kind: "error", message: "Gmail OAuth is not configured" };
+      return {
+        kind: "error",
+        message:
+          args.connection.connectorSlug === "gmail"
+            ? "Gmail OAuth is not configured"
+            : "Outlook OAuth is not configured",
+      };
     }
     return refreshed.kind === "ok"
       ? { kind: "ok", accessToken: refreshed.accessToken }
-      : { kind: "error", message: "Reconnect Gmail before continuing" };
+      : {
+          kind: "error",
+          message:
+            args.connection.connectorSlug === "gmail"
+              ? "Reconnect Gmail before continuing"
+              : "Reconnect Outlook before continuing",
+        };
   },
 );
 
@@ -907,7 +1041,7 @@ async function gmailGetDraft(
     };
   },
   signal: AbortSignal,
-): Promise<GmailDraftValue | null> {
+): Promise<MailDraftValue | null> {
   const draft = await gmailGetDraftResource(args, signal);
   if (!draft) {
     return null;
@@ -1146,7 +1280,7 @@ function responseDraft(args: {
   const details = responseDetails(args.row, args.details);
   return mailDraftSchema.parse({
     version: 3,
-    provider: "gmail",
+    provider: args.row.provider,
     from: details.from,
     fromName: details.fromName,
     to: details.to,
@@ -1164,17 +1298,25 @@ function responseDraft(args: {
     attachments: details.attachments,
     status: args.row.status,
     detailAvailable: args.detailAvailable,
-    gmailDraftId: args.row.gmailDraftId,
-    gmailThreadId: args.row.gmailThreadId,
-    gmailMessageId: args.row.gmailMessageId,
-    sentGmailMessageId: args.row.sentGmailMessageId ?? undefined,
+    ...(args.row.provider === "gmail"
+      ? {
+          gmailDraftId: args.row.draftId,
+          gmailThreadId: args.row.threadId,
+          gmailMessageId: args.row.messageId,
+          sentGmailMessageId: args.row.sentMessageId ?? undefined,
+        }
+      : {
+          outlookMessageId: args.row.messageId,
+          outlookConversationId: args.row.threadId,
+          outlookWebLink: args.row.webLink ?? undefined,
+        }),
     createdAt: args.row.createdAt.toISOString(),
     updatedAt: args.row.updatedAt.toISOString(),
     sentAt: args.row.sentAt?.toISOString(),
   });
 }
 
-const markGmailNeedsReconnect$ = command(
+const markMailNeedsReconnect$ = command(
   async (
     { set },
     args: {
@@ -1192,7 +1334,7 @@ const markGmailNeedsReconnect$ = command(
   },
 );
 
-function gmailOperationResult<T>(
+function mailOperationResult<T>(
   result:
     | { readonly ok: true; readonly value: T }
     | { readonly ok: false; readonly error: unknown },
@@ -1203,7 +1345,8 @@ function gmailOperationResult<T>(
   if (result.ok) {
     return { kind: "ok", value: result.value };
   }
-  return result.error instanceof GmailAuthorizationError
+  return result.error instanceof GmailAuthorizationError ||
+    result.error instanceof OutlookAuthorizationError
     ? { kind: "reconnect" }
     : { kind: "error", error: result.error };
 }
@@ -1245,6 +1388,7 @@ const connectionForRow$ = command(
     },
   ): Promise<MailConnection | null> => {
     const connections = await set(loadMailConnections$, {
+      connectorSlug: args.row.provider === "gmail" ? "gmail" : "outlook-mail",
       snapshot: args.snapshot,
       orgId: args.orgId,
       userId: args.userId,
@@ -1280,7 +1424,13 @@ const accessForRow$ = command(
     const connection = await set(connectionForRow$, args);
     signal.throwIfAborted();
     if (!connection) {
-      return { kind: "conflict", message: "Reconnect Gmail before continuing" };
+      return {
+        kind: "conflict",
+        message:
+          args.row.provider === "gmail"
+            ? "Reconnect Gmail before continuing"
+            : "Reconnect Outlook before continuing",
+      };
     }
     const access = await set(
       resolveMailAccessToken$,
@@ -1305,7 +1455,8 @@ const persistLinkedDraft$ = command(
   async (
     { set },
     args: {
-      readonly gmail: GmailDraftValue;
+      readonly mail: MailDraftValue;
+      readonly provider: MailProvider;
       readonly connection: MailConnection;
       readonly threadId: string;
     },
@@ -1326,18 +1477,22 @@ const persistLinkedDraft$ = command(
         id: mailDraftId,
         chatThreadId: args.threadId,
         connectorId: args.connection.connectorId,
-        gmailDraftId: args.gmail.draftId,
-        gmailThreadId: args.gmail.threadId,
-        gmailMessageId: args.gmail.messageId,
+        provider: args.provider,
+        ...mailIdentityValues(args.provider, args.mail),
         status: "draft",
-        senderName: args.gmail.details.fromName ?? null,
-        senderAddress: args.gmail.details.from,
-        subject: args.gmail.details.subject,
+        senderName: args.mail.details.fromName ?? null,
+        senderAddress: args.mail.details.from,
+        subject: args.mail.details.subject,
         createdAt,
         updatedAt: createdAt,
       })
       .onConflictDoNothing({
-        target: [mailDrafts.connectorId, mailDrafts.gmailDraftId],
+        target: [
+          mailDrafts.connectorId,
+          args.provider === "gmail"
+            ? mailDrafts.gmailDraftId
+            : mailDrafts.outlookMessageId,
+        ],
       })
       .returning({ id: mailDrafts.id });
     if (!inserted) {
@@ -1347,12 +1502,14 @@ const persistLinkedDraft$ = command(
         .where(
           and(
             eq(mailDrafts.connectorId, args.connection.connectorId),
-            eq(mailDrafts.gmailDraftId, args.gmail.draftId),
+            args.provider === "gmail"
+              ? eq(mailDrafts.gmailDraftId, args.mail.draftId)
+              : eq(mailDrafts.outlookMessageId, args.mail.messageId),
           ),
         )
         .limit(1);
       if (!existing?.chatThreadId) {
-        throw new Error("Linked Gmail draft row could not be loaded");
+        throw new Error("Linked mail draft row could not be loaded");
       }
       return {
         kind: "existing" as const,
@@ -1376,11 +1533,35 @@ const markDeleted$ = command(
   ): Promise<MailDraftRow> => {
     const db = set(writeDb$);
     const updatedAt = nowDate();
-    await db
+    const [deleted] = await db
       .update(mailDrafts)
       .set({ status: "deleted", updatedAt })
+      .where(
+        and(eq(mailDrafts.id, args.row.id), eq(mailDrafts.status, "draft")),
+      )
+      .returning({ id: mailDrafts.id });
+    if (deleted) {
+      return { ...args.row, status: "deleted", updatedAt };
+    }
+    // A stale provider miss must not overwrite an overlapping send or its
+    // confirmed sent record. Read back the winning business transition.
+    const [current] = await db
+      .select({
+        status: mailDrafts.status,
+        sentAt: mailDrafts.sentAt,
+        sentGmailMessageId: mailDrafts.sentGmailMessageId,
+      })
+      .from(mailDrafts)
       .where(eq(mailDrafts.id, args.row.id));
-    return { ...args.row, status: "deleted", updatedAt };
+    return {
+      ...args.row,
+      status: current ? mailDraftStatusSchema.parse(current.status) : "deleted",
+      sentAt: current?.sentAt ?? null,
+      sentMessageId:
+        args.row.provider === "gmail"
+          ? (current?.sentGmailMessageId ?? null)
+          : args.row.messageId,
+    };
   },
 );
 
@@ -1389,7 +1570,7 @@ const updateRowFromDraft$ = command(
     { set },
     args: {
       readonly row: MailDraftRow;
-      readonly gmail: GmailDraftValue;
+      readonly mail: MailDraftValue;
     },
   ): Promise<MailDraftRow> => {
     const db = set(writeDb$);
@@ -1397,23 +1578,288 @@ const updateRowFromDraft$ = command(
     await db
       .update(mailDrafts)
       .set({
-        gmailThreadId: args.gmail.threadId,
-        gmailMessageId: args.gmail.messageId,
-        senderName: args.gmail.details.fromName ?? null,
-        senderAddress: args.gmail.details.from,
-        subject: args.gmail.details.subject,
+        ...mailIdentityValues(args.row.provider, args.mail),
+        senderName: args.mail.details.fromName ?? null,
+        senderAddress: args.mail.details.from,
+        subject: args.mail.details.subject,
         updatedAt,
       })
       .where(eq(mailDrafts.id, args.row.id));
     return {
       ...args.row,
-      gmailThreadId: args.gmail.threadId,
-      gmailMessageId: args.gmail.messageId,
-      senderName: args.gmail.details.fromName ?? null,
-      senderAddress: args.gmail.details.from,
-      subject: args.gmail.details.subject,
+      threadId: args.mail.threadId,
+      messageId: args.mail.messageId,
+      webLink: args.mail.webLink ?? args.row.webLink,
+      senderName: args.mail.details.fromName ?? null,
+      senderAddress: args.mail.details.from,
+      subject: args.mail.details.subject,
       updatedAt,
     };
+  },
+);
+
+const loadOutlookDraftDetails$ = command(
+  async (
+    { set },
+    args: { readonly row: MailDraftRow; readonly access: MailAccess },
+    signal: AbortSignal,
+  ): Promise<MailDraftMutationResult> => {
+    const result = mailOperationResult(
+      await settle(
+        outlookGetMessage(
+          {
+            accessToken: args.access.accessToken,
+            messageId: args.row.messageId,
+            fallbackSender: {
+              address: args.access.connection.externalEmail,
+              name: args.access.connection.externalUsername,
+            },
+          },
+          signal,
+        ),
+        signal,
+      ),
+    );
+    if (result.kind === "reconnect") {
+      await set(markMailNeedsReconnect$, {
+        connection: args.access.connection,
+      });
+      signal.throwIfAborted();
+      return reconnectDraftResult(args.row, args.access.connection.connectorId);
+    }
+    if (result.kind === "error") {
+      throw result.error;
+    }
+    const mail = result.value;
+    if (!mail) {
+      // A sent copy may not exist yet after 202 Accepted. Never turn that
+      // propagation delay into a deleted draft or another send attempt.
+      const row =
+        args.row.status === "draft"
+          ? await set(markDeleted$, { row: args.row })
+          : args.row;
+      signal.throwIfAborted();
+      return okResult(
+        row.id,
+        responseDraft({ row, details: null, detailAvailable: false }),
+      );
+    }
+    return await set(publishOutlookMessage$, { row: args.row, mail }, signal);
+  },
+);
+
+const publishOutlookMessage$ = command(
+  async (
+    { set },
+    args: { readonly row: MailDraftRow; readonly mail: OutlookMailValue },
+    signal: AbortSignal,
+  ): Promise<MailDraftMutationResult> => {
+    const updatedAt = nowDate();
+    const sentAt =
+      !args.mail.isDraft && args.mail.sentAt
+        ? new Date(args.mail.sentAt)
+        : args.row.sentAt;
+    const status = sentAt
+      ? "sent"
+      : !args.mail.isDraft
+        ? "sending"
+        : args.row.status;
+    const [stored] = await set(writeDb$)
+      .update(mailDrafts)
+      .set({
+        ...mailIdentityValues("outlook", args.mail),
+        senderName: args.mail.details.fromName ?? null,
+        senderAddress: args.mail.details.from,
+        subject: args.mail.details.subject,
+        ...(status === "sent" || status === "sending"
+          ? { status, sentAt }
+          : {}),
+        updatedAt,
+      })
+      .where(
+        and(
+          eq(mailDrafts.id, args.row.id),
+          inArray(mailDrafts.status, ["draft", "sending", "sent"]),
+        ),
+      )
+      .returning({ status: mailDrafts.status });
+    signal.throwIfAborted();
+    const row: MailDraftRow = {
+      ...args.row,
+      status: stored?.status ?? "deleted",
+      draftId: args.mail.draftId,
+      messageId: args.mail.messageId,
+      threadId: args.mail.threadId,
+      sentAt,
+      sentMessageId: sentAt ? args.mail.messageId : null,
+      webLink: args.mail.webLink ?? args.row.webLink,
+      senderName: args.mail.details.fromName ?? null,
+      senderAddress: args.mail.details.from,
+      subject: args.mail.details.subject,
+      updatedAt,
+    };
+    return okResult(
+      row.id,
+      responseDraft({ row, details: args.mail.details, detailAvailable: true }),
+    );
+  },
+);
+
+const sendOutlookDraft$ = command(
+  async (
+    { set },
+    args: { readonly row: MailDraftRow; readonly access: MailAccess },
+    signal: AbortSignal,
+  ): Promise<MailDraftMutationResult | GmailDraftRejection> => {
+    const current = await set(loadOutlookDraftDetails$, args, signal);
+    if (
+      current.kind !== "ok" ||
+      current.mailDraft.accessStatus === "reconnect" ||
+      current.mailDraft.status !== "draft"
+    ) {
+      return current;
+    }
+    const [accepted] = await set(writeDb$)
+      .update(mailDrafts)
+      .set({ status: "sending", updatedAt: nowDate() })
+      .where(
+        and(eq(mailDrafts.id, args.row.id), eq(mailDrafts.status, "draft")),
+      )
+      .returning({ id: mailDrafts.id });
+    signal.throwIfAborted();
+    if (!accepted) {
+      return {
+        kind: "conflict",
+        message: "This mail draft can no longer be sent",
+      };
+    }
+    const sendingRow: MailDraftRow = { ...args.row, status: "sending" };
+    // The business transition selects one sender. Unknown network/provider
+    // outcomes remain sending and can only be reconciled by reading Outlook.
+    const result = await settle(
+      outlookSendDraft(
+        { accessToken: args.access.accessToken, messageId: args.row.messageId },
+        signal,
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      const error = result.error;
+      if (
+        error instanceof OutlookAuthorizationError ||
+        (error instanceof OutlookRequestError &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          error.status !== 408)
+      ) {
+        await set(writeDb$)
+          .update(mailDrafts)
+          .set({ status: "draft", updatedAt: nowDate() })
+          .where(
+            and(
+              eq(mailDrafts.id, args.row.id),
+              eq(mailDrafts.status, "sending"),
+            ),
+          );
+        signal.throwIfAborted();
+        if (error instanceof OutlookAuthorizationError) {
+          await set(markMailNeedsReconnect$, {
+            connection: args.access.connection,
+          });
+          signal.throwIfAborted();
+          return reconnectDraftResult(
+            args.row,
+            args.access.connection.connectorId,
+          );
+        }
+        return {
+          kind: "rejected",
+          message:
+            "Outlook rejected this draft. Open it in Outlook and check the recipients, content and account permissions before trying again.",
+        };
+      }
+      return okResult(args.row.id, { ...current.mailDraft, status: "sending" });
+    }
+    const confirmed = await settle(
+      set(loadOutlookDraftDetails$, { ...args, row: sendingRow }, signal),
+      signal,
+    );
+    return confirmed.ok
+      ? confirmed.value
+      : okResult(args.row.id, { ...current.mailDraft, status: "sending" });
+  },
+);
+
+const deleteOutlookDraft$ = command(
+  async (
+    { set },
+    args: { readonly row: MailDraftRow; readonly access: MailAccess },
+    signal: AbortSignal,
+  ): Promise<MailDraftMutationResult> => {
+    // The user may already have sent the draft from Outlook. Its immutable ID
+    // now resolves to the sent copy, which deleting a stale draft must preserve.
+    const current = await set(loadOutlookDraftDetails$, args, signal);
+    if (
+      current.kind !== "ok" ||
+      current.mailDraft.accessStatus === "reconnect"
+    ) {
+      return current;
+    }
+    if (current.mailDraft.status !== "draft") {
+      return {
+        kind: "conflict",
+        message: "Only an active draft can be deleted",
+      };
+    }
+    const [deleted] = await set(writeDb$)
+      .update(mailDrafts)
+      .set({ status: "deleted", updatedAt: nowDate() })
+      .where(
+        and(eq(mailDrafts.id, args.row.id), eq(mailDrafts.status, "draft")),
+      )
+      .returning({ id: mailDrafts.id });
+    signal.throwIfAborted();
+    if (!deleted) {
+      return {
+        kind: "conflict",
+        message: "Only an active draft can be deleted",
+      };
+    }
+    const result = mailOperationResult(
+      await settle(
+        outlookDeleteDraft(
+          {
+            accessToken: args.access.accessToken,
+            messageId: args.row.messageId,
+          },
+          signal,
+        ),
+        signal,
+      ),
+    );
+    if (result.kind !== "ok") {
+      // DELETE is idempotent. Restore the review record on failure; the next
+      // provider read distinguishes an existing draft from completed deletion.
+      await set(writeDb$)
+        .update(mailDrafts)
+        .set({ status: "draft", updatedAt: nowDate() })
+        .where(
+          and(eq(mailDrafts.id, args.row.id), eq(mailDrafts.status, "deleted")),
+        );
+      signal.throwIfAborted();
+      if (result.kind === "reconnect") {
+        await set(markMailNeedsReconnect$, {
+          connection: args.access.connection,
+        });
+        signal.throwIfAborted();
+        return reconnectDraftResult(
+          args.row,
+          args.access.connection.connectorId,
+        );
+      }
+      throw result.error;
+    }
+    return okResult(args.row.id, { ...current.mailDraft, status: "deleted" });
   },
 );
 
@@ -1435,8 +1881,14 @@ const loadMailDraftDetails$ = command(
       );
     }
     const access = await set(accessForRow$, args, signal);
+    if (args.row.provider === "outlook") {
+      return access.kind === "ok"
+        ? await set(loadOutlookDraftDetails$, { row: args.row, access }, signal)
+        : accessReconnectDraftResult(args.row, access);
+    }
+
     if (args.row.status === "sent") {
-      const sentGmailMessageId = args.row.sentGmailMessageId;
+      const sentGmailMessageId = args.row.sentMessageId;
       const stored = okResult(
         args.row.id,
         responseDraft({ row: args.row, details: null, detailAvailable: false }),
@@ -1447,7 +1899,7 @@ const loadMailDraftDetails$ = command(
           : accessReconnectDraftResult(args.row, access);
       }
       let sent: GmailSentValue | null = null;
-      const sentResult = gmailOperationResult(
+      const sentResult = mailOperationResult(
         await settle(
           gmailGetMessage(
             {
@@ -1465,7 +1917,7 @@ const loadMailDraftDetails$ = command(
       );
       signal.throwIfAborted();
       if (sentResult.kind === "reconnect") {
-        await set(markGmailNeedsReconnect$, { connection: access.connection });
+        await set(markMailNeedsReconnect$, { connection: access.connection });
         signal.throwIfAborted();
         return reconnectDraftResult(args.row, access.connection.connectorId);
       }
@@ -1492,12 +1944,12 @@ const loadMailDraftDetails$ = command(
     if (access.kind !== "ok") {
       return accessReconnectDraftResult(args.row, access);
     }
-    const gmailResult = gmailOperationResult(
+    const gmailResult = mailOperationResult(
       await settle(
         gmailGetDraft(
           {
             accessToken: access.accessToken,
-            gmailDraftId: args.row.gmailDraftId,
+            gmailDraftId: args.row.draftId,
             fallbackSender: {
               address: access.connection.externalEmail,
               name: access.connection.externalUsername,
@@ -1510,7 +1962,7 @@ const loadMailDraftDetails$ = command(
     );
     signal.throwIfAborted();
     if (gmailResult.kind === "reconnect") {
-      await set(markGmailNeedsReconnect$, { connection: access.connection });
+      await set(markMailNeedsReconnect$, { connection: access.connection });
       signal.throwIfAborted();
       return reconnectDraftResult(args.row, access.connection.connectorId);
     }
@@ -1528,7 +1980,7 @@ const loadMailDraftDetails$ = command(
     }
     const updatedRow = await set(updateRowFromDraft$, {
       row: args.row,
-      gmail,
+      mail: gmail,
     });
     signal.throwIfAborted();
     return okResult(
@@ -1557,13 +2009,13 @@ async function gmailAttachmentSource(
     return null;
   }
   if (args.row.status === "sent") {
-    if (!args.row.sentGmailMessageId) {
+    if (!args.row.sentMessageId) {
       return null;
     }
     const message = await gmailGetMessageResource(
       {
         accessToken: args.accessToken,
-        gmailMessageId: args.row.sentGmailMessageId,
+        gmailMessageId: args.row.sentMessageId,
       },
       signal,
     );
@@ -1582,7 +2034,7 @@ async function gmailAttachmentSource(
   const draft = await gmailGetDraftResource(
     {
       accessToken: args.accessToken,
-      gmailDraftId: args.row.gmailDraftId,
+      gmailDraftId: args.row.draftId,
     },
     signal,
   );
@@ -1635,7 +2087,7 @@ const sendGmailDraftWithAccess$ = command(
   ): Promise<
     | {
         readonly kind: "ok";
-        readonly current: GmailDraftValue;
+        readonly current: MailDraftValue;
         readonly sent: {
           readonly messageId: string;
           readonly threadId: string;
@@ -1645,12 +2097,12 @@ const sendGmailDraftWithAccess$ = command(
     | { readonly kind: "reconnect" }
     | GmailDraftRejection
   > => {
-    const currentResult = gmailOperationResult(
+    const currentResult = mailOperationResult(
       await settle(
         gmailGetDraft(
           {
             accessToken: args.access.accessToken,
-            gmailDraftId: args.row.gmailDraftId,
+            gmailDraftId: args.row.draftId,
             fallbackSender: {
               address: args.access.connection.externalEmail,
               name: args.access.connection.externalUsername,
@@ -1663,7 +2115,7 @@ const sendGmailDraftWithAccess$ = command(
     );
     signal.throwIfAborted();
     if (currentResult.kind === "reconnect") {
-      await set(markGmailNeedsReconnect$, {
+      await set(markMailNeedsReconnect$, {
         connection: args.access.connection,
       });
       signal.throwIfAborted();
@@ -1675,12 +2127,12 @@ const sendGmailDraftWithAccess$ = command(
     if (!currentResult.value) {
       return { kind: "missing" };
     }
-    const sentResult = gmailOperationResult(
+    const sentResult = mailOperationResult(
       await settle(
         gmailSendLinkedDraft(
           {
             accessToken: args.access.accessToken,
-            gmailDraftId: args.row.gmailDraftId,
+            gmailDraftId: args.row.draftId,
           },
           signal,
         ),
@@ -1689,7 +2141,7 @@ const sendGmailDraftWithAccess$ = command(
     );
     signal.throwIfAborted();
     if (sentResult.kind === "reconnect") {
-      await set(markGmailNeedsReconnect$, {
+      await set(markMailNeedsReconnect$, {
         connection: args.access.connection,
       });
       signal.throwIfAborted();
@@ -1707,7 +2159,7 @@ const sendGmailDraftWithAccess$ = command(
   },
 );
 
-export const linkMailDraft$ = command(
+const resolveMailLinkConnection$ = command(
   async (
     { set },
     args: {
@@ -1715,53 +2167,84 @@ export const linkMailDraft$ = command(
       readonly userId: string;
       readonly threadId: string;
       readonly agentId?: string;
-      readonly gmailDraftId: string;
+      readonly provider: MailProvider;
+      readonly snapshot: ConnectorRuntimeSelection;
     },
     signal: AbortSignal,
-  ): Promise<MailDraftLinkMutationResult> => {
-    const catalogDb = set(writeDb$);
-    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-      connectorSlugs: ["gmail"],
+  ): Promise<
+    | MailDraftErrorResult
+    | { readonly kind: "ok"; readonly connection: MailConnection }
+  > => {
+    const thread = await set(loadOwnedMailThreadContext$, {
+      ...args,
+      provider: args.provider,
     });
-    const snapshot = connectorRuntimeSlugSelectionFromRows(
-      catalogPlan.selection,
-      await catalogDb
-        .select(catalogPlan.columns)
-        .from(connectorCatalog)
-        .leftJoin(connectorCatalogEntries, catalogPlan.join)
-        .where(connectorCatalogCurrentWhere()),
-    );
-    signal.throwIfAborted();
-    const thread = await set(loadOwnedMailThreadContext$, { ...args });
     signal.throwIfAborted();
     if (!thread || (args.agentId && thread.agentId !== args.agentId)) {
       return { kind: "not_found", message: "Chat thread not found" };
     }
     const connections = (
       await set(loadMailConnections$, {
-        snapshot,
+        connectorSlug: args.provider === "gmail" ? "gmail" : "outlook-mail",
+        snapshot: args.snapshot,
         orgId: args.orgId,
         userId: args.userId,
         agentId: thread.agentId,
-        sourceId: thread.gmailConnectorId ?? undefined,
+        sourceId: thread.connectorId ?? undefined,
       })
     ).filter((connection) => {
       return !connection.needsReconnect && connection.scopesReady;
     });
     signal.throwIfAborted();
     const connection = connections.length === 1 ? connections[0] : undefined;
+
     if (!connection) {
       return {
         kind: "conflict",
         message:
           connections.length === 0
-            ? "Connect and authorize Gmail for this agent first"
-            : "The agent has more than one Gmail connection",
+            ? `Connect and authorize ${args.provider === "gmail" ? "Gmail" : "Outlook"} for this agent first`
+            : `The agent has more than one ${args.provider === "gmail" ? "Gmail" : "Outlook"} connection`,
       };
     }
+    return { kind: "ok", connection };
+  },
+);
+
+export const linkMailDraft$ = command(
+  async (
+    { set },
+    args: LinkMailDraftInput & {
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<MailDraftLinkMutationResult> => {
+    const provider = args.provider ?? "gmail";
+    if (
+      provider === "outlook" &&
+      !(await set(requireOutlookChatMail$, args, signal))
+    ) {
+      return { kind: "not_found", message: "Outlook chat mail is not enabled" };
+    }
+    const draftId =
+      args.provider === "outlook" ? args.outlookMessageId : args.gmailDraftId;
+    const snapshot = await set(loadMailCatalog$, provider);
+    signal.throwIfAborted();
+    const selection = await set(
+      resolveMailLinkConnection$,
+      { ...args, provider, snapshot },
+      signal,
+    );
+    if (selection.kind !== "ok") {
+      return selection;
+    }
+    const connection = selection.connection;
+    const providerName = provider === "gmail" ? "Gmail" : "Outlook";
     const existing = await set(loadLinkedDraft$, {
       connectorId: connection.connectorId,
-      gmailDraftId: args.gmailDraftId,
+      provider,
+      draftId,
     });
     signal.throwIfAborted();
     if (existing) {
@@ -1769,7 +2252,7 @@ export const linkMailDraft$ = command(
         ? linkResult(existing.id)
         : {
             kind: "conflict",
-            message: "This Gmail draft is already linked to another chat",
+            message: `This ${providerName} draft is already linked to another chat`,
           };
     }
     const access = await set(
@@ -1784,12 +2267,13 @@ export const linkMailDraft$ = command(
     if (access.kind !== "ok") {
       return { kind: "conflict", message: access.message };
     }
-    const gmailResult = gmailOperationResult(
+    const mailResult = mailOperationResult(
       await settle(
-        gmailGetDraft(
+        mailGetProviderDraft(
           {
+            provider,
+            draftId,
             accessToken: access.accessToken,
-            gmailDraftId: args.gmailDraftId,
             fallbackSender: {
               address: connection.externalEmail,
               name: connection.externalUsername,
@@ -1801,20 +2285,27 @@ export const linkMailDraft$ = command(
       ),
     );
     signal.throwIfAborted();
-    if (gmailResult.kind === "reconnect") {
-      await set(markGmailNeedsReconnect$, { connection });
+    if (mailResult.kind === "reconnect") {
+      await set(markMailNeedsReconnect$, { connection });
       signal.throwIfAborted();
-      return reconnectMailError;
+      return reconnectMailError(provider);
     }
-    if (gmailResult.kind === "error") {
-      throw gmailResult.error;
+    if (mailResult.kind === "error") {
+      throw mailResult.error;
     }
-    const gmail = gmailResult.value;
-    if (!gmail) {
-      return { kind: "not_found", message: "Gmail draft not found" };
+    const mail = mailResult.value;
+    if (!mail) {
+      return { kind: "not_found", message: `${providerName} draft not found` };
+    }
+    if ("isDraft" in mail && !mail.isDraft) {
+      return {
+        kind: "conflict",
+        message: "Only an Outlook draft can be linked",
+      };
     }
     const persisted = await set(persistLinkedDraft$, {
-      gmail,
+      mail,
+      provider,
       connection,
       threadId: args.threadId,
     });
@@ -1825,7 +2316,7 @@ export const linkMailDraft$ = command(
     ) {
       return {
         kind: "conflict",
-        message: "This Gmail draft is already linked to another chat",
+        message: `This ${providerName} draft is already linked to another chat`,
       };
     }
     return linkResult(persisted.mailDraftId);
@@ -1847,18 +2338,13 @@ export const getMailDraft$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    const catalogDb = set(writeDb$);
-    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-      connectorSlugs: ["gmail"],
-    });
-    const snapshot = connectorRuntimeSlugSelectionFromRows(
-      catalogPlan.selection,
-      await catalogDb
-        .select(catalogPlan.columns)
-        .from(connectorCatalog)
-        .leftJoin(connectorCatalogEntries, catalogPlan.join)
-        .where(connectorCatalogCurrentWhere()),
-    );
+    if (
+      row.provider === "outlook" &&
+      !(await set(requireOutlookChatMail$, args, signal))
+    ) {
+      return { kind: "not_found", message: "Mail draft not found" };
+    }
+    const snapshot = await set(loadMailCatalog$, row.provider);
     signal.throwIfAborted();
     return await set(
       loadMailDraftDetails$,
@@ -1889,18 +2375,13 @@ export const getMailDraftAttachment$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    const catalogDb = set(writeDb$);
-    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-      connectorSlugs: ["gmail"],
-    });
-    const snapshot = connectorRuntimeSlugSelectionFromRows(
-      catalogPlan.selection,
-      await catalogDb
-        .select(catalogPlan.columns)
-        .from(connectorCatalog)
-        .leftJoin(connectorCatalogEntries, catalogPlan.join)
-        .where(connectorCatalogCurrentWhere()),
-    );
+    if (
+      row.provider === "outlook" &&
+      !(await set(requireOutlookChatMail$, args, signal))
+    ) {
+      return { kind: "not_found", message: "Mail draft not found" };
+    }
+    const snapshot = await set(loadMailCatalog$, row.provider);
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -1915,7 +2396,33 @@ export const getMailDraftAttachment$ = command(
     if (access.kind !== "ok") {
       return access;
     }
-    const sourceResult = gmailOperationResult(
+    if (row.provider === "outlook") {
+      const result = mailOperationResult(
+        await settle(
+          outlookGetAttachment(
+            {
+              accessToken: access.accessToken,
+              messageId: row.messageId,
+              attachmentId: args.partId,
+            },
+            signal,
+          ),
+          signal,
+        ),
+      );
+      if (result.kind === "reconnect") {
+        await set(markMailNeedsReconnect$, { connection: access.connection });
+        signal.throwIfAborted();
+        return reconnectMailError(row.provider);
+      }
+      if (result.kind === "error") {
+        throw result.error;
+      }
+      return result.value
+        ? { kind: "ok", ...result.value }
+        : { kind: "not_found", message: "Mail draft attachment not found" };
+    }
+    const sourceResult = mailOperationResult(
       await settle(
         gmailAttachmentSource(
           {
@@ -1930,9 +2437,9 @@ export const getMailDraftAttachment$ = command(
     );
     signal.throwIfAborted();
     if (sourceResult.kind === "reconnect") {
-      await set(markGmailNeedsReconnect$, { connection: access.connection });
+      await set(markMailNeedsReconnect$, { connection: access.connection });
       signal.throwIfAborted();
-      return reconnectMailError;
+      return reconnectMailError(row.provider);
     }
     if (sourceResult.kind === "error") {
       throw sourceResult.error;
@@ -1944,7 +2451,7 @@ export const getMailDraftAttachment$ = command(
         message: "Mail draft attachment not found",
       };
     }
-    const contentResult = gmailOperationResult(
+    const contentResult = mailOperationResult(
       await settle(
         gmailAttachmentContent(
           {
@@ -1959,9 +2466,9 @@ export const getMailDraftAttachment$ = command(
     );
     signal.throwIfAborted();
     if (contentResult.kind === "reconnect") {
-      await set(markGmailNeedsReconnect$, { connection: access.connection });
+      await set(markMailNeedsReconnect$, { connection: access.connection });
       signal.throwIfAborted();
-      return reconnectMailError;
+      return reconnectMailError(row.provider);
     }
     if (contentResult.kind === "error") {
       throw contentResult.error;
@@ -1997,24 +2504,19 @@ export const deleteMailDraft$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
+    if (
+      row.provider === "outlook" &&
+      !(await set(requireOutlookChatMail$, args, signal))
+    ) {
+      return { kind: "not_found", message: "Mail draft not found" };
+    }
     if (row.status !== "draft") {
       return {
         kind: "conflict",
         message: "Only an active draft can be deleted",
       };
     }
-    const catalogDb = set(writeDb$);
-    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-      connectorSlugs: ["gmail"],
-    });
-    const snapshot = connectorRuntimeSlugSelectionFromRows(
-      catalogPlan.selection,
-      await catalogDb
-        .select(catalogPlan.columns)
-        .from(connectorCatalog)
-        .leftJoin(connectorCatalogEntries, catalogPlan.join)
-        .where(connectorCatalogCurrentWhere()),
-    );
+    const snapshot = await set(loadMailCatalog$, row.provider);
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -2029,12 +2531,15 @@ export const deleteMailDraft$ = command(
     if (access.kind !== "ok") {
       return access;
     }
-    const deletion = gmailOperationResult(
+    if (row.provider === "outlook") {
+      return await set(deleteOutlookDraft$, { row, access }, signal);
+    }
+    const deletion = mailOperationResult(
       await settle(
         gmailDeleteDraft(
           {
             accessToken: access.accessToken,
-            gmailDraftId: row.gmailDraftId,
+            gmailDraftId: row.draftId,
           },
           signal,
         ),
@@ -2043,9 +2548,9 @@ export const deleteMailDraft$ = command(
     );
     signal.throwIfAborted();
     if (deletion.kind === "reconnect") {
-      await set(markGmailNeedsReconnect$, { connection: access.connection });
+      await set(markMailNeedsReconnect$, { connection: access.connection });
       signal.throwIfAborted();
-      return reconnectMailError;
+      return reconnectMailError(row.provider);
     }
     if (deletion.kind === "error") {
       throw deletion.error;
@@ -2087,24 +2592,19 @@ export const sendMailDraft$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
+    if (
+      row.provider === "outlook" &&
+      !(await set(requireOutlookChatMail$, args, signal))
+    ) {
+      return { kind: "not_found", message: "Mail draft not found" };
+    }
     if (row.status !== "draft") {
       return {
         kind: "conflict",
         message: "This mail draft can no longer be sent",
       };
     }
-    const catalogDb = set(writeDb$);
-    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-      connectorSlugs: ["gmail"],
-    });
-    const snapshot = connectorRuntimeSlugSelectionFromRows(
-      catalogPlan.selection,
-      await catalogDb
-        .select(catalogPlan.columns)
-        .from(connectorCatalog)
-        .leftJoin(connectorCatalogEntries, catalogPlan.join)
-        .where(connectorCatalogCurrentWhere()),
-    );
+    const snapshot = await set(loadMailCatalog$, row.provider);
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -2119,6 +2619,9 @@ export const sendMailDraft$ = command(
     if (access.kind !== "ok") {
       return access;
     }
+    if (row.provider === "outlook") {
+      return await set(sendOutlookDraft$, { row, access }, signal);
+    }
     const gmail = await set(
       sendGmailDraftWithAccess$,
       {
@@ -2130,7 +2633,7 @@ export const sendMailDraft$ = command(
     );
     signal.throwIfAborted();
     if (gmail.kind === "reconnect") {
-      return reconnectMailError;
+      return reconnectMailError(row.provider);
     }
     if (gmail.kind === "rejected") {
       return gmail;
@@ -2162,9 +2665,9 @@ export const sendMailDraft$ = command(
     const sentRow: MailDraftRow = {
       ...row,
       status: "sent",
-      gmailThreadId: gmail.sent.threadId,
-      gmailMessageId: gmail.current.messageId,
-      sentGmailMessageId: gmail.sent.messageId,
+      threadId: gmail.sent.threadId,
+      messageId: gmail.current.messageId,
+      sentMessageId: gmail.sent.messageId,
       senderName: gmail.current.details.fromName ?? null,
       senderAddress: gmail.current.details.from,
       subject: gmail.current.details.subject,

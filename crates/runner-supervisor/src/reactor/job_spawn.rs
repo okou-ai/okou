@@ -59,7 +59,7 @@ pub(super) type JobResult = Result<RunCancellationRegistration, ClaimedActivatio
 
 /// Per-job profile parameters resolved from the profile config.
 pub(super) struct JobProfile {
-    pub(super) home_source_run_id: Option<RunId>,
+    pub(super) required_home_source_run_id: Option<RunId>,
     pub(super) profile_name: String,
     pub(super) rootfs_hash: String,
     pub(super) vcpu: u32,
@@ -68,7 +68,7 @@ pub(super) struct JobProfile {
     pub(super) budget_lease: BudgetLease,
     pub(super) restore_guest_state: bool,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
-    pub(super) home_image_prepare_lock_policy: crate::home_image_cache::HomeImagePrepareLockPolicy,
+    pub(super) home_image_prepare_policy: crate::home_image_cache::HomeImagePreparePolicy,
     pub(super) factory: SharedFactory,
     pub(super) cancellation: RunCancellationRegistration,
 }
@@ -163,6 +163,11 @@ impl ExecutorInvocation {
         let exec_config_for_panic = Arc::clone(&exec_config);
         let cancel_for_outcome = cancellation.any();
         let cancellation_for_executor = cancellation.clone();
+        let initial_storage_fingerprints = context
+            .storage_manifest
+            .as_ref()
+            .map(StorageFingerprints::from_manifest)
+            .unwrap_or_default();
 
         // Inner spawn isolates panics: if execute_job panics, the outer task
         // still reports completion and releases budget.
@@ -242,6 +247,7 @@ impl ExecutorInvocation {
                 ExecutorPhaseOutcome {
                     outcome: executor::ExecuteOutcome {
                         failure: Some(failure),
+                        storage_fingerprints: initial_storage_fingerprints,
                         sandbox_reuse_disposition: executor::SandboxReuseDisposition::default(),
                         sandbox: None,
                         source_ip: String::new(),
@@ -273,7 +279,6 @@ struct FinalizationPhase {
     rootfs_hash: String,
     reuse_key: Option<String>,
     cli_agent_session_id: Option<String>,
-    storage_fingerprints: StorageFingerprints,
     device_rate_limits: Option<sandbox::DeviceRateLimits>,
     guest_timezone_intent: GuestTimezoneIntent,
     factory: SharedFactory,
@@ -307,7 +312,6 @@ impl FinalizationPhase {
             rootfs_hash,
             reuse_key,
             cli_agent_session_id,
-            storage_fingerprints,
             device_rate_limits,
             guest_timezone_intent,
             factory,
@@ -347,6 +351,7 @@ impl FinalizationPhase {
         let executor::ExecuteOutcome {
             failure: _,
             sandbox_reuse_disposition,
+            storage_fingerprints,
             sandbox,
             source_ip,
             network_log_session,
@@ -530,7 +535,7 @@ pub(super) async fn run_job(
     let vcpu = job_profile.vcpu;
     let memory_mb = job_profile.memory_mb;
     let home_disk_mb = job_profile.home_disk_mb;
-    let home_image_prepare_lock_policy = job_profile.home_image_prepare_lock_policy;
+    let home_image_prepare_policy = job_profile.home_image_prepare_policy;
     let active_lease = job_profile.budget_lease;
     let profile_name = job_profile.profile_name;
     let factory = job_profile.factory;
@@ -538,7 +543,7 @@ pub(super) async fn run_job(
     let job_cancel = cancellation.handle();
     let rootfs_hash = job_profile.rootfs_hash;
     let params = executor::JobParams {
-        home_source_run_id: job_profile.home_source_run_id,
+        required_home_source_run_id: job_profile.required_home_source_run_id,
         profile_name: profile_name.clone(),
         rootfs_hash: rootfs_hash.clone(),
         vcpu,
@@ -546,15 +551,9 @@ pub(super) async fn run_job(
         home_disk_mb,
         restore_guest_state: job_profile.restore_guest_state,
         device_rate_limits: job_profile.device_rate_limits.clone(),
-        home_image_prepare_lock_policy,
+        home_image_prepare_policy,
     };
     let job_device_rate_limits = params.device_rate_limits.clone();
-
-    let storage_fingerprints = context
-        .storage_manifest
-        .as_ref()
-        .map(crate::storage_fingerprints::StorageFingerprints::from_manifest)
-        .unwrap_or_default();
 
     let provider = Arc::clone(&ctx.provider);
     let runner_id = ctx.runner_id.clone();
@@ -641,7 +640,6 @@ pub(super) async fn run_job(
         rootfs_hash,
         reuse_key,
         cli_agent_session_id,
-        storage_fingerprints,
         device_rate_limits: job_device_rate_limits,
         guest_timezone_intent,
         factory,
@@ -938,7 +936,6 @@ mod tests {
                     .into(),
                 reuse_key: Some(session_id.into()),
                 cli_agent_session_id: Some(session_id.into()),
-                storage_fingerprints: StorageFingerprints::default(),
                 guest_timezone_intent: GuestTimezoneIntent::Unknown,
                 device_rate_limits: None,
                 factory: Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new())),
@@ -978,6 +975,7 @@ mod tests {
         ExecutorPhaseOutcome {
             outcome: executor::ExecuteOutcome {
                 failure: None,
+                storage_fingerprints: StorageFingerprints::default(),
                 sandbox_reuse_disposition: executor::SandboxReuseDisposition::Eligible(
                     executor::SandboxReuseTerminal::Success,
                 ),
@@ -1000,6 +998,7 @@ mod tests {
         ExecutorPhaseOutcome {
             outcome: executor::ExecuteOutcome {
                 failure: None,
+                storage_fingerprints: StorageFingerprints::default(),
                 sandbox_reuse_disposition: executor::SandboxReuseDisposition::default(),
                 sandbox: None,
                 source_ip: String::new(),

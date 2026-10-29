@@ -14,5 +14,7 @@ export const profileLogoUrl$ = computed(async (get) => {
     return null;
   }
   const result = await accept(get(apiClient$)(orgLogoContract).get(), [200]);
-  return result.body.logoUrl;
+  // Clerk returns a generated placeholder URL for a workspace that never
+  // uploaded a logo; the page draws its own default for that case instead.
+  return result.body.hasImage ? result.body.logoUrl : null;
 });

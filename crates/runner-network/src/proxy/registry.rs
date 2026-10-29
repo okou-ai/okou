@@ -56,6 +56,8 @@ struct SandboxEntry {
     vars: Option<HashMap<String, String>>,
     #[serde(default)]
     capture_network_bodies: bool,
+    #[serde(default)]
+    outlook_mail_review_enabled: bool,
     billable_firewalls: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_usage_provider: Option<String>,
@@ -82,6 +84,7 @@ pub struct SandboxRegistration<'a> {
     pub secret_connector_metadata_map: Option<&'a HashMap<String, SecretConnectorMetadata>>,
     pub vars: Option<&'a HashMap<String, String>>,
     pub capture_network_bodies: bool,
+    pub outlook_mail_review_enabled: bool,
     pub billable_firewalls: &'a [String],
     pub model_usage_provider: Option<&'a str>,
     pub model_usage_long_context_min_total_input_tokens: Option<u64>,
@@ -134,16 +137,11 @@ async fn write_registry_with_reserve(
     let content = serialize_registry(path, value, fail_closed_reserve)?;
     let digest = RegistryDigest::of(&content);
     let path = path.to_path_buf();
-    // A cancelled observer cannot release exclusion while accepted physical
-    // publication or its staging cleanup can still modify the registry.
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        runner_host::state_file::write_private_atomic_blocking(&path, &content)
-    })
-    .await
-    .map_err(|error| {
-        RunnerError::Internal(format!("proxy registry publication task failed: {error}"))
-    })??;
+    runner_host::state_file::spawn_locked_private_atomic_write(path, content, guard)
+        .await
+        .map_err(|error| {
+            RunnerError::Internal(format!("proxy registry publication task failed: {error}"))
+        })??;
     Ok(digest)
 }
 
@@ -680,6 +678,7 @@ impl ProxyRegistryHandle {
                 secret_connector_metadata_map: registration.secret_connector_metadata_map.cloned(),
                 vars: registration.vars.cloned(),
                 capture_network_bodies: registration.capture_network_bodies,
+                outlook_mail_review_enabled: registration.outlook_mail_review_enabled,
                 billable_firewalls: registration.billable_firewalls.to_vec(),
                 model_usage_provider: registration.model_usage_provider.map(String::from),
                 model_usage_long_context_min_total_input_tokens: registration
@@ -1092,10 +1091,37 @@ mod tests {
             secret_connector_metadata_map: None,
             vars: None,
             capture_network_bodies: false,
+            outlook_mail_review_enabled: false,
             billable_firewalls: &[],
             model_usage_provider: None,
             model_usage_long_context_min_total_input_tokens: None,
             pi_model_config: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn registration_publishes_outlook_mail_review_gate() {
+        let fixture = RegistryHarness::new().await;
+        for enabled in [false, true] {
+            let registration = SandboxRegistration {
+                outlook_mail_review_enabled: enabled,
+                ..base_registration()
+            };
+            fixture
+                .handle
+                .register_sandbox("10.200.0.2", &registration)
+                .await
+                .unwrap();
+            let stored: serde_json::Value = serde_json::from_str(
+                &tokio::fs::read_to_string(fixture.registry_path())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                stored["sandboxes"]["10.200.0.2"]["outlookMailReviewEnabled"],
+                enabled
+            );
         }
     }
 
@@ -1358,6 +1384,7 @@ mod tests {
                 secret_connector_metadata_map: None,
                 vars: None,
                 capture_network_bodies: false,
+                outlook_mail_review_enabled: false,
                 billable_firewalls: vec![],
                 model_usage_provider: None,
                 model_usage_long_context_min_total_input_tokens: None,

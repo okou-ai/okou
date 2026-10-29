@@ -27,27 +27,14 @@
 //! uninstall retain their separate service-lifecycle ordering and rollback
 //! contracts and are outside this transaction.
 
-use std::time::Duration;
-
 use crate::error::{RunnerError, RunnerResult};
 
 use super::drain_override::{
     DrainRestartOverrideRemoval, remove_drain_restart_override_outcome,
     write_drain_restart_override,
 };
-use super::reload::{
-    SystemdReloadRequirement, coordinate_systemd_reload, coordinate_systemd_reload_bounded,
-};
+use super::reload::{SystemdReloadPolicy, SystemdReloadRequirement, coordinate_systemd_reload};
 use super::{RunnerServiceUnit, ServiceFuture};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum DrainOverrideReloadPolicy {
-    Unbounded,
-    Bounded {
-        lock_timeout: Duration,
-        command_timeout: Duration,
-    },
-}
 
 trait DrainOverrideCleanupOps {
     fn remove_override(
@@ -59,7 +46,7 @@ trait DrainOverrideCleanupOps {
         &'a mut self,
         unit: &'a RunnerServiceUnit,
         requirement: SystemdReloadRequirement,
-        policy: DrainOverrideReloadPolicy,
+        policy: SystemdReloadPolicy,
     ) -> ServiceFuture<'a, ()>;
 }
 
@@ -81,27 +68,12 @@ impl DrainOverrideCleanupOps for RealDrainOverrideCleanupOps {
         &'a mut self,
         unit: &'a RunnerServiceUnit,
         requirement: SystemdReloadRequirement,
-        policy: DrainOverrideReloadPolicy,
+        policy: SystemdReloadPolicy,
     ) -> ServiceFuture<'a, ()> {
         Box::pin(async move {
-            match policy {
-                DrainOverrideReloadPolicy::Unbounded => {
-                    coordinate_systemd_reload(unit, requirement).await?;
-                }
-                DrainOverrideReloadPolicy::Bounded {
-                    lock_timeout,
-                    command_timeout,
-                } => {
-                    coordinate_systemd_reload_bounded(
-                        unit,
-                        requirement,
-                        lock_timeout,
-                        command_timeout,
-                    )
-                    .await?;
-                }
-            }
-            Ok(())
+            coordinate_systemd_reload(unit, requirement, policy)
+                .await
+                .map(|_| ())
         })
     }
 }
@@ -119,7 +91,7 @@ fn cleanup_reload_error(
 
 async fn restore_after_failed_cleanup(
     unit: &RunnerServiceUnit,
-    policy: DrainOverrideReloadPolicy,
+    policy: SystemdReloadPolicy,
     ops: &mut impl DrainOverrideCleanupOps,
 ) -> RunnerResult<()> {
     if let Err(error) = ops.restore_override(unit) {
@@ -148,7 +120,7 @@ async fn restore_after_failed_cleanup(
 
 async fn reconcile_drain_restart_override_removal_with_ops(
     unit: &RunnerServiceUnit,
-    policy: DrainOverrideReloadPolicy,
+    policy: SystemdReloadPolicy,
     ops: &mut impl DrainOverrideCleanupOps,
 ) -> RunnerResult<()> {
     let remove_result = ops.remove_override(unit);
@@ -188,7 +160,7 @@ async fn reconcile_drain_restart_override_removal_with_ops(
 
 pub(super) async fn reconcile_drain_restart_override_removal(
     unit: &RunnerServiceUnit,
-    policy: DrainOverrideReloadPolicy,
+    policy: SystemdReloadPolicy,
 ) -> RunnerResult<()> {
     reconcile_drain_restart_override_removal_with_ops(
         unit,
@@ -201,6 +173,7 @@ pub(super) async fn reconcile_drain_restart_override_removal(
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
+    use std::time::Duration;
 
     use super::*;
 
@@ -208,7 +181,7 @@ mod tests {
     enum Event {
         Remove,
         Restore,
-        Reload(DrainOverrideReloadPolicy, SystemdReloadRequirement),
+        Reload(SystemdReloadPolicy, SystemdReloadRequirement),
     }
 
     struct FakeDrainOverrideCleanupOps {
@@ -236,7 +209,7 @@ mod tests {
             &'a mut self,
             _unit: &'a RunnerServiceUnit,
             requirement: SystemdReloadRequirement,
-            policy: DrainOverrideReloadPolicy,
+            policy: SystemdReloadPolicy,
         ) -> ServiceFuture<'a, ()> {
             self.events.push(Event::Reload(policy, requirement));
             Box::pin(std::future::ready(
@@ -265,8 +238,8 @@ mod tests {
         }
     }
 
-    fn bounded_policy() -> DrainOverrideReloadPolicy {
-        DrainOverrideReloadPolicy::Bounded {
+    fn bounded_policy() -> SystemdReloadPolicy {
+        SystemdReloadPolicy::Bounded {
             lock_timeout: Duration::from_secs(20),
             command_timeout: Duration::from_secs(10),
         }
@@ -274,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn absent_override_is_reconciled_through_both_reload_policies() {
-        for policy in [DrainOverrideReloadPolicy::Unbounded, bounded_policy()] {
+        for policy in [SystemdReloadPolicy::Unbounded, bounded_policy()] {
             let mut ops = fake_ops(Ok(DrainRestartOverrideRemoval::AlreadyAbsent), []);
 
             reconcile_drain_restart_override_removal_with_ops(&service_unit(), policy, &mut ops)
@@ -303,7 +276,7 @@ mod tests {
 
         let error = reconcile_drain_restart_override_removal_with_ops(
             &service_unit(),
-            DrainOverrideReloadPolicy::Unbounded,
+            SystemdReloadPolicy::Unbounded,
             &mut ops,
         )
         .await
@@ -315,7 +288,7 @@ mod tests {
             [
                 Event::Remove,
                 Event::Reload(
-                    DrainOverrideReloadPolicy::Unbounded,
+                    SystemdReloadPolicy::Unbounded,
                     SystemdReloadRequirement::dirty().with_drain_override(false),
                 ),
             ]
@@ -331,7 +304,7 @@ mod tests {
 
         let error = reconcile_drain_restart_override_removal_with_ops(
             &service_unit(),
-            DrainOverrideReloadPolicy::Unbounded,
+            SystemdReloadPolicy::Unbounded,
             &mut ops,
         )
         .await
@@ -343,7 +316,7 @@ mod tests {
             [
                 Event::Remove,
                 Event::Reload(
-                    DrainOverrideReloadPolicy::Unbounded,
+                    SystemdReloadPolicy::Unbounded,
                     SystemdReloadRequirement::dirty().with_drain_override(false),
                 ),
             ]
@@ -433,7 +406,7 @@ mod tests {
 
         let error = reconcile_drain_restart_override_removal_with_ops(
             &service_unit(),
-            DrainOverrideReloadPolicy::Unbounded,
+            SystemdReloadPolicy::Unbounded,
             &mut ops,
         )
         .await
@@ -454,7 +427,7 @@ mod tests {
 
         let error = reconcile_drain_restart_override_removal_with_ops(
             &service_unit(),
-            DrainOverrideReloadPolicy::Unbounded,
+            SystemdReloadPolicy::Unbounded,
             &mut ops,
         )
         .await

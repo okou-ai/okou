@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.109.18](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.17...guest-agent-v0.109.18) (2026-10-29)
+
+
+### Bug Fixes
+
+* recognize short claude oauth revocation errors ([#43823](https://github.com/okou-ai/okou/issues/43823)) ([2da1eb3](https://github.com/okou-ai/okou/commit/2da1eb3eb23daccc87db2c54ed24f6039b138960))
+
+## [0.109.17](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.16...guest-agent-v0.109.17) (2026-10-29)
+
 ## [0.109.16](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.15...guest-agent-v0.109.16) (2026-10-28)
 
 

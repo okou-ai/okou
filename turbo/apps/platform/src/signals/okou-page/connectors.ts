@@ -13,7 +13,7 @@ import { apiClient$ } from "../api-client.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { userPermissionGrantsByAgent } from "../permission-allow/permission-allow-signals.ts";
-import { resetSignal, withCleanup } from "../utils.ts";
+import { onRef, resetSignal, withCleanup } from "../utils.ts";
 import { reloadAgentConnectorAuthorizations$ } from "./agent-connector-authorizations.ts";
 import {
   composerAgentConnectors,
@@ -66,7 +66,7 @@ export interface ComposerConnectorUiState {
   readonly addDialogSearch: string;
   readonly popoverSearch: string;
   readonly popoverOpen: boolean;
-  readonly remoteMenuOpen: boolean;
+  readonly remoteAccessDialogOpen: boolean;
   readonly popoverSortOrder: readonly string[] | null;
   readonly permissionConnectorSlug: ConnectorSlug | null;
   readonly permissionConnector: BuiltinConnectorBrief | null;
@@ -111,6 +111,14 @@ export interface ComposerConnectorSignals {
   >;
   readonly connectorUiState$: Computed<ComposerConnectorUiState>;
   readonly openAddConnectorsDialog$: Command<void, []>;
+  readonly setPopoverOpen$: Command<void, [boolean]>;
+  readonly openRemoteAccessDialog$: Command<void, []>;
+  readonly closeRemoteAccessDialog$: Command<void, []>;
+  readonly triggerElement$: Computed<HTMLElement | null>;
+  readonly setTriggerRef$: Command<
+    (() => void) | undefined,
+    [HTMLElement | null]
+  >;
   readonly updateConnectorUiState$: Command<
     void,
     [Partial<ComposerConnectorUiState>]
@@ -139,7 +147,7 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     addDialogSearch: "",
     popoverSearch: "",
     popoverOpen: false,
-    remoteMenuOpen: false,
+    remoteAccessDialogOpen: false,
     popoverSortOrder: null,
     permissionConnectorSlug: null,
     permissionConnector: null,
@@ -279,11 +287,31 @@ function createConnectorAuthorizationCommand(
 
 function createConnectorUiSignals(
   resources: ReturnType<typeof createConnectorResourceSignals>,
+  accounts: ComposerConnectorAccountSignals,
 ): Pick<
   ComposerConnectorSignals,
-  "connectorUiState$" | "updateConnectorUiState$" | "openAddConnectorsDialog$"
+  | "connectorUiState$"
+  | "updateConnectorUiState$"
+  | "openAddConnectorsDialog$"
+  | "setPopoverOpen$"
+  | "openRemoteAccessDialog$"
+  | "closeRemoteAccessDialog$"
+  | "triggerElement$"
+  | "setTriggerRef$"
 > {
   const internalUiState$ = state(initialComposerConnectorUiState());
+  const internalTriggerElement$ = state<HTMLElement | null>(null);
+  const triggerElement$ = computed((get) => {
+    return get(internalTriggerElement$);
+  });
+  const setTriggerRef$ = onRef(
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+      set(internalTriggerElement$, element);
+      signal.addEventListener("abort", () => {
+        set(internalTriggerElement$, null);
+      });
+    }),
+  );
   const resetBuiltinSubscription$ = resetSignal();
   const connectorUiState$ = computed((get): ComposerConnectorUiState => {
     return get(internalUiState$);
@@ -292,12 +320,16 @@ function createConnectorUiSignals(
     ({ get, set }, patch: Partial<ComposerConnectorUiState>): void => {
       const current = get(internalUiState$);
       const next = { ...current, ...patch };
+      const hadResourceConsumer =
+        current.popoverOpen || current.remoteAccessDialogOpen;
+      const hasResourceConsumer =
+        next.popoverOpen || next.remoteAccessDialogOpen;
       const wasOpen =
-        current.popoverOpen ||
+        hadResourceConsumer ||
         current.showAddDialog ||
         current.selectedConnectorSlug !== null;
       const isOpen =
-        next.popoverOpen ||
+        hasResourceConsumer ||
         next.showAddDialog ||
         next.selectedConnectorSlug !== null;
       if (isOpen && !wasOpen) {
@@ -306,9 +338,11 @@ function createConnectorUiSignals(
       } else if (!isOpen && wasOpen) {
         set(resetBuiltinSubscription$);
       }
-      if (patch.popoverOpen === true && !current.popoverOpen) {
+      // The remote dialog takes over the same resources without cancelling
+      // their owner when the connector popover closes.
+      if (hasResourceConsumer && !hadResourceConsumer) {
         set(resources.open$, get(pageSignal$));
-      } else if (patch.popoverOpen === false) {
+      } else if (!hasResourceConsumer && hadResourceConsumer) {
         set(resources.close$);
       }
       if (patch.selectedConnectorSlug) {
@@ -328,10 +362,39 @@ function createConnectorUiSignals(
       directoryDetailSlug: null,
     });
   });
+  const setPopoverOpen$ = command(({ set }, open: boolean): void => {
+    if (open) {
+      set(updateConnectorUiState$, { popoverOpen: true });
+    } else {
+      set(accounts.closeMenu$);
+      set(updateConnectorUiState$, {
+        popoverOpen: false,
+        popoverSearch: "",
+        popoverSortOrder: null,
+      });
+    }
+  });
+  const openRemoteAccessDialog$ = command(({ set }): void => {
+    set(accounts.closeMenu$);
+    set(updateConnectorUiState$, {
+      popoverOpen: false,
+      popoverSearch: "",
+      popoverSortOrder: null,
+      remoteAccessDialogOpen: true,
+    });
+  });
+  const closeRemoteAccessDialog$ = command(({ set }): void => {
+    set(updateConnectorUiState$, { remoteAccessDialogOpen: false });
+  });
   return {
     connectorUiState$,
     updateConnectorUiState$,
     openAddConnectorsDialog$,
+    setPopoverOpen$,
+    openRemoteAccessDialog$,
+    closeRemoteAccessDialog$,
+    triggerElement$,
+    setTriggerRef$,
   };
 }
 
@@ -340,7 +403,8 @@ export function createComposerConnectorSignals(
   threadId?: string,
 ): ComposerConnectorSignals {
   const resources = createConnectorResourceSignals();
-  const ui = createConnectorUiSignals(resources);
+  const accounts = createComposerConnectorAccountSignals(threadId);
+  const ui = createConnectorUiSignals(resources, accounts);
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
     const [overview, authorization] = await Promise.all([
@@ -408,8 +472,6 @@ export function createComposerConnectorSignals(
       return await get(userPermissionGrantsByAgent({ agentId }));
     },
   );
-
-  const accounts = createComposerConnectorAccountSignals(threadId);
 
   return {
     data$,

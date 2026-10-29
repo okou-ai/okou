@@ -655,21 +655,6 @@ mod tests {
     }
 
     #[test]
-    fn shell_escape_simple() {
-        assert_eq!(shell_escape_value("hello"), "'hello'");
-    }
-
-    #[test]
-    fn shell_escape_with_single_quotes() {
-        assert_eq!(shell_escape_value("it's"), "'it'\\''s'");
-    }
-
-    #[test]
-    fn shell_escape_empty() {
-        assert_eq!(shell_escape_value(""), "''");
-    }
-
-    #[test]
     fn env_script_content_attempts_self_removal_before_exports() {
         let dir = Path::new("/run/vm0-exec/vm0-env-test");
         let path = dir.join("run.sh");

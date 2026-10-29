@@ -12,8 +12,10 @@ import { queryOf } from "../context/request";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
   connectTeamsInstallation$,
+  buildTeamsInstallUrl,
   isTeamsInstallationActive,
   prepareTeamsInstallation$,
+  prepareTeamsBotInstallation$,
   publishTeamsChanged$,
 } from "../services/teams-connect.service";
 import { safeJsonParse, tapError } from "../utils";
@@ -35,6 +37,11 @@ import {
   createTeamsOAuthState$,
 } from "../services/teams-oauth-state";
 
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { connectTeamsAccount$ } from "../services/teams-workspace-identity.service";
+
 const L = logger("TeamsOAuth");
 const MICROSOFT_AUTHORIZATION_URL =
   "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
@@ -55,6 +62,7 @@ interface OAuthState {
   readonly userId: string | null;
   readonly prompt: string | null;
   readonly redirectUri: string;
+  readonly flow?: "connect" | "install";
 }
 
 interface MicrosoftTeamsUserInfo {
@@ -342,6 +350,7 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     createTeamsOAuthState$,
     {
       purpose: "teams-callback",
+      flow: entry?.flow ?? query.flow,
       orgId: auth.orgId,
       userId: auth.userId,
       redirectUri,
@@ -362,6 +371,61 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   return noStoreRedirect(authUrl.toString());
 });
+
+const completeTeamsWorkspaceIdentity$ = command(
+  async (
+    { set },
+    args: {
+      readonly auth: TeamsOauthAuth;
+      readonly exchange: MicrosoftTeamsOAuthResult;
+      readonly flow?: "connect" | "install";
+    },
+    signal: AbortSignal,
+  ) => {
+    const { auth, exchange } = args;
+    const connectArgs = { ...auth, tenantId: exchange.tenantId };
+    if (args.flow === "install") {
+      const prepared = await set(
+        prepareTeamsBotInstallation$,
+        connectArgs,
+        signal,
+      );
+      if (prepared.kind !== "ok") {
+        return settingsErrorRedirect(prepared.message);
+      }
+      const installUrl = buildTeamsInstallUrl(exchange.tenantId);
+      await set(
+        publishTeamsChanged$,
+        { orgId: auth.orgId, userIds: [auth.userId] },
+        signal,
+      );
+      return installUrl
+        ? noStoreRedirect(installUrl)
+        : teamsPendingInstallationRedirect(exchange.tenantId);
+    }
+    const connected = await set(
+      connectTeamsAccount$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        tenantId: exchange.tenantId,
+        aadObjectId: exchange.user.id,
+        displayName: exchange.user.displayName,
+        principalName: exchange.user.userPrincipalName ?? exchange.user.mail,
+      },
+      signal,
+    );
+    if (connected.kind !== "ok") {
+      return settingsErrorRedirect(connected.message);
+    }
+    await set(
+      publishTeamsChanged$,
+      { orgId: auth.orgId, userIds: [auth.userId] },
+      signal,
+    );
+    return settingsSuccessRedirect({});
+  },
+);
 
 const completeCallbackOauth$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -440,6 +504,20 @@ const completeCallbackOauth$ = command(
       teamsUserPrincipalName:
         exchange.user.userPrincipalName ?? exchange.user.mail ?? undefined,
     };
+
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    if (isFeatureEnabled(FeatureSwitchKey.TeamsWorkspaceIdentity, features)) {
+      return await set(
+        completeTeamsWorkspaceIdentity$,
+        { auth, exchange, flow: state.flow },
+        signal,
+      );
+    }
 
     const result = await set(connectTeamsInstallation$, connectArgs, signal);
     signal.throwIfAborted();

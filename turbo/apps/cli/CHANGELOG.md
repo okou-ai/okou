@@ -1,5 +1,60 @@
 # Changelog
 
+## [10.7.1](https://github.com/okou-ai/okou/compare/cli-v10.7.0...cli-v10.7.1) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.17.1
+    * @okouai/core bumped to 8.799.1
+    * @okouai/pi-agent-runtime bumped to 1.51.16
+
+## [10.7.0](https://github.com/okou-ai/okou/compare/cli-v10.6.1...cli-v10.7.0) (2026-10-29)
+
+
+### Features
+
+* add whatsapp integration through agentphone ([#43656](https://github.com/okou-ai/okou/issues/43656)) ([a7306f0](https://github.com/okou-ai/okou/commit/a7306f0da51d3d9b00064ceae121fd002b3b64ed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.17.0
+    * @okouai/core bumped to 8.799.0
+    * @okouai/pi-agent-runtime bumped to 1.51.15
+
+## [10.6.1](https://github.com/okou-ai/okou/compare/cli-v10.6.0...cli-v10.6.1) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.798.0
+    * @okouai/pi-agent-runtime bumped to 1.51.14
+
+## [10.6.0](https://github.com/okou-ai/okou/compare/cli-v10.5.6...cli-v10.6.0) (2026-10-29)
+
+
+### Features
+
+* **connector:** support http custom api connectors ([#43736](https://github.com/okou-ai/okou/issues/43736)) ([78bcdb5](https://github.com/okou-ai/okou/commit/78bcdb51732ba11746f1807da98189458f7aa5ab))
+* support outlook mail review in chat ([#43751](https://github.com/okou-ai/okou/issues/43751)) ([d4a01db](https://github.com/okou-ai/okou/commit/d4a01dbac178e4d112e2e88aeb9a515aeb5560d9))
+* **teams:** separate account identity from bot installation ([#43730](https://github.com/okou-ai/okou/issues/43730)) ([9a65fcc](https://github.com/okou-ai/okou/commit/9a65fcc9237e91f7e05213bfc5d37d9572098454))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.16.0
+    * @okouai/core bumped to 8.797.0
+    * @okouai/pi-agent-runtime bumped to 1.51.13
+
 ## [10.5.6](https://github.com/okou-ai/okou/compare/cli-v10.5.5...cli-v10.5.6) (2026-10-28)
 
 

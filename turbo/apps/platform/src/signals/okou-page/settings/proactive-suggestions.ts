@@ -32,6 +32,8 @@ export const updateProactiveSuggestionsPreference$ = command(
     );
     signal.throwIfAborted();
     set(reloadProactiveSuggestionsPreference$);
+    await get(proactiveSuggestionsPreference$);
+    signal.throwIfAborted();
     return result.body;
   },
 );

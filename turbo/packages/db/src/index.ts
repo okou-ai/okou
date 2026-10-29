@@ -1,6 +1,8 @@
+import * as halloweenSchema from "./schema/halloween";
 import * as iosPushRegistrationSchema from "./schema/ios-push-registration";
 import * as dataRouterRequestSchema from "./schema/data-router-request";
 import * as wechatSchema from "./schema/wechat";
+import * as whatsappSchema from "./schema/whatsapp";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
@@ -8,6 +10,7 @@ import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as agentSuggestionSchema from "./schema/agent-suggestion";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
+import * as featureGuideSchema from "./schema/feature-guide";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as agentSchema from "./schema/agent";
@@ -91,7 +94,7 @@ import * as orgPlanEntitlementSchema from "./runtime/org-plan-entitlement";
 import * as orgConcurrencyEntitlementSchema from "./schema/org-concurrency-entitlement";
 import * as orgConcurrencySubscriptionSchema from "./schema/org-concurrency-subscription";
 import * as orgCacheSchema from "./schema/org-cache";
-import * as orgMembersSchema from "./schema/org-members-metadata";
+import * as orgMembersSchema from "./runtime/org-members-metadata";
 import * as orgMembersCacheSchema from "./schema/org-members-cache";
 import * as userCacheSchema from "./schema/user-cache";
 import * as exportJobSchema from "./schema/export-job";
@@ -163,12 +166,15 @@ import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
   ...iosPushRegistrationSchema,
+  ...halloweenSchema,
   ...mailNotificationSchema,
   ...wechatSchema,
+  ...whatsappSchema,
   ...getStartedClaimSchema,
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,
   ...userSchema,
+  ...featureGuideSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,

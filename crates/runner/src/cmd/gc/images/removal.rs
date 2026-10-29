@@ -19,20 +19,7 @@ pub(super) async fn remove_snapshot_dir(
     path: &Path,
     locks: SnapshotRemovalLocks,
 ) -> (SnapshotRemovalLocks, io::Result<()>) {
-    let path = path.to_path_buf();
-    let dispatch = tracing::dispatcher::get_default(Clone::clone);
-    let span = tracing::Span::current();
-    let result = tokio::task::spawn_blocking(move || {
-        let _default = tracing::dispatcher::set_default(&dispatch);
-        let _entered = span.enter();
-        let result = std::fs::remove_dir_all(path);
-        (locks, result)
-    })
-    .await;
-    match result {
-        Ok(result) => result,
-        Err(error) => std::panic::resume_unwind(error.into_panic()),
-    }
+    runner_host::gc::remove_dir_all_with_lock(path, locks).await
 }
 
 #[cfg(test)]

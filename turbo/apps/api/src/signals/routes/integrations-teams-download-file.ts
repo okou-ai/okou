@@ -234,6 +234,7 @@ const authorizeTeamsDownload$ = command(
       {
         installation,
         userId: get(organizationAuthContext$).userId,
+        orgId: get(organizationAuthContext$).orgId,
         mode: "read",
         body: { conversationId: scoped.delivery.conversationId },
       },

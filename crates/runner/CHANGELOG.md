@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.240.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.2...runner-rs-v0.240.3) (2026-10-29)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.240.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.1...runner-rs-v0.240.2) (2026-10-29)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.240.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.0...runner-rs-v0.240.1) (2026-10-29)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.240.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.239.3...runner-rs-v0.240.0) (2026-10-29)
+
+
+### Features
+
+* **connector:** support http custom api connectors ([#43736](https://github.com/okou-ai/okou/issues/43736)) ([78bcdb5](https://github.com/okou-ai/okou/commit/78bcdb51732ba11746f1807da98189458f7aa5ab))
+* support outlook mail review in chat ([#43751](https://github.com/okou-ai/okou/issues/43751)) ([d4a01db](https://github.com/okou-ai/okou/commit/d4a01dbac178e4d112e2e88aeb9a515aeb5560d9))
+
+
+### Bug Fixes
+
+* **runner:** unify predecessor home discovery and bounded routing ([#43655](https://github.com/okou-ai/okou/issues/43655)) ([2c512a7](https://github.com/okou-ai/okou/commit/2c512a7542a0adbf22d72e278dc8acdd52a10a6c))
+
+
+### Documentation
+
+* **runner:** correct data router buffering rationale ([#43695](https://github.com/okou-ai/okou/issues/43695)) ([d61c67a](https://github.com/okou-ai/okou/commit/d61c67a16dd646f4954032076ee46294756d9920))
+
+
+### Refactoring
+
+* **runner:** keep one doctor report identity ([#43789](https://github.com/okou-ai/okou/issues/43789)) ([8b66782](https://github.com/okou-ai/okou/commit/8b667821bee6d2685c32d4f73c7cdd116a355af7))
+* **runner:** own systemd reload execution policy ([#43784](https://github.com/okou-ai/okou/issues/43784)) ([a0103b7](https://github.com/okou-ai/okou/commit/a0103b7cbaf6bf06856b400719969c9eae708abe))
+* **runner:** retain typed nbd orphan observations ([#43775](https://github.com/okou-ai/okou/issues/43775)) ([6bf56b5](https://github.com/okou-ai/okou/commit/6bf56b5cd6ebb2cb98e8d91b36c8c3c5d730cf52))
+* **runner:** separate doctor test source ownership ([#43795](https://github.com/okou-ai/okou/issues/43795)) ([51aa7cd](https://github.com/okou-ai/okou/commit/51aa7cd8d54978ae4aaf83e883553a71881acf51))
+* **runner:** share lock-retaining gc removal workers ([#43703](https://github.com/okou-ai/okou/issues/43703)) ([380d943](https://github.com/okou-ai/okou/commit/380d94347942610cdd3288315914f4bcc24fe4a9))
+
+
+### Performance Improvements
+
+* prepare metadata-only workflow claims and downloads ([#43667](https://github.com/okou-ai/okou/issues/43667)) ([6fd2905](https://github.com/okou-ai/okou/commit/6fd29050029b5a521f75d0500e9876a11649afe6)) [#43642](https://github.com/okou-ai/okou/issues/43642)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.239.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.239.2...runner-rs-v0.239.3) (2026-10-28)
 
 ### Release Dependencies

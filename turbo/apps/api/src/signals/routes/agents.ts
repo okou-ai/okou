@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, count, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, lt, or, sql } from "drizzle-orm";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
@@ -18,7 +18,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate, nowDateSql } from "../../lib/time";
 import {
   nullableDriverValueDecoder,
@@ -38,6 +38,7 @@ import {
   agentList,
   visibleJoinedAgentCondition,
   nonDefaultAgentCondition,
+  publicAgentCountReadPlan,
 } from "../services/agent-data.service";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
 
@@ -164,59 +165,30 @@ function visibilityOwnerError(
   return forbidden("Only the agent owner can update agent visibility");
 }
 
-async function publicVisibilitySlotError(
-  args: {
-    readonly writeDb: Pick<Db, "select">;
-    readonly orgId: string;
-    readonly currentVisibility: AgentVisibility;
-    readonly nextVisibility: AgentVisibility;
-  },
-  signal: AbortSignal,
+function agentMetadataUpdateRejection(
+  existing: ExistingAgentForUpdate,
+  member: AgentMember,
+  updateBody: AgentUpdateBody,
 ) {
-  if (args.nextVisibility !== "public" || args.currentVisibility === "public") {
-    return null;
+  const permissionError = requireAgentPermission(
+    existing.owner,
+    member,
+    updateBody.avatarUrl === undefined
+      ? "update agent profile"
+      : "update agent avatar",
+    { visibility: existing.visibility },
+  );
+  if (permissionError) {
+    return permissionError;
   }
 
-  const [publicAgentCount] = await args.writeDb
-    .select({ value: count() })
-    .from(agents)
-    .where(and(eq(agents.orgId, args.orgId), eq(agents.visibility, "public")));
-  signal.throwIfAborted();
-
-  return (publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT
-    ? publicAgentLimitError()
-    : null;
-}
-
-function validateAgentVisibilityUpdate(
-  args: {
-    readonly writeDb: Pick<Db, "select">;
-    readonly orgId: string;
-    readonly member: AgentMember;
-    readonly existing: ExistingAgentVisibility;
-    readonly requestedVisibility: AgentVisibility | undefined;
-    readonly nextVisibility: AgentVisibility;
-  },
-  signal: AbortSignal,
-) {
-  const ownerError = visibilityOwnerError(
-    args.existing,
-    args.member,
-    args.requestedVisibility,
+  const identityError = agentConfigurationUpdateError(
+    existing.id === existing.defaultAgentId,
   );
-  if (ownerError) {
-    return ownerError;
+  if (identityError) {
+    return { status: 400 as const, body: { error: identityError } };
   }
-
-  return publicVisibilitySlotError(
-    {
-      writeDb: args.writeDb,
-      orgId: args.orgId,
-      currentVisibility: args.existing.visibility,
-      nextVisibility: args.nextVisibility,
-    },
-    signal,
-  );
+  return null;
 }
 
 function agentConfigurationUpdateRejection(
@@ -356,12 +328,11 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const visibility = body.data.visibility ?? "private";
 
   if (visibility === "public") {
+    const countPlan = publicAgentCountReadPlan(auth.orgId);
     const [publicAgentCount] = await writeDb
-      .select({ value: count() })
+      .select(countPlan.selection)
       .from(agents)
-      .where(
-        and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")),
-      );
+      .where(countPlan.condition);
     signal.throwIfAborted();
     if ((publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT) {
       return publicAgentCreateLimitError();
@@ -394,10 +365,11 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
   let blocked = false;
   if (visibility === "public") {
+    const countPlan = publicAgentCountReadPlan(auth.orgId);
     const publicAgentCount = writeDb
-      .select({ value: count().as("value") })
+      .select({ value: countPlan.selection.value.as("value") })
       .from(agents)
-      .where(and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")))
+      .where(countPlan.condition)
       .as("public_agent_count");
     const inserted = await writeDb
       .insert(agents)
@@ -557,10 +529,11 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
   const updateBody = body.data;
+  const countPlan = publicAgentCountReadPlan(auth.orgId);
   const publicAgentCount = writeDb
-    .select({ value: count() })
+    .select(countPlan.selection)
     .from(agents)
-    .where(and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")));
+    .where(countPlan.condition);
   // Retain the existing Agent row lock. Immutable default identity and the
   // documented soft public limit use this statement's snapshot.
   const locked = writeDb.$with("configuration_agent").as(
@@ -713,39 +686,46 @@ const updateAgentMetadataInner$ = command(
       }
       const updateBody = body.data;
 
-      const permissionError = requireAgentPermission(
-        existing.owner,
+      const rejection = agentMetadataUpdateRejection(
+        existing,
         member,
-        body.data.avatarUrl === undefined
-          ? "update agent profile"
-          : "update agent avatar",
-        { visibility: existing.visibility },
+        updateBody,
       );
-      if (permissionError) {
-        return { response: permissionError };
-      }
-
-      const identityError = agentConfigurationUpdateError(
-        existing.id === existing.defaultAgentId,
-      );
-      if (identityError) {
-        return {
-          response: { status: 400 as const, body: { error: identityError } },
-        };
+      if (rejection) {
+        return { response: rejection };
       }
 
       if (updateBody.visibility !== undefined) {
-        const visibilityError = await validateAgentVisibilityUpdate(
-          {
-            writeDb: tx,
-            orgId: auth.orgId,
-            member,
+        const visibilityError = await (() => {
+          const ownerError = visibilityOwnerError(
             existing,
-            requestedVisibility: updateBody.visibility,
-            nextVisibility: updateBody.visibility,
-          },
-          signal,
-        );
+            member,
+            updateBody.visibility,
+          );
+          if (ownerError) {
+            return ownerError;
+          }
+
+          return (async () => {
+            if (
+              updateBody.visibility !== "public" ||
+              existing.visibility === "public"
+            ) {
+              return null;
+            }
+
+            const countPlan = publicAgentCountReadPlan(auth.orgId);
+            const [publicAgentCount] = await tx
+              .select(countPlan.selection)
+              .from(agents)
+              .where(countPlan.condition);
+            signal.throwIfAborted();
+
+            return (publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT
+              ? publicAgentLimitError()
+              : null;
+          })();
+        })();
         if (visibilityError) {
           return { response: visibilityError };
         }

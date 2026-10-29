@@ -19,7 +19,7 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import {
   googleFormsAutomationCursors,

@@ -33,6 +33,7 @@ type ChatEventSourceContext =
   | {
       readonly kind: "agentphone";
       readonly toNumber: string;
+      readonly channel?: string;
       readonly isGroup: boolean;
     };
 
@@ -96,7 +97,9 @@ function agentphoneChatUrl(
 ): string | undefined {
   // The inbound destination is the assistant's number; the sender is the user.
   return !context.isGroup && /^\+[1-9]\d{7,14}$/u.test(context.toNumber)
-    ? `sms:${context.toNumber}`
+    ? context.channel === "whatsapp"
+      ? `https://wa.me/${context.toNumber.slice(1)}`
+      : `sms:${context.toNumber}`
     : undefined;
 }
 

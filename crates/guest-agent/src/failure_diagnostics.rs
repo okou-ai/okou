@@ -372,7 +372,7 @@ fn classify_cli_failure_reason(
         return Some(FailureReason::TermsAcceptanceRequired);
     }
     if matches!(framework, AgentFramework::ClaudeCode)
-        && is_claude_oauth_reconnect_required_error(&normalized)
+        && is_claude_oauth_reconnect_required_error(source, &normalized)
     {
         return Some(FailureReason::ReconnectRequired);
     }
@@ -578,8 +578,15 @@ fn is_claude_invalid_credentials_error(normalized: &str) -> bool {
         && normalized.contains("api error: 401 invalid authentication credentials")
 }
 
-fn is_claude_oauth_reconnect_required_error(normalized: &str) -> bool {
+fn is_claude_oauth_reconnect_required_error(source: FailureDetailSource, normalized: &str) -> bool {
     const INVALID_TOKEN: &str = "oauth access token is invalid";
+
+    if source == FailureDetailSource::ClaudeResult
+        && normalized.trim()
+            == "failed to authenticate: oauth token revoked. please log in again or contact your administrator."
+    {
+        return true;
+    }
 
     normalized.contains("failed to authenticate")
         && has_claude_api_status(normalized, "401")

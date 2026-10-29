@@ -11,7 +11,16 @@ import {
   type BrowserUserActionState,
   type BrowserUserActionPrepareFileUploadRequest,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
-import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/contracts/browser";
+import {
+  BROWSER_IDLE_LEASE_MINUTES,
+  type BrowserWindowContext,
+} from "@okouai/api-contracts/contracts/browser";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  browserOwnerProfiles,
+  browserOwnerWindows,
+} from "@okouai/db/schema/browser-owner";
 import {
   browserUserActionFieldSupportsTarget,
   parseBrowserUserActionPayload,
@@ -29,13 +38,19 @@ import {
 } from "@okouai/db/schema/browser-session";
 import {
   and,
+  type SQLWrapper,
   asc,
   eq,
+  exists,
   gt,
   inArray,
   isNotNull,
+  isNull,
   lt,
   lte,
+  notExists,
+  not,
+  or,
   sql,
 } from "drizzle-orm";
 import { command } from "ccstate";
@@ -65,6 +80,7 @@ import {
   preflightBrowserUseUserAction,
   validateBrowserUseUserAction,
 } from "./browser-use.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 const REQUEST_TOKEN_PREFIX = "vm0_browser_user_action";
 const APPLY_STUCK_AFTER_MS = 60_000;
@@ -79,6 +95,105 @@ const TERMINAL_STATES: readonly BrowserUserActionState[] = [
 ];
 
 type RequestRow = typeof browserUserActionRequests.$inferSelect;
+
+function noSharedInputOwner(owner: {
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return notExists(
+    new QueryBuilder()
+      .select({ id: browserOwnerProfiles.id })
+      .from(browserOwnerProfiles)
+      .where(
+        and(
+          eq(browserOwnerProfiles.orgId, owner.orgId),
+          eq(browserOwnerProfiles.userId, owner.userId),
+        ),
+      ),
+  );
+}
+
+function sharedInputWindowCondition(
+  owner: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly chatThreadId: string;
+    readonly providerSessionId: string;
+  },
+  window: BrowserWindowContext,
+  at: Date,
+) {
+  return and(
+    eq(browserOwnerWindows.chatThreadId, owner.chatThreadId),
+    eq(browserOwnerWindows.instanceId, window.instanceId),
+    eq(browserOwnerWindows.primaryWindowId, window.primaryWindowId),
+    eq(browserOwnerWindows.state, "active"),
+    gt(browserOwnerWindows.expiresAt, at),
+    exists(
+      new QueryBuilder()
+        .select({ id: browserOwnerProfiles.id })
+        .from(browserOwnerProfiles)
+        .where(
+          and(
+            eq(browserOwnerProfiles.orgId, owner.orgId),
+            eq(browserOwnerProfiles.userId, owner.userId),
+            eq(browserOwnerProfiles.instanceId, window.instanceId),
+            eq(browserOwnerProfiles.providerSessionId, owner.providerSessionId),
+            eq(browserOwnerProfiles.status, "active"),
+            gt(browserOwnerProfiles.timeoutAt, at),
+          ),
+        ),
+    ),
+  );
+}
+
+const storedInputWindow = sql`${browserUserActionRequests.payload}->'target'->'window'`;
+
+function storedSharedInputIsLive(at: Date) {
+  return exists(
+    new QueryBuilder()
+      .select({ id: browserOwnerWindows.chatThreadId })
+      .from(browserOwnerWindows)
+      .innerJoin(
+        browserOwnerProfiles,
+        eq(browserOwnerProfiles.instanceId, browserOwnerWindows.instanceId),
+      )
+      .where(
+        and(
+          eq(
+            browserOwnerWindows.chatThreadId,
+            browserUserActionRequests.chatThreadId,
+          ),
+          eq(browserOwnerProfiles.orgId, browserUserActionRequests.orgId),
+          eq(browserOwnerProfiles.userId, browserUserActionRequests.userId),
+          eq(
+            browserOwnerProfiles.providerSessionId,
+            browserUserActionRequests.providerSessionId,
+          ),
+          sql`${browserOwnerProfiles.instanceId}::text = ${storedInputWindow}->>'instanceId'`,
+          sql`${browserOwnerWindows.primaryWindowId}::text = ${storedInputWindow}->>'primaryWindowId'`,
+          eq(browserOwnerWindows.state, "active"),
+          gt(browserOwnerWindows.expiresAt, at),
+          eq(browserOwnerProfiles.status, "active"),
+          gt(browserOwnerProfiles.timeoutAt, at),
+        ),
+      ),
+  );
+}
+
+function storedInputHasSharedOwner() {
+  return exists(
+    new QueryBuilder()
+      .select({ id: browserOwnerProfiles.id })
+      .from(browserOwnerProfiles)
+      .where(
+        and(
+          eq(browserOwnerProfiles.orgId, browserUserActionRequests.orgId),
+          eq(browserOwnerProfiles.userId, browserUserActionRequests.userId),
+        ),
+      ),
+  );
+}
 
 export interface BrowserUserActionServiceError {
   readonly kind: "error";
@@ -202,7 +317,7 @@ export const prepareBrowserUserFileUpload$ = command(
     signal.throwIfAborted();
     // The signed PUT and the provider's idle lease use the same duration.
     // Its absolute timeout and request state still gate the subsequent apply.
-    if (!(await set(touchExactProvider$, row))) {
+    if (!(await set(touchExactProvider$, row, signal))) {
       return await expiredAfterNotify(row);
     }
     signal.throwIfAborted();
@@ -386,6 +501,17 @@ const requestHasLiveBrowser$ = command(
   async ({ get }, row: RequestRow): Promise<boolean> => {
     const db = get(db$);
     const now = nowDate();
+    const payload = decodePayload(row);
+    if (!payload) {
+      return false;
+    }
+    if (payload.target.window) {
+      const [live] = await db
+        .select({ id: browserOwnerWindows.chatThreadId })
+        .from(browserOwnerWindows)
+        .where(sharedInputWindowCondition(row, payload.target.window, now));
+      return live !== undefined;
+    }
     const [live] = await db
       .select({ providerSessionId: browserSessionInstances.providerSessionId })
       .from(browserSessionInstances)
@@ -396,6 +522,7 @@ const requestHasLiveBrowser$ = command(
           eq(browserSessionInstances.status, "active"),
           gt(browserSessionInstances.timeoutAt, now),
           gt(browserSessionInstances.idleExpiresAt, now),
+          noSharedInputOwner(row),
         ),
       )
       .limit(1);
@@ -404,9 +531,38 @@ const requestHasLiveBrowser$ = command(
 );
 
 const touchExactProvider$ = command(
-  async ({ set }, row: RequestRow): Promise<boolean> => {
+  async ({ set }, row: RequestRow, signal: AbortSignal): Promise<boolean> => {
     const db = set(writeDb$);
     const now = nowDate();
+    const payload = decodePayload(row);
+    if (!payload) {
+      return false;
+    }
+    if (payload.target.window) {
+      const features = await set(
+        loadUserFeatureSwitchContext$,
+        row.orgId,
+        row.userId,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!isFeatureEnabled(FeatureSwitchKey.BrowserSharedOwner, features)) {
+        return false;
+      }
+      const leaseTime = nowDate();
+      const [touched] = await db
+        .update(browserOwnerWindows)
+        .set({
+          expiresAt: sql`least(greatest(${browserOwnerWindows.expiresAt}, ${sql.param(new Date(leaseTime.getTime() + IDLE_LEASE_MS), browserOwnerWindows.expiresAt)}::timestamp), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, payload.target.window.instanceId))}))`,
+          updatedAt: leaseTime,
+        })
+        .where(
+          sharedInputWindowCondition(row, payload.target.window, leaseTime),
+        )
+        .returning({ id: browserOwnerWindows.chatThreadId });
+      signal.throwIfAborted();
+      return touched !== undefined;
+    }
     const [touched] = await db
       .update(browserSessionInstances)
       .set({
@@ -421,11 +577,13 @@ const touchExactProvider$ = command(
           eq(browserSessionInstances.status, "active"),
           gt(browserSessionInstances.timeoutAt, now),
           gt(browserSessionInstances.idleExpiresAt, now),
+          noSharedInputOwner(row),
         ),
       )
       .returning({
         providerSessionId: browserSessionInstances.providerSessionId,
       });
+    signal.throwIfAborted();
     return touched !== undefined;
   },
 );
@@ -503,6 +661,7 @@ const convertClosedBrowserUserActions$ = command(
     maintenanceSignal: AbortSignal,
   ): Promise<number> => {
     const db = set(writeDb$);
+    const now = nowDate();
     const candidates = await db
       .select({
         requestTokenHash: browserUserActionRequests.requestTokenHash,
@@ -511,10 +670,13 @@ const convertClosedBrowserUserActions$ = command(
         payload: browserUserActionRequests.payload,
         providerSessionId: browserUserActionRequests.providerSessionId,
         status: browserUserActionRequests.status,
-        finishedAt: browserSessionInstances.finishedAt,
+        finishedAt:
+          sql`CASE WHEN ${browserSessionInstances.status} = 'stopped' AND ${browserSessionInstances.finishedAt} IS NOT NULL THEN ${browserSessionInstances.finishedAt} ELSE ${sql.param(now, browserSessionInstances.finishedAt)}::timestamp END`
+            .mapWith(browserSessionInstances.finishedAt)
+            .as("finished_at"),
       })
       .from(browserUserActionRequests)
-      .innerJoin(
+      .leftJoin(
         browserSessionInstances,
         eq(
           browserSessionInstances.providerSessionId,
@@ -524,8 +686,22 @@ const convertClosedBrowserUserActions$ = command(
       .where(
         and(
           inArray(browserUserActionRequests.status, ["pending", "applying"]),
-          eq(browserSessionInstances.status, "stopped"),
-          isNotNull(browserSessionInstances.finishedAt),
+          or(
+            and(
+              isNotNull(storedInputWindow),
+              not(storedSharedInputIsLive(now)),
+            ),
+            and(
+              isNull(storedInputWindow),
+              or(
+                and(
+                  eq(browserSessionInstances.status, "stopped"),
+                  isNotNull(browserSessionInstances.finishedAt),
+                ),
+                storedInputHasSharedOwner(),
+              ),
+            ),
+          ),
         ),
       )
       .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -632,7 +808,7 @@ const deleteExpiredBrowserUserActions$ = command(
         completedAt: browserUserActionRequests.completedAt,
       })
       .from(browserUserActionRequests)
-      .innerJoin(
+      .leftJoin(
         browserSessionInstances,
         eq(
           browserSessionInstances.providerSessionId,
@@ -644,9 +820,18 @@ const deleteExpiredBrowserUserActions$ = command(
           inArray(browserUserActionRequests.status, [...TERMINAL_STATES]),
           isNotNull(browserUserActionRequests.completedAt),
           lte(browserUserActionRequests.completedAt, cutoff),
-          eq(browserSessionInstances.status, "stopped"),
-          isNotNull(browserSessionInstances.finishedAt),
-          lte(browserSessionInstances.finishedAt, cutoff),
+          or(
+            and(
+              isNotNull(storedInputWindow),
+              not(storedSharedInputIsLive(nowDate())),
+            ),
+            and(
+              isNull(storedInputWindow),
+              eq(browserSessionInstances.status, "stopped"),
+              isNotNull(browserSessionInstances.finishedAt),
+              lte(browserSessionInstances.finishedAt, cutoff),
+            ),
+          ),
         ),
       )
       .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -729,6 +914,7 @@ interface CreateBrowserUserActionArgs {
 interface PreparedBrowserUserAction {
   readonly chatThreadId: string;
   readonly providerSessionId: string;
+  readonly window?: BrowserWindowContext;
   readonly validation: BrowserUseUserActionValidation;
 }
 
@@ -834,9 +1020,126 @@ function requestedBrowserFieldsError(
   return null;
 }
 
+interface BrowserUserActionLifetime {
+  readonly runId: string | null;
+  readonly providerSessionId: string;
+  readonly window?: BrowserWindowContext;
+}
+const resolveBrowserUserActionLifetime$ = command(
+  async (
+    { get, set },
+    args: CreateBrowserUserActionArgs,
+    chatThreadId: string,
+    signal: AbortSignal,
+  ): Promise<ServiceResult<BrowserUserActionLifetime>> => {
+    const db = get(db$);
+    const now = nowDate();
+    const [shared] = await db
+      .select({
+        instanceId: browserOwnerProfiles.instanceId,
+        providerSessionId: browserOwnerProfiles.providerSessionId,
+        status: browserOwnerProfiles.status,
+        timeoutAt: browserOwnerProfiles.timeoutAt,
+        window: {
+          primaryWindowId: browserOwnerWindows.primaryWindowId,
+          state: browserOwnerWindows.state,
+          expiresAt: browserOwnerWindows.expiresAt,
+        },
+      })
+      .from(browserOwnerProfiles)
+      .leftJoin(
+        browserOwnerWindows,
+        and(
+          eq(browserOwnerWindows.instanceId, browserOwnerProfiles.instanceId),
+          eq(browserOwnerWindows.chatThreadId, chatThreadId),
+        ),
+      )
+      .where(
+        and(
+          eq(browserOwnerProfiles.orgId, args.orgId),
+          eq(browserOwnerProfiles.userId, args.userId),
+        ),
+      );
+    signal.throwIfAborted();
+    let live: {
+      readonly runId: string | null;
+      readonly providerSessionId: string;
+      readonly window?: BrowserWindowContext;
+    } | null = null;
+    if (shared) {
+      const features = await set(
+        loadUserFeatureSwitchContext$,
+        args.orgId,
+        args.userId,
+        signal,
+      );
+      if (
+        !isFeatureEnabled(FeatureSwitchKey.BrowserSharedOwner, features) ||
+        shared.status !== "active" ||
+        !shared.providerSessionId ||
+        shared.timeoutAt <= now ||
+        !shared.window ||
+        shared.window.state !== "active" ||
+        shared.window.expiresAt <= now
+      ) {
+        return conflict(
+          "The current chat has no live shared Browser window",
+          "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
+        );
+      }
+      live = {
+        runId: args.runId,
+        providerSessionId: shared.providerSessionId,
+        window: {
+          instanceId: shared.instanceId,
+          primaryWindowId: shared.window.primaryWindowId,
+        },
+      };
+    } else {
+      const [legacy = null] = await db
+        .select({
+          runId: browserSessions.runId,
+          providerSessionId: browserSessionInstances.providerSessionId,
+        })
+        .from(browserSessions)
+        .innerJoin(
+          browserSessionInstances,
+          eq(
+            browserSessionInstances.chatThreadId,
+            browserSessions.chatThreadId,
+          ),
+        )
+        .where(
+          and(
+            eq(browserSessions.chatThreadId, chatThreadId),
+            eq(browserSessions.orgId, args.orgId),
+            eq(browserSessions.userId, args.userId),
+            eq(browserSessions.status, "active"),
+            eq(browserSessionInstances.status, "active"),
+            gt(browserSessionInstances.timeoutAt, now),
+            gt(browserSessionInstances.idleExpiresAt, now),
+          ),
+        )
+        .limit(1)
+        .for("share");
+      signal.throwIfAborted();
+      live = legacy;
+    }
+    signal.throwIfAborted();
+    if (!live || live.runId !== args.runId) {
+      return conflict(
+        "The current chat run has no live managed Browser",
+        "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
+      );
+    }
+
+    return { kind: "ok", value: live };
+  },
+);
+
 const prepareBrowserUserAction$ = command(
   async (
-    { get },
+    { get, set },
     args: CreateBrowserUserActionArgs,
     signal: AbortSignal,
   ): Promise<ServiceResult<PreparedBrowserUserAction>> => {
@@ -866,37 +1169,17 @@ const prepareBrowserUserAction$ = command(
         "BROWSER_USER_ACTION_RUN_REQUIRED",
       );
     }
-    const now = nowDate();
-    const [live = null] = await db
-      .select({
-        runId: browserSessions.runId,
-        providerSessionId: browserSessionInstances.providerSessionId,
-      })
-      .from(browserSessions)
-      .innerJoin(
-        browserSessionInstances,
-        eq(browserSessionInstances.chatThreadId, browserSessions.chatThreadId),
-      )
-      .where(
-        and(
-          eq(browserSessions.chatThreadId, run.chatThreadId),
-          eq(browserSessions.orgId, args.orgId),
-          eq(browserSessions.userId, args.userId),
-          eq(browserSessions.status, "active"),
-          eq(browserSessionInstances.status, "active"),
-          gt(browserSessionInstances.timeoutAt, now),
-          gt(browserSessionInstances.idleExpiresAt, now),
-        ),
-      )
-      .limit(1)
-      .for("share");
+    const resolved = await set(
+      resolveBrowserUserActionLifetime$,
+      args,
+      run.chatThreadId,
+      signal,
+    );
     signal.throwIfAborted();
-    if (!live || live.runId !== args.runId) {
-      return conflict(
-        "The current chat run has no live managed Browser",
-        "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
-      );
+    if (resolved.kind === "error") {
+      return resolved;
     }
+    const live = resolved.value;
     const providerResult = await settle(
       getBrowserUseSession(live.providerSessionId, signal),
     );
@@ -918,6 +1201,9 @@ const prepareBrowserUserAction$ = command(
         providerResult.value.cdpUrl,
         {
           pageTargetId: args.input.pageTargetId,
+          ...(live.window
+            ? { primaryWindowId: live.window.primaryWindowId }
+            : {}),
           backendNodeIds: args.input.fields.map((field) => {
             return field.backendNodeId;
           }),
@@ -947,6 +1233,7 @@ const prepareBrowserUserAction$ = command(
       value: {
         chatThreadId: run.chatThreadId,
         providerSessionId: live.providerSessionId,
+        ...(live.window ? { window: live.window } : {}),
         validation: validationResult.value,
       },
     };
@@ -957,6 +1244,7 @@ function buildBrowserUserActionPayload(
   input: BrowserUserActionCreateRequest,
   validation: BrowserUseUserActionValidation,
   callbackIds: BrowserUserActionCallbackIds,
+  window?: BrowserWindowContext,
 ): BrowserUserActionPayload {
   return {
     version: 1,
@@ -965,6 +1253,7 @@ function buildBrowserUserActionPayload(
     reason: input.reason,
     callbackIds,
     target: {
+      ...(window ? { window } : {}),
       pageTargetId: validation.pageTargetId,
       documentLoaderId: validation.documentLoaderId,
       siteOrigin: validation.siteOrigin,
@@ -999,27 +1288,30 @@ function browserUserActionCreationPlan(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
+  readonly providerSessionId: string;
+  readonly window?: BrowserWindowContext;
 }) {
   const query = new QueryBuilder();
-  const run = query.$with("action_run").as(
-    query
-      .select({ agentId: chatThreads.agentId })
-      .from(agentRuns)
-      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-      .where(
-        and(
-          eq(agentRuns.id, args.runId),
-          eq(agentRuns.orgId, args.orgId),
-          eq(agentRuns.userId, args.userId),
-          eq(agentRuns.chatThreadId, args.chatThreadId),
-          inArray(agentRuns.status, ["pending", "running"]),
-          eq(chatThreads.userId, args.userId),
-          isNotNull(chatThreads.agentId),
-        ),
-      )
-      .limit(1)
-      .for("share", { of: agentRuns }),
-  );
+  const runQuery = query
+    .select({ agentId: chatThreads.agentId })
+    .from(agentRuns)
+    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+    .where(
+      and(
+        eq(agentRuns.id, args.runId),
+        eq(agentRuns.orgId, args.orgId),
+        eq(agentRuns.userId, args.userId),
+        eq(agentRuns.chatThreadId, args.chatThreadId),
+        inArray(agentRuns.status, ["pending", "running"]),
+        eq(chatThreads.userId, args.userId),
+        isNotNull(chatThreads.agentId),
+        args.window ? eq(chatThreads.cloudBrowserEnabled, true) : undefined,
+      ),
+    )
+    .limit(1);
+  const run = query
+    .$with("action_run")
+    .as(args.window ? runQuery : runQuery.for("share", { of: agentRuns }));
   const liveClock = query.$with("action_live_clock").as(
     query
       .select({
@@ -1029,31 +1321,82 @@ function browserUserActionCreationPlan(args: {
       })
       .from(run),
   );
-  const browser = query.$with("action_browser").as(
-    query
-      .select({
-        runId: browserSessions.runId,
-        providerSessionId: browserSessionInstances.providerSessionId,
-      })
-      .from(browserSessions)
-      .innerJoin(
-        browserSessionInstances,
-        eq(browserSessionInstances.chatThreadId, browserSessions.chatThreadId),
+  const browser = args.window
+    ? query.$with("action_browser").as(
+        query
+          .select({
+            runId: sql`${args.runId}`
+              .mapWith(nullableDriverValueDecoder(browserSessions.runId))
+              .as("input_run_id"),
+            providerSessionId: sql`${browserOwnerProfiles.providerSessionId}`
+              .mapWith(browserSessionInstances.providerSessionId)
+              .as("input_provider_session_id"),
+          })
+          .from(browserOwnerWindows)
+          .innerJoin(
+            browserOwnerProfiles,
+            eq(browserOwnerProfiles.instanceId, browserOwnerWindows.instanceId),
+          )
+          .innerJoin(
+            liveClock,
+            gt(browserOwnerProfiles.timeoutAt, liveClock.at),
+          )
+          .where(
+            and(
+              eq(browserOwnerProfiles.orgId, args.orgId),
+              eq(browserOwnerProfiles.userId, args.userId),
+              eq(browserOwnerProfiles.instanceId, args.window.instanceId),
+              eq(
+                browserOwnerProfiles.providerSessionId,
+                args.providerSessionId,
+              ),
+              eq(browserOwnerProfiles.status, "active"),
+              eq(browserOwnerWindows.chatThreadId, args.chatThreadId),
+              eq(
+                browserOwnerWindows.primaryWindowId,
+                args.window.primaryWindowId,
+              ),
+              eq(browserOwnerWindows.state, "active"),
+              gt(browserOwnerWindows.expiresAt, liveClock.at),
+            ),
+          ),
       )
-      .innerJoin(liveClock, gt(browserSessionInstances.timeoutAt, liveClock.at))
-      .where(
-        and(
-          eq(browserSessions.chatThreadId, args.chatThreadId),
-          eq(browserSessions.orgId, args.orgId),
-          eq(browserSessions.userId, args.userId),
-          eq(browserSessions.status, "active"),
-          eq(browserSessionInstances.status, "active"),
-          gt(browserSessionInstances.idleExpiresAt, liveClock.at),
-        ),
-      )
-      .limit(1)
-      .for("share"),
-  );
+    : query.$with("action_browser").as(
+        query
+          .select({
+            runId: sql`${browserSessions.runId}`
+              .mapWith(nullableDriverValueDecoder(browserSessions.runId))
+              .as("input_run_id"),
+            providerSessionId: sql`${browserSessionInstances.providerSessionId}`
+              .mapWith(browserSessionInstances.providerSessionId)
+              .as("input_provider_session_id"),
+          })
+          .from(browserSessions)
+          .innerJoin(
+            browserSessionInstances,
+            eq(
+              browserSessionInstances.chatThreadId,
+              browserSessions.chatThreadId,
+            ),
+          )
+          .innerJoin(
+            liveClock,
+            gt(browserSessionInstances.timeoutAt, liveClock.at),
+          )
+          .where(
+            and(
+              eq(browserSessions.chatThreadId, args.chatThreadId),
+              eq(browserSessions.orgId, args.orgId),
+              eq(browserSessions.userId, args.userId),
+              eq(browserSessions.status, "active"),
+              eq(browserSessionInstances.status, "active"),
+              gt(browserSessionInstances.idleExpiresAt, liveClock.at),
+              noSharedInputOwner(args),
+            ),
+          )
+          .limit(1)
+          .for("share"),
+      );
   const leaseClock = query.$with("action_lease_clock").as(
     query
       .select({
@@ -1068,6 +1411,46 @@ function browserUserActionCreationPlan(args: {
   return { run, liveClock, browser, leaseClock };
 }
 
+function browserUserActionRequestProjection(
+  input: {
+    readonly args: CreateBrowserUserActionArgs;
+    readonly prepared: PreparedBrowserUserAction;
+    readonly requestToken: string;
+    readonly payload: BrowserUserActionPayload;
+  },
+  agentId: SQLWrapper,
+  providerSessionId: SQLWrapper,
+) {
+  const { args, prepared, requestToken, payload } = input;
+  const t = browserUserActionRequests;
+  return {
+    requestTokenHash: sql`${sql.param(hash(requestToken), t.requestTokenHash)}`
+      .mapWith(t.requestTokenHash)
+      .as("request_token_hash"),
+    orgId: sql`${sql.param(args.orgId, t.orgId)}`.mapWith(t.orgId).as("org_id"),
+    userId: sql`${sql.param(args.userId, t.userId)}`
+      .mapWith(t.userId)
+      .as("user_id"),
+    agentId: sql`${agentId}`.mapWith(t.agentId).as("agent_id"),
+    chatThreadId: sql`${sql.param(prepared.chatThreadId, t.chatThreadId)}::uuid`
+      .mapWith(t.chatThreadId)
+      .as("chat_thread_id"),
+    status: sql`'pending'`.mapWith(t.status).as("status"),
+    providerSessionId: sql`${providerSessionId}`
+      .mapWith(t.providerSessionId)
+      .as("provider_session_id"),
+    payload: sql`${sql.param(payload, t.payload)}::jsonb`
+      .mapWith(t.payload)
+      .as("payload"),
+    applyStartedAt: sql`NULL`
+      .mapWith(nullableDriverValueDecoder(t.applyStartedAt))
+      .as("apply_started_at"),
+    completedAt: sql`NULL`
+      .mapWith(nullableDriverValueDecoder(t.completedAt))
+      .as("completed_at"),
+  };
+}
+
 const persistBrowserUserAction = command(
   async (
     { set },
@@ -1079,65 +1462,103 @@ const persistBrowserUserAction = command(
     },
   ): Promise<RequestRow | null> => {
     const db = set(writeDb$);
-    const { args, payload, prepared, requestToken } = input;
+    const { args, prepared } = input;
     const plan = browserUserActionCreationPlan({ ...args, ...prepared });
-    const leased = db.$with("action_leased_browser").as(
-      db
-        .update(browserSessionInstances)
-        .set({
-          lastTouchedAt: sql`${plan.leaseClock.at}`,
-          idleExpiresAt: sql`${plan.leaseClock.at} + ${IDLE_LEASE_MS} * interval '1 millisecond'`,
-          updatedAt: sql`${plan.leaseClock.at}`,
-        })
-        .from(plan.leaseClock)
-        .where(
-          and(
-            eq(plan.leaseClock.runId, args.runId),
-            eq(plan.leaseClock.providerSessionId, prepared.providerSessionId),
-            eq(
-              browserSessionInstances.providerSessionId,
-              prepared.providerSessionId,
-            ),
-            eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
-            eq(browserSessionInstances.status, "active"),
-            gt(browserSessionInstances.timeoutAt, plan.leaseClock.at),
-            gt(browserSessionInstances.idleExpiresAt, plan.leaseClock.at),
-          ),
+    const leased = prepared.window
+      ? db.$with("action_leased_browser").as(
+          db
+            .update(browserOwnerWindows)
+            .set({
+              expiresAt: sql`least(greatest(${browserOwnerWindows.expiresAt}, ${plan.leaseClock.at} + ${IDLE_LEASE_MS} * interval '1 millisecond'), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, prepared.window.instanceId))}))`,
+              updatedAt: sql`${plan.leaseClock.at}`,
+            })
+            .from(plan.leaseClock)
+            .where(
+              and(
+                eq(plan.leaseClock.runId, args.runId),
+                eq(
+                  plan.leaseClock.providerSessionId,
+                  prepared.providerSessionId,
+                ),
+                eq(browserOwnerWindows.chatThreadId, prepared.chatThreadId),
+                eq(browserOwnerWindows.instanceId, prepared.window.instanceId),
+                eq(
+                  browserOwnerWindows.primaryWindowId,
+                  prepared.window.primaryWindowId,
+                ),
+                eq(browserOwnerWindows.state, "active"),
+                gt(browserOwnerWindows.expiresAt, plan.leaseClock.at),
+                exists(
+                  new QueryBuilder()
+                    .select({ id: browserOwnerProfiles.id })
+                    .from(browserOwnerProfiles)
+                    .where(
+                      and(
+                        eq(browserOwnerProfiles.orgId, args.orgId),
+                        eq(browserOwnerProfiles.userId, args.userId),
+                        eq(
+                          browserOwnerProfiles.instanceId,
+                          prepared.window.instanceId,
+                        ),
+                        eq(
+                          browserOwnerProfiles.providerSessionId,
+                          prepared.providerSessionId,
+                        ),
+                        eq(browserOwnerProfiles.status, "active"),
+                        gt(browserOwnerProfiles.timeoutAt, plan.leaseClock.at),
+                      ),
+                    ),
+                ),
+              ),
+            )
+            .returning({
+              providerSessionId: sql`${plan.leaseClock.providerSessionId}`
+                .mapWith(browserSessionInstances.providerSessionId)
+                .as("provider_session_id"),
+            }),
         )
-        .returning({
-          providerSessionId: browserSessionInstances.providerSessionId,
-        }),
-    );
-    const t = browserUserActionRequests;
+      : db.$with("action_leased_browser").as(
+          db
+            .update(browserSessionInstances)
+            .set({
+              lastTouchedAt: sql`${plan.leaseClock.at}`,
+              idleExpiresAt: sql`${plan.leaseClock.at} + ${IDLE_LEASE_MS} * interval '1 millisecond'`,
+              updatedAt: sql`${plan.leaseClock.at}`,
+            })
+            .from(plan.leaseClock)
+            .where(
+              and(
+                eq(plan.leaseClock.runId, args.runId),
+                eq(
+                  plan.leaseClock.providerSessionId,
+                  prepared.providerSessionId,
+                ),
+                eq(
+                  browserSessionInstances.providerSessionId,
+                  prepared.providerSessionId,
+                ),
+                eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
+                eq(browserSessionInstances.status, "active"),
+                gt(browserSessionInstances.timeoutAt, plan.leaseClock.at),
+                gt(browserSessionInstances.idleExpiresAt, plan.leaseClock.at),
+                noSharedInputOwner(args),
+              ),
+            )
+            .returning({
+              providerSessionId:
+                sql`${browserSessionInstances.providerSessionId}`
+                  .mapWith(browserSessionInstances.providerSessionId)
+                  .as("provider_session_id"),
+            }),
+        );
     const source = new QueryBuilder()
-      .select({
-        requestTokenHash:
-          sql`${sql.param(hash(requestToken), t.requestTokenHash)}`
-            .mapWith(t.requestTokenHash)
-            .as("request_token_hash"),
-        orgId: sql`${sql.param(args.orgId, t.orgId)}`
-          .mapWith(t.orgId)
-          .as("org_id"),
-        userId: sql`${sql.param(args.userId, t.userId)}`
-          .mapWith(t.userId)
-          .as("user_id"),
-        agentId: sql`${plan.run.agentId}`.mapWith(t.agentId).as("agent_id"),
-        chatThreadId:
-          sql`${sql.param(prepared.chatThreadId, t.chatThreadId)}::uuid`
-            .mapWith(t.chatThreadId)
-            .as("chat_thread_id"),
-        status: sql`'pending'`.mapWith(t.status).as("status"),
-        providerSessionId: leased.providerSessionId,
-        payload: sql`${sql.param(payload, t.payload)}::jsonb`
-          .mapWith(t.payload)
-          .as("payload"),
-        applyStartedAt: sql`NULL`
-          .mapWith(nullableDriverValueDecoder(t.applyStartedAt))
-          .as("apply_started_at"),
-        completedAt: sql`NULL`
-          .mapWith(nullableDriverValueDecoder(t.completedAt))
-          .as("completed_at"),
-      })
+      .select(
+        browserUserActionRequestProjection(
+          input,
+          plan.run.agentId,
+          leased.providerSessionId,
+        ),
+      )
       .from(leased)
       .innerJoin(plan.run, sql`TRUE`);
     const [created] = await db
@@ -1180,6 +1601,7 @@ export const createBrowserUserAction$ = command(
       args.input,
       prepared.value.validation,
       callbackIds,
+      prepared.value.window,
     );
     const created = await set(persistBrowserUserAction, {
       args,
@@ -1539,6 +1961,9 @@ async function inspectPendingBrowserUserAction(
       provider.value.cdpUrl,
       {
         ...exactInputTarget(payload),
+        ...(payload.target.window
+          ? { primaryWindowId: payload.target.window.primaryWindowId }
+          : {}),
         fields: payload.target.fields.map((field) => {
           return {
             backendNodeId: field.backendNodeId,
@@ -1589,7 +2014,7 @@ export const preflightBrowserUserAction$ = command(
     if (located.status !== "pending") {
       return conflict("Browser input is no longer pending");
     }
-    const leased = await set(touchExactProvider$, located);
+    const leased = await set(touchExactProvider$, located, signal);
     signal.throwIfAborted();
     if (!leased) {
       return await expiredAfterNotify(located);
@@ -1735,8 +2160,14 @@ const applyClaimedBrowserUserAction$ = command(
     // restored pending state, each conditional on the claim still applying.
     // Provider work is cancellable; the guarded compensation writes below
     // must settle at their existing exits before cancellation propagates.
-    const leased = await set(touchExactProvider$, claimed);
-    if (!leased) {
+    const leased = await settleIncludingAbort(
+      set(touchExactProvider$, claimed, providerSignal),
+    );
+    if (!leased.ok) {
+      await set(restorePending$, claimed.requestTokenHash);
+      throw leased.error;
+    }
+    if (!leased.value) {
       const terminal = await set(finalize$, claimed.requestTokenHash, "stale");
       return terminal
         ? { kind: "ok", value: terminal }
@@ -1754,11 +2185,23 @@ const applyClaimedBrowserUserAction$ = command(
       await set(restorePending$, claimed.requestTokenHash);
       return providerFailure(new Error("Browser provider is not active"));
     }
+    if (
+      payload.target.window &&
+      !(await set(requestHasLiveBrowser$, claimed))
+    ) {
+      const terminal = await set(finalize$, claimed.requestTokenHash, "stale");
+      return terminal
+        ? { kind: "ok", value: terminal }
+        : conflict("Browser input state changed during application");
+    }
     const operation = await settle(
       applyBrowserUseUserAction(
         provider.value.cdpUrl,
         {
           ...target,
+          ...(payload.target.window
+            ? { primaryWindowId: payload.target.window.primaryWindowId }
+            : {}),
           fields: payload.target.fields.map((field) => {
             return browserApplyField(
               field,
@@ -1797,7 +2240,11 @@ const applyClaimedBrowserUserAction$ = command(
     const terminal = await set(
       finalize$,
       claimed.requestTokenHash,
-      operation.value,
+      operation.value === "succeeded" &&
+        payload.target.window &&
+        !(await set(requestHasLiveBrowser$, claimed))
+        ? "uncertain"
+        : operation.value,
     );
     providerSignal.throwIfAborted();
     return terminal
@@ -1862,13 +2309,10 @@ export const applyBrowserUserAction$ = command(
       fileContents = materialized.value;
     }
 
-    if (!(await set(requestHasLiveBrowser$, located))) {
-      signal.throwIfAborted();
+    const live = await set(requestHasLiveBrowser$, located);
+    signal.throwIfAborted();
+    if (!live) {
       return await expiredAfterNotify(located);
-    }
-    if (located.status !== "pending") {
-      signal.throwIfAborted();
-      return conflict("Browser input has already been claimed");
     }
     const [claimed] = await db
       .update(browserUserActionRequests)
@@ -1886,7 +2330,13 @@ export const applyBrowserUserAction$ = command(
         ),
       )
       .returning();
-    signal.throwIfAborted();
+    // A committed claim must be settled before cancellation propagates.
+    if (signal.aborted) {
+      if (claimed) {
+        await set(restorePending$, claimed.requestTokenHash);
+      }
+      signal.throwIfAborted();
+    }
     if (!claimed) {
       return conflict("Browser input has already been claimed");
     }
@@ -1898,6 +2348,7 @@ export const applyBrowserUserAction$ = command(
       signal,
     );
     if (applied.kind === "error") {
+      signal.throwIfAborted();
       return applied;
     }
     if (
@@ -1917,6 +2368,7 @@ export const applyBrowserUserAction$ = command(
         L.warn("Temporary Browser file cleanup failed");
       }
     }
+    signal.throwIfAborted();
     return {
       kind: "ok",
       value: publicRequest(applied.value, args.requestToken, payload),

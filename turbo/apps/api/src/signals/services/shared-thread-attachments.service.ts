@@ -17,6 +17,7 @@ import { copyPublicArtifactObject$ } from "../external/s3";
 
 export interface SharedThreadAttachmentCopy {
   readonly isPrivate: boolean;
+  readonly bucket: string;
   readonly sourceKey: string;
   readonly key: string;
   readonly attachment: SharedMessageAttachment;
@@ -55,6 +56,7 @@ const prepareSharedThreadAttachment$ = command(
     const key = `artifacts/shared-threads/${args.shareId}/${randomUUID()}-${sanitizeArtifactFilename(filename)}`;
     return {
       isPrivate: object.isPrivate,
+      bucket: object.bucket,
       sourceKey: object.key,
       key,
       attachment: {

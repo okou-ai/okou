@@ -86,7 +86,7 @@ fn source_candidate(
                     uuid::Uuid::from_u128(1),
                     7,
                 )?,
-                runner_provider::RunnerPreferenceTarget::SourceSandbox(source),
+                runner_provider::RunnerPreferenceTarget::ExactSandbox(source),
                 std::time::Instant::now() + std::time::Duration::from_secs(90),
             )),
     )

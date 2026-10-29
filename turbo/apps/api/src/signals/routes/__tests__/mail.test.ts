@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise, onRejection } from "../../utils";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -44,6 +44,422 @@ const GMAIL_PDF_BYTES = Buffer.from("mail draft pdf");
 const GMAIL_TEXT_BYTES = Buffer.from("mail draft decision");
 const GMAIL_HTML_BODY =
   '<div>Mail body <strong>before</strong></div><img src="cid:email-test-illustration" alt="Cheerful envelope illustration"><ul><li>Mail body after</li></ul><a href="https://example.com/review">Review</a>';
+
+async function createOutlookMailFixture() {
+  bdd.acceptAgentStorageWrites();
+  const owner = createPublicConnectorActor(context, {
+    optionalEnvironmentNames: [
+      "MICROSOFT_OAUTH_CLIENT_ID",
+      "MICROSOFT_OAUTH_CLIENT_SECRET",
+    ],
+  });
+  owner.ownsFeatureSwitches();
+  return await owner.run(async () => {
+    mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_ID", "outlook-client");
+    mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_SECRET", "outlook-client-secret");
+    const token = `outlook-${randomUUID()}`;
+    const messageId = `immutable-${randomUUID()}`;
+    const message = {
+      id: messageId,
+      conversationId: `conversation-${randomUUID()}`,
+      isDraft: true,
+      from: {
+        emailAddress: { address: "sender@outlook.com", name: "Outlook Sender" },
+      },
+      toRecipients: [{ emailAddress: { address: "recipient@example.com" } }],
+      ccRecipients: [],
+      bccRecipients: [],
+      replyTo: [],
+      subject: "Outlook review",
+      body: {
+        contentType: "html",
+        content:
+          '<p>Review this <strong>proposal</strong>.</p><img src="cid:outlook-logo">',
+      },
+      webLink: "https://outlook.live.com/mail/0/drafts/id/test",
+      sentDateTime: null as string | null,
+      internetMessageHeaders: [
+        { name: "In-Reply-To", value: "<original@example.com>" },
+      ],
+    };
+    const state = {
+      exists: true,
+      unauthorized: false,
+      sendCount: 0,
+      sendStatus: 202,
+      propagating: false,
+    };
+    const files = [
+      {
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        id: "report",
+        name: "proposal.pdf",
+        contentType: "application/pdf",
+        size: 8,
+        isInline: false,
+        contentBytes: Buffer.from("proposal").toString("base64"),
+      },
+      {
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        id: "inline-logo",
+        name: "logo.png",
+        contentType: "image/png",
+        size: 4,
+        isInline: true,
+        contentId: "outlook-logo",
+        contentBytes: Buffer.from("logo").toString("base64"),
+      },
+    ];
+    const base = "https://graph.microsoft.com/v1.0/me";
+    server.use(
+      http.post(
+        "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        () => {
+          return HttpResponse.json({
+            access_token: token,
+            refresh_token: "outlook-refresh",
+            expires_in: 3600,
+            scope: "Mail.ReadWrite Mail.Send User.Read",
+          });
+        },
+      ),
+      http.get(base, () => {
+        return HttpResponse.json({
+          id: owner.actor.userId,
+          mail: "sender@outlook.com",
+          displayName: "Outlook Sender",
+        });
+      }),
+      http.get(`${base}/messages/:messageId`, ({ request }) => {
+        expect(request.headers.get("authorization")).toBe(`Bearer ${token}`);
+        expect(request.headers.get("prefer")).toBe('IdType="ImmutableId"');
+        if (state.unauthorized) {
+          return new HttpResponse(null, { status: 401 });
+        }
+        if (!state.exists || state.propagating) {
+          return new HttpResponse(null, { status: 404 });
+        }
+        return HttpResponse.json(message);
+      }),
+      http.get(`${base}/messages/:messageId/attachments`, () => {
+        return HttpResponse.json({
+          value: files.map(({ contentBytes: _contentBytes, ...file }) => {
+            return {
+              ...file,
+            };
+          }),
+        });
+      }),
+      http.get(
+        `${base}/messages/:messageId/attachments/:attachmentId`,
+        ({ params }) => {
+          const file = files.find((item) => {
+            return item.id === params.attachmentId;
+          });
+          return file
+            ? HttpResponse.json(file)
+            : new HttpResponse(null, { status: 404 });
+        },
+      ),
+      http.post(`${base}/messages/:messageId/send`, () => {
+        state.sendCount += 1;
+        return new HttpResponse(null, { status: state.sendStatus });
+      }),
+      http.delete(`${base}/messages/:messageId`, () => {
+        state.exists = false;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await connectors.updateFeatureSwitches(owner.actor, {
+      outlookChatMail: true,
+    });
+    const agent = await bdd.createAgent(owner.actor, {
+      displayName: "Outlook Mail agent",
+      visibility: "private",
+    });
+    const thread = await chat.createThread(owner.actor, {
+      agentId: agent.agentId,
+      title: "Outlook review",
+    });
+    const start = await connectors.startOauth(
+      owner.actor,
+      "outlook-mail",
+      "oauth",
+    );
+    const oauthState = new URL(start.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!oauthState) {
+      throw new Error("Expected Outlook OAuth state");
+    }
+    await connectors.completeOauthCallback("outlook-mail", {
+      state: oauthState,
+      code: "outlook-code",
+    });
+    await runs.enableAgentConnectors(owner.actor, agent.agentId, [
+      "outlook-mail",
+    ]);
+    mocks.clerk.session(owner.actor.userId, owner.actor.orgId);
+    const link = () => {
+      return client().linkDraft({
+        headers: authHeaders(),
+        body: {
+          threadId: thread.id,
+          agentId: agent.agentId,
+          provider: "outlook",
+          outlookMessageId: messageId,
+        },
+      });
+    };
+    return { ...owner, agent, thread, state, message, link };
+  });
+}
+
+describe("Outlook mail in chat", () => {
+  it("links, refreshes and previews the provider draft with its attachments", async () => {
+    const fixture = await createOutlookMailFixture();
+    await fixture.run(async () => {
+      const linked = await accept(fixture.link(), [200]);
+      const again = await accept(fixture.link(), [200]);
+      expect(again.body.mailDraftId).toBe(linked.body.mailDraftId);
+      fixture.message.subject = "Revised Outlook proposal";
+      const draft = await accept(
+        client().getDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(draft.body.mailDraft).toMatchObject({
+        provider: "outlook",
+        outlookMessageId: fixture.message.id,
+        subject: "Revised Outlook proposal",
+        status: "draft",
+        inReplyTo: "<original@example.com>",
+        attachments: [{ filename: "proposal.pdf", partId: "report" }],
+        inlineImages: [{ contentId: "outlook-logo", partId: "inline-logo" }],
+      });
+      const attachment = await accept(
+        client().getAttachment({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId, partId: "report" },
+        }),
+        [200],
+      );
+      expect(attachment.headers.get("content-type")).toBe("application/pdf");
+      const list = await accept(
+        client().listThreadMail({
+          headers: authHeaders(),
+          params: { threadId: fixture.thread.id },
+        }),
+        [200],
+      );
+      expect(list.body.mails).toMatchObject([
+        {
+          mailDraftId: linked.body.mailDraftId,
+          subject: "Revised Outlook proposal",
+        },
+      ]);
+    });
+  });
+
+  it("keeps accepted sends pending, prevents duplicate sends, and reconciles the sent copy", async () => {
+    const fixture = await createOutlookMailFixture();
+    await fixture.run(async () => {
+      const linked = await accept(fixture.link(), [200]);
+      const params = { mailDraftId: linked.body.mailDraftId };
+      const results = await Promise.all([
+        client().sendDraft({ headers: authHeaders(), params }),
+        client().sendDraft({ headers: authHeaders(), params }),
+      ]);
+      expect(
+        results.every((result) => {
+          return result.status === 200 || result.status === 409;
+        }),
+      ).toBeTruthy();
+      expect(
+        results.find((result) => {
+          return result.status === 200;
+        })?.body,
+      ).toMatchObject({ mailDraft: { status: "sending" } });
+      expect(fixture.state.sendCount).toBe(1);
+      fixture.state.propagating = true;
+      const pending = await accept(
+        client().getDraft({ headers: authHeaders(), params }),
+        [200],
+      );
+      expect(pending.body.mailDraft.status).toBe("sending");
+      await accept(
+        client().sendDraft({ headers: authHeaders(), params }),
+        [409],
+      );
+      fixture.state.propagating = false;
+      fixture.message.isDraft = false;
+      fixture.message.sentDateTime = "2026-10-28T10:00:00.000Z";
+      const sent = await accept(
+        client().getDraft({ headers: authHeaders(), params }),
+        [200],
+      );
+      expect(sent.body.mailDraft).toMatchObject({
+        status: "sent",
+        sentAt: fixture.message.sentDateTime,
+      });
+      await accept(
+        client().deleteDraft({ headers: authHeaders(), params }),
+        [409],
+      );
+      expect(fixture.state.sendCount).toBe(1);
+    });
+  });
+
+  it("keeps a send visible when an earlier draft read reports a temporary provider miss", async () => {
+    const fixture = await createOutlookMailFixture();
+    await fixture.run(async () => {
+      const linked = await accept(fixture.link(), [200]);
+      const params = { mailDraftId: linked.body.mailDraftId };
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let reads = 0;
+      server.use(
+        http.get(
+          "https://graph.microsoft.com/v1.0/me/messages/:messageId",
+          async () => {
+            reads += 1;
+            if (reads === 1) {
+              entered.resolve();
+              await release.promise;
+              return new HttpResponse(null, { status: 404 });
+            }
+            return HttpResponse.json(fixture.message);
+          },
+        ),
+      );
+      const earlierRead = client().getDraft({ headers: authHeaders(), params });
+      await entered.promise;
+      const sent = await onRejection(
+        accept(client().sendDraft({ headers: authHeaders(), params }), [200]),
+        () => {
+          return release.resolve();
+        },
+      );
+      release.resolve();
+      expect(sent.body.mailDraft.status).toBe("sending");
+      const stale = await accept(earlierRead, [200]);
+      expect(stale.body.mailDraft.status).toBe("sending");
+      fixture.message.isDraft = false;
+      fixture.message.sentDateTime = "2026-10-28T10:00:00.000Z";
+      const confirmed = await accept(
+        client().getDraft({ headers: authHeaders(), params }),
+        [200],
+      );
+      expect(confirmed.body.mailDraft.status).toBe("sent");
+      expect(fixture.state.sendCount).toBe(1);
+    });
+  });
+
+  it.each([408, 503])(
+    "preserves an uncertain HTTP %i send without retrying and lets explicit rejections be corrected",
+    async (sendStatus) => {
+      const fixture = await createOutlookMailFixture();
+      await fixture.run(async () => {
+        const linked = await accept(fixture.link(), [200]);
+        const params = { mailDraftId: linked.body.mailDraftId };
+        fixture.state.sendStatus = 400;
+        await accept(
+          client().sendDraft({ headers: authHeaders(), params }),
+          [400],
+        );
+        const draft = await accept(
+          client().getDraft({ headers: authHeaders(), params }),
+          [200],
+        );
+        expect(draft.body.mailDraft.status).toBe("draft");
+        fixture.state.sendStatus = sendStatus;
+        const uncertain = await accept(
+          client().sendDraft({ headers: authHeaders(), params }),
+          [200],
+        );
+        expect(uncertain.body.mailDraft.status).toBe("sending");
+        await accept(
+          client().sendDraft({ headers: authHeaders(), params }),
+          [409],
+        );
+        expect(fixture.state.sendCount).toBe(2);
+      });
+    },
+  );
+
+  it("requires reconnect for revoked access and hides disabled Outlook mail", async () => {
+    const fixture = await createOutlookMailFixture();
+    await fixture.run(async () => {
+      const linked = await accept(fixture.link(), [200]);
+      const params = { mailDraftId: linked.body.mailDraftId };
+      fixture.state.unauthorized = true;
+      const reconnect = await accept(
+        client().getDraft({ headers: authHeaders(), params }),
+        [200],
+      );
+      expect(reconnect.body.mailDraft).toMatchObject({
+        provider: "outlook",
+        accessStatus: "reconnect",
+      });
+      await connectors.updateFeatureSwitches(fixture.actor, {
+        outlookChatMail: false,
+      });
+      await accept(
+        client().getDraft({ headers: authHeaders(), params }),
+        [404],
+      );
+      const list = await accept(
+        client().listThreadMail({
+          headers: authHeaders(),
+          params: { threadId: fixture.thread.id },
+        }),
+        [200],
+      );
+      expect(list.body.mails).toStrictEqual([]);
+    });
+  });
+
+  it("preserves the sent copy when the user sends an Outlook draft externally", async () => {
+    const fixture = await createOutlookMailFixture();
+    await fixture.run(async () => {
+      const linked = await accept(fixture.link(), [200]);
+      const params = { mailDraftId: linked.body.mailDraftId };
+      fixture.message.isDraft = false;
+      fixture.message.sentDateTime = "2026-10-28T10:00:00.000Z";
+      await accept(
+        client().deleteDraft({ headers: authHeaders(), params }),
+        [409],
+      );
+      const sent = await accept(
+        client().getDraft({ headers: authHeaders(), params }),
+        [200],
+      );
+      expect(sent.body.mailDraft.status).toBe("sent");
+      expect(fixture.state.exists).toBeTruthy();
+      expect(fixture.state.sendCount).toBe(0);
+    });
+  });
+
+  it("deletes an Outlook draft and keeps its review link unavailable", async () => {
+    const fixture = await createOutlookMailFixture();
+    await fixture.run(async () => {
+      const linked = await accept(fixture.link(), [200]);
+      const params = { mailDraftId: linked.body.mailDraftId };
+      await accept(
+        client().deleteDraft({ headers: authHeaders(), params }),
+        [204],
+      );
+      const deleted = await accept(
+        client().getDraft({ headers: authHeaders(), params }),
+        [200],
+      );
+      expect(deleted.body.mailDraft.status).toBe("deleted");
+      expect(fixture.state.exists).toBeFalsy();
+    });
+  });
+});
 
 describe("thread email list", () => {
   it("lists linked drafts, then sent emails, and refuses to delete sent mail", async () => {
@@ -1286,9 +1702,10 @@ describe("POST /api/mail/drafts/link", () => {
         [200],
       );
       expect(sent.body.mailDraft.status).toBe("sent");
-      expect(sent.body.mailDraft.sentGmailMessageId).toBe(
-        GMAIL_SENT_MESSAGE_ID,
-      );
+      expect(sent.body.mailDraft).toMatchObject({
+        provider: "gmail",
+        sentGmailMessageId: GMAIL_SENT_MESSAGE_ID,
+      });
       expect(gmail.sentBody).toStrictEqual({ id: GMAIL_DRAFT_ID });
       expect(gmail.sendCount).toBe(1);
 
@@ -1365,7 +1782,7 @@ describe("POST /api/mail/drafts/link", () => {
         [200],
       );
       expect(draft.body.mailDraft.status).toBe("draft");
-      expect(draft.body.mailDraft.sentGmailMessageId).toBeUndefined();
+      expect(draft.body.mailDraft).not.toHaveProperty("sentGmailMessageId");
       await expect(
         connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
       ).resolves.toMatchObject({ connectionStatus: "connected" });
@@ -1485,7 +1902,7 @@ describe("POST /api/mail/drafts/link", () => {
         [200],
       );
       expect(draft.body.mailDraft.status).toBe("draft");
-      expect(draft.body.mailDraft.sentGmailMessageId).toBeUndefined();
+      expect(draft.body.mailDraft).not.toHaveProperty("sentGmailMessageId");
       await expect(
         connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
       ).resolves.toMatchObject({ connectionStatus: "connected" });

@@ -18,6 +18,7 @@ struct MessageBodyView: View, Equatable {
   let artifacts: MessageArtifactStore?
   let artifactImageSources: [String]
   let loadsActions: Bool
+  let loadsDiagrams: Bool
   @Environment(\.openURL) private var openURL
   private struct Prepared {
     let source: String
@@ -30,7 +31,7 @@ struct MessageBodyView: View, Equatable {
     actionContext: MessageActionContext? = nil, connectorActions: ConnectorActionStore? = nil,
     permissionActions: PermissionActionRegistry? = nil,
     artifacts: MessageArtifactStore? = nil, artifactImageSources: [String] = [],
-    loadsActions: Bool = false
+    loadsActions: Bool = false, loadsDiagrams: Bool = true
   ) {
     self.text = text
     self.baseURL = baseURL
@@ -41,6 +42,7 @@ struct MessageBodyView: View, Equatable {
     self.artifacts = artifacts
     self.artifactImageSources = artifactImageSources
     self.loadsActions = loadsActions
+    self.loadsDiagrams = loadsDiagrams
     _prepared = State(
       initialValue: markdown.cached(text).map { Prepared(source: text, content: $0) })
   }
@@ -51,6 +53,7 @@ struct MessageBodyView: View, Equatable {
       && lhs.permissionActions === rhs.permissionActions
       && lhs.artifacts === rhs.artifacts && lhs.artifactImageSources == rhs.artifactImageSources
       && lhs.loadsActions == rhs.loadsActions
+      && lhs.loadsDiagrams == rhs.loadsDiagrams
   }
 
   @ViewBuilder private func preparedBody(_ content: AttributedString) -> some View {
@@ -101,7 +104,7 @@ struct MessageBodyView: View, Equatable {
           case .markdown(let fragment):
             if !String(fragment.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             {
-              StructuredText(text, parser: PreparedMessageParser(content: fragment))
+              diagramBody(fragment)
             }
           case .artifact(let resource, let label, let destination):
             MessageArtifactCard(
@@ -112,7 +115,24 @@ struct MessageBodyView: View, Equatable {
         }
       }
     } else {
-      StructuredText(text, parser: PreparedMessageParser(content: content))
+      diagramBody(content)
+    }
+  }
+
+  private func diagramBody(_ content: AttributedString) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(Array(MessageMermaidBody.blocks(content, source: text).enumerated()), id: \.offset) {
+        _, block in
+        switch block {
+        case .markdown(let fragment):
+          StructuredText(text, parser: PreparedMessageParser(content: fragment))
+        case .diagram(let code, let original):
+          MessageMermaidView(
+            code: code, original: original, renderer: markdown.diagrams, loadsContent: loadsDiagrams
+          )
+          .id(code)
+        }
+      }
     }
   }
 

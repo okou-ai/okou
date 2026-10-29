@@ -1,11 +1,7 @@
-import boldFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Bold.otf?url";
-import regularFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf?url";
-import italicFontUrl from "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-italic.ttf?url";
-import boldItalicFontUrl from "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-bolditalic.ttf?url";
-import emojiFontUrl from "@fontsource/noto-emoji/files/noto-emoji-emoji-400-normal.woff?url";
 import type { Root, RootContent } from "hast";
 
 import { createDeferredPromise } from "../../signals/utils.ts";
+import { platformMessagePdfFontUrls } from "../static-assets.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
 import type { PdfWorkerRequest, PdfWorkerResponse } from "./types.ts";
@@ -65,11 +61,17 @@ export async function generateMessagePdfBlob(
   const [assets, regularFont, boldFont, italicFont, boldItalicFont, emojiFont] =
     await Promise.all([
       preparePdfAssets(tree, imageUrls, signal),
-      loadFont(regularFontUrl, signal),
-      loadFont(boldFontUrl, signal),
-      needed.italic ? loadFont(italicFontUrl, signal) : undefined,
-      needed.boldItalic ? loadFont(boldItalicFontUrl, signal) : undefined,
-      needed.emoji ? loadFont(emojiFontUrl, signal) : undefined,
+      loadFont(platformMessagePdfFontUrls.regular, signal),
+      loadFont(platformMessagePdfFontUrls.bold, signal),
+      needed.italic
+        ? loadFont(platformMessagePdfFontUrls.italic, signal)
+        : undefined,
+      needed.boldItalic
+        ? loadFont(platformMessagePdfFontUrls.boldItalic, signal)
+        : undefined,
+      needed.emoji
+        ? loadFont(platformMessagePdfFontUrls.emoji, signal)
+        : undefined,
     ]);
   signal.throwIfAborted();
   const worker = new Worker(

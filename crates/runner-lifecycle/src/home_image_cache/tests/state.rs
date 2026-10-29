@@ -28,54 +28,100 @@ async fn source_home_probe_requires_unlocked_matching_generation_and_profile() {
         .await
         .unwrap();
     let source = metadata.image_generation.parse().unwrap();
-    assert!(
-        !f.cache
-            .probe_source_home(key, PROFILE, SIZE, source)
+    assert_eq!(
+        f.cache
+            .probe_home(key, PROFILE, SIZE, Some(source))
             .await
-            .unwrap()
+            .unwrap(),
+        HomeCacheProbe::Busy
     );
     drop(context);
     f.cache.reset_held_state_root_scan_count();
     for (profile, size, generation, expected) in [
-        (PROFILE, SIZE, source, true),
-        (PROFILE, SIZE, runner_types::ids::RunId::new_v4(), false),
-        ("vm0/other", SIZE, source, false),
-        (PROFILE, SIZE * 2, source, false),
+        (
+            PROFILE,
+            SIZE,
+            Some(source),
+            HomeCacheProbe::Ready {
+                source_run_id: source,
+            },
+        ),
+        (
+            PROFILE,
+            SIZE,
+            None,
+            HomeCacheProbe::Ready {
+                source_run_id: source,
+            },
+        ),
+        (
+            PROFILE,
+            SIZE,
+            Some(runner_types::ids::RunId::new_v4()),
+            HomeCacheProbe::Incompatible,
+        ),
+        ("vm0/other", SIZE, Some(source), HomeCacheProbe::Missing),
+        (PROFILE, SIZE * 2, Some(source), HomeCacheProbe::Missing),
     ] {
         assert_eq!(
             f.cache
-                .probe_source_home(key, profile, size, generation)
+                .probe_home(key, profile, size, generation)
                 .await
                 .unwrap(),
             expected
         );
     }
     assert_eq!(f.cache.held_state_root_scan_count(), 0);
-    // A positive observation did not consume or reserve the published image.
-    let lease = f.lease(key).await;
-    assert_eq!(lease.result(), HomeCacheCheckoutResult::Hit);
+    assert_eq!(f.lease(key).await.result(), HomeCacheCheckoutResult::Hit);
 }
 
 #[tokio::test]
 async fn source_home_probe_keeps_missing_state_and_lock_errors_distinct() {
     let f = Fixture::new().await;
     let key = "thread:peer-lock-error";
-    assert!(
-        !f.cache
-            .probe_source_home(key, PROFILE, SIZE, runner_types::ids::RunId::new_v4())
-            .await
-            .unwrap()
+    assert_eq!(
+        f.cache.probe_home(key, PROFILE, SIZE, None).await.unwrap(),
+        HomeCacheProbe::Missing
     );
     assert!(!f.cache.entry_lock_path(&f.key(key)).exists());
     tokio::fs::create_dir_all(f.cache.entry_lock_path(&f.key(key)))
         .await
         .unwrap();
+    assert!(f.cache.probe_home(key, PROFILE, SIZE, None).await.is_err());
+}
+
+#[tokio::test]
+async fn home_probe_recovers_a_committed_image_after_free_lock_collection() {
+    let f = Fixture::new().await;
+    let key = "thread:collected-home-lock";
+    let metadata = f
+        .commit(key, b"retained Home", "2026-10-27T10:00:00Z")
+        .await;
+    let source = metadata.image_generation.parse().unwrap();
+    let path = f.cache.entry_lock_path(&f.key(key));
+    let runner_host::gc::LockProbe::Free(lock) = runner_host::gc::probe_lock(&path) else {
+        panic!("completed Home must have a free entry lock");
+    };
     assert!(
-        f.cache
-            .probe_source_home(key, PROFILE, SIZE, runner_types::ids::RunId::new_v4())
-            .await
-            .is_err()
+        runner_host::gc::remove_unused_lock_after_probe(
+            &path,
+            lock,
+            "home-image-cache-test.lock",
+            false,
+        )
+        .await
     );
+    assert!(!path.exists());
+    assert_eq!(
+        f.cache
+            .probe_home(key, PROFILE, SIZE, Some(source))
+            .await
+            .unwrap(),
+        HomeCacheProbe::Ready {
+            source_run_id: source
+        },
+    );
+    assert_eq!(f.lease(key).await.result(), HomeCacheCheckoutResult::Hit);
 }
 
 #[tokio::test]
@@ -156,7 +202,7 @@ async fn validated_commit_wakes_every_subscriber_without_advertisement_authority
     let source = runner_types::ids::RunId::new_v4();
     let mut first = snapshot.subscribe_committed();
     let mut second = snapshot.subscribe_committed();
-    assert!(!snapshot.contains_source_home("thread:peer", "vm0/default", source));
+    assert!(!snapshot.has_source_home_hint("thread:peer", "vm0/default", source));
     snapshot.upsert_home_cache_state(
         "physical-key".into(),
         HeldHomeState {
@@ -172,9 +218,9 @@ async fn validated_commit_wakes_every_subscriber_without_advertisement_authority
     // Commit occurred before either await: both receivers must retain it.
     first.changed().await.unwrap();
     second.changed().await.unwrap();
-    assert!(snapshot.contains_source_home("thread:peer", "vm0/default", source));
-    assert!(!snapshot.contains_source_home("thread:peer", "vm0/other", source));
-    assert!(!snapshot.contains_source_home(
+    assert!(snapshot.has_source_home_hint("thread:peer", "vm0/default", source));
+    assert!(!snapshot.has_source_home_hint("thread:peer", "vm0/other", source));
+    assert!(!snapshot.has_source_home_hint(
         "thread:peer",
         "vm0/default",
         runner_types::ids::RunId::new_v4()
@@ -190,5 +236,5 @@ async fn validated_commit_wakes_every_subscriber_without_advertisement_authority
             .current_held_home_states(&active_runs, None)
             .is_empty()
     );
-    assert!(snapshot.contains_source_home("thread:peer", "vm0/default", source));
+    assert!(snapshot.has_source_home_hint("thread:peer", "vm0/default", source));
 }

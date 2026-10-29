@@ -1,9 +1,10 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { CdpViewer } from "cdp-viewer";
+import { CdpViewer, type CdpViewerStyle } from "cdp-viewer";
 import { browserUse } from "cdp-viewer/extensions/browser-use";
-import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
-import { cn } from "@okouai/ui";
+import { AppWindow, AppWindowMac, Globe, Loader2, Play } from "lucide-react";
+import { Button, cn } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
@@ -11,6 +12,7 @@ import {
   browserSessionReclaimHint,
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { theme$ } from "../../signals/theme.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
@@ -20,6 +22,13 @@ import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
   readonly showPausedScreenshot?: boolean;
+  /**
+   * Panel actions for a host without its own header. The live viewer places
+   * them at the end of its tab row; other states give them a row of their own.
+   */
+  readonly actions?: ReactNode;
+  /** Status layered over the live page, such as who is in control. */
+  readonly overlay?: ReactNode;
 }
 
 function PanelFrame({
@@ -86,60 +95,150 @@ export function BrowserSessionNotFound() {
   );
 }
 
-export function BrowserSessionLoading() {
+function LoadingBody() {
   const { t } = useTranslation();
   return (
+    <div role="status" className="flex flex-1 items-center justify-center">
+      <Loader2 className="animate-spin" size={20} />
+      <span className="sr-only">
+        {t(($) => {
+          return $.browserSession.status.starting;
+        })}
+      </span>
+    </div>
+  );
+}
+
+function UnavailableBody({ quiet = false }: { readonly quiet?: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <PanelMessage
+      className={quiet ? "" : undefined}
+      icon={<AppWindowMac size={26} className="text-muted-foreground" />}
+      title={t(($) => {
+        return $.browserSession.unavailable.title;
+      })}
+      description={t(($) => {
+        return $.browserSession.unavailable.description;
+      })}
+    />
+  );
+}
+
+export function BrowserSessionLoading() {
+  return (
     <PanelFrame>
-      <div role="status" className="flex flex-1 items-center justify-center">
-        <Loader2 className="animate-spin" size={20} />
-        <span className="sr-only">
-          {t(($) => {
-            return $.browserSession.status.starting;
-          })}
-        </span>
-      </div>
+      <LoadingBody />
     </PanelFrame>
   );
 }
 
 export function BrowserSessionUnavailable() {
-  const { t } = useTranslation();
   return (
     <PanelFrame>
-      <PanelMessage
-        icon={<AppWindowMac size={26} className="text-muted-foreground" />}
-        title={t(($) => {
-          return $.browserSession.unavailable.title;
-        })}
-        description={t(($) => {
-          return $.browserSession.unavailable.description;
-        })}
-      />
+      <UnavailableBody />
     </PanelFrame>
+  );
+}
+
+/**
+ * The viewer's own palette is Chrome's. Map every surface, state and focus
+ * ring onto the app tokens so the browser reads as part of the panel.
+ */
+function okouViewerStyle(): CdpViewerStyle {
+  const stateLayer = (alpha: string) => {
+    return `hsl(var(--state-layer) / var(${alpha}))`;
+  };
+  return {
+    height: "100%",
+    minHeight: 0,
+    fontFamily: "inherit",
+    border: 0,
+    "--cdpv-radius": 0,
+    "--cdpv-background": "hsl(var(--background))",
+    "--cdpv-tab-background": "hsl(var(--background))",
+    "--cdpv-tab-selected-background": stateLayer("--state-selected-alpha"),
+    "--cdpv-address-background": stateLayer("--state-selected-alpha"),
+    "--cdpv-stage-background": "hsl(var(--background))",
+    "--cdpv-foreground": "hsl(var(--foreground))",
+    "--cdpv-muted": "hsl(var(--muted-foreground))",
+    "--cdpv-border": "hsl(var(--divider))",
+    "--cdpv-accent": "hsl(var(--primary))",
+    "--cdpv-on-accent": "hsl(var(--primary-foreground))",
+    "--cdpv-focus": "hsl(var(--ring))",
+    "--cdpv-hover": stateLayer("--state-hover-alpha"),
+    "--cdpv-control-radius": "var(--radius)",
+  };
+}
+
+function BrowserBlankPage() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-8 pb-10 text-center">
+      <Globe size={20} aria-hidden className="text-muted-foreground" />
+      <p className="mt-3 text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.browserSession.blankPage.title;
+        })}
+      </p>
+      <p className="mt-1 max-w-72 text-xs leading-5 text-muted-foreground">
+        {t(($) => {
+          return $.browserSession.blankPage.description;
+        })}
+      </p>
+    </div>
+  );
+}
+
+function PanelActions({ actions }: { readonly actions: ReactNode }) {
+  return (
+    <div className="flex h-11 shrink-0 items-center justify-end gap-0.5 px-1.5">
+      {actions}
+    </div>
   );
 }
 
 function BrowserCdpViewer({
   signals,
   liveUrl,
+  refined,
+  actions,
+  overlay,
 }: {
   readonly signals: BrowserSessionSignals;
   readonly liveUrl: string;
+  /** The Cloud browser panel switch: app tokens, merged tab row, presence. */
+  readonly refined: boolean;
+  readonly actions: ReactNode;
+  readonly overlay: ReactNode;
 }) {
+  const { t } = useTranslation();
   const connection = useLastLoadable(signals.viewerConnection$);
   const windowSizeSync = useGet(signals.viewerWindowSizeSync$);
   const setWindowSizeSync = useSet(signals.setViewerWindowSizeSync$);
   const theme = useGet(theme$);
-  if (connection.state === "loading") {
-    return <BrowserSessionLoading />;
-  }
-  if (connection.state === "hasError" || !connection.data) {
-    return <BrowserSessionUnavailable />;
-  }
   // Keep the stream during lease refreshes, but never reuse an endpoint from a
   // previous provider instance while its replacement connection is loading.
-  if (connection.data.liveUrl !== liveUrl) {
-    return <BrowserSessionLoading />;
+  const connecting =
+    connection.state === "loading" ||
+    (connection.state === "hasData" &&
+      connection.data !== null &&
+      connection.data.liveUrl !== liveUrl);
+  if (connecting) {
+    return (
+      <>
+        {actions ? <PanelActions actions={actions} /> : null}
+        <LoadingBody />
+      </>
+    );
+  }
+  if (connection.state === "hasError" || !connection.data) {
+    return (
+      <>
+        {actions ? <PanelActions actions={actions} /> : null}
+        <UnavailableBody quiet={refined} />
+      </>
+    );
   }
   return (
     <div data-browser-session-cdp-viewer className="flex min-h-0 flex-1">
@@ -151,8 +250,24 @@ function BrowserCdpViewer({
         onWindowSizeSyncChange={setWindowSizeSync}
         extensions={[browserUse()]}
         colorScheme={theme}
+        {...(refined
+          ? {
+              tabStyle: "floating",
+              toolbarEnd: actions ?? undefined,
+              stageOverlay: overlay ?? undefined,
+              blankPage: <BrowserBlankPage />,
+              labels: {
+                addressPlaceholder: t(($) => {
+                  return $.browserSession.addressPlaceholder;
+                }),
+                blankTabTitle: t(($) => {
+                  return $.browserSession.blankTabTitle;
+                }),
+              },
+            }
+          : {})}
         className="w-full flex-1"
-        style={{ height: "100%", minHeight: 0 }}
+        style={refined ? okouViewerStyle() : { height: "100%", minHeight: 0 }}
       />
     </div>
   );
@@ -164,15 +279,35 @@ function PausedBrowserSession({
   showPausedScreenshot,
   starting,
   onStart,
+  refined,
+  actions,
 }: {
   readonly screenshotUrl?: string | null;
   readonly screenshotLoad: ImageLoadSignals;
   readonly showPausedScreenshot: boolean;
   readonly starting: boolean;
   readonly onStart: () => void;
+  readonly refined: boolean;
+  readonly actions: ReactNode;
 }) {
   const { t } = useTranslation();
   const showScreenshot = showPausedScreenshot && screenshotUrl;
+  const startContent = (
+    <>
+      {starting ? (
+        <Loader2 className="animate-spin" size={14} />
+      ) : (
+        <Play size={14} />
+      )}
+      {starting
+        ? t(($) => {
+            return $.browserSession.panel.starting;
+          })
+        : t(($) => {
+            return $.browserSession.panel.start;
+          })}
+    </>
+  );
   const pausedMessage = (
     <PanelMessage
       icon={<AppWindow size={26} className="text-muted-foreground" />}
@@ -183,39 +318,50 @@ function PausedBrowserSession({
         return $.browserSession.panel.startDescription;
       })}
       action={
-        <button
-          type="button"
-          disabled={starting}
-          data-browser-session-start
-          onClick={onStart}
-          className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
-        >
-          {starting ? (
-            <Loader2 className="animate-spin" size={14} />
-          ) : (
-            <Play size={14} />
-          )}
-          {starting
-            ? t(($) => {
-                return $.browserSession.panel.starting;
-              })
-            : t(($) => {
-                return $.browserSession.panel.start;
-              })}
-        </button>
+        refined ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={starting}
+            data-browser-session-start
+            onClick={onStart}
+            className="mt-2 disabled:cursor-wait"
+          >
+            {startContent}
+          </Button>
+        ) : (
+          <button
+            type="button"
+            disabled={starting}
+            data-browser-session-start
+            onClick={onStart}
+            className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
+          >
+            {startContent}
+          </button>
+        )
       }
       className={
         showScreenshot
           ? "absolute inset-0 z-10 bg-background/50 backdrop-blur-md"
-          : undefined
+          : refined
+            ? ""
+            : undefined
       }
     />
   );
   if (!showScreenshot) {
-    return <PanelFrame>{pausedMessage}</PanelFrame>;
+    return (
+      <PanelFrame>
+        {actions ? <PanelActions actions={actions} /> : null}
+        {pausedMessage}
+      </PanelFrame>
+    );
   }
   return (
     <PanelFrame>
+      {actions ? <PanelActions actions={actions} /> : null}
       <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/20">
         <ArtifactThumbnailImage
           src={screenshotUrl}
@@ -235,18 +381,32 @@ function PausedBrowserSession({
 export function BrowserSessionPanel({
   signals,
   showPausedScreenshot = false,
+  actions,
+  overlay,
 }: BrowserSessionPanelProps) {
   const sessionLoadable = useLastLoadable(signals.panelSession$);
+  const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
   const starting = startOperation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
+  const actionsRow = actions ? <PanelActions actions={actions} /> : null;
   if (sessionLoadable.state === "loading") {
-    return <BrowserSessionLoading />;
+    return (
+      <PanelFrame>
+        {actionsRow}
+        <LoadingBody />
+      </PanelFrame>
+    );
   }
   if (sessionLoadable.state === "hasError") {
-    return <BrowserSessionUnavailable />;
+    return (
+      <PanelFrame>
+        {actionsRow}
+        <UnavailableBody quiet={refined} />
+      </PanelFrame>
+    );
   }
 
   const session = sessionLoadable.data;
@@ -261,6 +421,8 @@ export function BrowserSessionPanel({
         onStart={() => {
           detach(start(pageSignal), Reason.DomCallback);
         }}
+        refined={refined}
+        actions={actions}
       />
     );
   }
@@ -270,10 +432,18 @@ export function BrowserSessionPanel({
   }
   return (
     <PanelFrame panelRef={keepAliveRef}>
-      <BrowserCdpViewer signals={signals} liveUrl={liveUrl} />
-      <p className="border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
-        {browserSessionReclaimHint(session)}
-      </p>
+      <BrowserCdpViewer
+        signals={signals}
+        liveUrl={liveUrl}
+        refined={refined}
+        actions={actions}
+        overlay={overlay}
+      />
+      {refined ? null : (
+        <p className="border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
+          {browserSessionReclaimHint(session)}
+        </p>
+      )}
     </PanelFrame>
   );
 }

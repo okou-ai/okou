@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.47...runner-executor-v0.16.0) (2026-10-29)
+
+
+### Features
+
+* support outlook mail review in chat ([#43751](https://github.com/okou-ai/okou/issues/43751)) ([d4a01db](https://github.com/okou-ai/okou/commit/d4a01dbac178e4d112e2e88aeb9a515aeb5560d9))
+
+
+### Bug Fixes
+
+* **runner:** unify predecessor home discovery and bounded routing ([#43655](https://github.com/okou-ai/okou/issues/43655)) ([2c512a7](https://github.com/okou-ai/okou/commit/2c512a7542a0adbf22d72e278dc8acdd52a10a6c))
+
+
+### Performance Improvements
+
+* prepare metadata-only workflow claims and downloads ([#43667](https://github.com/okou-ai/okou/issues/43667)) ([6fd2905](https://github.com/okou-ai/okou/commit/6fd29050029b5a521f75d0500e9876a11649afe6)) [#43642](https://github.com/okou-ai/okou/issues/43642)
+
 ## [0.15.47](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.46...runner-executor-v0.15.47) (2026-10-28)
 
 ## [0.15.46](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.45...runner-executor-v0.15.46) (2026-10-28)

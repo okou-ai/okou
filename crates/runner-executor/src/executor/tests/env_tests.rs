@@ -610,6 +610,7 @@ fn emitted_bootstrap_env_keys_classify_as_runner_owned() {
     ctx.settings = Some(r#"{"hooks":{}}"#.into());
     ctx.feature_flags = Some(HashMap::from([("runnerEnvKeyTest".into(), true)]));
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_references: Vec::new(),
         workflow_skills: Vec::new(),
         storages: vec![],
         artifacts: vec![api_artifact(
@@ -721,6 +722,7 @@ fn build_env_json_rejects_invalid_codex_resume_session_id() {
 fn build_env_json_with_single_artifact() {
     let mut ctx = minimal_context();
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_references: Vec::new(),
         workflow_skills: Vec::new(),
         storages: vec![api_storage(
             "data",
@@ -760,6 +762,7 @@ fn build_env_json_with_artifact_missing_root_policy() {
     );
     artifact.missing_root_policy = Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion);
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_references: Vec::new(),
         workflow_skills: Vec::new(),
         storages: vec![],
         artifacts: vec![artifact],
@@ -781,6 +784,7 @@ fn build_env_json_with_artifact_missing_root_policy() {
 fn build_env_json_with_two_artifacts() {
     let mut ctx = minimal_context();
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_references: Vec::new(),
         workflow_skills: Vec::new(),
         storages: vec![],
         artifacts: vec![
@@ -817,6 +821,7 @@ fn build_env_json_with_two_artifacts() {
 fn build_env_json_empty_artifacts_emits_no_env_var() {
     let mut ctx = minimal_context();
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_references: Vec::new(),
         workflow_skills: Vec::new(),
         storages: vec![],
         artifacts: vec![],
@@ -1851,6 +1856,7 @@ async fn build_env_json_with_memory_as_artifact() {
     // Memory is carried as an artifact in the private run payload.
     let mut ctx = minimal_context();
     ctx.storage_manifest = Some(StorageManifest {
+        workflow_references: Vec::new(),
         workflow_skills: Vec::new(),
         storages: vec![],
         artifacts: vec![api_artifact(
