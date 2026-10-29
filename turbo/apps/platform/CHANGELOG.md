@@ -12,6 +12,15 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1075.4](https://github.com/okou-ai/okou/compare/app-v0.1075.3...app-v0.1075.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** align thread sharing visibility menus with artifacts ([#43862](https://github.com/okou-ai/okou/issues/43862)) ([2e5337e](https://github.com/okou-ai/okou/commit/2e5337e7c90889b37ebf9be876b7110d03574531))
+* **artifacts:** open shared conversations in a new tab ([#43869](https://github.com/okou-ai/okou/issues/43869)) ([4489875](https://github.com/okou-ai/okou/commit/448987522c29bddedc60f610817146e3cba9d5b6))
+* **platform:** show a toast after artifact deletion ([#43864](https://github.com/okou-ai/okou/issues/43864)) ([eb48cbe](https://github.com/okou-ai/okou/commit/eb48cbef75a4a6903105488039b56e2d5cc44fde))
+
 ## [0.1075.3](https://github.com/okou-ai/okou/compare/app-v0.1075.2...app-v0.1075.3) (2026-10-29)
 
 

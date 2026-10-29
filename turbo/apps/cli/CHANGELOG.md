@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.7.4](https://github.com/okou-ai/okou/compare/cli-v10.7.3...cli-v10.7.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **api:** allow owners to delete legacy hosted sites ([#43867](https://github.com/okou-ai/okou/issues/43867)) ([0b9fc2b](https://github.com/okou-ai/okou/commit/0b9fc2b60d72207c7b2508eadaef295c76f83b62))
+
 ## [10.7.3](https://github.com/okou-ai/okou/compare/cli-v10.7.2...cli-v10.7.3) (2026-10-29)
 
 
