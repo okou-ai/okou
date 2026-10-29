@@ -1702,6 +1702,13 @@
       "customAmountError": "Masukkan antara $1 dan $10.000",
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
+      "proCard": {
+        "creditsNow": "kredit · Sekarang juga",
+        "description": "Kredit tambahan · Fitur lanjutan · 3 komputer cloud",
+        "priceUnavailable": "Lihat paket untuk harga terbaru",
+        "title": "Tersisa sekitar 5 tugas",
+        "upgradeNow": "Upgrade sekarang"
+      },
       "redirecting": "Mengarahkan...",
       "upgradeToContinue": "Upgrade ke Pro agar tetap bisa mengobrol dengan {{assistantName}}.",
       "upgradeToPro": "Upgrade ke Pro",

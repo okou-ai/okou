@@ -1706,6 +1706,13 @@
       "customAmountError": "Geben Sie zwischen 1 und 10.000 US-Dollar ein",
       "customDollarAmount": "Benutzerdefinierter Dollarbetrag",
       "outOfCredits": "Ihre Credits sind aufgebraucht",
+      "proCard": {
+        "creditsNow": "Credits · Jetzt gleich",
+        "description": "Zusätzliche Credits · Erweiterte Funktionen · 3 Cloud-Computer",
+        "priceUnavailable": "Aktuelle Preise in den Tarifen ansehen",
+        "title": "Noch etwa 5 Aufgaben",
+        "upgradeNow": "Jetzt upgraden"
+      },
       "redirecting": "Weiterleitung...",
       "upgradeToContinue": "Führen Sie ein Upgrade auf Pro durch, um weiterhin mit {{assistantName}} chatten zu können.",
       "upgradeToPro": "Upgrade auf Pro",

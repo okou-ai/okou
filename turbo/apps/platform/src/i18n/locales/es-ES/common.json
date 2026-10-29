@@ -1734,6 +1734,13 @@
       "customAmountError": "Introduce entre $1 y $10,000",
       "customDollarAmount": "Cantidad personalizada en dólares",
       "outOfCredits": "Se te han acabado los créditos",
+      "proCard": {
+        "creditsNow": "créditos · Ahora mismo",
+        "description": "Créditos adicionales · Funciones avanzadas · 3 ordenadores en la nube",
+        "priceUnavailable": "Consulta los precios actuales de los planes",
+        "title": "Quedan unas 5 tareas",
+        "upgradeNow": "Mejorar plan ahora"
+      },
       "redirecting": "Redirigiendo...",
       "upgradeToContinue": "Actualiza a Pro para seguir charlando con {{assistantName}}.",
       "upgradeToPro": "Actualizar a Pro",

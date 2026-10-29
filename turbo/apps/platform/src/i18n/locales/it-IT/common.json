@@ -1734,6 +1734,13 @@
       "customAmountError": "Inserisci tra $ 1 e $ 10.000",
       "customDollarAmount": "Importo in dollari personalizzato",
       "outOfCredits": "Hai esaurito i crediti",
+      "proCard": {
+        "creditsNow": "crediti · Proprio ora",
+        "description": "Crediti extra · Funzioni avanzate · 3 computer cloud",
+        "priceUnavailable": "Consulta i piani per i prezzi attuali",
+        "title": "Circa 5 attività rimaste",
+        "upgradeNow": "Passa a Pro ora"
+      },
       "redirecting": "Reindirizzamento...",
       "upgradeToContinue": "Esegui l'upgrade a Pro per continuare a chattare con {{assistantName}}.",
       "upgradeToPro": "Passa a Pro",

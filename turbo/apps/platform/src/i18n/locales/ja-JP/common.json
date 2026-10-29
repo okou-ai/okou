@@ -1702,6 +1702,13 @@
       "customAmountError": "1 ドルから 10,000 ドルの間で入力してください",
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
+      "proCard": {
+        "creditsNow": "クレジット · 今すぐ",
+        "description": "追加クレジット · 高度な機能 · 3 台のクラウドコンピューター",
+        "priceUnavailable": "プランで最新の料金を確認",
+        "title": "残り約 5 件のタスク",
+        "upgradeNow": "今すぐアップグレード"
+      },
       "redirecting": "リダイレクト中...",
       "upgradeToContinue": "{{assistantName}} とチャットを続けるには、Pro にアップグレードしてください。",
       "upgradeToPro": "プロにアップグレード",

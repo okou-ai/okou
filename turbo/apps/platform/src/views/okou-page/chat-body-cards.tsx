@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { now } from "../../lib/time.ts";
 import type { ArtifactSignals } from "../../signals/chat-page/artifact-card-signals.ts";
 import type { ComputerUseAuthorizationSignals } from "../../signals/chat-page/computer-use-authorization-block.ts";
@@ -81,6 +83,12 @@ import { WalletActionCard } from "./wallet-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
 import { SubscriptionResetCard } from "./subscription-reset-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
+import { ProUpgradeCard } from "./pro-upgrade-card.tsx";
+import {
+  billingStatusAsync$,
+  memberUsagePackOptionsAsync$,
+} from "../../signals/okou-page/billing.ts";
+import { openSettingsBillingPlansDialog$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 
 type ChatImagePreviewLinkProps = {
   alt: string;
@@ -739,14 +747,25 @@ function ComputerUseAuthorizationCard({
   );
 }
 
-function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
+export function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const open = useSet(signals.open$);
+  const billing = useLastLoadable(billingStatusAsync$);
+  const firstTaskUpgrade =
+    useGet(featureSwitch$)[FeatureSwitchKey.FirstTaskUpgrade];
 
   const handleClick = () => {
     detach(open(pageSignal), Reason.DomCallback);
   };
+
+  if (
+    firstTaskUpgrade &&
+    (billing.state === "loading" ||
+      (billing.state === "hasData" && billing.data.tier === "limited-free-1"))
+  ) {
+    return null;
+  }
 
   return (
     <ChatCard
@@ -780,6 +799,34 @@ function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
         })}
       </Button>
     </ChatCard>
+  );
+}
+
+export function FirstTaskUpgradeCard() {
+  const pageSignal = useGet(pageSignal$);
+  const open = useSet(openSettingsBillingPlansDialog$);
+  const catalog = useLastLoadable(memberUsagePackOptionsAsync$);
+  const entryPack =
+    catalog.state === "hasData"
+      ? catalog.data
+          .filter((option) => {
+            return option.usagePackUsd > 0;
+          })
+          .sort((left, right) => {
+            return left.priceUsd - right.priceUsd;
+          })[0]
+      : undefined;
+  const onUpgrade = () => {
+    detach(open(pageSignal), Reason.DomCallback);
+  };
+
+  return (
+    <ProUpgradeCard
+      onUpgrade={onUpgrade}
+      monthlyPriceUsd={entryPack?.priceUsd}
+      includedCredits={entryPack?.purchasedCredits}
+      bonusCredits={entryPack?.bonusCredits}
+    />
   );
 }
 

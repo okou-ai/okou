@@ -1734,6 +1734,13 @@
       "customAmountError": "Entrez un montant entre 1 $ et 10 000 $",
       "customDollarAmount": "Montant personnalisé en dollars",
       "outOfCredits": "Vous êtes à court de crédits",
+      "proCard": {
+        "creditsNow": "crédits · Maintenant",
+        "description": "Crédits supplémentaires · Fonctions avancées · 3 ordinateurs cloud",
+        "priceUnavailable": "Consultez les offres et leurs tarifs actuels",
+        "title": "Environ 5 tâches restantes",
+        "upgradeNow": "Passer à Pro maintenant"
+      },
       "redirecting": "Redirection...",
       "upgradeToContinue": "Passez à Pro pour continuer à discuter avec {{assistantName}}.",
       "upgradeToPro": "Passer à Pro",

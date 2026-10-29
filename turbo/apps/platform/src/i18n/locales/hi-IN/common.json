@@ -1706,6 +1706,13 @@
       "customAmountError": "$1 और $10,000 के बीच दर्ज करें",
       "customDollarAmount": "कस्टम डॉलर राशि",
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
+      "proCard": {
+        "creditsNow": "क्रेडिट · अभी",
+        "description": "अतिरिक्त क्रेडिट · उन्नत सुविधाएँ · 3 क्लाउड कंप्यूटर",
+        "priceUnavailable": "मौजूदा कीमतों के लिए प्लान देखें",
+        "title": "लगभग 5 टास्क बचे हैं",
+        "upgradeNow": "अभी अपग्रेड करें"
+      },
       "redirecting": "पुनर्निर्देशन...",
       "upgradeToContinue": "{{assistantName}} के साथ चैट जारी रखने के लिए प्रो में अपग्रेड करें।",
       "upgradeToPro": "प्रो में अपग्रेड",
