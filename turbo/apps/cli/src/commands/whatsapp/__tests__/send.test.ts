@@ -64,7 +64,7 @@ it("rejects an arbitrary recipient instead of borrowing another connection", asy
     ]),
   ).rejects.toThrow("process.exit called");
   expect(errors).toHaveBeenCalledWith(
-    expect.stringContaining("only go to the phone connected"),
+    expect.stringContaining("only go to your independently verified WhatsApp"),
   );
 });
 

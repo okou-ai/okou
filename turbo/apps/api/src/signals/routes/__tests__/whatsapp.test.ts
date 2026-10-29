@@ -8,6 +8,7 @@ import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -81,7 +82,12 @@ async function configure(enabled = true) {
         featureSwitchesContract,
       ).update({
         headers: headers(actor),
-        body: { switches: { [FeatureSwitchKey.WhatsappIntegration]: true } },
+        body: {
+          switches: {
+            [FeatureSwitchKey.WhatsappIntegration]: true,
+            [FeatureSwitchKey.WhatsappFileUpload]: true,
+          },
+        },
       }),
       [200],
     );
@@ -110,6 +116,22 @@ async function connect(
   );
   expect(status.body).toMatchObject({ linked: true, phoneHandle: phone });
   return phone;
+}
+
+async function uploadedWhatsappFile(
+  setup: Awaited<ReturnType<typeof configure>>,
+  contentType = "application/pdf",
+) {
+  const chat = createChatFilesBddApi(context);
+  chat.mockObjectStorageObjectsExist();
+  const file = await chat.prepareUpload(setup.actor, {
+    filename: contentType.startsWith("audio/") ? "voice.mp3" : "report.pdf",
+    contentType,
+    size: 1024,
+    purpose: "artifact",
+  });
+  const uploaded = await chat.completeUpload(setup.actor, { id: file.id });
+  return { chat, file: uploaded };
 }
 
 async function requestWhatsappProof(
@@ -336,6 +358,147 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     expect(setup.sends.at(-1)?.body).toContain("/settings/whatsapp?");
   });
 
+  it("keeps file delivery disabled until its independent rollout switch is enabled", async () => {
+    const setup = await configure();
+    await connect(setup);
+    const { file } = await uploadedWhatsappFile(setup);
+    await accept(
+      setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      ).update({
+        headers: headers(setup.actor),
+        body: { switches: { [FeatureSwitchKey.WhatsappFileUpload]: false } },
+      }),
+      [200],
+    );
+    setup.sends.length = 0;
+    await accept(
+      client().sendUploadedFile({
+        headers: headers(setup.actor),
+        body: { fileId: file.id },
+      }),
+      [404],
+    );
+    expect(setup.sends).toHaveLength(0);
+  });
+
+  it("sends an owned private artifact as one WhatsApp attachment without publishing its fetch URL", async () => {
+    const setup = await configure();
+    const phone = await connect(setup);
+    const { chat, file } = await uploadedWhatsappFile(setup);
+    setup.sends.length = 0;
+    const sent = await accept(
+      client().sendUploadedFile({
+        headers: headers(setup.actor),
+        body: { fileId: file.id, caption: "Here is the report" },
+      }),
+      [200],
+    );
+    expect(sent.body).toMatchObject({
+      channel: "whatsapp",
+      toNumber: phone,
+      file: { id: file.id, url: file.url, size: 1024 },
+    });
+    expect(sent.body.messages).toHaveLength(1);
+    expect(setup.sends).toHaveLength(1);
+    expect(setup.sends[0]).toMatchObject({
+      channel: "whatsapp",
+      from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+      to_number: phone,
+      body: "Here is the report",
+      media_urls: [expect.any(String)],
+    });
+    expect(
+      (await chat.resolveWebFileUrl(setup.actor, file.id)).publicUrl,
+    ).toBeNull();
+    const media = setup.sends[0]?.media_urls;
+    if (!Array.isArray(media) || typeof media[0] !== "string") {
+      throw new Error("Expected one provider fetch URL");
+    }
+    expect(new URL(media[0]).protocol).toBe("https:");
+    expect(new URL(media[0]).search).not.toBe("");
+    const other = await configure();
+    await connect(other);
+    other.sends.length = 0;
+    await accept(
+      client().sendUploadedFile({
+        headers: headers(other.actor),
+        body: { fileId: file.id },
+      }),
+      [404],
+    );
+    expect(other.sends).toHaveLength(0);
+  });
+
+  it.each(["rejected", "unknown", "server-error"])(
+    "preserves the uploaded artifact when file delivery is %s without retrying",
+    async (outcome) => {
+      const setup = await configure();
+      await connect(setup);
+      const { chat, file } = await uploadedWhatsappFile(setup);
+      let attempts = 0;
+      server.use(
+        http.post(`${providerUrl}/v1/messages`, () => {
+          attempts += 1;
+          return outcome === "unknown"
+            ? HttpResponse.error()
+            : HttpResponse.json(
+                { error: { code: "SEND_FAILED" } },
+                { status: outcome === "rejected" ? 422 : 500 },
+              );
+        }),
+      );
+      const rejected = outcome === "rejected";
+      const response = await accept(
+        client().sendUploadedFile({
+          headers: headers(setup.actor),
+          body: { fileId: file.id },
+        }),
+        [400, 502],
+      );
+      expect(response.status).toBe(rejected ? 400 : 502);
+      expect(response.body).toMatchObject({
+        delivery: rejected ? "failed" : "unknown",
+        file: { id: file.id, url: file.url },
+      });
+      expect(attempts).toBe(1);
+      expect(
+        (await chat.resolveWebFileUrl(setup.actor, file.id)).publicUrl,
+      ).toBeNull();
+    },
+  );
+
+  it("rejects an audio caption before sending and accepts the same audio without a caption", async () => {
+    const setup = await configure();
+    await connect(setup);
+    const { file } = await uploadedWhatsappFile(setup, "audio/mpeg");
+    setup.sends.length = 0;
+    const rejected = await accept(
+      client().sendUploadedFile({
+        headers: headers(setup.actor),
+        body: { fileId: file.id, caption: "Listen" },
+      }),
+      [400],
+    );
+    expect(rejected.body).toMatchObject({
+      delivery: "failed",
+      error: { code: "WHATSAPP_AUDIO_CAPTION_UNSUPPORTED" },
+    });
+    expect(setup.sends).toHaveLength(0);
+    await accept(
+      client().sendUploadedFile({
+        headers: headers(setup.actor),
+        body: { fileId: file.id },
+      }),
+      [200],
+    );
+    expect(setup.sends[0]).toMatchObject({
+      channel: "whatsapp",
+      body: "",
+      media_urls: [expect.any(String)],
+    });
+  });
+
   it("verifies WhatsApp independently and disconnects it without changing the phone link", async () => {
     const setup = await configure();
     const phone = sender();
@@ -492,6 +655,20 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     "routes WhatsApp run replies and respects connection changes (state before completion: %s)",
     async (connectionState) => {
       const setup = await configure();
+      const fileEnabled = connectionState !== "switch";
+      if (!fileEnabled) {
+        await accept(
+          setupApp({ context, routes: featureSwitchesRoutes })(
+            featureSwitchesContract,
+          ).update({
+            headers: headers(setup.actor),
+            body: {
+              switches: { [FeatureSwitchKey.WhatsappFileUpload]: false },
+            },
+          }),
+          [200],
+        );
+      }
       const runs = createRunsApi(context);
       setup.ap.acceptAgentPhoneObjectStorage();
       runs.acceptStorageDownloads();
@@ -540,6 +717,16 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       expect(run.appendSystemPrompt).toContain(
         "currently running inside: WhatsApp",
       );
+      if (fileEnabled) {
+        expect(run.appendSystemPrompt).toContain("okou whatsapp upload-file");
+      } else {
+        expect(run.appendSystemPrompt).not.toContain(
+          "okou whatsapp upload-file",
+        );
+        expect(run.appendSystemPrompt).toContain(
+          "Outbound file upload is not available on WhatsApp in this Run",
+        );
+      }
       expect(run.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("whatsapp");
       expect(run.appendSystemPrompt).toContain(
         "okou whatsapp message send --help",
@@ -701,7 +888,12 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         featureSwitchesContract,
       ).update({
         headers: headers(setup.actor),
-        body: { switches: { [FeatureSwitchKey.WhatsappIntegration]: true } },
+        body: {
+          switches: {
+            [FeatureSwitchKey.WhatsappIntegration]: true,
+            [FeatureSwitchKey.WhatsappFileUpload]: true,
+          },
+        },
       }),
       [200],
     );

@@ -19,6 +19,7 @@ interface IntegrationNotePromptInputs {
   readonly larkEnabled: boolean;
   readonly outlookChatMailEnabled: boolean;
   readonly whatsappEnabled: boolean;
+  readonly whatsappFileUploadEnabled: boolean;
   readonly agentPhoneChannel?: string | null;
 }
 
@@ -45,6 +46,11 @@ function integrationNoteLines(
       return [
         "- Web chat files: use `okou web download-file -h` when a web chat message includes a `[Web file]` block. `okou web upload-file -h` can share a local file back to the web chat user when file delivery is needed.",
         `- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: \`okou feishu message send --help\` for chats, DMs, and replies.${args.larkEnabled ? " Lark: `okou lark message send --help` for chats, DMs, and replies." : ""} Microsoft Teams: \`okou teams message send --help\` for conversations and thread replies. Telegram: \`okou telegram message send --help\` for chats, replies, and forum topics through the official Okou bot. Phone/SMS: \`okou phone message --help\`.${args.whatsappEnabled ? " WhatsApp: `okou whatsapp message send --help`; sends only to your independently verified WhatsApp account within the 24-hour service window." : ""}`,
+        ...(args.whatsappEnabled && args.whatsappFileUploadEnabled
+          ? [
+              "- Files explicitly requested in WhatsApp: use `okou whatsapp upload-file -h` to send a local file to your independently verified WhatsApp account within its 24-hour service window. The original artifact remains private. Retain the upload receipt if delivery fails and never automatically repeat an uncertain send.",
+            ]
+          : []),
         "- Gmail email from web chat: use the Gmail skill and `GMAIL_TOKEN` to create the draft directly in Gmail. Before composing, list `GET /gmail/v1/users/me/settings/sendAs`; select the entry matching the message's From address, or the `isDefault` entry when no From address is specified. Include a `multipart/alternative` body with plain-text and HTML versions. Keep each plain-text paragraph on one logical line, never hard-wrap prose to a fixed column width, and use HTML paragraph elements so Gmail wraps the message naturally. If the selected entry has a non-empty HTML `signature`, append that signature exactly once to the HTML body and include a readable text equivalent in the plain-text body. For attachments, upload a valid RFC822 multipart message through Gmail's draft media-upload endpoint. Never call `messages.send` or `drafts.send`. After Gmail returns the draft ID, run `okou mail link <gmail-draft-id>` and return the link from the command to the user.",
         ...(args.outlookChatMailEnabled
           ? [
@@ -132,7 +138,17 @@ function integrationNoteLines(
       if (args.agentPhoneChannel === "whatsapp") {
         return [
           "- WhatsApp messaging: only your final reply is automatically delivered to this WhatsApp conversation; nothing produced while the run is in progress is sent on its own. Do not duplicate the final reply with a message command. Use concise plain text. Use `okou whatsapp message send --help` for an explicitly requested extra message; it sends only to this user's independently verified WhatsApp account. Free-form sends require the customer's 24-hour service window. Preserve accepted part receipts and delivery outcomes; never fall back to SMS/iMessage or retry an uncertain or partial send.",
-          "- WhatsApp files: incoming `[Web file]` blocks use `okou web download-file -h`. Historical `[Phone file]` attachments use `okou phone download-file -h`. Outbound file upload is not available on WhatsApp yet; share an accessible artifact link when appropriate. A private `/artifacts/...` address requires the owner to sign in on the web and does not deliver a WhatsApp attachment. Keep the original private address for the owner and explain how to open it; do not claim a file was sent or change its visibility just to deliver it.",
+          args.whatsappFileUploadEnabled
+            ? "- WhatsApp files: incoming `[Web file]` blocks use `okou web download-file -h`. Historical `[Phone file]` attachments use `okou phone download-file -h`. Use `okou whatsapp upload-file -f <path>` to send a local file to this verified conversation; the artifact remains private. WhatsApp accepts one attachment per message within the 24-hour service window. Audio files cannot carry a caption; send any requested text separately. Preserve the uploaded artifact and delivery outcome when a send fails; never repeat an uncertain send."
+            : "- WhatsApp files: incoming `[Web file]` blocks use `okou web download-file -h`. Historical `[Phone file]` attachments use `okou phone download-file -h`. Outbound file upload is not available on WhatsApp in this Run. A private `/artifacts/...` address requires the owner to sign in on the web and does not deliver a WhatsApp attachment. Keep the original private address for the owner and explain how to open it; do not claim a file was sent or change its visibility just to deliver it.",
+          ...(args.whatsappFileUploadEnabled
+            ? [
+                privateArtifactFinalReplyLine({
+                  surface: "WhatsApp",
+                  uploadCommand: "okou whatsapp upload-file",
+                }),
+              ]
+            : []),
         ];
       }
       return [
@@ -165,6 +181,10 @@ export function resolveIntegrationNotePrompt(args: {
   return buildIntegrationNotePrompt({
     triggerSource: args.triggerSource,
     agentPhoneChannel: args.agentPhoneChannel,
+    whatsappFileUploadEnabled: isFeatureEnabled(
+      FeatureSwitchKey.WhatsappFileUpload,
+      args.featureSwitchContext,
+    ),
     whatsappEnabled: isFeatureEnabled(
       FeatureSwitchKey.WhatsappIntegration,
       args.featureSwitchContext,

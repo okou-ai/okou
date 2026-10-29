@@ -56,6 +56,7 @@ export enum FeatureSwitchKey {
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",
   WhatsappIntegration = "whatsappIntegration",
+  WhatsappFileUpload = "whatsappFileUpload",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",
   AutoContinueBusyChats = "_autoContinueBusyChats",

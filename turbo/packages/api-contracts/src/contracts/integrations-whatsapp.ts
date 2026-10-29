@@ -4,6 +4,8 @@ import {
   discriminatedUnion,
   iso,
   literal,
+  number,
+  uuid,
   object,
   string,
   enum as zEnum,
@@ -36,6 +38,18 @@ const sendErrorSchema = apiErrorSchema.extend({
   delivery: zEnum(["failed", "unknown"]).optional(),
 });
 
+const whatsappFileSchema = object({
+  id: uuid(),
+  filename: string(),
+  contentType: string(),
+  size: number().int().nonnegative(),
+  url: string(),
+});
+const fileSendErrorSchema = apiErrorSchema.extend({
+  file: whatsappFileSchema.optional(),
+  delivery: zEnum(["failed", "unknown"]).optional(),
+});
+
 export const integrationsWhatsappContract = c.router({
   getConnectStatus: {
     ...integrationsAgentPhoneContract.getConnectStatus,
@@ -56,6 +70,28 @@ export const integrationsWhatsappContract = c.router({
     },
     summary:
       "Link the authenticated user to an independently verified WhatsApp handle",
+  },
+  sendUploadedFile: {
+    method: "POST",
+    path: "/api/integrations/whatsapp/files",
+    headers: authHeadersSchema,
+    body: object({ fileId: uuid(), caption: string().max(4096).optional() }),
+    responses: {
+      200: object({
+        channel: literal("whatsapp"),
+        toNumber: string(),
+        messages: array(object({ id: string() })),
+        file: whatsappFileSchema,
+      }),
+      400: fileSendErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      502: fileSendErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary:
+      "Send an owned uploaded file to your independently verified WhatsApp account",
   },
   getLinkStatus: {
     method: "GET",
@@ -114,3 +150,5 @@ export const integrationsWhatsappContract = c.router({
 });
 export type WhatsappLinkStatusResponse = zInfer<typeof linkStatusSchema>;
 export type WhatsappLinkCodeResponse = zInfer<typeof linkCodeSchema>;
+
+export type WhatsappFile = zInfer<typeof whatsappFileSchema>;

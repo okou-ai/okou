@@ -21,6 +21,7 @@ export const CAPABILITIES = [
   "wechat:read",
   "wechat:write",
   "whatsapp:write",
+  "whatsapp:file:write",
   "discord:read",
   "discord:write",
   "feishu:write",
