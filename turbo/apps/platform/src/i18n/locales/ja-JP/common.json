@@ -2084,6 +2084,27 @@
       "sourcePartsHeading_one": "{{description}}から {{count}} 件を引用",
       "sourcePartsHeading_other": "{{description}}から {{count}} 件を引用"
     },
+    "folders": {
+      "actions": "{{name}} の操作",
+      "chats": "チャット",
+      "create": "フォルダーを作成",
+      "delete": "フォルダーを削除",
+      "deleteDescription": "「{{name}}」を削除しますか？フォルダーのみが削除され、会話は保持されます。",
+      "description": "このエージェント内の自分のチャットを整理します。",
+      "down": "フォルダーを下へ移動",
+      "empty": "会話はまだありません",
+      "failed": "変更を保存できませんでした。もう一度お試しください。",
+      "move": "移動先…",
+      "name": "フォルダー名",
+      "refresh": "フォルダーを更新",
+      "rename": "フォルダー名を変更",
+      "running": "実行中のチャット",
+      "save": "保存",
+      "title": "フォルダー",
+      "unfiled": "未分類",
+      "unread": "未読のチャット",
+      "up": "フォルダーを上へ移動"
+    },
     "forward": {
       "action": "転送",
       "agents": "エージェント",

@@ -2,10 +2,8 @@ import { command } from "ccstate";
 import { isEditableTarget } from "@okouai/ui";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
-import {
-  currentChatThreadId$,
-  currentChatThreadListIds$,
-} from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadListIds$ } from "../chat-page/chat-thread-navigation.ts";
 import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
 import { currentRightThread$ } from "../chat-page/chat-thread-pane-state.ts";
 import { loadLeftThread$ } from "../chat-page/chat-thread-panes.ts";

@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  ChatThreadFolders = "chatThreadFolders",
   FirstTaskUpgrade = "firstTaskUpgrade",
   ChatThinkingBrandMotion = "chatThinkingBrandMotion",
   HalloweenQuiz = "halloweenQuiz",

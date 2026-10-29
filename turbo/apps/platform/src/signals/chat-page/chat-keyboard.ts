@@ -19,10 +19,8 @@ import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
 import { CHAT_THREAD_EMOJI_OPTIONS } from "./chat-thread-title.ts";
 import { onRef } from "../utils.ts";
 import { openChatThreadEmojiMenu$ } from "../okou-page/sidebar-state.ts";
-import {
-  currentChatThreadId$,
-  currentChatThreadNavigationList$,
-} from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadNavigationList$ } from "./chat-thread-navigation.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import {
   setupGlobalShortcut,

@@ -1,6 +1,19 @@
+import {
+  CurrentChatFolderControls,
+  ChatFolderCatalogError,
+  ChatFolderCreateButton,
+  ChatFolderMoveMenuItem,
+  VirtualizedChatFolderRows,
+} from "./sidebar-chat-folders.tsx";
+import {
+  chatFoldersEnabled$,
+  currentChatFolders$,
+  CHAT_THREAD_FOLDER_DRAG_TYPE,
+} from "../../signals/chat-page/chat-folders.ts";
 import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
+  useLoadable,
   useLastLoadable,
   useSet,
   useLastResolved,
@@ -138,6 +151,13 @@ function equalSidebarChatThreadWindows(
   return (
     previous.startIndex === next.startIndex &&
     previous.showAllChatsRow === next.showAllChatsRow &&
+    equalArrays(
+      previous.folderRows ?? [],
+      next.folderRows ?? [],
+      (left, right) => {
+        return left === right;
+      },
+    ) &&
     equalArrays(previous.items, next.items, (left, right) => {
       return left === right;
     })
@@ -517,6 +537,7 @@ function ChatThreadMenuItems({
       <ChatThreadMuteMenuItem signals={signals} />
       <ChatThreadArchiveMenuSection signals={signals} />
       <ChatThreadRenameMenuItem signals={signals} />
+      <ChatFolderMoveMenuItem threadId={signals.threadId} />
       <DropdownMenuItem
         onClick={() => {
           requestDelete();
@@ -770,8 +791,21 @@ export function ChatThreadItem({
   rowIndex: number;
   touch?: boolean;
 }) {
+  const folderEnabled = useGet(chatFoldersEnabled$);
   return (
     <div
+      draggable={folderEnabled}
+      onDragStart={
+        folderEnabled
+          ? (event) => {
+              event.dataTransfer.setData(
+                CHAT_THREAD_FOLDER_DRAG_TYPE,
+                signals.threadId,
+              );
+              event.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
       data-sidebar-chat-thread-row-id={signals.threadId}
       className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center"
     >
@@ -990,6 +1024,7 @@ function DeleteChatThreadDialogBody() {
 export function ChatThreadDialogs() {
   return (
     <>
+      <CurrentChatFolderControls />
       <ChatThreadRenameDialog />
       <DeleteChatThreadDialog />
     </>
@@ -1081,6 +1116,33 @@ function VirtualizedChatThreads({
   });
   const startIndex = window.startIndex;
   const visibleItems = window.items;
+  const folders = useLoadable(currentChatFolders$);
+  if (window.folderRows && folders.state === "hasData" && folders.data) {
+    return (
+      <VirtualizedChatFolderRows
+        folders={folders.data}
+        rows={window.folderRows}
+        startIndex={startIndex}
+        rowCount={rowCount}
+        showAllChats={window.showAllChatsRow}
+        showAllChatsRow={<ShowAllChatsRow />}
+        searchOpen={searchOpen}
+        renderThread={(row, index, searchOpen) => {
+          return (
+            <ChatThreadItem
+              signals={row.item}
+              rowIndex={index}
+              shortcutNumber={
+                !searchOpen && row.shortcutIndex < 9
+                  ? row.shortcutIndex + 1
+                  : undefined
+              }
+            />
+          );
+        }}
+      />
+    );
+  }
 
   return (
     <div
@@ -1139,12 +1201,13 @@ function ChatThreads({
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
+  const folderEnabled = useGet(chatFoldersEnabled$);
   const threadCount = useGet(listSignals.count$);
   const hasHiddenArchivedThreads = useGet(
     listSignals.hasHiddenArchivedThreads$,
   );
 
-  if (threadCount === 0) {
+  if (threadCount === 0 && !folderEnabled) {
     const showAllChats = {
       filter: "all",
       label: t(($) => {
@@ -1494,7 +1557,14 @@ function ChatThreadsTitle({
   contentId: string;
   collapsible: boolean;
 }) {
-  const titleLabel = useChatThreadsFilteredTitleLabel();
+  const { t } = useTranslation();
+  const folderEnabled = useGet(chatFoldersEnabled$);
+  const flatTitleLabel = useChatThreadsFilteredTitleLabel();
+  const titleLabel = folderEnabled
+    ? t(($) => {
+        return $.chat.folders.title;
+      })
+    : flatTitleLabel;
   const setCollapsed = useSet(setSessionListCollapsed$);
   const collapsed = useGet(sessionListCollapsed$);
 
@@ -1525,7 +1595,7 @@ function ChatThreadsTitle({
         </span>
       )}
       <div className="flex items-center gap-0.5">
-        <NewChatThreadButton />
+        {folderEnabled ? <ChatFolderCreateButton /> : <NewChatThreadButton />}
         <ChatThreadsListMenu showMarkAllRead={showMarkAllRead} />
       </div>
     </div>
@@ -1673,7 +1743,8 @@ function AllChatThreadsContent({
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
-  const listLoadable = useLastLoadable(scrollSignals.list$);
+  const listLoadable = useLoadable(scrollSignals.list$);
+  const foldersEnabled = useGet(chatFoldersEnabled$);
 
   if (listLoadable.state === "loading") {
     return (
@@ -1683,7 +1754,7 @@ function AllChatThreadsContent({
     );
   }
   if (listLoadable.state === "hasError") {
-    return null;
+    return foldersEnabled ? <ChatFolderCatalogError /> : null;
   }
 
   return (
@@ -1777,13 +1848,14 @@ function ExpandedChatThreadsContent({
   contentClassName: string;
 }) {
   const unreadOnly = useGet(chatThreadOnlyUnread$);
+  const folderEnabled = useGet(chatFoldersEnabled$);
 
   return (
     <ChatThreadsViewport
       scrollSignals={scrollSignals}
       contentClassName={contentClassName}
     >
-      {unreadOnly ? (
+      {unreadOnly && !folderEnabled ? (
         <UnreadChatThreadsContent scrollSignals={scrollSignals} />
       ) : (
         <AllChatThreadsContent scrollSignals={scrollSignals} />

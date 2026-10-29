@@ -2084,6 +2084,27 @@
       "sourcePartsHeading_one": "从{{description}}引用了 {{count}} 段内容",
       "sourcePartsHeading_other": "从{{description}}引用了 {{count}} 段内容"
     },
+    "folders": {
+      "actions": "{{name}} 的操作",
+      "chats": "对话",
+      "create": "创建文件夹",
+      "delete": "删除文件夹",
+      "deleteDescription": "删除“{{name}}”？仅删除文件夹，所有对话都会保留。",
+      "description": "文件夹用于整理当前 Agent 下的个人对话。",
+      "down": "下移文件夹",
+      "empty": "暂无对话",
+      "failed": "未能保存更改，请重试。",
+      "move": "移动到…",
+      "name": "文件夹名称",
+      "refresh": "刷新文件夹",
+      "rename": "重命名文件夹",
+      "running": "运行中的对话",
+      "save": "保存",
+      "title": "文件夹",
+      "unfiled": "未分类",
+      "unread": "未读对话",
+      "up": "上移文件夹"
+    },
     "forward": {
       "action": "转发",
       "agents": "智能体",
