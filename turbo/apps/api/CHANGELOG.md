@@ -9,6 +9,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.4](https://github.com/okou-ai/okou/compare/api-v2.22.3...api-v2.22.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **api:** allow owners to delete legacy hosted sites ([#43867](https://github.com/okou-ai/okou/issues/43867)) ([0b9fc2b](https://github.com/okou-ai/okou/commit/0b9fc2b60d72207c7b2508eadaef295c76f83b62))
+
 ## [2.22.3](https://github.com/okou-ai/okou/compare/api-v2.22.2...api-v2.22.3) (2026-10-29)
 
 
