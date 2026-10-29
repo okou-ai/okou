@@ -176,10 +176,7 @@ struct ChatComposerView: View {
               .disabled(isBusy || needsUpgrade)
           }
           Button {
-            if !showsStop && sendTransition == nil {
-              draftState?.editor.dismissKeyboard()
-              isFocused = false
-            }
+            // The send operation captures native text for motion before ending editing.
             Task { await submit() }
           } label: {
             Group {

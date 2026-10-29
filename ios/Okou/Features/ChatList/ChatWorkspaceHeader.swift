@@ -8,8 +8,10 @@ struct ChatWorkspaceHeader: View {
   var body: some View {
     ZStack {
       Text(
-        store.list.threads.first(where: { $0.id == store.selectedThreadID })?.displayTitle
-          ?? store.currentAgentName
+        store.newChatSubmission?.isPresenting == true
+          ? "New chat"
+          : store.list.threads.first(where: { $0.id == store.selectedThreadID })?.displayTitle
+            ?? store.currentAgentName
       )
       .font(.system(size: 17, weight: .semibold))
       .lineLimit(1)

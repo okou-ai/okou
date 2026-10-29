@@ -18,6 +18,7 @@ final class WorkspaceStore {
   let messageMarkdown: MessageMarkdownCache
   private(set) var needsUpgrade = false
   private(set) var isCreating = false
+  private(set) var newChatSubmission: NewChatSubmission?
   var error: String?
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
@@ -195,6 +196,8 @@ final class WorkspaceStore {
     startupGeneration = UUID()
     refreshTask?.cancel()
     creationTask?.cancel()
+    newChatSubmission?.close()
+    newChatSubmission = nil
     pruneTask?.cancel()
     warmingTask?.cancel()
     modelStore.close()
@@ -388,6 +391,10 @@ final class WorkspaceStore {
   private func presentChat(_ thread: ChatThread) {
     let id = thread.id
     let reselected = selectedThreadID == id
+    if !reselected, newChatSubmission?.isReadyForConversation == true {
+      newChatSubmission?.close()
+      newChatSubmission = nil
+    }
     selectedThreadID = id
     selectedAgentID = thread.agentID
     selectedConversation?.setAutomaticReadSuppressed(false, resetReadWatermark: true)
@@ -568,6 +575,8 @@ final class WorkspaceStore {
 
   func startNewChat(agentID: String? = nil) {
     guard !isCreating, !needsUpgrade, !closed else { return }
+    newChatSubmission?.close()
+    newChatSubmission = nil
     chatLinkRequestID = UUID()
     chatLinkThreadID = nil
     selectedThreadID = nil
@@ -620,17 +629,45 @@ final class WorkspaceStore {
     return await task.value
   }
 
-  func sendNewChat() async {
+  func sendNewChat(
+    sendTransition: ConversationSendTransition? = nil, reduceMotion: Bool = false
+  ) async {
     let sourceComposer = newComposer
     let wasAwaitingAgent = selectedAgentID == nil
     guard sourceComposer.hasContent, sourceComposer.canSend, newAttachmentDraft.isReady,
-      selectedThreadID == nil, !isCreating, !needsUpgrade, !closed
+      selectedThreadID == nil, !isCreating, !needsUpgrade, !closed, !Task.isCancelled,
+      newModelSelection.canSend
     else {
       return
     }
     let sourceAgentID = selectedAgentID
     newModelSelection.connectors.configure(agentID: sourceAgentID)
     let options = newModelSelection.connectors.pendingOptions
+    let messageID = UUID().uuidString.lowercased()
+    let transition = sendTransition ?? ConversationSendTransition()
+    if sendTransition != nil, !reduceMotion, sourceComposer.attachments.items.isEmpty,
+      sourceComposer.document.parts.allSatisfy({ $0["type"]?.string == "text" }),
+      sourceComposer.editor.view?.markedTextRange == nil
+    {
+      transition.beginFirstMessage(messageID: messageID, sourceView: sourceComposer.editor.view)
+    }
+    // Commit marked text and present the first message before the creation request suspends.
+    sourceComposer.editor.dismissKeyboard()
+    let submission = NewChatSubmission(
+      message: ConversationStore.PendingMessage(
+        id: messageID,
+        text: sourceComposer.text.trimmingCharacters(in: .whitespacesAndNewlines),
+        createdAt: .now, attachments: sourceComposer.attachments.uploaded,
+        document: sourceComposer.value.draftUserMessage),
+      composer: ComposerDraftStore(target: .unassigned, commands: commands, didFail: { _ in }),
+      viewer: MessageAttachmentStore(
+        commands: commands, didFail: { [weak self] in self?.handle($0) }),
+      transition: transition)
+    newChatSubmission = submission
+    defer {
+      if newChatSubmission?.message.id == submission.message.id { newChatSubmission = nil }
+      submission.close()
+    }
     guard let created = await createChat(agentID: selectedAgentID, composerOptions: options),
       !closed,
       let conversation = conversation(for: created.id)
@@ -643,8 +680,14 @@ final class WorkspaceStore {
     }
     sourceComposer.requestSync()
     await conversation.send(
+      initialMessage: submission.message,
       initialSelection: ChatModelSelection(thread: created),
-      initialComputerAccess: options.computerAccess)
+      initialComputerAccess: options.computerAccess,
+      willSend: { [weak self] id in
+        guard let submission = self?.newChatSubmission, submission.message.id == id else { return }
+        submission.isReadyForConversation = true
+      })
+    if sendTransition != nil { await submission.waitUntilPresented() }
   }
 
   func reduceMemory() async {

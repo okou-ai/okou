@@ -84,6 +84,53 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertEqual(messages.first?.userMessage.parts.first?.fileId, AttachmentFlowFixture.fileID)
   }
 
+  func testNewChatPresentsItsFirstMessageBeforeCreationAndDeliversTheSameIdentity() async throws {
+    let creating = expectation(description: "Conversation creation is awaiting its response")
+    let (responses, release) = AsyncStream<Void>.makeStream()
+    defer { release.finish() }
+    let fixture = AttachmentFlowFixture(creation: {
+      creating.fulfill()
+      for await _ in responses { break }
+      return true
+    })
+    let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { store.close() }
+    store.selectedAgentID = AttachmentFlowFixture.agentID
+    store.newChatDraft = "Show this message immediately"
+    let source = try makeFile()
+    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+    store.newAttachmentDraft.importFiles([source])
+    try await waitForBusinessResult {
+      store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
+    }
+
+    let send = Task { await store.sendNewChat() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      send.cancel()
+      release.finish()
+      await send.value
+    }
+    await fulfillment(of: [creating], timeout: 3)
+    let firstMessage = try XCTUnwrap(store.newChatSubmission?.message.message)
+    XCTAssertEqual(firstMessage.text, "Show this message immediately")
+    XCTAssertEqual(firstMessage.attachments.first?.filename, "notes.txt")
+
+    release.yield(())
+    await send.value
+    let delivered = try XCTUnwrap(store.selectedConversation?.messages.first)
+    XCTAssertEqual(delivered.id, firstMessage.id)
+    XCTAssertEqual(delivered.text, firstMessage.text)
+    XCTAssertEqual(delivered.attachments.map(\.id), firstMessage.attachments.map(\.id))
+    XCTAssertEqual(delivered.attachments.map(\.filename), firstMessage.attachments.map(\.filename))
+    let sent = try fixture.state.value.withLock {
+      try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
+    }
+    XCTAssertEqual(sent.map(\.clientEventId), [firstMessage.id])
+    XCTAssertEqual(sent.first?.userMessage.parts.last?.fileId, AttachmentFlowFixture.fileID)
+    XCTAssertEqual(store.newChatDraft, "")
+  }
+
   func testNewImageChatStaysSelectedWhenAnOlderListRefreshFinishesAfterSending() async throws {
     let oldListReady = expectation(description: "The pre-creation list is awaiting indicators")
     let freshListReady = expectation(description: "The replacement list is awaiting indicators")
@@ -173,6 +220,68 @@ final class AttachmentDraftTests: XCTestCase {
     await store.list.refresh(waitForCurrent: true)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertNil(store.selectedConversation)
+  }
+
+  func testFinishingAnEarlierSendKeepsTheNextNewChatsFirstMessageVisible() async throws {
+    let sending = expectation(description: "The first conversation's send is held")
+    let creating = expectation(description: "The second conversation's creation is held")
+    let (sends, releaseSend) = AsyncStream<Void>.makeStream()
+    let (creations, releaseCreation) = AsyncStream<Void>.makeStream()
+    defer {
+      releaseSend.finish()
+      releaseCreation.finish()
+    }
+    let creationCount = Mutex(0)
+    let fixture = AttachmentFlowFixture(
+      failSend: true,
+      creation: {
+        let count = creationCount.withLock {
+          $0 += 1
+          return $0
+        }
+        if count == 1 { return true }
+        creating.fulfill()
+        for await _ in creations { break }
+        return false
+      },
+      sending: {
+        sending.fulfill()
+        for await _ in sends { break }
+      })
+    let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { store.close() }
+    store.selectedAgentID = AttachmentFlowFixture.agentID
+    store.newChatDraft = "First conversation"
+    let first = Task { await store.sendNewChat(sendTransition: ConversationSendTransition()) }
+    addTeardownBlock { @MainActor in
+      store.close()
+      first.cancel()
+      releaseSend.finish()
+      releaseCreation.finish()
+      await first.value
+    }
+    await fulfillment(of: [sending], timeout: 3)
+    let firstConversation = try XCTUnwrap(store.selectedConversation)
+
+    store.startNewChat()
+    store.newChatDraft = "Second conversation"
+    let second = Task { await store.sendNewChat() }
+    addTeardownBlock { @MainActor in
+      second.cancel()
+      releaseCreation.finish()
+      await second.value
+    }
+    await fulfillment(of: [creating], timeout: 3)
+    let secondMessage = try XCTUnwrap(store.newChatSubmission?.message.message)
+    releaseSend.yield(())
+    await first.value
+
+    XCTAssertEqual(store.newChatSubmission?.message.message, secondMessage)
+    XCTAssertEqual(firstConversation.messages.first?.text, "First conversation")
+    XCTAssertTrue(firstConversation.pending.first?.needsRetry == true)
+    releaseCreation.yield(())
+    await second.value
+    XCTAssertEqual(store.newChatDraft, "Second conversation")
   }
 
   func testClosingWorkspaceCancelsInFlightUploadAndCleansItsPrivateCopy() async throws {
@@ -465,6 +574,7 @@ final class AttachmentFlowFixture: Sendable {
     storage: @escaping @Sendable () async -> Void = {},
     creation: @escaping @Sendable () async -> Bool = { true },
     creationResponse: ChatHTTPFixture.Handler? = nil,
+    sending: @escaping @Sendable () async -> Void = {},
     draftRead: @escaping @Sendable () async -> Void = {},
     workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil,
     attachment: ChatAttachment? = nil,
@@ -581,6 +691,7 @@ final class AttachmentFlowFixture: Sendable {
         }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case "/api/chat/events":
+        await sending()
         let failed = state.value.withLock {
           $0.messages.append(chatRequestBody(request))
           if failSend && $0.messages.count == 1 {

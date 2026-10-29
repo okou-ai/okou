@@ -46,6 +46,24 @@ final class ConversationSendTransition {
   func begin(messageID: String, reduceMotion: Bool, sourceView: ComposerTextView? = nil) {
     cancel()
     guard let collection else { return }
+    prepare(messageID: messageID, reduceMotion: reduceMotion, sourceView: sourceView)
+    offset = collection.contentOffset
+    didBegin?()
+    if flight?.messageFrame != nil {
+      isAnimating = true
+      animateToBottom()
+    }
+  }
+
+  /// A new conversation has a bubble destination before it has a native history collection.
+  func beginFirstMessage(messageID: String, sourceView: ComposerTextView?) {
+    cancel()
+    guard let sourceView else { return }
+    prepare(messageID: messageID, reduceMotion: false, sourceView: sourceView)
+    if flight == nil { cancel() }
+  }
+
+  private func prepare(messageID: String, reduceMotion: Bool, sourceView: ComposerTextView?) {
     self.messageID = messageID
     self.reduceMotion = reduceMotion
     if !reduceMotion,
@@ -56,17 +74,11 @@ final class ConversationSendTransition {
         hidesBubbleID = messageID
       }
     }
-    offset = collection.contentOffset
     curve = 0
     composerAnimation =
       flight != nil
       ? .timingCurve(0.2, 0.4, 0.4, 1, duration: Self.flightDuration)
       : .easeInOut(duration: 0.22)
-    didBegin?()
-    if flight?.messageFrame != nil {
-      isAnimating = true
-      animateToBottom()
-    }
     keyboardObserver = NotificationCenter.default.addObserver(
       forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
     ) { [weak self] notification in
@@ -85,6 +97,12 @@ final class ConversationSendTransition {
   func registerBubble(messageID: String, view: UIView) {
     guard self.messageID == messageID, view.window != nil else { return }
     flight?.destination = view
+    if collection == nil, flight != nil, !isAnimating,
+      view.bounds.width > 0, view.bounds.height > 0
+    {
+      isAnimating = true
+      startDisplayLink()
+    }
   }
 
   func projectFlight(insertionY: CGFloat, topSpacing: CGFloat) {
@@ -214,6 +232,10 @@ final class ConversationSendTransition {
     }
     // Composer/keyboard geometry can change on every frame. Retarget the
     // current clock; only an actual snapshot pauses it.
+    startDisplayLink()
+  }
+
+  private func startDisplayLink() {
     guard displayLink == nil else { return }
     // Starting the clock on its first display callback excludes snapshot work
     // before any frame can be presented. UIKit animation completions cannot
@@ -226,13 +248,18 @@ final class ConversationSendTransition {
   }
 
   fileprivate func advanceFrame(_ link: CADisplayLink) {
-    guard displayLink === link, let collection, let target, isAnimating else { return }
-    if flight != nil {
-      if flightStartedAt == 0 {
-        flightStartedAt = link.timestamp
+    guard displayLink === link, isAnimating else { return }
+    if let flight, collection == nil {
+      let progress = advanceFlight(at: link.timestamp)
+      UIView.performWithoutAnimation {
+        flight.present(fraction: flightFraction, remainingScroll: 0)
       }
-      let progress = min(1, max(0, (link.timestamp - flightStartedAt) / Self.flightDuration))
-      flightFraction = CGFloat(Self.flightCurve.value(at: progress))
+      if progress >= 1, CACurrentMediaTime() >= deadline { finish() }
+      return
+    }
+    guard let collection, let target else { return }
+    if flight != nil {
+      let progress = advanceFlight(at: link.timestamp)
       let viewportFraction: CGFloat =
         progress >= 1
         ? 1
@@ -271,6 +298,13 @@ final class ConversationSendTransition {
       in: collection, target: target)
     guard displayLink === link, self.target == target else { return }
     if progress >= 1, CACurrentMediaTime() >= deadline { finish() }
+  }
+
+  private func advanceFlight(at timestamp: CFTimeInterval) -> Double {
+    if flightStartedAt == 0 { flightStartedAt = timestamp }
+    let progress = min(1, max(0, (timestamp - flightStartedAt) / Self.flightDuration))
+    flightFraction = CGFloat(Self.flightCurve.value(at: progress))
+    return progress
   }
 
   private func presentFrame(

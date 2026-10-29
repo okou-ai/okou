@@ -7,6 +7,7 @@ struct ChatDetailView: View {
   let topContentInset: CGFloat
   let sidebar: SidebarInteraction?
   let mentionSource: ComposerMentionSource?
+  let onFirstMessagePresented: (@MainActor (String) -> Void)?
   private var thread: ChatThread { conversation.thread }
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -21,12 +22,14 @@ struct ChatDetailView: View {
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0,
-    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil
+    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil,
+    onFirstMessagePresented: (@MainActor (String) -> Void)? = nil
   ) {
     self.conversation = conversation
     self.topContentInset = topContentInset
     self.sidebar = sidebar
     self.mentionSource = mentionSource
+    self.onFirstMessagePresented = onFirstMessagePresented
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -86,7 +89,10 @@ struct ChatDetailView: View {
       sendTransition: scrolling.sendTransition,
       isLoadingHistory: conversation.isLoading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
-      rowsPresented: scrolling.rowsPresented,
+      rowsPresented: { id in
+        scrolling.rowsPresented(firstItemID: id)
+        if let id { onFirstMessagePresented?(id) }
+      },
       quote: conversation.quote,
       refresh: {
         await conversation.refresh()
