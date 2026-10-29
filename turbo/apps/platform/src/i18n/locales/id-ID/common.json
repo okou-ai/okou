@@ -2547,6 +2547,7 @@
       },
       "ideasLabel": "Ide untuk memulai",
       "label": "Mulai tugas",
+      "more": "Lainnya",
       "moreTemplates": "Template lainnya",
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",

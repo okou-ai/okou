@@ -2604,6 +2604,7 @@
       },
       "ideasLabel": "Ideias para começar",
       "label": "Tarefas para começar",
+      "more": "Mais",
       "moreTemplates": "Mais modelos",
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",

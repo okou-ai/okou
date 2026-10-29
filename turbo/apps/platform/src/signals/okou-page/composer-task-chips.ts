@@ -15,6 +15,7 @@ import { onRef, settle } from "../utils.ts";
 import { observeRail, type RailTravel } from "./rail-travel.ts";
 import { customTemplateCatalog$ } from "./custom-template-library.ts";
 import { homeJobSummaries$ } from "./entrusted-jobs.ts";
+import { createComposerTaskOverflowSignals } from "./composer-task-overflow.ts";
 
 export type ComposerTask =
   | ComposerCreateMode
@@ -134,6 +135,7 @@ export function createComposerTaskChipsSignals(
   >(null);
   const explicitSelection$ = state(false);
   const visualization = createComposerVisualizationSignals();
+  const overflow = createComposerTaskOverflowSignals();
   const { documentCategory$, setDocumentCategory$ } =
     createDocumentCategorySignals();
   /** The task selected through the chip row, slash panel or template picker. */
@@ -233,12 +235,19 @@ export function createComposerTaskChipsSignals(
       }
     },
   );
+  // Choosing a task hands focus to the composer and removes More. Ordinary
+  // dismissal (or browsing Suggestions/Tasks) returns focus to the trigger.
+  const taskMenuFinalFocus$ = command(({ get }) => {
+    const task = get(task$);
+    return task === null || task === "suggestions" || task === "jobs";
+  });
   const { railTravel$, setRailTravel$, bindRail$ } = createTaskRailSignals();
   return {
     task$,
     initializeHomeJobs$,
     customTemplates$,
     selectTask$,
+    taskMenuFinalFocus$,
     openTask$,
     browseTask$,
     selectTemplate$,
@@ -247,6 +256,7 @@ export function createComposerTaskChipsSignals(
     bindRail$,
     workflows,
     visualization,
+    overflow,
     documentCategory$,
     setDocumentCategory$,
   };

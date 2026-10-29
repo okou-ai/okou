@@ -2547,6 +2547,7 @@
       },
       "ideasLabel": "시작 아이디어",
       "label": "시작할 작업",
+      "more": "더 보기",
       "moreTemplates": "더 많은 템플릿",
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",

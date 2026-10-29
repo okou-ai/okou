@@ -2604,6 +2604,7 @@
       },
       "ideasLabel": "Idee per iniziare",
       "label": "Attività per iniziare",
+      "more": "Altro",
       "moreTemplates": "Altri modelli",
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",

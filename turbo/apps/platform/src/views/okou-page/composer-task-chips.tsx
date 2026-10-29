@@ -1,19 +1,7 @@
 import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
-import {
-  ArrowRight,
-  ChartNoAxesCombined,
-  Globe,
-  FileText,
-  Image,
-  MessageSquare,
-  Presentation,
-  Route,
-  Lightbulb,
-  ListTodo,
-} from "lucide-react";
-import { Button, Tabs, TabsList, TabsContent } from "@okouai/ui";
+import { ArrowRight, Image, MessageSquare } from "lucide-react";
+import { Button, Tabs, TabsContent } from "@okouai/ui";
 import {
   agentSuggestionsEnabled$,
   visibleAgentSuggestions$,
@@ -62,35 +50,8 @@ import { useCustomTemplateRecommendations } from "./use-custom-template-recommen
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
-import { SCROLLBAR_HIDDEN } from "./scroll-fade.ts";
+import { ComposerTaskChipRow } from "./composer-task-chip-row.tsx";
 
-/**
- * The task-type row. `outline` at its default size is a form button: `px-4`
- * against a fixed `h-9` leaves 17.25px of ink inset on the sides and 11.5px
- * above and below, a 1.5 : 1 frame that reads as a submit control rather than a
- * chip. `px-3` brings the sides to 13.25px, or 1.15 : 1 -- close to even, with
- * the slight horizontal margin a label needs to not touch its own edge. The
- * height is deliberately left alone: `h-9` is what sets this row's rhythm under
- * the composer, and what reads wrong is the frame, not the size.
- *
- * `outline` rather than `neutral`, because this row sits directly on the page
- * canvas. `neutral` fills a chip with `control-surface`, which is gray-50:
- * 1.02 : 1 against white, so it carries no step in lightness and reaches the
- * eye as hue alone, on a screen whose canvas, card and copy are otherwise
- * unsaturated. `outline` keeps the same stroke and leaves the canvas itself
- * behind the label, so five chips stop reading as the one tinted band on the
- * page. The idea cards below are the opposite case and keep `neutral`: they
- * own an opaque `bg-muted` fill, which needs that variant's overlay states.
- *
- * Padding is the caller's to set; the border is not.
- */
-const TASK_CHIP = "shrink-0 px-3";
-// Center the row when it fits; overflow scrolls from the first chip. Padding
-// keeps focus rings and the active shadow inside the scrollport.
-const TASK_CHIP_ROW = cn(
-  "-my-1 mx-auto flex h-auto w-max max-w-full flex-nowrap items-center justify-start gap-2 overflow-x-auto overscroll-x-contain bg-transparent p-1",
-  SCROLLBAR_HIDDEN,
-);
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
  * the task row uses. A fixed box is what makes the row read as one set: the
@@ -118,16 +79,6 @@ const TASK_IDEA_CARD = [
   // ordering is stated from the icon: past the text, then pushed to the floor.
   "[&_svg]:order-2 [&_svg]:mt-auto",
 ].join(" ");
-const TASK_ICONS = {
-  jobs: ListTodo,
-  suggestions: Lightbulb,
-  workflow: Route,
-  presentation: Presentation,
-  document: FileText,
-  image: Image,
-  website: Globe,
-  visualization: ChartNoAxesCombined,
-} as const;
 /**
  * One mark for the whole row. An idea is something the user says, so the same
  * speech bubble fits every type; the four glyphs this replaced carried nothing
@@ -724,12 +675,6 @@ function ComposerTaskTabs({
   const { t } = useTranslation();
   const browseTask = useSet(signals.taskChips.browseTask$);
   const selectTask = useSet(signals.taskChips.selectTask$);
-  const labels = t(
-    ($) => {
-      return $.chat.taskChips.tasks;
-    },
-    { returnObjects: true },
-  );
   return (
     <Tabs
       value={selected}
@@ -748,26 +693,7 @@ function ComposerTaskTabs({
         return $.chat.taskChips.label;
       })}
     >
-      <TabsList className={TASK_CHIP_ROW}>
-        {tasks.map((task) => {
-          const Icon = TASK_ICONS[task];
-          // Keep the Button's chip geometry; the styled TabsTrigger supplies
-          // segmented-control sizing that overrides its height and radius.
-          return (
-            <TabsPrimitive.Tab
-              key={task}
-              value={task}
-              className="data-active:bg-segment-selected data-active:shadow-segment-selected"
-              render={
-                <Button type="button" variant="outline" className={TASK_CHIP} />
-              }
-            >
-              <Icon size={16} className="text-muted-foreground" aria-hidden />
-              {labels[task]}
-            </TabsPrimitive.Tab>
-          );
-        })}
-      </TabsList>
+      <ComposerTaskChipRow signals={signals} tasks={tasks} tabs />
       {tasks.map((task) => {
         return (
           <TabsContent key={task} value={task}>
@@ -806,13 +732,6 @@ export function ComposerTaskChips({
     (current === "jobs" && !jobsEnabled)
       ? null
       : (current ?? (showSuggestions ? "suggestions" : null));
-  const selectTask = useSet(signals.taskChips.selectTask$);
-  const labels = t(
-    ($) => {
-      return $.chat.taskChips.tasks;
-    },
-    { returnObjects: true },
-  );
   const tasks = (
     [
       "jobs",
@@ -856,31 +775,7 @@ export function ComposerTaskChips({
       })}
     >
       {selected === null && (
-        <div
-          className={TASK_CHIP_ROW}
-          role="group"
-          aria-label={t(($) => {
-            return $.chat.taskChips.chooseTask;
-          })}
-        >
-          {tasks.map((task) => {
-            const Icon = TASK_ICONS[task];
-            return (
-              <Button
-                key={task}
-                type="button"
-                variant="outline"
-                className={TASK_CHIP}
-                onClick={() => {
-                  return selectTask(task);
-                }}
-              >
-                <Icon size={16} className="text-muted-foreground" aria-hidden />
-                {labels[task]}
-              </Button>
-            );
-          })}
-        </div>
+        <ComposerTaskChipRow signals={signals} tasks={tasks} />
       )}
       {selected !== null && (
         <ComposerTaskPanel signals={signals} selected={selected} />
