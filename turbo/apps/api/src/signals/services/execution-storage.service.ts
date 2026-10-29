@@ -4,7 +4,7 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { command, computed, type Computed } from "ccstate";
 import { alias } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
@@ -320,7 +320,6 @@ const persistPresignedUrlCache$ = command(
             ttlSeconds: excluded.ttlSeconds,
             presignedUrl: excluded.presignedUrl,
             expiresAt: excluded.expiresAt,
-            refreshAfter: excluded.refreshAfter,
             lastRequestedAt: excluded.lastRequestedAt,
             updatedAt: excluded.updatedAt,
           },
