@@ -10,7 +10,7 @@ import {
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { hostedSites } from "@okouai/db/runtime/hosted-site";
 
-import { badRequestMessage, notConfigured, notFound } from "../../lib/error";
+import { notConfigured, notFound } from "../../lib/error";
 import { env } from "../../lib/env";
 import {
   isSharedThreadArtifactLogicalKey,
@@ -87,9 +87,6 @@ const withdrawHostedArtifact$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.status === "bad_request") {
-      return badRequestMessage(result.message);
-    }
     if (result.status === "config_error") {
       return notConfigured(result.message);
     }
