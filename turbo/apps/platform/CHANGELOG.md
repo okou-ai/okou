@@ -12,6 +12,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1077.0](https://github.com/okou-ai/okou/compare/app-v0.1076.0...app-v0.1077.0) (2026-10-29)
+
+
+### Features
+
+* learn from suggestions with per-card feedback storage ([#43771](https://github.com/okou-ai/okou/issues/43771)) ([cefb967](https://github.com/okou-ai/okou/commit/cefb967db3d9b20e83b3f7239815a264975bd2ec)) [#43760](https://github.com/okou-ai/okou/issues/43760)
+
+
+### Bug Fixes
+
+* **app:** group overflowing task chips behind an icon stack ([#43835](https://github.com/okou-ai/okou/issues/43835)) ([f8079f8](https://github.com/okou-ai/okou/commit/f8079f8ba697cef87ba22929ce88b1120ce12361))
+* **app:** suppress duplicate website preview error toast ([#43944](https://github.com/okou-ai/okou/issues/43944)) ([54a5323](https://github.com/okou-ai/okou/commit/54a5323995856ac84246ed8a29c6d098f7231809))
+
+
+### Refactoring
+
+* remove hosted site url editing feature switch ([#43937](https://github.com/okou-ai/okou/issues/43937)) ([bd980f4](https://github.com/okou-ai/okou/commit/bd980f407b03e4b513f8d76ead8338433c5d9b38))
+* remove thread email manager feature switch ([#43934](https://github.com/okou-ai/okou/issues/43934)) ([4233f42](https://github.com/okou-ai/okou/commit/4233f42b391ba6c96c39c02d0eb5d64c54bc196e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.18.0
+    * @okouai/core bumped to 8.800.1
+
 ## [0.1076.0](https://github.com/okou-ai/okou/compare/app-v0.1075.5...app-v0.1076.0) (2026-10-29)
 
 
