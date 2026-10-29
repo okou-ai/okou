@@ -39,7 +39,7 @@ async function run(t, script, env, args = []) {
   });
   return new Promise((resolve, reject) => {
     child.on("error", reject);
-    child.on("exit", (code) => {
+    child.on("close", (code) => {
       resolve({ code, stdout, stderr });
     });
   });
