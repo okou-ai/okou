@@ -491,9 +491,17 @@ test("Take over the cloud browser from a working run and hand it back through th
     within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
 
-  // An earlier Run's budget declaration and usage can arrive after takeover.
+  // An earlier Run's final output, budget declaration and usage can arrive late.
   act(() => {
     chatEvents.push(
+      {
+        id: "navigation-browser-previous-final-output",
+        role: "assistant",
+        content: "The release notes review is complete.",
+        runId: previousRunId,
+        seqId: 98,
+        createdAt: "2026-09-01T12:00:58.000Z",
+      },
       {
         id: "navigation-browser-previous-budget",
         eventType: "input.budget",
@@ -527,7 +535,7 @@ test("Take over the cloud browser from a working run and hand it back through th
     );
     createChatEvent(THREAD_ID);
   });
-  await screen.findByLabelText("Credit usage 7");
+  await screen.findByText("The release notes review is complete.");
   expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 
   click(buttonByName("Hand back", viewer));
