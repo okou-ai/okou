@@ -2,7 +2,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import { CdpViewer, type CdpViewerStyle } from "cdp-viewer";
 import { browserUse } from "cdp-viewer/extensions/browser-use";
-import { AppWindow, AppWindowMac, Globe, Loader2, Play } from "lucide-react";
+import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
@@ -22,12 +22,9 @@ import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
   readonly showPausedScreenshot?: boolean;
-  /**
-   * Panel actions for a host without its own header. The live viewer places
-   * them at the end of its tab row; other states give them a row of their own.
-   */
+  /** Panel actions for a host without its own header. */
   readonly actions?: ReactNode;
-  /** Status layered over the live page, such as who is in control. */
+  /** Status layered over the live viewer, such as who is in control. */
   readonly overlay?: ReactNode;
 }
 
@@ -142,8 +139,8 @@ export function BrowserSessionUnavailable() {
 }
 
 /**
- * The viewer's own palette is Chrome's. Map every surface, state and focus
- * ring onto the app tokens so the browser reads as part of the panel.
+ * Map the viewer's supported palette variables onto the app tokens so the
+ * browser reads as part of the panel.
  */
 function okouViewerStyle(): CdpViewerStyle {
   const stateLayer = (alpha: string) => {
@@ -157,7 +154,6 @@ function okouViewerStyle(): CdpViewerStyle {
     "--cdpv-radius": 0,
     "--cdpv-background": "hsl(var(--background))",
     "--cdpv-tab-background": "hsl(var(--background))",
-    "--cdpv-tab-selected-background": stateLayer("--state-selected-alpha"),
     "--cdpv-address-background": stateLayer("--state-selected-alpha"),
     "--cdpv-stage-background": "hsl(var(--background))",
     "--cdpv-foreground": "hsl(var(--foreground))",
@@ -165,29 +161,7 @@ function okouViewerStyle(): CdpViewerStyle {
     "--cdpv-border": "hsl(var(--divider))",
     "--cdpv-accent": "hsl(var(--primary))",
     "--cdpv-on-accent": "hsl(var(--primary-foreground))",
-    "--cdpv-focus": "hsl(var(--ring))",
-    "--cdpv-hover": stateLayer("--state-hover-alpha"),
-    "--cdpv-control-radius": "var(--radius)",
   };
-}
-
-function BrowserBlankPage() {
-  const { t } = useTranslation();
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-8 pb-10 text-center">
-      <Globe size={20} aria-hidden className="text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium text-foreground">
-        {t(($) => {
-          return $.browserSession.blankPage.title;
-        })}
-      </p>
-      <p className="mt-1 max-w-72 text-xs leading-5 text-muted-foreground">
-        {t(($) => {
-          return $.browserSession.blankPage.description;
-        })}
-      </p>
-    </div>
-  );
 }
 
 function PanelActions({ actions }: { readonly actions: ReactNode }) {
@@ -207,15 +181,16 @@ function BrowserCdpViewer({
 }: {
   readonly signals: BrowserSessionSignals;
   readonly liveUrl: string;
-  /** The Cloud browser panel switch: app tokens, merged tab row, presence. */
+  /** The Cloud browser panel switch: app tokens and presence. */
   readonly refined: boolean;
   readonly actions: ReactNode;
   readonly overlay: ReactNode;
 }) {
-  const { t } = useTranslation();
   const connection = useLastLoadable(signals.viewerConnection$);
   const windowSizeSync = useGet(signals.viewerWindowSizeSync$);
   const setWindowSizeSync = useSet(signals.setViewerWindowSizeSync$);
+  const capture = useGet(signals.viewerCapture$);
+  const setCapture = useSet(signals.setViewerCapture$);
   const theme = useGet(theme$);
   // Keep the stream during lease refreshes, but never reuse an endpoint from a
   // previous provider instance while its replacement connection is loading.
@@ -241,35 +216,32 @@ function BrowserCdpViewer({
     );
   }
   return (
-    <div data-browser-session-cdp-viewer className="flex min-h-0 flex-1">
-      <CdpViewer
-        cdpUrl={connection.data.cdpUrl}
-        interactive
-        showSettingsMenu
-        windowSizeSync={windowSizeSync}
-        onWindowSizeSyncChange={setWindowSizeSync}
-        extensions={[browserUse()]}
-        colorScheme={theme}
-        {...(refined
-          ? {
-              tabStyle: "floating",
-              toolbarEnd: actions ?? undefined,
-              stageOverlay: overlay ?? undefined,
-              blankPage: <BrowserBlankPage />,
-              labels: {
-                addressPlaceholder: t(($) => {
-                  return $.browserSession.addressPlaceholder;
-                }),
-                blankTabTitle: t(($) => {
-                  return $.browserSession.blankTabTitle;
-                }),
-              },
-            }
-          : {})}
-        className="w-full flex-1"
-        style={refined ? okouViewerStyle() : { height: "100%", minHeight: 0 }}
-      />
-    </div>
+    <>
+      {actions ? <PanelActions actions={actions} /> : null}
+      <div
+        data-browser-session-cdp-viewer
+        className="relative isolate flex min-h-0 flex-1"
+      >
+        <CdpViewer
+          cdpUrl={connection.data.cdpUrl}
+          interactive
+          showSettingsMenu
+          windowSizeSync={windowSizeSync}
+          onWindowSizeSyncChange={setWindowSizeSync}
+          capture={capture}
+          onCaptureChange={setCapture}
+          extensions={[browserUse()]}
+          colorScheme={theme}
+          className="w-full flex-1"
+          style={refined ? okouViewerStyle() : { height: "100%", minHeight: 0 }}
+        />
+        {overlay ? (
+          <div className="pointer-events-none absolute inset-0 z-10">
+            {overlay}
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }
 

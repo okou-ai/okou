@@ -1360,12 +1360,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL 입력",
-    "blankPage": {
-      "description": "{{assistantName}}이(가) 작업하는 동안 여기에서 페이지를 엽니다. 위에 URL을 입력해 직접 둘러볼 수도 있습니다.",
-      "title": "아직 열린 페이지가 없습니다"
-    },
-    "blankTabTitle": "새 탭",
     "cardTitle": "클라우드 브라우저",
     "close": "클라우드 브라우저 닫기",
     "documentTitle": "클라우드 브라우저",
