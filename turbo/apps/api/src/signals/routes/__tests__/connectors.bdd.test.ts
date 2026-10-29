@@ -6643,7 +6643,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(autoSlug.slug).toMatch(
       new RegExp(`^_api-bdd${rand}-example-test-[a-z0-9]{6}$`),
     );
-    expect(autoSlug.prefixTemplates).toStrictEqual([`https://api.${host}/v1/`]);
+    expect(autoSlug.prefixTemplates).toStrictEqual([`https://api.${host}/v1`]);
     await expect(
       connectorsApi.listCustomConnectorAccounts(admin, autoSlug.id),
     ).resolves.toStrictEqual([]);
@@ -6671,7 +6671,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(wildcard.slug).toMatch(
       new RegExp(`^_bdd${rand}-example-test-[a-z0-9]{6}$`),
     );
-    expect(wildcard.prefixTemplates).toStrictEqual([`https://*.${host}/v1/`]);
+    expect(wildcard.prefixTemplates).toStrictEqual([`https://*.${host}/v1`]);
 
     const builtinOverlap = await connectorsApi.createCustomConnector(
       admin,
@@ -6722,6 +6722,70 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await expect(
       connectorsApi.listCustomConnectors(admin),
     ).resolves.toStrictEqual([]);
+  });
+
+  it("preserves custom HTTP prefix trailing slashes through edits and readback", async () => {
+    const bdd = createBddApi(context);
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const base = `https://${randomUUID()}.prefix-spelling.test/v1`;
+    const definition = manualHttpCustomConnectorCreateBody({
+      displayName: "BDD Prefix Spelling",
+      prefixTemplates: [`${base}/systemone/`, `${base}/events`],
+    });
+
+    const created = await connectorsApi.createCustomConnector(
+      admin,
+      definition,
+    );
+    expect(created.prefixTemplates).toStrictEqual(definition.prefixTemplates);
+    await expect(
+      connectorsApi.readCustomConnector(admin, created.id),
+    ).resolves.toMatchObject({ prefixTemplates: definition.prefixTemplates });
+
+    const renamed = await connectorsApi.updateCustomConnector(
+      admin,
+      created.id,
+      {
+        ...definition,
+        displayName: "BDD Renamed Prefix Spelling",
+        prefixTemplates: created.prefixTemplates,
+      },
+    );
+    expect(renamed.prefixTemplates).toStrictEqual(definition.prefixTemplates);
+
+    const editedPrefixes = [`${base}/systemone`, `${base}/events/`];
+    const updated = await connectorsApi.updateCustomConnector(
+      admin,
+      created.id,
+      {
+        ...definition,
+        displayName: renamed.displayName,
+        prefixTemplates: editedPrefixes,
+      },
+    );
+    expect(updated.prefixTemplates).toStrictEqual(editedPrefixes);
+    await expect(
+      connectorsApi.listCustomConnectors(admin),
+    ).resolves.toMatchObject([
+      { id: created.id, prefixTemplates: editedPrefixes },
+    ]);
+
+    const duplicate = await connectorsApi.requestUpdateCustomConnector(
+      admin,
+      created.id,
+      {
+        ...definition,
+        prefixTemplates: [`${base}/systemone`, `${base}/systemone/`],
+      },
+      [400],
+    );
+    expectApiError(duplicate.body);
+    expect(duplicate.body.error.message).toContain("Duplicate prefix template");
+    await expect(
+      connectorsApi.readCustomConnector(admin, created.id),
+    ).resolves.toMatchObject({ prefixTemplates: editedPrefixes });
+
+    await connectorsApi.deleteCustomConnector(admin, created.id);
   });
 
   it("manages MCP definitions, credentials, and agent access", async () => {
@@ -7305,7 +7369,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       (await connectorsApi.listCustomConnectors(admin)).find((connector) => {
         return connector.id === editable.id;
       })?.prefixTemplates,
-    ).toStrictEqual(original.prefixTemplates);
+    ).toStrictEqual([originalPrefix.slice(0, -1)]);
 
     await connectorsApi.deleteCustomConnector(admin, original.id);
     await connectorsApi.deleteCustomConnector(admin, editable.id);
@@ -7367,7 +7431,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       created.map((definition) => {
         return definition.prefixTemplates;
       }),
-    ).toStrictEqual([[prefix], [prefix]]);
+    ).toStrictEqual([[prefix], [prefix.slice(0, -1)]]);
     for (const definition of created) {
       await connectorsApi.deleteCustomConnector(admin, definition.id);
     }
