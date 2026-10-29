@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..7092915d99ca11d2861279a4b936472e421c3d33 100644
+index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..dbb5c2b7d40c47b19ba05206e0878ec1e7253ce6 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -1395,7 +1395,7 @@ var NodeViewDesc = function (_ViewDesc4) {
@@ -16,7 +16,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..7092915d99ca11d2861279a4b936472e
      value: function updateNodeAt(node, outerDeco, innerDeco, index, view) {
        var child = this.top.children[index];
 -      if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM) child.dirty = CONTENT_DIRTY;
-+      if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM || child.contentDOM && child.contentDOM.contains(view.input.compositionNode))) child.dirty = CONTENT_DIRTY;
++      if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM || child.contentDOM && contains(child.contentDOM, view.input.compositionNode))) child.dirty = CONTENT_DIRTY;
        if (!child.update(node, outerDeco, innerDeco, view)) return false;
        this.destroyBetween(this.index, index);
        this.index++;
@@ -132,7 +132,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..7092915d99ca11d2861279a4b936472e
    }
    var chFrom = change.start,
 diff --git a/dist/index.js b/dist/index.js
-index 37521100e6800b065f48f551ceddfae2f9b48386..9df9dce198ab05991cb390632578e1ca8428f9cb 100644
+index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2dbb8b14e6 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -1452,7 +1452,8 @@ class NodeViewDesc extends ViewDesc {
@@ -151,7 +151,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..9df9dce198ab05991cb390632578e1ca
          let child = this.top.children[index];
 -        if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM)
 +        if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM ||
-+            child.contentDOM && child.contentDOM.contains(view.input.compositionNode)))
++            child.contentDOM && contains(child.contentDOM, view.input.compositionNode)))
              child.dirty = CONTENT_DIRTY;
          if (!child.update(node, outerDeco, innerDeco, view))
              return false;
@@ -381,7 +381,7 @@ index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..965db969ce342355cab57d4353f7909d
        // Crude approximation of backspace behavior when no command handled it
        if ($cursor && $cursor.pos > 0) view.dispatch(view.state.tr.delete($cursor.pos - 1, $cursor.pos).scrollIntoView())
 diff --git a/src/viewdesc.ts b/src/viewdesc.ts
-index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..da280cbc8183400840e83b8626573f87058110fe 100644
+index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..1b1dabcc73ae6946557a7c8212ce0cca3f78fa88 100644
 --- a/src/viewdesc.ts
 +++ b/src/viewdesc.ts
 @@ -842,7 +842,8 @@ export class NodeViewDesc extends ViewDesc {
@@ -400,7 +400,7 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..da280cbc8183400840e83b8626573f87
      let child = this.top.children[index] as NodeViewDesc
 -    if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM) child.dirty = CONTENT_DIRTY
 +    if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM ||
-+        child.contentDOM && child.contentDOM.contains(view.input.compositionNode))) child.dirty = CONTENT_DIRTY
++        child.contentDOM && contains(child.contentDOM, view.input.compositionNode))) child.dirty = CONTENT_DIRTY
      if (!child.update(node, outerDeco, innerDeco, view)) return false
      this.destroyBetween(this.index, index)
      this.index++
