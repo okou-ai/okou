@@ -543,6 +543,8 @@ await test("rejects worker chunks with imports or forbidden packages", () => {
   );
 });
 
+const OPTIONAL_FONT_STYLESHEET = `<link rel="stylesheet" href="https://fonts.example.test/fallback.css" media="print" onload="this.media='all'">`;
+
 function clerkDiscoveryFixture(): string {
   return [
     "<!doctype html><html><head>",
@@ -550,6 +552,7 @@ function clerkDiscoveryFixture(): string {
     '<meta name="okou-clerk-ui-script" content="__OKOU_CLERK_UI_SCRIPT_URL__">',
     '<script id="okou-clerk-core-script" src="https://cdn.example.test/clerk.js" defer></script>',
     '<script data-okou-clerk-bootstrap="">window.__clerkConfigured = true;</script>',
+    OPTIONAL_FONT_STYLESHEET,
     '<script type="module" src="/src/main.js"></script>',
     "</head><body>",
     '<div id="app-bootstrap-skeleton"></div>',
@@ -612,7 +615,15 @@ function assertApplicationStylesheetPreload(htmlSource: string): void {
     htmlSource,
     /<link id="okou-main-stylesheet" rel="preload" as="style"[^>]*>/u,
   );
-  assert.equal((htmlSource.match(/<link rel="stylesheet"/gu) ?? []).length, 0);
+  assert.deepEqual(
+    [...htmlSource.matchAll(/<link\b[^>]*\brel="stylesheet"[^>]*>/gu)].map(
+      (match) => {
+        return match[0];
+      },
+    ),
+    [OPTIONAL_FONT_STYLESHEET],
+    "only the non-blocking optional font stylesheet remains outside the managed preload",
+  );
   assert.doesNotMatch(htmlSource, /\sfetchpriority=/u);
   assert.match(
     htmlSource,
