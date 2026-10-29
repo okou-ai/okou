@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { semanticChatEventsFromChatEvents } from "../chat-event-semantics";
 import {
   CHAT_EVENT_TYPES,
   foldChatRunStates,
@@ -421,6 +422,240 @@ describe("ChatEvent folds", () => {
         return event.id;
       }),
     ).toStrictEqual(["prompt-newer", "automation-oldest"]);
+  });
+});
+
+describe("ChatEvent semantic projection", () => {
+  it("preserves independent origins and submission times through interleaved replacement chains", () => {
+    const prompt = {
+      id: "prompt-origin",
+      seqId: 1,
+      threadId: THREAD_ID,
+      eventType: "input.prompt",
+      content: null,
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Run the task" }],
+      },
+      createdAt: CREATED_AT,
+    } satisfies ChatEvent;
+    const automation = {
+      ...prompt,
+      id: "automation-origin",
+      seqId: 2,
+      eventType: "input.automation",
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "automation",
+            workflowName: "inbox-triage",
+            automationBrief: "Gmail label applied",
+          },
+        ],
+      },
+      createdAt: "2026-07-23T00:00:01.000Z",
+    } satisfies ChatEvent;
+    const replacedPrompt = {
+      ...prompt,
+      id: "prompt-replacement",
+      seqId: 3,
+      revokesEventId: prompt.id,
+      createdAt: "2026-07-23T00:00:02.000Z",
+    } satisfies ChatEvent;
+    const replacedAutomation = {
+      ...automation,
+      id: "automation-replacement",
+      seqId: 4,
+      eventType: "input.prompt",
+      revokesEventId: automation.id,
+      createdAt: "2026-07-23T00:00:03.000Z",
+    } satisfies ChatEvent;
+    const deliveredPrompt = {
+      ...replacedPrompt,
+      id: "prompt-delivered",
+      seqId: 5,
+      runId: "run-prompt",
+      revokesEventId: replacedPrompt.id,
+      createdAt: "2026-07-23T00:00:04.000Z",
+    } satisfies ChatEvent;
+    const rejectedAutomation = {
+      ...replacedAutomation,
+      id: "automation-rejected",
+      seqId: 6,
+      eventType: "input.rejected",
+      revokesEventId: replacedAutomation.id,
+      error: "Insufficient credits",
+      createdAt: "2026-07-23T00:00:05.000Z",
+    } satisfies ChatEvent;
+
+    expect(
+      semanticChatEventsFromChatEvents([
+        prompt,
+        automation,
+        replacedPrompt,
+        replacedAutomation,
+        deliveredPrompt,
+        rejectedAutomation,
+      ]),
+    ).toStrictEqual([
+      {
+        event: deliveredPrompt,
+        isQueued: false,
+        inputCreatedAt: prompt.createdAt,
+        inputOriginId: prompt.id,
+      },
+      {
+        event: rejectedAutomation,
+        isQueued: false,
+        inputCreatedAt: automation.createdAt,
+        inputOriginId: automation.id,
+      },
+    ]);
+  });
+
+  it("projects interleaved recalls, automation rejection, interruptions, and queue associations", () => {
+    const base = {
+      threadId: THREAD_ID,
+      content: null,
+      createdAt: CREATED_AT,
+    } as const;
+    const queuedAutomation = {
+      ...base,
+      id: "automation-queued",
+      seqId: 1,
+      eventType: "input.automation",
+    } satisfies ChatEvent;
+    const recalledAutomation = {
+      ...queuedAutomation,
+      id: "automation-recalled",
+      seqId: 2,
+    } satisfies ChatEvent;
+    const rejectedAutomation = {
+      ...queuedAutomation,
+      id: "automation-rejected",
+      seqId: 3,
+    } satisfies ChatEvent;
+    const cancellation = {
+      ...base,
+      id: "run-cancelled",
+      seqId: 4,
+      eventType: "run.cancelled",
+      runId: "run-interrupted",
+      runLifecycleEvent: "cancelled",
+    } satisfies ChatEvent;
+    const pendingPrompt = {
+      ...base,
+      id: "prompt-pending",
+      seqId: 5,
+      eventType: "input.prompt",
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Continue" }],
+      },
+    } satisfies ChatEvent;
+    const recall = {
+      ...base,
+      id: "automation-recall",
+      seqId: 6,
+      eventType: "control.revoke",
+      revokesEventId: recalledAutomation.id,
+    } satisfies ChatEvent;
+    const rejection = {
+      ...pendingPrompt,
+      id: "automation-rejection",
+      seqId: 7,
+      eventType: "input.rejected",
+      revokesEventId: rejectedAutomation.id,
+      error: "Insufficient credits",
+    } satisfies ChatEvent;
+    const interrupt = {
+      ...base,
+      id: "run-interrupt",
+      seqId: 8,
+      eventType: "control.interrupt",
+      interruptsRunId: cancellation.runId,
+      createdAt: "2026-07-23T00:00:01.000Z",
+    } satisfies ChatEvent;
+    const runningAutomation = {
+      ...queuedAutomation,
+      id: "automation-running",
+      seqId: 9,
+      runId: "run-active",
+    } satisfies ChatEvent;
+    const otherCancellation = {
+      ...cancellation,
+      id: "other-run-cancelled",
+      seqId: 10,
+      runId: "run-other",
+    } satisfies ChatEvent;
+    const optimisticAutomation = {
+      ...base,
+      id: "automation-optimistic",
+      eventType: "input.automation",
+      optimisticUserMessageAssociation: "run",
+    } as const;
+
+    expect(
+      semanticChatEventsFromChatEvents([
+        queuedAutomation,
+        recalledAutomation,
+        rejectedAutomation,
+        cancellation,
+        pendingPrompt,
+        recall,
+        rejection,
+        interrupt,
+        runningAutomation,
+        otherCancellation,
+        optimisticAutomation,
+      ]),
+    ).toStrictEqual([
+      {
+        event: queuedAutomation,
+        isQueued: true,
+        inputCreatedAt: queuedAutomation.createdAt,
+        inputOriginId: queuedAutomation.id,
+      },
+      {
+        event: pendingPrompt,
+        isQueued: false,
+        inputCreatedAt: pendingPrompt.createdAt,
+        inputOriginId: pendingPrompt.id,
+      },
+      {
+        event: {
+          ...base,
+          id: interrupt.id,
+          seqId: interrupt.seqId,
+          eventType: "run.cancelled",
+          content: "Run cancelled",
+          runId: cancellation.runId,
+          error: "Run cancelled",
+          runLifecycleEvent: "cancelled",
+          createdAt: interrupt.createdAt,
+        },
+        isQueued: false,
+      },
+      {
+        event: runningAutomation,
+        isQueued: false,
+        inputCreatedAt: runningAutomation.createdAt,
+        inputOriginId: runningAutomation.id,
+      },
+      {
+        event: otherCancellation,
+        isQueued: false,
+        inputCreatedAt: undefined,
+        inputOriginId: undefined,
+      },
+      {
+        event: optimisticAutomation,
+        isQueued: false,
+        inputCreatedAt: optimisticAutomation.createdAt,
+        inputOriginId: optimisticAutomation.id,
+      },
+    ]);
   });
 });
 

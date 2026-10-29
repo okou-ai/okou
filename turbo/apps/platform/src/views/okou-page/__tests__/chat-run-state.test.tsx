@@ -1,8 +1,10 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click } from "../../../__tests__/page-helper.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
@@ -10,9 +12,11 @@ import {
   completedEvent,
   findButton,
   promptEvent,
+  publishRunUpdate,
   queryButton,
   readyChat,
   RUN_PATH,
+  RUN_THREAD_ID,
   sendText,
   createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
@@ -134,6 +138,89 @@ test("Show thinking as soon as a new prompt is sent", async () => {
   ).resolves.toBeVisible();
   await expect(findButton("Send")).resolves.toBeVisible();
   expect(queryButton("Stop")).toBeNull();
+});
+
+test("Keep the composer and transcript in sync as a sent prompt is queued, claimed and finished", async () => {
+  const inputAccepted = context.mocks.deferred<void>();
+  const queuedInput = context.mocks.deferred<string>();
+  const events: MockChatEventInput[] = [];
+  installRunChat({ chatEvents: events });
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
+    if (body.prompt === undefined || body.clientEventId === undefined) {
+      throw new Error("Expected a prompt with a client event ID");
+    }
+    await inputAccepted.promise;
+    const input = promptEvent({
+      id: body.clientEventId,
+      seqId: 1,
+      text: body.prompt,
+    });
+    events.push({
+      ...input,
+      ...(body.userMessage ? { userMessage: body.userMessage } : {}),
+    });
+    queuedInput.resolve(body.clientEventId);
+    publishRunUpdate();
+    return respond(201, {
+      threadId: RUN_THREAD_ID,
+      createdAt: input.createdAt,
+    });
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await sendText("Prepare the launch checklist");
+
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
+  expect(userMessageInHistory("Prepare the launch checklist")).not.toBeNull();
+
+  inputAccepted.resolve(undefined);
+
+  await expect(findButton("queue...")).resolves.toBeInTheDocument();
+  expect(screen.getByText("Waiting in")).toBeInTheDocument();
+  expect(queryButton("Send")).toBeInTheDocument();
+  expect(queryButton("Stop")).toBeNull();
+  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+  expect(screen.getAllByText("Prepare the launch checklist")).toHaveLength(1);
+
+  const queuedInputId = await queuedInput.promise;
+  events.push({
+    ...promptEvent({
+      id: "launch-checklist-claimed",
+      runId: RUN_A,
+      seqId: 2,
+      text: "Prepare the launch checklist",
+    }),
+    revokesEventId: queuedInputId,
+  });
+  publishRunUpdate();
+
+  await expect(findButton("Stop")).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
+  expect(queryButton("queue...")).toBeNull();
+  expect(screen.getAllByText("Prepare the launch checklist")).toHaveLength(1);
+
+  events.push(
+    assistantEvent({
+      id: "launch-checklist-result",
+      runId: RUN_A,
+      seqId: 3,
+      text: "The launch checklist is ready.",
+    }),
+    completedEvent({ id: "launch-checklist-done", runId: RUN_A, seqId: 4 }),
+  );
+  publishRunUpdate();
+
+  await expect(
+    screen.findByText("The launch checklist is ready."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(queryButton("Send")).toBeInTheDocument();
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+  });
+  expect(queryButton("Stop")).toBeNull();
+  expect(userMessageInHistory("Prepare the launch checklist")).not.toBeNull();
 });
 
 test("Keep a prompt waiting for steer delivery in the message history", async () => {
