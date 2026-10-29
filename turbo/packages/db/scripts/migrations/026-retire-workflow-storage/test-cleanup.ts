@@ -49,6 +49,7 @@ const credential = join(root, "database-url");
 const orgId = `retirement-${randomUUID()}`;
 const agentId = randomUUID();
 const runnerId = randomUUID();
+const runId = randomUUID();
 const objects = new Set<string>();
 let listCount = 0;
 let deleteCount = 0;
@@ -279,7 +280,9 @@ try {
     const id = randomUUID(),
       workflowId = randomUUID();
     const storageName = name ?? `custom-skill@${workflowId}`;
-    const prefix = `${orgId}/${id}`;
+    const prefix = name?.startsWith("custom-skill@")
+      ? `${orgId}/volume/${storageName}`
+      : `${orgId}/${id}`;
     const version = digest(id);
     const directory = historical
       ? `renamed-org/volume/${storageName}/${version}`
@@ -465,6 +468,66 @@ try {
   assert.equal(await storageCount(userOwned.id), 1);
   assert.equal(await storageCount(memory.id), 1);
 
+  // Pre-UUID slugs can have zero, one or multiple current namesakes. None owns
+  // the captured Storage by name; current UUID Storage and Workflows survive.
+  for (const matches of [0, 1, 2]) {
+    const slug = `legacy-${matches}-${randomUUID().slice(0, 8)}`;
+    const legacySource = await seed(false, "__org__", `custom-skill@${slug}`);
+    const canonicalIds: string[] = [];
+    for (let index = 0; index < matches; index++) {
+      const canonical = await seed();
+      canonicalIds.push(canonical.id);
+      await db.query(
+        "UPDATE workflows SET name=$2,owner_user_id=$3 WHERE id=$1",
+        [canonical.workflowId, slug, `owner-${index}`],
+      );
+    }
+    const legacyPlan = await review(legacySource.id);
+    assert.equal(legacyPlan.plan.ready.length, 1);
+    assert.deepEqual(
+      legacyPlan.plan.ready[0]?.jobs.map((job) => {
+        return job.prefix;
+      }),
+      [legacySource.prefix],
+    );
+    const listsBefore: number = listCount;
+    await apply(legacyPlan);
+    assert.equal(listCount, listsBefore);
+    assert.equal(await storageCount(legacySource.id), 0);
+    assert.equal(await versionCount(legacySource.id), 0);
+    await processJobs(legacyPlan);
+    assert.equal(
+      objects.has(`${legacySource.directory}/archive.tar.gz`),
+      false,
+    );
+    const legacyAudit = await audit(legacyPlan);
+    assert.equal(legacyAudit.records[0]?.status, "verified");
+    assert.deepEqual(legacyAudit.last?.workflowChanges, []);
+    for (const id of canonicalIds) {
+      assert.equal(await storageCount(id), 1);
+      assert.equal(await versionCount(id), 1);
+    }
+  }
+
+  // Canonical UUID identities still require the actual Workflow organization.
+  const foreignOwner = await seed();
+  const foreignOwnerPlan = await review(foreignOwner.id);
+  await db.query("UPDATE workflows SET org_id=$2 WHERE id=$1", [
+    foreignOwner.workflowId,
+    `${orgId}-other`,
+  ]);
+  assert.ok(
+    (await review(foreignOwner.id, 2)).plan.blocked[0]?.reasons.includes(
+      "workflow-owner",
+    ),
+  );
+  await apply(foreignOwnerPlan, 2);
+  assert.equal(await storageCount(foreignOwner.id), 1);
+  await db.query("UPDATE workflows SET org_id=$2 WHERE id=$1", [
+    foreignOwner.workflowId,
+    orgId,
+  ]);
+
   // A collision cannot remove the source without its complete durable job inventory.
   const collision = await seed();
   const collisionPlan = await review(collision.id);
@@ -507,7 +570,6 @@ try {
   // Expired queue context and terminal Runs with live owners remain consumers.
   const protectedSource = await seed();
   const protectedPlan = await review(protectedSource.id);
-  const runId = randomUUID();
   const mount = JSON.stringify([
     { storageId: protectedSource.id, version: protectedSource.version },
   ]);
@@ -569,16 +631,103 @@ try {
   );
   await db.query("DELETE FROM runner_state WHERE runner_id=$1", [runnerId]);
   assert.equal((await review(protectedSource.id)).plan.ready.length, 1);
-  // A foreign Storage root is protected by overlap, not only by foreign keys.
-  await db.query("UPDATE storages SET s3_prefix=$2 WHERE id=$1", [
-    memory.id,
-    `${protectedSource.prefix}/shared`,
-  ]);
+
+  // Historical name-only references are tenant-scoped and protect planning,
+  // metadata removal and deletion, including a reference created during LIST.
+  const namedSource = await seed(
+    false,
+    "__org__",
+    `custom-skill@named-${randomUUID()}`,
+  );
+  const namedPlan = await review(namedSource.id);
+  const storageName = string().parse(namedPlan.plan.ready[0]?.source.name);
+  await db.query(
+    "INSERT INTO runner_job_queue(run_id,runner_group,execution_context,expires_at) VALUES($1,'fixture',$2,now()-interval '1 day')",
+    [runId, JSON.stringify({ storageMounts: [{ name: storageName }] })],
+  );
   assert.ok(
-    (await review(protectedSource.id, 2)).plan.blocked[0]?.reasons.includes(
-      "other-storage",
+    (await review(namedSource.id, 2)).plan.blocked[0]?.reasons.includes(
+      "queued-consumer",
     ),
   );
+  await apply(namedPlan, 2);
+  assert.equal(await storageCount(namedSource.id), 1);
+  await db.query("UPDATE agent_runs SET org_id=$2 WHERE id=$1", [
+    runId,
+    `${orgId}-other`,
+  ]);
+  assert.equal((await review(namedSource.id)).plan.ready.length, 1);
+  // UUID/version references remain global even when the consumer is in another org.
+  await db.query(
+    "UPDATE runner_job_queue SET execution_context=$2 WHERE run_id=$1",
+    [
+      runId,
+      JSON.stringify({ artifacts: [{ versionId: namedSource.version }] }),
+    ],
+  );
+  assert.ok(
+    (await review(namedSource.id, 2)).plan.blocked[0]?.reasons.includes(
+      "queued-consumer",
+    ),
+  );
+  await db.query("DELETE FROM runner_job_queue WHERE run_id=$1", [runId]);
+  await db.query(
+    "UPDATE agent_runs SET org_id=$2,storage_mounts=$3 WHERE id=$1",
+    [runId, orgId, JSON.stringify([{ name: storageName }])],
+  );
+  await db.query(
+    "INSERT INTO active_agent_runs(run_id,org_id,user_id,last_heartbeat_at) VALUES($1,$2,'owner',now())",
+    [runId, orgId],
+  );
+  assert.ok(
+    (await review(namedSource.id, 2)).plan.blocked[0]?.reasons.includes(
+      "execution-consumer",
+    ),
+  );
+  await db.query("DELETE FROM active_agent_runs WHERE run_id=$1", [runId]);
+  const consumerId = randomUUID();
+  await db.query(
+    "INSERT INTO background_jobs(id,kind,handler_version,user_id,org_id,input,checkpoint) VALUES($1,'fixture',1,'owner',$2,'{}',$3)",
+    [consumerId, orgId, JSON.stringify({ mount: { storageName } })],
+  );
+  assert.ok(
+    (await review(namedSource.id, 2)).plan.blocked[0]?.reasons.includes(
+      "background-consumer",
+    ),
+  );
+  await db.query("DELETE FROM background_jobs WHERE id=$1", [consumerId]);
+  await apply(namedPlan);
+  beforeList = async () => {
+    await db.query(
+      "INSERT INTO runner_job_queue(run_id,runner_group,execution_context,expires_at) VALUES($1,'fixture',$2,now()-interval '1 day')",
+      [runId, JSON.stringify({ storageMounts: [{ name: storageName }] })],
+    );
+  };
+  const namedDeletesBefore = deleteCount;
+  await processJobs(namedPlan, 1);
+  assert.equal(deleteCount, namedDeletesBefore);
+  assert.equal(objects.has(`${namedSource.directory}/archive.tar.gz`), true);
+  await db.query("DELETE FROM runner_job_queue WHERE run_id=$1", [runId]);
+  await processJobs(namedPlan);
+  await audit(namedPlan);
+
+  // A foreign Storage root is protected by overlap, not only by foreign keys.
+  for (const overlappingPrefix of [orgId, `${protectedSource.prefix}/shared`]) {
+    await db.query("UPDATE storages SET s3_prefix=$2 WHERE id=$1", [
+      memory.id,
+      overlappingPrefix,
+    ]);
+    assert.ok(
+      (await review(protectedSource.id, 2)).plan.blocked[0]?.reasons.includes(
+        "other-storage",
+      ),
+    );
+  }
+  await db.query("UPDATE storages SET s3_prefix=$2 WHERE id=$1", [
+    memory.id,
+    `${protectedSource.prefix}-sibling`,
+  ]);
+  assert.equal((await review(protectedSource.id)).plan.ready.length, 1);
   await db.query("UPDATE storages SET s3_prefix=$2 WHERE id=$1", [
     memory.id,
     memory.prefix,
@@ -595,6 +744,80 @@ try {
   await db.query("DELETE FROM skills WHERE storage_id=$1", [
     protectedSource.id,
   ]);
+
+  // A version-only Skill or custom connector remains an independent owner.
+  const versionOwnerPlan = await review(protectedSource.id);
+  const skillUrl = `https://fixture.test/version/${protectedSource.id}`;
+  await db.query(
+    "INSERT INTO skills(url,name,full_path,version_hash) VALUES($1,'fixture','fixture',$2)",
+    [skillUrl, protectedSource.version],
+  );
+  assert.ok(
+    (await review(protectedSource.id, 2)).plan.blocked[0]?.reasons.includes(
+      "skill",
+    ),
+  );
+  await apply(versionOwnerPlan, 2);
+  await db.query("DELETE FROM skills WHERE url=$1", [skillUrl]);
+  const connectorId = randomUUID();
+  await db.query(
+    "INSERT INTO org_custom_connectors(id,org_id,slug,display_name,prefix_templates,auth_mode,created_by,skill_markdown,skill_storage_version_id) VALUES($1,$2,'_retirement','Retirement','[\"https://fixture.test/\"]','none','owner','fixture',$3)",
+    [connectorId, orgId, protectedSource.version],
+  );
+  assert.ok(
+    (await review(protectedSource.id, 2)).plan.blocked[0]?.reasons.includes(
+      "custom-connector",
+    ),
+  );
+  const connectorApply = await apply(versionOwnerPlan, 2);
+  assert.equal(connectorApply.records[0]?.status, "changed_or_referenced");
+  assert.equal(await versionCount(protectedSource.id), 1);
+  await db.query("DELETE FROM org_custom_connectors WHERE id=$1", [
+    connectorId,
+  ]);
+
+  // Pending work and running leases (even expired) block retirement. Completed
+  // derived indexes follow their parent version's existing cascading lifecycle.
+  for (const state of ["pending", "leased", "expired"] as const) {
+    const running = state !== "pending";
+    await db.query(
+      "INSERT INTO pi_resource_version_indexes(storage_version_id,extractor_version,status,lease_id,lease_expires_at) VALUES($1,1,$2,$3,$4)",
+      [
+        protectedSource.version,
+        running ? "running" : "pending",
+        running ? randomUUID() : null,
+        running
+          ? new Date(Date.now() + (state === "leased" ? 60_000 : -60_000))
+          : null,
+      ],
+    );
+    assert.ok(
+      (await review(protectedSource.id, 2)).plan.blocked[0]?.reasons.includes(
+        "pi-index-work",
+      ),
+    );
+    await apply(versionOwnerPlan, 2);
+    assert.equal(await versionCount(protectedSource.id), 1);
+    await db.query(
+      "DELETE FROM pi_resource_version_indexes WHERE storage_version_id=$1",
+      [protectedSource.version],
+    );
+  }
+  await db.query(
+    "INSERT INTO pi_resource_version_indexes(storage_version_id,extractor_version,status,projection,projection_hash,source_archive_size) VALUES($1,1,'ready','{\"schemaVersion\":1,\"files\":[]}',$2,1),($1,2,'unindexable',NULL,NULL,NULL)",
+    [protectedSource.version, digest("empty-index")],
+  );
+  const indexedPlan = await review(protectedSource.id);
+  await apply(indexedPlan);
+  assert.equal(
+    await scalar(
+      "SELECT count(*)::int AS count FROM pi_resource_version_indexes WHERE storage_version_id=$1",
+      [protectedSource.version],
+    ),
+    0,
+  );
+  await processJobs(indexedPlan);
+  await audit(indexedPlan);
 
   // Multi-page deletion has a bounded continuation and certifies only a final empty listing.
   const paginated = await seed();
@@ -717,6 +940,10 @@ try {
       "UnrecognizedLegacyPrefix",
     ),
   );
+  const unknownName = await seed(false, "__org__", "custom-skill@Unknown_Name");
+  assert.deepEqual((await review(unknownName.id, 2)).plan.blocked[0]?.reasons, [
+    "UnsupportedWorkflowStorageIdentity",
+  ]);
   assert.equal(objects.has(newAttachment), true);
   assert.equal(objects.has(sibling), true);
   console.log(
@@ -733,18 +960,28 @@ try {
     });
   await db.query("DELETE FROM runner_state WHERE runner_id=$1", [runnerId]);
   await db.query(
-    "DELETE FROM runner_job_queue WHERE run_id IN(SELECT id FROM agent_runs WHERE org_id=$1)",
-    [orgId],
+    "DELETE FROM runner_job_queue WHERE run_id=$2 OR run_id IN(SELECT id FROM agent_runs WHERE org_id=$1)",
+    [orgId, runId],
   );
-  await db.query("DELETE FROM active_agent_runs WHERE org_id=$1", [orgId]);
-  await db.query("DELETE FROM agent_runs WHERE org_id=$1", [orgId]);
+  await db.query("DELETE FROM active_agent_runs WHERE org_id=$1 OR run_id=$2", [
+    orgId,
+    runId,
+  ]);
+  await db.query("DELETE FROM agent_runs WHERE org_id=$1 OR id=$2", [
+    orgId,
+    runId,
+  ]);
   await db.query(
-    "DELETE FROM skills WHERE storage_id IN(SELECT id FROM storages WHERE org_id=$1)",
+    "DELETE FROM skills WHERE storage_id IN(SELECT id FROM storages WHERE org_id=$1) OR version_hash IN(SELECT v.id FROM storage_versions v JOIN storages s ON s.id=v.storage_id WHERE s.org_id=$1)",
     [orgId],
   );
   await db.query("DELETE FROM background_jobs WHERE org_id=$1", [orgId]);
+  await db.query("DELETE FROM org_custom_connectors WHERE org_id=$1", [orgId]);
   await db.query("DELETE FROM storages WHERE org_id=$1", [orgId]);
-  await db.query("DELETE FROM workflows WHERE org_id=$1", [orgId]);
+  await db.query("DELETE FROM workflows WHERE org_id=$1 OR agent_id=$2", [
+    orgId,
+    agentId,
+  ]);
   await db.query("DELETE FROM agents WHERE id=$1", [agentId]);
   await db.end();
   await rm(root, { recursive: true, force: true });

@@ -76,8 +76,15 @@ node --import tsx scripts/migrations/026-retire-workflow-storage/cleanup.ts \
 ```
 
 Selection is limited to organization-owned (`user_id='__org__'`)
-`custom-skill@<Workflow UUID>` Storage. Use the reported `nextAfter` as `--after`
-for the next plan until it is null. `--storage-id UUID` scopes investigation to
+`custom-skill@<Workflow UUID>` and historical `custom-skill@<slug>` Storage.
+Historical slugs follow the original publisher's 2–64 character lowercase
+alphanumeric/hyphen contract, without leading or trailing hyphens. They are
+Storage identities only, regardless of zero, one or multiple current
+same-organization Workflow name matches. Only a UUID identity is checked
+against a current Workflow owner; a slug is never cast to UUID.
+All candidates still require the exact captured locations and reference gates.
+Use the reported `nextAfter` as `--after` for the next plan until it is null.
+`--storage-id UUID` scopes investigation to
 one candidate. A page can contain blocked candidates: following its cursor is
 not permission to ignore them. `--max-ms` bounds work (default 60,000 ms, maximum
 300,000); a partially examined page retains the last **examined** cursor.
@@ -90,9 +97,16 @@ are blocked. Every R2 operation appends `/` to its captured prefix, preserving
 similarly named siblings and the new `workflow-attachments/` namespace.
 
 Plans block overlapping foreign Storage/version locations, Skills, official
-definition revisions, lineage, export artifacts, claimed or current attachments,
-unfinished background consumers, queued contexts, and Runs with a live execution
-owner. Review external retirement gates even if all these checks are clear.
+definition revisions, custom connector version references, lineage, export
+artifacts, claimed or current attachments, unfinished background consumers,
+queued contexts, and Runs with a live execution owner. Structured consumers are
+checked for captured Storage/version IDs and exact Storage names; name-only
+references are scoped to the consumer's organization.
+Pending or running Pi resource indexing blocks retirement, including expired
+leases. Ready/unindexable indexes are derived cache entries and follow their
+parent Storage version's existing cascading deletion; the operator neither
+cancels indexing nor changes its leases. Review external retirement gates even
+if all these checks are clear.
 
 ## 2. Remove reviewed metadata and register every exact job
 
@@ -195,4 +209,6 @@ Run `pnpm test:workflow-storage-retirement` with a migrated, disposable local
 `DATABASE_URL`. The suite runs the real CLI against PostgreSQL and a local HTTP
 S3 fixture; it never accepts a remote production database. The migration
 consistency suite also invokes it. No GitHub workflow or online runtime changes
-are needed.
+are needed. Coverage includes historical slugs with zero/one/multiple namesakes,
+current Workflow preservation, name-only consumers appearing during listing,
+custom connector and version-only Skill ownership, and Pi indexing lifecycle.
