@@ -85,18 +85,14 @@ export class AdmissionAttemptTiming {
     this.heldStartedAt = this.nowMs();
   }
 
-  async measureLeaf<T>(
-    leaf: AdmissionLockLeaf,
-    operation: () => T | Promise<T>,
-  ): Promise<T> {
-    const startedAt = this.nowMs();
-    return await (async () => {
-      return await operation();
-    })().finally(() => {
-      const durationMs = Math.max(0, this.nowMs() - startedAt);
-      this.leafDurationMs += durationMs;
-      this.record("api_dispatch_admission_lock_leaf", durationMs, leaf);
-    });
+  leafStartedAt(): number {
+    return this.nowMs();
+  }
+
+  recordLeafElapsed(leaf: AdmissionLockLeaf, startedAt: number): void {
+    const durationMs = Math.max(0, this.nowMs() - startedAt);
+    this.leafDurationMs += durationMs;
+    this.record("api_dispatch_admission_lock_leaf", durationMs, leaf);
   }
 
   callbackFinished(): void {

@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { captureInvokedWorkflow$ } from "./execution-agent-workflows.service";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
@@ -62,6 +63,10 @@ import {
   parseRawRows,
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
+import {
+  withPgQueryExecutionCapture,
+  type PgQueryExecutionCapture,
+} from "../../lib/db-instrumentation";
 import { env, optionalEnv } from "../../lib/env";
 import {
   AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
@@ -6492,56 +6497,61 @@ export const commitPreparedPendingLaunch$ = command(
       claim,
       queueFirst,
     });
-    return await admissionTiming.measureLeaf("persistence", async () => {
+    const leafStartedAt = admissionTiming.leafStartedAt();
+    return await (async () => {
       signal.throwIfAborted();
-      const persisted = await timing.measureDatabase(
-        "api_dispatch_persist_atomic_launch",
-        "api_dispatch_persist_atomic_launch_sql_call",
-        "api_dispatch_persist_atomic_launch_application_remainder",
-        async () => {
-          const buildStartedAt = monotonicNow();
-          const plan = pendingAtomicLaunchPlan(prepared.rows, prepared.context);
-          timing.recordDuration(
-            "api_dispatch_persist_atomic_launch_build",
-            "nested",
-            monotonicNow() - buildStartedAt,
-            now(),
-          );
+      const capture: PgQueryExecutionCapture = { executions: [] };
+      const databaseStartedAt = performance.now();
+      const persisted = await withPgQueryExecutionCapture(capture, async () => {
+        const buildStartedAt = monotonicNow();
+        const plan = pendingAtomicLaunchPlan(prepared.rows, prepared.context);
+        timing.recordDuration(
+          "api_dispatch_persist_atomic_launch_build",
+          "nested",
+          monotonicNow() - buildStartedAt,
+          now(),
+        );
+        signal.throwIfAborted();
+        const outcome = await settle(
+          (async () => {
+            return parseRawRows(pendingLaunchRowSchema, await db.execute(plan));
+          })(),
+        );
+        if (!outcome.ok) {
           signal.throwIfAborted();
-          const outcome = await settle(
-            (async () => {
-              return parseRawRows(
-                pendingLaunchRowSchema,
-                await db.execute(plan),
-              );
-            })(),
-          );
-          if (!outcome.ok) {
-            signal.throwIfAborted();
-            throwPendingLaunchGuardFailure(outcome.error);
-            throw outcome.error;
-          }
-          // Publication has committed. Return its durable identity before the
-          // caller observes cancellation; do not orphan an accepted pending Run.
-          const materializeStartedAt = monotonicNow();
-          const result = pendingAtomicLaunchResult(
-            args,
-            prepared.context,
-            outcome.value[0],
-          );
-          timing.recordDuration(
-            "api_dispatch_persist_atomic_launch_materialize",
-            "nested",
-            monotonicNow() - materializeStartedAt,
-            now(),
-          );
-          return result;
-        },
-      );
+          throwPendingLaunchGuardFailure(outcome.error);
+          throw outcome.error;
+        }
+        // Publication has committed. Return its durable identity before the
+        // caller observes cancellation; do not orphan an accepted pending Run.
+        const materializeStartedAt = monotonicNow();
+        const result = pendingAtomicLaunchResult(
+          args,
+          prepared.context,
+          outcome.value[0],
+        );
+        timing.recordDuration(
+          "api_dispatch_persist_atomic_launch_materialize",
+          "nested",
+          monotonicNow() - materializeStartedAt,
+          now(),
+        );
+        return result;
+      }).finally(() => {
+        timing.recordDatabaseElapsed(
+          "api_dispatch_persist_atomic_launch",
+          "api_dispatch_persist_atomic_launch_sql_call",
+          "api_dispatch_persist_atomic_launch_application_remainder",
+          databaseStartedAt,
+          capture.executions,
+        );
+      });
       admissionTiming.callbackFinished();
       return "run" in persisted
         ? pendingLaunchCommitResult(args, accepted, persisted)
         : persisted;
+    })().finally(() => {
+      admissionTiming.recordLeafElapsed("persistence", leafStartedAt);
     });
   },
 );

@@ -1,10 +1,7 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { performance } from "node:perf_hooks";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
-import {
-  withPgQueryExecutionCapture,
-  type PgQueryExecutionCapture,
-} from "../../lib/db-instrumentation";
+import type { PgQueryExecution } from "../../lib/db-instrumentation";
 import { env } from "../../lib/env";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
@@ -360,55 +357,52 @@ export class ApiDispatchTimingCollector {
   private processDispatchOrdinalBucket:
     ApiProcessDispatchOrdinalBucket | undefined;
 
-  async measureDatabase<T>(
+  recordDatabaseElapsed(
     parentActionType: ApiDispatchTimingActionType,
     sqlActionType: ApiDispatchTimingActionType,
     applicationActionType: ApiDispatchTimingActionType,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const capture: PgQueryExecutionCapture = { executions: [] };
-    const startedAt = performance.now();
-    return await withPgQueryExecutionCapture(capture, operation).finally(() => {
-      safeSync(() => {
-        const durationMs = performance.now() - startedAt;
-        const finishedAt = now();
-        const dimensions = {
-          db_query_capture:
-            capture.executions.length === 1
-              ? "single"
-              : capture.executions.length === 0
-                ? "missing"
-                : "multiple",
-        };
+    startedAt: number,
+    executions: readonly PgQueryExecution[],
+  ): void {
+    safeSync(() => {
+      const durationMs = performance.now() - startedAt;
+      const finishedAt = now();
+      const dimensions = {
+        db_query_capture:
+          executions.length === 1
+            ? "single"
+            : executions.length === 0
+              ? "missing"
+              : "multiple",
+      };
+      this.recordDuration(
+        parentActionType,
+        "nested",
+        durationMs,
+        finishedAt,
+        dimensions,
+      );
+      const [execution] = executions;
+      if (executions.length === 1 && execution) {
         this.recordDuration(
-          parentActionType,
+          sqlActionType,
           "nested",
-          durationMs,
-          finishedAt,
+          execution.durationMs,
+          execution.finishedAt,
           dimensions,
         );
-        const [execution] = capture.executions;
-        if (capture.executions.length === 1 && execution) {
+        // Query construction, ORM/schema decoding and projection are outside
+        // the client's SQL-call wall. Never infer them from missing capture.
+        if (durationMs >= execution.durationMs) {
           this.recordDuration(
-            sqlActionType,
+            applicationActionType,
             "nested",
-            execution.durationMs,
-            execution.finishedAt,
+            durationMs - execution.durationMs,
+            finishedAt,
             dimensions,
           );
-          // Query construction, ORM/schema decoding and projection are outside
-          // the client's SQL-call wall. Never infer them from missing capture.
-          if (durationMs >= execution.durationMs) {
-            this.recordDuration(
-              applicationActionType,
-              "nested",
-              durationMs - execution.durationMs,
-              finishedAt,
-              dimensions,
-            );
-          }
         }
-      });
+      }
     });
   }
 
