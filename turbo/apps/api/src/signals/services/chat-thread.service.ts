@@ -6,6 +6,7 @@ import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { command, computed, type Computed } from "ccstate";
 import {
   type ChatThreadDraft,
@@ -1250,6 +1251,19 @@ const deleteChatThreadContent$ = command(
       await tx
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
+      signal.throwIfAborted();
+
+      // Explicitly detach the same references as the thread's SET NULL actions.
+      // Keep the workflow-user binding until its Automations are disabled above.
+      await tx
+        .update(agentRuns)
+        .set({ chatThreadId: null })
+        .where(eq(agentRuns.chatThreadId, ownedThread.id));
+      signal.throwIfAborted();
+      await tx
+        .update(workflowUserAutomationThreads)
+        .set({ chatThreadId: null })
+        .where(eq(workflowUserAutomationThreads.chatThreadId, ownedThread.id));
       signal.throwIfAborted();
 
       // Delete the thread after cleanup under its row lock. Cascades chat_events.
