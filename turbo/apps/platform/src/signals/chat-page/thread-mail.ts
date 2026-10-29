@@ -126,6 +126,7 @@ function createMailBulkSignals(
         href,
         originalUrl: new URL(href, window.location.origin).href,
       });
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const outcome = await settle<unknown>(
         pending.action === "send"
           ? set(signals.send$, signal)

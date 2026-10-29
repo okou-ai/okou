@@ -53,6 +53,7 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
     ) {
       // The SDK decorates cross-origin development returns with the current
       // browser token. Never send that credential to an unvalidated URL.
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const redirect = await settle(
         clerk.redirectWithAuth(continuation.href),
         signal,
@@ -65,6 +66,7 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
     }
     // The optional hosted UI can fail before a form exists, so `settle` keeps
     // cancellation propagating while this route offers a visible reload.
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const uiLoad = await settle(set(ensureClerkUiLoaded$, signal), signal);
     if (!uiLoad.ok) {
       set(updatePage$, createElement(AuthV1LoadError));

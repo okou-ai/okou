@@ -1817,6 +1817,7 @@ const prewarmMermaidDiagrams$ = command(
     for (const code of new Set(codes)) {
       // The view owns each diagram's error fallback. A failed layout must
       // not stop prewarming other diagrams or fail chat synchronization.
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       await settle(get(registry.register(code).diagram$));
       signal.throwIfAborted();
     }
@@ -2249,6 +2250,7 @@ function createChatEventPresentationLifecycle({
       );
       await set(syncVisibleEventTrees$, false, signal);
       set(enableSidebarEntryAnimations$);
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const result = await settle(set(chatEvents.setup$, signal), signal);
       if (!result.ok) {
         set(initialEventsReady$, true);
@@ -2258,6 +2260,7 @@ function createChatEventPresentationLifecycle({
   );
   const catchUp$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const result = await settle(set(chatEvents.catchUp$, signal), signal);
       set(initialEventsReady$, true);
       if (!result.ok) {

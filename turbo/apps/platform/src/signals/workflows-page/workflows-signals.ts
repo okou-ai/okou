@@ -1666,6 +1666,7 @@ export const runWorkflowAutomationNow$ = command(
     );
     signal.throwIfAborted();
     if (workflowId) {
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       await settle(() => {
         set(recordRecentWorkflowUse$, [workflowId], signal);
       }, signal);

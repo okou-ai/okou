@@ -60,6 +60,7 @@ function createDocumentCategorySignals() {
   );
   const defaultDocumentCategory$ = computed(
     async (get): Promise<ComposerDocumentCategory> => {
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const result = await settle(get(customTemplateCatalog$));
       if (!result.ok) {
         // A failed custom catalog must leave the built-in shelf usable.

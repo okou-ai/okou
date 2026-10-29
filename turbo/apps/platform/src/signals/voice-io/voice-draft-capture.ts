@@ -95,6 +95,7 @@ export function createVoiceDraftCaptureSignals() {
         },
         { once: true },
       );
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const started = await settle(
         (async () => {
           await waitForBrowserPaint(signal);
@@ -116,6 +117,7 @@ export function createVoiceDraftCaptureSignals() {
             "voice draft recording",
           );
           const startedAt = now();
+          // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
           const monitored = await settle(
             startAudioActivityMonitor(
               stream,

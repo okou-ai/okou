@@ -219,6 +219,7 @@ export const approveDiscordAuthorization$ = command(
     const request = set(verifyDiscordAuthorization$, proof, signal);
     set(approvalRequest$, request);
     // The panel displays the failed request; a rejection must not fail route setup.
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     await settle(request, signal);
   },
 );

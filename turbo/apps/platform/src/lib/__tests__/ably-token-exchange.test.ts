@@ -125,6 +125,7 @@ test("Auth deadline aborts an in-flight platform token HTTP request without exch
     },
   );
   const ably = client();
+  // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
   const result = settle(ably.auth.requestToken());
   const signal = await started.promise;
   await expire();

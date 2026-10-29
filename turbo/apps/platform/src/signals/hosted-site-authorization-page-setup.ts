@@ -42,6 +42,7 @@ export const setupHostedSiteAuthorizationPage$ = command(
     }
     const { siteId, origin, state, codeChallenge } = input.data;
     const body = { origin, state, codeChallenge };
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
       accept(
         get(apiClient$)(hostContract).authorizeSiteSession({

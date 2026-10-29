@@ -556,6 +556,7 @@ export const connectorCatalogDiscovery$ = relatedConnectorCatalog(
 export const relatedCatalogItems$ = computed(async (get) => {
   const { connectors } = await get(connectorCatalogDiscovery$);
   const items = connectors.map(withConnectorCompletion);
+  // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
   const read = await settle(get(connectedConnectorTargetKeys$));
   // An unavailable status read leaves metadata browsable in provider order.
   if (!read.ok) {

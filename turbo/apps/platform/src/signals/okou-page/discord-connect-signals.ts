@@ -19,6 +19,7 @@ export const connectDiscordFromWorks$ = command(
     options: DiscordAuthorizationOptions,
     signal: AbortSignal,
   ) => {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
       set(startDiscordAuthorization$, options, signal),
       signal,

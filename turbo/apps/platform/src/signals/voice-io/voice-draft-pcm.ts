@@ -217,6 +217,7 @@ export async function startVoiceDraftPcmCapture(
     "abort",
     () => {
       detach(
+        // eslint-disable-next-line ccstate/no-best-effort -- Legacy 20261029: existing bestEffort only; do not add new usages.
         bestEffort(audioContext.close()),
         Reason.DomCallback,
         "close voice draft audio context",

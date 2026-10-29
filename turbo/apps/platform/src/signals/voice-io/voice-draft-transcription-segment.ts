@@ -116,6 +116,7 @@ async function transcribePreparedSegment(
     const newSamples = samples.subarray(
       Math.round(options.overlapDurationSeconds * VOICE_DRAFT_PCM_SAMPLE_RATE),
     );
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const detected = await settle(
       analyzeVoiceActivity(newSamples, signal),
       signal,

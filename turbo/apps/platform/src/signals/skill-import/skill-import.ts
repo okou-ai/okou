@@ -102,6 +102,7 @@ export function createSkillImportSignals(options: SkillImportOptions) {
       signal,
     );
     // Views independently read session$ and own its loading/error UI.
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const session = await settle(get(session$), signal);
     if (
       session.ok &&

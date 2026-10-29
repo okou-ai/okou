@@ -19,6 +19,8 @@
  * - no-command-in-command: Prevent runtime command creation inside commands
  * - no-on-rejection: Require review for onRejection error callbacks
  * - no-with-cleanup: Disallow new withCleanup usages
+ * - no-settle: Disallow new settle usages
+ * - no-best-effort: Disallow new bestEffort usages
  * - no-getter-setter-params: Functions must not accept ccstate Getter/Setter — use command()
  * - no-accessor-escape: ccstate get/set accessors must only be called directly
  * - no-new-abort-controller: Disallow new AbortController() — use signal hierarchy
@@ -55,6 +57,8 @@ import commandAsyncSignal from "./rules/command-async-signal.ts";
 import noCommandInCommand from "./rules/no-command-in-command.ts";
 import noOnRejection from "./rules/no-on-rejection.ts";
 import noWithCleanup from "./rules/no-with-cleanup.ts";
+import noSettle from "./rules/no-settle.ts";
+import noBestEffort from "./rules/no-best-effort.ts";
 import noGetterSetterParams from "./rules/no-getter-setter-params.ts";
 import noAccessorEscape from "./rules/no-accessor-escape.ts";
 import noNewAbortController from "./rules/no-new-abort-controller.ts";
@@ -105,6 +109,8 @@ const plugin = {
     "no-command-in-command": noCommandInCommand,
     "no-on-rejection": noOnRejection,
     "no-with-cleanup": noWithCleanup,
+    "no-settle": noSettle,
+    "no-best-effort": noBestEffort,
     "no-getter-setter-params": noGetterSetterParams,
     "no-accessor-escape": noAccessorEscape,
     "no-new-abort-controller": noNewAbortController,

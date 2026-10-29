@@ -946,6 +946,7 @@ export const importVncKerberos$ = command(
           ]
         : null;
     let bytes: Uint8Array | undefined;
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
       // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       withCleanup(
@@ -1162,6 +1163,7 @@ export const openVncDialog$ = command(
     };
     set(dialog$, dialog);
     if (kind === "create") {
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const credentials = await settle(get(vncCredentials$), signal);
       signal.throwIfAborted();
       if (

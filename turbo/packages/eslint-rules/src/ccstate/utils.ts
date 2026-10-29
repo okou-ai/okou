@@ -14,10 +14,17 @@ interface RuleDocs {
   requiresTypeChecking?: boolean;
 }
 
+const SIGNALS_HELPER_GUIDES: Readonly<Record<string, string>> = {
+  "no-on-rejection": "onRejection",
+  "no-with-cleanup": "withCleanup",
+  "no-settle": "settle",
+  "no-best-effort": "settle",
+};
+
 export const createRule = ESLintUtils.RuleCreator<RuleDocs>((name) => {
-  if (name === "no-on-rejection" || name === "no-with-cleanup") {
-    const helper = name === "no-on-rejection" ? "onRejection" : "withCleanup";
-    return `https://github.com/okou-ai/okou/blob/main/docs/app/signals/${helper}.md`;
+  const helperGuide = SIGNALS_HELPER_GUIDES[name];
+  if (helperGuide) {
+    return `https://github.com/okou-ai/okou/blob/main/docs/app/signals/${helperGuide}.md`;
   }
   return `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`;
 });
