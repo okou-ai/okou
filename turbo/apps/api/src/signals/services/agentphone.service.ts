@@ -30,7 +30,6 @@ import { waitUntil } from "../context/wait-until";
 import {
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
-  sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
@@ -39,7 +38,11 @@ import {
   publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
-import { bestEffort, safeUrlParse, settle } from "../utils";
+import { safeUrlParse, settle, tapError } from "../utils";
+import {
+  AGENTPHONE_TYPING_REQUEST_TIMEOUT_MS,
+  sendAgentPhoneRunTyping,
+} from "./agentphone-run-typing.service";
 import {
   ensureAgentPhoneChatThreadRoute$,
   resolveAgentPhoneGroupChatRoot$,
@@ -946,24 +949,6 @@ const sendAgentPhoneSlashCommandText$ = command(
   },
 );
 
-async function refreshTypingIfSupported(
-  event: AgentPhoneMessageEvent,
-  signal: AbortSignal,
-): Promise<void> {
-  if (event.channel !== "imessage") {
-    return;
-  }
-  const conversationId = event.conversationId;
-  if (!conversationId) {
-    return;
-  }
-
-  await bestEffort(
-    sendAgentPhoneTypingIndicator({ conversationId }, signal),
-    signal,
-  );
-}
-
 function formatConnectPrompt(
   event: AgentPhoneMessageEvent,
   action: "link" | "reply" = "link",
@@ -1652,6 +1637,25 @@ export const handleAgentPhoneMessage$ = command(
       return;
     }
 
+    signal.throwIfAborted();
+    if (params.event.channel === "imessage" && params.event.conversationId) {
+      // Ingress has verified the sender and persisted/deduplicated the message.
+      // Start typing before agent/context reads, without delaying run dispatch.
+      waitUntil(
+        tapError(
+          sendAgentPhoneRunTyping(
+            {
+              conversationId: params.event.conversationId,
+              phase: "admission",
+              messageId: params.event.messageId,
+              apiStartTime: params.apiStartTime,
+            },
+            AbortSignal.timeout(AGENTPHONE_TYPING_REQUEST_TIMEOUT_MS),
+          ),
+        ),
+      );
+    }
+
     const agent = await set(resolveAgentPhoneAgent$, userLink);
     signal.throwIfAborted();
     if (!agent) {
@@ -1663,9 +1667,6 @@ export const handleAgentPhoneMessage$ = command(
       );
       return;
     }
-
-    await refreshTypingIfSupported(params.event, signal);
-    signal.throwIfAborted();
 
     const isGroup = isAgentPhoneGroupEvent(params.event);
     const rootMessageId = await set(

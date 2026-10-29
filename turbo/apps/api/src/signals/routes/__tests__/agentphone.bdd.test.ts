@@ -2,7 +2,7 @@ import { state, createStore } from "ccstate";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
@@ -16,6 +16,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   clearAllDetached,
+  createDeferredPromise,
   joinAll,
   settle,
   settleIncludingAbort,
@@ -2084,6 +2085,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         runId: run1.runId,
         events: [{ type: "assistant", sequenceNumber: 1 }],
       };
+      mockNow(now() + 4000);
       const typingScheduled = await webhooks.requestAgentEvents(
         typingBody,
         { authorization: `Bearer ${run1.sandboxToken}` },
@@ -2097,6 +2099,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await waitForTyping(sends, [conversationId, conversationId]);
 
       // Sandbox progress refreshes the typing indicator through the callback.
+      mockNow(now() + 4000);
       const heartbeat = await webhooks.requestAgentHeartbeat(
         { runId: run1.runId },
         { authorization: `Bearer ${run1.sandboxToken}` },
@@ -2126,6 +2129,173 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
+  it("admits the Phone input while the first typing request is still pending", async () => {
+    const { actor, ap, phone, runnerGroup, sends } =
+      await entitledLinkedActor();
+    const chat = createChatFilesBddApi(context);
+    const conversationId = uniqueConversationId();
+    const typingStarted = createDeferredPromise<void>(context.signal);
+    const releaseTyping = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(
+        `https://api.agentphone.test/v1/conversations/${conversationId}/typing`,
+        async () => {
+          typingStarted.resolve();
+          await releaseTyping.promise;
+          return HttpResponse.json({ status: "typing indicator sent" });
+        },
+      ),
+    );
+    const inbound = settle(
+      ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "Process this while typing is pending",
+        conversationId,
+      }),
+    );
+    onTestFinished(async () => {
+      if (!releaseTyping.settled()) {
+        releaseTyping.resolve();
+      }
+      await inbound;
+    });
+    await typingStarted.promise;
+    await expect
+      .poll(async () => {
+        const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+        if (lifecycle.status !== 200) {
+          throw new Error("Expected Phone thread lifecycle events");
+        }
+        const created = lifecycle.body.events.find((event) => {
+          return event.kind === "created";
+        });
+        if (!created) {
+          return [];
+        }
+        const events = await chat.listThreadEvents(actor, created.chatThreadId);
+        return events.events.flatMap((event) => {
+          return event.eventType === "input.prompt"
+            ? event.userMessage.parts.flatMap((part) => {
+                return part.type === "text" ? [part.text] : [];
+              })
+            : [];
+        });
+      })
+      .toContain("Process this while typing is pending");
+
+    releaseTyping.resolve();
+    expect((await inbound).ok).toBeTruthy();
+    const run = await claimDispatchedRun(runnerGroup);
+    const beforeCompletion = sends.messages.length;
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await waitForSendCount(sends, beforeCompletion + 1);
+    expect(lastSend(sends).toNumber).toBe(phone);
+  });
+
+  it("coalesces Phone typing bursts and refreshes at the next four-second heartbeat", async () => {
+    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const webhooks = createWebhookCallbackApi(context);
+    const conversationId = uniqueConversationId();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "Keep typing through progress updates",
+      conversationId,
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    await webhooks.requestAgentEvents(
+      {
+        runId: run.runId,
+        events: [{ type: "assistant", sequenceNumber: 1 }],
+      },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    const earlyHeartbeat = await webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    expect(earlyHeartbeat.body).toStrictEqual({
+      ok: true,
+      typingRefreshIntervalSeconds: 4,
+    });
+    await waitForTyping(sends, [conversationId]);
+
+    mockNow(now() + 4000);
+    await webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    await waitForTyping(sends, [conversationId, conversationId]);
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    expect(lastSend(sends).toNumber).toBe(phone);
+  });
+
+  it.each(["server", "network", "timeout"] as const)(
+    "recovers a Phone typing %s failure on the next progress update",
+    async (failure) => {
+      const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
+      const webhooks = createWebhookCallbackApi(context);
+      const conversationId = uniqueConversationId();
+      let failTyping = true;
+      const acceptedTyping: string[] = [];
+      server.use(
+        http.post(
+          `https://api.agentphone.test/v1/conversations/${conversationId}/typing`,
+          async ({ request }) => {
+            if (failTyping) {
+              if (failure === "timeout") {
+                const aborted = createDeferredPromise<void>(context.signal);
+                if (request.signal.aborted) {
+                  aborted.resolve();
+                } else {
+                  request.signal.addEventListener(
+                    "abort",
+                    () => {
+                      if (!aborted.settled()) {
+                        aborted.resolve();
+                      }
+                    },
+                    { once: true },
+                  );
+                }
+                await aborted.promise;
+              }
+              return failure === "network" || failure === "timeout"
+                ? HttpResponse.error()
+                : HttpResponse.json(
+                    { detail: "temporary failure" },
+                    { status: 503 },
+                  );
+            }
+            acceptedTyping.push(conversationId);
+            return HttpResponse.json({ status: "typing indicator sent" });
+          },
+        ),
+      );
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "Recover typing without delaying my reply",
+        conversationId,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      failTyping = false;
+      await webhooks.requestAgentHeartbeat(
+        { runId: run.runId },
+        { authorization: `Bearer ${run.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(acceptedTyping).toStrictEqual([conversationId]);
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      expect(lastSend(sends).toNumber).toBe(phone);
+    },
+  );
+
   it("keeps run progress alive when the typing provider fails", async () => {
     const webhooks = createWebhookCallbackApi(context);
     const ap = createAgentPhoneBddApi(context);
@@ -2152,6 +2322,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         },
       ),
     );
+    mockNow(now() + 4000);
     const heartbeat = await webhooks.requestAgentHeartbeat(
       { runId: run.runId },
       { authorization: `Bearer ${run.sandboxToken}` },
@@ -4507,6 +4678,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     // Typing uses the conversation id on ingress and subsequent refreshes,
     // while the final message below still uses the group id as its address.
+    mockNow(now() + 4000);
     await webhooks.requestAgentEvents(
       {
         runId: run1.runId,
@@ -4516,6 +4688,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       [200],
     );
     await waitForTyping(sends, [conversationId, conversationId]);
+    mockNow(now() + 4000);
     const heartbeat = await webhooks.requestAgentHeartbeat(
       { runId: run1.runId },
       { authorization: `Bearer ${run1.sandboxToken}` },
