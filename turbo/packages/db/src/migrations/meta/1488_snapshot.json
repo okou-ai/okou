@@ -1,5 +1,5 @@
 {
-  "id": "cc2f7837-d410-4284-8de0-82d4689e07bd",
+  "id": "c950d667-c3c4-46c2-aeeb-aaae13f4e37a",
   "prevId": "396fd543-7f80-4bea-b6eb-f454fb88056b",
   "version": "7",
   "dialect": "postgresql",
@@ -1028,7 +1028,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -6984,21 +6984,7 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "chat_event_search_message_watermarks_chat_thread_id_chat_threads_id_fk": {
-          "name": "chat_event_search_message_watermarks_chat_thread_id_chat_threads_id_fk",
-          "tableFrom": "chat_event_search_message_watermarks",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -7132,21 +7118,7 @@
           }
         }
       },
-      "foreignKeys": {
-        "chat_event_search_messages_chat_thread_id_chat_threads_id_fk": {
-          "name": "chat_event_search_messages_chat_thread_id_chat_threads_id_fk",
-          "tableFrom": "chat_event_search_messages",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {
         "chat_event_search_messages_chat_thread_id_seq_id_pk": {
           "name": "chat_event_search_messages_chat_thread_id_seq_id_pk",
@@ -23510,18 +23482,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "proactive_planning_enabled": {
-          "name": "proactive_planning_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "translation_language": {
-          "name": "translation_language",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -36369,7 +36329,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

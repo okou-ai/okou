@@ -126,6 +126,12 @@ async fn serve_connection(
     requests: mpsc::Sender<ArchiveRequest>,
 ) {
     loop {
+        // A pooled socket may stay idle until reuse or owner drop. Start the
+        // bounded request read only after the peer actually sends a byte.
+        let mut eof = [0; 1];
+        if socket.peek(&mut eof).await.unwrap() == 0 {
+            return;
+        }
         let headers = match read_http_request(&mut socket).await {
             Ok(headers) => headers,
             Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return,
@@ -140,7 +146,6 @@ async fn serve_connection(
             })
             .await
             .unwrap();
-        let mut eof = [0; 1];
         let (bytes, close) = tokio::select! {
             response = response => response.unwrap(),
             read = socket.read(&mut eof) => {
@@ -666,6 +671,9 @@ async fn fresh_delivery_reaps_the_full_shared_connection_allowance_on_owner_drop
     for archive in archives {
         archive.complete(&home).await;
     }
+    // Idle keep-alive sockets have no request to read yet. Cross the raw
+    // request-read deadline without reaching the production pool idle timeout.
+    raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(6)).await;
     assert!(
         connections.contains(&download(&mut server, &home, &admission, "after-wave", false).await)
     );

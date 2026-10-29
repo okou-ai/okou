@@ -1,7 +1,7 @@
 import { computed, type Computed } from "ccstate";
 import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { and, asc, eq, or, sql } from "drizzle-orm";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import {
   storageVersionCacheKeySql,
   cacheRowsFromProjection,

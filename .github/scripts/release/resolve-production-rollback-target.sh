@@ -36,6 +36,10 @@ readonly MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT=b220a504c5e633de162791f1216c4458
 readonly STRIPE_INVOICE_PAID_RETIREMENT_COMMIT=190cdfba6440b50469117758156616447d707b81
 # #43148 removed every citation-table reader and writer before its contraction.
 readonly RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT=26bacab4693d32e4a4453dce5c84e565d7129b9c
+# #43797 stopped naming org_members_metadata.translation_language and
+# proactive_planning_enabled. Migration drop_retired_member_preference_columns
+# drops them, so earlier APIs fail every member preference statement.
+readonly MEMBER_PREFERENCE_RETIREMENT_COMMIT=94389e2203aaa62408b780156c2cf8f9a9cc5414
 # DAV catalog rules require #43517's API/Runner method support and rollout.
 readonly DAV_FIREWALL_READER_COMMIT=c8de6212dc54a5aae0d4658acf1afa6a35f939ab
 # #43667 prepared reference-only Workflow claims and current-content downloads.
@@ -217,6 +221,10 @@ fi
 
 if ! git merge-base --is-ancestor "$RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Run output memory citation retirement: ${RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$MEMBER_PREFERENCE_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired member preference mapping: ${MEMBER_PREFERENCE_RETIREMENT_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$TARGET_COMMIT"; then

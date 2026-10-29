@@ -3,7 +3,7 @@ import {
   PRESIGNED_URL_TTL_SECONDS,
   PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS,
 } from "@okouai/api-contracts/contracts/presigned-urls";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { command } from "ccstate";
 import { and, eq, inArray, like, lte, sql, type SQL } from "drizzle-orm";
 import { createHash } from "node:crypto";
@@ -129,7 +129,6 @@ interface CacheRowValue {
   readonly ttlSeconds: number;
   readonly presignedUrl: string;
   readonly expiresAt: Date;
-  readonly refreshAfter: Date;
   readonly lastRequestedAt: Date;
   readonly updatedAt: Date;
 }
@@ -398,8 +397,6 @@ function signedCacheValue(
     ttlSeconds: args.ttlSeconds,
     presignedUrl,
     expiresAt,
-    // Retain the required legacy column while older API deployments coexist.
-    refreshAfter: expiresAt,
     lastRequestedAt: args.lastRequestedAt,
     updatedAt: args.issuedAt,
   };
@@ -435,7 +432,6 @@ function storagePresignedUrlCacheValues(values: readonly CacheRowValue[]) {
         ttlSeconds: value.ttlSeconds,
         presignedUrl: value.presignedUrl,
         expiresAt: value.expiresAt,
-        refreshAfter: value.refreshAfter,
         lastRequestedAt: value.lastRequestedAt,
         updatedAt: value.updatedAt,
       };
@@ -453,7 +449,6 @@ function storagePresignedUrlCacheConflictSet() {
     ttlSeconds: sql`excluded.ttl_seconds`,
     presignedUrl: sql`excluded.presigned_url`,
     expiresAt: sql`excluded.expires_at`,
-    refreshAfter: sql`excluded.refresh_after`,
     lastRequestedAt: sql`excluded.last_requested_at`,
     updatedAt: sql`excluded.updated_at`,
   };

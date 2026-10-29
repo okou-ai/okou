@@ -121,14 +121,17 @@ function selectChatListFilter(sidebar: HTMLElement, filter: "Unread"): void {
 }
 
 test("Restore the mobile chat-list scroll position after reopening the sidebar", async () => {
+  const threadCount = 64;
   context.mocks.browser.matchMedia(false);
-  mockThreads(120);
+  mockThreads(threadCount);
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
-  });
+  }, threadCount);
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
   click(screen.getByLabelText("Open menu"));
-  const drawer = screen.getByRole("dialog", { name: "Sidebar" });
+  const drawer = screen.getByLabelText("Sidebar", {
+    selector: '[role="dialog"]',
+  });
   await within(drawer).findByText("History 1");
   const viewport = within(drawer).getByTestId("sidebar-scroll-area");
   fireEvent.scroll(viewport, { target: { scrollTop: 50 * ROW_HEIGHT } });
@@ -136,10 +139,12 @@ test("Restore the mobile chat-list scroll position after reopening the sidebar",
 
   click(within(drawer).getByLabelText("Collapse sidebar"));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
+    expect(drawer).not.toBeInTheDocument();
   });
   click(screen.getByLabelText("Open menu"));
-  const reopened = screen.getByRole("dialog", { name: "Sidebar" });
+  const reopened = screen.getByLabelText("Sidebar", {
+    selector: '[role="dialog"]',
+  });
   await within(reopened).findByText("History 51");
   expect(within(reopened).getByTestId("sidebar-scroll-area").scrollTop).toBe(
     50 * ROW_HEIGHT,
@@ -148,10 +153,11 @@ test("Restore the mobile chat-list scroll position after reopening the sidebar",
 });
 
 test("Keep the chat viewport keyboard-focusable only while a conversation is open", async () => {
-  mockThreads(120);
+  const threadCount = 64;
+  mockThreads(threadCount);
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
-  });
+  }, threadCount);
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
   const sidebar = await screen.findByTestId("chat-list-column");
   await within(sidebar).findByText("History 1");

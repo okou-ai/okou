@@ -38,7 +38,6 @@ export type ConfigureFeishuResult =
   | {
       readonly kind: "ok";
       readonly installationId: string;
-      readonly connectorConfigurationChanged: boolean;
     }
   | { readonly kind: "installation_not_found" }
   | { readonly kind: "app_identity_mismatch" }
@@ -49,7 +48,6 @@ type PreparedFeishuInstallation =
   | { readonly kind: "unchanged" }
   | {
       readonly kind: "changed";
-      readonly connectorConfigurationChanged: boolean;
       readonly callbackConfigurationChanged: boolean;
       readonly encryptedAppSecret: string;
       readonly encryptedVerificationToken: string;
@@ -69,6 +67,48 @@ function feishuInstallationCredentialsMatch(
     input.encryptKey === existing.encryptKey
   );
 }
+
+const loadFeishuInstallationConfig$ = command(
+  async ({ get }, installationId: string, signal: AbortSignal) => {
+    const db = get(db$);
+    const plan = feishuInstallationConfigReadPlan(installationId);
+    const [installation] = await db
+      .select(plan.columns)
+      .from(feishuOrgInstallations)
+      .where(plan.condition)
+      .limit(1);
+    signal.throwIfAborted();
+    if (!installation) {
+      return null;
+    }
+    const availability = feishuInstallationAvailabilityReadPlan(installation);
+    const enabled =
+      availability.kind === "resolved"
+        ? availability.enabled
+        : feishuInstallationEnabledFromRows(
+            availability.scope,
+            await db
+              .select(availability.columns)
+              .from(userFeatureSwitches)
+              .where(availability.condition),
+          );
+    signal.throwIfAborted();
+    if (!enabled) {
+      return null;
+    }
+    const context = { orgId: installation.orgId };
+    const secrets = await Promise.all([
+      decryptPersistentSecretValue(installation.encryptedAppSecret, context),
+      decryptPersistentSecretValue(
+        installation.encryptedVerificationToken,
+        context,
+      ),
+      decryptPersistentSecretValue(installation.encryptedEncryptKey, context),
+    ]);
+    signal.throwIfAborted();
+    return feishuInstallationConfigFromSecrets(installation, secrets);
+  },
+);
 
 async function prepareFeishuInstallation(
   input: ConfigureFeishuArgs,
@@ -106,8 +146,6 @@ async function prepareFeishuInstallation(
   signal.throwIfAborted();
   return {
     kind: "changed",
-    connectorConfigurationChanged:
-      !existing || input.appSecret !== existing.appSecret,
     callbackConfigurationChanged:
       !existing ||
       input.verificationToken !== existing.verificationToken ||
@@ -253,7 +291,6 @@ const persistFeishuInstallation$ = command(
         return {
           kind: "ok",
           installationId: created.id,
-          connectorConfigurationChanged: true,
         };
       }
       if (
@@ -282,6 +319,19 @@ const persistFeishuInstallation$ = command(
 
       // A unique-conflict replay may update only the freshly resolved owned target.
       targetInstallationId = target.installationId;
+      const current = await set(
+        loadFeishuInstallationConfig$,
+        targetInstallationId,
+        signal,
+      );
+      if (!current) {
+        return { kind: "installation_not_found" };
+      }
+      // Both requests can prepare credentials before either insert wins. Keep
+      // the winner's ciphertext and callback verification for an identical replay.
+      if (feishuInstallationCredentialsMatch(args.input, current)) {
+        return { kind: "ok", installationId: targetInstallationId };
+      }
     }
     const [updated] = await db
       .update(feishuOrgInstallations)
@@ -318,9 +368,6 @@ const persistFeishuInstallation$ = command(
     return {
       kind: "ok",
       installationId: updated.id,
-      connectorConfigurationChanged:
-        args.prepared.kind === "changed" &&
-        args.prepared.connectorConfigurationChanged,
     };
   },
 );
@@ -331,57 +378,13 @@ export const configureFeishuInstallation$ = command(
     args: ConfigureFeishuArgs,
     signal: AbortSignal,
   ): Promise<ConfigureFeishuResult> => {
-    const db = set(writeDb$);
     const preflight = await set(resolveFeishuInstallationTarget$, args, signal);
     if (preflight.kind !== "target") {
       return preflight;
     }
     const installationId = preflight.installationId;
     const existing = installationId
-      ? await (async () => {
-          const plan = feishuInstallationConfigReadPlan(installationId);
-          const [installation] = await db
-            .select(plan.columns)
-            .from(feishuOrgInstallations)
-            .where(plan.condition)
-            .limit(1);
-          if (
-            !installation ||
-            !(await (async () => {
-              const availability =
-                feishuInstallationAvailabilityReadPlan(installation);
-              if (availability.kind === "resolved") {
-                return availability.enabled;
-              }
-              const rows = await db
-                .select(availability.columns)
-                .from(userFeatureSwitches)
-                .where(availability.condition);
-              return feishuInstallationEnabledFromRows(
-                availability.scope,
-                rows,
-              );
-            })())
-          ) {
-            return null;
-          }
-          const context = { orgId: installation.orgId };
-          const secrets = await Promise.all([
-            decryptPersistentSecretValue(
-              installation.encryptedAppSecret,
-              context,
-            ),
-            decryptPersistentSecretValue(
-              installation.encryptedVerificationToken,
-              context,
-            ),
-            decryptPersistentSecretValue(
-              installation.encryptedEncryptKey,
-              context,
-            ),
-          ]);
-          return feishuInstallationConfigFromSecrets(installation, secrets);
-        })()
+      ? await set(loadFeishuInstallationConfig$, installationId, signal)
       : null;
     signal.throwIfAborted();
     if (existing && existing.appId !== args.appId) {
@@ -405,7 +408,6 @@ export const configureFeishuInstallation$ = command(
           orgId: args.orgId,
           userId: args.userId,
           installationId: result.installationId,
-          configurationChanged: result.connectorConfigurationChanged,
         },
         signal,
       );

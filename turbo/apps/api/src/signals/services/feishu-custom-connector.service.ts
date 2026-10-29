@@ -73,7 +73,6 @@ interface EnsureFeishuCustomConnectorArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly installationId: string;
-  readonly configurationChanged?: boolean;
 }
 
 interface FeishuConnectorInstallation {
@@ -408,7 +407,7 @@ function feishuConnectorMutation(
       installation,
       skillStorageVersionId,
     ) || !oauthConfigMatches(existing.oauthConfig, installation);
-  if (!args.configurationChanged && !needsRepair) {
+  if (!needsRepair) {
     return { kind: "unchanged" } as const;
   }
   const changed =
