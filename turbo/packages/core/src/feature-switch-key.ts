@@ -13,7 +13,6 @@ export enum FeatureSwitchKey {
   BatchConnectorPermissions = "batchConnectorPermissions",
   SharedThreadVisibility = "sharedThreadVisibility",
   HostedSiteVisibility = "hostedSiteVisibility",
-  HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
   RemoteControlGuidedSetup = "remoteControlGuidedSetup",
   Dummy = "_dummy",

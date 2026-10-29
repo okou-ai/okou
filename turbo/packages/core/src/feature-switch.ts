@@ -110,14 +110,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Control who can visit a published website.",
     enabled: true,
   },
-  // Enable only after canonical Host Worker delivery authority and compatible
-  // serving/rollback API writers support public address changes.
-  [FeatureSwitchKey.HostedSiteUrlEditing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Website URL editing",
-    description: "Customize a published website address from its Share menu.",
-    enabled: true,
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",

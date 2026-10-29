@@ -4472,9 +4472,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       }),
     ).toStrictEqual([ownId]);
 
-    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.HostedSiteUrlEditing]: true,
-    });
     const nextSlug = `${prepared.publicSlug}-renamed`;
     const renamed = await accept(
       setupApp({ context, routes: hostRoutes })(hostContract).updateSiteUrl({

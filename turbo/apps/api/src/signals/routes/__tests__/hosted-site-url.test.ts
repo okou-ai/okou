@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { hostRoutes } from "../host";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
@@ -25,18 +22,6 @@ function client(user: ApiTestUser) {
     routes: hostRoutes,
     baseUrl: "https://api.okou.ai",
   })(hostContract);
-}
-async function enable(user: ApiTestUser, enabled = true) {
-  client(user);
-  await accept(
-    setupAppWithRoutes({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers,
-      body: { switches: { [FeatureSwitchKey.HostedSiteUrlEditing]: enabled } },
-    }),
-    [200],
-  );
 }
 async function publish() {
   const owner = createBddApi(context).user();
@@ -153,17 +138,13 @@ test("renames only the active address while immutable versions and the CLI site 
   expect(restored.body.pointer?.deploymentId).toBe(upload.deploymentId);
 });
 
-test("gates writes, validates addresses, and hides other owners' websites", async () => {
+test("validates addresses and hides other owners' websites", async () => {
   const { owner, prepared, name } = await publish();
-  await enable(owner, false);
   const rename = {
     headers,
     params: { siteId: prepared.siteId },
     body: { publicSlug: `${name}-new`, expectedPublicSlug: name },
   };
-  const disabled = await accept(client(owner).updateSiteUrl(rename), [403]);
-  expect(disabled.body.error.code).toBe("FORBIDDEN");
-  await enable(owner);
   for (const publicSlug of ["dpl-reserved", "pv-private"]) {
     await accept(
       client(owner).updateSiteUrl({
@@ -174,7 +155,6 @@ test("gates writes, validates addresses, and hides other owners' websites", asyn
     );
   }
   const peer = createBddApi(context).user({ orgId: owner.orgId });
-  await enable(peer);
   await accept(client(peer).updateSiteUrl(rename), [404]);
   await accept(
     client(peer).siteUrlAvailability({
@@ -192,11 +172,24 @@ test("gates writes, validates addresses, and hides other owners' websites", asyn
     }),
     [404],
   );
+  const unchanged = await accept(
+    client(owner).siteUrl({
+      headers,
+      params: { publicSlug: name },
+      query: { hostname: `${name}.okou.app` },
+    }),
+    [200],
+  );
+  expect(unchanged.body).toMatchObject({
+    siteId: prepared.siteId,
+    publicSlug: name,
+    url: `https://${name}.okou.app`,
+    isActive: true,
+  });
 });
 
 test("rejects stale edits and reserves previous published names for their owner", async () => {
   const { owner, api, name, prepared } = await publish();
-  await enable(owner);
   const http = client(owner);
   await accept(
     http.updateSiteUrl({
@@ -223,7 +216,6 @@ test("rejects stale edits and reserves previous published names for their owner"
   });
   expect(upload.publicSlug).not.toBe(name);
   await api.completeHostedSite(other, upload.deploymentId);
-  await enable(other);
   const availability = await accept(
     client(other).siteUrlAvailability({
       headers,
@@ -251,7 +243,6 @@ test("an upload prepared before renaming completes at the new address", async ()
     spaFallback: false,
     files: [hostedTextFile("/index.html", "<p>next</p>")],
   });
-  await enable(owner);
   await accept(
     client(owner).updateSiteUrl({
       headers,
@@ -281,7 +272,6 @@ test("concurrent websites cannot claim the same address", async () => {
     files: [hostedTextFile("/index.html", "<p>second</p>")],
   });
   await api.completeHostedSite(owner, other.deploymentId);
-  await enable(owner);
   const http = client(owner);
   const publicSlug = `${name}-claimed`;
   const results = await Promise.all(
@@ -303,7 +293,6 @@ test("concurrent websites cannot claim the same address", async () => {
       })
       .sort(),
   ).toStrictEqual([200, 409]);
-  await enable(owner, false);
   const live = await accept(
     http.resolveAlias({
       params: { publicSlug },

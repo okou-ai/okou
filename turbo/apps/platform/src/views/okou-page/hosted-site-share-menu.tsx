@@ -513,7 +513,6 @@ function HostedSiteShareBody({
             session={session}
             link={link}
             customizable={
-              switches[FeatureSwitchKey.HostedSiteUrlEditing] &&
               details.state === "hasData" &&
               details.data?.isActive === true &&
               new URL(details.data.url).hostname.endsWith(
