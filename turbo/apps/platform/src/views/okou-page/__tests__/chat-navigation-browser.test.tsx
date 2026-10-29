@@ -431,6 +431,7 @@ test("Take over the cloud browser from a working run and hand it back through th
       eventType: "input.budget",
       role: "user",
       content: "Finish this run before its runtime limit",
+      runId: undefined,
       seqId: 2,
       createdAt: "2026-09-01T12:00:01.000Z",
     },
@@ -535,7 +536,9 @@ test("Take over the cloud browser from a working run and hand it back through th
     );
     createChatEvent(THREAD_ID);
   });
-  await screen.findByText("The release notes review is complete.");
+  await within(screen.getByRole("main")).findByText(
+    "The release notes review is complete.",
+  );
   expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 
   click(buttonByName("Hand back", viewer));
