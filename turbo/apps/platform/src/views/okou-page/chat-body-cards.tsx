@@ -804,18 +804,16 @@ export function FirstTaskUpgradeCard() {
   const pageSignal = useGet(pageSignal$);
   const open = useSet(openSettingsBillingPlansDialog$);
   const catalog = useLastLoadable(memberUsagePackOptionsAsync$);
-  const paidPrices =
+  const entryPack =
     catalog.state === "hasData"
       ? catalog.data
           .filter((option) => {
             return option.usagePackUsd > 0;
           })
-          .map((option) => {
-            return option.priceUsd;
-          })
-      : [];
-  const monthlyPriceUsd =
-    paidPrices.length > 0 ? Math.min(...paidPrices) : undefined;
+          .sort((left, right) => {
+            return left.priceUsd - right.priceUsd;
+          })[0]
+      : undefined;
   const onUpgrade = () => {
     detach(open(pageSignal), Reason.DomCallback);
   };
@@ -823,7 +821,8 @@ export function FirstTaskUpgradeCard() {
   return (
     <ProUpgradeCard
       onUpgrade={onUpgrade}
-      monthlyPriceUsd={monthlyPriceUsd}
+      monthlyPriceUsd={entryPack?.priceUsd}
+      includedCredits={entryPack?.purchasedCredits}
       bonusCredits={INTRODUCTORY_UPGRADE_BONUS_CREDITS}
     />
   );

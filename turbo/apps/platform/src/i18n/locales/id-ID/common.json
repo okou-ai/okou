@@ -1708,7 +1708,7 @@
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
       "proCard": {
-        "bonusCreditsNow": "kredit bonus · Sekarang juga",
+        "creditsNow": "kredit · Sekarang juga",
         "description": "Kredit tambahan · Fitur lanjutan · 3 komputer cloud",
         "priceUnavailable": "Lihat paket untuk harga terbaru",
         "title": "Tersisa sekitar 5 tugas",

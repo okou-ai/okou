@@ -177,10 +177,9 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
       "Additional credits · Advanced features · 3 cloud computers",
     ),
   ).toBeInTheDocument();
+  expect(within(card).getByText("20,000")).toBeInTheDocument();
   expect(within(card).getByText("+400")).toBeInTheDocument();
-  expect(
-    within(card).getByText(/bonus credits · Just now/u),
-  ).toBeInTheDocument();
+  expect(within(card).getByText(/credits · Just now/u)).toBeInTheDocument();
   click(await findEnabledButton("Upgrade now", card));
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
@@ -199,6 +198,7 @@ test("Keep the upgrade action usable when the price catalog is unavailable", asy
     within(card).findByText("See plans for current pricing"),
   ).resolves.toBeVisible();
   expect(within(card).queryByText(/\$/u)).toBeNull();
+  expect(within(card).queryByText("20,000")).toBeNull();
   expect(within(card).getByText("+400")).toBeInTheDocument();
   await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
 });

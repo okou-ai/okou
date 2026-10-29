@@ -8,6 +8,7 @@ import { proUpgradeSceneImg } from "./platform-assets.ts";
 interface ProUpgradeCardProps {
   readonly onUpgrade: () => void;
   readonly monthlyPriceUsd?: number;
+  readonly includedCredits?: number;
   // The introductory upgrade offer shown by the calling surface.
   readonly bonusCredits?: number;
 }
@@ -16,6 +17,7 @@ interface ProUpgradeCardProps {
 export function ProUpgradeCard({
   onUpgrade,
   monthlyPriceUsd,
+  includedCredits,
   bonusCredits,
 }: ProUpgradeCardProps) {
   const { t } = useTranslation();
@@ -70,13 +72,20 @@ export function ProUpgradeCard({
         </p>
         {bonusCredits !== undefined && bonusCredits > 0 && (
           <p className="order-3 basis-full text-sm font-medium text-brand-text @[480px]:order-2 @[480px]:basis-auto">
+            {includedCredits !== undefined && (
+              <>
+                <strong className="text-xl font-semibold tracking-tight text-foreground">
+                  {formatLocalizedNumber(includedCredits)}
+                </strong>{" "}
+              </>
+            )}
             <strong className="text-xl font-semibold tracking-tight">
               {formatLocalizedNumber(bonusCredits, {
                 signDisplay: "always",
               })}
             </strong>{" "}
             {t(($) => {
-              return $.chat.billing.proCard.bonusCreditsNow;
+              return $.chat.billing.proCard.creditsNow;
             })}
           </p>
         )}

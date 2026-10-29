@@ -1712,7 +1712,7 @@
       "customDollarAmount": "Benutzerdefinierter Dollarbetrag",
       "outOfCredits": "Ihre Credits sind aufgebraucht",
       "proCard": {
-        "bonusCreditsNow": "Bonus-Credits · Jetzt gleich",
+        "creditsNow": "Credits · Jetzt gleich",
         "description": "Zusätzliche Credits · Erweiterte Funktionen · 3 Cloud-Computer",
         "priceUnavailable": "Aktuelle Preise in den Tarifen ansehen",
         "title": "Noch etwa 5 Aufgaben",
