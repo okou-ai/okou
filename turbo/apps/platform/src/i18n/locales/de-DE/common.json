@@ -656,7 +656,6 @@
       "label": "Website-URL",
       "loadFailed": "Website-Einstellungen konnten nicht geladen werden",
       "oldUrlWarning": "Die alte URL funktioniert nicht mehr. Aktualisiere bereits geteilte Links.",
-      "published": "Veröffentlicht",
       "save": "Speichern",
       "saveFailed": "Speichern fehlgeschlagen. Die Adresse ist möglicherweise vergeben oder wurde geändert.",
       "taken": "Diese Adresse ist bereits vergeben",

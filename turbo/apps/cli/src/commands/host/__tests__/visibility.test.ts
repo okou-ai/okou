@@ -12,19 +12,6 @@ const DEPLOYMENT_ID = "00000000-0000-4000-8000-000000000002";
 const URL = "https://demo-site.okou.app";
 const PREPARE_URL = "http://localhost:3000/api/host/deployments/prepare";
 
-function runToken(enabled: boolean): string {
-  const payload = Buffer.from(
-    JSON.stringify({
-      scope: "okou",
-      capabilities: [
-        "host:write",
-        ...(enabled ? ["host-visibility:write"] : []),
-      ],
-    }),
-  ).toString("base64url");
-  return `vm0_sandbox_header.${payload}.signature`;
-}
-
 describe("okou host visibility", () => {
   let directory: string;
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -35,7 +22,7 @@ describe("okou host visibility", () => {
 
   beforeEach(() => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", runToken(true));
+    vi.stubEnv("OKOU_TOKEN", "test-token");
     directory = mkdtempSync(join(tmpdir(), "host-visibility-"));
     writeFileSync(join(directory, "index.html"), "<main>Private report</main>");
   });
@@ -61,38 +48,20 @@ describe("okou host visibility", () => {
     ];
   }
 
-  it.each([true, false])(
-    "shows visibility only with the run capability (enabled=%s)",
-    async (enabled) => {
-      vi.stubEnv("OKOU_TOKEN", runToken(enabled));
-      let output = "";
-      const command = createHostCommand()
-        .exitOverride()
-        .configureOutput({
-          writeOut: (text) => {
-            output += text;
-          },
-        });
-      await expect(
-        command.parseAsync(["node", "okou", "--help"]),
-      ).rejects.toMatchObject({ code: "commander.helpDisplayed" });
-      expect(output.includes("--visibility")).toBe(enabled);
-      expect(output.includes("New hosted sites default to only-me")).toBe(
-        enabled,
-      );
-      expect(output.includes("Hosted sites are public:")).toBe(!enabled);
-    },
-  );
-
-  it("rejects an explicit visibility while the switch is off", async () => {
-    vi.stubEnv("OKOU_TOKEN", runToken(false));
+  it("shows visibility choices and default-private hosting guidance", async () => {
+    let output = "";
+    const command = createHostCommand()
+      .exitOverride()
+      .configureOutput({
+        writeOut: (text) => {
+          output += text;
+        },
+      });
     await expect(
-      createHostCommand().parseAsync(args("only-me")),
-    ).rejects.toThrow("process.exit called");
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "requires hostedSiteVisibility to be enabled",
-    );
-    expect(log).not.toHaveBeenCalled();
+      command.parseAsync(["node", "okou", "--help"]),
+    ).rejects.toMatchObject({ code: "commander.helpDisplayed" });
+    expect(output).toContain("--visibility");
+    expect(output).toContain("New hosted sites default to only-me");
   });
 
   it.each([
