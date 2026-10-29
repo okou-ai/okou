@@ -3,7 +3,6 @@ import { createStore } from "ccstate";
 import { expect, test } from "vitest";
 import {
   featureGuidesContract,
-  importFeatureGuideSchema,
   type ImportFeatureGuide,
 } from "@okouai/api-contracts/contracts/feature-guides";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
@@ -12,7 +11,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
-import productGuide from "../../../feature-guides/product-updates-2026-10-28.json";
 import { featureGuidesRoutes } from "../feature-guides";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
@@ -114,7 +112,7 @@ test("only delivers a published edition when its server-side feature switch is e
     isolatePg: true,
   });
   mockNow(NOW);
-  const prepared = await prepare(importFeatureGuideSchema.parse(productGuide));
+  const prepared = await prepare();
   const viewer = await identity();
   await enable();
   await expect(current()).resolves.toBeNull();

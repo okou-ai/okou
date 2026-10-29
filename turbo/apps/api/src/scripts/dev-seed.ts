@@ -28,7 +28,6 @@ import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-syn
 import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
 import { onRejection } from "../signals/utils";
 import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "./dev-seed-managed-model-key";
-import { seedPreviewFeatureGuide$ } from "./dev-seed-feature-guides";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
 
 function writeLine(message: string): void {
@@ -860,8 +859,6 @@ async function devSeed() {
       `Seeded ${insertedCount} metadata-only skills and cleared stale volumes`,
     );
   }
-
-  await store.set(seedPreviewFeatureGuide$, signal);
 
   // --- connector catalog (validated R2 publication -> pointer + entries) ---
   // The flag keeps its historical name because the CI preview workflow passes
