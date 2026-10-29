@@ -462,10 +462,64 @@ async fn size_drift_payload_preserves_exact_lengths_and_bounded_encodings() {
         );
         let (mut telemetry, receiver) = mismatch_telemetry_receiver().await;
         let sandbox = MockSandbox::new("header-mismatch");
+        let retries = length > 0 && length <= CACHE_MAX_SIZE;
+        let result = {
+            let admission = FreshArchiveDeliveryAdmission::new();
+            let cancel = CancellationToken::new();
+            let mut delivery = prepare_fresh_archive_delivery(
+                &mut plan,
+                &home,
+                &admission,
+                &cancel,
+                &mut telemetry,
+                None,
+            )
+            .await
+            .unwrap();
+            if retries {
+                for (action, error, delay) in [
+                    (
+                        STORAGE_CACHE_FRESH_DELIVERY_BODY,
+                        "body",
+                        OBJECT_DOWNLOAD_RETRY_DELAY,
+                    ),
+                    (
+                        STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
+                        "http",
+                        OBJECT_DOWNLOAD_RETRY_DELAY * 2,
+                    ),
+                ] {
+                    tokio::time::timeout(Duration::from_secs(5), async {
+                        loop {
+                            delivery.phase_records.record_to(&mut telemetry);
+                            if phase_ops(&telemetry).iter().any(|(name, success, reason)| {
+                                name == action && !success && reason.as_deref() == Some(error)
+                            }) {
+                                break;
+                            }
+                            tokio::task::yield_now().await;
+                        }
+                    })
+                    .await
+                    .expect("the real failed attempt must precede its retry timer");
+                    // On this current-thread runtime the fetch task records its
+                    // failure and arms backoff before yielding to this observer.
+                    // The helper resumes time before the next real socket attempt.
+                    raw_http_test_support::clock::advance_timer_phase(delay).await;
+                }
+            }
+            populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                Some(&mut delivery),
+                None,
+            )
+            .await
+        };
         assert!(
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .is_err(),
+            result.is_err(),
             "an incomplete or invalid response must still fail storage delivery"
         );
         let requests = server.assert_finished_with_requests().await;
@@ -480,6 +534,15 @@ async fn size_drift_payload_preserves_exact_lengths_and_bounded_encodings() {
         );
         let operations = telemetry.pending_ops_snapshot();
         assert_op_count(&operations, STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST, 1);
+        assert_op_count(
+            &operations,
+            STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
+            if retries {
+                OBJECT_DOWNLOAD_MAX_ATTEMPTS
+            } else {
+                1
+            },
+        );
         assert_no_op(&operations, STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED);
         let payload = flush_telemetry_payload(telemetry, receiver).await;
         let header = mismatch_header(&payload);
