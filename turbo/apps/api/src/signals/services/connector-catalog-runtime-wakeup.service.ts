@@ -133,12 +133,16 @@ const publishCustomCatalogRuntimeWakeups$ = command(
       }
     }
 
-    await Promise.all(
-      [...affectedByOrg].map(async ([orgId, customConnectorIds]) => {
-        const wakeup = customCatalogWakeup(orgId, customConnectorIds);
-        await set(publishCatalogWakeup$, wakeup);
-      }),
-    );
+    const publications = [];
+    for (const [orgId, customConnectorIds] of affectedByOrg) {
+      publications.push(
+        (async () => {
+          const wakeup = customCatalogWakeup(orgId, customConnectorIds);
+          await set(publishCatalogWakeup$, wakeup);
+        })(),
+      );
+    }
+    await Promise.all(publications);
     log.debug(
       "Evaluated Custom connector catalog wakeups",
       customCatalogWakeupSummary(connectorIdsByRef.size, affectedByOrg),
@@ -168,9 +172,12 @@ const publishBuiltinCatalogRuntimeWakeups$ = command(
         await set(publishCatalogWakeup$, wakeup);
       }
     }
-    await Promise.all(
-      Array.from({ length: Math.min(4, byOrg.size) }, publishOrgWakeups),
-    );
+    const workerCount = Math.min(4, byOrg.size);
+    const workers = [];
+    for (let index = 0; index < workerCount; index++) {
+      workers.push(publishOrgWakeups());
+    }
+    await Promise.all(workers);
   },
 );
 

@@ -27,25 +27,29 @@ export const publishNetworkHostInvalidation$ = command(
     }
     const recipients = [...groups.values()];
     for (let offset = 0; offset < recipients.length; offset += 16) {
-      await Promise.all(
-        recipients.slice(offset, offset + 16).map(async (group) => {
-          if (group.protocol === "ssh") {
-            await publishSshClientInvalidation({
-              orgId: args.orgId,
-              userId: group.userId,
-            });
-          }
-          await set(
-            publishRemoteRunnerInvalidation$,
-            {
-              orgId: args.orgId,
-              userId: group.userId,
-              connectionIds: group.ids,
-            },
-            group.protocol,
-          );
-        }),
-      );
+      const publications = [];
+      for (const group of recipients.slice(offset, offset + 16)) {
+        publications.push(
+          (async () => {
+            if (group.protocol === "ssh") {
+              await publishSshClientInvalidation({
+                orgId: args.orgId,
+                userId: group.userId,
+              });
+            }
+            await set(
+              publishRemoteRunnerInvalidation$,
+              {
+                orgId: args.orgId,
+                userId: group.userId,
+                connectionIds: group.ids,
+              },
+              group.protocol,
+            );
+          })(),
+        );
+      }
+      await Promise.all(publications);
     }
   },
 );
