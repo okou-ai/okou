@@ -115,13 +115,18 @@ required for the final archive.
   publishing job after resolving the cause; it allocates a new build number for
   the same release source. Re-running the whole release-please workflow may no
   longer report a newly created release, so prefer **Re-run failed jobs**. Never
-  change a published release tag to recover a failed upload.
+  change a published release tag to recover a failed upload. Reruns check out the
+  original release target; fixes to publishing scripts on main require a release
+  containing those fixes.
 - Before App Store Connect preparation, the publishing job verifies the app and
   extension Mach-O UUIDs against their exact archive dSYMs, uploads both to Sentry,
-  and waits for processing. Missing configuration, mismatched symbols, or an
-  upload/processing failure stops publication. Uploads are idempotent by debug ID;
-  rerunning the failed job can reuse symbols already present in Sentry. The
-  publishing job never recompiles the archive or uploads symbols from another build.
+  and waits for processing. It then reads back both debug IDs from the configured
+  Sentry project and requires each canonical file's SHA-1 and debug information
+  to match, including files already uploaded by an earlier run. Missing
+  configuration, mismatched or unavailable symbols, and upload/processing or API
+  failures stop publication. Rerunning the failed job can reuse symbols already
+  present in Sentry. The publishing job never recompiles the archive or uploads
+  symbols from another build.
 - dSYMs are also retained as private workflow artifacts for 90 days. Signing material
   lives in a temporary keychain and temporary files and is removed when the
   publishing script exits. Renew the certificate/profile before expiration.
