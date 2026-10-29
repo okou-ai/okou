@@ -39,7 +39,6 @@ async function setupHostedSite(
 ) {
   const deploymentUrl = `https://dpl-${deploymentId}.${hostDomain}/`;
   let currentSlug = initialSlug;
-  installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({
     timezone: "Etc/UTC",
@@ -262,6 +261,7 @@ test.each([false, true])(
 test.each([false, true])(
   "Resources copies the final address after consecutive site renames (sidebar=%s)",
   async (sidebar) => {
+    installResourceGeometry(480);
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
     expect(title).toHaveTextContent(siteTitle);
@@ -283,6 +283,7 @@ test.each([false, true])(
 );
 
 test("a reopened chat shows the catalog title and copies the current site address", async () => {
+  installResourceGeometry(480);
   const clipboard = context.mocks.browser.clipboardWriteText();
   const preview = await setupHostedSite(true, "already-renamed");
   const title = await within(preview).findByTestId("artifact-title-link");
