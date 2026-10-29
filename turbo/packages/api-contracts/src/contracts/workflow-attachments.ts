@@ -64,10 +64,3 @@ export const workflowDownloadSchema = object({
     .nullable(),
 }).strict();
 export type WorkflowDownload = zInfer<typeof workflowDownloadSchema>;
-
-/** Outgoing Runner input; retire after the download readers have deployed. */
-export const workflowSkillDocumentSchema = workflowSkillReferenceSchema.extend({
-  skillMd: string(),
-  attachments: workflowDownloadSchema.shape.attachments,
-});
-export type WorkflowSkillDocument = zInfer<typeof workflowSkillDocumentSchema>;

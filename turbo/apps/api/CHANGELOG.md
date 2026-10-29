@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.2](https://github.com/okou-ai/okou/compare/api-v2.22.1...api-v2.22.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** refresh chat resources after artifact publication ([#43727](https://github.com/okou-ai/okou/issues/43727)) ([2da7f7a](https://github.com/okou-ai/okou/commit/2da7f7a765ef61cfe8d417be6733c5059ccb0fe5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.2
+    * @okouai/core bumped to 8.799.2
+    * @okouai/db bumped to 2.10.2
+    * @okouai/pi-agent-runtime bumped to 1.51.17
+
 ## [2.22.1](https://github.com/okou-ai/okou/compare/api-v2.22.0...api-v2.22.1) (2026-10-29)
 
 

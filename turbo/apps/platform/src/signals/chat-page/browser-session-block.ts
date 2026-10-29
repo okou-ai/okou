@@ -4,7 +4,7 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
-import type { WindowSizeSync } from "cdp-viewer";
+import type { ViewerCaptureOptions, WindowSizeSync } from "cdp-viewer";
 import {
   command,
   computed,
@@ -48,6 +48,8 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   >;
   readonly viewerWindowSizeSync$: Computed<WindowSizeSync>;
   readonly setViewerWindowSizeSync$: Command<void, [WindowSizeSync]>;
+  readonly viewerCapture$: Computed<ViewerCaptureOptions>;
+  readonly setViewerCapture$: Command<void, [ViewerCaptureOptions]>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -199,6 +201,39 @@ function createBrowserSessionSubscriptionSignals(
   return { subscribe$ };
 }
 
+function createViewerSettingsSignals(): Pick<
+  BrowserSessionSignals,
+  | "viewerWindowSizeSync$"
+  | "setViewerWindowSizeSync$"
+  | "viewerCapture$"
+  | "setViewerCapture$"
+> {
+  const internalViewerWindowSizeSync$ = state<WindowSizeSync>("live");
+  const viewerWindowSizeSync$ = computed((get) => {
+    return get(internalViewerWindowSizeSync$);
+  });
+  const setViewerWindowSizeSync$ = command(({ set }, mode: WindowSizeSync) => {
+    set(internalViewerWindowSizeSync$, mode);
+  });
+  const internalViewerCapture$ = state<ViewerCaptureOptions>({
+    format: "webp",
+  });
+  const viewerCapture$ = computed((get) => {
+    return get(internalViewerCapture$);
+  });
+  const setViewerCapture$ = command(
+    ({ set }, capture: ViewerCaptureOptions) => {
+      set(internalViewerCapture$, capture);
+    },
+  );
+  return {
+    viewerWindowSizeSync$,
+    setViewerWindowSizeSync$,
+    viewerCapture$,
+    setViewerCapture$,
+  };
+}
+
 export function createBrowserSessionSignals(
   threadId: string,
 ): BrowserSessionSignals {
@@ -207,13 +242,6 @@ export function createBrowserSessionSignals(
     href: `/browsers/${threadId}`,
   };
   const reloadVersion$ = state(0);
-  const internalViewerWindowSizeSync$ = state<WindowSizeSync>("live");
-  const viewerWindowSizeSync$ = computed((get) => {
-    return get(internalViewerWindowSizeSync$);
-  });
-  const setViewerWindowSizeSync$ = command(({ set }, mode: WindowSizeSync) => {
-    set(internalViewerWindowSizeSync$, mode);
-  });
   const screenshotImageLoad = createImageLoadSignals();
   const sessionOverride$ = state<BrowserSession | null | undefined>(undefined);
   const session$ = computed(async (get): Promise<BrowserSession | null> => {
@@ -315,8 +343,7 @@ export function createBrowserSessionSignals(
     session$,
     panelSession$: session$,
     viewerConnection$,
-    viewerWindowSizeSync$,
-    setViewerWindowSizeSync$,
+    ...createViewerSettingsSignals(),
     ...startSignals,
     ...closeSignals,
     reload$,

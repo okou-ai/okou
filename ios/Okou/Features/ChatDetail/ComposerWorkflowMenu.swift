@@ -3,7 +3,8 @@ import SwiftUI
 
 struct ComposerWorkflowMenu: View {
   let suggestions: ComposerWorkflowSuggestions
-  @State private var height: CGFloat = 0
+  let availableHeight: CGFloat
+  @State private var headerHeight: CGFloat = 44
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -19,37 +20,47 @@ struct ComposerWorkflowMenu: View {
         .accessibilityIdentifier("dismiss-workflows")
       }
       .padding(.leading, 16)
-      if suggestions.isLoading {
-        HStack {
-          ProgressView()
-          Text("Loading Workflows…").font(.subheadline)
-        }.padding(16)
-      } else if let error = suggestions.error {
-        VStack(alignment: .leading, spacing: 8) {
-          Text(error).font(.caption).foregroundStyle(.secondary)
-          Button("Retry Workflows") { suggestions.reload() }.frame(minHeight: 44)
-        }.padding(.horizontal, 16)
-      } else if suggestions.matches.isEmpty {
-        Text("No matching Workflows").font(.subheadline).foregroundStyle(.secondary)
-          .padding(16)
-      } else {
-        ComposerWorkflowTable(
-          suggestions: suggestions, values: suggestions.matches,
-          selectedIndex: suggestions.selectedIndex
-        )
-        .frame(height: min(240, CGFloat(suggestions.matches.count) * 68))
+      .fixedSize(horizontal: false, vertical: true)
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        headerHeight = $0
       }
+      content
+        .frame(maxHeight: max(0, availableHeight - headerHeight), alignment: .top)
+        .clipped()
     }
+    .frame(maxHeight: availableHeight, alignment: .top)
+    .fixedSize(horizontal: false, vertical: true)
     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     .clipShape(RoundedRectangle(cornerRadius: 16))
     .accessibilityIdentifier("workflow-menu")
-    .onGeometryChange(for: CGFloat.self) {
-      $0.size.height
-    } action: {
-      height = $0
+  }
+
+  @ViewBuilder
+  private var content: some View {
+    if suggestions.isLoading {
+      HStack {
+        ProgressView()
+        Text("Loading Workflows…").font(.subheadline)
+      }.padding(16)
+    } else if let error = suggestions.error {
+      VStack(alignment: .leading, spacing: 8) {
+        Text(error).font(.caption).foregroundStyle(.secondary)
+        Button("Retry Workflows") { suggestions.reload() }.frame(minHeight: 44)
+      }.padding(.horizontal, 16)
+    } else if suggestions.matches.isEmpty {
+      Text("No matching Workflows").font(.subheadline).foregroundStyle(.secondary)
+        .padding(16)
+    } else {
+      ComposerWorkflowTable(
+        suggestions: suggestions, values: suggestions.matches,
+        selectedIndex: suggestions.selectedIndex
+      )
+      .frame(
+        height: max(
+          0, min(240, availableHeight - headerHeight, CGFloat(suggestions.matches.count) * 68)))
     }
-    .offset(y: -height - 8)
-    .opacity(height > 0 ? 1 : 0)
   }
 }
 

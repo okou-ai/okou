@@ -37,6 +37,12 @@ case "${1:-}" in
       else
         [ "${MOCK_WORKFLOW_ATTACHMENT_API_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "6fd29050029b5a521f75d0500e9876a11649afe6" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_WORKFLOW_DOWNLOAD_RUNNER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_WORKFLOW_DOWNLOAD_API_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "$MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_DATA_ROUTER_RESPONSE_ID_ON_MAIN:-1}" = "1" ]
@@ -451,8 +457,29 @@ assert_failure() {
   if "$@" >"${tmp_dir}/failure.out" 2>"${tmp_dir}/failure.err"; then
     fail "expected command to fail: ${expected_message}"
   fi
-  grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
+  if ! grep -q "$expected_message" "${tmp_dir}/failure.err"; then
+    cat "${tmp_dir}/failure.err" >&2
+    fail "missing failure message: ${expected_message}"
+  fi
 }
+
+# A paired rollback must not reintroduce an API without current-content
+# downloads or independently restart a Runner that still consumes inline claims.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates Workflow download preparation" \
+  run_resolver "${tmp_dir}/workflow-download-api.output" MOCK_WORKFLOW_DOWNLOAD_API_VALID=0
+[ ! -s "${tmp_dir}/workflow-download-api.output" ] || fail "preparation-free Workflow API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "preparation-free Workflow API must fail before provider or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Runner release runner-rs-v1.2.3 predates Workflow download preparation" \
+  run_resolver "${tmp_dir}/workflow-download-runner.output" MOCK_WORKFLOW_DOWNLOAD_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/workflow-download-runner.output" ] || fail "inline Workflow Runner must not publish outputs"
+if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "inline Workflow Runner must fail before Runner artifact or host access"
+fi
 
 # Publishing DAV catalog rules must not make either independently selected
 # rollback artifact unable to read the catalog or bypass the iCloud rollout.

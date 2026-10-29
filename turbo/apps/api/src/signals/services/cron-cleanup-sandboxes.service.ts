@@ -1,12 +1,27 @@
+import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { command } from "ccstate";
-import { eq, inArray, isNull, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { logger } from "../../lib/log";
-import { now } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
   publishCancelToRunnerGroup,
@@ -16,7 +31,10 @@ import { settle, settleIncludingAbort, tapError } from "../utils";
 import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
-import { commitStaleRunTimeout$ } from "./agent-run-terminal-transition.service";
+import {
+  cancelRun$,
+  commitStaleRunTimeout$,
+} from "./agent-run-terminal-transition.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
@@ -25,10 +43,12 @@ import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
 import { cleanupExpiredRunnerJobs$ } from "./runner-job-queue-lifecycle.service";
 import {
-  cleanupThreadlessRuns$,
-  type ThreadlessRunCleanupResult,
+  deleteThreadlessRunIfStillEligible$,
+  type ThreadlessRunCandidate,
 } from "./threadless-run-cleanup.service";
 
+import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ } from "./agent-run-callback.service";
+import { dispatchCancelSideEffects$ } from "./run-cancel.service";
 import { cleanupExpiredExportJobs$ } from "./user-export-cleanup.service";
 
 const L = logger("CronCleanupSandboxes");
@@ -44,6 +64,111 @@ const TERMINAL_RUN_STATUSES = [
   "timeout",
   "cancelled",
 ] as const;
+
+const threadlessLog = logger("ThreadlessRunCleanup");
+
+const THREADLESS_ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
+const THREADLESS_TERMINAL_RUN_STATUSES = [
+  "completed",
+  "failed",
+  "cancelled",
+  "timeout",
+] as const;
+
+const THREADLESS_RUN_SWEEP_LIMIT = 20;
+
+// The audited legacy cohort predates this issue. It must remain untouched until
+// a separately gated data migration. Newer runs are unambiguously forward
+// lifecycle rows. Older runs enter the forward cohort only when their durable
+// chat callback can be matched to a post-cutoff thread-deletion tombstone.
+const THREADLESS_RUN_FORWARD_CUTOFF_ISO = "2026-08-03T05:40:26.000Z";
+
+interface ThreadlessRunCleanupError {
+  readonly runId: string;
+  readonly error: string;
+}
+
+interface ThreadlessRunCleanupResult {
+  readonly discovered: number;
+  readonly cancelled: number;
+  readonly waiting: number;
+  readonly deleted: number;
+  readonly failed: number;
+  readonly errors: readonly ThreadlessRunCleanupError[];
+}
+
+function isActiveStatus(status: string): boolean {
+  return (THREADLESS_ACTIVE_RUN_STATUSES as readonly string[]).includes(status);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function terminalError(candidate: ThreadlessRunCandidate): string | undefined {
+  if (candidate.status === "completed") {
+    return undefined;
+  }
+  if (candidate.error) {
+    return candidate.error;
+  }
+  if (candidate.status === "cancelled") {
+    return "Run cancelled";
+  }
+  if (candidate.status === "timeout") {
+    return "Run timed out";
+  }
+  return "Run failed";
+}
+
+function threadlessRunCandidateReadPlan() {
+  const forwardCutoff = new Date(THREADLESS_RUN_FORWARD_CUTOFF_ISO);
+  return {
+    selection: {
+      runId: agentRuns.id,
+      orgId: agentRuns.orgId,
+      userId: agentRuns.userId,
+      status: agentRuns.status,
+      error: agentRuns.error,
+      completedAt: agentRuns.completedAt,
+      cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
+    },
+    conditions: [
+      isNotNull(agentRuns.triggerSource),
+      isNull(agentRuns.chatThreadId),
+      ne(agentRuns.triggerSource, "test"),
+      inArray(agentRuns.status, [
+        ...THREADLESS_ACTIVE_RUN_STATUSES,
+        ...THREADLESS_TERMINAL_RUN_STATUSES,
+      ]),
+    ],
+    forwardCohort: gte(agentRuns.createdAt, forwardCutoff),
+    deletedThread: {
+      selection: { id: chatThreadEvents.id },
+      join: and(
+        eq(chatThreadEvents.userId, agentRuns.userId),
+        eq(chatThreadEvents.orgId, agentRuns.orgId),
+        eq(chatThreadEvents.kind, "deleted"),
+        gte(chatThreadEvents.createdAt, forwardCutoff),
+        eq(
+          sql`${agentRunCallbacks.payload}->>'threadId'`,
+          sql`${chatThreadEvents.chatThreadId}::text`,
+        ),
+      ),
+      condition: and(
+        eq(agentRunCallbacks.runId, agentRuns.id),
+        eq(agentRunCallbacks.internalKind, "chat"),
+      ),
+    },
+  };
+}
+
+function quietWindowElapsed(
+  candidate: ThreadlessRunCandidate,
+  quietBefore: Date,
+): boolean {
+  return candidate.completedAt !== null && candidate.completedAt <= quietBefore;
+}
 
 interface CleanupResult {
   readonly runId: string;
@@ -258,6 +383,164 @@ const cleanupExpiredRuns$ = command(
       });
     }
     return results;
+  },
+);
+
+const redriveTerminalLifecycle$ = command(
+  async function redriveTerminalLifecycle(
+    { set },
+    candidate: ThreadlessRunCandidate,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (candidate.status === "cancelled") {
+      const cancelResult = await set(
+        cancelRun$,
+        {
+          runId: candidate.runId,
+          userId: candidate.userId,
+          orgId: candidate.orgId,
+          runnerCancellationMode: "hard",
+          preserveExistingCancellation: true,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if ("alreadyCancelled" in cancelResult) {
+        await set(dispatchCancelSideEffects$, cancelResult, signal);
+        signal.throwIfAborted();
+      }
+    }
+
+    const error = terminalError(candidate);
+    await set(
+      dispatchCompleteSideEffects$,
+      {
+        kind: "terminal",
+        firstTerminalTransition: false,
+        runId: candidate.runId,
+        orgId: candidate.orgId,
+        status: candidate.status === "completed" ? "completed" : "failed",
+        ...(error === undefined ? {} : { error }),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+
+    await set(
+      failPendingInlineOnlyDeliveryCallbacksForDeletedThread$,
+      candidate.runId,
+      signal,
+    );
+    signal.throwIfAborted();
+  },
+);
+
+const cleanupThreadlessRuns$ = command(
+  async ({ set }, signal: AbortSignal): Promise<ThreadlessRunCleanupResult> => {
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    const candidates = await (async (): Promise<
+      readonly ThreadlessRunCandidate[]
+    > => {
+      const plan = threadlessRunCandidateReadPlan();
+      return await db
+        .select(plan.selection)
+        .from(agentRuns)
+        .where(
+          and(
+            ...plan.conditions,
+            or(
+              plan.forwardCohort,
+              exists(
+                db
+                  .select(plan.deletedThread.selection)
+                  .from(agentRunCallbacks)
+                  .innerJoin(chatThreadEvents, plan.deletedThread.join)
+                  .where(plan.deletedThread.condition),
+              ),
+            ),
+          ),
+        )
+        .orderBy(asc(agentRuns.createdAt), asc(agentRuns.id))
+        .limit(THREADLESS_RUN_SWEEP_LIMIT);
+    })();
+    signal.throwIfAborted();
+
+    let cancelled = 0;
+    let waiting = 0;
+    let deleted = 0;
+    const errors: ThreadlessRunCleanupError[] = [];
+    const quietBefore = new Date(
+      currentTime.getTime() - CANCELLATION_RECOVERY_STALE_AFTER_MS,
+    );
+
+    for (const candidate of candidates) {
+      const result = await settle(
+        (async () => {
+          if (isActiveStatus(candidate.status)) {
+            const cancelResult = await set(
+              cancelRun$,
+              {
+                runId: candidate.runId,
+                userId: candidate.userId,
+                orgId: candidate.orgId,
+                runnerCancellationMode: "hard",
+                preserveExistingCancellation: true,
+              },
+              signal,
+            );
+            signal.throwIfAborted();
+            if (!("alreadyCancelled" in cancelResult)) {
+              waiting++;
+              return;
+            }
+            await set(dispatchCancelSideEffects$, cancelResult, signal);
+            signal.throwIfAborted();
+            cancelled++;
+            return;
+          }
+
+          if (!quietWindowElapsed(candidate, quietBefore)) {
+            waiting++;
+            return;
+          }
+
+          await set(redriveTerminalLifecycle$, candidate, signal);
+          signal.throwIfAborted();
+          if (
+            await set(
+              deleteThreadlessRunIfStillEligible$,
+              candidate,
+              quietBefore,
+            )
+          ) {
+            deleted++;
+          } else {
+            waiting++;
+          }
+        })(),
+        signal,
+      );
+      if (!result.ok) {
+        errors.push({
+          runId: candidate.runId,
+          error: errorMessage(result.error),
+        });
+      }
+    }
+
+    const cleanupResult = {
+      discovered: candidates.length,
+      cancelled,
+      waiting,
+      deleted,
+      failed: errors.length,
+      errors,
+    };
+    if (candidates.length > 0) {
+      threadlessLog.debug("Threadless run cleanup completed", cleanupResult);
+    }
+    return cleanupResult;
   },
 );
 

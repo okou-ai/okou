@@ -1,46 +1,24 @@
-import { command } from "ccstate";
 import { and, eq, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import {
-  discriminatedUnion as zDiscriminatedUnion,
-  literal as zLiteral,
   object as zObject,
   uuid as zUuid,
   string as zString,
   type infer as zInfer,
 } from "zod";
-import {
-  workflowAttachmentsSchema,
-  type WorkflowSkillDocument,
-} from "@okouai/api-contracts/contracts/workflow-attachments";
 import type { StoredExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
-import { env } from "../../lib/env";
-import { generatePresignedGetUrl } from "../external/s3";
-import { assertWorkflowAttachmentOwner } from "./workflow-attachment-cleanup.service";
 
-const claimedWorkflowIdentitySchema = zObject({
+export const claimedWorkflowSchema = zObject({
   id: zUuid(),
   name: zString(),
 });
-export const claimedWorkflowSchema = zDiscriminatedUnion("delivery", [
-  claimedWorkflowIdentitySchema.extend({ delivery: zLiteral("download") }),
-  claimedWorkflowIdentitySchema.extend({
-    delivery: zLiteral("inline"),
-    orgId: zString(),
-    description: zString().nullable(),
-    instruction: zString().nullable(),
-    attachments: workflowAttachmentsSchema,
-  }),
-]);
 export type ClaimedWorkflow = zInfer<typeof claimedWorkflowSchema>;
 
 export interface WorkflowClaimInput {
-  readonly delivery: "inline" | "download";
   readonly selection: StoredExecutionContext["customWorkflowSelection"];
   readonly skillRoot: string;
   readonly invokedWorkflowId: string | null;
@@ -51,7 +29,6 @@ export interface WorkflowClaimInput {
 export function workflowClaimInput(
   context: StoredExecutionContext,
   prompt: string,
-  delivery: WorkflowClaimInput["delivery"],
 ): WorkflowClaimInput {
   const skillRoot =
     context.cliAgentType === "pi"
@@ -75,7 +52,6 @@ export function workflowClaimInput(
     /^\/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])(?:\s|$)/u.exec(prompt.trim())?.[1] ??
     null;
   return {
-    delivery,
     selection: context.customWorkflowSelection,
     skillRoot,
     invokedWorkflowId:
@@ -129,14 +105,9 @@ export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
     notInArray(workflows.name, [...SEED_SKILLS]),
     sql`NOT (${JSON.stringify(protectedPaths)}::jsonb ? (${input.skillRoot} || '/' || ${workflows.name}))`,
   );
-  const inlineFields =
-    input.delivery === "inline"
-      ? sql`, ${workflows.orgId} AS "orgId", ${workflows.description} AS description,
-        ${workflows.instruction} AS instruction, ${workflows.attachments} AS attachments`
-      : sql``;
   return sql`selected_workflows AS MATERIALIZED (
       SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.name} AS name,
-        ${input.delivery}::text AS delivery, (${workflows.attachments} IS NOT NULL) AS available${inlineFields}
+        (${workflows.attachments} IS NOT NULL) AS available
       FROM ${workflows} INNER JOIN ${agents} ON ${eq(agents.id, workflows.agentId)} CROSS JOIN locked_run
       WHERE ${eligible}
       ORDER BY ${workflows.name}, (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = locked_run."userId") DESC, ${workflows.createdAt}, ${workflows.id}
@@ -171,50 +142,3 @@ export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
       )
     )`;
 }
-
-/** Temporary outgoing-reader producer; remove in the second release (#43642). */
-export const materializeClaimedWorkflowDocuments$ = command(
-  async (
-    { get },
-    input: {
-      readonly workflows: readonly ClaimedWorkflow[];
-      readonly skillRoot: string;
-    },
-    signal: AbortSignal,
-  ): Promise<WorkflowSkillDocument[]> => {
-    return await Promise.all(
-      input.workflows.map(async (workflow) => {
-        if (workflow.delivery !== "inline") {
-          throw new Error("Inline Workflow claim is missing its document");
-        }
-        const descriptor = workflow.attachments;
-        let attachments: WorkflowSkillDocument["attachments"] = null;
-        if (descriptor.kind === "bundle") {
-          assertWorkflowAttachmentOwner(
-            workflow.orgId,
-            workflow.id,
-            descriptor.objectKey,
-          );
-          const archiveUrl = await get(
-            generatePresignedGetUrl(
-              env("R2_USER_STORAGES_BUCKET_NAME"),
-              descriptor.objectKey,
-            ),
-          );
-          signal.throwIfAborted();
-          attachments = {
-            archiveUrl,
-            archiveSha256: descriptor.archiveSha256,
-            archiveSize: descriptor.archiveBytes,
-          };
-        }
-        return {
-          workflowId: workflow.id,
-          mountPath: `${input.skillRoot}/${workflow.name}`,
-          skillMd: synthesizeWorkflowSkillMd(workflow),
-          attachments,
-        };
-      }),
-    );
-  },
-);

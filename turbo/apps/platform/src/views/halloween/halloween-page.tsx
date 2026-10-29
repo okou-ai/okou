@@ -47,12 +47,13 @@ function StartScreen() {
       </h1>
       {open ? (
         <p className={cn("mb-8 text-[#96a5b9]", typography.bodyClassName)}>
-          {copy.rewardPrefix}
+          {copy.intro}
+          <br />
           <strong className={cn("text-[#e8cfaa]", typography.bodyClassName)}>
-            {copy.rewardEmphasis}
+            {copy.rewardQuestion}
           </strong>
           <br />
-          {copy.review}
+          {copy.hint}
         </p>
       ) : (
         <p
@@ -88,7 +89,7 @@ function StartScreen() {
             typography.labelClassName,
           )}
         >
-          {copy.hint}
+          {copy.review}
         </p>
       )}
       {operation.state === "hasError" && (
@@ -124,7 +125,7 @@ export function HalloweenPage() {
       ) : (
         <StartScreen />
       )}
-      <HalloweenFooter />
+      {screen !== "result" && <HalloweenFooter />}
       <HalloweenRules />
     </div>
   );

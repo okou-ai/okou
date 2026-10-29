@@ -2496,14 +2496,16 @@ type ThreadActivitySummarySignals = ReturnType<
 
 interface RunTrackingDeps {
   threadId: string;
-  setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
-  catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
-  subscribeBrowserSessions$: Command<void, [AbortSignal]>;
+  messages: Pick<
+    MessageListSignals,
+    "setup$" | "catchUp$" | "subscribeBrowserSessions$" | "sidebar"
+  >;
   subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccountPreference$: Command<void, []>;
+  resourceCatalog: ReturnType<typeof createArtifacts>["resourceCatalog"];
 }
 
 interface ChatRenderWindowState {
@@ -2941,10 +2943,9 @@ function createOnSubscribedCommand({
   threadId,
   catchUpChatEvents$,
   cancellationRecovery,
-}: Pick<
-  RunTrackingDeps,
-  "threadId" | "catchUpChatEvents$" | "cancellationRecovery"
->): Command<Promise<void>, [AbortSignal]> {
+}: Pick<RunTrackingDeps, "threadId" | "cancellationRecovery"> & {
+  catchUpChatEvents$: MessageListSignals["catchUp$"];
+}): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ catchup start", { threadId });
     set(cancellationRecovery.reload$);
@@ -2967,28 +2968,27 @@ const onWorkflowsChanged$ = command(
 
 function createRunTracking({
   threadId,
-  setupChatEvents$,
-  catchUpChatEvents$,
-  subscribeBrowserSessions$,
+  messages,
   subscribeSessionOutput$,
   subscribeThinkingSummaries$,
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccountPreference$,
+  resourceCatalog,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
-    catchUpChatEvents$,
+    catchUpChatEvents$: messages.catchUp$,
     cancellationRecovery,
   });
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ start", { threadId });
-    await set(setupChatEvents$, signal);
+    await set(messages.setup$, signal);
     signal.throwIfAborted();
 
     await Promise.all([
-      set(subscribeBrowserSessions$, signal),
+      set(messages.subscribeBrowserSessions$, signal),
       set(subscribeSessionOutput$, signal),
       set(subscribeThinkingSummaries$, signal),
       set(
@@ -2996,6 +2996,10 @@ function createRunTracking({
         {
           threadId,
           invalidations: {
+            artifactCatalog: [
+              resourceCatalog.reload$,
+              messages.sidebar.artifactCatalog.reload$,
+            ],
             threadDetail: [
               cancellationRecovery.reload$,
               reloadConnectorAccountPreference$,
@@ -3867,15 +3871,14 @@ export function createChatPanelSignals(
   });
   const runTracking = createRunTracking({
     threadId,
-    setupChatEvents$: messages.setup$,
-    catchUpChatEvents$: messages.catchUp$,
-    subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
+    messages,
     subscribeThinkingSummaries$: activity.subscribe$,
     subscribeSessionOutput$: sessionOutput.subscribe$,
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
+    resourceCatalog: artifact.resourceCatalog,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
