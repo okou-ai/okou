@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.3](https://github.com/okou-ai/okou/compare/ios-v0.22.2...ios-v0.22.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* **ios:** keep connector reads alive across navigation ([#43969](https://github.com/okou-ai/okou/issues/43969)) ([9112ceb](https://github.com/okou-ai/okou/commit/9112ceb6c3f88e8a7f98ee80d0459ebe7da91952))
+
 ## [0.22.2](https://github.com/okou-ai/okou/compare/ios-v0.22.1...ios-v0.22.2) (2026-10-29)
 
 
