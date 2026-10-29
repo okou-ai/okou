@@ -971,9 +971,11 @@ impl CompletionAuth {
 /// details (Ably control-plane notifications, HTTP poll, WebSocket, etc.) are
 /// hidden behind this trait.
 ///
-/// `discover()` and `claim()` are deliberately separate so that `discover()`
-/// can live as a cancellable `select!` branch future while `claim()` runs
-/// inside the branch handler where it cannot be interrupted.
+/// `discover()` can live as a cancellable `select!` branch future. The runner
+/// submits candidates to bounded, independently scheduled admission/claim
+/// tasks; calls to `claim()` on the same provider can overlap. During normal
+/// shutdown, accepted tasks are retained and joined before provider teardown,
+/// rather than aborting in-flight claims.
 #[async_trait::async_trait]
 pub trait JobProvider: Send + Sync {
     /// Wait for the next job candidate. Returns `None` on shutdown signal.
@@ -1009,9 +1011,16 @@ pub trait JobProvider: Send + Sync {
     /// by another runner or an error occurred. A returned claim must carry an
     /// execution context whose `run_id` matches the discovered candidate.
     ///
-    /// Callers **must** invoke this from a non-cancellable context (e.g.
-    /// inside a `select!` branch handler) to guarantee that a successful
-    /// claim is always paired with a later [`complete()`](JobProvider::complete).
+    /// Calls on the same provider can overlap; implementations must support
+    /// concurrent claims.
+    ///
+    /// Callers **must not** cancel or drop an in-flight claim future. The runner
+    /// retains each independently scheduled admission task until a successful
+    /// claim is owned by execution or pre-executor recovery. In ordinary control
+    /// flow, either path pairs a successful claim with a later
+    /// [`complete()`](JobProvider::complete). Panics and process/runtime
+    /// termination are abnormal recovery boundaries where completion is not
+    /// guaranteed.
     async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob>;
 
     /// Controls when reporting completion may make the terminal result
