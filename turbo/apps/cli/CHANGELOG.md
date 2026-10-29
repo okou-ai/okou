@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.7.0](https://github.com/okou-ai/okou/compare/cli-v10.6.1...cli-v10.7.0) (2026-10-29)
+
+
+### Features
+
+* add whatsapp integration through agentphone ([#43656](https://github.com/okou-ai/okou/issues/43656)) ([a7306f0](https://github.com/okou-ai/okou/commit/a7306f0da51d3d9b00064ceae121fd002b3b64ed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.17.0
+    * @okouai/core bumped to 8.799.0
+    * @okouai/pi-agent-runtime bumped to 1.51.15
+
 ## [10.6.1](https://github.com/okou-ai/okou/compare/cli-v10.6.0...cli-v10.6.1) (2026-10-29)
 
 

@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.0](https://github.com/okou-ai/okou/compare/api-v2.21.1...api-v2.22.0) (2026-10-29)
+
+
+### Features
+
+* add whatsapp integration through agentphone ([#43656](https://github.com/okou-ai/okou/issues/43656)) ([a7306f0](https://github.com/okou-ai/okou/commit/a7306f0da51d3d9b00064ceae121fd002b3b64ed))
+
+
+### Refactoring
+
+* **api:** localize agent visibility validation reads ([#43801](https://github.com/okou-ai/okou/issues/43801)) ([1b26f11](https://github.com/okou-ai/okou/commit/1b26f11336350b4152aeed42cd273737df506550))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.0
+    * @okouai/core bumped to 8.799.0
+    * @okouai/db bumped to 2.10.0
+    * @okouai/pi-agent-runtime bumped to 1.51.15
+
 ## [2.21.1](https://github.com/okou-ai/okou/compare/api-v2.21.0...api-v2.21.1) (2026-10-29)
 
 
