@@ -111,7 +111,7 @@ function ComposerTaskChipRow({
       <Row
         ref={bindRail}
         data-rail="tasks"
-        role={tabs ? undefined : "group"}
+        {...(tabs ? {} : { role: "group" })}
         aria-label={t(($) => {
           return $.chat.taskChips.chooseTask;
         })}

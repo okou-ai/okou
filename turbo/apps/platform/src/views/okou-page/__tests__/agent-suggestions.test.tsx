@@ -250,6 +250,9 @@ test("Selecting a task hides the categories, focuses the composer, and restores 
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
+  expect(
+    screen.getByRole("tablist", { name: "Choose a task" }),
+  ).toContainElement(button("Suggestions", "tab"));
   expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
   await fill(composer(), "My draft stays here");
   click(button("Image", "tab"));
