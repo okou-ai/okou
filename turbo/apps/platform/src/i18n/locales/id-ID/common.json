@@ -4040,11 +4040,13 @@
   },
   "featureGuide": {
     "close": "Tutup panduan fitur",
-    "dismiss": "Mengerti",
     "label": "Yang baru",
+    "navigation": "Fitur dalam pembaruan ini",
     "next": "Berikutnya",
+    "nextFeature": "Fitur berikutnya",
     "preview": "Pratinjau",
     "previous": "Sebelumnya",
+    "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
   },
   "global": {

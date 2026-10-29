@@ -4109,11 +4109,13 @@
   },
   "featureGuide": {
     "close": "Fermer le guide des nouveautés",
-    "dismiss": "J’ai compris",
     "label": "Nouveautés",
+    "navigation": "Fonctionnalités de cette mise à jour",
     "next": "Suivant",
+    "nextFeature": "Fonctionnalité suivante",
     "preview": "Aperçu",
     "previous": "Précédent",
+    "previousFeature": "Fonctionnalité précédente",
     "tryPrompt": "Essayer cette tâche"
   },
   "global": {
