@@ -293,6 +293,8 @@ private struct WorkspaceRootView: View {
             if sidebar.isOpen && !wasOpen { Task { await store.refreshNavigation() } }
           })
       )
+      .composerWorkflowOverlay(
+        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil)
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
