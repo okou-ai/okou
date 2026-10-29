@@ -35,7 +35,13 @@ final class ConversationStore {
 
   let modelSelection: ChatModelSelectionStore?
   let workflowSource: ComposerWorkflowSource?
-  var thread: ChatThread
+  var thread: ChatThread {
+    didSet {
+      if ChatModelSelection(thread: oldValue) != ChatModelSelection(thread: thread) {
+        modelSelection?.apply(thread: thread)
+      }
+    }
+  }
   var draft: String {
     get { composer.text }
     set { composer.text = newValue }
@@ -403,8 +409,8 @@ final class ConversationStore {
   func recoverFailure(_ id: String, resetUsage: Bool = false) async {
     guard !closed, !needsUpgrade, !isRecoveringFailure, !isSending, pending.isEmpty,
       history?.latestFailureID == id, let failure = messages.first(where: { $0.id == id })?.failure,
-      failureState(failure).recovery.canRetry, modelSelection?.canSend != false,
-      modelSelection?.isBusy != true
+      failureState(failure).recovery.canRetry,
+      modelSelection?.canSendConfirmedSelection != false, modelSelection?.isMutating != true
     else { return }
     isRecoveringFailure = true
     modelSelection?.isSending = true
@@ -419,16 +425,19 @@ final class ConversationStore {
       }
       await refresh()
       if let refreshTask { await refreshTask.value }
-      await modelSelection?.refresh()
       guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
         history?.latestFailureID == id, pending.isEmpty, error == nil,
-        failureState(failure).recovery.canRetry, modelSelection?.canSend != false
+        failureState(failure).recovery.canRetry,
+        modelSelection?.canSendConfirmedSelection != false
       else { return }
       if resetUsage {
+        // Spending a reset credit must resolve the current subscription route first.
+        await modelSelection?.refresh()
+        guard modelSelection?.canSend != false else { return }
         await refreshFailureAccounts()
         let state = failureState(failure)
         guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
-          history?.latestFailureID == id, modelSelection?.canSend != false,
+          history?.latestFailureID == id, modelSelection?.canSendConfirmedSelection != false,
           let accountID = state.resetAccountID,
           let subscriptions = modelSelection?.models.subscriptions,
           let account = subscriptions.accounts.first(where: { $0.id == accountID }),
@@ -436,7 +445,8 @@ final class ConversationStore {
         else { return }
       }
       guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
-        history?.latestFailureID == id, pending.isEmpty, modelSelection?.canSend != false
+        history?.latestFailureID == id, pending.isEmpty,
+        modelSelection?.canSendConfirmedSelection != false
       else { return }
       let message = PendingMessage(
         id: UUID().uuidString.lowercased(), text: "continue", createdAt: Date(), attachments: [],

@@ -134,16 +134,33 @@ final class ChatModelSelectionStore {
       URLQueryItem(name: "billingView", value: "plans"),
     ])
   }
-  var isBusy: Bool { isSaving || isLoading || isSending }
-  var canSend: Bool {
+  var isMutating: Bool { isSaving || isSending }
+  var isBusy: Bool { isMutating || isLoading }
+  var canSend: Bool { !isLoading && canSendConfirmedSelection }
+  /// Background reads do not invalidate the selection already confirmed for recovery.
+  var canSendConfirmedSelection: Bool {
     guard connectors.canSend else { return false }
     guard models.active else { return true }
     guard models.configuration != nil else { return false }
-    return !isSaving && !isLoading && hasLoaded && !uncertain
+    return !isSaving && hasLoaded && !uncertain
       && models.configuration?.row(for: selection)?.memberEffective.availability == "available"
   }
   var effectiveEffort: String? { models.configuration?.effectiveEffort(for: selection) }
   var requestedEffort: String? { models.configuration?.requestedEffort(for: selection) }
+
+  func apply(thread: ChatThread) {
+    guard !closed, thread.id == threadID else { return }
+    if isSaving {
+      refreshAfterSave = true
+      return
+    }
+    // An ambiguous local write still needs its explicit metadata readback.
+    guard !uncertain else { return }
+    revision += 1
+    isLoading = false
+    stored = ChatModelSelection(thread: thread)
+    hasLoaded = true
+  }
 
   func open() async {
     if models.configuration == nil { await models.refresh() }

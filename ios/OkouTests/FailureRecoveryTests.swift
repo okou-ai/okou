@@ -8,6 +8,152 @@ import XCTest
 
 @MainActor
 final class FailureRecoveryTests: XCTestCase {
+  func testOneRetrySendsWhileBackgroundModelReadIsStillPending() async throws {
+    let fixture = FailureRecoveryFixture(
+      reason: "provider_server_error", error: "Provider unavailable")
+    let (conversation, models) = await fixture.conversation()
+    defer {
+      conversation.close()
+      models.close()
+    }
+    let gate = ModelResponseGate()
+    let started = expectation(description: "Background model read reached the HTTP boundary")
+    fixture.state.value.withLock {
+      $0.metadataGate = gate
+      $0.metadataRequested = { started.fulfill() }
+    }
+    let backgroundRead = Task { await conversation.modelSelection?.refresh() }
+    addTeardownBlock {
+      backgroundRead.cancel()
+      gate.open()
+      await backgroundRead.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    let failure = try XCTUnwrap(conversation.messages.last?.failure)
+    XCTAssertFalse(conversation.failureState(failure).isBusy)
+    XCTAssertTrue(conversation.failureState(failure).canSend)
+
+    await conversation.recoverFailure(failure.id)
+
+    let sends = fixture.state.value.withLock { $0.sends }
+    XCTAssertEqual(sends.count, 1)
+    let data = try XCTUnwrap(sends.first)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(body["prompt"] as? String, "continue")
+    XCTAssertEqual(body["model"] as? String, "codex-model")
+    XCTAssertEqual((body["runOptions"] as? [String: String])?["reasoningEffort"], "max")
+    XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
+    gate.open()
+    await backgroundRead.value
+  }
+
+  func testModelSaveAndUncertainWriteBlockRecoveryUntilReadbackConfirmsTheChoice() async throws {
+    let fixture = FailureRecoveryFixture()
+    let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { workspace.close() }
+    await workspace.modelStore.refresh()
+    await workspace.refresh([.threadList])
+    workspace.selectedThreadID = ModelHTTPFixtures.threadID
+    let conversation = try XCTUnwrap(workspace.selectedConversation)
+    await conversation.modelSelection?.open()
+    await conversation.refresh()
+    let failure = try XCTUnwrap(conversation.messages.last?.failure)
+    let gate = ModelResponseGate()
+    let started = expectation(description: "Model switch reached the HTTP boundary")
+    fixture.state.value.withLock {
+      $0.modelSaveStatus = 503
+      $0.modelSaveGate = gate
+      $0.modelSaveRequested = { started.fulfill() }
+    }
+    let saving = Task { await conversation.modelSelection?.choose(model: "claude-model") }
+    addTeardownBlock {
+      saving.cancel()
+      gate.open()
+      await saving.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    await conversation.recoverFailure(failure.id)
+    XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
+
+    gate.open()
+    await saving.value
+    await conversation.recoverFailure(failure.id)
+    XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
+
+    await conversation.modelSelection?.refresh()
+    // An unrelated list update must not replace the acknowledged local choice
+    // with the older selection still present in the thread projection.
+    fixture.state.value.withLock {
+      $0.threadEvents = [
+        FailureRecoveryFixture.threadEvent(1, kind: "renamed", fields: #""title":"Renamed""#)
+      ]
+    }
+    await workspace.refresh([.threadList])
+    await conversation.recoverFailure(failure.id)
+    let sends = fixture.state.value.withLock { $0.sends }
+    XCTAssertEqual(sends.count, 1)
+    let data = try XCTUnwrap(sends.first)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(body["model"] as? String, "claude-model")
+    XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
+  }
+
+  func testThreadEventsSupplyRecoveryModelEffortAndFastWithoutAMetadataRefresh() async throws {
+    for model in ["claude-model", "codex-model"] {
+      let fixture = FailureRecoveryFixture()
+      let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+      defer { workspace.close() }
+      await workspace.modelStore.refresh()
+      await workspace.refresh([.threadList])
+      workspace.selectedThreadID = ModelHTTPFixtures.threadID
+      let conversation = try XCTUnwrap(workspace.selectedConversation)
+      await conversation.modelSelection?.open()
+      await conversation.refresh()
+
+      let gate = ModelResponseGate()
+      let started = expectation(description: "Old model read captured before thread events")
+      fixture.state.value.withLock {
+        $0.metadataGate = gate
+        $0.metadataRequested = { started.fulfill() }
+      }
+      let backgroundRead = Task { await conversation.modelSelection?.refresh() }
+      addTeardownBlock {
+        backgroundRead.cancel()
+        gate.open()
+        await backgroundRead.value
+      }
+      await fulfillment(of: [started], timeout: 3)
+      let tier = model == "codex-model" ? #""priority""# : "null"
+      fixture.state.value.withLock {
+        $0.model = model
+        $0.metadataStatus = 503
+        $0.threadEvents = [
+          FailureRecoveryFixture.threadEvent(
+            1, kind: "model_selection_updated",
+            fields:
+              "\"selectedModel\":\"\(model)\",\"modelSettingsPatch\":{\"model\":\"\(model)\",\"effort\":\"high\"}"),
+          FailureRecoveryFixture.threadEvent(
+            2, kind: "service_tier_updated", fields: "\"serviceTier\":\(tier)"),
+        ]
+      }
+      await workspace.refresh([.threadList])
+      gate.open()
+      await backgroundRead.value
+      fixture.state.value.withLock { $0.metadataStatus = 200 }
+      await conversation.recoverFailure(FailureRecoveryFixture.failureID)
+
+      let sends = fixture.state.value.withLock { $0.sends }
+      XCTAssertEqual(sends.count, 1)
+      let data = try XCTUnwrap(sends.first)
+      let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+      XCTAssertEqual(body["model"] as? String, model)
+      let options = try XCTUnwrap(body["runOptions"] as? [String: String])
+      XCTAssertEqual(options["reasoningEffort"], "high")
+      XCTAssertEqual(options["codexServiceTier"], model == "codex-model" ? "fast" : nil)
+      XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
+    }
+  }
+
   func testRestartingAnUncertainContinuePreservesAnUnuploadedAttachmentDraft() async throws {
     let fixture = FailureRecoveryFixture()
     fixture.state.value.withLock {
@@ -187,7 +333,7 @@ final class FailureRecoveryTests: XCTestCase {
     XCTAssertTrue(conversation.messages.contains { $0.id == failure.id })
   }
 
-  func testContinueUsesCurrentModelAndPreservesStructuredDraftAndAttachments() async throws {
+  func testContinueUsesConfirmedModelAndPreservesStructuredDraftAndAttachments() async throws {
     let document = ChatDraftDocument(parts: [
       .object(["type": .string("text"), "text": .string("An unfinished follow-up")]),
       .object([
@@ -214,8 +360,9 @@ final class FailureRecoveryTests: XCTestCase {
     }
     try await waitForBusinessResult { conversation.attachmentDraft.isReady }
     let draft = conversation.composer.value
-    // A different client changes the thread's model before recovery.
+    // A different client's model change has synchronized before recovery.
     fixture.state.value.withLock { $0.model = "claude-model" }
+    await conversation.modelSelection?.refresh()
     await conversation.recoverFailure(FailureRecoveryFixture.failureID)
     let sends = fixture.state.value.withLock { $0.sends }
     XCTAssertEqual(sends.count, 1)
