@@ -26,6 +26,7 @@ import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { nowDate } from "../../lib/time";
+import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 
 import {
   teamsAccountConnection,
@@ -864,7 +865,11 @@ const notifyTeamsConnect$ = command(
   ): Promise<void> => {
     const writeDb = set(writeDb$);
     const [connection] = await writeDb
-      .select({ dmWelcomeSent: teamsOrgConnections.dmWelcomeSent })
+      .select({
+        dmWelcomeSent: teamsOrgConnections.dmWelcomeSent,
+        teamsUserId: teamsOrgConnections.teamsUserId,
+        teamsAadObjectId: teamsOrgConnections.teamsAadObjectId,
+      })
       .from(teamsOrgConnections)
       .where(eq(teamsOrgConnections.id, args.connectionId))
       .limit(1);
@@ -878,7 +883,12 @@ const notifyTeamsConnect$ = command(
       {
         tenantId: args.tenantId,
         serviceUrl: args.serviceUrl,
-        teamsUserId: args.teamsUserId,
+        // Microsoft accepts the verified AAD object ID for personal chats.
+        teamsUserId:
+          args.teamsUserId ??
+          connection.teamsUserId ??
+          connection.teamsAadObjectId ??
+          undefined,
         teamsUserDisplayName: args.teamsUserDisplayName,
         botId: args.installation.botId,
         botName: args.installation.botName,
@@ -920,6 +930,81 @@ const notifyTeamsConnect$ = command(
       .set({ dmWelcomeSent: true, updatedAt: nowDate() })
       .where(eq(teamsOrgConnections.id, args.connectionId));
     signal.throwIfAborted();
+  },
+);
+
+/** Deliver pending welcomes only through the account's own workspace bot. */
+export const notifyPendingTeamsConnectWelcomes$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly tenantId: string;
+      readonly userId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const rows = await set(writeDb$)
+      .select({
+        connection: teamsOrgConnections,
+        installation: teamsOrgInstallations,
+      })
+      .from(teamsOrgConnections)
+      .innerJoin(
+        teamsOrgInstallations,
+        eq(
+          teamsOrgInstallations.teamsTenantId,
+          teamsOrgConnections.teamsTenantId,
+        ),
+      )
+      .where(
+        and(
+          eq(teamsOrgConnections.teamsTenantId, args.tenantId),
+          eq(teamsOrgInstallations.orgId, args.orgId),
+          or(
+            eq(teamsOrgConnections.orgId, args.orgId),
+            isNull(teamsOrgConnections.orgId),
+          ),
+          args.userId ? eq(teamsOrgConnections.userId, args.userId) : undefined,
+          eq(teamsOrgConnections.dmWelcomeSent, false),
+        ),
+      );
+    signal.throwIfAborted();
+    for (const { connection, installation } of rows) {
+      const membership = await set(
+        getMemberRoleAndUpdateCache$,
+        args.orgId,
+        connection.userId,
+        signal,
+      );
+      if (membership.kind !== "member") {
+        continue;
+      }
+      const result = await settle(
+        set(
+          notifyTeamsConnect$,
+          {
+            connectionId: connection.id,
+            installation,
+            orgId: args.orgId,
+            tenantId: args.tenantId,
+            serviceUrl: installation.serviceUrl ?? undefined,
+            conversationId: undefined,
+            conversationType: undefined,
+            teamsUserId: connection.teamsUserId ?? undefined,
+            teamsUserDisplayName: connection.teamsUserDisplayName ?? undefined,
+          },
+          signal,
+        ),
+        signal,
+      );
+      if (!result.ok) {
+        L.warn("Failed to deliver pending Teams connect welcome", {
+          connectionId: connection.id,
+          error: result.error,
+        });
+      }
+    }
   },
 );
 
