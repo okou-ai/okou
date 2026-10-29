@@ -99,6 +99,8 @@ export interface ConnectorNoAuthGrantConfig {
 export interface ConnectorAutomaticGrantConfig {
   readonly kind: "automatic";
   readonly callbackOrigin: "api";
+  /** Additional OAuth scopes required alongside provider discovery. */
+  readonly scopes?: readonly string[];
   readonly outputs: ConnectorGrantOutputBindings;
 }
 

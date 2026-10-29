@@ -39,7 +39,7 @@ function accounts() {
   return setupApp({ context, routes })(connectorAccountsContract);
 }
 
-function fixture() {
+function fixture(variant: "oauth" | "declared-scopes" = "oauth") {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -47,7 +47,7 @@ function fixture() {
   mocks.clerk.session(actor.userId, actor.orgId);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
-  const catalog = automaticMcpCatalogFixture();
+  const catalog = automaticMcpCatalogFixture(variant);
   onTestFinished(async () => {
     mocks.clerk.session(actor.userId, actor.orgId);
     const existing = await accept(
@@ -122,6 +122,57 @@ function receipt(f: Fixture, attemptId: string) {
 }
 
 describe("builtin MCP automatic authentication", () => {
+  it.each(["cimd", "dcr"] as const)(
+    "requests declared business scopes on %s connection and exact-account reconnect",
+    async (registration) => {
+      const f = fixture("declared-scopes");
+      const scope = "openid read write offline_access";
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration,
+        challengeScope: null,
+        metadataScopes: ["openid"],
+        authorizationServerScopes: [
+          "openid",
+          "read",
+          "write",
+          "admin",
+          "offline_access",
+        ],
+        authorizationCodeScopes: [scope, scope],
+        initialExpiresIn: 3600,
+      });
+      const started = await beginOAuth(f);
+      expect(started.url.searchParams.get("scope")).toBe(scope);
+      expect((await callback(started.state, provider.issuer)).body.status).toBe(
+        "success",
+      );
+      const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+      const connectionId = completed.body.connectionId;
+
+      const reconnected = await beginOAuth(f, connectionId);
+      expect(reconnected.url.searchParams.get("scope")).toBe(scope);
+      expect(
+        (await callback(reconnected.state, provider.issuer)).body.status,
+      ).toBe("success");
+      expect(
+        (await accept(receipt(f, reconnected.oauthAttemptId), [200])).body,
+      ).toStrictEqual(completed.body);
+      const connected = await accept(
+        accounts().connection({
+          headers,
+          params: { connectionId },
+          query: f.target,
+        }),
+        [200],
+      );
+      expect(connected.body.oauthScopes).toStrictEqual(scope.split(" "));
+      if (registration === "dcr") {
+        expect(provider.registrationBodies).toMatchObject([{ scope }]);
+        expect(provider.registrationBodies).toHaveLength(1);
+      }
+    },
+  );
+
   it("connects and reconnects accepted no-auth with its exact catalog method", async () => {
     const f = fixture();
     mockAutomaticMcpOAuthProvider(context, {

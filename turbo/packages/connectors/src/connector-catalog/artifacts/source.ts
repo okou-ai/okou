@@ -77,6 +77,7 @@ export const noneGrantSourceSchema = object({ kind: literal("none") }).strict();
 export const automaticGrantSourceSchema = object({
   kind: literal("automatic"),
   callbackOrigin: literal("api"),
+  scopes: array(string()).optional(),
   outputs: connectorAutomaticTokenBindingsSchema,
 }).strict();
 

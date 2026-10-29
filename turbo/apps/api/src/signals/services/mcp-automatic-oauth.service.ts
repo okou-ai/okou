@@ -387,14 +387,12 @@ function withOfflineAccessScope(
 function selectedScope(
   challengeScope: string | undefined,
   metadata: OAuthProtectedResourceMetadata,
+  additionalScopes: readonly string[] = [],
 ): string | undefined {
-  if (challengeScope) {
-    return scopeTokens(challengeScope).join(" ");
-  }
-  const supported = metadata.scopes_supported;
-  return supported && supported.length > 0
-    ? scopeTokens(supported.join(" ")).join(" ")
-    : undefined;
+  const discoveredScope =
+    challengeScope || metadata.scopes_supported?.join(" ");
+  const scopes = scopeTokens([discoveredScope, ...additionalScopes].join(" "));
+  return scopes.length > 0 ? scopes.join(" ") : undefined;
 }
 
 interface DiscoveredAutomaticOAuthAuthority {
@@ -414,6 +412,7 @@ async function discoverAutomaticOAuthAuthority(
     readonly endpoint: string;
     readonly resourceMetadataUrl: URL | null;
     readonly challengeScope?: string;
+    readonly additionalScopes?: readonly string[];
   },
   signal: AbortSignal,
 ): Promise<DiscoveredAutomaticOAuthAuthority> {
@@ -517,7 +516,11 @@ async function discoverAutomaticOAuthAuthority(
       authorizationServerMetadata.authorization_response_iss_parameter_supported ===
       true,
     scope: withOfflineAccessScope(
-      selectedScope(args.challengeScope, protectedResourceMetadata),
+      selectedScope(
+        args.challengeScope,
+        protectedResourceMetadata,
+        args.additionalScopes,
+      ),
       authorizationServerMetadata,
     ),
     protectedResourceMetadata,
@@ -990,6 +993,7 @@ export async function prepareMcpAutomaticOAuthAuthorization(
   args: {
     readonly dcrStore: McpAutomaticOAuthDcrPreparationStore;
     readonly endpoint: string;
+    readonly additionalScopes?: readonly string[];
     readonly redirectUri: string;
     readonly state: string;
     readonly cimdClientId: string;
@@ -1014,6 +1018,7 @@ export async function prepareMcpAutomaticOAuthAuthorization(
       endpoint: args.endpoint,
       resourceMetadataUrl: challengeParameters.resourceMetadataUrl ?? null,
       challengeScope: challengeParameters.scope,
+      additionalScopes: args.additionalScopes,
     },
     signal,
   );
