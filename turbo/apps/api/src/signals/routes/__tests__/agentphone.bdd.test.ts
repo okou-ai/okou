@@ -5,9 +5,11 @@ import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { integrationsPhoneMessageRoutes } from "../integrations-phone-message";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -547,6 +549,223 @@ const EXPECTED_PLAIN_RUN_OUTPUT = [
 ].join("\n");
 
 describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
+  it("sends an explicit group message with a run-scoped CLI token and archives it for current members", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const { actor, ap, phone, runnerGroup, sends } =
+      await entitledLinkedActor();
+    const other = createBddApi(context).user();
+    const otherPhone = uniquePhoneHandle();
+    await ap.linkViaWebhookConnectPrompt(other, otherPhone, sends);
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "@Okou prepare a group update",
+      conversationId,
+      isGroup: true,
+      participants: [{ identifier: phone }, { identifier: otherPhone }],
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.appendSystemPrompt).toContain(`Group ID: ${groupId}`);
+    expect(run.appendSystemPrompt).toContain(
+      `okou imessage message send --to ${groupId}`,
+    );
+    if (!run.okouToken) {
+      throw new Error("Expected a claim-issued CLI token");
+    }
+    const client = setupApp({
+      context,
+      routes: integrationsPhoneMessageRoutes,
+    })(integrationsAgentPhoneContract);
+    const sent = await accept(
+      client.groupMessage({
+        headers: { authorization: `Bearer ${run.okouToken}` },
+        body: { groupId, text: "The group update is ready" },
+      }),
+      [200],
+    );
+    expect(sent.body).toMatchObject({ ok: true, toNumber: groupId });
+    expect(lastSend(sends)).toMatchObject({
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      toNumber: groupId,
+      body: "The group update is ready",
+    });
+    for (const member of [actor, other]) {
+      const history = await integrations.requestAgentPhoneGroupHistory(
+        member,
+        { groupId, limit: 100 },
+        [200],
+      );
+      if (history.status !== 200) {
+        throw new Error("Expected authorized group history");
+      }
+      expect(history.body.messages).toContainEqual(
+        expect.objectContaining({
+          id: sent.body.messageId,
+          conversationId,
+          toNumber: groupId,
+          direction: "outbound",
+          channel: "imessage",
+          body: "The group update is ready",
+        }),
+      );
+    }
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+  });
+
+  it.each([
+    "unknown group",
+    "foreign workspace",
+    "unrelated user",
+    "unlinked phone",
+    "departed member",
+    "foreign agent",
+  ] as const)("rejects an explicit group send for a %s", async (scenario) => {
+    const integrations = createBddIntegrationApi(context);
+    const { actor, ap, phone, sends } = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "ordinary group conversation",
+      conversationId,
+      isGroup: true,
+      participants: [{ identifier: phone }],
+    });
+    const sender =
+      scenario === "unrelated user"
+        ? createBddApi(context).user({ orgId: actor.orgId })
+        : actor;
+    if (scenario === "unrelated user") {
+      await ap.linkViaWebhookConnectPrompt(sender, uniquePhoneHandle(), sends);
+    }
+    if (scenario === "unlinked phone") {
+      await integrations.requestUnlinkAgentPhone(actor, [204]);
+    }
+    if (scenario === "departed member") {
+      server.use(
+        http.get(
+          `https://api.agentphone.test/v1/conversations/${conversationId}`,
+          () => {
+            return HttpResponse.json({ participants: [uniquePhoneHandle()] });
+          },
+        ),
+      );
+    }
+    const before = sends.messages.length;
+    const denied = await integrations.requestSendAgentPhoneGroupMessage(
+      scenario === "foreign workspace"
+        ? { ...actor, orgId: `org_${randomUUID()}` }
+        : sender,
+      {
+        groupId:
+          scenario === "unknown group"
+            ? bddGroupId(uniqueConversationId())
+            : groupId,
+        text: "This must not be sent",
+        ...(scenario === "foreign agent"
+          ? { agentphoneAgentId: "foreign-agent" }
+          : {}),
+      },
+      [404],
+    );
+    expect(denied.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    expect(sends.messages).toHaveLength(before);
+  });
+
+  it.each([
+    { providerStatus: 404, expectedStatus: 404 },
+    { providerStatus: 503, expectedStatus: 502 },
+  ] as const)(
+    "does not send a group message when roster lookup returns $providerStatus",
+    async ({ providerStatus, expectedStatus }) => {
+      const integrations = createBddIntegrationApi(context);
+      const { actor, ap, phone, sends } = await entitledLinkedActor();
+      const conversationId = uniqueConversationId();
+      const groupId = bddGroupId(conversationId);
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "ordinary group conversation",
+        conversationId,
+        isGroup: true,
+      });
+      server.use(
+        http.get(
+          `https://api.agentphone.test/v1/conversations/${conversationId}`,
+          () => {
+            return HttpResponse.json(
+              { detail: "Roster unavailable" },
+              { status: providerStatus },
+            );
+          },
+        ),
+      );
+      const before = sends.messages.length;
+      const failed = await integrations.requestSendAgentPhoneGroupMessage(
+        actor,
+        { groupId, text: "This must not be sent" },
+        [expectedStatus],
+      );
+      expect(failed.status).toBe(expectedStatus);
+      expect(sends.messages).toHaveLength(before);
+    },
+  );
+
+  it("does not retry an uncertain group message or fall back to a DM", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const { actor, ap, phone, sends } = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "ordinary group conversation",
+      conversationId,
+      isGroup: true,
+    });
+    const attempts: unknown[] = [];
+    server.use(
+      http.post(
+        "https://api.agentphone.test/v1/messages",
+        async ({ request }) => {
+          attempts.push(await request.json());
+          return HttpResponse.json(
+            { detail: "Send outcome unknown" },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+    const before = sends.messages.length;
+    await integrations.requestSendAgentPhoneGroupMessage(
+      actor,
+      { groupId, text: "Group update" },
+      [502],
+    );
+    expect(attempts).toStrictEqual([
+      {
+        agent_id: AGENTPHONE_BDD_AGENT_ID,
+        to_number: groupId,
+        body: "Group update",
+      },
+    ]);
+    expect(sends.messages).toHaveLength(before);
+  });
+
+  it("requires authentication for explicit group sends", async () => {
+    const denied = await createBddIntegrationApi(
+      context,
+    ).requestSendAgentPhoneGroupMessage(
+      null,
+      { groupId: "grp_auth_required", text: "Group update" },
+      [401],
+    );
+    expect(denied.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+  });
+
   it("sends one contact card after a successful text conversation and ignores repeated callbacks", async () => {
     const chat = await contactCardConversation();
     const before = chat.sends.messages.length;

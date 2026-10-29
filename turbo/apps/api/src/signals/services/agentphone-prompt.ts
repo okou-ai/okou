@@ -5,6 +5,7 @@ export function buildAgentPhonePrompt(
     readonly sharedNumber: string;
     readonly phoneHandle: string;
     readonly conversationId?: string | null;
+    readonly groupId?: string | null;
     readonly channel?: string | null;
     readonly isGroup?: boolean;
     readonly messageId?: string;
@@ -32,6 +33,9 @@ export function buildAgentPhonePrompt(
   if (opts.conversationId) {
     headerParts.push(`Conversation ID: ${opts.conversationId}`);
   }
+  if (opts.isGroup && opts.groupId) {
+    headerParts.push(`Group ID: ${opts.groupId}`);
+  }
   if (opts.messageId) {
     headerParts.push(`Message ID: ${opts.messageId}`);
   }
@@ -40,7 +44,9 @@ export function buildAgentPhonePrompt(
     headerParts.join("\n"),
     opts.channel === "whatsapp"
       ? "# Integration Note\nYour final reply is automatically delivered to this WhatsApp conversation. Do not duplicate it with a message command. Use concise plain text. For an explicitly requested additional message, use `okou whatsapp message send --help`; it sends only to this user's independently verified WhatsApp account. Free-form sends require the customer's 24-hour service window. Never fall back to SMS/iMessage or retry an uncertain send. Incoming `[Web file]` blocks use `okou web download-file -h`. Historical `[Phone file]` attachments use `okou phone download-file -h`. File upload is not available on this integration yet; share an accessible artifact link when appropriate."
-      : integrationNote,
+      : opts.isGroup && opts.groupId
+        ? `${integrationNote}\n- For an explicitly requested additional text message to this group, use \`okou imessage message send --to ${opts.groupId} --text "message"\`. Your final reply is delivered automatically; do not send it again with the CLI.`
+        : integrationNote,
     threadContext,
   ]
     .filter(Boolean)
