@@ -52,6 +52,9 @@ impl HomeCacheInventory {
 
     pub(super) fn insert(&mut self, key: String, state: HeldHomeState) {
         let reuse_key = state.reuse_key.clone();
+        // Every retained group has a completion time, so a new group has only
+        // this entry and cannot exceed the per-group profile cap.
+        let existing_group = self.completion_times.contains_key(&reuse_key);
         let completed_at = self.completion_times.entry(reuse_key.clone()).or_default();
         if state.last_completed_at > *completed_at {
             completed_at.clone_from(&state.last_completed_at);
@@ -59,12 +62,13 @@ impl HomeCacheInventory {
         self.entries.insert(key, state);
         self.omitted_groups |= self.completion_times.len() > MAX_HELD_HOME_STATES;
         if self.completion_times.len() > MAX_HELD_HOME_STATES
-            || self
-                .entries
-                .values()
-                .filter(|state| state.reuse_key == reuse_key)
-                .count()
-                > MAX_HOME_CACHES_PER_REUSE_KEY
+            || (existing_group
+                && self
+                    .entries
+                    .values()
+                    .filter(|state| state.reuse_key == reuse_key)
+                    .count()
+                    > MAX_HOME_CACHES_PER_REUSE_KEY)
         {
             self.truncated |= cap_inventory_entries(&mut self.entries, &mut self.completion_times);
         }
