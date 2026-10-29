@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.46](https://github.com/okou-ai/okou/compare/runner-host-v0.9.45...runner-host-v0.9.46) (2026-10-29)
+
+
+### Bug Fixes
+
+* **runner-host:** retain atomic staging cleanup after cancellation ([#43752](https://github.com/okou-ai/okou/issues/43752)) ([8db3a57](https://github.com/okou-ai/okou/commit/8db3a572c72f530f3fcd7c7af2a72745a98f552f))
+
+
+### Refactoring
+
+* **runner-host:** share lock-retaining state publication ([#43715](https://github.com/okou-ai/okou/issues/43715)) ([0529b89](https://github.com/okou-ai/okou/commit/0529b89aef1a46d8b9b0e31445bbc8e9bff549b7))
+* **runner:** share lock-retaining gc removal workers ([#43703](https://github.com/okou-ai/okou/issues/43703)) ([380d943](https://github.com/okou-ai/okou/commit/380d94347942610cdd3288315914f4bcc24fe4a9))
+
 ## [0.9.45](https://github.com/okou-ai/okou/compare/runner-host-v0.9.44...runner-host-v0.9.45) (2026-10-28)
 
 ## [0.9.44](https://github.com/okou-ai/okou/compare/runner-host-v0.9.43...runner-host-v0.9.44) (2026-10-28)

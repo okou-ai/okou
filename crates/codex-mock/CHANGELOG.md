@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.12.33](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.32...codex-mock-v0.12.33) (2026-10-29)
+
 ## [0.12.32](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.31...codex-mock-v0.12.32) (2026-10-28)
 
 ## [0.12.31](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.30...codex-mock-v0.12.31) (2026-10-27)

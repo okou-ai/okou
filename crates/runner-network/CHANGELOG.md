@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-network-v0.2.93...runner-network-v0.3.0) (2026-10-29)
+
+
+### Features
+
+* support outlook mail review in chat ([#43751](https://github.com/okou-ai/okou/issues/43751)) ([d4a01db](https://github.com/okou-ai/okou/commit/d4a01dbac178e4d112e2e88aeb9a515aeb5560d9))
+
+
+### Refactoring
+
+* **runner-host:** share lock-retaining state publication ([#43715](https://github.com/okou-ai/okou/issues/43715)) ([0529b89](https://github.com/okou-ai/okou/commit/0529b89aef1a46d8b9b0e31445bbc8e9bff549b7))
+
 ## [0.2.93](https://github.com/okou-ai/okou/compare/runner-network-v0.2.92...runner-network-v0.2.93) (2026-10-28)
 
 ## [0.2.92](https://github.com/okou-ai/okou/compare/runner-network-v0.2.91...runner-network-v0.2.92) (2026-10-28)
