@@ -716,36 +716,44 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     ).toBeTruthy();
   });
 
-  it("preserves accepted part receipts when the next send has an uncertain outcome", async () => {
-    const setup = await configure();
-    await connect(setup);
-    let sends = 0;
-    server.use(
-      http.post(`${providerUrl}/v1/messages`, () => {
-        sends += 1;
-        return sends === 1
-          ? HttpResponse.json({
-              id: "accepted-part",
-              channel: "whatsapp",
-              from_number: AGENTPHONE_BDD_PHONE_NUMBER,
-            })
-          : HttpResponse.error();
-      }),
-    );
-    const response = await accept(
-      client().sendMessage({
-        headers: headers(setup.actor),
-        body: { text: "x".repeat(4100) },
-      }),
-      [502],
-    );
-    expect(response.body).toMatchObject({
-      acceptedMessages: [{ id: "accepted-part" }],
-      delivery: "unknown",
-    });
-    expect(response.body.error.message).toContain("accepted-part");
-    expect(sends).toBe(2);
-  });
+  it.each(["lost", "server-error"])(
+    "preserves accepted part receipts when the next send has an uncertain outcome (%s)",
+    async (outcome) => {
+      const setup = await configure();
+      await connect(setup);
+      let sends = 0;
+      server.use(
+        http.post(`${providerUrl}/v1/messages`, () => {
+          sends += 1;
+          return sends === 1
+            ? HttpResponse.json({
+                id: "accepted-part",
+                channel: "whatsapp",
+                from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+              })
+            : outcome === "lost"
+              ? HttpResponse.error()
+              : HttpResponse.json(
+                  { error: { code: "INTERNAL_ERROR" } },
+                  { status: 500 },
+                );
+        }),
+      );
+      const response = await accept(
+        client().sendMessage({
+          headers: headers(setup.actor),
+          body: { text: "x".repeat(4100) },
+        }),
+        [502],
+      );
+      expect(response.body).toMatchObject({
+        acceptedMessages: [{ id: "accepted-part" }],
+        delivery: "unknown",
+      });
+      expect(response.body.error.message).toContain("accepted-part");
+      expect(sends).toBe(2);
+    },
+  );
 
   it("returns the provider's service-window failure without retrying or changing transports", async () => {
     const setup = await configure();
