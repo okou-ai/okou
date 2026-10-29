@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;
+use std::io::Write;
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
 use nix::errno::Errno;
@@ -57,6 +59,64 @@ fn payload_accesses(watcher: &Inotify) -> BTreeSet<OsString> {
     }
 }
 
+fn write_future_inputs(
+    group_dir: &Path,
+    entry: &ActiveInputEntry,
+    sequences: impl IntoIterator<Item = u64>,
+) {
+    local_queue::ensure_run_inputs_dir(group_dir, entry.run_id).unwrap();
+    let run_id = serde_json::to_string(&entry.run_id).unwrap();
+    let text = serde_json::to_string(&entry.text).unwrap();
+    for sequence in sequences {
+        let path = local_queue::active_input_path(group_dir, entry.run_id, sequence);
+        let mut file = local_queue::open_private_new_file(&path, "future input fixture").unwrap();
+        // Keep ActiveInputEntry's field order; Serde escapes each invariant
+        // scalar once. Every sequence still owns its complete private file.
+        write!(
+            file,
+            r#"{{"runId":{run_id},"sequence":{sequence},"text":{text}}}"#,
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn future_input_fixture_preserves_canonical_bytes_and_private_independent_files() {
+    let sequences = [2, 9, 10, 99, 100, 1001, u64::MAX];
+    for text in [
+        "plain",
+        "你\"\\\n\0\tsequence",
+        r#"{"runId":"sequence","sequence":0}"#,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut entry = ActiveInputEntry {
+            run_id: RunId::from(uuid::Uuid::nil()),
+            sequence: 2,
+            text: text.to_owned(),
+        };
+        write_future_inputs(dir.path(), &entry, sequences);
+        for path in [
+            local_queue::inputs_dir(dir.path()),
+            local_queue::run_inputs_dir(dir.path(), entry.run_id),
+        ] {
+            assert_eq!(std::fs::metadata(path).unwrap().mode() & 0o777, 0o700);
+        }
+        let mut inodes = BTreeSet::new();
+        for sequence in sequences {
+            entry.sequence = sequence;
+            let path = local_queue::active_input_path(dir.path(), entry.run_id, sequence);
+            assert_eq!(
+                std::fs::read(&path).unwrap(),
+                serde_json::to_vec(&entry).unwrap()
+            );
+            let metadata = std::fs::metadata(path).unwrap();
+            assert_eq!(metadata.mode() & 0o777, 0o600);
+            assert_eq!(metadata.nlink(), 1);
+            assert!(inodes.insert(metadata.ino()));
+        }
+    }
+}
+
 #[test]
 fn missing_sequence_never_opens_a_large_future_backlog() {
     let dir = tempfile::tempdir().unwrap();
@@ -67,10 +127,9 @@ fn missing_sequence_never_opens_a_large_future_backlog() {
         sequence: 2,
         text: "x".repeat(100 * 1024),
     };
-    for sequence in 2..=1001 {
-        entry.sequence = sequence;
-        queue.write_active_input_sync(&entry).unwrap();
-    }
+    // Only reader gap behavior is observed here; publication/admission has
+    // separate owner coverage. Prepare the entire unpublished backlog first.
+    write_future_inputs(dir.path(), &entry, 2..=1001);
     let watcher = watch_payloads(dir.path(), run_id);
 
     for _ in 0..3 {
