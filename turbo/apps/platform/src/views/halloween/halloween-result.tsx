@@ -135,7 +135,7 @@ export function HalloweenResultScreen() {
             <div className="mt-7 flex flex-wrap items-stretch gap-3">
               {won && (
                 <a
-                  href="mailto:contact@okou.ai?subject=Halloween%20reward%20redemption"
+                  href={`mailto:contact@okou.ai?subject=${encodeURIComponent(copy.redeemEmailSubject)}&body=${encodeURIComponent(copy.redeemEmailBody.replaceAll("\n", "\r\n"))}`}
                   className={cn(
                     buttonVariants({ size: "lg" }),
                     goldButton,

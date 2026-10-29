@@ -212,9 +212,32 @@ test.each(["success", "wrong"] as const)(
     const redeem = queryAllByRoleFast("link", dialog).find((element) => {
       return element.textContent?.trim() === "Redeem";
     });
-    expect(redeem?.getAttribute("href")).toBe(
+    const email = redeem
+      ? new URL(redeem.getAttribute("href") ?? "")
+      : undefined;
+    expect(
+      email && {
+        protocol: email.protocol,
+        recipient: email.pathname,
+        subject: email.searchParams.get("subject"),
+        body: email.searchParams.get("body"),
+      },
+    ).toStrictEqual(
       outcome === "success"
-        ? "mailto:contact@okou.ai?subject=Halloween%20reward%20redemption"
+        ? {
+            protocol: "mailto:",
+            recipient: "contact@okou.ai",
+            subject: "Halloween reward redemption",
+            body: [
+              "Hi Okou team,",
+              "",
+              "I passed the Halloween quiz and would like to redeem my 7-day Okou Pro trial.",
+              "",
+              "Okou account email: [Your account email]",
+              "",
+              "Thank you!",
+            ].join("\r\n"),
+          }
         : undefined,
     );
     click(button("Play again", dialog));
