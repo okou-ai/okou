@@ -164,11 +164,17 @@ describe("shared context statement projections through normal sends", () => {
           expect(skills).toContainEqual(
             expect.objectContaining({
               workflowId,
-              skillMd: expect.stringContaining(
-                "Preserve this selected workflow.",
-              ),
             }),
           );
+          expect(
+            (
+              await api.downloadWorkflow(
+                run.runId,
+                workflowId,
+                claimed.claim.sandboxToken,
+              )
+            ).skillMd,
+          ).toContain("Preserve this selected workflow.");
         } else {
           expect(skills).toStrictEqual([]);
         }

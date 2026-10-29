@@ -25,7 +25,7 @@ fn exact_source_candidate(run_id: RunId, reuse_key: &str, source_run_id: RunId) 
         .with_reuse_key(Some(reuse_key.to_owned()))
         .with_runner_preference(ActiveRunnerPreference::new(
             test_runner_identity(),
-            RunnerPreferenceTarget::SourceSandbox(source_run_id),
+            RunnerPreferenceTarget::ExactSandbox(source_run_id),
             std::time::Instant::now() + Duration::from_secs(30),
         ))
 }
@@ -101,9 +101,12 @@ async fn assert_exact_reuse_claim_progresses_during_status_write(exact: bool) {
     let reuse_key = RunId::new_v4().to_string();
     let generation_run_id = RunId::new_v4();
     let tier = if exact {
-        RunnerPreferenceTarget::SourceSandbox(generation_run_id)
+        RunnerPreferenceTarget::ExactSandbox(generation_run_id)
     } else {
-        RunnerPreferenceTarget::SourceHomeCache(generation_run_id)
+        RunnerPreferenceTarget::PredecessorHome(
+            generation_run_id,
+            runner_provider::ActivePredecessorHomeEvidence::Advertised,
+        )
     };
     let sandbox_id = seed_idle_pool_with_speculative_timezone(
         &env.idle_pool,

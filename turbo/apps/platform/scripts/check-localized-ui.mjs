@@ -103,6 +103,18 @@ function isUserVisibleFunctionName(value) {
 function getInternalAllowedLiterals() {
   return [
     [
+      "src/signals/halloween/halloween-operations-page-setup.ts\u0000Halloween participant review",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/views/halloween/halloween-operations.tsx\u0000Halloween participant review",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/views/halloween/halloween-operations.tsx\u0000Staff administrators only. Capture an immutable account list, export it, and record your review decisions.",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
       "src/signals/okou-page/chat-feedback.ts\u0000a sent email (mail ID: {…}{…})",
       "locale-neutral serialized agent prompt metadata",
     ],

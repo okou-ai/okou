@@ -90,7 +90,7 @@ use super::drain_override::{
     remove_drain_restart_override_outcome, write_drain_restart_override,
 };
 use super::gate::read_runner_status;
-use super::reload::{SystemdReloadRequirement, coordinate_systemd_reload};
+use super::reload::{SystemdReloadPolicy, SystemdReloadRequirement, coordinate_systemd_reload};
 use super::signal::{ServiceSignalOutcome, signal_service_main, signal_service_main_bounded};
 use super::{
     RunnerServiceUnit, ServiceFuture, acquire_service_lock, read_unit_config_path,
@@ -254,7 +254,7 @@ impl ServiceDrainOps for RealServiceDrainOps {
         requirement: SystemdReloadRequirement,
     ) -> ServiceFuture<'a, ()> {
         Box::pin(async move {
-            coordinate_systemd_reload(unit, requirement)
+            coordinate_systemd_reload(unit, requirement, SystemdReloadPolicy::Unbounded)
                 .await
                 .map(|_| ())
         })
@@ -353,7 +353,7 @@ impl ServiceResumeOps for RealServiceResumeOps {
         requirement: SystemdReloadRequirement,
     ) -> ServiceFuture<'a, ()> {
         Box::pin(async move {
-            coordinate_systemd_reload(unit, requirement)
+            coordinate_systemd_reload(unit, requirement, SystemdReloadPolicy::Unbounded)
                 .await
                 .map(|_| ())
         })

@@ -1574,7 +1574,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 });
 
 describe("INT-01: Slack app deep webhook flows", () => {
-  it("keeps disabled workspace routing when another workspace enables the same Slack user ID", async () => {
+  it("routes identical Slack user IDs by the verified sender workspace", async () => {
     const actor = bdd.user();
     const other = bdd.user();
     runs.acceptStorageDownloads();
@@ -1589,11 +1589,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.installSlackWorkspace(other, {
       installerSlackUserId: slackUserId,
     });
-    await integrations.enableSlackWorkspaceIdentity(other);
     const entry = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
     });
-    await integrations.enableSlackWorkspaceIdentity(actor, false);
     cleanUpCanonicalSlackScenario(actor);
     onTestFinished(async () => {
       await integrations.requestSlackDisconnect(other, "uninstall", [200]);
@@ -1612,7 +1610,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       type: "app_mention",
       user: slackUserId,
       text: "use this workspace's existing connection",
-      channel: "C_BDD_DISABLED_WORKSPACE_IDENTITY",
+      channel: "C_BDD_SENDER_WORKSPACE",
       ts: "6090.000100",
     });
     await flushWaitUntilForTest();
@@ -1645,7 +1643,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     onTestFinished(async () => {
       await integrations.requestSlackDisconnect(entryActor, "uninstall", [200]);
     });
-    await integrations.enableSlackWorkspaceIdentity(actor);
     context.mocks.slack.users.info.mockResolvedValue({
       ok: true,
       user: {
@@ -1917,52 +1914,51 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(denied.status).toBe(404);
   });
 
-  it.each([
-    "left channel",
-    "posting restricted",
-    "deleted identity",
-    "switch disabled",
-  ])("revokes external input-channel writes when %s", async (reason) => {
-    const scenario = await claimedExternalSlackRun();
-    allowExternalSlackChannels(scenario);
-    if (reason === "left channel") {
-      server.use(
-        http.get("https://slack.com/api/conversations.members", () => {
-          return HttpResponse.json({
-            ok: true,
-            members: [scenario.entry.botUserId],
-          });
-        }),
-      );
-    } else if (reason === "posting restricted") {
-      server.use(
-        http.get("https://slack.com/api/conversations.info", () => {
-          return HttpResponse.json({
-            ok: true,
-            channel: { id: scenario.channel, is_read_only: true },
-          });
-        }),
-      );
-    } else if (reason === "deleted identity") {
-      context.mocks.slack.users.info.mockResolvedValue({
-        ok: true,
-        user: {
-          id: scenario.slackUserId,
-          team_id: scenario.home.teamId,
-          deleted: true,
+  it.each(["left channel", "posting restricted", "deleted identity"])(
+    "revokes external input-channel writes when %s",
+    async (reason) => {
+      const scenario = await claimedExternalSlackRun();
+      allowExternalSlackChannels(scenario);
+      if (reason === "left channel") {
+        server.use(
+          http.get("https://slack.com/api/conversations.members", () => {
+            return HttpResponse.json({
+              ok: true,
+              members: [scenario.entry.botUserId],
+            });
+          }),
+        );
+      } else if (reason === "posting restricted") {
+        server.use(
+          http.get("https://slack.com/api/conversations.info", () => {
+            return HttpResponse.json({
+              ok: true,
+              channel: { id: scenario.channel, is_read_only: true },
+            });
+          }),
+        );
+      } else if (reason === "deleted identity") {
+        context.mocks.slack.users.info.mockResolvedValue({
+          ok: true,
+          user: {
+            id: scenario.slackUserId,
+            team_id: scenario.home.teamId,
+            deleted: true,
+          },
+        });
+      }
+      context.mocks.slack.chat.postMessage.mockClear();
+      await integrations.requestSendSlackMessageAsRun(
+        scenario.token,
+        {
+          channel: scenario.channel,
+          text: "must remain within current access",
         },
-      });
-    } else {
-      await integrations.enableSlackWorkspaceIdentity(scenario.actor, false);
-    }
-    context.mocks.slack.chat.postMessage.mockClear();
-    await integrations.requestSendSlackMessageAsRun(
-      scenario.token,
-      { channel: scenario.channel, text: "must remain within current access" },
-      [404],
-    );
-    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
-  });
+        [404],
+      );
+      expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps canonical external uploads bound to their Run, entry bot and persisted channel", async () => {
     const scenario = await claimedExternalSlackRun(false);
@@ -2148,7 +2144,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       email: actor.email,
       orgId: movedOrgId,
     });
-    await integrations.enableSlackWorkspaceIdentity(movedActor);
     await integrations.connectSlackUser(movedActor, {
       workspaceId: home.teamId,
       slackUserId,
@@ -4924,7 +4919,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(responseJson).toContain("connect");
   });
 
-  it("keeps the disabled-identity App Home, welcome and lifecycle behavior", async () => {
+  it("keeps App Home, welcome and account lifecycle behavior", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
@@ -4932,8 +4927,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await bdd.readOnboardingStatus(actor);
     await bdd.completeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();
-    await integrations.enableSlackWorkspaceIdentity(actor, false);
-    const install = await integrations.installSlackWorkspace(null);
+    const install = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    await integrations.requestSlackDisconnect(actor, "disconnect", [200]);
     await integrations.connectSlackUser(actor, {
       workspaceId: install.teamId,
       slackUserId,
@@ -5133,7 +5130,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(revokedStatus.body).toMatchObject({
       isInstalled: false,
-      isConnected: false,
+      isConnected: true,
     });
   });
 

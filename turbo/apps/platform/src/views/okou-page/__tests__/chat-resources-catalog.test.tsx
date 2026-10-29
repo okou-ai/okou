@@ -69,7 +69,9 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
       );
     },
   });
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   await within(resources).findByText("report.pdf");
   click(artifactEntryNamed("report.pdf", resources));
   const sidebar = await screen.findByTestId("artifact-sidebar");
@@ -131,7 +133,9 @@ test.each([
         );
       },
     });
-    const resources = await screen.findByRole("region", { name: "Resources" });
+    const resources = await screen.findByRole("region", {
+      name: "Artifacts and chats",
+    });
     await within(resources).findByText(title);
     expect(artifactEntryNamed(title, resources)).toBeInTheDocument();
   },
@@ -140,7 +144,9 @@ test.each([
 test("Copy an artifact's on-demand detail URL without opening its preview", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   await setupResources({ sourceUrl: false });
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   const artifacts = within(resources).getByRole("region", {
     name: "Artifacts",
   });
@@ -180,7 +186,9 @@ test("Copying a private artifact reports failure without exposing its signed or 
       });
     },
   });
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   const artifacts = within(resources).getByRole("region", {
     name: "Artifacts",
   });
@@ -204,7 +212,9 @@ test("Copying an unavailable artifact reports failure", async () => {
       });
     },
   });
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   const artifacts = within(resources).getByRole("region", {
     name: "Artifacts",
   });
@@ -220,7 +230,9 @@ test("Copying an artifact reports a browser clipboard failure", async () => {
     new DOMException("Clipboard unavailable", "NotAllowedError"),
   );
   await setupResources();
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   const artifacts = within(resources).getByRole("region", {
     name: "Artifacts",
   });
@@ -324,7 +336,7 @@ test("Disable show more while loading and keep resource pages unique", async () 
   click(more);
   await expect(
     within(artifacts).findByRole("status"),
-  ).resolves.toHaveTextContent("Loading resources");
+  ).resolves.toHaveTextContent("Loading artifacts");
   expect(more).toHaveAttribute("aria-disabled", "true");
   expect(more).toHaveAttribute("aria-busy", "true");
   expect(more).toHaveFocus();
@@ -372,7 +384,7 @@ test("Retain loaded resources after a paging failure and retry with show more", 
   click(more);
   await expect(
     within(artifacts).findByRole("alert"),
-  ).resolves.toHaveTextContent("Could not load resources");
+  ).resolves.toHaveTextContent("Could not load artifacts");
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(60);
   expect(more).toBeEnabled();
   expect(more).toHaveTextContent("Show more");

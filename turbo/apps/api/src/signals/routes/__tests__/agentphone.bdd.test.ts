@@ -1531,7 +1531,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(prompt).toMatchObject({
         toNumber: handle,
         agentId: AGENTPHONE_BDD_AGENT_ID,
-        body: expect.stringContaining("/agentphone/connect?"),
+        body: expect.stringContaining("/settings/agentphone?"),
       });
       expect(prompt?.replyToMessageId).toBeUndefined();
       expect(sends.messages[before + 1]).toMatchObject({
@@ -1542,7 +1542,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         ),
       });
       expect(sends.messages[before + 1]?.body).not.toContain(
-        "/agentphone/connect?",
+        "/settings/agentphone?",
       );
 
       await connectFromReceivedLink(actor, prompt);
@@ -1604,7 +1604,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
             privateAttempts.push(message);
             if (
               !hasPrivateReply &&
-              message.body.includes("/agentphone/connect?")
+              message.body.includes("/settings/agentphone?")
             ) {
               return HttpResponse.json(
                 {
@@ -1642,7 +1642,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(privateAttempts).toMatchObject([
         {
           to_number: phone,
-          body: expect.stringContaining("/agentphone/connect?"),
+          body: expect.stringContaining("/settings/agentphone?"),
         },
         {
           to_number: phone,
@@ -1665,7 +1665,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
             ? "I've sent you a private message. Please reply there so I can send you your connection link."
             : "Please message this number directly to get your connection link.",
       });
-      expect(lastSend(sends).body).not.toContain("/agentphone/connect?");
+      expect(lastSend(sends).body).not.toContain("/settings/agentphone?");
       await expect(
         integrations.getAgentPhoneLinkStatus(actor),
       ).resolves.toMatchObject({ linked: false });
@@ -1689,7 +1689,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(prompt).toMatchObject({
         toNumber: phone,
         replyToMessageId: privateMessageId,
-        body: expect.stringContaining("/agentphone/connect?"),
+        body: expect.stringContaining("/settings/agentphone?"),
       });
       await connectFromReceivedLink(actor, prompt);
       await expect(
@@ -2273,7 +2273,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           isGroup: true,
         });
         expect(lastSend(sends).body).toContain("message this number directly");
-        expect(lastSend(sends).body).not.toContain("/agentphone/connect?");
+        expect(lastSend(sends).body).not.toContain("/settings/agentphone?");
         const status = await integrations.getAgentPhoneLinkStatus(actor);
         expect(status.linked).toBeTruthy();
         return;
@@ -3024,7 +3024,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(sends.messages).toHaveLength(2);
     expect(sends.messages[0]).toMatchObject({
       toNumber: phone,
-      body: expect.stringContaining("/agentphone/connect?"),
+      body: expect.stringContaining("/settings/agentphone?"),
     });
     expect(sends.messages[0]?.replyToMessageId).toBeUndefined();
     expect(sends.messages[1]).toMatchObject({
@@ -3282,7 +3282,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     const switchPrompt = await commandReply("/switch");
     expect(switchPrompt).toContain("Open this link to connect");
-    expect(switchPrompt).toContain("/agentphone/connect?");
+    expect(switchPrompt).toContain("/settings/agentphone?");
     expect(switchPrompt).toContain(SMS_RISK_WARNING);
 
     const plainPromptUnlinked = await commandReply("hello again");
@@ -3290,7 +3290,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       "Click the link below to start using Okou.",
     );
     expect(plainPromptUnlinked).not.toContain("AgentPhone");
-    expect(plainPromptUnlinked).toContain("/agentphone/connect?");
+    expect(plainPromptUnlinked).toContain("/settings/agentphone?");
     expect(plainPromptUnlinked).not.toContain(SMS_RISK_WARNING);
   });
 
@@ -4159,7 +4159,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const blockedReply = lastSend(sends);
     expect(blockedReply.toNumber).toBe(bddGroupId(conversationId));
     expect(blockedReply.body).toContain("Only the linked sender");
-    expect(blockedReply.body).not.toContain("/agentphone/connect?");
+    expect(blockedReply.body).not.toContain("/settings/agentphone?");
     const stillLinked = await integrations.getAgentPhoneLinkStatus(actor);
     expect(stillLinked).toMatchObject({ linked: true, phoneHandle: phone });
 
@@ -4190,12 +4190,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(dmPrompt.replyToMessageId).toBe(strangerMessageId);
     expect(sends.messages[beforeStrangerPrompt]).toMatchObject({
       toNumber: stranger,
-      body: expect.stringContaining("/agentphone/connect?"),
+      body: expect.stringContaining("/settings/agentphone?"),
     });
     expect(
       sends.messages[beforeStrangerPrompt]?.replyToMessageId,
     ).toBeUndefined();
-    expect(dmPrompt.body).not.toContain("/agentphone/connect?");
+    expect(dmPrompt.body).not.toContain("/settings/agentphone?");
 
     // /connect also delivers a private link rather than borrowing the
     // linked participant's account.
@@ -4236,7 +4236,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         );
       },
     );
-    expect(borrowPrompt.body).not.toContain("/agentphone/connect?");
+    expect(borrowPrompt.body).not.toContain("/settings/agentphone?");
     await runs.heartbeatRunner(runnerGroup);
     const borrowIdle = await runs.pollRunner(runnerGroup);
     expect(borrowIdle.body.job).toBeNull();
@@ -4548,8 +4548,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
   });
 
-  it.each(["unlink", "switch"] as const)(
-    "skips completion delivery after the phone link is removed through %s",
+  it.each(["unlink", "switch", "replace"] as const)(
+    "skips completion delivery after the phone link changes through %s",
     async (method) => {
       const integrations = createBddIntegrationApi(context);
       const ap = createAgentPhoneBddApi(context);
@@ -4582,7 +4582,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           body: "/switch",
           conversationId: dmConversationId,
         });
-        expect(lastSend(sends).body).toContain("/agentphone/connect?");
+        expect(lastSend(sends).body).toContain("/settings/agentphone?");
+      } else if (method === "replace") {
+        const proof = await ap.requestConnectLink(uniquePhoneHandle(), sends);
+        await integrations.requestConnectAgentPhone(
+          actor,
+          { ...proof, replacePhoneHandle: phone },
+          [200],
+        );
       } else {
         await integrations.requestUnlinkAgentPhone(actor, [204]);
       }

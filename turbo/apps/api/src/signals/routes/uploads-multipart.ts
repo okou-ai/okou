@@ -82,6 +82,7 @@ const completeMultipartInner$ = command(
           url: completed.url,
           contentType: completed.contentType,
           size: completed.size,
+          runId: "runId" in auth ? auth.runId : undefined,
         },
         signal,
       );

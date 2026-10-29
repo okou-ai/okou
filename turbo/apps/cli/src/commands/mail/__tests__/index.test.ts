@@ -298,6 +298,39 @@ describe("okou mail", () => {
     );
   });
 
+  it("links an Outlook message with its provider and keeps the exact review URL", async () => {
+    server.use(
+      http.post(
+        "http://localhost:3000/api/mail/drafts/link",
+        async ({ request }) => {
+          expect(await request.json()).toStrictEqual({
+            threadId: THREAD_ID,
+            agentId: AGENT_ID,
+            provider: "outlook",
+            outlookMessageId: "immutable-message-id",
+          });
+          return HttpResponse.json({
+            mailDraftId: MAIL_DRAFT_ID,
+            mailDraftUrl: `https://app.okou.ai/mail/drafts/${MAIL_DRAFT_ID}`,
+          });
+        },
+      ),
+    );
+    await mailCommand.parseAsync([
+      "node",
+      "cli",
+      "link",
+      "immutable-message-id",
+      "--provider",
+      "outlook",
+    ]);
+    expect(mockConsoleLog).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `https://app.okou.ai/mail/drafts/${MAIL_DRAFT_ID}`,
+      ),
+    );
+  });
+
   it("adds a callback prompt to the review URL for a single draft", async () => {
     server.use(
       http.post("http://localhost:3000/api/mail/drafts/link", () => {

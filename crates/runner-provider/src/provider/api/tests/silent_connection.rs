@@ -68,7 +68,7 @@ impl Queue {
         assert_eq!(
             path,
             format!(
-                "/api/runners/jobs/{RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID}/claim?workflowSkills=1"
+                "/api/runners/jobs/{RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID}/claim?workflowSkills=2"
             )
         );
         let body: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();

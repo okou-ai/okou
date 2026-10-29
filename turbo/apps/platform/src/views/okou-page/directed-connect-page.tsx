@@ -133,6 +133,7 @@ function ManualGrantForm({
 
   return (
     <form
+      autoComplete="off"
       className="flex w-full flex-col gap-3 text-left"
       onSubmit={handleSubmit}
     >
@@ -152,6 +153,7 @@ function ManualGrantForm({
             </label>
             <Input
               type={fieldConfig.inputType}
+              autoComplete="off"
               placeholder={fieldConfig.placeholder ?? undefined}
               value={fieldValues[fieldConfig.id] ?? ""}
               onChange={(e) => {

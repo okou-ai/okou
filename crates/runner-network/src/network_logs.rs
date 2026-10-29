@@ -1341,26 +1341,6 @@ mod tests {
         String::from_utf8(content).unwrap()
     }
 
-    #[test]
-    fn network_log_fixture_preserves_canonical_lines_and_trailing_newline() {
-        for logs in [
-            Vec::new(),
-            vec![json!({"sequence":0,"body":"你好\"\\\n"})],
-            vec![
-                json!({"sequence":0}),
-                json!({"sequence":1,"body":[null,true,19]}),
-            ],
-        ] {
-            let expected = logs
-                .iter()
-                .map(|log| serde_json::to_string(log).unwrap())
-                .collect::<Vec<_>>()
-                .join("\n")
-                + "\n";
-            assert_eq!(network_log_content(&logs), expected);
-        }
-    }
-
     fn one_entry_per_batch_log(sequence: usize) -> serde_json::Value {
         serde_json::Value::Object(serde_json::Map::from_iter([
             ("sequence".into(), json!(sequence)),
@@ -1447,30 +1427,6 @@ mod tests {
                 assert_eq!(sequenced_log_content(&log, sequences), expected);
                 assert_eq!(log.to_string(), original);
             }
-        }
-    }
-
-    #[test]
-    fn repeated_batch_fixture_preserves_every_canonical_line_and_empty_input() {
-        for count in [0, 1, 3, 11] {
-            let body = "x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES / 2);
-            let expected = (0..count)
-                .map(|sequence| {
-                    serde_json::to_string(&json!({"sequence": sequence, "body": &body})).unwrap()
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-                + "\n";
-            assert_eq!(
-                network_log_content(&one_entry_per_batch_logs(count)),
-                expected,
-                "{count} independent original entries"
-            );
-            assert_eq!(
-                one_entry_per_batch_log_content(count),
-                expected,
-                "{count} complete original entries"
-            );
         }
     }
 

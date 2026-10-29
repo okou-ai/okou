@@ -33,6 +33,23 @@ function isValidAgentPhoneHandle(value: string): boolean {
 }
 
 export const apiIntegrationsAgentPhoneHandlers = [
+  mockApi(
+    integrationsAgentPhoneContract.getConnectStatus,
+    ({ query, respond }) => {
+      return respond(
+        200,
+        mockAgentPhoneStatus.linked
+          ? mockAgentPhoneStatus.phoneHandle === query.phoneHandle
+            ? { kind: "connected", phoneHandle: query.phoneHandle }
+            : {
+                kind: "phone_mismatch",
+                currentPhoneHandle: mockAgentPhoneStatus.phoneHandle,
+              }
+          : { kind: "connect" },
+      );
+    },
+  ),
+
   mockApi(integrationsAgentPhoneContract.getLinkStatus, ({ respond }) => {
     return respond(200, mockAgentPhoneStatus);
   }),

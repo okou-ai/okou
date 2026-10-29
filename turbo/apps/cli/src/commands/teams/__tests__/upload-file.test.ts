@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Tests for okou teams upload-file command.
  */
@@ -24,6 +25,9 @@ describe("okou teams upload-file command", () => {
   const mockConsoleError = vi
     .spyOn(console, "error")
     .mockImplementation(() => {});
+  const mockConsoleWarn = vi
+    .spyOn(console, "warn")
+    .mockImplementation(() => {});
 
   let tmpDir: string;
   let testFilePath: string;
@@ -31,6 +35,7 @@ describe("okou teams upload-file command", () => {
   beforeEach(() => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
+    mockConsoleWarn.mockClear();
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
 
@@ -216,4 +221,78 @@ describe("okou teams upload-file command", () => {
       expect.stringContaining("File not found"),
     );
   });
+  it.each([true, false])(
+    "preserves a Teams operation identity when uploadRequired is %s",
+    async (uploadRequired) => {
+      const operationId = "a0000000-0000-4000-a000-000000000042";
+      const uploadId = "a0000000-0000-4000-a000-000000000043";
+      let uploads = 0;
+      server.use(
+        http.post(UPLOAD_INIT_URL, async ({ request }) => {
+          expect(mockConsoleWarn).toHaveBeenCalledWith(
+            `Upload operation: ${operationId}`,
+          );
+          expect(await request.json()).toMatchObject({
+            canonical: {
+              operationId,
+              checksumSha256: createHash("sha256")
+                .update("teams pdf content")
+                .digest("hex"),
+              conversationId: "19:thread@thread.tacv2",
+              activityId: "thread-root",
+              text: "Pinned report",
+            },
+          });
+          return HttpResponse.json({
+            uploadId,
+            operationId,
+            uploadRequired,
+            uploadUrl: uploadRequired ? R2_UPLOAD_URL : "",
+            fileUrl: "https://files.example/report.pdf",
+            filename: "report.pdf",
+            contentType: "application/pdf",
+            size: 17,
+          });
+        }),
+        http.put(R2_UPLOAD_URL, () => {
+          uploads++;
+          return new HttpResponse(null, { status: 200 });
+        }),
+        http.post(UPLOAD_COMPLETE_URL, async ({ request }) => {
+          expect(await request.json()).toMatchObject({
+            uploadId,
+            operationId,
+            conversationId: "19:thread@thread.tacv2",
+          });
+          return HttpResponse.json({
+            activityId: "saved-activity",
+            conversationId: "19:thread@thread.tacv2",
+            filename: "report.pdf",
+            mimetype: "application/pdf",
+            size: 17,
+            url: "https://files.example/report.pdf",
+          });
+        }),
+      );
+      await uploadFileCommand.parseAsync([
+        "node",
+        "cli",
+        "--file",
+        testFilePath,
+        "--to",
+        "19:thread@thread.tacv2",
+        "--reply-to",
+        "thread-root",
+        "--text",
+        "Pinned report",
+        "--operation-id",
+        operationId,
+        "--json",
+      ]);
+      expect(uploads).toBe(uploadRequired ? 1 : 0);
+      expect(
+        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+      ).toMatchObject({ messages: [{ id: "saved-activity", url: null }] });
+    },
+  );
 });

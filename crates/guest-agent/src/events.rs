@@ -1616,6 +1616,8 @@ mod tests {
 
     #[test]
     fn jsonl_result_failure_diagnostic_truncates_to_max_bytes() {
+        let retained_bytes =
+            FAILURE_DIAGNOSTIC_MAX_BYTES - FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX.len();
         let event = serde_json::json!({
             "type": "result",
             "is_error": true,
@@ -1626,15 +1628,60 @@ mod tests {
                 .expect("JSONL error result should produce a diagnostic");
 
         assert_eq!(diagnostic.message.len(), FAILURE_DIAGNOSTIC_MAX_BYTES);
-        assert!(
-            diagnostic
-                .message
-                .ends_with(FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX),
-            "diagnostic should end with truncation marker: {diagnostic:?}"
+        assert_eq!(
+            diagnostic.message,
+            format!(
+                "{}{}",
+                "é".repeat(retained_bytes / "é".len()),
+                FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX
+            )
         );
-        assert!(diagnostic.message.is_char_boundary(
-            FAILURE_DIAGNOSTIC_MAX_BYTES - FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX.len()
-        ));
+    }
+
+    #[test]
+    fn jsonl_result_failure_diagnostic_preserves_exact_limit_message() {
+        let message = "é".repeat(FAILURE_DIAGNOSTIC_MAX_BYTES / "é".len());
+        assert_eq!(message.len(), FAILURE_DIAGNOSTIC_MAX_BYTES);
+        let event = serde_json::json!({
+            "type": "result",
+            "is_error": true,
+            "result": message
+        });
+        let diagnostic =
+            masked_jsonl_result_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                .expect("JSONL error result should produce a diagnostic");
+
+        assert_eq!(diagnostic.message, message);
+    }
+
+    #[test]
+    fn jsonl_result_failure_diagnostic_retreats_to_utf8_boundary() {
+        let retained_bytes =
+            FAILURE_DIAGNOSTIC_MAX_BYTES - FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX.len();
+        for character in ["界", "🦀"] {
+            let message = character.repeat(FAILURE_DIAGNOSTIC_MAX_BYTES);
+            assert!(message.len() > FAILURE_DIAGNOSTIC_MAX_BYTES);
+            assert!(!message.is_char_boundary(retained_bytes));
+            let event = serde_json::json!({
+                "type": "result",
+                "is_error": true,
+                "result": message
+            });
+            let diagnostic =
+                masked_jsonl_result_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                    .expect("JSONL error result should produce a diagnostic");
+
+            assert_eq!(
+                diagnostic.message,
+                format!(
+                    "{}{}",
+                    character.repeat(retained_bytes / character.len()),
+                    FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX
+                ),
+                "diagnostic should retain only complete characters for {character}"
+            );
+            assert!(diagnostic.message.len() <= FAILURE_DIAGNOSTIC_MAX_BYTES);
+        }
     }
 
     #[test]

@@ -260,6 +260,48 @@ test("Insert an attached workflow with slash suggestions", async () => {
   });
 });
 
+test("Reopen workflow suggestions after clearing a pending draft", async () => {
+  mockAgent();
+  mockThread();
+  const response = context.mocks.deferred<void>();
+  let workflows = [workflow("pr-review")];
+  context.mocks.api(
+    workflowsCollectionContract.composer,
+    async ({ respond }) => {
+      const items = [...workflows];
+      await response.promise;
+      return respond(200, items);
+    },
+  );
+
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+  const editor = await findComposerEditor();
+  await fill(editor, "/pr");
+  await expect(
+    screen.findByText("Loading workflows..."),
+  ).resolves.toBeInTheDocument();
+
+  await fill(editor, "");
+  await fill(editor, "/pr");
+  response.resolve();
+  await waitFor(() => {
+    expect(slashButton("/pr-review")).toBeInTheDocument();
+  });
+
+  workflows = [];
+  await fill(editor, "");
+  await fill(editor, "/pr");
+  const review = await waitFor(() => {
+    return slashButton("/pr-review");
+  });
+  click(review);
+  await waitFor(() => {
+    expect(workflowHighlights(editor)).toHaveLength(1);
+  });
+  expect(workflowHighlights(editor)[0]).toHaveTextContent("/pr-review");
+});
+
 test("Find and insert a workflow with an abbreviated name", async () => {
   mockAgent();
   mockThread();

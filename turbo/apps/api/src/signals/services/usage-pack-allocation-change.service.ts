@@ -2665,7 +2665,7 @@ const prepareUsagePackMemberRemoval$ = command(
     const db = set(writeDb$);
 
     const at = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0268; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: refundable credit snapshots, member grant clearing and the matching subscription-removal reservation must commit together; single-statement alternative: refund-source conflict validation and refreshed reservation reads need ordered financial snapshots that one simple statement cannot preserve.
     return await db.transaction(async (tx) => {
       const plan = prepareUsagePackMemberRemovalPlan(args, at);
       let step = plan.next();

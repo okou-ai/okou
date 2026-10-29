@@ -873,9 +873,13 @@ describe("Workflow Run admission", () => {
       expect(skills).toHaveLength(2);
       for (const workflow of published) {
         expect(
-          skills?.find((skill) => {
-            return skill.workflowId === workflow.workflowId;
-          })?.skillMd,
+          (
+            await runs.downloadWorkflow(
+              current.runId,
+              workflow.workflowId,
+              claim.sandboxToken,
+            )
+          ).skillMd,
         ).toContain(
           workflow.workflowId === firstWorkflow.workflowId
             ? revised

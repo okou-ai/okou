@@ -235,6 +235,11 @@ pub async fn read_private_file_to_string_with_max(
 /// a crash-durability guarantee. The function also provides no locking or
 /// concurrent-writer ordering guarantee. After an error, staging-file removal
 /// is attempted as best-effort cleanup.
+///
+/// On Unix, created staging retains a cleanup owner across cancellation of
+/// the opening or writing observer. Drop attempts a synchronous unlink; it
+/// does not retain caller authority or cancel an already submitted rename.
+/// Publication can therefore remain uncertain after cancellation.
 pub async fn write_private_file(path: &Path, content: &[u8]) -> HostResult<()> {
     crate::host_file::write_private_atomic(path, content, "private file")
         .await

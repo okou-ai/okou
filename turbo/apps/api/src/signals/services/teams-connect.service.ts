@@ -27,6 +27,13 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { nowDate } from "../../lib/time";
 
+import {
+  teamsAccountConnection,
+  teamsAccountOwnerCondition,
+  teamsWorkspaceIdentityEnabled,
+  removeTeamsInstallation$,
+} from "./teams-workspace-identity.service";
+
 type TeamsInstallation = typeof teamsOrgInstallations.$inferSelect;
 
 const L = logger("TeamsConnect");
@@ -140,13 +147,17 @@ function buildTeamsBrowserConnectUrl(args: {
   return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`;
 }
 
-function buildTeamsOauthConnectUrl(args: {
+export function buildTeamsOauthConnectUrl(args: {
   readonly orgId: string;
   readonly userId: string;
+  readonly flow?: "connect" | "install";
 }): string {
   const url = new URL("/api/teams/oauth/connect", internalApiBaseUrl());
   url.searchParams.set("orgId", args.orgId);
   url.searchParams.set("userId", args.userId);
+  if (args.flow) {
+    url.searchParams.set("flow", args.flow);
+  }
   return url.toString();
 }
 
@@ -223,6 +234,9 @@ function teamsConnectionValues(
     teamsTenantId: sql`${args.tenantId}`
       .mapWith(teamsOrgConnections.teamsTenantId)
       .as("teams_tenant_id"),
+    orgId: sql`null`
+      .mapWith(nullableDriverValueDecoder(teamsOrgConnections.orgId))
+      .as("org_id"),
     userId: sql`${args.userId}`
       .mapWith(teamsOrgConnections.userId)
       .as("user_id"),
@@ -345,7 +359,10 @@ const commitTeamsBinding$ = command(
           db
             .select(teamsConnectionValues(args, createdAt))
             .from(installed)
-            .where(notExists(db.select({ id: updated.id }).from(updated))),
+            .where(notExists(db.select({ id: updated.id }).from(updated)))
+            // Drizzle's typed INSERT SELECT key check includes generated columns;
+            // the SQL insert list correctly omits the legacy FK discriminator.
+            .getSQL(),
         )
         .returning({ id: teamsOrgConnections.id }),
     );
@@ -602,6 +619,56 @@ function activeTeamsStatus(args: {
   };
 }
 
+function independentTeamsStatus(
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly isAdmin: boolean;
+  },
+  account: Awaited<
+    ReturnType<ReturnType<typeof teamsAccountConnection>["read"]>
+  >,
+  installation: TeamsInstallation | undefined,
+): TeamsConnectStatus {
+  const active = installation && isTeamsInstallationActive(installation);
+  return {
+    workspaceIdentity: true,
+    isInstalled: Boolean(active),
+    isConnected: Boolean(account),
+    isAdmin: args.isAdmin,
+    pendingInstallation: Boolean(installation && !active),
+    installUrl:
+      args.isAdmin && !active
+        ? installation
+          ? buildTeamsInstallUrl(installation.teamsTenantId)
+          : buildTeamsOauthConnectUrl({ ...args, flow: "install" })
+        : null,
+    connectUrl: account ? null : buildTeamsOauthConnectUrl(args),
+    tenantId:
+      account?.connection.teamsTenantId ?? installation?.teamsTenantId ?? null,
+    tenantName: account
+      ? (account.installation?.teamsTenantName ?? null)
+      : (installation?.teamsTenantName ?? null),
+    teamId: null,
+    teamName: null,
+    botName: teamsBotDisplayName(installation?.botName),
+    linkedAccounts: account
+      ? [
+          {
+            tenantId: account.connection.teamsTenantId,
+            teamsUserId: account.connection.teamsUserId,
+            teamsAadObjectId: account.connection.teamsAadObjectId,
+            displayName: account.connection.teamsUserDisplayName,
+            userPrincipalName: account.connection.teamsUserPrincipalName,
+          },
+        ]
+      : [],
+    ...(installation
+      ? teamsPermissionStatus({ installation, isAdmin: args.isAdmin })
+      : {}),
+  };
+}
+
 export function teamsConnectStatus(
   args$: Computed<{
     readonly orgId: string;
@@ -609,6 +676,8 @@ export function teamsConnectStatus(
     readonly isAdmin: boolean;
   }>,
 ): Computed<Promise<TeamsConnectStatus>> {
+  const enabled$ = teamsWorkspaceIdentityEnabled(args$);
+  const account$ = teamsAccountConnection(args$);
   return computed(async (get) => {
     const args = get(args$);
     const db = get(db$);
@@ -617,6 +686,10 @@ export function teamsConnectStatus(
       .from(teamsOrgInstallations)
       .where(eq(teamsOrgInstallations.orgId, args.orgId))
       .limit(1);
+
+    if (await get(enabled$)) {
+      return independentTeamsStatus(args, await get(account$), installation);
+    }
 
     const connections = installation
       ? await db
@@ -891,6 +964,60 @@ const finalizeTeamsConnection$ = command(
   },
 );
 
+/** Install authority and personal identity have separate lifecycles. */
+export const prepareTeamsBotInstallation$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly orgRole: "admin" | "member";
+      readonly tenantId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (args.orgRole !== "admin") {
+      return { kind: "forbidden", message: adminRequiredMessage } as const;
+    }
+    const db = set(writeDb$);
+    const saved = await settle(
+      db
+        .insert(teamsOrgInstallations)
+        .values({
+          teamsTenantId: args.tenantId,
+          orgId: args.orgId,
+          installedByUserId: args.userId,
+        })
+        .onConflictDoUpdate({
+          target: teamsOrgInstallations.teamsTenantId,
+          set: {
+            orgId: args.orgId,
+            installedByUserId: args.userId,
+            updatedAt: nowDate(),
+          },
+          setWhere: or(
+            isNull(teamsOrgInstallations.orgId),
+            eq(teamsOrgInstallations.orgId, args.orgId),
+          ),
+        })
+        .returning(),
+      signal,
+    );
+    if (!saved.ok) {
+      if (
+        isUniqueViolation(saved.error, "idx_teams_org_installations_org_unique")
+      ) {
+        return { kind: "forbidden", message: orgMismatchMessage } as const;
+      }
+      throw saved.error;
+    }
+    const [installation] = saved.value;
+    return installation
+      ? ({ kind: "ok", installation } as const)
+      : ({ kind: "forbidden", message: orgMismatchMessage } as const);
+  },
+);
+
 export const prepareTeamsInstallation$ = command(
   async (
     { set },
@@ -979,39 +1106,28 @@ export const disconnectTeamsConnection$ = command(
     signal: AbortSignal,
   ): Promise<TeamsDisconnectResult> => {
     const writeDb = set(writeDb$);
-    const [installation] = await writeDb
-      .select()
-      .from(teamsOrgInstallations)
-      .where(eq(teamsOrgInstallations.orgId, args.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!installation) {
-      return { kind: "not_found", message: connectionNotFoundMessage };
-    }
-
-    const [connection] = await writeDb
+    const [account] = await writeDb
       .select({ id: teamsOrgConnections.id })
       .from(teamsOrgConnections)
-      .where(
-        and(
-          eq(teamsOrgConnections.userId, args.userId),
-          eq(teamsOrgConnections.teamsTenantId, installation.teamsTenantId),
+      .leftJoin(
+        teamsOrgInstallations,
+        eq(
+          teamsOrgInstallations.teamsTenantId,
+          teamsOrgConnections.teamsTenantId,
         ),
       )
-      .limit(1);
+      .where(teamsAccountOwnerCondition(args))
+      .limit(2);
     signal.throwIfAborted();
-
-    if (!connection) {
-      return { kind: "not_found", message: connectionNotFoundMessage };
+    if (account) {
+      await writeDb
+        .delete(teamsOrgConnections)
+        .where(eq(teamsOrgConnections.id, account.id));
+      signal.throwIfAborted();
+      return { kind: "ok", orgId: args.orgId, userId: args.userId };
     }
 
-    await writeDb
-      .delete(teamsOrgConnections)
-      .where(eq(teamsOrgConnections.id, connection.id));
-    signal.throwIfAborted();
-
-    return { kind: "ok", orgId: args.orgId, userId: args.userId };
+    return { kind: "not_found", message: connectionNotFoundMessage };
   },
 );
 
@@ -1041,17 +1157,7 @@ export const uninstallTeamsInstallation$ = command(
       .where(eq(teamsOrgConnections.teamsTenantId, installation.teamsTenantId));
     signal.throwIfAborted();
 
-    await writeDb
-      .delete(teamsOrgConnections)
-      .where(eq(teamsOrgConnections.teamsTenantId, installation.teamsTenantId));
-    signal.throwIfAborted();
-
-    await writeDb
-      .delete(teamsOrgInstallations)
-      .where(
-        eq(teamsOrgInstallations.teamsTenantId, installation.teamsTenantId),
-      );
-    signal.throwIfAborted();
+    await set(removeTeamsInstallation$, installation.teamsTenantId, signal);
 
     return {
       kind: "ok",
@@ -1155,15 +1261,7 @@ export const recordTeamsInstallationActivity$ = command(
         .where(eq(teamsOrgConnections.teamsTenantId, activity.tenantId));
       signal.throwIfAborted();
 
-      await writeDb
-        .delete(teamsOrgConnections)
-        .where(eq(teamsOrgConnections.teamsTenantId, activity.tenantId));
-      signal.throwIfAborted();
-
-      await writeDb
-        .delete(teamsOrgInstallations)
-        .where(eq(teamsOrgInstallations.teamsTenantId, activity.tenantId));
-      signal.throwIfAborted();
+      await set(removeTeamsInstallation$, activity.tenantId, signal);
 
       return {
         kind: "removed",

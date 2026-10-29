@@ -5,7 +5,7 @@ import {
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { boolean, literal, object, string, uuid } from "zod";
 import {
   CURRENT_LINK_LAYOUT,
@@ -14,6 +14,7 @@ import {
   linkLayoutSegmentSchema,
 } from "@okouai/api-contracts/contracts/link-layout";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { RunUploadedFileMetadata } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 
 import { env } from "../../lib/env";
@@ -269,7 +270,9 @@ export const privateArtifactRecord$ = command(
     const [row] = await get(db$)
       .select()
       .from(runUploadedFiles)
-      .where(eq(runUploadedFiles.id, id))
+      .where(
+        and(eq(runUploadedFiles.id, id), isNull(runUploadedFiles.deletedAt)),
+      )
       .limit(1);
     signal.throwIfAborted();
     if (!row || row.metadata.storage === undefined) {
@@ -308,10 +311,24 @@ export const completePrivateArtifact$ = command(
       readonly url: string | null;
       readonly contentType: string;
       readonly size: number;
+      readonly runId?: string;
     },
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    const producingThread = args.runId
+      ? sql`(${db
+          .select({ chatThreadId: agentRuns.chatThreadId })
+          .from(agentRuns)
+          .where(
+            and(
+              eq(agentRuns.id, args.runId),
+              eq(agentRuns.orgId, runUploadedFiles.orgId),
+              isNotNull(agentRuns.triggerSource),
+            ),
+          )
+          .limit(1)})`
+      : sql`NULL`;
     // A completed file and its durable catalog handoff must commit together.
     const [outcome] = parseRawRows(
       object({ changed: boolean() }),
@@ -321,6 +338,11 @@ export const completePrivateArtifact$ = command(
           db
             .update(runUploadedFiles)
             .set({
+              // Publish the creating thread with the first URL, before catalog
+              // registration. A retry must preserve a deleted thread's NULL.
+              chatThreadId: sql`CASE WHEN ${isNull(runUploadedFiles.url)}
+                THEN COALESCE(${runUploadedFiles.chatThreadId}, ${producingThread})
+                ELSE ${runUploadedFiles.chatThreadId} END`,
               url: args.url,
               contentType: args.contentType,
               sizeBytes: args.size,

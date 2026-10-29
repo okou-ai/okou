@@ -500,8 +500,8 @@ function useComposerWorkflowSuggestions(
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
   const recentIds = useGet(composer.suggestion.recentWorkflowIds$);
-  // Null means the list is not requested yet; the last loadable keeps that
-  // null while the first request is in flight.
+  // Empty drafts do not need the list; the last loadable can retain that
+  // null while a request is in flight.
   const requested =
     workflowsLoadable.state === "hasData" ? workflowsLoadable.data : undefined;
   const workflows = buildComposerSlashWorkflows({

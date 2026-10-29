@@ -213,7 +213,9 @@ test("Toggle the artifact panel with the keyboard", async () => {
 test("Return focus to the resource trigger when Escape dismisses its content", async () => {
   await setupResources();
   const user = userEvent.setup();
-  const panel = await screen.findByRole("region", { name: "Resources" });
+  const panel = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   act(() => {
     resourceButton().focus();
   });
@@ -240,7 +242,9 @@ test("Preserve category expansion controls after switching to mobile", async () 
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
   await userEvent.click(resourceButton());
-  const panel = await screen.findByRole("region", { name: "Resources" });
+  const panel = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   await userEvent.click(
     buttonNamed(
       "Show more",
@@ -257,7 +261,9 @@ test("Preserve category expansion controls after switching to mobile", async () 
   act(() => {
     media.setMatches(false);
   });
-  const mobilePanel = await screen.findByRole("region", { name: "Resources" });
+  const mobilePanel = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   const artifacts = within(mobilePanel).getByRole("region", {
     name: "Artifacts",
   });

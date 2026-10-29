@@ -12,6 +12,16 @@ use runner_host::service::{
     read_systemd_reload_state_bounded, run_systemctl, run_systemctl_bounded,
 };
 
+/// Reload-specific wait policy, shared by forward and compensating transitions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SystemdReloadPolicy {
+    Unbounded,
+    Bounded {
+        lock_timeout: Duration,
+        command_timeout: Duration,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SystemdReloadRequirement {
     reload_if_not_found: bool,
@@ -148,35 +158,22 @@ async fn coordinate_systemd_reload_with_ops(
 pub(super) async fn coordinate_systemd_reload(
     unit: &RunnerServiceUnit,
     requirement: SystemdReloadRequirement,
+    policy: SystemdReloadPolicy,
 ) -> RunnerResult<bool> {
     let home = HomePaths::new()?;
+    let (lock_timeout, command_timeout) = match policy {
+        SystemdReloadPolicy::Unbounded => (None, None),
+        SystemdReloadPolicy::Bounded {
+            lock_timeout,
+            command_timeout,
+        } => (Some(lock_timeout), Some(command_timeout)),
+    };
     coordinate_systemd_reload_with_ops(
         unit,
         &home,
         requirement,
-        None,
-        &mut RealSystemdReloadOps {
-            command_timeout: None,
-        },
-    )
-    .await
-}
-
-pub(super) async fn coordinate_systemd_reload_bounded(
-    unit: &RunnerServiceUnit,
-    requirement: SystemdReloadRequirement,
-    lock_timeout: Duration,
-    command_timeout: Duration,
-) -> RunnerResult<bool> {
-    let home = HomePaths::new()?;
-    coordinate_systemd_reload_with_ops(
-        unit,
-        &home,
-        requirement,
-        Some(lock_timeout),
-        &mut RealSystemdReloadOps {
-            command_timeout: Some(command_timeout),
-        },
+        lock_timeout,
+        &mut RealSystemdReloadOps { command_timeout },
     )
     .await
 }

@@ -945,9 +945,10 @@ function ChatListColumn() {
       className={cn(
         "hidden md:flex shrink-0 flex-col",
         // Unified: the list is the left part of the workspace sheet, which
-        // continues it from the divider rightwards.
+        // continues it from the divider rightwards. It sits half a step toward
+        // the ground, so it reads below the content without leaving the sheet.
         unified
-          ? "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas"
+          ? "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas-recessed"
           : "h-full w-[300px] bg-sidebar",
       )}
       style={unified ? { width } : undefined}

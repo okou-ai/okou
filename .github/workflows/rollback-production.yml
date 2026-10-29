@@ -1,4 +1,4 @@
-# Manual production rollback — converges Runner and API to one release commit
+# Manual production rollback — converges Runner and both API runtimes to one release commit
 # recorded by release-please.yml, or validates and rolls back only the App Worker.
 
 name: Rollback Production
@@ -220,6 +220,13 @@ jobs:
       contents: read
       deployments: write
     environment: production
+    outputs:
+      vercel_outcome: ${{ steps.promote.outcome }}
+      worker_status: ${{ steps.api-worker-rollback.outputs.status || steps.api-worker-rollback.outcome }}
+      worker_detail: ${{ steps.api-worker-rollback.outputs.detail }}
+      worker_version_id: ${{ steps.api-worker-rollback.outputs.version-id }}
+      worker_deployment_id: ${{ steps.api-worker-rollback.outputs.deployment-id }}
+      worker_observed_sha: ${{ steps.api-worker-rollback.outputs.observed-sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -248,6 +255,7 @@ jobs:
             text: "*Production* ⏪ rolling API back to `${{ needs.resolve-target.outputs.target_commit }}`..."
 
       - name: Promote target API deployment
+        id: promote
         uses: ./.github/actions/vercel-promote
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -266,8 +274,28 @@ jobs:
           env_url: ${{ needs.resolve-target.outputs.api_deployment_url }}
           deployment_id: ${{ steps.deployment.outputs.deployment_id }}
 
+      # The canonical Vercel rollback is already complete. Only this auxiliary
+      # step is best-effort; Worker failures must not skip domain verification.
+      - name: Roll back paired API Worker and verify release SHA
+        id: api-worker-rollback
+        timeout-minutes: 5
+        if: ${{ !cancelled() && steps.promote.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          TARGET_COMMIT: ${{ needs.resolve-target.outputs.target_commit }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+        run: bash .github/scripts/release/rollback-api-worker-production.sh
+
+      - name: Report API Worker rollback failure
+        if: ${{ !cancelled() && steps.api-worker-rollback.outcome == 'failure' }}
+        shell: bash
+        run: echo "::warning::Paired API Worker rollback failed. The Vercel rollback is not blocked; inspect the Worker result and logs."
+
       - name: Notify Slack - Success
         if: ${{ success() && steps.slack-start.outputs.ts }}
+        continue-on-error: true
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
@@ -275,10 +303,11 @@ jobs:
           payload: |
             channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
             ts: "${{ steps.slack-start.outputs.ts }}"
-            text: "*Production* ✅ API rolled back to `${{ needs.resolve-target.outputs.target_commit }}`"
+            text: "*Production* ✅ Vercel API rolled back to `${{ needs.resolve-target.outputs.target_commit }}`\nAPI Worker: ${{ steps.api-worker-rollback.outcome == 'success' && '✅' || '⚠️' }} ${{ steps.api-worker-rollback.outputs.status || steps.api-worker-rollback.outcome }} — ${{ steps.api-worker-rollback.outputs.detail }}\nWorker version: `${{ steps.api-worker-rollback.outputs.version-id }}`; observed SHA: `${{ steps.api-worker-rollback.outputs.observed-sha }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
+        continue-on-error: true
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.update
@@ -286,7 +315,7 @@ jobs:
           payload: |
             channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
             ts: "${{ steps.slack-start.outputs.ts }}"
-            text: "*Production* ❌ API rollback failed for `${{ needs.resolve-target.outputs.target_commit }}`"
+            text: "*Production* ❌ API rollback job failed for `${{ needs.resolve-target.outputs.target_commit }}`\nVercel: ${{ steps.promote.outcome }}; API Worker: ${{ steps.api-worker-rollback.outputs.status || steps.api-worker-rollback.outcome }} — ${{ steps.api-worker-rollback.outputs.detail }}\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
   verify-production-domains:
     name: Verify production domains after rollback
@@ -298,6 +327,52 @@ jobs:
           ref: main
       - name: Verify production App and API domains
         run: bash .github/scripts/verify-okou-production-domains.sh
+
+  report-api-rollback:
+    name: Record paired API rollback in dashboard
+    needs: [resolve-target, rollback-api, verify-production-domains]
+    if: ${{ always() && needs.resolve-target.result == 'success' && needs.rollback-api.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Record Vercel and Worker results
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ vars.ROLLBACK_ISSUE_NUMBER }}
+          TARGET_COMMIT: ${{ needs.resolve-target.outputs.target_commit }}
+          VERCEL_OUTCOME: ${{ needs.rollback-api.outputs.vercel_outcome || needs.rollback-api.result }}
+          WORKER_STATUS: ${{ needs.rollback-api.outputs.worker_status || 'not-run' }}
+          WORKER_DETAIL: ${{ needs.rollback-api.outputs.worker_detail }}
+          WORKER_VERSION: ${{ needs.rollback-api.outputs.worker_version_id || 'unavailable' }}
+          WORKER_DEPLOYMENT: ${{ needs.rollback-api.outputs.worker_deployment_id || 'unavailable' }}
+          WORKER_OBSERVED_SHA: ${{ needs.rollback-api.outputs.worker_observed_sha || 'unavailable' }}
+          DOMAINS_RESULT: ${{ needs.verify-production-domains.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          report=$(mktemp)
+          trap 'rm -f "$report"' EXIT
+          {
+            printf "## Paired API production rollback\n\nTarget: \`%s\`\n\n" "$TARGET_COMMIT"
+            printf '| Component | Result |\n| --- | --- |\n'
+            printf '| Canonical Vercel API | %s |\n' "$VERCEL_OUTCOME"
+            printf '| API Worker (non-blocking) | %s |\n' "$WORKER_STATUS"
+            printf '| Production domains | %s |\n\n' "$DOMAINS_RESULT"
+            printf '%s\n\nWorker: https://okou-api-production.vm0.workers.dev\n\n' "$WORKER_DETAIL"
+            printf "Worker version: \`%s\`; deployment: \`%s\`; observed SHA: \`%s\`.\n\n" "$WORKER_VERSION" "$WORKER_DEPLOYMENT" "$WORKER_OBSERVED_SHA"
+            printf '[Workflow logs](%s)\n' "$RUN_URL"
+          } > "$report"
+          tee -a "$GITHUB_STEP_SUMMARY" < "$report"
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "::warning::ROLLBACK_ISSUE_NUMBER not set; paired rollback results are available in the workflow summary only."
+          elif ! gh issue comment "$ISSUE_NUMBER" --body-file "$report"; then
+            echo "::warning::Could not record paired API rollback in the dashboard; see the workflow summary."
+            exit 1
+          fi
 
   rollback-app:
     name: Validate and roll back App only

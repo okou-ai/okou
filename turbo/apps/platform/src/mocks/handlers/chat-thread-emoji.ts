@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 
-import emojiGroupsUrl from "../../data/chat-thread-emoji.json?url";
+import { chatThreadEmojiDataUrl as emojiGroupsUrl } from "../../data/chat-thread-emoji-url.ts";
 
 // One or two emoji per category keeps every category on the rail and in the
 // feed while the picker mounts a few dozen buttons instead of ~1,900. Tests

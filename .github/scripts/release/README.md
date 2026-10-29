@@ -10,6 +10,7 @@ command. [Artifact tools](../artifacts/) own build, fetch, verification and smok
 | Release PR gates                               | `pass-release-pr-ci-gates.sh`                |
 | Desktop version decision                       | `resolve-desktop-version-change.sh`          |
 | Production rollback decision                   | `resolve-production-rollback-target.sh`      |
+| Paired API Worker rollback                     | `rollback-api-worker-production.sh`          |
 | Rollback dashboard body                        | `update-rollback-dashboard-body.sh`          |
 | Presentation archive build, verify and publish | `publish-presentation-template-archives.mjs` |
 

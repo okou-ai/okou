@@ -427,7 +427,7 @@ mod tests {
                 Some("session:sess-2".to_string()),
                 Some(ranked_preference_context(
                     20,
-                    RunnerPreferenceTarget::SourceSandbox(source),
+                    RunnerPreferenceTarget::ExactSandbox(source),
                     exact_deadline,
                 )),
             ))
@@ -471,7 +471,7 @@ mod tests {
             .expect("updated canonical preference");
         assert_eq!(
             preference.target(),
-            RunnerPreferenceTarget::SourceSandbox(source)
+            RunnerPreferenceTarget::ExactSandbox(source)
         );
         assert_eq!(preference.deadline(), exact_deadline);
         assert!(
@@ -513,7 +513,10 @@ mod tests {
                 Some("session:first-decision".to_string()),
                 Some(ranked_preference_context(
                     10,
-                    RunnerPreferenceTarget::SourceHomeCache(source),
+                    RunnerPreferenceTarget::PredecessorHome(
+                        source,
+                        crate::provider::ActivePredecessorHomeEvidence::Advertised,
+                    ),
                     first_deadline,
                 )),
             ))
@@ -527,7 +530,7 @@ mod tests {
                 Some("session:must-not-replace".to_string()),
                 Some(ranked_preference_context(
                     20,
-                    RunnerPreferenceTarget::SourceSandbox(run_id(9)),
+                    RunnerPreferenceTarget::ExactSandbox(run_id(9)),
                     StdInstant::now() + Duration::from_secs(30),
                 )),
             ))
@@ -554,7 +557,10 @@ mod tests {
         let preference = candidate.runner_preference().expect("runner preference");
         assert_eq!(
             preference.target(),
-            RunnerPreferenceTarget::SourceHomeCache(source)
+            RunnerPreferenceTarget::PredecessorHome(
+                source,
+                crate::provider::ActivePredecessorHomeEvidence::Advertised
+            )
         );
         assert_eq!(preference.deadline(), first_deadline);
         assert!(
@@ -566,7 +572,7 @@ mod tests {
         assert!(matches!(
             telemetry.runner_preference,
             RunnerPreference::Preference(
-                crate::provider::RunnerPreferenceDecision::SourceHomeCache { .. }
+                crate::provider::RunnerPreferenceDecision::PredecessorHome { .. }
             )
         ));
         assert_eq!(

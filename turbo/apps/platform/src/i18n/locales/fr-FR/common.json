@@ -536,6 +536,16 @@
       "kindIcon": "Artéfact {{kind}}",
       "loading": "Chargement des artéfacts"
     },
+    "deletion": {
+      "cancel": "Annuler",
+      "delete": "Supprimer",
+      "deleting": "Suppression…",
+      "description": "Cet artefact sera supprimé et ses liens Okou seront désactivés. Les copies déjà téléchargées ou enregistrées dans d’autres services seront conservées.",
+      "hostedDescription": "Ce site et toutes ses versions publiées seront mis hors ligne. Les copies enregistrées dans d’autres services seront conservées.",
+      "menu": "Plus d’actions pour {{title}}",
+      "sharedDescription": "Retirez cette conversation enregistrée de vos artefacts. La conversation originale et son lien de partage resteront accessibles.",
+      "title": "Supprimer {{title}} ?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",
@@ -636,7 +646,8 @@
       "organizationOptionUnnamed": "Toute personne de votre organisation",
       "permissionsUpdated": "Accès mis à jour",
       "publicAccess": "Accès public",
-      "publicOption": "Toute personne disposant du lien"
+      "publicOption": "Toute personne disposant du lien",
+      "updateFailed": "Impossible de modifier l’accès"
     },
     "sidebar": {
       "openSharedConversation": "Ouvrir la conversation partagée",
@@ -2091,6 +2102,7 @@
         "open": "Gérer les e-mails",
         "openEmail": "Ouvrir : {{subject}}",
         "result": "{{succeeded}} terminés · {{failed}} en échec",
+        "resultAwaiting": "{{succeeded}} terminés · {{failed}} en échec · {{awaitingConfirmation}} En attente de confirmation d’envoi",
         "search": "Rechercher par objet ou expéditeur",
         "selectAll": "Tout sélectionner",
         "selected": "{{quantity}} sélectionnés",
@@ -2106,16 +2118,19 @@
       "noSubject": "(Pas de sujet)",
       "noSubjectPlain": "Pas de sujet",
       "openEmail": "Ouvrir l'e-mail {{status}} : {{subject}}",
-      "openInGmail": "Ouvrir dans Gmail",
+      "openInProvider": "Ouvrir dans {{provider}}",
       "recipientsLine": "à {{recipients}}",
-      "reconnectDescription": "Vous n'avez plus l'autorisation d'accéder à cet e-mail. Reconnectez Gmail pour continuer.",
-      "reconnectGmail": "Reconnecter Gmail",
+      "reconnectDescription": "Vous n'avez plus l'autorisation d'accéder à cet e-mail. Reconnectez {{provider}} pour continuer.",
       "reconnecting": "Reconnexion…",
-      "reconnectToAccess": "Reconnecter Gmail pour accéder à l'e-mail : {{subject}}",
+      "reconnectProvider": "Reconnecter {{provider}}",
+      "reconnectToAccess": "Reconnecter {{provider}} pour accéder à l'e-mail : {{subject}}",
+      "refreshStatus": "Actualiser le statut",
+      "sendingDescription": "Outlook n’a pas encore confirmé l’envoi. Actualisez le statut ou vérifiez dans Outlook avant de continuer.",
       "sentToast": "E-mail envoyé",
       "status": {
         "deleted": "Supprimé",
         "draft": "Brouillon",
+        "sending": "En attente de confirmation d’envoi",
         "sent": "Envoyé"
       },
       "toRecipients": "À : {{recipients}}",
@@ -2228,12 +2243,12 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "emptyDescription": "Les fichiers et discussions de ce chat apparaîtront ici.",
-      "emptyTitle": "Aucune ressource pour l’instant",
-      "loadFailed": "Impossible de charger les ressources",
-      "loading": "Chargement des ressources",
+      "emptyDescription": "Les fichiers, sites Web et autres artéfacts créés dans ce chat apparaîtront ici.",
+      "emptyTitle": "Aucun artéfact pour l’instant",
+      "loadFailed": "Impossible de charger les artéfacts",
+      "loading": "Chargement des artéfacts",
       "showMore": "Afficher plus",
-      "title": "Ressources du chat"
+      "title": "Artéfacts et discussions"
     },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",
@@ -2304,7 +2319,8 @@
       "shareLink": "Lien de la conversation partagée",
       "shareLinkCopied": "Lien de partage copié",
       "start": "Partager des messages",
-      "tooLarge": "Sélectionnez moins de messages à partager"
+      "tooLarge": "Sélectionnez moins de messages à partager",
+      "visibilityDescription": "Choisissez qui peut voir cette conversation. Vous seul pouvez modifier l’accès."
     },
     "shortcuts": {
       "number": "numéro"
@@ -3535,7 +3551,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Retour à {{brandName}}",
         "connectDescription": "Associez ce numéro de téléphone à votre compte {{brandName}} afin de pouvoir interagir avec {{assistantName}} par messages texte.",
         "connectTitle": "Connecter le numéro de téléphone",
         "documentTitle": "Connecter Messages",
@@ -3545,9 +3560,16 @@
         "invalidSignature": "La signature de ce lien n'est pas valide.",
         "invalidTimestamp": "L'horodatage de ce lien n'est pas valide.",
         "invalidTitle": "Le lien de connexion est invalide",
+        "keepPhone": "Conserver {{phone}}",
+        "phoneInUseDescription": "Ce numéro est connecté à un autre compte ou à une autre organisation Okou. Déconnectez-le là-bas avant de réessayer.",
+        "phoneInUseTitle": "Numéro de téléphone déjà connecté",
+        "phoneMismatchDescription": "Votre compte Okou utilise actuellement {{currentPhone}} dans cette organisation. Passer à {{requestedPhone}}, le numéro qui a ouvert ce lien ?",
+        "phoneMismatchTitle": "Changer de numéro de téléphone ?",
         "risk": "Les réponses SMS et MMS peuvent ne pas être livrées de manière fiable. Pour une expérience la plus fiable, utilisez iMessage avec ce numéro.",
         "successDescription": "{{phone}} est connecté. Envoyez un message texte pour commencer à discuter avec {{assistantName}}.",
-        "successTitle": "Numéro de téléphone connecté"
+        "successTitle": "Numéro de téléphone connecté",
+        "switchPhone": "Passer à {{phone}}",
+        "unavailable": "La connexion téléphonique n’est pas disponible pour le moment."
       },
       "common": {
         "backToSettings": "Retour aux paramètres",
@@ -5987,6 +6009,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "Vous ne pouvez pas voir cette conversation",
     "handoffDescription": "{{assistantName}} transfère le contexte vers une nouvelle conversation",
     "handoffPrompt": "Poursuis cette conversation partagée avec moi : {{url}}",
     "makeConversationYours": "Faites de cette conversation la vôtre",

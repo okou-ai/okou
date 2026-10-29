@@ -1,3 +1,4 @@
+import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { computed, type Computed } from "ccstate";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
@@ -604,7 +605,7 @@ export function createTeamsThreadContext(
         teamsOrgInstallations,
         and(
           eq(teamsOrgInstallations.teamsTenantId, chatTeamsContext.tenantId),
-          eq(teamsOrgInstallations.orgId, orgId),
+          teamsAccountOwnerCondition({ orgId, userId: pickedEvent.userId }),
         ),
       )
       .where(

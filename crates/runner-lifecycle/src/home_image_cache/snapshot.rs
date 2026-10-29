@@ -107,7 +107,7 @@ impl HomeCacheStateSnapshot {
 
     /// Validated local readiness, independent of advertised caps/active-key filtering.
     /// Checkout must recheck the immutable generation under its entry lock.
-    pub fn contains_source_home(
+    pub fn has_source_home_hint(
         &self,
         reuse_key: &str,
         profile: &str,
@@ -260,15 +260,17 @@ impl HomeCacheStateSnapshot {
         self.committed.send_replace(());
     }
 
-    /// Keep admission's capped advertised view: retained refill candidates must
-    /// not change blank-sandbox preference. Before loading, any key may exist.
-    pub fn might_contain_home_cache_reuse_key(&self, reuse_key: &str) -> bool {
+    /// Positive observed evidence, including entries omitted from the wire projection.
+    /// Unloaded state alone grants no hint.
+    pub fn has_compatible_home_hint(&self, reuse_key: &str, profile: &str) -> bool {
         let inner = self.lock_inner();
-        !inner.loaded
-            || inner
-                .states
-                .iter()
-                .any(|state| state.reuse_key == reuse_key)
+        inner.entries.values().any(|state| {
+            state.reuse_key == reuse_key
+                && state.home_caches.iter().any(|home| {
+                    home.profile == profile
+                        && home.home_affinity_version == runner_types::types::HOME_AFFINITY_VERSION
+                })
+        })
     }
 
     pub fn current_held_home_states(
@@ -435,14 +437,14 @@ mod tests {
     }
 
     #[test]
-    fn home_cache_snapshot_treats_unloaded_cache_as_unknown() {
+    fn home_cache_snapshot_requires_positive_profile_evidence() {
         let snapshot = HomeCacheStateSnapshot::new();
         assert!(!snapshot.home_cache_loaded());
-        assert!(snapshot.might_contain_home_cache_reuse_key("sess-cache"));
+        assert!(!snapshot.has_compatible_home_hint("sess-cache", "vm0/default"));
 
         refresh_snapshot(&snapshot, Vec::new());
         assert!(snapshot.home_cache_loaded());
-        assert!(!snapshot.might_contain_home_cache_reuse_key("sess-cache"));
+        assert!(!snapshot.has_compatible_home_hint("sess-cache", "vm0/default"));
 
         refresh_snapshot(
             &snapshot,
@@ -452,11 +454,12 @@ mod tests {
                 &["vm0/default"],
             )],
         );
-        assert!(snapshot.might_contain_home_cache_reuse_key("sess-cache"));
+        assert!(snapshot.has_compatible_home_hint("sess-cache", "vm0/default"));
+        assert!(!snapshot.has_compatible_home_hint("sess-cache", "vm0/other"));
     }
 
     #[test]
-    fn home_cache_priority_uses_the_advertised_view_when_physical_inventory_is_larger() {
+    fn home_cache_positive_hint_retains_observed_entries_beyond_wire_projection() {
         let snapshot = HomeCacheStateSnapshot::new();
         let scan = inventory(
             (0..MAX_HELD_HOME_STATES)
@@ -477,39 +480,59 @@ mod tests {
                 .iter()
                 .any(|state| state.reuse_key == "group-0000")
         );
-        assert!(!snapshot.might_contain_home_cache_reuse_key("group-0000"));
-        assert!(
-            snapshot.might_contain_home_cache_reuse_key(&format!(
-                "group-{:04}",
-                MAX_HELD_HOME_STATES - 1
-            ))
-        );
+        assert!(snapshot.has_compatible_home_hint("group-0000", "vm0/default"));
+        assert!(snapshot.has_compatible_home_hint(
+            &format!("group-{:04}", MAX_HELD_HOME_STATES - 1),
+            "vm0/default"
+        ));
     }
 
     #[test]
     fn home_cache_snapshot_upsert_caps_states() {
         let snapshot = HomeCacheStateSnapshot::new();
-        for index in 0..=MAX_HELD_HOME_STATES {
-            snapshot.upsert_home_cache_state(
-                format!("sess-{index:04}:vm0/default"),
-                HeldHomeState {
-                    reuse_key: format!("sess-{index:04}"),
-                    last_completed_at: timestamp_for_index(index),
-                    home_caches: vec![home_cache("vm0/default")],
-                },
-            );
-        }
+        // Load a full snapshot once instead of reprojecting every setup upsert.
+        let inventory = HomeCacheInventory {
+            entries: (0..MAX_HELD_HOME_STATES)
+                .map(|index| {
+                    (
+                        format!("sess-{index:04}:vm0/default"),
+                        held_home_state(
+                            &format!("sess-{index:04}"),
+                            &timestamp_for_index(index),
+                            &["vm0/default"],
+                        ),
+                    )
+                })
+                .collect(),
+            ..Default::default()
+        };
+        snapshot.finish_home_cache_refresh(snapshot.begin_home_cache_refresh(), inventory);
+        assert_eq!(
+            snapshot.loaded_home_cache_snapshot().states.len(),
+            MAX_HELD_HOME_STATES
+        );
+        let source = home_cache("vm0/default").source_run_id;
+        assert!(snapshot.has_source_home_hint("sess-0000", "vm0/default", source));
 
-        // Observe stored state directly; the current view applies its own cap.
+        let newest = format!("sess-{MAX_HELD_HOME_STATES:04}");
+        snapshot.upsert_home_cache_state(
+            format!("{newest}:vm0/default"),
+            held_home_state(
+                &newest,
+                &timestamp_for_index(MAX_HELD_HOME_STATES),
+                &["vm0/default"],
+            ),
+        );
+
+        // Check the stored projection as well as physical readiness below.
         let states = snapshot.loaded_home_cache_snapshot().states;
 
         assert_eq!(states.len(), MAX_HELD_HOME_STATES);
         assert!(!states.iter().any(|state| state.reuse_key == "sess-0000"));
-        assert!(
-            states
-                .iter()
-                .any(|state| state.reuse_key == format!("sess-{MAX_HELD_HOME_STATES:04}"))
-        );
+        assert!(states.iter().any(|state| state.reuse_key == newest));
+        // Readiness sees physical entries, independently of the capped projection.
+        assert!(!snapshot.has_source_home_hint("sess-0000", "vm0/default", source));
+        assert!(snapshot.has_source_home_hint(&newest, "vm0/default", source));
     }
 
     #[test]

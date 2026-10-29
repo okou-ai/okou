@@ -7,7 +7,7 @@ import type {
   ProactivePreference,
   ProactiveWorkflowKind,
 } from "@okouai/api-contracts/contracts/proactive";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { resourceUnavailable } from "../../lib/error";

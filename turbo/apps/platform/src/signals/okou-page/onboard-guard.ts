@@ -17,7 +17,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.agentDetail,
   ROUTES.agentIdeas,
   ROUTES.agentPermissions,
-  ROUTES.agentphoneConnect,
   ROUTES.agents,
   ROUTES.artifacts,
   ROUTES.browser,

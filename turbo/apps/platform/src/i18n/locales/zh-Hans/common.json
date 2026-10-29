@@ -520,6 +520,16 @@
       "kindIcon": "{{kind}}成果",
       "loading": "正在加载成果"
     },
+    "deletion": {
+      "cancel": "取消",
+      "delete": "删除",
+      "deleting": "正在删除…",
+      "description": "删除此作品并停用其 Okou 链接。已下载或保存到其他服务的副本会保留。",
+      "hostedDescription": "此网站及其所有已发布版本将下线。保存到其他服务的副本会保留。",
+      "menu": "{{title}}的更多操作",
+      "sharedDescription": "从你的作品中移除此收藏对话。原始对话及其分享链接仍可访问。",
+      "title": "删除{{title}}？"
+    },
     "fileBadges": {
       "artwork": "美术",
       "audio": "音频",
@@ -619,7 +629,8 @@
       "organizationOptionUnnamed": "组织内的所有成员",
       "permissionsUpdated": "访问权限已更新",
       "publicAccess": "公开访问",
-      "publicOption": "知道链接的所有人"
+      "publicOption": "知道链接的所有人",
+      "updateFailed": "无法更新访问权限"
     },
     "sidebar": {
       "openSharedConversation": "打开分享的对话",
@@ -2050,6 +2061,7 @@
         "open": "管理邮件",
         "openEmail": "打开邮件：{{subject}}",
         "result": "{{succeeded}} 封已完成 · {{failed}} 封失败",
+        "resultAwaiting": "{{succeeded}} 封已完成 · {{failed}} 封失败 · {{awaitingConfirmation}} 等待发送确认",
         "search": "搜索主题或发件人",
         "selectAll": "全选",
         "selected": "已选 {{quantity}} 封",
@@ -2065,16 +2077,19 @@
       "noSubject": "（无主题）",
       "noSubjectPlain": "无主题",
       "openEmail": "打开{{status}}邮件：{{subject}}",
-      "openInGmail": "在 Gmail 中打开",
+      "openInProvider": "在 {{provider}} 中打开",
       "recipientsLine": "发给{{recipients}}",
-      "reconnectDescription": "你已没有访问这封邮件的权限。重新连接 Gmail 后可继续。",
-      "reconnectGmail": "重新连接 Gmail",
+      "reconnectDescription": "你已没有访问这封邮件的权限。重新连接 {{provider}} 后可继续。",
       "reconnecting": "正在重新连接…",
-      "reconnectToAccess": "重新连接 Gmail 以访问邮件：{{subject}}",
+      "reconnectProvider": "重新连接 {{provider}}",
+      "reconnectToAccess": "重新连接 {{provider}} 以访问邮件：{{subject}}",
+      "refreshStatus": "刷新状态",
+      "sendingDescription": "Outlook 尚未确认发送完成。请刷新状态或前往 Outlook 核实后再进行其他操作。",
       "sentToast": "邮件已发送",
       "status": {
         "deleted": "已删除",
         "draft": "草稿",
+        "sending": "等待发送确认",
         "sent": "已发送"
       },
       "toRecipients": "收件人：{{recipients}}",
@@ -2181,12 +2196,12 @@
     "resources": {
       "collapse": "收起",
       "copyLink": "复制链接",
-      "emptyDescription": "这个对话的文件和关联对话会显示在这里。",
-      "emptyTitle": "还没有资源",
-      "loadFailed": "无法加载聊天资源",
-      "loading": "正在加载资源",
+      "emptyDescription": "这个对话里生成的文件、网站等成果会显示在这里。",
+      "emptyTitle": "还没有成果",
+      "loadFailed": "无法加载成果",
+      "loading": "正在加载成果",
       "showMore": "查看更多",
-      "title": "聊天资源"
+      "title": "成果和聊天"
     },
     "run": {
       "collapseWorkHistory": "收起工作记录",
@@ -2251,7 +2266,8 @@
       "shareLink": "分享对话链接",
       "shareLinkCopied": "分享链接已复制",
       "start": "分享消息",
-      "tooLarge": "选择的消息过多，请减少后再分享"
+      "tooLarge": "选择的消息过多，请减少后再分享",
+      "visibilityDescription": "选择谁可以查看此对话，只有你能修改权限。"
     },
     "shortcuts": {
       "number": "数字"
@@ -3466,7 +3482,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "返回 {{brandName}}",
         "connectDescription": "把这个电话号码关联到你的 {{brandName}} 账号，就可以通过短信与 {{assistantName}} 交流。",
         "connectTitle": "连接电话号码",
         "documentTitle": "连接 Messages",
@@ -3476,9 +3491,16 @@
         "invalidSignature": "此链接的签名无效。",
         "invalidTimestamp": "此链接的时间戳无效。",
         "invalidTitle": "连接链接无效",
+        "keepPhone": "保留 {{phone}}",
+        "phoneInUseDescription": "此号码已连接到其他 Okou 账号或组织。请先在那里断开连接，再重试。",
+        "phoneInUseTitle": "号码已连接",
+        "phoneMismatchDescription": "你的 Okou 账号在此组织中当前使用 {{currentPhone}}。要切换到打开此链接的号码 {{requestedPhone}} 吗？",
+        "phoneMismatchTitle": "切换号码？",
         "risk": "短信和彩信回复可能无法稳定送达。为获得最可靠的体验，请用 iMessage 与这个号码通信。",
         "successDescription": "{{phone}}已连接。发送一条短信，即可开始与 {{assistantName}} 对话。",
-        "successTitle": "电话号码已连接"
+        "successTitle": "电话号码已连接",
+        "switchPhone": "切换到 {{phone}}",
+        "unavailable": "暂时无法连接电话号码。"
       },
       "common": {
         "backToSettings": "返回设置",
@@ -5907,6 +5929,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "你无法查看此对话",
     "handoffDescription": "{{assistantName}} 会把上下文带进新的对话",
     "handoffPrompt": "和我一起继续这段分享的对话：{{url}}",
     "makeConversationYours": "把这段对话变成你自己的",

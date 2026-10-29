@@ -338,12 +338,11 @@ async fn claim_timeout_retains_request_identity_without_inventing_response_timin
         .with_subscriber(subscriber),
     );
     let request = server.next_request("claim that times out").await;
-    // Keep the existing ten-second production timeout. The raw peer deliberately
-    // withholds its response; no sleep or shortened test-only transport is used.
-    let result = tokio::time::timeout(Duration::from_secs(15), claim)
-        .await
-        .unwrap()
-        .unwrap();
+    // The real peer has received the complete request. Anchor completion before
+    // advancing the admitted request timer so its outer bound is not extended.
+    let completion = tokio::time::timeout(Duration::from_secs(15), claim);
+    raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(10)).await;
+    let result = completion.await.unwrap().unwrap();
     assert!(matches!(
         result,
         Err(ClaimApiError::Request(ProviderError::ApiTransport(ref error)))
@@ -406,7 +405,7 @@ async fn claims_observe_system_dns_and_reused_connection_without_new_setup() {
         );
         assert_eq!(event_field(transport, "outcome"), "response_headers");
         assert!(request.starts_with(&format!(
-            "POST /api/runners/jobs/{run_id}/claim?workflowSkills=1 "
+            "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2 "
         )));
         assert_eq!(request_header(request, "content-type"), "application/json");
         let body = request.split_once("\r\n\r\n").unwrap().1;
