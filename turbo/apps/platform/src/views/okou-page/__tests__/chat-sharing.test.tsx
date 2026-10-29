@@ -1055,6 +1055,7 @@ test("Select an audience before creating a share and change it after creation", 
 
 test("A message share starts private and exposes its access controls", async () => {
   mockConversation();
+  const permissions = context.mocks.deferred<void>();
   const requests: (SharedThreadAudience | undefined)[] = [];
   context.mocks.browser.clipboardWriteText();
   context.mocks.api(
@@ -1066,7 +1067,8 @@ test("A message share starts private and exposes its access controls", async () 
   );
   context.mocks.api(
     sharedThreadVisibilityContract.get,
-    ({ params, respond }) => {
+    async ({ params, respond }) => {
+      await permissions.promise;
       return respond(200, {
         id: params.id,
         audience: "private",
@@ -1088,9 +1090,14 @@ test("A message share starts private and exposes its access controls", async () 
   click(requiredButtonNamed("Share message"));
   await screen.findByRole("textbox", { name: "Shared conversation link" });
   expect(requests).toStrictEqual(["private"]);
+  await screen.findByRole("status", { name: "Loading permissions" });
+  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  expect(buttonsNamed("Copy link")).toHaveLength(0);
+  permissions.resolve();
   await waitFor(() => {
     expect(requiredRadioNamed("Only me")).toBeChecked();
   });
+  expect(requiredButtonNamed("Copy link")).toBeEnabled();
   expect(screen.queryByText("0 selected")).not.toBeInTheDocument();
 });
 

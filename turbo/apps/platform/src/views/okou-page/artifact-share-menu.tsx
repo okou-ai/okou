@@ -238,6 +238,84 @@ export function ShareSkeleton({
   );
 }
 
+export function ShareMenuContent({
+  label,
+  selected,
+  organizationName,
+  loading = false,
+  saving = false,
+  failed = false,
+  unavailable = false,
+  showPermissions = true,
+  errorMessage,
+  onChange,
+  copy,
+}: {
+  readonly label: string;
+  readonly selected: ArtifactShareStatus["audience"] | undefined;
+  readonly organizationName: string | null;
+  readonly loading?: boolean;
+  readonly saving?: boolean;
+  readonly failed?: boolean;
+  readonly unavailable?: boolean;
+  readonly showPermissions?: boolean;
+  readonly errorMessage?: string | null;
+  readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
+  readonly copy?: {
+    readonly copied: boolean;
+    readonly disabled: boolean;
+    readonly onCopy: () => void;
+  };
+}) {
+  const { t } = useTranslation();
+  return (
+    <PopoverContent
+      aria-label={label}
+      align="end"
+      className="w-80 max-w-[calc(100vw-32px)] p-1.5"
+    >
+      {showPermissions && (
+        <div
+          aria-hidden="true"
+          className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground"
+        >
+          {t(($) => {
+            return $.artifacts.sharing.accessLabel;
+          })}
+          {saving && <Loader2 size={14} className="animate-spin" />}
+        </div>
+      )}
+      {loading ? (
+        <ShareSkeleton showCopyButton={!!copy} />
+      ) : (
+        <>
+          {showPermissions && (
+            <SharePermissionChoices
+              selected={failed ? undefined : selected}
+              organizationName={failed ? null : organizationName}
+              saving={saving}
+              unavailable={failed || unavailable}
+              onChange={onChange}
+            />
+          )}
+          {failed ? (
+            <ShareLoadError />
+          ) : (
+            <>
+              {errorMessage && <ShareLoadError message={errorMessage} />}
+              {copy && (
+                <div className="mt-1.5 flex justify-end">
+                  <ShareCopyButton {...copy} />
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </PopoverContent>
+  );
+}
+
 interface ShareButtonProps {
   readonly className?: string;
   readonly iconSize?: number;
@@ -311,70 +389,24 @@ function ShareSessionMenu({
         <Share2 size={iconSize} />
       </PopoverTrigger>
 
-      <PopoverContent
-        aria-label={title}
-        align="end"
-        className="w-80 max-w-[calc(100vw-32px)] p-1.5"
-      >
-        <div
-          aria-hidden="true"
-          className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground"
-        >
-          {t(($) => {
-            return $.artifacts.sharing.accessLabel;
-          })}
-          {audienceOperation.state === "loading" && (
-            <Loader2 size={14} className="animate-spin" />
-          )}
-        </div>
-        {loading ? (
-          <ShareSkeleton />
-        ) : (
-          <>
-            {details?.status ? (
-              <SharePermissionChoices
-                selected={details.audience}
-                organizationName={details.status.organization.name}
-                saving={audienceOperation.state === "loading"}
-                onChange={(audience) => {
-                  return detach(change(audience, signal), Reason.DomCallback);
-                }}
-              />
-            ) : (
-              /* A failed read leaves the audience unknown, not absent. Keeping
-                 the choices in place, inert and unselected, holds the menu's
-                 shape while the audience remains unknown. */
-              failed && (
-                <SharePermissionChoices
-                  selected={undefined}
-                  organizationName={null}
-                  saving={false}
-                  unavailable
-                  onChange={() => {
-                    return undefined;
-                  }}
-                />
-              )
-            )}
-            {failed ? (
-              <ShareLoadError />
-            ) : (
-              /* Only the owner's stable app link is copied here, and its
-                 artifact id tells the reader nothing, so the menu offers the
-                 action without spelling the address out. */
-              <div className="mt-1.5 flex justify-end">
-                <ShareCopyButton
-                  copied={!!details?.status && copiedUrl === details.copyUrl}
-                  disabled={!details?.status}
-                  onCopy={() => {
-                    detach(copy(signal), Reason.DomCallback);
-                  }}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </PopoverContent>
+      <ShareMenuContent
+        label={title}
+        selected={details?.audience}
+        organizationName={details?.status?.organization.name ?? null}
+        loading={loading}
+        saving={audienceOperation.state === "loading"}
+        failed={failed}
+        onChange={(audience) => {
+          detach(change(audience, signal), Reason.DomCallback);
+        }}
+        copy={{
+          copied: !!details?.status && copiedUrl === details.copyUrl,
+          disabled: !details?.status,
+          onCopy: () => {
+            detach(copy(signal), Reason.DomCallback);
+          },
+        }}
+      />
     </Popover>
   );
 }
