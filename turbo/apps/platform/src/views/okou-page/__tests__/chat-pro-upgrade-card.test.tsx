@@ -171,7 +171,7 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
   ).toBeInTheDocument();
   await expect(within(card).findByText("$18")).resolves.toBeVisible();
   expect(within(card).queryByText("$0")).toBeNull();
-  expect(within(card).getByText("Fewer than 5 tasks left")).toBeInTheDocument();
+  expect(within(card).getByText("About 5 tasks left")).toBeInTheDocument();
   expect(
     within(card).getByText(
       "Additional credits · Advanced features · 3 cloud computers",
