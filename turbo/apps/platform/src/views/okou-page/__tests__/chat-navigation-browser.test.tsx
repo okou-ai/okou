@@ -2,7 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
@@ -17,6 +17,7 @@ import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
+import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
 
@@ -112,13 +113,15 @@ function mockBrowserApi(
   };
 }
 
-function completedConversationEvents(): MockChatEventInput[] {
+function completedConversationEvents(
+  runId = "navigation-browser-run",
+): MockChatEventInput[] {
   return [
     {
       id: "navigation-browser-user",
       role: "user",
       content: "Research the release notes",
-      runId: "navigation-browser-run",
+      runId,
       seqId: 1,
       createdAt: "2026-09-01T12:00:00.000Z",
     },
@@ -126,7 +129,7 @@ function completedConversationEvents(): MockChatEventInput[] {
       id: "navigation-browser-reply",
       role: "assistant",
       content: "I am checking the release notes now.",
-      runId: "navigation-browser-run",
+      runId,
       seqId: 2,
       createdAt: "2026-09-01T12:00:01.000Z",
     },
@@ -134,7 +137,7 @@ function completedConversationEvents(): MockChatEventInput[] {
       id: "navigation-browser-complete",
       role: "assistant",
       content: null,
-      runId: "navigation-browser-run",
+      runId,
       runLifecycleEvent: "completed",
       seqId: 3,
       createdAt: "2026-09-01T12:00:02.000Z",
@@ -414,20 +417,23 @@ test("Take over the cloud browser from a working run and hand it back through th
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
   );
   const browser = mockBrowserApi(liveBrowserSession());
-  const runId = "navigation-browser-live-run";
+  const runId = "d0000000-0000-4000-a000-000000000902";
+  const previousRunId = "d0000000-0000-4000-a000-000000000901";
+  const chatEvents: MockChatEventInput[] = [
+    ...completedConversationEvents(previousRunId),
+    {
+      id: "navigation-browser-live-user",
+      role: "user",
+      content: "Book a table for two",
+      runId,
+      seqId: 4,
+      createdAt: "2026-09-01T12:00:03.000Z",
+    },
+  ];
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
-    chatEvents: [
-      {
-        id: "navigation-browser-live-user",
-        role: "user",
-        content: "Book a table for two",
-        runId,
-        seqId: 1,
-        createdAt: "2026-09-01T12:00:00.000Z",
-      },
-    ],
+    chatEvents,
     activeRunIds: [runId],
   });
   await setupPage({
@@ -454,6 +460,33 @@ test("Take over the cloud browser from a working run and hand it back through th
   await expect(
     within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
+
+  // An earlier Run can settle after takeover has interrupted the current one.
+  act(() => {
+    chatEvents.push({
+      id: "navigation-browser-previous-usage",
+      role: "assistant",
+      content: null,
+      runId: previousRunId,
+      seqId: 100,
+      createdAt: "2026-09-01T12:01:00.000Z",
+      usage: {
+        version: 1,
+        totalCredits: 7,
+        settledAt: "2026-09-01T12:01:00.000Z",
+        breakdown: [
+          {
+            kind: "model/gpt-6-luna/tokens.output",
+            credits: 7,
+            providers: [{ provider: "openai", credits: 7 }],
+          },
+        ],
+      },
+    });
+    createChatEvent(THREAD_ID);
+  });
+  await screen.findByLabelText("Credit usage 7");
+  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 
   click(buttonByName("Hand back", viewer));
   await waitFor(() => {
