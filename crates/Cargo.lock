@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.111"
+version = "0.1.112"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4046,7 +4046,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.240.15"
+version = "0.240.16"
 dependencies = [
  "api-contracts",
  "async-trait",
