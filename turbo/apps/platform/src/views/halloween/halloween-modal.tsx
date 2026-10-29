@@ -4,6 +4,7 @@ import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import {
   closeHalloweenModal$,
   halloweenModalOpen$,
+  halloweenScreen$,
   openHalloweenModal$,
 } from "../../signals/halloween/halloween.ts";
 import { mountHalloweenModal$ } from "../../signals/halloween/halloween-modal.ts";
@@ -13,6 +14,7 @@ import { HalloweenPage } from "./halloween-page.tsx";
 export function HalloweenHomeActivity() {
   const copy = useHalloweenCopy();
   const open = useGet(halloweenModalOpen$);
+  const screen = useGet(halloweenScreen$);
   const show = useSet(openHalloweenModal$);
   const close = useSet(closeHalloweenModal$);
   const mount = useSet(mountHalloweenModal$);
@@ -32,7 +34,7 @@ export function HalloweenHomeActivity() {
       <DialogContent
         ref={mount}
         maxWidth={1120}
-        height={760}
+        height={screen === "result" ? "content" : 760}
         surface="transparent"
         contentClassName="block p-0"
         overlayClassName="backdrop-blur-sm"
