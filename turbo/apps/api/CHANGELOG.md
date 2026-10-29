@@ -9,6 +9,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.25.1](https://github.com/okou-ai/okou/compare/api-v2.25.0...api-v2.25.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **api:** align whatsapp run context and prompts ([#43972](https://github.com/okou-ai/okou/issues/43972)) ([36af6d9](https://github.com/okou-ai/okou/commit/36af6d9b9d5c6018ea1939e6fedb7a364326ca2b))
+* **api:** route imessage group replies to their web thread ([#44024](https://github.com/okou-ai/okou/issues/44024)) ([9e70dbf](https://github.com/okou-ai/okou/commit/9e70dbfcd33e5d7c750e528ca43f480fe66b31c6))
+* preserve whatsapp partial send outcomes ([#43970](https://github.com/okou-ai/okou/issues/43970)) ([6ad1188](https://github.com/okou-ai/okou/commit/6ad1188fa8b397a28c350285765f8ee938512b7c))
+
+
+### Refactoring
+
+* **api:** localize post-commit runtime wakeup fanout ([#44025](https://github.com/okou-ai/okou/issues/44025)) ([1e4765d](https://github.com/okou-ai/okou/commit/1e4765d99964a303e1735faf7c382819707a8bd4))
+* **api:** make custom account deletion statement-atomic ([#44014](https://github.com/okou-ai/okou/issues/44014)) ([5c506c2](https://github.com/okou-ai/okou/commit/5c506c20e016a78456a6aec82c12b1decc3d49a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.20.1
+    * @okouai/core bumped to 8.800.4
+    * @okouai/db bumped to 2.11.3
+    * @okouai/pi-agent-runtime bumped to 1.51.23
+
 ## [2.25.0](https://github.com/okou-ai/okou/compare/api-v2.24.0...api-v2.25.0) (2026-10-29)
 
 
