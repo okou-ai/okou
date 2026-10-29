@@ -48,7 +48,10 @@ import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import { sendAgentPhoneMessage } from "../external/agentphone-client";
+import {
+  isAgentPhoneApiError,
+  sendAgentPhoneMessage,
+} from "../external/agentphone-client";
 import type { RouteEntry } from "../route-entry";
 import {
   consumeAgentPhoneConnectionCode$,
@@ -1482,15 +1485,55 @@ const handleAgentPhoneConnectionCode$ = command(
   },
 );
 
-function isAllowedWhatsappEvent(event: AgentPhoneMessageEvent): boolean {
-  return (
-    event.channel !== "whatsapp" ||
-    (!event.isGroup &&
+const handleUnsupportedWhatsappEvent$ = command(
+  async ({ set }, event: AgentPhoneMessageEvent, signal: AbortSignal) => {
+    if (event.channel !== "whatsapp") {
+      return false;
+    }
+    if (event.isGroup) {
+      return true;
+    }
+    if (
       isWhatsappSupportedHandle(
         normalizeAgentPhoneHandle(event.fromNumber, "whatsapp"),
-      ))
-  );
-}
+      )
+    ) {
+      return false;
+    }
+    const stored = await set(
+      storeInboundAgentPhoneMessage$,
+      { event: agentPhoneEventForStorage(event, null) },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!stored.dispatch) {
+      return true;
+    }
+    const sent = await settle(
+      set(
+        sendAgentPhoneText$,
+        event,
+        `Okou isn't available on WhatsApp for your phone number's country or region. Please use Okou on the web: ${env("APP_URL")}`,
+        signal,
+      ),
+      signal,
+    );
+    if (!sent.ok) {
+      if (
+        !isAgentPhoneApiError(sent.error) &&
+        !(sent.error instanceof TypeError) &&
+        !(sent.error instanceof SyntaxError)
+      ) {
+        throw sent.error;
+      }
+      log.warn("Unsupported WhatsApp country reply failed", {
+        phoneHandle: maskPhoneHandle(event.fromNumber),
+        error: sent.error,
+      });
+    }
+    return true;
+  },
+);
 
 const loadAgentPhoneSenderLink$ = command(
   async ({ get }, event: AgentPhoneMessageEvent, signal: AbortSignal) => {
@@ -1531,6 +1574,35 @@ const acceptsWhatsappSender$ = command(
     return isAgentPhoneConnectionCodeMessage(event.body);
   },
 );
+
+function logAgentPhoneGroupReplyMetadata(
+  body: Record<string, unknown>,
+  event: AgentPhoneMessageEvent,
+): void {
+  if (event.channel !== "imessage" || !event.isGroup) {
+    return;
+  }
+
+  const data = valueObject(body.data);
+  const replyTo = valueObject(data.replyTo);
+  // Inspect reply metadata omitted by normalization without logging message text.
+  log.info("AgentPhone iMessage group reply metadata", {
+    webhookId: event.webhookId,
+    messageId: event.messageId,
+    conversationId: event.conversationId,
+    groupId: event.groupId,
+    mentioned: event.mentioned,
+    bodyKeys: Object.keys(body),
+    dataKeys: Object.keys(data),
+    replyToKeys: Object.keys(replyTo),
+    replyToMessageId: stringValue(replyTo, ["messageId"]) ?? null,
+    replyToMessageIdCamel: stringValue(data, ["replyToMessageId"]) ?? null,
+    replyToMessageIdSnake: stringValue(data, ["reply_to_message_id"]) ?? null,
+    threadId: stringValue(data, ["threadId"]) ?? null,
+    threadRootMessageId: stringValue(data, ["threadRootMessageId"]) ?? null,
+    threadOriginatorGuid: stringValue(data, ["threadOriginatorGuid"]) ?? null,
+  });
+}
 
 const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const apiStartTime = now();
@@ -1600,7 +1672,9 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return admissionResponse;
   }
 
-  if (!isAllowedWhatsappEvent(event)) {
+  logAgentPhoneGroupReplyMetadata(body, event);
+
+  if (await set(handleUnsupportedWhatsappEvent$, event, signal)) {
     return okText();
   }
   // A group sender never borrows a participant's or route owner's link.

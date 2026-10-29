@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import {
   getFrameworkForType,
   isBuiltInModelProviderType,
@@ -22,6 +23,7 @@ import {
   insufficientCredits,
   providerUnavailable,
 } from "../../lib/error";
+import { now } from "../../lib/time";
 import { safeSync, settle } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type {
@@ -527,10 +529,10 @@ function createSubscriptionSelection(
         return selection;
       }
       const providerType = pin.modelProvider;
-      return get(dispatchTiming$).measure(
-        "api_dispatch_pre_create_agent_capture_subscription_account",
-        "nested",
-        async () => {
+      const collector = get(dispatchTiming$);
+      return (async () => {
+        const startedAt = performance.now();
+        const operation = (async () => {
           const candidates = personalSubscriptionAccountCandidates({
             command: selection,
             providerType,
@@ -551,8 +553,18 @@ function createSubscriptionSelection(
             modelProviderId: account.id,
             agentRunModelPin: { ...pin, modelProviderId: account.id },
           };
-        },
-      );
+        })();
+        return await (async () => {
+          return await operation;
+        })().finally(() => {
+          collector.recordDuration(
+            "api_dispatch_pre_create_agent_capture_subscription_account",
+            "nested",
+            performance.now() - startedAt,
+            now(),
+          );
+        });
+      })();
     },
   );
   return subscriptionSelection$;
@@ -722,17 +734,27 @@ function createModelRoute(
       if ("status" in context) {
         return context;
       }
+      const collector = context.input.timing;
       const result = await settle(
-        context.input.timing.measure(
-          "api_dispatch_prepare_context_resolve_model_provider",
-          "nested",
-          async () => {
+        (async () => {
+          const startedAt = performance.now();
+          const operation = (async () => {
             return (
               (await get(modelEnvironment$)) ??
               providerUnavailable("No model provider is available for this run")
             );
-          },
-        ),
+          })();
+          return await (async () => {
+            return await operation;
+          })().finally(() => {
+            collector.recordDuration(
+              "api_dispatch_prepare_context_resolve_model_provider",
+              "nested",
+              performance.now() - startedAt,
+              now(),
+            );
+          });
+        })(),
       );
       if (!result.ok) {
         return piConfigurationRouteError(result.error);

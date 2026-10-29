@@ -92,7 +92,7 @@ describe("okou generate presentation command", () => {
       "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --title 'API Migration Plan' --artifact-kind presentation-html --preview ./generated/previews/cover.png --json\n",
     );
     expect(stdout).toContain(
-      "Uploaded and generated files default to only-me. Hosted sites are public.",
+      "Uploaded and generated files default to only-me. New hosted sites default to only-me. Redeployments keep the site's visibility unless --visibility is supplied.",
     );
   });
 

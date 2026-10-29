@@ -12,7 +12,6 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { currentChatAgentId$ } from "../agent-chat.ts";
 import { apiClient$ } from "../api-client.ts";
-import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
@@ -22,7 +21,7 @@ import {
 } from "../chat-page/create-chat-thread.ts";
 import { ensureAgentDraft$ } from "./agent-draft.ts";
 import { now } from "../../lib/time.ts";
-import { setLoop, settle } from "../utils.ts";
+import { settle } from "../utils.ts";
 import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
 import {
@@ -198,7 +197,6 @@ export const agentSuggestionsEnabled$ = computed(async (get) => {
   return primary !== null && current === primary;
 });
 const revision$ = state(0);
-const expiryRevision$ = state(0);
 const consumedIds$ = state<readonly string[]>([]);
 interface OptimisticFeedback {
   readonly suggestionId: string;
@@ -406,7 +404,6 @@ const agentSuggestions$ = computed(async (get) => {
   return result.status === 200 ? result.body.suggestions : [];
 });
 export const visibleAgentSuggestions$ = computed(async (get) => {
-  get(expiryRevision$);
   const consumed = get(consumedIds$);
   const optimistic = get(optimisticFeedbacks$);
   return (await get(agentSuggestions$)).filter((item) => {
@@ -433,36 +430,6 @@ export const enterAgentSuggestions$ = command(({ set }) => {
   set(closeSuggestionFeedback$);
   set(reload$);
 });
-export const subscribeAgentSuggestions$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
-      return;
-    }
-    set(
-      setAblyInvalidationLoop$,
-      {
-        scope: "credential",
-        topic: "agentSuggestionsChanged",
-        invalidations: [reload$],
-        options: { runOnSubscribe: true },
-      },
-      signal,
-    );
-    // Expire already-loaded cards even if no curation or cleanup event arrives.
-    // This only re-derives the cached collection; it does not poll the API.
-    setLoop(
-      () => {
-        set(expiryRevision$, (value) => {
-          return value + 1;
-        });
-        return false;
-      },
-      1000,
-      signal,
-      { testIntervalMs: 100 },
-    );
-  },
-);
 /**
  * Consume the suggestion on the server, then remove it from the panel.
  * Dismissing stops here; using a suggestion adds its content to a draft. Resolves to

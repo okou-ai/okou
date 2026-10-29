@@ -888,7 +888,7 @@ assert.equal(
 assert.equal(metaContent(okouPage.html, "property", "og:image:alt"), okouTitle);
 assert.equal(
   metaContent(okouPage.html, "property", "og:image"),
-  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
+  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
 );
 assert.equal(metaContent(okouPage.html, "name", "twitter:title"), okouTitle);
 assert.equal(
@@ -897,7 +897,7 @@ assert.equal(
 );
 assert.equal(
   metaContent(okouPage.html, "name", "twitter:image"),
-  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
+  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
 );
 assert.equal(
   tagAttribute(okouPage.html, "link", "rel", "canonical", "href"),
@@ -1719,11 +1719,11 @@ assert.equal(
 );
 assert.equal(
   metaContent(previewHtml, "property", "og:image"),
-  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
+  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
 );
 assert.equal(
   metaContent(previewHtml, "name", "twitter:image"),
-  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
+  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
 );
 assert.equal(
   tagAttribute(previewHtml, "link", "rel", "canonical", "href"),
@@ -1870,7 +1870,7 @@ for (const state of [
   if (state !== "public") {
     assert.equal(
       metaContent(html, "property", "og:image"),
-      "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
+      "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
     );
     assert.equal(
       metaContent(html, "property", "og:description"),

@@ -24,7 +24,7 @@ import { SingleConnectionSharedDatabaseBridge } from "../shared-database/single-
 import { SharedDatabaseWorkerLoadError } from "../shared-database/worker-load-error.ts";
 import { reportSharedWorkerFailure } from "./shared-worker-failure.ts";
 import { clerk$, clerkUser$ } from "./auth.ts";
-import { readClerkToken, waitForClerkSession } from "./clerk-token.ts";
+import { ensureClerkToken, waitForClerkSession } from "./clerk-token.ts";
 import {
   applyChatThreadReadCursorUpdated$,
   reloadChatIndicatorsLocally$,
@@ -214,7 +214,7 @@ const prepareSharedDatabaseBridge$ = command(
     };
     const bridgeHost = get(sharedDatabaseBridgeHostState$);
     const getToken: SharedDatabaseTokenProvider = (requestSignal) => {
-      return readClerkToken(clerk, requestSignal);
+      return ensureClerkToken(clerk, requestSignal);
     };
     const bridge = new SingleConnectionSharedDatabaseBridge({
       createBridge: (events, connectionSignal) => {

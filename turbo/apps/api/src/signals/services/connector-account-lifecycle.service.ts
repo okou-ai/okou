@@ -1299,20 +1299,6 @@ export function connectorAccountSibling(owner: SQL, connectionId: string) {
   return and(owner, ne(connectors.id, connectionId));
 }
 
-export function customConnectorAccountDeletionScope(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly connectorId: string;
-  readonly memberConnectorId: string;
-}): ConnectorAccountDeletionScope {
-  return {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "custom", customConnectorId: args.connectorId },
-    connectionId: args.memberConnectorId,
-  };
-}
-
 export function connectorAccountDeletionResult(
   resolvedSelectionCount: number,
   promotedDefaultConnectionId: string | null,

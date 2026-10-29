@@ -29,6 +29,7 @@ describe("validatedEnvironmentRecord", () => {
       APNS_PRIVATE_KEY_BASE64:
         "-----BEGIN PRIVATE KEY-----\nc2VjcmV0==\n-----END PRIVATE KEY-----",
       OKOU_PRICE_CUSTOM: " price_a, ,price_b ",
+      WHATSAPP_ALLOWED_COUNTRY_PREFIXES: " +1, +49 ",
       OKOU_ONE_TIME_CAMPAIGN: '{"launch":{"priceId":"p","couponId":"c"}}',
       DB_POOL_MAX: "",
       S3_ENDPOINT: "https://s3.example.test",
@@ -59,6 +60,7 @@ describe("validatedEnvironmentRecord", () => {
       APNS_PRIVATE_KEY_BASE64:
         "-----BEGIN PRIVATE KEY-----\nc2VjcmV0==\n-----END PRIVATE KEY-----",
       OKOU_PRICE_CUSTOM: ["price_a", "price_b"],
+      WHATSAPP_ALLOWED_COUNTRY_PREFIXES: ["+1", "+49"],
       OKOU_ONE_TIME_CAMPAIGN: { launch: { priceId: "p", couponId: "c" } },
       DB_POOL_MAX: 10,
       S3_PUBLIC_ENDPOINT: "https://s3.example.test",
@@ -72,6 +74,7 @@ describe("validatedEnvironmentRecord", () => {
       // A secret stored with a final newline renders an extra empty line.
       STRIPE_SECRET_KEY: "sk_test_rendered_with_newline\n",
       CRON_SECRET: "cron-secret  ",
+      WHATSAPP_ALLOWED_COUNTRY_PREFIXES: "",
     });
 
     const record = parseEnvironmentFile(
@@ -81,6 +84,18 @@ describe("validatedEnvironmentRecord", () => {
     expect(JSON.parse(record ?? "")).toMatchObject({
       STRIPE_SECRET_KEY: "sk_test_rendered_with_newline",
       CRON_SECRET: "cron-secret",
+      WHATSAPP_ALLOWED_COUNTRY_PREFIXES: [],
     });
+  });
+
+  it("rejects a malformed nonempty country allowlist before deployment", () => {
+    const file = environmentFile({
+      ...apiTestEnvironment,
+      DATABASE_URL: "postgresql://user:pass@db.example.test/neondb",
+      WHATSAPP_ALLOWED_COUNTRY_PREFIXES: "+49,,+1",
+    });
+    expect(() => {
+      return validatedEnvironmentRecord(file);
+    }).toThrow("Invalid environment variables");
   });
 });

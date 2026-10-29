@@ -9,19 +9,6 @@ const deploymentId = "00000000-0000-4000-8000-000000000002";
 const base = "http://localhost:3000/api/host";
 const brandingUrl = `${base}/sites/${siteId}/branding`;
 
-function runToken(enabled: boolean) {
-  const payload = Buffer.from(
-    JSON.stringify({
-      scope: "okou",
-      capabilities: [
-        "host:write",
-        ...(enabled ? ["host-visibility:write"] : []),
-      ],
-    }),
-  ).toString("base64url");
-  return `vm0_sandbox_header.${payload}.signature`;
-}
-
 describe("okou host banner", () => {
   const logs = vi.spyOn(console, "log").mockImplementation(() => {});
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -32,7 +19,7 @@ describe("okou host banner", () => {
   beforeEach(() => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", runToken(true));
+    vi.stubEnv("OKOU_TOKEN", "test-token");
     server.use(
       http.get(`${base}/aliases/demo-site`, ({ request }) => {
         expect(new URL(request.url).searchParams.get("publicBrand")).toBe(
@@ -61,27 +48,7 @@ describe("okou host banner", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each([true, false])(
-    "exposes banner help only to enabled runs (enabled=%s)",
-    async (enabled) => {
-      vi.stubEnv("OKOU_TOKEN", runToken(enabled));
-      let output = "";
-      const command = createHostCommand()
-        .exitOverride()
-        .configureOutput({
-          writeOut: (text) => {
-            output += text;
-          },
-        });
-      await expect(
-        command.parseAsync(["node", "okou", "--help"]),
-      ).rejects.toMatchObject({ code: "commander.helpDisplayed" });
-      expect(output.includes("banner")).toBe(enabled);
-    },
-  );
-
-  it("keeps direct subcommand help free of banner features when disabled", async () => {
-    vi.stubEnv("OKOU_TOKEN", runToken(false));
+  it("exposes banner help", async () => {
     let output = "";
     const command = createHostCommand()
       .exitOverride()
@@ -91,27 +58,9 @@ describe("okou host banner", () => {
         },
       });
     await expect(
-      command.parseAsync(["node", "okou", "banner", "--help"]),
+      command.parseAsync(["node", "okou", "--help"]),
     ).rejects.toMatchObject({ code: "commander.helpDisplayed" });
-    expect(output).toContain("Publish, redeploy");
-    expect(output).not.toContain("banner");
-  });
-
-  it("does not register banner changes in disabled runs", async () => {
-    vi.stubEnv("OKOU_TOKEN", runToken(false));
-    let output = "";
-    const command = createHostCommand()
-      .exitOverride()
-      .configureOutput({
-        writeErr: (text) => {
-          output += text;
-        },
-      });
-    await expect(
-      command.parseAsync(["node", "okou", "banner", "demo-site", "off"]),
-    ).rejects.toMatchObject({ code: "commander.excessArguments" });
-    expect(output).toContain("too many arguments");
-    expect(logs.mock.calls).toHaveLength(0);
+    expect(output).toContain("banner");
   });
 
   it("reads the default-on setting and prints the next action", async () => {
@@ -142,7 +91,7 @@ describe("okou host banner", () => {
       server.use(
         http.get(brandingUrl, ({ request }) => {
           expect(request.headers.get("authorization")).toBe(
-            `Bearer ${runToken(true)}`,
+            "Bearer test-token",
           );
           return HttpResponse.json(saved);
         }),
@@ -188,12 +137,6 @@ describe("okou host banner", () => {
   );
 
   it.each([
-    {
-      status: 403,
-      code: "RESOURCE_UNAVAILABLE",
-      message: "Website visibility management is not available",
-      change: false,
-    },
     {
       status: 404,
       code: "NOT_FOUND",

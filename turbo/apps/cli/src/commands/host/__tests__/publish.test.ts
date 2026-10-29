@@ -86,6 +86,7 @@ describe("okou host publish command", () => {
           deploymentId: "00000000-0000-4000-8000-000000000002",
           publicSlug: "demo-site",
           url: "https://demo-site.okou.app",
+          visibility: "public",
           uploads: [],
         });
       }),
@@ -183,6 +184,7 @@ describe("okou host publish command", () => {
             deploymentVersion: 1,
             artifactUrl,
             ...alias,
+            visibility: "public",
             uploads: [
               { path: "/index.html", uploadUrl: INDEX_UPLOAD_URL },
               { path: "/robots.txt", uploadUrl: ROBOTS_UPLOAD_URL },
@@ -307,6 +309,7 @@ describe("okou host publish command", () => {
           deploymentId: "00000000-0000-4000-8000-000000000004",
           publicSlug: legacyPublicSlug,
           url: legacyUrl,
+          visibility: "public",
           uploads: [
             { path: "/index.html", uploadUrl: INDEX_UPLOAD_URL },
             { path: "/robots.txt", uploadUrl: ROBOTS_UPLOAD_URL },

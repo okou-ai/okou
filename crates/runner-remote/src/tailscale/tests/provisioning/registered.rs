@@ -373,6 +373,7 @@ async fn unsafe_or_oversized_regional_map_metadata_never_reaches_a_relay_socket(
         "bad-pin",
         "test-tls",
         "too-many-nodes",
+        "duplicate-names",
         "too-many-regions",
         "no-home",
         "disabled",
@@ -391,7 +392,18 @@ async fn unsafe_or_oversized_regional_map_metadata_never_reaches_a_relay_socket(
             }
             "too-many-nodes" => {
                 let node = value["DERPMap"]["Regions"]["1"]["Nodes"][0].clone();
-                value["DERPMap"]["Regions"]["1"]["Nodes"] = vec![node; 9].into();
+                value["DERPMap"]["Regions"]["1"]["Nodes"] = (0..9)
+                    .map(|index| {
+                        let mut node = node.clone();
+                        node["Name"] = format!("1-{index}").into();
+                        node
+                    })
+                    .collect::<Vec<_>>()
+                    .into();
+            }
+            "duplicate-names" => {
+                let node = value["DERPMap"]["Regions"]["1"]["Nodes"][0].clone();
+                value["DERPMap"]["Regions"]["1"]["Nodes"] = vec![node; 2].into();
             }
             "too-many-regions" => {
                 let region = value["DERPMap"]["Regions"]["1"].clone();

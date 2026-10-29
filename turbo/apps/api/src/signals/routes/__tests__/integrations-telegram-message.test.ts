@@ -22,6 +22,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "../integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
@@ -565,6 +566,9 @@ describe("official Telegram self delivery", () => {
     await a.onboard();
     await b.onboard();
     await a.link(a.telegramUserId);
+    await flushWaitUntilForTest();
+    expect(telegramPosts).toStrictEqual([a.telegramUserId]);
+    telegramPosts.length = 0;
     const statusClient = setupApp({
       context,
       routes: integrationsTelegramRoutes,
@@ -614,7 +618,11 @@ describe("official Telegram self delivery", () => {
     await a.onboard();
     await b.onboard();
     await a.link(telegramA);
+    await flushWaitUntilForTest();
     await b.link(telegramB);
+    await flushWaitUntilForTest();
+    expect(telegramPosts).toStrictEqual([telegramA, telegramB]);
+    telegramPosts.length = 0;
     const client = setupApp({
       context,
       routes: integrationsTelegramMessageRoutes,

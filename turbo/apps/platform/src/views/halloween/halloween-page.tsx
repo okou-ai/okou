@@ -125,7 +125,7 @@ export function HalloweenPage() {
       ) : (
         <StartScreen />
       )}
-      <HalloweenFooter />
+      {screen !== "result" && <HalloweenFooter />}
       <HalloweenRules />
     </div>
   );

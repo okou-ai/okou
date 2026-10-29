@@ -21,6 +21,7 @@ import {
   createAgentPhoneBddApi,
   AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
+  uniquePhoneHandle,
 } from "./helpers/api-bdd-agentphone";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
@@ -520,7 +521,165 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     );
   });
 
-  it("does not bind unsupported markets or group messages", async () => {
+  it.each([undefined, "", "   "])(
+    "connects and sends to any country when the prefix allowlist is %s",
+    async (prefixes) => {
+      mockEnv("WHATSAPP_ALLOWED_COUNTRY_PREFIXES", prefixes);
+      const setup = await configure();
+      const phone = await connect(setup, uniquePhoneHandle());
+      setup.sends.length = 0;
+      await accept(
+        client().sendMessage({
+          headers: headers(setup.actor),
+          body: { text: "Your report is ready" },
+        }),
+        [200],
+      );
+      expect(setup.sends).toHaveLength(1);
+      expect(setup.sends[0]).toMatchObject({
+        channel: "whatsapp",
+        to_number: phone,
+        body: "Your report is ready",
+      });
+    },
+  );
+
+  it("applies the configured country prefixes to outbound sends", async () => {
+    const setup = await configure();
+    await connect(setup, uniquePhoneHandle());
+    setup.sends.length = 0;
+    mockEnv("WHATSAPP_ALLOWED_COUNTRY_PREFIXES", "+49");
+    await accept(
+      client().sendMessage({
+        headers: headers(setup.actor),
+        body: { text: "Your report is ready" },
+      }),
+      [404],
+    );
+    expect(setup.sends).toHaveLength(0);
+  });
+
+  it.each([
+    "connection code",
+    "ordinary message",
+    "command",
+    "attachment",
+  ] as const)(
+    "returns the same country restriction reply for a WhatsApp %s without connecting",
+    async (messageKind) => {
+      mockEnv("APP_URL", "https://app.okou.test");
+      mockEnv("WHATSAPP_ALLOWED_COUNTRY_PREFIXES", " +49, +55, +90 ");
+      const setup = await configure();
+      const code = await accept(
+        client().createLinkCode({ headers: headers(setup.actor) }),
+        [200],
+      );
+      const phone = uniquePhoneHandle();
+      const body =
+        messageKind === "connection code"
+          ? code.body.code
+          : messageKind === "command"
+            ? "/help"
+            : messageKind === "attachment"
+              ? ""
+              : "Hello Okou";
+      const mediaUrl =
+        messageKind === "attachment"
+          ? "https://media.agentphone.test/photo.jpg"
+          : undefined;
+      const messageId = await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        from: phone,
+        body,
+        mediaUrl,
+      });
+      expect(
+        (
+          await accept(
+            client().getLinkStatus({ headers: headers(setup.actor) }),
+            [200],
+          )
+        ).body.linked,
+      ).toBeFalsy();
+      expect(setup.sends).toHaveLength(1);
+      expect(setup.sends[0]).toMatchObject({
+        channel: "whatsapp",
+        to_number: phone,
+        body: "Okou isn't available on WhatsApp for your phone number's country or region. Please use Okou on the web: https://app.okou.test",
+      });
+      await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        messageId,
+        from: phone,
+        body,
+        mediaUrl,
+      });
+      expect(setup.sends).toHaveLength(1);
+      const supportedPhone = sender();
+      await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        from: supportedPhone,
+        body: code.body.code,
+      });
+      expect(
+        (
+          await accept(
+            client().getLinkStatus({ headers: headers(setup.actor) }),
+            [200],
+          )
+        ).body,
+      ).toMatchObject({ linked: true, phoneHandle: supportedPhone });
+    },
+  );
+
+  it.each(["rejected", "unknown"] as const)(
+    "does not connect or retry the country restriction reply when delivery is %s",
+    async (delivery) => {
+      mockEnv("WHATSAPP_ALLOWED_COUNTRY_PREFIXES", "+49");
+      const setup = await configure();
+      const code = await accept(
+        client().createLinkCode({ headers: headers(setup.actor) }),
+        [200],
+      );
+      const attempted: Record<string, unknown>[] = [];
+      server.use(
+        http.post(`${providerUrl}/v1/messages`, async ({ request }) => {
+          attempted.push((await request.json()) as Record<string, unknown>);
+          return delivery === "rejected"
+            ? HttpResponse.json({ error: "Rejected" }, { status: 422 })
+            : HttpResponse.error();
+        }),
+      );
+      const phone = "+8613800138000";
+      const messageId = await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        from: phone,
+        body: code.body.code,
+      });
+      await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        messageId,
+        from: phone,
+        body: code.body.code,
+      });
+      expect(attempted).toHaveLength(1);
+      expect(attempted[0]).toMatchObject({
+        channel: "whatsapp",
+        to_number: phone,
+      });
+      expect(
+        (
+          await accept(
+            client().getLinkStatus({ headers: headers(setup.actor) }),
+            [200],
+          )
+        ).body.linked,
+      ).toBeFalsy();
+    },
+  );
+
+  it("does not bind or reply to WhatsApp group messages", async () => {
+    mockEnv("WHATSAPP_ALLOWED_COUNTRY_PREFIXES", " +49, +55, +90 ");
     const setup = await configure();
     const code = await accept(
       client().createLinkCode({ headers: headers(setup.actor) }),
@@ -530,6 +689,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       channel: "whatsapp",
       from: "+12025550123",
       body: code.body.code,
+      isGroup: true,
     });
     await setup.ap.postAgentPhoneInboundMessage({
       channel: "whatsapp",

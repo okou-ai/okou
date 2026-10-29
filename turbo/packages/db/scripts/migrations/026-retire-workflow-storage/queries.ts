@@ -2,6 +2,7 @@ import {
   JOB_KIND,
   HANDLER_VERSION,
   jobInput,
+  sourceWorkflowId,
   type Source,
   type Ready,
 } from "./schema";
@@ -47,17 +48,20 @@ export function inventoryQuery(
   };
 }
 
-function capturedReference(value: string) {
+function capturedReference(value: string, orgId: string) {
   return `jsonb_path_exists(COALESCE(${value},'null'::jsonb),
-    '$.** ? (@.storageId == $storageId || @.versionId == $versions[*] || @.version == $versions[*] || @.storageVersion == $versions[*])',
-    jsonb_build_object('storageId',$1::text,'versions',$3::jsonb))`;
+    '$.** ? (@.storageId == $storageId || @.versionId == $versions[*] || @.version == $versions[*] || @.storageVersion == $versions[*] || ($sameOrg == true && (@.name == $storageName || @.storageName == $storageName)))',
+    jsonb_build_object('storageId',$1::text,'versions',$3::jsonb,
+      'sameOrg',${orgId}=$5,'storageName',$6::text))`;
 }
 
 function overlaps(key: string) {
-  return `(${key}=t.prefix OR starts_with(${key},t.prefix||'/') OR starts_with(t.prefix,${key}||'/'))`;
+  // Equal/ancestor paths share their first component; retain full slash bounds.
+  return `(split_part(${key},'/',1)=split_part(t.prefix,'/',1)
+    AND (${key}=t.prefix OR starts_with(${key},t.prefix||'/') OR starts_with(t.prefix,${key}||'/')))`;
 }
 
-/** $1 identity, $2 exact prefixes, $3 versions, $4 Workflow, $5 organization. */
+/** $1 Storage, $2 prefixes, $3 versions, $4 nullable Workflow UUID, $5 org, $6 name. */
 function referenceCtes(requireDeleted: boolean) {
   return `targets AS MATERIALIZED (SELECT value AS prefix FROM jsonb_array_elements_text($2::jsonb)),
     captured_ids AS MATERIALIZED (SELECT value AS id FROM jsonb_array_elements_text($3::jsonb)),
@@ -74,7 +78,10 @@ function referenceCtes(requireDeleted: boolean) {
       CASE WHEN EXISTS(SELECT 1 FROM storage_versions v CROSS JOIN targets t WHERE v.storage_id<>$1::uuid
         AND ${overlaps("v.s3_key")}) THEN 'other-version' END,
       CASE WHEN EXISTS(SELECT 1 FROM skills sk CROSS JOIN targets t WHERE sk.storage_id=$1::uuid
-        OR ${overlaps("sk.s3_key")}) THEN 'skill' END,
+        OR sk.version_hash IN(SELECT id FROM captured_ids) OR ${overlaps("sk.s3_key")}) THEN 'skill' END,
+      CASE WHEN EXISTS(SELECT 1 FROM org_custom_connectors WHERE skill_storage_version_id IN(SELECT id FROM captured_ids)) THEN 'custom-connector' END,
+      CASE WHEN EXISTS(SELECT 1 FROM pi_resource_version_indexes WHERE storage_version_id IN(SELECT id FROM captured_ids)
+        AND status IN('pending','running')) THEN 'pi-index-work' END,
       CASE WHEN EXISTS(SELECT 1 FROM official_workflow_definition_revisions WHERE storage_id=$1::uuid
         OR storage_version IN(SELECT id FROM captured_ids)) THEN 'official-definition' END,
       CASE WHEN EXISTS(SELECT 1 FROM storage_version_lineage WHERE storage_id=$1::uuid
@@ -89,10 +96,11 @@ function referenceCtes(requireDeleted: boolean) {
       CASE WHEN EXISTS(SELECT 1 FROM background_jobs j CROSS JOIN targets t
         WHERE j.kind<>'${JOB_KIND}' AND j.status NOT IN('completed','cancelled')
         AND (position(t.prefix IN j.input::text)>0 OR position(t.prefix IN j.checkpoint::text)>0
-          OR ${capturedReference("j.input")} OR ${capturedReference("j.checkpoint")})) THEN 'background-consumer' END,
-      CASE WHEN EXISTS(SELECT 1 FROM runner_job_queue q WHERE ${capturedReference("q.execution_context")}) THEN 'queued-consumer' END,
+          OR ${capturedReference("j.input", "j.org_id")} OR ${capturedReference("j.checkpoint", "j.org_id")})) THEN 'background-consumer' END,
+      CASE WHEN EXISTS(SELECT 1 FROM runner_job_queue q JOIN agent_runs r ON r.id=q.run_id
+        WHERE ${capturedReference("q.execution_context", "r.org_id")}) THEN 'queued-consumer' END,
       CASE WHEN EXISTS(SELECT 1 FROM live_run_ids live JOIN agent_runs r ON r.id=live.id WHERE
-        (${capturedReference("r.storage_mounts")} OR ${capturedReference("r.official_workflow_provenance")})) THEN 'execution-consumer' END,
+        (${capturedReference("r.storage_mounts", "r.org_id")} OR ${capturedReference("r.official_workflow_provenance", "r.org_id")})) THEN 'execution-consumer' END,
       CASE WHEN EXISTS(SELECT 1 FROM workflows WHERE official_definition_name IS NULL AND attachments IS NULL) THEN 'unconverted-workflows' END,
       CASE WHEN EXISTS(SELECT 1 FROM storage_publication_tokens WHERE starts_with(publication_key,'workflow:')) THEN 'workflow-publication' END
     ]::text[],NULL) AS reasons)`;
@@ -107,8 +115,9 @@ function referenceValues(source: Source, prefixes: readonly string[]) {
         return version.id;
       }),
     ),
-    source.name.slice("custom-skill@".length),
+    sourceWorkflowId(source),
     source.orgId,
+    source.name,
   ];
 }
 
@@ -144,7 +153,6 @@ export function retireQuery(bucket: string, row: Ready) {
           return job.prefix;
         }),
       ),
-      source.name,
       source.prefix,
       source.xmin,
       source.head,

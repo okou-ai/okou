@@ -1,5 +1,58 @@
 # Changelog
 
+## [10.10.0](https://github.com/okou-ai/okou/compare/cli-v10.9.0...cli-v10.10.0) (2026-10-29)
+
+
+### Features
+
+* **cli:** support file uploads to imessage groups ([#44002](https://github.com/okou-ai/okou/issues/44002)) ([ea08509](https://github.com/okou-ai/okou/commit/ea0850926d622ac4a7a4f7cbe9144af34866dc7e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.20.0
+    * @okouai/core bumped to 8.800.3
+    * @okouai/pi-agent-runtime bumped to 1.51.22
+
+## [10.9.0](https://github.com/okou-ai/okou/compare/cli-v10.8.0...cli-v10.9.0) (2026-10-29)
+
+
+### Features
+
+* **cli:** send text to existing imessage groups ([#43990](https://github.com/okou-ai/okou/issues/43990)) ([846f53f](https://github.com/okou-ai/okou/commit/846f53f4c20a2d641d53ad459ec4ac6c729410ac))
+
+
+### Refactoring
+
+* remove hosted site visibility feature switch ([#43947](https://github.com/okou-ai/okou/issues/43947)) ([4aade90](https://github.com/okou-ai/okou/commit/4aade9015eaf2e73d9b63fab530758ca155fed07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.19.0
+    * @okouai/core bumped to 8.800.2
+    * @okouai/pi-agent-runtime bumped to 1.51.21
+
+## [10.8.0](https://github.com/okou-ai/okou/compare/cli-v10.7.5...cli-v10.8.0) (2026-10-29)
+
+
+### Features
+
+* learn from suggestions with per-card feedback storage ([#43771](https://github.com/okou-ai/okou/issues/43771)) ([cefb967](https://github.com/okou-ai/okou/commit/cefb967db3d9b20e83b3f7239815a264975bd2ec)) [#43760](https://github.com/okou-ai/okou/issues/43760)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.18.0
+    * @okouai/core bumped to 8.800.1
+    * @okouai/pi-agent-runtime bumped to 1.51.20
+
 ## [10.7.5](https://github.com/okou-ai/okou/compare/cli-v10.7.4...cli-v10.7.5) (2026-10-29)
 
 

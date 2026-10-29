@@ -38,14 +38,19 @@ struct NativeHelperRequestDiagnostics: Sendable {
   let operation: NativeHelperOperation
   let timeout: TimeInterval
   let started: ContinuousClock.Instant
+  let awakeStarted: SuspendingClock.Instant
   var writtenAt: ContinuousClock.Instant?
 
   var deadline: ContinuousClock.Instant { started.advanced(by: .seconds(timeout)) }
 
-  init(_ request: JSONValue, timeout: TimeInterval, started: ContinuousClock.Instant) {
+  init(
+    _ request: JSONValue, timeout: TimeInterval, started: ContinuousClock.Instant,
+    awakeStarted: SuspendingClock.Instant
+  ) {
     operation = NativeHelperOperation(rawValue: request["kind"].string ?? "") ?? .unknown
     self.timeout = timeout
     self.started = started
+    self.awakeStarted = awakeStarted
   }
 }
 
@@ -94,6 +99,9 @@ struct NativeHelperTimeoutDiagnostics: Sendable {
   let processedBytes: Int
   let processedAt: ContinuousClock.Instant?
   let observedAt: ContinuousClock.Instant
+  let awakeObservedAt: SuspendingClock.Instant
+  let detectedAt: ContinuousClock.Instant
+  let retiredAt: ContinuousClock.Instant
 }
 
 struct NativeHelperDiagnostics: Sendable {

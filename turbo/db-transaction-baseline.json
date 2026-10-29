@@ -32,11 +32,6 @@
       "owner": "projectThread"
     },
     {
-      "id": "TX-0148",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "deleteCustomConnectorAccount$"
-    },
-    {
       "id": "TX-0170",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "bindHostedSiteDeployment$"

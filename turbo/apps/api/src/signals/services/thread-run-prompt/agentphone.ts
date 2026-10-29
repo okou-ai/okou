@@ -29,6 +29,7 @@ export function createAgentPhoneThreadPrompt(
             sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
             phoneHandle: context.phoneHandle,
             conversationId: context.conversationId,
+            groupId: context.groupId,
             channel: context.channel,
             isGroup: context.isGroup,
             messageId: context.messageId,

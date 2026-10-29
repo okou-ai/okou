@@ -136,7 +136,7 @@ function integrationNoteLines(
         ];
       }
       return [
-        "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
+        "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.",
         privateArtifactFinalReplyLine({
           surface: "the phone channel",
           uploadCommand: "okou phone upload-file",

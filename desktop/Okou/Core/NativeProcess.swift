@@ -34,7 +34,8 @@ public actor NativeProcess {
   private let environment: [String: String]
   private let purpose: Purpose
   private let now: @Sendable () -> ContinuousClock.Instant
-  private var process: Process?
+  private let awakeNow: @Sendable () -> SuspendingClock.Instant
+  private var lifetime: NativeHelperLifetime?
   private var input: FileHandle?
   private var output: FileHandle?
   private var errors: FileHandle?
@@ -60,19 +61,22 @@ public actor NativeProcess {
 
   public init(
     executable: URL, environment: [String: String] = [:], purpose: Purpose = .computerUse,
-    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+    awakeNow: @escaping @Sendable () -> SuspendingClock.Instant = { .now }
   ) {
     self.executable = executable
     self.environment = environment
     self.purpose = purpose
     self.now = now
+    self.awakeNow = awakeNow
     outputReader = NativeHelperOutputReader(now: now)
   }
   private func start() throws {
-    if process?.isRunning == true { return }
-    if let process {
-      reportFailure(.unexpectedExit, termination: NativeHelperTermination(process))
-      stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
+    if lifetime?.isRunning == true { return }
+    if let lifetime {
+      stop(
+        error: DesktopFailure("accessibility_unavailable", "Native helper exited"),
+        failure: .unexpectedExit, termination: lifetime.termination)
     }
     generation += 1
     let current = generation
@@ -103,11 +107,17 @@ public actor NativeProcess {
       let termination = NativeHelperTermination(child)
       Task { await self.exited(generation: current, termination: termination) }
     }
-    do { try child.run() } catch {
+    do {
+      // Killing a timed-out helper must turn a blocked write into EPIPE, not kill Desktop.
+      guard fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+      }
+      try child.run()
+    } catch {
       reportFailure(.launch)
       throw error
     }
-    process = child
+    lifetime = NativeHelperLifetime(process: child, now: now)
     input = stdin.fileHandleForWriting
     output = stdout.fileHandleForReading
     errors = stderr.fileHandleForReading
@@ -125,20 +135,34 @@ public actor NativeProcess {
     data.append(10)
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
-        let diagnostics = NativeHelperRequestDiagnostics(values, timeout: timeout, started: now())
+        let diagnostics = NativeHelperRequestDiagnostics(
+          values, timeout: timeout, started: now(), awakeStarted: awakeNow())
         pending[id] = PendingRequest(
           continuation: continuation, diagnostics: diagnostics)
-        do { try input?.write(contentsOf: data) } catch {
-          reportFailure(.write)
-          stop(error: DesktopFailure("accessibility_unavailable", "Native helper write failed"))
+        let current = generation
+        guard
+          lifetime?.watch(
+            id, until: diagnostics.deadline,
+            onExpiration: {
+              Task { await self.expire(id, generation: current) }
+            }) == true
+        else {
+          stop(error: Self.timeoutFailure)
           return
         }
-        pending[id]?.diagnostics.writtenAt = now()
+        // Dispatch uses an awake clock. Keep ContinuousClock's timer for system sleep/wake.
         let deadline = diagnostics.deadline
         timeouts[id] = Task {
           do { try await Task.sleep(until: deadline) } catch { return }
-          self.expire(id)
+          self.expire(id, generation: current)
         }
+        do { try input?.write(contentsOf: data) } catch {
+          stop(
+            error: DesktopFailure("accessibility_unavailable", "Native helper write failed"),
+            failure: .write)
+          return
+        }
+        pending[id]?.diagnostics.writtenAt = now()
       }
     } onCancel: {
       Task { await self.cancel(id) }
@@ -146,12 +170,17 @@ public actor NativeProcess {
   }
   private func receive(_ data: Data, sequence: Int, generation current: Int) {
     guard current == generation else { return }
+    if lifetime?.expired == true {
+      stop(error: Self.timeoutFailure)
+      return
+    }
     // Tasks created by readability callbacks can reach the actor out of read order.
     queuedReads[sequence] = data
     queuedReadBytes += data.count
     if queuedReadBytes + buffer.count > 32 * 1024 * 1024 {
-      reportFailure(.responseLimit, responseBytes: queuedReadBytes + buffer.count)
-      stop(error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"))
+      stop(
+        error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"),
+        failure: .responseLimit, responseBytes: queuedReadBytes + buffer.count)
       return
     }
     while let next = queuedReads.removeValue(forKey: nextReadSequence) {
@@ -200,8 +229,8 @@ public actor NativeProcess {
         return
       }
       // A ready response must not bypass the deadline when the client resumes late.
-      if let request = pending[responseId], now() >= request.diagnostics.deadline {
-        expire(responseId, detectedBy: .response)
+      if lifetime?.complete(responseId) != nil {
+        stop(error: Self.timeoutFailure)
         return
       }
       if response["status"].string == "failed",
@@ -243,27 +272,21 @@ public actor NativeProcess {
         responseStart: responseStart, reads: readFragments, omittedThrough: omittedReadsThrough,
         decoderError: decoderError, decodeDurationMs: decodeDurationMs)
     }
-    reportFailure(failure, responseBytes: response.count, attachments: attachments)
     stop(
       error: DesktopFailure(
         "accessibility_unavailable",
-        "\(message) Reconnect Computer Use; do not replay the failed action automatically."))
+        "\(message) Reconnect Computer Use; do not replay the failed action automatically."),
+      failure: failure, responseBytes: response.count, attachments: attachments)
   }
-  private func expire(
-    _ id: Int, detectedBy trigger: NativeHelperTimeoutDiagnostics.Trigger = .timer
-  ) {
-    guard let request = pending[id] else { return }
-    let output = outputReader.snapshot
-    reportFailure(
-      .timeout, request: request.diagnostics,
-      timeout: NativeHelperTimeoutDiagnostics(
-        trigger: trigger, output: output, processedBytes: receivedBytes,
-        processedAt: outputProcessedAt, observedAt: now()))
-    stop(
-      error: DesktopFailure(
-        "command_timeout",
-        "Native command deadline expired. An action may have been delivered; do not replay automatically."
-      ))
+  private static var timeoutFailure: DesktopFailure {
+    DesktopFailure(
+      "command_timeout",
+      "Native command deadline expired. An action may have been delivered; do not replay automatically."
+    )
+  }
+  private func expire(_ id: Int, generation current: Int) {
+    guard current == generation, lifetime?.expire(id, detectedBy: .timer) != nil else { return }
+    stop(error: Self.timeoutFailure)
   }
   private func cancel(_ id: Int) { if pending[id] != nil { stop(error: CancellationError()) } }
   private func exited(generation current: Int, termination: NativeHelperTermination) {
@@ -271,8 +294,9 @@ public actor NativeProcess {
     self.termination = termination
     // A process can exit before its final stdout callbacks reach the actor.
     guard outputClosed else { return }
-    reportFailure(.unexpectedExit, termination: termination)
-    stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
+    stop(
+      error: DesktopFailure("accessibility_unavailable", "Native helper exited"),
+      failure: .unexpectedExit, termination: termination)
   }
   private func reportFailure(
     _ reason: NativeHelperFailure, responseBytes: Int? = nil,
@@ -286,17 +310,30 @@ public actor NativeProcess {
       attachments: attachments, timeout: timeout)
   }
   public func stop() { stop(error: CancellationError()) }
-  private func stop(error: Error) {
+  private func stop(
+    error: Error, failure: NativeHelperFailure? = nil, responseBytes: Int? = nil,
+    termination: NativeHelperTermination? = nil, attachments: NativeHelperDiagnostics? = nil
+  ) {
+    // Retirement serializes with the watchdog, so a racing exit/write cannot hide its timeout.
+    let expiration = lifetime?.retire()
+    var error = error
+    if let expiration, let request = pending[expiration.requestID] {
+      error = Self.timeoutFailure
+      reportFailure(
+        .timeout, request: request.diagnostics,
+        timeout: NativeHelperTimeoutDiagnostics(
+          trigger: expiration.trigger, output: outputReader.snapshot, processedBytes: receivedBytes,
+          processedAt: outputProcessedAt, observedAt: now(), awakeObservedAt: awakeNow(),
+          detectedAt: expiration.detectedAt, retiredAt: expiration.retiredAt))
+    } else if let failure {
+      reportFailure(
+        failure, responseBytes: responseBytes, termination: termination, attachments: attachments)
+    }
     generation += 1
     output?.readabilityHandler = nil
     errors?.readabilityHandler = nil
     try? input?.close()
-    if let child = process, child.isRunning {
-      // Retirement must finish before another helper can dispatch input.
-      kill(child.processIdentifier, SIGKILL)
-      child.waitUntilExit()
-    }
-    process = nil
+    lifetime = nil
     input = nil
     output = nil
     errors = nil
@@ -312,7 +349,7 @@ public actor NativeProcess {
     responseStart = 0
     omittedReadsThrough = 0
     outputClosed = false
-    termination = nil
+    self.termination = nil
     for timeout in timeouts.values { timeout.cancel() }
     timeouts.removeAll()
     let requests = pending

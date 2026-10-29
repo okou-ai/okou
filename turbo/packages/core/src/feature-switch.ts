@@ -50,8 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ming@okou.ai",
     displayName: "First task upgrade",
     description: "Show the Pro offer after a user's first completed chat task.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {
     maintainer: "ming@okou.ai",
@@ -102,13 +101,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Choose who can view a shared conversation.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  // Gate visibility settings; access and preview delivery always enforce Site policy.
-  [FeatureSwitchKey.HostedSiteVisibility]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Website visibility",
-    description: "Control who can visit a published website.",
-    enabled: true,
   },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",

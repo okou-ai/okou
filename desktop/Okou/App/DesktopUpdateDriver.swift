@@ -113,7 +113,17 @@ final class DesktopUpdateDriver: NSObject, SPUUserDriver {
       model.upgradePhase = .failed(
         "No supported update is available. Retry or download the latest Okou.")
     } else {
-      await standard.showUpdateNotFoundWithError(error)
+      await withCheckedContinuation { continuation in
+        // Sparkle enters runModal synchronously. Start it from the RunLoop so
+        // its nested event loop can service the main queue while awaiting OK.
+        RunLoop.main.perform { [standard] in
+          MainActor.assumeIsolated {
+            standard.showUpdateNotFoundWithError(error) {
+              continuation.resume()
+            }
+          }
+        }
+      }
     }
   }
   func showUpdaterError(_ error: Error) async {

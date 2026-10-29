@@ -7,6 +7,7 @@ import {
   isAbortError,
   onRejection,
   resetSignal,
+  settle,
   withCleanup,
 } from "../signals/utils.ts";
 import type {
@@ -308,16 +309,18 @@ export const requestTokenFromTabs$ = command(
     if (connections.size === 0) {
       throw new Error("Shared database token requires a registered tab");
     }
-    // Each request broadcasts once and accepts the first response, including null.
+    // Each request broadcasts once and accepts the first successful token response.
     const attempts = [];
     for (const connection of connections.values()) {
       attempts.push(
         requestConnectionToken(connection.getToken, connection.signal, signal),
       );
     }
-    const response = await Promise.race(attempts);
-    signal.throwIfAborted();
-    return response;
+    const response = await settle(Promise.any(attempts), signal);
+    if (!response.ok) {
+      throw response.error;
+    }
+    return response.value;
   },
 );
 
