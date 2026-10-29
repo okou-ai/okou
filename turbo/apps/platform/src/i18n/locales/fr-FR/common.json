@@ -1717,7 +1717,7 @@
       "outOfCredits": "Vous êtes à court de crédits",
       "proCard": {
         "bonusCreditsNow": "crédits bonus · Maintenant",
-        "description": "Pro comprend des modèles avancés, des automatisations, des données de recherche intégrées et 3 tâches à la fois.",
+        "description": "Modèles avancés · Automatisations · 3 tâches à la fois",
         "estimatedTasksLeft_one": "Moins de {{count}} tâche restante",
         "estimatedTasksLeft_many": "Moins de {{count}} tâches restantes",
         "estimatedTasksLeft_other": "Moins de {{count}} tâches restantes",

@@ -1685,7 +1685,7 @@
       "outOfCredits": "你的积分用完了",
       "proCard": {
         "bonusCreditsNow": "奖励积分 · 就现在",
-        "description": "Pro 支持高级模型、自动化、内置研究数据，3 个任务并行。",
+        "description": "高级模型 · 自动化 · 3 个任务并行",
         "estimatedTasksLeft_other": "预计还能完成不到 {{count}} 个任务",
         "priceUnavailable": "查看套餐及最新价格",
         "title": "用 Pro 完成更多工作",

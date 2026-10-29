@@ -1689,7 +1689,7 @@
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
       "proCard": {
         "bonusCreditsNow": "बोनस क्रेडिट · अभी",
-        "description": "Pro में उन्नत मॉडल, ऑटोमेशन, अंतर्निहित शोध डेटा और एक साथ 3 टास्क शामिल हैं।",
+        "description": "उन्नत मॉडल · ऑटोमेशन · एक साथ 3 टास्क",
         "estimatedTasksLeft_one": "{{count}} से कम टास्क बचे हैं",
         "estimatedTasksLeft_other": "{{count}} से कम टास्क बचे हैं",
         "priceUnavailable": "मौजूदा कीमतों के लिए प्लान देखें",

@@ -1685,7 +1685,7 @@
       "outOfCredits": "クレジットが不足しています",
       "proCard": {
         "bonusCreditsNow": "ボーナスクレジット · 今すぐ",
-        "description": "Pro なら高度なモデル、自動化、組み込みの調査データが使え、3 件のタスクを同時に実行できます。",
+        "description": "高度なモデル · 自動化 · 3 件同時実行",
         "estimatedTasksLeft_other": "残りのタスクは {{count}} 件未満の見込み",
         "priceUnavailable": "プランで最新の料金を確認",
         "title": "Pro でもっとできる",

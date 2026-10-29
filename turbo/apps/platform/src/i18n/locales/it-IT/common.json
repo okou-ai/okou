@@ -1717,7 +1717,7 @@
       "outOfCredits": "Hai esaurito i crediti",
       "proCard": {
         "bonusCreditsNow": "crediti bonus · Proprio ora",
-        "description": "Pro include modelli avanzati, automazioni, dati di ricerca integrati e 3 attività alla volta.",
+        "description": "Modelli avanzati · Automazioni · 3 attività alla volta",
         "estimatedTasksLeft_one": "Meno di {{count}} attività rimasta",
         "estimatedTasksLeft_many": "Meno di {{count}} attività rimaste",
         "estimatedTasksLeft_other": "Meno di {{count}} attività rimaste",

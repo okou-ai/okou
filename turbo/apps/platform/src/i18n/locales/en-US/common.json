@@ -1689,7 +1689,7 @@
       "outOfCredits": "You're out of credits",
       "proCard": {
         "bonusCreditsNow": "bonus credits · Just now",
-        "description": "Pro includes advanced models, automations, built-in research data, and 3 tasks at once.",
+        "description": "Advanced models · Automations · 3 tasks at once",
         "estimatedTasksLeft_one": "Fewer than {{count}} task left",
         "estimatedTasksLeft_other": "Fewer than {{count}} tasks left",
         "priceUnavailable": "See plans for current pricing",
