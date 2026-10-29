@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.34](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.33...runner-provider-v0.11.34) (2026-10-29)
+
+
+### Bug Fixes
+
+* **runner:** retire invalidated local queue watches ([#43966](https://github.com/okou-ai/okou/issues/43966)) ([6e98e29](https://github.com/okou-ai/okou/commit/6e98e293ecf62ccadf7ee0e4507e8ff25e22986b))
+
 ## [0.11.33](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.32...runner-provider-v0.11.33) (2026-10-29)
 
 

@@ -9,6 +9,89 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.25.0](https://github.com/okou-ai/okou/compare/api-v2.24.0...api-v2.25.0) (2026-10-29)
+
+
+### Features
+
+* **cli:** support file uploads to imessage groups ([#44002](https://github.com/okou-ai/okou/issues/44002)) ([ea08509](https://github.com/okou-ai/okou/commit/ea0850926d622ac4a7a4f7cbe9144af34866dc7e))
+
+
+### Refactoring
+
+* **api:** localize hosted site file signing ([#44007](https://github.com/okou-ai/okou/issues/44007)) ([5c8b615](https://github.com/okou-ai/okou/commit/5c8b615ebd186bf474e10dfeb75dbb1dce9801a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.20.0
+    * @okouai/core bumped to 8.800.3
+    * @okouai/db bumped to 2.11.2
+    * @okouai/pi-agent-runtime bumped to 1.51.22
+
+## [2.24.0](https://github.com/okou-ai/okou/compare/api-v2.23.0...api-v2.24.0) (2026-10-29)
+
+
+### Features
+
+* **cli:** send text to existing imessage groups ([#43990](https://github.com/okou-ai/okou/issues/43990)) ([846f53f](https://github.com/okou-ai/okou/commit/846f53f4c20a2d641d53ad459ec4ac6c729410ac))
+
+
+### Bug Fixes
+
+* configure whatsapp regions and standardize unsupported replies ([#43971](https://github.com/okou-ai/okou/issues/43971)) ([37fffbf](https://github.com/okou-ai/okou/commit/37fffbf81e095bbebee1b5cec13d30a468f3cd80))
+
+
+### Refactoring
+
+* **api:** localize run connector and model snapshot timing ([#43978](https://github.com/okou-ai/okou/issues/43978)) ([e17db34](https://github.com/okou-ai/okou/commit/e17db34d252cf32127d77ad002365122b95e4361))
+* remove hosted site visibility feature switch ([#43947](https://github.com/okou-ai/okou/issues/43947)) ([4aade90](https://github.com/okou-ai/okou/commit/4aade9015eaf2e73d9b63fab530758ca155fed07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.19.0
+    * @okouai/core bumped to 8.800.2
+    * @okouai/db bumped to 2.11.1
+    * @okouai/pi-agent-runtime bumped to 1.51.21
+
+## [2.23.0](https://github.com/okou-ai/okou/compare/api-v2.22.7...api-v2.23.0) (2026-10-29)
+
+
+### Features
+
+* learn from suggestions with per-card feedback storage ([#43771](https://github.com/okou-ai/okou/issues/43771)) ([cefb967](https://github.com/okou-ai/okou/commit/cefb967db3d9b20e83b3f7239815a264975bd2ec)) [#43760](https://github.com/okou-ai/okou/issues/43760)
+
+
+### Bug Fixes
+
+* **api:** remove official identities before workflow automations ([#43952](https://github.com/okou-ai/okou/issues/43952)) ([2a9472b](https://github.com/okou-ai/okou/commit/2a9472b83d4737c002b8cd227b2ec5791ffb7519))
+* **api:** use conversation ids for group imessage typing ([#43939](https://github.com/okou-ai/okou/issues/43939)) ([e67bb39](https://github.com/okou-ai/okou/commit/e67bb39a77fa02e89f620093e1331e3f614bd5ab))
+* **teams:** return connect links for unconnected greetings ([#43941](https://github.com/okou-ai/okou/issues/43941)) ([73a1c2e](https://github.com/okou-ai/okou/commit/73a1c2eed9ae9ab7a355276ed18258ee594a61c2))
+
+
+### Refactoring
+
+* **api:** keep google event source timing in its owning commands ([#43951](https://github.com/okou-ai/okou/issues/43951)) ([252750f](https://github.com/okou-ai/okou/commit/252750f26ba7a69247f682ca9e5be2e8f1bddc66))
+* **api:** remove run settlement audit endpoint ([#43458](https://github.com/okou-ai/okou/issues/43458)) ([d33052b](https://github.com/okou-ai/okou/commit/d33052bb1ff3dfb9e26d053da7ebf4dec52c7a1e))
+* remove hosted site url editing feature switch ([#43937](https://github.com/okou-ai/okou/issues/43937)) ([bd980f4](https://github.com/okou-ai/okou/commit/bd980f407b03e4b513f8d76ead8338433c5d9b38))
+* remove icloud connector feature switch ([#43932](https://github.com/okou-ai/okou/issues/43932)) ([f080c78](https://github.com/okou-ai/okou/commit/f080c7849bb0f52cb74daff61e1c0d06359af3f2))
+* remove thread email manager feature switch ([#43934](https://github.com/okou-ai/okou/issues/43934)) ([4233f42](https://github.com/okou-ai/okou/commit/4233f42b391ba6c96c39c02d0eb5d64c54bc196e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.18.0
+    * @okouai/core bumped to 8.800.1
+    * @okouai/db bumped to 2.11.0
+    * @okouai/pi-agent-runtime bumped to 1.51.20
+
 ## [2.22.7](https://github.com/okou-ai/okou/compare/api-v2.22.6...api-v2.22.7) (2026-10-29)
 
 

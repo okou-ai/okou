@@ -179,34 +179,71 @@ test.each(["(hover: hover)", "(hover: none)"])(
   },
 );
 
-test("restores a completed result until the user plays again", async () => {
-  context.store.set(currentRound$, {
-    ...round(roundIds[0]!),
-    outcome: "success",
-    correct: 5,
-    question: null,
-    questionNumber: 5,
-    feedback: {
-      correct: true,
-      selectedId: "A",
-      explanation: "Oh cool. Okou likes you too!",
-    },
-    completedAt: "2026-10-30T12:05:00Z",
-  });
-  await setupPage({ context, path: "/", featureSwitches: switches });
-  await waitFor(() => {
-    expect(button("Play the Halloween quiz")).toBeInTheDocument();
-  });
-  click(button("Play the Halloween quiz"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Spooky Halloween",
-  });
-  await within(dialog).findByRole("heading", {
-    name: "You passed the quiz!",
-  });
-  click(button("Play again", dialog));
-  await within(dialog).findByRole("heading", { name: question.text });
-});
+test.each(["success", "wrong"] as const)(
+  "restores a completed %s result with outcome-specific actions until replay",
+  async (outcome) => {
+    context.store.set(currentRound$, {
+      ...round(roundIds[0]!),
+      outcome,
+      correct: outcome === "success" ? 5 : 0,
+      question: null,
+      questionNumber: outcome === "success" ? 5 : 1,
+      feedback: {
+        correct: outcome === "success",
+        selectedId: "A",
+        explanation:
+          outcome === "success"
+            ? "Oh cool. Okou likes you too!"
+            : "Okou got you this time...",
+      },
+      completedAt: "2026-10-30T12:05:00Z",
+    });
+    await setupPage({ context, path: "/", featureSwitches: switches });
+    await waitFor(() => {
+      expect(button("Play the Halloween quiz")).toBeInTheDocument();
+    });
+    click(button("Play the Halloween quiz"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Spooky Halloween",
+    });
+    await within(dialog).findByRole("heading", {
+      name: outcome === "success" ? "You passed the quiz!" : "You got tricked!",
+    });
+    const redeem = queryAllByRoleFast("link", dialog).find((element) => {
+      return element.textContent?.trim() === "Redeem";
+    });
+    const email = redeem
+      ? new URL(redeem.getAttribute("href") ?? "")
+      : undefined;
+    expect(
+      email && {
+        protocol: email.protocol,
+        recipient: email.pathname,
+        subject: email.searchParams.get("subject"),
+        body: email.searchParams.get("body"),
+      },
+    ).toStrictEqual(
+      outcome === "success"
+        ? {
+            protocol: "mailto:",
+            recipient: "contact@okou.ai",
+            subject: "Halloween reward redemption",
+            body: [
+              "Hi Okou team,",
+              "",
+              "I passed the Halloween quiz and would like to redeem my 7-day Okou Pro trial.",
+              "",
+              "Okou account email: [Your account email]",
+              "",
+              "Thank you!",
+            ].join("\r\n"),
+          }
+        : undefined,
+    );
+    click(button("Play again", dialog));
+    await within(dialog).findByRole("heading", { name: question.text });
+  },
+);
 
 test("keeps the current question when leaving the round fails", async () => {
   await setupPage({ context, path: "/", featureSwitches: switches });

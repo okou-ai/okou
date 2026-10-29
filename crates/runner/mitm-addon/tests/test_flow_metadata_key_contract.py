@@ -210,8 +210,28 @@ def test_check_flow_metadata_keys_cli_reports_configured_registry_path(tmp_path)
     assert result.stderr == ""
 
 
-@pytest.mark.parametrize("wrapper", ["{}", "tuple(iter(list({})))"])
-def test_check_flow_metadata_keys_cli_bounds_conditional_starred_arguments(tmp_path, wrapper):
+@pytest.mark.parametrize(
+    ("wrapper", "expected_keys"),
+    [
+        ("{}", [(3, "FIREWALL_NAME"), (3, "FIREWALL_ACTION"), (2, "SANDBOX_RUN_ID")]),
+        (
+            "tuple(iter(list({})))",
+            [(3, "FIREWALL_NAME"), (3, "FIREWALL_ACTION"), (2, "SANDBOX_RUN_ID")],
+        ),
+        ("reversed({})", []),
+        ("reversed([*{}, 'sandbox_run_id'])", [(26, "SANDBOX_RUN_ID")]),
+        ("sorted({})", []),
+        (
+            "sorted({}, reverse=True)",
+            [(2, "SANDBOX_RUN_ID"), (3, "FIREWALL_NAME"), (3, "FIREWALL_ACTION")],
+        ),
+        ("set({})", [(2, "SANDBOX_RUN_ID"), (3, "FIREWALL_NAME"), (3, "FIREWALL_ACTION")]),
+        ("frozenset({})", [(2, "SANDBOX_RUN_ID"), (3, "FIREWALL_NAME"), (3, "FIREWALL_ACTION")]),
+    ],
+)
+def test_check_flow_metadata_keys_cli_bounds_conditional_starred_arguments(
+    tmp_path, wrapper, expected_keys
+):
     addon_root = tmp_path / "mitm-addon"
     check_script = _copy_linter_scripts(addon_root)
     src_root = addon_root / "src"
@@ -245,13 +265,10 @@ def test_check_flow_metadata_keys_cli_bounds_conditional_starred_arguments(tmp_p
         timeout_seconds=_COMPLEX_STAR_ARGS_TIMEOUT_SECONDS,
     )
 
-    assert result.returncode == 1
-    assert result.stdout == (
-        "tests/complex_star_args.py:3: use metadata_keys.FIREWALL_NAME "
-        "for flow.metadata access\n"
-        "tests/complex_star_args.py:3: use metadata_keys.FIREWALL_ACTION "
-        "for flow.metadata access\n"
-        "tests/complex_star_args.py:2: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access\n"
+    assert result.returncode == (1 if expected_keys else 0)
+    assert result.stdout == "".join(
+        f"tests/complex_star_args.py:{line}: use metadata_keys.{key} for flow.metadata access\n"
+        for line, key in expected_keys
     )
     assert result.stderr == ""
 
@@ -422,6 +439,67 @@ def test_registered_flow_metadata_guard_preserves_wrapped_iterable_first_argumen
     assert _normalized_violations(source_path, violations) == _expected_lines(
         "wrapped_iterable_first_arguments.expected.txt"
     )
+
+
+@pytest.mark.parametrize("wrapper", ["reversed", "sorted", "set", "frozenset"])
+@pytest.mark.parametrize("method", ["get", "pop", "setdefault"])
+@pytest.mark.parametrize(
+    ("key", "reports_key"),
+    [('"sandbox_run_id"', True), ("metadata_keys.SANDBOX_RUN_ID", False)],
+)
+def test_registered_flow_metadata_guard_projects_reordered_singleton_keys(
+    tmp_path, wrapper, method, key, reports_key
+):
+    source_path = tmp_path / "singleton.py"
+    source_path.write_text(f"flow.metadata.{method}(*{wrapper}([{key}]))\n", encoding="utf-8")
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == (
+        ["singleton.py:1: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access"]
+        if reports_key
+        else []
+    )
+
+
+def test_registered_flow_metadata_guard_preserves_reordered_first_arguments(tmp_path):
+    source_path = tmp_path / "reordered_iterable_first_arguments.py"
+    _write_python_source(source_path, "reordered_iterable_first_arguments.base.py.txt")
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == _expected_lines(
+        "reordered_iterable_first_arguments.expected.txt"
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("reversed_key", "registered"),
+        ("reversed_default", "external"),
+        ("nested_reversal", "external"),
+        ("reversed_sorted_key", "registered"),
+        ("sorted_key", "registered"),
+        ("sorted_default", "external"),
+        ("sorted_reverse_key", "registered"),
+        ("sorted_reverse_default", "external"),
+        ("reversed_mapping_default", "external"),
+    ],
+)
+def test_reordered_first_argument_fixture_matches_runtime_key(case, expected):
+    namespace = runpy.run_path(
+        str(_FIXTURE_ROOT / "reordered_iterable_first_arguments.base.py.txt")
+    )
+    flow = SimpleNamespace(
+        metadata={
+            "sandbox_run_id": "registered",
+            "external_key": "external",
+            "z_external_key": "external",
+        }
+    )
+
+    assert namespace[case](flow) == expected
 
 
 def test_registered_flow_metadata_guard_flags_composed_iterables(tmp_path):

@@ -2,6 +2,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   integrationsAgentPhoneContract,
   type AgentPhoneGroupHistoryQuery,
+  type SendAgentPhoneGroupMessageBody,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import {
   integrationsPhoneMessageContract,
@@ -56,6 +57,18 @@ export async function sendPhoneMessage(
   handleError(result, "Failed to send phone message");
 }
 
+export async function sendAgentPhoneGroupMessage(
+  body: SendAgentPhoneGroupMessageBody,
+) {
+  const config = await getClientConfig();
+  const client = initClient(integrationsAgentPhoneContract, config);
+  const result = await client.groupMessage({ body, headers: {} });
+  if (result.status === 200) {
+    return result.body;
+  }
+  handleError(result, "Failed to send iMessage group message");
+}
+
 export async function initPhoneFileUpload(
   body: PhoneUploadInitBody,
 ): Promise<PhoneUploadInitResponse> {
@@ -72,12 +85,17 @@ export async function initPhoneFileUpload(
 }
 
 export async function completePhoneFileUpload(
-  body: PhoneUploadCompleteBody,
+  body: PhoneUploadCompleteBody & { groupId?: string },
 ): Promise<PhoneUploadCompleteResponse> {
   const config = await getClientConfig();
   const client = initClient(integrationsPhoneUploadCompleteContract, config);
 
-  const result = await client.complete({ body, headers: {} });
+  const result = body.groupId
+    ? await client.completeGroup({
+        body: { ...body, groupId: body.groupId },
+        headers: {},
+      })
+    : await client.complete({ body, headers: {} });
 
   if (result.status === 200) {
     return result.body;

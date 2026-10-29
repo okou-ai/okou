@@ -409,6 +409,82 @@ async fn invalid_client_and_server_identifications_never_return_a_stream() {
 }
 
 #[test]
+fn identity_enforces_aggregate_certificate_byte_budget() {
+    const MAX_DER_BYTES: usize = 64 * 1024;
+
+    // Ed25519 signatures have a fixed encoded length, so padding determines size.
+    let issuer_key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519).unwrap();
+    let mut issuer_params = rcgen::CertificateParams::default();
+    issuer_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    issuer_params.key_usages = vec![rcgen::KeyUsagePurpose::KeyCertSign];
+    let leaf_key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519).unwrap();
+    let mut leaf_params =
+        rcgen::CertificateParams::new(vec!["client.example.test".into()]).unwrap();
+    leaf_params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ClientAuth];
+    let leaf = leaf_params
+        .signed_by(
+            &leaf_key,
+            &rcgen::Issuer::from_params(&issuer_params, &issuer_key),
+        )
+        .unwrap();
+    let padded_issuer = |padding_len: usize| {
+        // A DER OCTET STRING in an unknown, noncritical extension.
+        let mut content = vec![0x04, 0x82];
+        content.extend_from_slice(&u16::try_from(padding_len).unwrap().to_be_bytes());
+        content.resize(4 + padding_len, 0);
+        let mut params = issuer_params.clone();
+        params
+            .custom_extensions
+            .push(rcgen::CustomExtension::from_oid_content(
+                &[1, 2, 3, 4],
+                content,
+            ));
+        params.self_signed(&issuer_key).unwrap().der().clone()
+    };
+
+    // Keep both encodings in the same DER length width; measure metadata overhead.
+    let initial_padding = 32 * 1024;
+    let initial_size = leaf.der().len() + padded_issuer(initial_padding).len();
+    let provider = rustls::crypto::aws_lc_rs::default_provider();
+    for extra in [0, 1] {
+        let total = MAX_DER_BYTES + extra;
+        let chain = vec![
+            leaf.der().clone(),
+            padded_issuer(initial_padding + total - initial_size),
+        ];
+        assert_eq!(chain.iter().map(|cert| cert.len()).sum::<usize>(), total);
+        // Neither certificate alone exceeds the budget: this must be aggregate.
+        assert!(chain.iter().all(|cert| cert.len() < MAX_DER_BYTES));
+        for certificate in &chain {
+            rustls::server::ParsedCertificate::try_from(certificate).unwrap();
+        }
+        let certified = rustls::sign::CertifiedKey::from_der(
+            chain.clone(),
+            PrivatePkcs8KeyDer::from(leaf_key.serialize_der()).into(),
+            &provider,
+        )
+        .unwrap();
+        certified.keys_match().unwrap();
+
+        let identity = ClientIdentity::from_pkcs8_der(
+            chain,
+            PrivatePkcs8KeyDer::from(leaf_key.serialize_der()),
+        );
+        if extra == 0 {
+            assert!(
+                identity.is_ok(),
+                "exactly 64 KiB must be accepted: {identity:?}"
+            );
+        } else {
+            assert!(
+                matches!(identity, Err(Error::InvalidClientIdentity)),
+                "64 KiB + 1 byte must be rejected: {identity:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn identity_rejects_malformed_oversized_and_mismatched_keys() {
     let fixture = Fixture::new(false, true, false, false);
     let invalid = |chain: Vec<CertificateDer<'static>>, key: Vec<u8>| {
@@ -426,13 +502,6 @@ fn identity_rejects_malformed_oversized_and_mismatched_keys() {
         invalid(
             vec![fixture.client_certificate.clone()],
             vec![0; 16 * 1024 + 1]
-        ),
-        Error::InvalidClientIdentity
-    ));
-    assert!(matches!(
-        invalid(
-            vec![CertificateDer::from(vec![0; 64 * 1024 + 1])],
-            fixture.client_key.clone()
         ),
         Error::InvalidClientIdentity
     ));

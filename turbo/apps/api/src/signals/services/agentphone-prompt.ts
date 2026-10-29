@@ -5,6 +5,7 @@ export function buildAgentPhonePrompt(
     readonly sharedNumber: string;
     readonly phoneHandle: string;
     readonly conversationId?: string | null;
+    readonly groupId?: string | null;
     readonly channel?: string | null;
     readonly isGroup?: boolean;
     readonly messageId?: string;
@@ -32,13 +33,18 @@ export function buildAgentPhonePrompt(
   if (opts.conversationId) {
     headerParts.push(`Conversation ID: ${opts.conversationId}`);
   }
+  if (opts.isGroup && opts.groupId) {
+    headerParts.push(`Group ID: ${opts.groupId}`);
+  }
   if (opts.messageId) {
     headerParts.push(`Message ID: ${opts.messageId}`);
   }
   return [
     CONVERSATION_GUIDANCE,
     headerParts.join("\n"),
-    integrationNote,
+    opts.channel !== "whatsapp" && opts.isGroup && opts.groupId
+      ? `${integrationNote}\n- For an explicitly requested additional text message to this group, use \`okou imessage message send --to ${opts.groupId} --text "message"\`. Your final reply is delivered automatically; do not send it again with the CLI.`
+      : integrationNote,
     threadContext,
   ]
     .filter(Boolean)

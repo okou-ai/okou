@@ -1771,9 +1771,6 @@ describe("canonical Discord ingress", () => {
       (await postDiscordGatewayEnvelope(context, removed)).body.outcome,
     ).toBe("ignored");
     await flushWaitUntilForTest();
-    expect(channelsPublishedTo(context.mocks, "discord:changed")).toStrictEqual(
-      [],
-    );
     expect(context.mocks.ably.publish).not.toHaveBeenCalled();
     await expect(discordStatus(actor)).resolves.toMatchObject({
       isConnected: true,

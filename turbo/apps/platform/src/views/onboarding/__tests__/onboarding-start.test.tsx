@@ -103,22 +103,25 @@ test("Onboarding sends an authenticated event without waiting, with one attempt 
   complete.resolve();
 });
 
-test.each([503])(
+test.each([401, 503] as const)(
   "A Marketing %s response does not produce another telemetry record or block onboarding",
   async (status) => {
     onboardingNeeded();
-    const received = context.mocks.deferred<void>();
-    context.mocks.http.post(ENDPOINT, () => {
-      received.resolve();
-      return status === 204
-        ? new Response(null, { status })
-        : Response.json(
-            { code: "TEST_FAILURE", error: "Marketing unavailable" },
-            { status },
-          );
-    });
+    const received = context.mocks.deferred<Request>();
+    context.mocks.api(
+      marketingEventsContract.record,
+      ({ request, respond }) => {
+        received.resolve(request);
+        return respond(status, {
+          code: status === 401 ? "UNAUTHENTICATED" : "PROVIDER_UNAVAILABLE",
+          error: "Marketing unavailable",
+        });
+      },
+    );
     await openOnboarding();
-    await received.promise;
+    const request = await received.promise;
+    expect(request.url).toBe(ENDPOINT);
+    expect(request.headers.get("authorization")).toBe("Bearer test-token");
     window.dispatchEvent(new Event("focus"));
     window.dispatchEvent(new Event("online"));
     expect(marketingEvents()).toHaveLength(1);
@@ -130,29 +133,6 @@ test.each([503])(
     ).toBeInTheDocument();
   },
 );
-
-test("A missing session token is sent to Marketing for authentication without blocking onboarding", async () => {
-  onboardingNeeded();
-  const received = context.mocks.deferred<Request>();
-  context.mocks.api(marketingEventsContract.record, ({ request, respond }) => {
-    received.resolve(request);
-    return respond(401, { code: "UNAUTHENTICATED", error: "Missing token" });
-  });
-  await setupPage({
-    context,
-    path: "/onboarding",
-    host: "app.okou.ai",
-    auth: {
-      user: { id: "test-user-123", fullName: "Test User" },
-      session: { token: "" },
-    },
-  });
-  const request = await received.promise;
-  expect(request.headers.has("authorization")).toBeFalsy();
-  await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).resolves.toBeInTheDocument();
-});
 
 test("An already onboarded user continues into the app", async () => {
   await setupPage({

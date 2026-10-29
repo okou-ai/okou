@@ -4,6 +4,7 @@ use crate::common;
 
 use base64::Engine as _;
 use serde_json::{Value, json};
+use std::io::{BufWriter, Write};
 use std::time::Duration;
 use tokio::process::Command;
 
@@ -43,7 +44,8 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     result["result"] = large_text("result");
     let mut tail = json!({"type":"result","subtype":"success","session_id":SESSION_ID,"is_error":false,"result":"final native result","protectedMetadata":null});
     tail["protectedMetadata"] = Value::String("protected-tail-".repeat(LIMIT / 12));
-    let mut source = Vec::new();
+    // Batch the serializer's small escaped-string writes into canonical JSONL.
+    let mut source = BufWriter::new(Vec::new());
     for event in [
         json!({"type":"system","subtype":"init","session_id":SESSION_ID,"model":"mock-claude"}),
         json!({"type":"assistant","message":{"id":"ordinary","role":"assistant","content":[{"type":"text","text":"ordinary text"}]}}),
@@ -57,8 +59,9 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
         tail,
     ] {
         serde_json::to_writer(&mut source, &event)?;
-        source.push(b'\n');
+        source.write_all(b"\n")?;
     }
+    let source = source.into_inner()?;
     let source_path = tmp.path().join("original.jsonl");
     std::fs::write(&source_path, &source)?;
     let mut prompt = b"@ECHO@\n".to_vec();

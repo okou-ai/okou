@@ -1,5 +1,49 @@
 # Changelog
 
+## [8.800.3](https://github.com/okou-ai/okou/compare/core-v8.800.2...core-v8.800.3) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.20.0
+
+## [8.800.2](https://github.com/okou-ai/okou/compare/core-v8.800.1...core-v8.800.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* update okou social sharing image ([#43980](https://github.com/okou-ai/okou/issues/43980)) ([eaa1bc7](https://github.com/okou-ai/okou/commit/eaa1bc7732ce2fe040605c3ef8f0bdd1cd7bc4da))
+
+
+### Refactoring
+
+* remove hosted site visibility feature switch ([#43947](https://github.com/okou-ai/okou/issues/43947)) ([4aade90](https://github.com/okou-ai/okou/commit/4aade9015eaf2e73d9b63fab530758ca155fed07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.19.0
+
+## [8.800.1](https://github.com/okou-ai/okou/compare/core-v8.800.0...core-v8.800.1) (2026-10-29)
+
+
+### Refactoring
+
+* remove hosted site url editing feature switch ([#43937](https://github.com/okou-ai/okou/issues/43937)) ([bd980f4](https://github.com/okou-ai/okou/commit/bd980f407b03e4b513f8d76ead8338433c5d9b38))
+* remove icloud connector feature switch ([#43932](https://github.com/okou-ai/okou/issues/43932)) ([f080c78](https://github.com/okou-ai/okou/commit/f080c7849bb0f52cb74daff61e1c0d06359af3f2))
+* remove thread email manager feature switch ([#43934](https://github.com/okou-ai/okou/issues/43934)) ([4233f42](https://github.com/okou-ai/okou/commit/4233f42b391ba6c96c39c02d0eb5d64c54bc196e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.18.0
+
 ## [8.800.0](https://github.com/okou-ai/okou/compare/core-v8.799.3...core-v8.800.0) (2026-10-29)
 
 

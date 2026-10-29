@@ -226,11 +226,10 @@ pub struct CliExecutionResult {
     /// signal termination is mapped to `128 + signal`, matching shell
     /// convention, so SIGKILL is reported as `137`.
     ///
-    /// For Pi execution, this starts with the mapped CLI process exit code.
-    /// In RPC runs, a terminal JSONL `Error` result overrides it to `1`, even
-    /// when the child process exits with `0`; `cli_observed_exit` retains the
-    /// raw process exit observation. Non-RPC Pi runs keep the mapped process
-    /// exit code.
+    /// For Pi RPC execution, this starts with the mapped CLI process exit code.
+    /// A terminal JSONL `Error` result overrides it to `1`, even when the child
+    /// process exits with `0`; `cli_observed_exit` retains the raw process exit
+    /// observation.
     ///
     /// For Codex app-server execution, completed turns map to `0`, while failed
     /// or interrupted turns and terminal non-retry errors map to `1`. These are
@@ -1229,12 +1228,11 @@ async fn execute_cli_inner(
             .await
     });
 
-    let pi_rpc_execution = pi_execution;
     let (pi_rpc_response_tx, pi_rpc_response_rx) = pi_rpc::response_channel();
     let (pi_rpc_startup_tx, pi_rpc_startup_rx) = tokio::sync::oneshot::channel();
-    let mut pi_rpc_startup_tx = pi_rpc_execution.then_some(pi_rpc_startup_tx);
+    let mut pi_rpc_startup_tx = pi_execution.then_some(pi_rpc_startup_tx);
     let pi_rpc_cancellation = CancellationToken::new();
-    let pi_session_output = pi_rpc_execution
+    let pi_session_output = pi_execution
         .then(|| {
             pi_session_output::start(
                 http.clone(),
@@ -1247,7 +1245,7 @@ async fn execute_cli_inner(
             )
         })
         .flatten();
-    let mut pi_rpc_projection = pi_rpc_execution.then(|| {
+    let mut pi_rpc_projection = pi_execution.then(|| {
         let projection =
             pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref())
                 .with_active_input(active_input_controller.clone());
@@ -1256,13 +1254,13 @@ async fn execute_cli_inner(
             None => projection,
         }
     });
-    let mut pi_rpc_startup_boundary = pi_rpc_execution.then(pi_rpc::PiRpcStartupBoundary::default);
+    let mut pi_rpc_startup_boundary = pi_execution.then(pi_rpc::PiRpcStartupBoundary::default);
     let mut stdin_write_handle = Some({
         let run_id = runtime.run_id.to_string();
         let prompt = runtime.prompt.to_string();
         let pi_rpc_cancellation = pi_rpc_cancellation.clone();
         tokio::spawn(async move {
-            if pi_rpc_execution {
+            if pi_execution {
                 pi_rpc::write_commands(
                     cli_stdin,
                     &run_id,
@@ -1273,9 +1271,6 @@ async fn execute_cli_inner(
                     pi_rpc_cancellation,
                 )
                 .await
-            } else if pi_execution {
-                drop(cli_stdin);
-                Ok(())
             } else {
                 drop(pi_rpc_response_rx);
                 write_claude_stream_json_to_stdin(cli_stdin, &run_id, &prompt, active_input).await
@@ -1391,7 +1386,7 @@ async fn execute_cli_inner(
                     CliExitObservation::ExitedAndStdoutClosed => break Ok(()),
                 }
                 user_cancellation_handled = true;
-                if pi_rpc_execution {
+                if pi_execution {
                     pi_user_cancelled = true;
                     active_input_controller.close_terminal();
                     pi_rpc_cancellation.cancel();
@@ -1749,7 +1744,7 @@ async fn execute_cli_inner(
                                 }
                                 let active_input_idle =
                                     active_input_controller.close_for_result_if_idle();
-                                if pi_rpc_execution && active_input_idle {
+                                if pi_execution && active_input_idle {
                                     active_input_controller.close_terminal();
                                 }
                                 // Arm the post-result reap deadline once per
@@ -2190,8 +2185,7 @@ async fn execute_cli_inner(
         );
     }
     let (mut exit_code, cli_observed_exit) = cli_exit_summary_from_status(&status);
-    if pi_rpc_execution
-        && jsonl_result.is_some_and(|result| result.status == JsonlResultStatus::Error)
+    if pi_execution && jsonl_result.is_some_and(|result| result.status == JsonlResultStatus::Error)
     {
         exit_code = 1;
     }

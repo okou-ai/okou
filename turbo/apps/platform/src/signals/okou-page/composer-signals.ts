@@ -31,19 +31,8 @@ import {
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import type { DraftSignals, ChatAttachment } from "./chat-draft.ts";
 import { createComposerFeedbackModel } from "./chat-feedback.ts";
-import type { ChatEvent } from "../chat-page/chat-event-types.ts";
-import {
-  deriveRunIndicatorStateFromChatEvents,
-  lastAssistantCancelledFromGroups,
-  queuedEventsFromSemanticEvents,
-  runningModelSelectionFromChatEvents,
-  type ChatRunModelSelection,
-} from "../chat-page/chat-event-state.ts";
-import {
-  groupSemanticChatEvents,
-  isUsageEvent,
-  semanticChatEventsFromChatEvents,
-} from "@okouai/api-contracts/contracts/chat-event-semantics";
+import type { ChatRunModelSelection } from "../chat-page/chat-event-state.ts";
+import type { ChatEventProjectionSignals } from "../chat-page/chat-event-projection-signals.ts";
 import {
   createEditorDocumentSnapshot,
   messageDocumentToDisplayText,
@@ -298,7 +287,10 @@ interface CreateComposerSignalsOptions {
     readonly load$: ComposerDraftSignals["load$"];
     readonly save$: ComposerDraftSignals["save$"];
   };
-  readonly chatEvents$: Computed<ChatEvent[]>;
+  readonly eventSignals: Pick<
+    ChatEventProjectionSignals,
+    "sending$" | "hasEvents$" | "queuedEvents$" | "runningModelSelection$"
+  >;
   readonly threadId?: string;
   readonly pendingRemoteAccess?: ReturnType<
     typeof createPendingRemoteAccessSignals
@@ -541,7 +533,7 @@ function composerRemoteAccessSignals(
 export function createComposerSignals(
   options: CreateComposerSignalsOptions,
 ): ComposerSignals {
-  const eventSignals = createComposerChatEventSignals(options.chatEvents$);
+  const eventSignals = createComposerChatEventSignals(options.eventSignals);
   const draft = options.draft.signals;
   const agentId$ = computed((): string => {
     return options.agentId;
@@ -690,48 +682,19 @@ function pendingAutomationEventText(
   return (messageDocumentToDisplayText(userMessage) ?? "").trim();
 }
 
-function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
-  const semanticEvents$ = computed((get) => {
-    return semanticChatEventsFromChatEvents(get(chatEvents$));
-  });
-  const semanticGroups$ = computed((get) => {
-    return groupSemanticChatEvents(get(semanticEvents$));
-  });
-  const hasEvents$ = computed((get): Promise<boolean> => {
-    return Promise.resolve(
-      get(semanticEvents$).some((entry) => {
-        return !isUsageEvent(entry.event);
-      }),
-    );
-  });
-  const runIndicatorState$ = computed((get) => {
-    return deriveRunIndicatorStateFromChatEvents(get(chatEvents$));
-  });
-  const runningModelSelection$ = computed(
-    (get): Promise<ChatRunModelSelection | null> => {
-      return Promise.resolve(
-        runningModelSelectionFromChatEvents(get(chatEvents$)),
-      );
-    },
-  );
-  const sending$ = computed((get): Promise<boolean> => {
-    const running = get(runIndicatorState$) !== null;
-    const lastAssistantCancelled = lastAssistantCancelledFromGroups(
-      get(semanticGroups$),
-    );
-    return Promise.resolve(running && !lastAssistantCancelled);
-  });
+function createComposerChatEventSignals(
+  events: CreateComposerSignalsOptions["eventSignals"],
+) {
+  const { hasEvents$, sending$, runningModelSelection$ } = events;
   const actionsLoading$ = computed(async (get): Promise<boolean> => {
     await get(hasEvents$);
     return false;
   });
-  // Queue order is FIFO by seqId: chatEvents$ lists persisted events by seqId,
-  // then still-sending optimistic events in their local order. Prompts and
-  // automation inputs share one order and must not be regrouped by kind.
+  // The thread owns queue selection and ordering; the composer formats labels.
   const pendingEvents$ = computed(
     (get): Promise<readonly ComposerPendingEvent[]> => {
       return Promise.resolve(
-        queuedEventsFromSemanticEvents(get(semanticEvents$)).map((event) => {
+        get(events.queuedEvents$).map((event) => {
           return event.eventType === "input.automation"
             ? {
                 kind: "automation" as const,

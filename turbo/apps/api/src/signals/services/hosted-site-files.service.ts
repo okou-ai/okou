@@ -34,31 +34,35 @@ export const signHostedSiteFiles$ = command(
       return a.path.localeCompare(b.path);
     });
     const grant = await set(createHostedSiteDownloadGrant$, args, signal);
-    const files = await Promise.all(
-      manifestFiles.map(async (file) => {
-        if (grant) {
-          const url = new URL(grant);
-          url.searchParams.set("path", file.path);
-          return { ...file, downloadUrl: url.href };
-        }
-        const downloadUrl = await get(
-          generateHostedSitesPresignedGetUrl(
-            bucket,
-            `${args.prefix}${file.path}`,
-            true,
-            args.attachment
-              ? {
-                  filename: file.path.slice(file.path.lastIndexOf("/") + 1),
-                  responseCacheControl: "private, no-store",
-                  signingDate: nowDate(),
-                }
-              : undefined,
-          ),
-        );
-        signal.throwIfAborted();
-        return { ...file, downloadUrl };
-      }),
-    );
+    const fileRequests = [];
+    for (const file of manifestFiles) {
+      fileRequests.push(
+        (async () => {
+          if (grant) {
+            const url = new URL(grant);
+            url.searchParams.set("path", file.path);
+            return { ...file, downloadUrl: url.href };
+          }
+          const downloadUrl = await get(
+            generateHostedSitesPresignedGetUrl(
+              bucket,
+              `${args.prefix}${file.path}`,
+              true,
+              args.attachment
+                ? {
+                    filename: file.path.slice(file.path.lastIndexOf("/") + 1),
+                    responseCacheControl: "private, no-store",
+                    signingDate: nowDate(),
+                  }
+                : undefined,
+            ),
+          );
+          signal.throwIfAborted();
+          return { ...file, downloadUrl };
+        })(),
+      );
+    }
+    const files = await Promise.all(fileRequests);
     signal.throwIfAborted();
     return {
       ...args.metadata,

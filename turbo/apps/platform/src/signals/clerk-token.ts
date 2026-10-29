@@ -87,3 +87,15 @@ export async function readClerkToken(
     signal,
   );
 }
+
+export async function ensureClerkToken(
+  clerk: ClerkTokenSource,
+  signal?: AbortSignal,
+  options: { readonly skipCache?: true } = {},
+): Promise<string> {
+  const token = await readClerkToken(clerk, signal, options);
+  if (!token) {
+    throw new Error("Clerk token is unavailable");
+  }
+  return token;
+}

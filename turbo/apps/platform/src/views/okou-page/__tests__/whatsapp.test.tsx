@@ -67,7 +67,7 @@ test("WhatsApp connects with the same shared number and a prefilled code, update
   expect(within(dialog).getByText("12345678")).toBeInTheDocument();
   expect(
     within(dialog).getByText(
-      "Available for WhatsApp numbers in the European Economic Area, Brazil and Türkiye.",
+      "WhatsApp availability is subject to Meta's policies.",
     ),
   ).toBeInTheDocument();
   linked = true;

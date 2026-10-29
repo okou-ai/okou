@@ -16,6 +16,7 @@ import { testContext } from "../../__tests__/test-helpers.ts";
 import { notifyChatEventsChanged$ } from "../chat-event-change-registry.ts";
 import type { ChatEvent } from "../chat-event-types.ts";
 import { createSessionOutputStreamSignals } from "../session-output-stream.ts";
+import { createChatEventProjectionSignals } from "../chat-event-projection-signals.ts";
 
 const context = testContext();
 
@@ -103,7 +104,10 @@ test("A run change during channel attachment keeps only the latest run subscribe
   const chatEvents$ = computed((get) => {
     return get(events$);
   });
-  const signals = createSessionOutputStreamSignals(THREAD_ID, chatEvents$);
+  const signals = createSessionOutputStreamSignals(THREAD_ID, {
+    chatEvents$,
+    ...createChatEventProjectionSignals(chatEvents$),
+  });
   const resetViewer$ = resetSignal();
   const viewerSignal = context.store.set(resetViewer$, context.signal);
   const attaching = context.mocks.ably.deferSubscribeOnChannel(
@@ -162,7 +166,10 @@ test("Cancelling an obsolete viewer cannot stop its replacement subscription", a
   const chatEvents$ = computed((get) => {
     return get(events$);
   });
-  const signals = createSessionOutputStreamSignals(THREAD_ID, chatEvents$);
+  const signals = createSessionOutputStreamSignals(THREAD_ID, {
+    chatEvents$,
+    ...createChatEventProjectionSignals(chatEvents$),
+  });
   const resetPreviousViewer$ = resetSignal();
   const resetCurrentViewer$ = resetSignal();
   const previousSignal = context.store.set(

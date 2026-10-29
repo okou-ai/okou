@@ -1,14 +1,7 @@
-import { Button, cn, DialogClose } from "@okouai/ui";
+import { Button, buttonVariants, cn, DialogClose } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  Command,
-  RotateCcw,
-  Sparkle,
-  Zap,
-} from "lucide-react";
+import { ArrowUpRight, Command, Sparkle, Zap } from "lucide-react";
 import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import { halloweenConfetti$ } from "../../signals/halloween/halloween-motion.ts";
 import {
@@ -54,61 +47,62 @@ function Confetti() {
 
 function ResultTasks({ won }: { readonly won: boolean }) {
   const copy = useHalloweenCopy();
-  const icons = [Sparkle, Command, Zap];
+  const destinations = [
+    {
+      Icon: Sparkle,
+      pathname: "/",
+      searchParams: new URLSearchParams({ prompt: copy.tasks[0].prompt }),
+    },
+    {
+      Icon: Command,
+      pathname: "/connectors",
+      searchParams: undefined,
+    },
+    {
+      Icon: Zap,
+      pathname: "/",
+      searchParams: new URLSearchParams({ templatePicker: "slides" }),
+    },
+  ] as const;
   return (
-    <section className="mt-8 w-full max-w-[820px] text-left">
-      <div className="mb-5 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1.5 text-center">
+    <section className="min-w-0">
+      <div className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm leading-5">
         {won ? (
           <>
-            <h2 className={cn("text-[#e9e8e5]", typography.labelClassName)}>
-              {copy.taskTitle}
-            </h2>
-            <p className={cn("text-[#8e9fb6]", typography.labelClassName)}>
-              {copy.taskSub}
-            </p>
+            <h2 className="font-medium text-[#e9e8e5]">{copy.taskTitle}</h2>
+            <p className="text-[#8e9fb6]">{copy.taskSub}</p>
           </>
         ) : (
-          <p className={cn("text-[#8e9fb6]", typography.labelClassName)}>
-            {copy.lostTaskTitle}
-          </p>
+          <p className="text-[#8e9fb6]">{copy.lostTaskTitle}</p>
         )}
       </div>
-      <div className="grid gap-3 md:grid-cols-3 md:gap-4">
+      <div className="grid gap-3">
         {copy.tasks.map((task, index) => {
-          const Icon = icons[index]!;
+          const { Icon, pathname, searchParams } = destinations[index]!;
           return (
             <DialogClose
               key={task.title}
               nativeButton={false}
               render={
                 <Link
-                  pathname="/"
-                  options={{
-                    searchParams: task.prompt
-                      ? new URLSearchParams({ prompt: task.prompt })
-                      : undefined,
-                  }}
-                  className="group relative flex items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[linear-gradient(145deg,#ffffff07,#ffffff02)] p-4 pr-9 text-left transition-all duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07] motion-safe:hover:-translate-y-0.5 md:flex-col md:items-start md:gap-4 md:rounded-3xl md:p-5"
+                  pathname={pathname}
+                  options={{ searchParams }}
+                  className="group grid min-h-[84px] min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_1rem] items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[#ffffff03] px-5 py-4 text-left transition-colors duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07]"
                 />
               }
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#e8c68d1a] bg-[#e8c68d08] text-[#dbbc89]">
+              <span className="flex size-9 items-center justify-center rounded-xl border border-[#e8c68d1a] bg-[#e8c68d08] text-[#dbbc89]">
                 <Icon className="size-[18px]" />
               </span>
-              <div>
-                <h3
-                  className={cn(
-                    "mb-1.5 text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]",
-                    typography.labelClassName,
-                  )}
-                >
+              <div className="min-w-0">
+                <h3 className="text-sm font-medium leading-5 text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]">
                   {task.title}
                 </h3>
-                <p className={cn("text-[#92a3bb]", typography.bodyClassName)}>
+                <p className="mt-1 text-sm leading-5 text-[#92a3bb]">
                   {task.text}
                 </p>
               </div>
-              <ArrowUpRight className="absolute right-4 top-4 size-3.5 text-[#71849e] transition-colors group-hover:text-[#e8c68d] md:right-5 md:top-5" />
+              <ArrowUpRight className="size-4 text-[#71849e] transition-colors group-hover:text-[#e8c68d]" />
             </DialogClose>
           );
         })}
@@ -128,65 +122,65 @@ export function HalloweenResultScreen() {
   return (
     <>
       {won && <Confetti />}
-      <main className="relative z-10 mx-auto flex w-[calc(100%-40px)] max-w-[880px] flex-1 flex-col items-center justify-center py-10 pb-12 text-center md:w-[calc(100%-96px)]">
-        <div
-          className="mb-6 flex size-14 items-center justify-center rounded-full border border-[#e8c68d33] bg-[radial-gradient(circle_at_50%_0,#e8c68d15,#e8c68d03)] text-[#e8c68d] shadow-[0_0_40px_#e8c68d08]"
-          aria-hidden="true"
-        >
-          {won ? (
-            <Sparkle className="size-6" />
-          ) : (
-            <RotateCcw className="size-5" />
-          )}
-        </div>
-        <h1
-          className={cn(
-            "mb-3 text-balance text-[#f4f1eb]",
-            typography.titleClassName,
-          )}
-        >
-          {won ? copy.won : copy.lost}
-        </h1>
-        <p className={cn("text-[#95a6be]", typography.bodyClassName)}>
-          {won ? copy.wonSub : copy.lostSub}
-        </p>
-        <p
-          className={cn(
-            "text-[#95a6be]",
-            typography.bodyClassName,
-            won ? "mt-5" : "mt-6",
-          )}
-        >
-          <strong className={cn("text-[#e8c68d]", typography.bodyClassName)}>
-            {won ? copy.resultRewardEmphasis : copy.lostRewardEmphasis}
-          </strong>
-          <br />
-          {won ? copy.resultRewardRest : copy.lostRewardRest}
-        </p>
-        <ResultTasks won={won} />
-        <div className="mt-7 flex w-full max-w-[360px] flex-col items-stretch gap-3 md:w-auto md:max-w-none md:flex-row">
-          <DialogClose render={<Button className={goldButton} />}>
-            {copy.magic}
-            <ArrowRight className="size-4" />
-          </DialogClose>
-          {phase === "open" && (
-            <Button
-              variant="quiet"
+      <main className="relative z-10 flex w-full flex-1 flex-col">
+        <div className="grid flex-1 gap-10 px-6 py-8 md:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)] md:items-start md:gap-12 md:px-10 md:py-12">
+          <section className="min-w-0">
+            <h1
               className={cn(
-                "h-auto min-h-12 gap-3 rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-[#b9c5d6] transition-all duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]",
-                typography.labelClassName,
+                "text-balance text-[#f4f1eb]",
+                typography.titleClassName,
+                "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
               )}
-              pending={operation.state === "loading"}
-              onClick={() => {
-                detach(replay(signal), Reason.DomCallback);
-              }}
             >
-              {copy.again}
-              <RotateCcw className="size-4" />
-            </Button>
-          )}
+              {won ? copy.won : copy.lost}
+            </h1>
+            <p className={cn("mt-2 text-[#95a6be]", typography.bodyClassName)}>
+              {won ? copy.wonSub : copy.lostSub}
+            </p>
+            <p className="mt-6 text-sm leading-6 text-[#95a6be]">
+              <strong className="font-medium text-[#e8c68d]">
+                {won ? copy.resultRewardEmphasis : copy.lostRewardEmphasis}
+              </strong>
+              <br />
+              {won ? copy.resultRewardRest : copy.lostRewardRest}
+            </p>
+            <div className="mt-7 flex flex-wrap items-stretch gap-3">
+              {won && (
+                <a
+                  href={`mailto:contact@okou.ai?subject=${encodeURIComponent(copy.redeemEmailSubject)}&body=${encodeURIComponent(copy.redeemEmailBody.replaceAll("\n", "\r\n"))}`}
+                  className={cn(
+                    buttonVariants({ size: "lg" }),
+                    goldButton,
+                    "h-10 min-h-10 whitespace-normal px-5 py-2",
+                  )}
+                >
+                  {copy.redeem}
+                </a>
+              )}
+              {phase === "open" && (
+                <Button
+                  variant={won ? "quiet" : "default"}
+                  size="lg"
+                  className={cn(
+                    won
+                      ? "rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] text-[#b9c5d6] transition-colors duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]"
+                      : goldButton,
+                    typography.labelClassName,
+                    "h-auto min-h-10 whitespace-normal px-5 py-2",
+                  )}
+                  pending={operation.state === "loading"}
+                  onClick={() => {
+                    detach(replay(signal), Reason.DomCallback);
+                  }}
+                >
+                  {copy.again}
+                </Button>
+              )}
+            </div>
+          </section>
+          <ResultTasks won={won} />
         </div>
-        <p className={cn("mt-5 text-[#7b8da5]", typography.labelClassName)}>
+        <p className="border-t border-[#c0d1e512] px-6 py-5 text-center text-sm leading-5 text-[#7b8da5] md:px-10">
           {copy.footerBefore}
           <Button
             variant="quiet"

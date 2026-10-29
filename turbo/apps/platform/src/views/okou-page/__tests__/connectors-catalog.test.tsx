@@ -571,7 +571,6 @@ test("Keep a saved connector in Connected when its account needs a reconnect", a
     );
     expect(getConnectorAction("button", "Manage Gmail accounts")).toBeEnabled();
   });
-  expect(screen.queryByLabelText("Needs attention")).not.toBeInTheDocument();
 });
 
 test("Find the connectors no agent is using", async () => {

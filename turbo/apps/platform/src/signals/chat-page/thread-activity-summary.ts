@@ -10,7 +10,7 @@ import { currentChatThreadId$ } from "../agent-chat.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setLoop } from "../utils.ts";
 import { createActiveRunSubscription } from "./active-run-subscription.ts";
-import { liveRunIdsFromChatEvents } from "./chat-event-state.ts";
+import type { ChatEventSignals } from "./chat-event-signals.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
 
@@ -92,14 +92,17 @@ function createThinkingSummaryDemand(
 
 export function createThreadActivitySummarySignals(
   threadId: string,
-  chatEvents$: Computed<ChatEvent[]>,
+  {
+    chatEvents$,
+    activeRunId$,
+  }: Pick<ChatEventSignals, "chatEvents$" | "activeRunId$">,
   threadMeta$: Computed<ThreadMeta | null>,
 ) {
   const currentActiveRunId$ = computed((get): string | null => {
     if (get(currentChatThreadId$) !== threadId || get(threadMeta$) === null) {
       return null;
     }
-    return liveRunIdsFromChatEvents(get(chatEvents$)).at(-1) ?? null;
+    return get(activeRunId$);
   });
   const demand = createThinkingSummaryDemand(
     threadId,
