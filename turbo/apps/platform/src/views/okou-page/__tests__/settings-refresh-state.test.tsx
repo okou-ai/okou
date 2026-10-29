@@ -182,6 +182,70 @@ test.each([false, true])(
   },
 );
 
+test.each(["reopening Settings", "returning to Preference"])(
+  "%s refreshes a Planning preference changed elsewhere",
+  async (entry) => {
+    let enabled = false;
+    context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled,
+        status: enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      });
+    });
+    await setupPage({
+      context,
+      path: "/agents?settings=preference",
+      featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
+    });
+    const planning = await screen.findByRole("switch", {
+      name: "Planning & action",
+    });
+    await waitFor(() => {
+      expect(planning).toBeEnabled();
+      expect(planning).not.toBeChecked();
+    });
+    const settings = screen.getByRole("dialog", { name: "Settings" });
+    function selectSection(name: string) {
+      const button = queryAllByRoleFast("button", settings).find((element) => {
+        return element.textContent?.trim() === name;
+      });
+      if (!button) {
+        throw new Error(`Settings section not found: ${name}`);
+      }
+      click(button);
+    }
+    if (entry === "reopening Settings") {
+      click(within(settings).getByLabelText("Close", { selector: "button" }));
+    } else {
+      selectSection("Chat");
+      await within(settings).findByRole("switch", { name: "Cloud browser" });
+    }
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Settings" })).toBe(
+        entry === "reopening Settings" ? null : settings,
+      );
+    });
+
+    enabled = true;
+    if (entry === "reopening Settings") {
+      const rail = await screen.findByTestId("labeled-nav-rail");
+      click(within(rail).getByLabelText("Test User"));
+      click(within(await screen.findByRole("menu")).getByText("Settings"));
+    } else {
+      selectSection("Preference");
+    }
+    const reopened = await screen.findByRole("dialog", { name: "Settings" });
+    await waitFor(() => {
+      const refreshed = within(reopened).getByRole("switch", {
+        name: "Planning & action",
+      });
+      expect(refreshed).toBeEnabled();
+      expect(refreshed).toBeChecked();
+    });
+  },
+);
+
 test("saving time zone keeps enabled Morning brief unchanged during refresh", async () => {
   const { refreshing, release } = delayPreferenceRefresh();
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
