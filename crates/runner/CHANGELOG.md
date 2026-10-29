@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.240.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.4...runner-rs-v0.240.5) (2026-10-29)
+
+
+### Refactoring
+
+* **runner:** separate service stop test source ownership ([#43846](https://github.com/okou-ai/okou/issues/43846)) ([a7c4cd0](https://github.com/okou-ai/okou/commit/a7c4cd01a765aba8785a547238cc9ba84c94315f))
+
 ## [0.240.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.3...runner-rs-v0.240.4) (2026-10-29)
 
 
