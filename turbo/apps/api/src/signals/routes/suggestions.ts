@@ -1,16 +1,22 @@
 import { command } from "ccstate";
 import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
+import { suggestionLearningContract } from "@okouai/api-contracts/contracts/suggestion-learning";
+import {
+  readSuggestionManagement$,
+  readSuggestions$,
+} from "../services/agent-suggestion-read.service";
+import { prepareSuggestionLearning$ } from "../services/suggestion-learning.service";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import {
   suggestionAccess$,
-  readSuggestions$,
   createSuggestion$,
   updateSuggestion$,
   removeSuggestion$,
   consumeSuggestion$,
+  recordSuggestionFeedback$,
 } from "../services/agent-suggestions.service";
 
 const list$ = command(async ({ set }, signal: AbortSignal) => {
@@ -85,6 +91,59 @@ const writeAuth = {
   requiredCapability: "suggestion:write",
 } as const;
 export const suggestionsRoutes: readonly RouteEntry[] = [
+  {
+    route: suggestionsContract.manage,
+    handler: authRoute(
+      { ...readAuth, accept: ["agent"] },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        set(setResHeader$, "Cache-Control", "no-store");
+        const owner = await set(suggestionAccess$, signal);
+        return "status" in owner
+          ? owner
+          : await set(
+              readSuggestionManagement$,
+              owner,
+              get(queryOf(suggestionsContract.manage)).after,
+              signal,
+            );
+      }),
+    ),
+  },
+  {
+    route: suggestionLearningContract.prepare,
+    handler: authRoute(
+      writeAuth,
+      command(async ({ set }, signal: AbortSignal) => {
+        const owner = await set(suggestionAccess$, signal);
+        return "status" in owner
+          ? owner
+          : await set(prepareSuggestionLearning$, owner, signal);
+      }),
+    ),
+  },
+  {
+    route: suggestionsContract.feedback,
+    handler: authRoute(
+      { accept: ["session"], requireOrganization: true },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        const owner = await set(suggestionAccess$, signal);
+        if ("status" in owner) {
+          return owner;
+        }
+        const body = await get(bodyResultOf(suggestionsContract.feedback));
+        signal.throwIfAborted();
+        return body.ok
+          ? await set(
+              recordSuggestionFeedback$,
+              owner,
+              get(pathParamsOf(suggestionsContract.feedback)).id,
+              body.data,
+              signal,
+            )
+          : body.response;
+      }),
+    ),
+  },
   { route: suggestionsContract.list, handler: authRoute(readAuth, list$) },
   { route: suggestionsContract.create, handler: authRoute(writeAuth, create$) },
   { route: suggestionsContract.update, handler: authRoute(writeAuth, update$) },

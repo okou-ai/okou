@@ -1,4 +1,5 @@
 import { CANONICAL_PI_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
+import { SUGGESTION_FEEDBACK_INSTRUCTION } from "./suggestion-feedback-instructions";
 
 const REVIEW_SOURCES = `Use only ordinary authorized connector skills and CLI commands. At the start, fix the review cutoff to this Run's schedule trigger time, or the start of a manual Run. Read each source from this workflow's own verified coverage with a bounded overlap for late arrivals. Follow pagination and retain fixed time bounds; stop with an accurate partial-coverage record when the Run budget is near exhaustion.
 
@@ -35,7 +36,7 @@ All paths below are relative to this Run's member-memory root:
 - \`notes/<stable-topic>.md\` stores new Learning-owned detailed facts and their evidence. Prefer updating an existing suitable topic record; a date is not a fact identity. Existing evidence can stay in its current directory and be referenced without copying it into this namespace.
 - \`learning/coverage.json\` stores per-source verified review windows/cursors and complete, partial, unavailable or failed status. Advance only progress actually made. \`learning/reviews/<review-date>.md\` records changed record IDs, unchanged outcomes, source gaps and unfinished review. Keep these administrative records out of the startup summary and avoid duplicating the underlying private facts. Repeated review of the same date updates its record rather than creating duplicates.
 
-Only create or update these Learning outputs and existing Learning-owned records as necessary. Preserve unknown files, shared instructions, historical raw evidence and existing skills, including \`rollout_summaries/\`, \`skills/\` and \`extensions/ad_hoc/notes/\`. Do not fabricate rollout evidence or create executable skills. Use ordinary authorized file tools within the selected root; do not invoke retired maintenance-only tools.
+Suggestions owns suggestions/feedback-memory.json. Preserve it unchanged, respect its per-record expiration, and do not promote its temporary conclusions into permanent user facts. Only create or update these Learning outputs and existing Learning-owned records as necessary. Preserve unknown files, shared instructions, historical raw evidence and existing skills, including \`rollout_summaries/\`, \`skills/\` and \`extensions/ad_hoc/notes/\`. Do not fabricate rollout evidence or create executable skills. Use ordinary authorized file tools within the selected root; do not invoke retired maintenance-only tools.
 
 ## Corrections, forgetting and consistency
 
@@ -56,6 +57,8 @@ Plan next actions within the user's explicitly entrusted work. This is an Offici
 Read the current published member memory selected and mounted for this Run (Okou Harness: \`${CANONICAL_PI_MEMORY_MOUNT_PATH}\`). Learning and Planning run independently on their own schedules. Use the published memory available when this Run starts, including when Learning has not run, is still running, failed, or produced no new memory. Never treat a local write or a previous Run's summary as proof of publication. Treat memory as evidence-backed context, and verify current state before making Task changes.
 
 ## Continue this workflow's Planning coverage
+
+${SUGGESTION_FEEDBACK_INSTRUCTION}
 
 At startup, synchronize this Planning workflow's own Chat with \`okou chat messages --output-dir ./planning-history --json\` (the thread defaults to \`OKOU_CHAT_THREAD_ID\`). Read the clearly labeled Planning coverage records from earlier completed Planning Runs in that Chat, matching each record's Run ID to its \`run.completed\` event. Use only the per-source progress that Planning actually reviewed. Running, failed or cancelled Runs and a final message without confirmed completion do not establish a new boundary. If a source has no trustworthy Planning coverage, use the initial-review rule below and record the gap.
 
