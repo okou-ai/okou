@@ -460,7 +460,8 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
         // invoking unrelated publication capacity/GC policy for every fixture.
         let generation = RunId::new_v4();
         let image = paths.image(&generation.to_string()).unwrap();
-        write_image(&image, b"home", SIZE);
+        // Inventory reads completed writes in-process, not crash durability.
+        drop(create_image(&image, b"home", SIZE));
         let mut metadata = original.clone();
         metadata.image_generation = generation.to_string();
         metadata.profile_name = profile.into();
