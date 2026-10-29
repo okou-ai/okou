@@ -575,15 +575,17 @@ export function isClaudeCodeAuthenticationCredentialsError(
 function isClaudeCodeOAuthReconnectRequiredError(
   errorMessage: string,
 ): boolean {
-  const normalized = errorMessage.toLowerCase();
+  const normalized = errorMessage.trim().toLowerCase();
   return (
-    normalized.includes("failed to authenticate") &&
-    /api error:[\s:.-]*401(?![a-z0-9_-])/u.test(normalized) &&
-    normalized.includes("oauth access token") &&
-    (normalized.includes("revoked") ||
-      /(?:^|[^a-z0-9_-])oauth access token is invalid(?![a-z0-9_-])/u.test(
-        normalized,
-      ))
+    normalized ===
+      "failed to authenticate: oauth token revoked. please log in again or contact your administrator." ||
+    (normalized.includes("failed to authenticate") &&
+      /api error:[\s:.-]*401(?![a-z0-9_-])/u.test(normalized) &&
+      normalized.includes("oauth access token") &&
+      (normalized.includes("revoked") ||
+        /(?:^|[^a-z0-9_-])oauth access token is invalid(?![a-z0-9_-])/u.test(
+          normalized,
+        )))
   );
 }
 

@@ -606,6 +606,50 @@ fn cli_failure_reason_classifies_claude_invalid_credentials() {
 }
 
 #[test]
+fn short_claude_oauth_revocation_requires_the_claude_result_boundary() {
+    let message = "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.";
+    for (framework, source, expected) in [
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            Some(FailureReason::ReconnectRequired),
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            None,
+        ),
+        (AgentFramework::Codex, FailureDetailSource::CodexJsonl, None),
+        (AgentFramework::Pi, FailureDetailSource::PiResult, None),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            expected,
+            "framework={framework:?}, source={source:?}"
+        );
+    }
+}
+
+#[test]
+fn short_claude_oauth_revocation_does_not_classify_quoted_or_incomplete_messages() {
+    for message in [
+        "The tool printed: Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.",
+        "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator. This is quoted tool output.",
+        "Failed to authenticate: OAuth token revoked.",
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+                message,
+            ),
+            None,
+            "message: {message}"
+        );
+    }
+}
+
+#[test]
 fn cli_failure_reason_classifies_expired_authentication_tokens_at_model_boundaries() {
     for message in [
         "Your authentication token has expired. Please try refreshing it.",

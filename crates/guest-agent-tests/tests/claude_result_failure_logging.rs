@@ -37,6 +37,10 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
             Some(FailureReason::ReconnectRequired),
         ),
         (
+            "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.",
+            Some(FailureReason::ReconnectRequired),
+        ),
+        (
             "Failed to authenticate. API Error: 4010 OAuth access token is invalid.",
             None,
         ),
@@ -93,7 +97,7 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
         );
     }
 
-    runtime.config.prompt = "printf 'Credit balance is too low'".to_string();
+    runtime.config.prompt = "printf 'Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.'".to_string();
     let successful = tokio::time::timeout(
         Duration::from_secs(5),
         common::execute_cli_for_runtime(&runtime, &masker, common::spawn_dummy_heartbeat()),
