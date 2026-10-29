@@ -76,9 +76,6 @@ import {
   outlookDeleteDraft,
   type OutlookMailValue,
 } from "./outlook-mail";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import type { MailDetails, MailDraftValue } from "./mail-details";
 
 const L = logger("api:mail-draft");
@@ -530,7 +527,6 @@ export const listThreadMail$ = command(
     if (!thread) {
       return null;
     }
-    const outlookEnabled = await set(requireOutlookChatMail$, args, signal);
     const rows = await set(writeDb$)
       .select({
         mailDraftId: mailDrafts.id,
@@ -543,7 +539,6 @@ export const listThreadMail$ = command(
       .where(
         and(
           eq(mailDrafts.chatThreadId, args.threadId),
-          outlookEnabled ? undefined : eq(mailDrafts.provider, "gmail"),
           inArray(mailDrafts.status, ["draft", "sending", "sent"]),
         ),
       )
@@ -610,22 +605,6 @@ function mailIdentityValues(provider: MailProvider, mail: MailDraftValue) {
         outlookWebLink: mail.webLink ?? null,
       };
 }
-
-const requireOutlookChatMail$ = command(
-  async (
-    { set },
-    args: { readonly orgId: string; readonly userId: string },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
-    return isFeatureEnabled(FeatureSwitchKey.OutlookChatMail, context);
-  },
-);
 
 const loadLinkedDraft$ = command(
   async (
@@ -2233,12 +2212,6 @@ export const linkMailDraft$ = command(
     signal: AbortSignal,
   ): Promise<MailDraftLinkMutationResult> => {
     const provider = args.provider ?? "gmail";
-    if (
-      provider === "outlook" &&
-      !(await set(requireOutlookChatMail$, args, signal))
-    ) {
-      return { kind: "not_found", message: "Outlook chat mail is not enabled" };
-    }
     const draftId =
       args.provider === "outlook" ? args.outlookMessageId : args.gmailDraftId;
     const snapshot = await set(loadMailCatalog$, provider);
@@ -2350,12 +2323,6 @@ export const getMailDraft$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    if (
-      row.provider === "outlook" &&
-      !(await set(requireOutlookChatMail$, args, signal))
-    ) {
-      return { kind: "not_found", message: "Mail draft not found" };
-    }
     const snapshot = await set(loadMailCatalog$, row.provider);
     signal.throwIfAborted();
     return await set(
@@ -2385,12 +2352,6 @@ export const getMailDraftAttachment$ = command(
     const row = await set(loadOwnedMailDraft$, { ...args });
     signal.throwIfAborted();
     if (!row) {
-      return { kind: "not_found", message: "Mail draft not found" };
-    }
-    if (
-      row.provider === "outlook" &&
-      !(await set(requireOutlookChatMail$, args, signal))
-    ) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
     const snapshot = await set(loadMailCatalog$, row.provider);
@@ -2516,12 +2477,6 @@ export const deleteMailDraft$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    if (
-      row.provider === "outlook" &&
-      !(await set(requireOutlookChatMail$, args, signal))
-    ) {
-      return { kind: "not_found", message: "Mail draft not found" };
-    }
     if (row.status !== "draft") {
       return {
         kind: "conflict",
@@ -2602,12 +2557,6 @@ export const sendMailDraft$ = command(
     const row = await set(loadOwnedMailDraft$, { ...args });
     signal.throwIfAborted();
     if (!row) {
-      return { kind: "not_found", message: "Mail draft not found" };
-    }
-    if (
-      row.provider === "outlook" &&
-      !(await set(requireOutlookChatMail$, args, signal))
-    ) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
     if (row.status !== "draft") {

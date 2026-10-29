@@ -22,7 +22,6 @@ def _outlook_registry(tmp_path, firewall_name="outlook-mail", custom_connector_i
                 "permissions": [{"name": "mail.send", "rules": ["ANY /{path+}"]}],
             },
             network_policy={"allow": ["mail.send"], "deny": [], "unknownPolicy": "allow"},
-            sandbox_fields={"outlookMailReviewEnabled": True},
         ),
     )
 
@@ -126,29 +125,6 @@ async def test_non_mail_connector_keeps_graph_batch(
     )
     if explicit_intent:
         flow.request.headers["X-Okou-Connector-Intent"] = "microsoft-365"
-    with (
-        mitm_ctx(registry_path=str(registry), api_url="https://api.okou.ai"),
-        fake_firewall_headers(),
-    ):
-        await mitm_addon.request(flow)
-    assert flow.response is None
-
-
-async def test_disabled_review_gate_preserves_existing_outlook_send(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
-):
-    registry = _outlook_registry(tmp_path)
-    value = json.loads(registry.read_text())
-    for sandbox in value["sandboxes"].values():
-        sandbox["outlookMailReviewEnabled"] = False
-    registry.write_text(json.dumps(value))
-    flow = real_flow(
-        with_response=False,
-        client_ip="10.200.0.5",
-        host="graph.microsoft.com",
-        method="POST",
-        path="/v1.0/me/sendMail",
-    )
     with (
         mitm_ctx(registry_path=str(registry), api_url="https://api.okou.ai"),
         fake_firewall_headers(),

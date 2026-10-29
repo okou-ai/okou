@@ -108,7 +108,6 @@ async def test_native_valid_large_query_keeps_mail_policy(
                 "permissions": [{"name": "mail", "rules": ["ANY /{path+}"]}],
             },
             network_policy={"allow": ["mail"], "deny": [], "unknownPolicy": "allow"},
-            sandbox_fields={"outlookMailReviewEnabled": True},
         ),
     )
     flow = real_flow(with_response=False, client_ip="10.200.0.5", host=host)

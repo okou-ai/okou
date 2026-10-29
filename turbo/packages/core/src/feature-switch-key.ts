@@ -48,7 +48,6 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
   ArtifactDeletion = "artifactDeletion",
-  OutlookChatMail = "outlookChatMail",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",

@@ -117,12 +117,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Set up and manage remote connections and private networks step by step.",
     enabled: true,
   },
-  [FeatureSwitchKey.OutlookChatMail]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Outlook chat mail",
-    description: "Review Outlook drafts and confirm sending from chat.",
-    enabled: false,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",
