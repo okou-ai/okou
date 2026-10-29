@@ -3,10 +3,7 @@ import { hostedSites } from "@okouai/db/runtime/hosted-site";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { chatRelations } from "@okouai/db/schema/chat-relation";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 import { artifacts } from "@okouai/db/schema/artifact";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { command, computed, type Computed } from "ccstate";
 import {
   type ChatThreadDraft,
@@ -30,13 +27,8 @@ import {
   chatEventTerminalPredicate,
   chatEvents,
 } from "@okouai/db/schema/chat-event";
-import {
-  chatEventSearchMessages,
-  chatEventSearchMessageWatermarks,
-} from "@okouai/db/schema/chat-event-search";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
-import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,
@@ -69,10 +61,13 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { chatThreadInitializationCtes } from "./chat-thread-initialization-plan";
+import {
+  chatThreadDeletionRowSchema,
+  chatThreadDeletionSql,
+} from "./chat-thread-deletion-plan";
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
-import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
   deleteChatThreadDraft$,
   persistChatThreadDraft$,
@@ -84,7 +79,6 @@ import {
 } from "./agent-run-terminal-transition.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
-import { threadBoundWorkflowAutomationsPredicate } from "./workflow-user-automation-thread.service";
 import {
   selectionParentMissing,
   prepareChatThreadConnectorSelections$,
@@ -1117,11 +1111,6 @@ export const createChatThread$ = command(
   },
 );
 
-interface ThreadRunToCancel {
-  readonly runId: string;
-  readonly orgId: string;
-}
-
 interface DeleteChatThreadArgs {
   readonly threadId: string;
   readonly userId: string;
@@ -1129,196 +1118,40 @@ interface DeleteChatThreadArgs {
   readonly eventId?: string;
 }
 
-/** Pure child-lock statement, reused before and after the parent attach fence. */
-function attachedRunFenceSql(threadId: string) {
-  return new QueryBuilder()
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(eq(agentRuns.chatThreadId, threadId))
-    .orderBy(asc(agentRuns.id))
-    .for("no key update")
-    .getSQL();
-}
-
-const disabledAutomationSelection = Object.freeze({
-  orgId: workflowAutomations.orgId,
-  ownerUserId: workflowAutomations.ownerUserId,
-  eventType: workflowAutomations.eventType,
-  eventConfig: workflowAutomations.eventConfig,
-  eventConnectorId: workflowAutomations.eventConnectorId,
-});
-
-/** The attach fence and deletion tombstone commit together. */
+/** The deletion and ordered tombstone share one database statement. */
 const deleteChatThreadContent$ = command(
   async ({ set }, args: DeleteChatThreadArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0097; new non-billing transactions are prohibited.
-    const result = await set(writeDb$).transaction(async (tx) => {
-      signal.throwIfAborted();
-
-      const ownedThreadCondition = and(
-        eq(chatThreads.id, args.threadId),
-        eq(chatThreads.userId, args.userId),
-        chatThreadOrganizationPredicate(args.orgId),
-      );
-      const [authorizedThread] = await tx
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .where(ownedThreadCondition);
-      signal.throwIfAborted();
-      if (!authorizedThread) {
-        return {
-          deleted: false,
-          activeRuns: [] as readonly ThreadRunToCancel[],
-          disabledAutomations: [],
-        };
-      }
-
-      // Output owns its run before reserving event IDs; an ordinary append owns
-      // the sequence before checking the thread FK. Take both children first so
-      // cascading deletion cannot invert either order. Lock every attached run:
-      // ON DELETE SET NULL also updates terminal runs.
-      await tx.execute(attachedRunFenceSql(args.threadId));
-      signal.throwIfAborted();
-      await tx
-        .select({ id: chatEventSequences.chatThreadId })
-        .from(chatEventSequences)
-        .where(eq(chatEventSequences.chatThreadId, args.threadId))
-        .for("update");
-      signal.throwIfAborted();
-
-      // Deletion waits for a writer that already owns the thread. A writer that
-      // then waits on a locked run or sequence forms a cycle that PostgreSQL's
-      // deadlock detector aborts; the deletion request surfaces that failure.
-      const [ownedThread] = await tx
-        .select({ id: chatThreads.id, agentId: chatThreads.agentId })
-        .from(chatThreads)
-        .where(ownedThreadCondition)
-        .for("update");
-      signal.throwIfAborted();
-      if (!ownedThread?.agentId) {
-        return {
-          deleted: false,
-          activeRuns: [] as readonly ThreadRunToCancel[],
-          disabledAutomations: [],
-        };
-      }
-
-      // Include an attachment committed between discovery and the strong fence;
-      // the thread lock above waited for any uncommitted attachment.
-      await tx.execute(attachedRunFenceSql(ownedThread.id));
-      signal.throwIfAborted();
-
-      // Capture related active runs while the thread row blocks new FK attaches.
-      // Terminal runs (completed/failed/cancelled) are left untouched; only
-      // queued/pending/running runs need stopping.
-      const activeRuns = await tx
-        .select({ runId: agentRuns.id, orgId: agentRuns.orgId })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.chatThreadId, ownedThread.id),
-            eq(agentRuns.userId, args.userId),
-            inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
-            isNotNull(agentRuns.triggerSource),
-          ),
-        );
-      signal.throwIfAborted();
-
-      const disabledAutomations = await tx
-        .update(workflowAutomations)
-        .set({ enabled: false, nextRunAt: null, updatedAt: nowDate() })
-        .where(
-          threadBoundWorkflowAutomationsPredicate({
-            userId: args.userId,
-            chatThreadId: ownedThread.id,
-          }),
-        )
-        .returning(disabledAutomationSelection);
-      signal.throwIfAborted();
-
-      // Search rows are an eventually consistent derived projection without a
-      // parent FK. Remove the normal-path rows synchronously; the projection
-      // cron repairs only writes that race this transaction. Delete the
-      // watermark first so any later projector write also restores the cleanup
-      // anchor.
-      await tx
-        .delete(chatEventSearchMessageWatermarks)
-        .where(
-          eq(chatEventSearchMessageWatermarks.chatThreadId, ownedThread.id),
-        );
-      signal.throwIfAborted();
-      await tx
-        .delete(chatEventSearchMessages)
-        .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
-      signal.throwIfAborted();
-
-      // Explicitly detach the same references as the thread's SET NULL actions.
-      // Keep the workflow-user binding until its Automations are disabled above.
-      await tx
-        .update(agentRuns)
-        .set({ chatThreadId: null })
-        .where(eq(agentRuns.chatThreadId, ownedThread.id));
-      signal.throwIfAborted();
-      await tx
-        .update(workflowUserAutomationThreads)
-        .set({ chatThreadId: null })
-        .where(eq(workflowUserAutomationThreads.chatThreadId, ownedThread.id));
-      signal.throwIfAborted();
-
-      // Delete the thread after cleanup under its row lock. Cascades chat_events.
-      // Captured active runs lose their canonical chatThreadId, while any retained legacy
-      // row is independently nulled by its own foreign key.
-      const [deletedThread] = await tx
-        .delete(chatThreads)
-        .where(eq(chatThreads.id, ownedThread.id))
-        .returning({ id: chatThreads.id });
-      signal.throwIfAborted();
-
-      if (deletedThread) {
-        // Acquire the user/org event sequence only after all cleanup and
-        // cascading deletes. A blocked child row must not hold this shared
-        // lock and stall events for other threads. Keep the tombstone in this
-        // transaction so deletion and its ordered event become visible
-        // together.
-        await tx.execute(
-          chatThreadEventInsertSql({
-            kind: "deleted",
-            userId: args.userId,
-            orgId: args.orgId,
-            chatThreadId: ownedThread.id,
-            agentId: ownedThread.agentId,
-            eventId: args.eventId,
-          }),
-        );
-        signal.throwIfAborted();
-      }
-
-      return {
-        deleted: Boolean(deletedThread),
-        activeRuns,
-        disabledAutomations,
-      };
-    });
+    const [result] = parseRawRows(
+      chatThreadDeletionRowSchema,
+      await set(writeDb$).execute(
+        chatThreadDeletionSql({ ...args, updatedAt: nowDate() }),
+      ),
+    );
     signal.throwIfAborted();
+    if (!result) {
+      throw new Error("Chat thread deletion returned no result");
+    }
     return result;
   },
 );
 /**
  * Delete a chat thread after winding down everything attached to it. Deleting a
  * thread on its own leaves the linked automations firing and any in-flight runs
- * executing: the canonical run metadata uses `ON DELETE SET NULL`, so a running
- * run simply loses its thread reference and keeps consuming credits.
+ * executing. Return the actual detached Run identities so cancellation retains
+ * its owner after the canonical thread reference is cleared.
  *
  * Lock the thread row while deleting it and collecting active runs. Inserts into
  * `agent_runs.chatThreadId` take a FK lock on the same parent row, so this closes
  * the race where a new run attaches after the active-run scan but before the
  * thread delete. All run-side thread ownership now lives in `agent_runs`.
- * Cancellation still happens after the delete transaction because it has runner
- * notifications and queue-drain side effects.
+ * The NO ACTION references reject a late attachment invisible to the statement
+ * snapshot, rolling back deletion instead of silently missing its cancellation.
+ * Cancellation still happens after deletion because it has runner notifications
+ * and queue-drain side effects.
  *
  * Run cancellation has side effects that cannot participate in the thread's
- * delete transaction (`cancelRun$` opens its own transaction and the runner
+ * delete statement (`cancelRun$` opens its own transaction and the runner
  * must be notified), so ownership is verified up front and the cancelled-run
  * results are returned for the caller to dispatch the post-cancel side effects.
  */

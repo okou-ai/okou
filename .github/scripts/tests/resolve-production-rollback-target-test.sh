@@ -159,6 +159,12 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "9797979797979797979797979797979797979797" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CHAT_THREAD_REFERENCE_PREPARATION_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_CHAT_THREAD_REFERENCE_PREPARATION_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "66e1cae65d0468a50149f0dafab9d0d35abd0819" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_RUN_REFERENCE_PREPARATION_ON_MAIN:-1}" = "1" ]
@@ -330,6 +336,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/chat-thread-reference-preparation" ]; then
+      [ "${MOCK_CHAT_THREAD_REFERENCE_PREPARATION_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_CHAT_THREAD_REFERENCE_PREPARATION_COMMIT-9797979797979797979797979797979797979797}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/run-reference-preparation" ]; then
       [ "${MOCK_RUN_REFERENCE_PREPARATION_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_RUN_REFERENCE_PREPARATION_COMMIT-66e1cae65d0468a50149f0dafab9d0d35abd0819}"
@@ -1979,6 +1990,27 @@ for run_reference_case in \
   [ ! -s "${tmp_dir}/run-reference-policy.output" ] || fail "invalid Run policy must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "invalid Run policy must reject before provider or host access"
+  fi
+done
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates explicit chat thread reference cleanup" \
+  run_resolver "${tmp_dir}/chat-thread-reference-preparation.output" MOCK_CHAT_THREAD_REFERENCE_PREPARATION_VALID=0
+[ ! -s "${tmp_dir}/chat-thread-reference-preparation.output" ] || fail "cascade-dependent chat API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "Chat thread reference preparation must reject before provider or host access"
+fi
+
+for chat_thread_reference_case in \
+  "MOCK_CHAT_THREAD_REFERENCE_PREPARATION_AVAILABLE=0|Cannot read the chat thread reference preparation rollback floor from main" \
+  "MOCK_CHAT_THREAD_REFERENCE_PREPARATION_COMMIT=invalid|Missing or invalid chat thread reference preparation rollback floor" \
+  "MOCK_CHAT_THREAD_REFERENCE_PREPARATION_ON_MAIN=0|Chat thread reference preparation rollback floor is not on main"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${chat_thread_reference_case#*|}" \
+    run_resolver "${tmp_dir}/chat-thread-reference-policy.output" "${chat_thread_reference_case%%|*}"
+  [ ! -s "${tmp_dir}/chat-thread-reference-policy.output" ] || fail "invalid chat thread policy must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid chat thread policy must reject before provider or host access"
   fi
 done
 

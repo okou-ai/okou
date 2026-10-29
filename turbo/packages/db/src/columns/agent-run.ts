@@ -149,7 +149,7 @@ export function agentRunColumns() {
       (): AnyPgColumn => {
         return chatThreads.id;
       },
-      { onDelete: "set null" },
+      { onDelete: "no action" },
     ),
     apiStartedAt: timestamp("api_started_at"),
     firstAssistantEventAcknowledgedAt: timestamp(

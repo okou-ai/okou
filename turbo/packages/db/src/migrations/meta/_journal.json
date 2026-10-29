@@ -2864,6 +2864,13 @@
       "when": 1793279960293,
       "tag": "1487_chat_thread_folders",
       "breakpoints": true
+    },
+    {
+      "idx": 1488,
+      "version": "7",
+      "when": 1793288040184,
+      "tag": "1488_chat_thread_atomic_deletion",
+      "breakpoints": true
     }
   ]
 }

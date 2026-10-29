@@ -176,7 +176,7 @@ export const workflowUserAutomationThreads = pgTable(
       () => {
         return chatThreads.id;
       },
-      { onDelete: "set null" },
+      { onDelete: "no action" },
     ),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

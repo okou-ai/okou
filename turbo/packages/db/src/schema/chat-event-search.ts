@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { chatThreads } from "./chat-thread";
 import {
   bigint,
   customType,
@@ -24,7 +25,14 @@ const tsvectorColumn = customType<{ data: string }>({
 export const chatEventSearchMessages = pgTable(
   "chat_event_search_messages",
   {
-    chatThreadId: uuid("chat_thread_id").notNull(),
+    chatThreadId: uuid("chat_thread_id")
+      .notNull()
+      .references(
+        () => {
+          return chatThreads.id;
+        },
+        { onDelete: "cascade" },
+      ),
     seqId: bigint("seq_id", { mode: "number" }).notNull(),
     runId: uuid("run_id"),
     userId: text("user_id").notNull(),
@@ -63,7 +71,14 @@ export const chatEventSearchMessages = pgTable(
 export const chatEventSearchMessageWatermarks = pgTable(
   "chat_event_search_message_watermarks",
   {
-    chatThreadId: uuid("chat_thread_id").primaryKey(),
+    chatThreadId: uuid("chat_thread_id")
+      .primaryKey()
+      .references(
+        () => {
+          return chatThreads.id;
+        },
+        { onDelete: "cascade" },
+      ),
     indexedSeqId: bigint("indexed_seq_id", { mode: "number" }).notNull(),
   },
 );

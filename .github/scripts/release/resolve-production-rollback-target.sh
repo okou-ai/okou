@@ -103,6 +103,8 @@ readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT=b4a90a6b3f79527f91836df6a2bcc8fe81c622e8
 # #43808 explicitly clears callbacks, queue rows and usage links before Run deletion.
 readonly RUN_REFERENCE_PREPARATION_PATH=.github/rollback-floors/run-reference-preparation
+# #44069 explicitly detaches Run and automation destinations before thread deletion.
+readonly CHAT_THREAD_REFERENCE_PREPARATION_PATH=.github/rollback-floors/chat-thread-reference-preparation
 # #41393 prepared inline file injection before release 2 emits it.
 readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
@@ -897,6 +899,19 @@ fi
 
 # Restrictive Run references no longer perform the old cascade/SET NULL work.
 # Keep the separately deployed preparation available for rollback.
+if ! chat_thread_reference_preparation_commit=$(git show "origin/main:${CHAT_THREAD_REFERENCE_PREPARATION_PATH}"); then
+  fail "Cannot read the chat thread reference preparation rollback floor from main."
+fi
+if [[ ! "$chat_thread_reference_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid chat thread reference preparation rollback floor."
+fi
+if ! git merge-base --is-ancestor "$chat_thread_reference_preparation_commit" origin/main; then
+  fail "Chat thread reference preparation rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$chat_thread_reference_preparation_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates explicit chat thread reference cleanup: ${chat_thread_reference_preparation_commit}."
+fi
+
 if ! run_reference_preparation_commit=$(git show "origin/main:${RUN_REFERENCE_PREPARATION_PATH}"); then
   fail "Cannot read the Run reference preparation rollback floor from main."
 fi
