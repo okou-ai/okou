@@ -419,6 +419,27 @@ jobs:
         with:
           version: 10.33.4
       - uses: ./.github/actions/toolchain-init
+
+      - name: Notify Slack - Starting
+        id: slack-start
+        if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} publishing to Browser Use..."
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} publishing to Browser Use...\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Normalize CI App private key
         id: private-key
         env:
@@ -452,6 +473,50 @@ jobs:
         env:
           GITHUB_VARIABLES_TOKEN: ${{ steps.variables-token.outputs.token }}
         run: node .github/scripts/release/browser-extension-variable-token.mjs --revoke
+
+      - name: Calculate duration
+        id: duration
+        if: ${{ always() && steps.timer.outputs.start }}
+        run: |
+          set -euo pipefail
+          elapsed=$(( $(date +%s) - ${{ steps.timer.outputs.start }} ))
+          h=$((elapsed / 3600)) m=$(( (elapsed % 3600) / 60 )) s=$((elapsed % 60))
+          if [ $h -gt 0 ]; then text="${h}h ${m}m ${s}s"
+          elif [ $m -gt 0 ]; then text="${m}m ${s}s"
+          else text="${s}s"; fi
+          echo "text=$text" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Slack - Success
+        if: ${{ success() && steps.slack-start.outputs.ts }}
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.update
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            ts: "${{ steps.slack-start.outputs.ts }}"
+            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ✅ Published to Browser Use; configuration verified"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ✅ Published to Browser Use; configuration verified\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+
+      - name: Notify Slack - Failure
+        if: ${{ failure() && steps.slack-start.outputs.ts }}
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.update
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            ts: "${{ steps.slack-start.outputs.ts }}"
+            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ❌ Publish failed"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ❌ Publish failed\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
   publish-ios-testflight:
     name: publish-ios-testflight
