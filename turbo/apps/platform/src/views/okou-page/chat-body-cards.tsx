@@ -744,7 +744,13 @@ function ComputerUseAuthorizationCard({
   );
 }
 
-function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
+export function PlanUpgradeCard({
+  signals,
+  placement = "message",
+}: {
+  signals: PlanUpgradeSignals;
+  placement?: "message" | "run-end";
+}) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const open = useSet(signals.open$);
@@ -754,8 +760,18 @@ function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
     detach(open(pageSignal), Reason.DomCallback);
   };
 
+  if (billing.state === "loading") {
+    return null;
+  }
+
   if (billing.state === "hasData" && billing.data.tier === "limited-free-1") {
-    return <FreePlanUpgradeCard onUpgrade={handleClick} />;
+    return placement === "run-end" ? (
+      <FreePlanUpgradeCard onUpgrade={handleClick} />
+    ) : null;
+  }
+
+  if (placement === "run-end") {
+    return null;
   }
 
   return (

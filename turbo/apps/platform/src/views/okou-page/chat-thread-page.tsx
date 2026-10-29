@@ -158,7 +158,9 @@ import {
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
   ChatImagePreviewLink,
   ChatVideoPreviewButton,
+  PlanUpgradeCard,
 } from "./chat-body-cards.tsx";
+import { completedResponsePlanUpgrade } from "../../signals/chat-page/plan-upgrade-block.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   ChatConversationLandingHighlight,
@@ -4603,6 +4605,12 @@ function FinishedRunRow({
   source: RecommendedFollowupSource | null;
 }) {
   const { t } = useTranslation();
+  const renderedGroups = useLastResolved(thread.visibleRenderedChatGroups$);
+  const billing = useLastResolved(billingStatusAsync$);
+  const planUpgrade =
+    billing?.tier === "limited-free-1"
+      ? completedResponsePlanUpgrade(renderedGroups ?? [])
+      : undefined;
   const donePhrase =
     useLastResolved(thread.donePhrase$) ??
     t(($) => {
@@ -4631,6 +4639,11 @@ function FinishedRunRow({
         label={label}
         className={CHAT_THREAD_RESPONSE_FLUSH_CLASS}
       />
+      {planUpgrade ? (
+        <div className="@container w-full max-w-2xl">
+          <PlanUpgradeCard signals={planUpgrade} placement="run-end" />
+        </div>
+      ) : null}
       {source ? (
         <RecommendedFollowupList thread={thread} source={source} />
       ) : null}

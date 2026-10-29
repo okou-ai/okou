@@ -27,22 +27,22 @@ export function ProUpgradeCard({
   return (
     <ChatCard
       data-testid="plan-upgrade-card"
-      className="flex w-full flex-col overflow-hidden text-left @[560px]:flex-row"
+      className="flex w-full max-w-2xl overflow-hidden text-left"
     >
       <div
         aria-hidden="true"
-        className="flex shrink-0 items-center justify-center bg-illustration-canvas px-5 py-5 @[560px]:w-1/3"
+        className="flex w-20 shrink-0 items-center justify-center bg-illustration-canvas p-2 @[480px]:w-32 @[480px]:p-3"
       >
         <img
           src={proUpgradeSceneImg}
           alt=""
-          className="h-32 w-full object-contain @[560px]:h-auto"
+          className="h-24 w-full object-contain @[480px]:h-28"
         />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col justify-center p-5 @[640px]:p-7">
+      <div className="flex min-w-0 flex-1 flex-col justify-center p-3 @[480px]:p-4">
         <div>
-          <h3 className="text-xl font-semibold tracking-tight text-foreground @[640px]:text-2xl">
+          <h3 className="text-base font-semibold tracking-tight text-foreground @[480px]:text-lg">
             {hasTaskEstimate
               ? t(
                   ($) => {
@@ -54,58 +54,60 @@ export function ProUpgradeCard({
                   return $.chat.billing.proCard.title;
                 })}
           </h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">
             {t(($) => {
               return $.chat.billing.proCard.description;
             })}
           </p>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-baseline gap-x-5 gap-y-2">
-          <p className="flex min-w-0 flex-wrap items-baseline gap-1 text-sm text-muted-foreground">
-            {monthlyPriceUsd !== undefined ? (
-              <>
-                {t(($) => {
-                  return $.billing.plans.usagePacks.priceFrom;
-                })}
-                <span className="text-3xl font-semibold tracking-tight text-foreground">
-                  {formatUsd(monthlyPriceUsd, 0)}
-                </span>
-                {t(($) => {
-                  return $.billing.plans.perMonth;
-                })}
-              </>
-            ) : (
-              t(($) => {
-                return $.chat.billing.proCard.priceUnavailable;
-              })
-            )}
-          </p>
-          {bonusCredits !== undefined && bonusCredits > 0 && (
-            <p className="text-sm font-medium text-brand-text">
-              <strong className="text-xl font-semibold tracking-tight">
-                {formatLocalizedNumber(bonusCredits, {
-                  signDisplay: "always",
-                })}
-              </strong>{" "}
-              {t(($) => {
-                return $.chat.billing.proCard.bonusCreditsNow;
-              })}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="flex min-w-0 flex-wrap items-baseline gap-1 text-sm text-muted-foreground">
+              {monthlyPriceUsd !== undefined ? (
+                <>
+                  {t(($) => {
+                    return $.billing.plans.usagePacks.priceFrom;
+                  })}
+                  <span className="text-2xl font-semibold tracking-tight text-foreground">
+                    {formatUsd(monthlyPriceUsd, 0)}
+                  </span>
+                  {t(($) => {
+                    return $.billing.plans.perMonth;
+                  })}
+                </>
+              ) : (
+                t(($) => {
+                  return $.chat.billing.proCard.priceUnavailable;
+                })
+              )}
             </p>
-          )}
-        </div>
+            {bonusCredits !== undefined && bonusCredits > 0 && (
+              <p className="text-sm font-medium text-brand-text">
+                <strong className="text-xl font-semibold tracking-tight">
+                  {formatLocalizedNumber(bonusCredits, {
+                    signDisplay: "always",
+                  })}
+                </strong>{" "}
+                {t(($) => {
+                  return $.chat.billing.proCard.bonusCreditsNow;
+                })}
+              </p>
+            )}
+          </div>
 
-        <Button
-          type="button"
-          variant="default"
-          size="default"
-          onClick={onUpgrade}
-          className="mt-5 self-start"
-        >
-          {t(($) => {
-            return $.chat.billing.proCard.upgradeNow;
-          })}
-        </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="default"
+            onClick={onUpgrade}
+            className="shrink-0"
+          >
+            {t(($) => {
+              return $.chat.billing.proCard.upgradeNow;
+            })}
+          </Button>
+        </div>
       </div>
     </ChatCard>
   );

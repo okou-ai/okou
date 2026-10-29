@@ -13,16 +13,24 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   completedConversation,
-  createChatCapabilityHelpers,
+  FIRST_CAPABILITY_RUN_ID,
   readyChat,
   RUN_PATH,
 } from "./chat-capability-test-helpers.ts";
-import { findEnabledButton } from "./chat-run-test-fixtures.ts";
+import {
+  completedEvent,
+  createChatRunFixtures,
+  findButton,
+  findEnabledButton,
+  sendText,
+} from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { installCapabilityChat } = createChatCapabilityHelpers(context);
+const { installRunChat } = createChatRunFixtures(context);
+const UPGRADE_LINK =
+  "[Compare plans](https://app.okou.ai/?settings=billing&billingView=plans)";
 
-async function openUpgradeChat(tier = "limited-free-1") {
+function mockBilling(tier = "limited-free-1") {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       ...defaultBillingStatus(),
@@ -31,10 +39,19 @@ async function openUpgradeChat(tier = "limited-free-1") {
       onboardingPaymentPending: false,
     });
   });
-  installCapabilityChat({
-    events: completedConversation(
-      "[Compare plans](https://app.okou.ai/?settings=billing&billingView=plans)",
-    ),
+}
+
+async function openUpgradeChat(tier = "limited-free-1") {
+  mockBilling(tier);
+  installRunChat({
+    chatEvents: [
+      ...completedConversation(UPGRADE_LINK),
+      completedEvent({
+        id: "upgrade-completed",
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 3,
+      }),
+    ],
   });
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
   await readyChat();
@@ -65,6 +82,17 @@ test("Show the lowest paid catalog price and open the existing plans dialog", as
   });
 
   const card = await openUpgradeChat();
+  const completion = document.querySelector<HTMLElement>(
+    "[data-chat-run-status-tail]",
+  );
+  if (!completion) {
+    throw new Error("Expected the task completion status");
+  }
+  expect(completion).toContainElement(card);
+  const separator = within(completion).getByRole("separator");
+  expect(
+    separator.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   await expect(within(card).findByText("$18")).resolves.toBeVisible();
   expect(within(card).queryByText("$0")).toBeNull();
   expect(within(card).queryByText(/tasks? left/u)).toBeNull();
@@ -100,4 +128,57 @@ test("Keep the general plans action for an existing paid workspace", async () =>
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
   ).resolves.toBeVisible();
+});
+
+test("Wait for successful completion, show one trailing card, and retire it on the next task", async () => {
+  mockBilling();
+  const chat = installRunChat({
+    chatEvents: completedConversation(
+      `Your report is ready.\n\n${UPGRADE_LINK}`,
+    ),
+    activeRunIds: [FIRST_CAPABILITY_RUN_ID],
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+  await findButton("Stop");
+  expect(screen.getByText("Your report is ready.")).toBeInTheDocument();
+  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
+
+  chat.completeRun(`Everything is ready.\n\n${UPGRADE_LINK}`);
+
+  const card = await screen.findByTestId("plan-upgrade-card");
+  expect(screen.getAllByTestId("plan-upgrade-card")).toHaveLength(1);
+  expect(card.closest("[data-chat-run-status-tail]")).not.toBeNull();
+
+  await sendText("Summarize the report");
+  await findButton("Stop");
+  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
+  chat.completeRun("Here is the summary.");
+  await screen.findByText("Here is the summary.");
+  await findButton("Send");
+  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
+});
+
+test("Do not promote an upgrade link from an unsuccessful response", async () => {
+  mockBilling();
+  installRunChat({
+    chatEvents: [
+      ...completedConversation(
+        `Still preparing the report.\n\n${UPGRADE_LINK}`,
+      ),
+      {
+        id: "upgrade-failed",
+        eventType: "run.failed",
+        content: null,
+        error: "The report could not be completed.",
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 3,
+        createdAt: "2026-08-01T10:00:03.000Z",
+      },
+    ],
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+  await screen.findByText("The report could not be completed.");
+  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
 });
