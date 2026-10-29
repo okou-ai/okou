@@ -52,7 +52,6 @@ export enum FeatureSwitchKey {
   ArtifactSidebarPreview = "artifactSidebarPreview",
   ArtifactDeletion = "artifactDeletion",
   OutlookChatMail = "outlookChatMail",
-  ThreadEmailManager = "threadEmailManager",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",

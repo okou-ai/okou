@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
@@ -180,7 +179,6 @@ async function link(name: string, container: ParentNode = document.body) {
 }
 
 async function openChat(
-  enabled = true,
   withCard = true,
   path = `/chats/${THREAD_ID}`,
   sidebarThreadId?: string,
@@ -244,9 +242,6 @@ async function openChat(
     context,
     path,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ThreadEmailManager]: enabled,
-    },
   });
   await waitFor(() => {
     expect(screen.getAllByRole("textbox", { name: "Message" })).toHaveLength(
@@ -261,29 +256,9 @@ async function openList() {
 }
 
 describe("thread email manager", () => {
-  it("keeps draft details available without manager navigation when the switch is disabled", async () => {
-    installMails();
-    await openChat(
-      false,
-      false,
-      `/chats/${THREAD_ID}?mailThread=${THREAD_ID}&mailView=detail&mailId=${id(1)}&mailFrom=list`,
-    );
-    await screen.findByText("Proposal details 1");
-    expect(
-      queryAllByRoleFast("button").some((element) => {
-        return element.getAttribute("aria-label") === "Manage emails";
-      }),
-    ).toBeFalsy();
-    expect(
-      queryAllByRoleFast("link").some((element) => {
-        return element.textContent?.trim() === "Back to emails";
-      }),
-    ).toBeFalsy();
-  });
-
   it("hides the entry for an empty thread", async () => {
     installMails(0);
-    await openChat(true, false);
+    await openChat(false);
     expect(
       queryAllByRoleFast("button").some((element) => {
         return element.getAttribute("aria-label") === "Manage emails";
@@ -455,7 +430,7 @@ describe("thread email manager", () => {
       mailQuery: "Proposal 12",
       unrelated: "keep",
     });
-    await openChat(true, false, `/chats/${THREAD_ID}?${params}#note`);
+    await openChat(false, `/chats/${THREAD_ID}?${params}#note`);
     await screen.findByText("Proposal details 12");
     const back = await link("Back to emails");
     click(back);
@@ -544,12 +519,7 @@ describe("thread email manager", () => {
       mailFilter: "sent",
       mailQuery: "Proposal 12",
     });
-    await openChat(
-      true,
-      false,
-      `/chats/${THREAD_ID}?${params}`,
-      RIGHT_THREAD_ID,
-    );
+    await openChat(false, `/chats/${THREAD_ID}?${params}`, RIGHT_THREAD_ID);
     await screen.findByText("Proposal details 12");
     const back = await link("Back to emails");
     expect(back).toHaveAttribute(
@@ -609,12 +579,7 @@ describe("thread email manager", () => {
       mailThread: RIGHT_THREAD_ID,
       mailView: "list",
     });
-    await openChat(
-      true,
-      false,
-      `/chats/${THREAD_ID}?${params}`,
-      RIGHT_THREAD_ID,
-    );
+    await openChat(false, `/chats/${THREAD_ID}?${params}`, RIGHT_THREAD_ID);
     const list = await screen.findByRole("dialog", { name: "Emails" });
     click(await link("Open email: Proposal 12", list));
     await screen.findByText("Proposal details 12");
@@ -642,7 +607,7 @@ describe("thread email manager", () => {
   it("keeps a failed initial list read accessible", async () => {
     const fixture = installMails();
     fixture.listing.fail = true;
-    await openChat(true, false);
+    await openChat(false);
     await screen.findAllByText("Temporary email list failure");
     const list = await openList();
     await within(list).findByRole("alert");
