@@ -178,7 +178,7 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
     ),
   ).toBeInTheDocument();
   expect(within(card).getByText("20,000")).toBeInTheDocument();
-  expect(within(card).getByText("+400")).toBeInTheDocument();
+  expect(within(card).getByText("+2,000")).toBeInTheDocument();
   expect(within(card).getByText(/credits · Just now/u)).toBeInTheDocument();
   click(await findEnabledButton("Upgrade now", card));
   await expect(
@@ -199,7 +199,7 @@ test("Keep the upgrade action usable when the price catalog is unavailable", asy
   ).resolves.toBeVisible();
   expect(within(card).queryByText(/\$/u)).toBeNull();
   expect(within(card).queryByText("20,000")).toBeNull();
-  expect(within(card).getByText("+400")).toBeInTheDocument();
+  expect(within(card).queryByText(/credits · Just now/u)).toBeNull();
   await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
 });
 
@@ -209,6 +209,34 @@ test("Keep the general plans action for an existing paid workspace", async () =>
     within(card).findByText("Upgrade your workspace"),
   ).resolves.toBeVisible();
   expect(within(card).queryByText("+400")).toBeNull();
+  click(await findEnabledButton("Compare plans", card));
+  await expect(
+    screen.findByRole("dialog", { name: "Choose a plan" }),
+  ).resolves.toBeVisible();
+});
+
+test("Keep the free workspace plans action when the first-task rollout is disabled", async () => {
+  mockBilling();
+  installRunChat({
+    chatEvents: [
+      ...completedConversation(`Your report is ready.\n\n${UPGRADE_LINK}`),
+      completedEvent({
+        id: "upgrade-completed",
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 3,
+      }),
+    ],
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: false },
+  });
+  await readyChat();
+
+  const card = await screen.findByTestId("plan-upgrade-card");
+  expect(within(card).getByText("Upgrade your workspace")).toBeInTheDocument();
   click(await findEnabledButton("Compare plans", card));
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
