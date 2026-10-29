@@ -18,7 +18,8 @@ def blocks_outlook_send(
 ) -> bool:
     if host != "graph.microsoft.com":
         return False
-    path = request_path.partition("?")[0]
+    query_start = request_path.find("?")
+    path = request_path[:query_start] if query_start >= 0 else request_path
     if has_unsafe_path(path):
         return True
     for _ in range(5):
