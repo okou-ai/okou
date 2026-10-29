@@ -86,8 +86,6 @@ const GLOBAL_SWEEP_BOUNDARIES: readonly GlobalSweepBoundary[] = [
 const CONTRACT_HARNESS_SUFFIX =
   "/src/signals/routes/__tests__/global-sweep-contracts.test.ts";
 const PRODUCTION_ROUTE_SUFFIX = "/src/signals/route.ts";
-const COMPUTER_USE_RETENTION_SUFFIX =
-  "/turbo/apps/api/src/signals/routes/__tests__/computer-use-retention.test.ts";
 const CONTRACT_HELPER_SUFFIX =
   "/signals/routes/__tests__/helpers/global-sweep-contract";
 const CONTRACT_HELPER_RELATIVE = "./helpers/global-sweep-contract";
@@ -230,7 +228,6 @@ export const noGlobalSweepTestRoutes = createRule({
       readonly boundary: GlobalSweepBoundary;
       readonly specifier: TSESTree.ImportSpecifier;
     }[] = [];
-    const systemBoundaryBindings: typeof harnessBindings = [];
     const calls: TSESTree.CallExpression[] = [];
 
     function report(node: TSESTree.Node, boundary: GlobalSweepBoundary): void {
@@ -859,19 +856,6 @@ export const noGlobalSweepTestRoutes = createRule({
       );
     }
 
-    function isCanonicalSystemBoundaryMount(
-      call: TSESTree.CallExpression,
-    ): boolean {
-      if (call.callee.type !== AST_NODE_TYPES.Identifier) {
-        return false;
-      }
-      const factory = importReference(context.sourceCode, call.callee);
-      return (
-        factory?.importedName === "setupApp" &&
-        factory.source === "../../../__tests__/test-helpers"
-      );
-    }
-
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (typeof node.source.value !== "string") {
@@ -895,17 +879,6 @@ export const noGlobalSweepTestRoutes = createRule({
               : String(specifier.imported.value);
           const boundary = boundaryForImport(node.source.value, importedName);
           if (!boundary) {
-            continue;
-          }
-          // Approved operator boundaries use isolated databases and construct
-          // business state through the normal public lifecycle.
-          if (
-            filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
-            node.source.value === "../cron-computer-use-screenshot-cleanup" &&
-            boundary.exportName === "cronComputerUseScreenshotCleanupRoutes" &&
-            specifier.local.name === boundary.exportName
-          ) {
-            systemBoundaryBindings.push({ boundary, specifier });
             continue;
           }
           // This system-boundary suite publishes through the real catalog cron
@@ -986,42 +959,6 @@ export const noGlobalSweepTestRoutes = createRule({
               if (
                 identifier.type === AST_NODE_TYPES.Identifier &&
                 !isApprovedHarnessReference(identifier, boundary, context)
-              ) {
-                report(identifier, boundary);
-              }
-            }
-          }
-        }
-        for (const { boundary, specifier } of systemBoundaryBindings) {
-          for (const variable of context.sourceCode.getDeclaredVariables(
-            specifier,
-          )) {
-            for (const reference of variable.references) {
-              const identifier = reference.identifier;
-              const property = identifier.parent;
-              const options = property.parent;
-              const call = options?.parent;
-              if (
-                property.type !== AST_NODE_TYPES.Property ||
-                property.value !== identifier ||
-                property.computed ||
-                propertyName(property) !== "routes" ||
-                options?.type !== AST_NODE_TYPES.ObjectExpression ||
-                call?.type !== AST_NODE_TYPES.CallExpression ||
-                call.arguments[0] !== options ||
-                !isCanonicalSystemBoundaryMount(call) ||
-                (filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
-                  (options.properties.some((entry) => {
-                    return entry.type === AST_NODE_TYPES.SpreadElement;
-                  }) ||
-                    !options.properties.some((entry) => {
-                      return (
-                        entry.type === AST_NODE_TYPES.Property &&
-                        propertyName(entry) === "isolatePg" &&
-                        entry.value.type === AST_NODE_TYPES.Literal &&
-                        entry.value.value === true
-                      );
-                    })))
               ) {
                 report(identifier, boundary);
               }

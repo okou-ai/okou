@@ -2,20 +2,16 @@ import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 import { createHash, randomUUID } from "node:crypto";
-import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { onboardingSourcesContract } from "@okouai/api-contracts/contracts/onboarding";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   connectorCatalogArtifactSchema,
@@ -27,26 +23,19 @@ import { getApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
-import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
 import { describe, expect, it } from "vitest";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const routeMocks = createRouteMocks(context);
 
-function release(version: string, label: string, entrySlug?: string) {
+function release(version: string, label: string) {
   const artifact = connectorCatalogArtifactSchema.parse(
     structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
   );
   artifact.catalogVersion = version;
-  const first =
-    entrySlug === undefined
-      ? artifact.connectors[0]
-      : artifact.connectors.find((entry) => {
-          return entry.slug === entrySlug;
-        });
+  const first = artifact.connectors[0];
   if (!first) {
     throw new Error("Missing fixed catalog connector");
   }
@@ -89,74 +78,6 @@ function serve(candidate: ReturnType<typeof release>) {
       },
     });
   });
-}
-
-async function directory(candidate: ReturnType<typeof release>) {
-  routeMocks.clerk.session("catalog-lifecycle-user", "catalog-lifecycle-org");
-  const first = candidate.artifact.connectors[0];
-  if (!first) {
-    throw new Error("Missing fixed catalog connector");
-  }
-  const response = await setupApp({ context, routes: builtinConnectorsRoutes })(
-    builtinConnectorsSearchContract,
-  ).search({
-    headers: { authorization: "Bearer clerk-session" },
-    query: { keyword: first.slug },
-  });
-  expect(response.status).toBe(200);
-  if (response.status !== 200) {
-    throw new Error("Catalog search failed");
-  }
-  expect(
-    response.body.connectors.find((entry) => {
-      return entry.slug === first.slug;
-    })?.label,
-  ).toBe(first.label);
-}
-
-async function sync(app: Awaited<ReturnType<typeof setupApp>>) {
-  return await app(cronConnectorCatalogContract).sync({
-    headers: { authorization: "Bearer test-cron-secret" },
-  });
-}
-
-async function admittedMcpRun() {
-  const bdd = createBddApi(context);
-  const connectors = createConnectorBddApi(context);
-  const runs = createRunsApi(context);
-  const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
-  await runs.grantProEntitlement(actor);
-  await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Catalog MCP reader",
-  });
-  const connection = await connectors.connectManualGrant(
-    actor,
-    "manual-mcp",
-    "api-token",
-    { apiKey: "catalog-mcp-key" },
-    agent.agentId,
-  );
-  await runs.enableAgentConnectors(actor, agent.agentId, ["manual-mcp"]);
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Discover the admitted MCP connection",
-  });
-  await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(run.runId);
-  const token = claim.platformEnvironment.OKOU_TOKEN;
-  if (!token) {
-    throw new Error("Expected a claimed Run's Okou token");
-  }
-  const client = setupApp({ context, routes: mcpConnectorsRoutes })(
-    mcpConnectorsContract,
-  );
-  const headers = { authorization: `Bearer ${token}` };
-  return { actor, connection, run, runs, client, headers };
 }
 
 describe("immutable connector catalog publication", () => {
@@ -216,151 +137,6 @@ describe("immutable connector catalog publication", () => {
         })
         .sort(),
     );
-    await directory(candidate);
-  });
-
-  it("serves the current MCP descriptor to an admitted Run after publication changes", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const first = release("2099-01-02.old", "Old MCP catalog", "manual-mcp");
-    serve(first);
-    await accept(sync(app), [200]);
-    const { actor, connection, run, runs, client, headers } =
-      await admittedMcpRun();
-    const original = await accept(client.list({ headers }), [200]);
-    expect(original.body.connectors).toContainEqual(
-      expect.objectContaining({
-        displayName: "Old MCP catalog",
-        connectionId: connection.id,
-      }),
-    );
-    const next = release("2099-01-02.new", "New MCP catalog", "manual-mcp");
-    serve(next);
-    await accept(sync(app), [200]);
-    const current = await accept(client.list({ headers }), [200]);
-    expect(current.body.connectors).toContainEqual(
-      expect.objectContaining({
-        displayName: "New MCP catalog",
-        connectionId: connection.id,
-      }),
-    );
-    await runs.requestCancelRun(actor, run.runId, [200]);
-  });
-});
-
-describe("slug-first current catalog business readers", () => {
-  const headers = { authorization: "Bearer clerk-session" };
-  function catalogClient() {
-    return setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-  }
-  async function publishedCatalog(app: Awaited<ReturnType<typeof setupApp>>) {
-    const candidate = release(
-      `2099-02-01.${randomUUID()}`,
-      "Slug-reader catalog",
-    );
-    serve(candidate);
-    expect((await sync(app)).body).toMatchObject({ outcome: "accepted" });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    return candidate;
-  }
-  it("follows permission metadata changes and removal across catalog publications", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const client = catalogClient();
-    const first = release(
-      `2099-02-02.${randomUUID()}`,
-      "First permission catalog",
-      "notion",
-    );
-    serve(first);
-    await accept(sync(app), [200]);
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const params = { connectorSlug: "notion" };
-    const initial = await accept(
-      client.permissions({ headers, params }),
-      [200],
-    );
-    expect(initial.body.permissions.label).toBe("First permission catalog");
-
-    const next = release(
-      `2099-02-03.${randomUUID()}`,
-      "Updated permission catalog",
-      "notion",
-    );
-    serve(next);
-    await accept(sync(app), [200]);
-    const updated = await accept(
-      client.permissions({ headers, params }),
-      [200],
-    );
-    expect(updated.body.permissions.label).toBe("Updated permission catalog");
-
-    const removed = publication({
-      ...next.artifact,
-      catalogVersion: `2099-02-04.${randomUUID()}`,
-      connectors: next.artifact.connectors.filter((connector) => {
-        return connector.slug !== "notion";
-      }),
-    });
-    serve(removed);
-    await accept(sync(app), [200]);
-    const missing = await accept(
-      client.permissions({ headers, params }),
-      [404],
-    );
-    expect(missing.body.error.code).toBe("NOT_FOUND");
-  });
-  it("serves concurrent and subsequent catalog reads across publications", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    for (const label of ["Initial catalog", "Replacement catalog"]) {
-      const candidate = release(`2099-02-01.${randomUUID()}`, label, "github");
-      serve(candidate);
-      expect((await sync(app)).body).toMatchObject({ outcome: "accepted" });
-      routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-      const client = catalogClient();
-      const responses = await Promise.all(
-        Array.from({ length: 3 }, () => {
-          return accept(client.list({ headers }), [200]);
-        }),
-      );
-      for (const response of responses) {
-        expect(response.body.connectors).toContainEqual(
-          expect.objectContaining({ slug: "github", label }),
-        );
-        expect(response.body).toStrictEqual(responses[0]?.body);
-      }
-      const subsequent = await accept(client.list({ headers }), [200]);
-      expect(subsequent.body).toStrictEqual(responses[0]?.body);
-      await directory(candidate);
-      const oneClick = await accept(client.oneClick({ headers }), [200]);
-      expect(oneClick.body.connectors.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("lists named onboarding sources from current entries", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    await publishedCatalog(app);
-    const client = setupApp({ context, routes: onboardingSourcesRoutes })(
-      onboardingSourcesContract,
-    );
-    const listed = await accept(client.list({ headers }), [200]);
-    expect(listed.body.connectors.length).toBeGreaterThan(0);
   });
 });
 

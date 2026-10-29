@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -68,7 +68,10 @@ import {
   type SidebarChatThreadScrollSignals,
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
-import type { SidebarChatThreadItemSignals } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
+import type {
+  SidebarChatThreadIndicatorState,
+  SidebarChatThreadItemSignals,
+} from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import {
   currentChatAgentScope$,
@@ -142,16 +145,12 @@ function equalSidebarChatThreadWindows(
 }
 
 function SessionStateIndicator({
-  signals,
+  state,
   rowIndex,
 }: {
-  signals: SidebarChatThreadItemSignals;
+  state: SidebarChatThreadIndicatorState;
   rowIndex: number;
 }) {
-  const state = useLastResolved(signals.indicatorState$) ?? null;
-  if (state === null) {
-    return null;
-  }
   if (state === "running") {
     return (
       <RunningIndicator phaseOffset={rowIndex / RUNNING_INDICATOR_WAVE_ROWS} />
@@ -394,12 +393,47 @@ type ChatThreadMenuProps = {
   touch?: boolean;
 };
 
-function ChatThreadMenuTrigger({
+function ChatThreadMenuButton({
+  signals,
+  touch = false,
+  className,
+  ...props
+}: ComponentProps<typeof Button> &
+  Pick<ChatThreadMenuProps, "signals" | "touch">) {
+  const { t } = useTranslation();
+  const isPinned = useGet(signals.pinned$);
+  const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
+  const hasRestingIndicator = indicatorState !== null || isPinned;
+
+  return (
+    <Button
+      {...props}
+      type="button"
+      variant="quiet"
+      size="icon-2xs"
+      className={cn(
+        `group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
+          hasRestingIndicator
+            ? ""
+            : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
+        } ${CHAT_THREAD_ROW_ICON_CLASS}`,
+        className,
+      )}
+      aria-label={t(($) => {
+        return $.chat.sidebar.openChatMenu;
+      })}
+      data-testid="chat-thread-menu-trigger"
+      data-pinned={isPinned ? "true" : "false"}
+    />
+  );
+}
+
+function ChatThreadMenuGlyph({
   signals,
   rowIndex,
-  touch = false,
-}: ChatThreadMenuProps) {
-  const { t } = useTranslation();
+  className,
+  ...props
+}: ComponentProps<"span"> & Pick<ChatThreadMenuProps, "signals" | "rowIndex">) {
   const isPinned = useGet(signals.pinned$);
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
 
@@ -408,60 +442,55 @@ function ChatThreadMenuTrigger({
   const hasRestingIndicator = showStateIndicator || showPinIndicator;
 
   return (
-    <DropdownMenuTrigger
-      render={
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-2xs"
-          className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
-            hasRestingIndicator
-              ? ""
-              : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
-          } ${CHAT_THREAD_ROW_ICON_CLASS}`}
-          aria-label={t(($) => {
-            return $.chat.sidebar.openChatMenu;
-          })}
-          data-testid="chat-thread-menu-trigger"
-          data-pinned={isPinned ? "true" : "false"}
-        />
+    <span
+      {...props}
+      data-testid={
+        showPinIndicator ? "chat-thread-pinned-indicator" : undefined
       }
+      className={cn("flex items-center justify-center", className)}
+    >
+      {hasRestingIndicator ? (
+        <>
+          <span
+            aria-hidden="true"
+            data-testid="chat-thread-state-indicator"
+            className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
+          >
+            {showStateIndicator ? (
+              <SessionStateIndicator
+                state={indicatorState}
+                rowIndex={rowIndex}
+              />
+            ) : (
+              <Pin size={17} className="opacity-70" />
+            )}
+          </span>
+          <Ellipsis
+            size={17}
+            className="hidden opacity-70 md:group-hover:block group-focus-visible/thread-menu:block md:group-data-[popup-open]/thread-menu:block"
+          />
+        </>
+      ) : (
+        <Ellipsis size={17} className="opacity-70" />
+      )}
+    </span>
+  );
+}
+
+function ChatThreadMenuTrigger({
+  signals,
+  rowIndex,
+  touch = false,
+}: ChatThreadMenuProps) {
+  const { t } = useTranslation();
+
+  return (
+    <DropdownMenuTrigger
+      render={<ChatThreadMenuButton signals={signals} touch={touch} />}
     >
       <Tooltip>
         <TooltipTrigger
-          render={
-            <span
-              data-testid={
-                showPinIndicator ? "chat-thread-pinned-indicator" : undefined
-              }
-              className="flex items-center justify-center"
-            >
-              {hasRestingIndicator ? (
-                <>
-                  <span
-                    aria-hidden="true"
-                    data-testid="chat-thread-state-indicator"
-                    className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
-                  >
-                    {showStateIndicator ? (
-                      <SessionStateIndicator
-                        signals={signals}
-                        rowIndex={rowIndex}
-                      />
-                    ) : (
-                      <Pin size={17} className="opacity-70" />
-                    )}
-                  </span>
-                  <Ellipsis
-                    size={17}
-                    className="hidden opacity-70 md:group-hover:block group-focus-visible/thread-menu:block md:group-data-[popup-open]/thread-menu:block"
-                  />
-                </>
-              ) : (
-                <Ellipsis size={17} className="opacity-70" />
-              )}
-            </span>
-          }
+          render={<ChatThreadMenuGlyph signals={signals} rowIndex={rowIndex} />}
         />
         <TooltipContent side="bottom">
           <p className="text-xs">
@@ -528,6 +557,20 @@ function ChatThreadMenu({
   );
 }
 
+function ChatThreadItemStateText({
+  signals,
+}: {
+  signals: SidebarChatThreadItemSignals;
+}) {
+  const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
+  const isPinned = useGet(signals.pinned$);
+  return (
+    <ChatThreadStateText
+      state={indicatorState ?? (isPinned ? "pinned" : null)}
+    />
+  );
+}
+
 function ChatThreadItemLink({
   signals,
   shortcutNumber,
@@ -542,8 +585,6 @@ function ChatThreadItemLink({
   const isCurrentPage = useGet(signals.currentPage$);
   const isHighlighted = useGet(signals.highlighted$);
   const isUnread = useLastResolved(signals.unread$) ?? false;
-  const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
-  const isPinned = useGet(signals.pinned$);
   const select = useSet(signals.select$);
   const inlineRenameEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadInlineRename] === true;
@@ -602,9 +643,7 @@ function ChatThreadItemLink({
             })
           }
         />
-        <ChatThreadStateText
-          state={indicatorState ?? (isPinned ? "pinned" : null)}
-        />
+        <ChatThreadItemStateText signals={signals} />
       </span>
       <span
         className={cn(

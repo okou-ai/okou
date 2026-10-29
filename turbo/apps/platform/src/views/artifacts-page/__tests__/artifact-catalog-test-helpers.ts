@@ -58,7 +58,9 @@ export function getButtonByName(
 
 export async function findArtifactAction(title: string): Promise<HTMLElement> {
   const titleElement = await screen.findByText(title);
-  const action = titleElement.closest<HTMLElement>('button, [role="button"]');
+  const action = titleElement.closest<HTMLElement>(
+    'a[href], button, [role="button"]',
+  );
   if (!action) {
     throw new Error(`Expected an artifact action for "${title}"`);
   }

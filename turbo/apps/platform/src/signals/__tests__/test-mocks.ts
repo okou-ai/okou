@@ -405,8 +405,8 @@ export function createTestMocks(getSignal: () => AbortSignal) {
     browser: {
       webSocket: (
         respond: (data: string, url: string) => string | null,
-      ): void => {
-        mockBrowserWebSocket(getSignal(), respond);
+      ): ReturnType<typeof mockBrowserWebSocket> => {
+        return mockBrowserWebSocket(getSignal(), respond);
       },
       url: (url: string, options: BrowserUrlOptions = {}): void => {
         if (originalBrowserUrl === null) {
@@ -656,6 +656,18 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
       canvasRendering: (): CanvasRenderingMock => {
         return mockCanvasRendering(getSignal());
+      },
+      imageBitmap: (width: number, height: number): void => {
+        const descriptor = defineWindowProperty(
+          globalThis,
+          "createImageBitmap",
+          () => {
+            return Promise.resolve({ width, height, close() {} });
+          },
+        );
+        restoreOnAbort(getSignal(), () => {
+          restoreWindowProperty(globalThis, "createImageBitmap", descriptor);
+        });
       },
       uint8ArrayFromBase64: (): void => {
         // The viewer requires this browser API, which the test runtime lacks.
@@ -1473,7 +1485,7 @@ function mockImageDimensions(
 function mockBrowserWebSocket(
   signal: AbortSignal,
   respond: (data: string, url: string) => string | null,
-): void {
+) {
   const sockets = new Set<TestWebSocket>();
   class TestWebSocket extends EventTarget {
     static readonly CONNECTING = 0;
@@ -1526,6 +1538,15 @@ function mockBrowserWebSocket(
     }
     restoreWindowProperty(globalThis, "WebSocket", descriptor);
   });
+  return {
+    receive(url: string, data: string): void {
+      for (const socket of sockets) {
+        if (socket.url === url && socket.readyState === TestWebSocket.OPEN) {
+          socket.dispatchEvent(new MessageEvent("message", { data }));
+        }
+      }
+    },
+  };
 }
 
 function mockCanvasRendering(signal: AbortSignal): CanvasRenderingMock {

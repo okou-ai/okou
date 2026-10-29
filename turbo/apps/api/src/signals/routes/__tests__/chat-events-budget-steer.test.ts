@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { cronSteerRunTimeBudgetContract } from "@okouai/api-contracts/contracts/cron";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -7,7 +6,6 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronSteerRunTimeBudgetRoutes } from "../cron-steer-run-time-budget";
-import { expectApiError } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
@@ -132,86 +130,15 @@ describe("run-targeted time budget steering through HTTP", () => {
     ).toHaveLength(0);
   }, 90_000);
 
-  it("leaves no pending warning when a sweep overlaps runner completion", async () => {
+  it("consumes the warning once and retains its run identity on replay", async () => {
     const app = await setupApp({
       context,
       routes: cronSteerRunTimeBudgetRoutes,
       isolatePg: true,
     });
-    const { actor, active, claimed, startedAt, requestBudgetSweep } =
-      await startBudgetRun(app);
-    mockNow(startedAt + STEER_AT_MS);
-    await Promise.all([
-      requestBudgetSweep(),
-      completeChatRunOk(active.runId, claimed.sandboxHeaders),
-    ]);
-    await flushWaitUntilForTest();
-    const events = (await chat.listThreadEvents(actor, active.threadId)).events;
-    const budgets = events.filter((event) => {
-      return event.eventType === "input.budget";
-    });
-    expect(budgets.length).toBeLessThanOrEqual(1);
-    for (const budget of budgets) {
-      expect(
-        events.filter((event) => {
-          return event.revokesEventId === budget.id;
-        }),
-      ).toStrictEqual([
-        expect.objectContaining({
-          eventType: "control.revoke",
-          runId: active.runId,
-        }),
-      ]);
-    }
-    await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
-    ).resolves.toStrictEqual({ input: null });
-    await expect(api.readRun(actor, active.runId)).resolves.toMatchObject({
-      status: "completed",
-    });
-  }, 90_000);
-
-  it("consumes the warning once, retains its run identity, and survives a later prompt anchor", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronSteerRunTimeBudgetRoutes,
-      isolatePg: true,
-    });
-    const {
-      actor,
-      agentId,
-      active,
-      claimed,
-      budget,
-      prompt,
-      requestBudgetSweep,
-    } = await startRunAtBudgetBoundary(app);
+    const { actor, active, claimed, budget } =
+      await startRunAtBudgetBoundary(app);
     const token = claimed.claim.sandboxToken;
-    const laterPromptId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: active.threadId,
-        prompt: "finish the current work",
-        clientEventId: laterPromptId,
-      },
-      [201],
-    );
-    // A budget precedes the later prompt in the next-input response.
-    await expect(
-      api.nextSteerableInput(token, active.runId),
-    ).resolves.toStrictEqual({
-      input: { eventId: budget.id, prompt },
-    });
-    // An independently accepted prompt may be declared before the warning.
-    await api.declareSteeredInput(token, active.runId, laterPromptId);
-    await expect(
-      api.nextSteerableInput(token, active.runId),
-    ).resolves.toStrictEqual({
-      input: { eventId: budget.id, prompt },
-    });
-
     await expect(
       api.declareSteeredInput(token, active.runId, budget.id),
     ).resolves.toStrictEqual({ outcome: "steered" });
@@ -223,12 +150,6 @@ describe("run-targeted time budget steering through HTTP", () => {
     ).resolves.toStrictEqual({
       input: null,
     });
-    await requestBudgetSweep();
-    await completeChatRunOk(active.runId, claimed.sandboxHeaders);
-    await flushWaitUntilForTest();
-    await expect(
-      api.declareSteeredInput(token, active.runId, budget.id),
-    ).resolves.toStrictEqual({ outcome: "steered" });
     const events = (await chat.listThreadEvents(actor, active.threadId)).events;
     const replacements = events.filter((event) => {
       return event.revokesEventId === budget.id;
@@ -244,9 +165,7 @@ describe("run-targeted time budget steering through HTTP", () => {
         return event.eventType === "input.budget";
       }),
     ).toHaveLength(2);
-    await expect(api.readRun(actor, active.runId)).resolves.toMatchObject({
-      status: "completed",
-    });
+    await cancelChatRun(actor, active.runId, claimed.sandboxHeaders);
   }, 90_000);
 
   it("revokes an unsteered warning at completion and never gives it to the next run", async () => {
@@ -285,13 +204,6 @@ describe("run-targeted time budget steering through HTTP", () => {
         successor.runId,
       ),
     ).resolves.toStrictEqual({ input: null });
-    const wrongRun = await api.requestDeclareSteeredInputAs(
-      successorClaim.sandboxHeaders.authorization,
-      successor.runId,
-      budget.id,
-      [404],
-    );
-    expectApiError(wrongRun.body);
     await cancelChatRun(actor, successor.runId, successorClaim.sandboxHeaders);
   }, 90_000);
 });

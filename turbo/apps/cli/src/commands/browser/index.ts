@@ -32,6 +32,7 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { captureBrowserInputTargets } from "./browser-user-action-capture";
 import { BrowserInputRequestError } from "./browser-input-request-error";
+import { getConnectedEmailLoginGuidance } from "./connected-email-login";
 import {
   browserTabCommand,
   bindBrowserWindow,
@@ -324,12 +325,14 @@ function renderInputRequestError(
 function renderBrowserUserAction(
   response: BrowserUserActionCreateResponse,
   options: OutputOptions,
+  loginGuidance: string | undefined,
 ): void {
   if (options.json) {
     console.log(
       JSON.stringify({
         actionUrl: response.actionUrl,
         nextAction: BROWSER_ACTION_NEXT_STEP,
+        ...(loginGuidance ? { loginGuidance } : {}),
       }),
     );
     return;
@@ -337,6 +340,7 @@ function renderBrowserUserAction(
   console.log(chalk.green("✓ Browser handoff ready"));
   console.log(response.actionUrl);
   console.log(chalk.dim(BROWSER_ACTION_NEXT_STEP));
+  if (loginGuidance) console.log(loginGuidance);
 }
 
 function browserJson(browser: BrowserSession): Omit<BrowserSession, "liveUrl"> {
@@ -391,6 +395,7 @@ async function connectResponse(
     readonly cdpUrl: string;
   },
   options: ConnectionOptions,
+  loginGuidance: string | undefined,
 ): Promise<void> {
   const sessionName = options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION;
   connectAgentBrowser(
@@ -404,6 +409,7 @@ async function connectResponse(
       JSON.stringify({
         browser: browserJson(response.browser),
         agentBrowserSession: sessionName,
+        ...(loginGuidance ? { loginGuidance } : {}),
       }),
     );
     return;
@@ -419,6 +425,7 @@ async function connectResponse(
   }
   console.log(chalk.dim(`  ${reclaimNotice(response.browser)}`));
   console.log(`[Open live browser](${response.browser.viewerUrl})`);
+  if (loginGuidance) console.log(loginGuidance);
 }
 
 const useCommand = new Command()
@@ -435,7 +442,10 @@ const useCommand = new Command()
   .option("--json", "Print machine-readable output without connection secrets")
   .action(
     withErrorHandler(async (options: ConnectionOptions) => {
-      await connectResponse(await useBrowser(), options);
+      const loginGuidance = await getConnectedEmailLoginGuidance(
+        options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
+      );
+      await connectResponse(await useBrowser(), options, loginGuidance);
     }),
   );
 
@@ -482,7 +492,14 @@ const newCommand = new Command()
         name: options.name,
         proxyCountryCode: options.country ?? null,
       });
-      await connectResponse(await createBrowser(request), options);
+      const loginGuidance = await getConnectedEmailLoginGuidance(
+        options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
+      );
+      await connectResponse(
+        await createBrowser(request),
+        options,
+        loginGuidance,
+      );
     }),
   );
 
@@ -573,6 +590,15 @@ const inputRequestCommand = new Command()
           `--callback-prompt must be 1-${BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH} characters`,
         );
       }
+      const loginGuidance = fields.some((field) => {
+        return ["username", "password", "one_time_code"].includes(
+          field.fieldKind,
+        );
+      })
+        ? await getConnectedEmailLoginGuidance(
+            options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
+          )
+        : undefined;
       const captured = await captureBrowserInputTargets(
         options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
         fields.map((field) => {
@@ -610,6 +636,7 @@ const inputRequestCommand = new Command()
       renderBrowserUserAction(
         await createBrowserUserAction(request.data),
         options,
+        loginGuidance,
       );
     }, renderInputRequestError),
   );

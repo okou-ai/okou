@@ -527,7 +527,8 @@
       "description": "删除此作品并停用其 Okou 链接。已下载或保存到其他服务的副本会保留。",
       "hostedDescription": "此网站及其所有已发布版本将下线。保存到其他服务的副本会保留。",
       "menu": "{{title}}的更多操作",
-      "sharedDescription": "从你的作品中移除此收藏对话。原始对话及其分享链接仍可访问。",
+      "sharedDescription": "从你的作品中删除此分享对话，其分享链接将失效。原始对话仍会保留。",
+      "success": "作品已删除",
       "title": "删除{{title}}？"
     },
     "fileBadges": {
@@ -1360,12 +1361,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "输入网址",
-    "blankPage": {
-      "description": "{{assistantName}} 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
-      "title": "还没有打开网页"
-    },
-    "blankTabTitle": "新标签页",
     "cardTitle": "云端浏览器",
     "close": "关闭云端浏览器",
     "documentTitle": "云端浏览器",
@@ -1544,16 +1539,29 @@
       "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
+      "addReason": "补充原因",
+      "alreadyDone": "已经处理了",
+      "closeFeedback": "关闭反馈",
       "customDirection": "我想……",
       "customDirectionDescription": "提个问题，或说说你想做什么。",
       "customPlaceholder": "你有什么想法？",
       "customPrepared": "接着说……",
       "customPreparedDescription": "在上方输入消息，然后发送。",
       "dismiss": "忽略",
+      "dismissRecorded": "已收起这条建议",
+      "doneRecorded": "已记下，这件事已经处理了",
+      "editReason": "修改原因",
       "label": "建议",
+      "lessLikeThis": "少推荐这类内容",
+      "lessRecorded": "会少推荐类似的建议（{{scope}}）",
       "next": "下一条建议",
+      "notPlanned": "暂无计划",
+      "notPlannedRecorded": "已记下，这件事暂无计划",
       "position": "{{current}} / {{total}}",
       "previous": "上一条建议",
+      "reasonLabel": "补充原因（选填）",
+      "saveReason": "保存",
+      "undoFeedback": "撤销",
       "useSuggestion": "使用建议"
     },
     "attachments": {
@@ -1707,6 +1715,13 @@
       "customAmountError": "请输入 $1 到 $10,000 之间的金额",
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
+      "proCard": {
+        "creditsNow": "积分 · 就现在",
+        "description": "额外积分 · 高级功能 · 3 台云电脑",
+        "priceUnavailable": "查看套餐及最新价格",
+        "title": "大约还剩 5 个任务",
+        "upgradeNow": "立即升级"
+      },
       "redirecting": "正在跳转…",
       "upgradeToContinue": "升级到 Pro，继续和 {{assistantName}} 对话。",
       "upgradeToPro": "升级到 Pro",
@@ -2084,12 +2099,12 @@
       "reconnectProvider": "重新连接 {{provider}}",
       "reconnectToAccess": "重新连接 {{provider}} 以访问邮件：{{subject}}",
       "refreshStatus": "刷新状态",
-      "sendingDescription": "Outlook 尚未确认发送完成。请刷新状态或前往 Outlook 核实后再进行其他操作。",
+      "sendingDescription": "无法确认是否已发送，请先在 Outlook 中核实。",
       "sentToast": "邮件已发送",
       "status": {
         "deleted": "已删除",
         "draft": "草稿",
-        "sending": "等待发送确认",
+        "sending": "发送中",
         "sent": "已发送"
       },
       "toRecipients": "收件人：{{recipients}}",

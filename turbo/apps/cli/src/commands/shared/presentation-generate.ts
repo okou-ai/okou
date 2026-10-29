@@ -106,6 +106,7 @@ Output:
 
 Notes:
   - Authenticates via OKOU_TOKEN
+  - Without --template, the agent reads the source and selects a built-in template by tone, audience fit, and visual preferences
   - The agent authors HTML first, then chooses delivery from the request, remembered preferences, and intended use
   - Use okou host for HTML; follow the platform's conversion instructions only when the agent selects PPTX
   - Deliver one format unless the user requests multiple formats
@@ -168,8 +169,7 @@ ${formatPresentationTemplateListing(templates)}`;
           [
             "# Okou generate presentation",
             "",
-            "This is a direct HTML presentation authoring packet for the current agent.",
-            "Author the deck directly from the user's request and any supplied source material.",
+            "Select a built-in presentation template from the catalog below, then use its authoring workflow.",
             "",
             "## User Prompt",
             prompt,
@@ -177,34 +177,36 @@ ${formatPresentationTemplateListing(templates)}`;
             "## Requested Parameters",
             `- Slide count: ${options.slides}`,
             `- Requested deck title: ${options.title ?? "not specified"}`,
-            "- Selected template: agent decides",
             "",
-            "## Authoring Rules",
-            "- Think like a presentation designer, not a web page designer.",
-            "- Use a fixed 1920x1080 slide canvas and scale it uniformly for smaller viewports.",
-            "- Use one section per slide and keep repeated elements in consistent positions.",
+            "## Understand the Task and Source",
+            "- Before choosing a template, planning slides, or launching workers, read the user's request and supplied source text and inspect important charts and images. Reuse source understanding already available in this conversation.",
+            "- Identify the audience, intended outcome, essential evidence, desired tone and visual preferences. Preserve the requested page count, language, brand requirements and output format.",
+            "- Distinguish content sources from visual references and explicitly required templates. An uploaded PDF is not automatically a style reference; its file type or topic alone does not determine the template.",
+            "",
+            "## Select a Template",
+            "- Honor an explicitly selected or named template. When revising an existing deck, retain its established style unless the user asks to change it.",
+            "- Otherwise choose one template from the catalog based only on tone, audience fit, and visual preferences. All templates support the same content capabilities; do not rank them by charts, tables, diagrams, images, language, fonts, or content capacity.",
+            "- The scenarios in each description are examples, not subject restrictions. The same source may suit different templates for different audiences or purposes; do not select by template name alone.",
+            "- When visual preferences are unspecified, choose a broadly suitable, understated style consistent with the audience and context.",
+            "- Keep the choice internal: do not announce the selected template or ask the user to choose or confirm one. Proceed with generation.",
+            "",
+            "## Built-in Template Catalog",
+            ...listPresentationRunbookPackages().map((template) => {
+              return [
+                `### ${template.name} (${template.templateId})`,
+                template.description,
+                `Package: ${template.resourceId}; default color system: ${template.defaultColorSystem}`,
+                "",
+              ].join("\n");
+            }),
+            "## Use the Selected Template",
+            "- Pull only the selected package once: `okou resource pull <Package from the catalog> --dir ./generated/resources`.",
+            "- Read SKILL.md in the source directory printed by the pull command fully, then read the workflow instructions it references. Follow that package's authoring, worker startup, layout and verification workflow, using its listed default color system unless the request specifies another supported palette.",
+            "- Use the source understanding above in the selected workflow; do not restart source preparation unnecessarily. Preserve the requested slide count and substantive content rather than copying the reference deck's sample story, wording, metrics, imagery or page count.",
             PRESENTATION_STATIC_HTML_INSTRUCTION,
             ...presentationImageInstructions(
               isPaidToolEnabled("image-generation"),
             ),
-            "- Make keyboard navigation work with ArrowLeft, ArrowRight, Home, and End.",
-            "- Keep slide text readable from across a room; avoid memo-like walls of text.",
-            "- Produce exactly the requested slide count. Do not let a template's reference example or preview slide count override the requested count.",
-            "- Before authoring, make an internal slide plan with exactly the requested count and map each slide to a narrative role plus a selected template layout or device.",
-            "- Adapt the selected template to the requested slide count: for shorter decks, merge or omit lower-priority content roles; for longer decks, split dense sections into multiple focused slides or reuse layout patterns with different substantive content. Do not add decorative, duplicate, or empty filler slides.",
-            "- Use selected template references only for structure, layout devices, spacing, and visual language. Do not inherit or continue any reference deck's sample subject, sample story, sample copy, sample metrics, preview imagery, or media seed names.",
-            "- Derive every presentation image/media choice from the user's requested topic, story, source material, or cited facts.",
-            "- Before laying out slides, establish the deck's arc: the opening problem or question, how it develops, and what conclusion lands; every slide should serve a clear narrative role in that arc.",
-            "- Vary slide forms across the deck — full-bleed statement, evidence with data, pull quote, section break, summary — and avoid defaulting every slide to title-plus-bullets.",
-            "- Each slide carries one idea; prefer a single strong statement over a list, and never exceed three bullets on any slide.",
-            "",
-            "## Verification",
-            "- Use `agent-browser` for browser verification when available. Start with `agent-browser skills get core` if you need command guidance.",
-            "- Prefer `agent-browser` over Playwright, Puppeteer, or installing browser automation dependencies.",
-            "- Open the HTML locally and verify it is nonblank.",
-            "- Check that keyboard/click interactions work when present.",
-            "- Check that text does not overflow or overlap at desktop and mobile viewport sizes.",
-            "- Check that shapes, charts, images, or decorative graphics do not cover readable text at desktop and mobile viewport sizes.",
             "",
             "## Delivery",
             ...presentationDeliveryInstructions({

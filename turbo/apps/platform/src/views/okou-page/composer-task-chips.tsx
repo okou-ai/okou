@@ -5,6 +5,8 @@ import { Button, Tabs, TabsContent } from "@okouai/ui";
 import {
   agentSuggestionsEnabled$,
   visibleAgentSuggestions$,
+  suggestionFeedbackConfirmation$,
+  savingSuggestionFeedback$,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { EntrustedJobs } from "./entrusted-jobs.tsx";
@@ -718,8 +720,12 @@ export function ComposerTaskChips({
   // pending or failed read would add a tab and a placeholder that vanish again
   // whenever the pool turns out empty; a refresh keeps the last resolved pool.
   const items = useLastLoadable(visibleAgentSuggestions$);
+  const feedback = useGet(suggestionFeedbackConfirmation$);
+  const savingFeedback = useGet(savingSuggestionFeedback$);
   const showSuggestions =
-    suggestionsEnabled && items.state === "hasData" && items.data.length > 0;
+    suggestionsEnabled &&
+    items.state === "hasData" &&
+    (items.data.length > 0 || feedback !== null || savingFeedback);
   const current = useGet(signals.taskChips.task$);
   const selected =
     (current === "suggestions" && !showSuggestions) ||

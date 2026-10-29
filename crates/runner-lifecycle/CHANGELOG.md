@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.34](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.33...runner-lifecycle-v0.17.34) (2026-10-29)
+
+
+### Performance Improvements
+
+* **runner-lifecycle:** skip counts for unseen cache groups ([#43912](https://github.com/okou-ai/okou/issues/43912)) ([1a149d7](https://github.com/okou-ai/okou/commit/1a149d708b009ec9e40fc3f5c9a1eddb3617232a))
+
+## [0.17.33](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.32...runner-lifecycle-v0.17.33) (2026-10-29)
+
 ## [0.17.32](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.31...runner-lifecycle-v0.17.32) (2026-10-29)
 
 

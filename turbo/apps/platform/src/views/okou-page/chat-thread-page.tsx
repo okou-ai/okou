@@ -166,6 +166,7 @@ import {
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
   ChatImagePreviewLink,
   ChatVideoPreviewButton,
+  FirstTaskUpgradeCard,
 } from "./chat-body-cards.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
@@ -4697,6 +4698,18 @@ function FinishedRunRow({
   );
 }
 
+function CompletedResultUpgrade({ thread }: { thread: ChatPanelSignals }) {
+  const eligible = useLoadable(thread.firstTaskUpgradeEligible$);
+  if (eligible.state !== "hasData" || !eligible.data) {
+    return null;
+  }
+  return (
+    <div className="@container w-full max-w-2xl">
+      <FirstTaskUpgradeCard />
+    </div>
+  );
+}
+
 function equalRecommendedFollowupSources(
   previous: RecommendedFollowupSource | null,
   next: RecommendedFollowupSource | null,
@@ -8246,6 +8259,9 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         mainActions={mainActions}
       />
+      {statusRow?.kind === "finished" ? (
+        <CompletedResultUpgrade thread={thread} />
+      ) : null}
       {(statusTailEvents?.length ?? 0) > 0 || statusRow !== undefined ? (
         <div
           data-chat-run-status-tail

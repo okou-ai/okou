@@ -2829,6 +2829,27 @@
       "when": 1793235449657,
       "tag": "1482_whatsapp_agentphone_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 1483,
+      "version": "7",
+      "when": 1793240643965,
+      "tag": "1483_repair_web_upload_artifact_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 1484,
+      "version": "7",
+      "when": 1793247516607,
+      "tag": "1484_threadless_run_restrictive_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 1485,
+      "version": "7",
+      "when": 1793256861194,
+      "tag": "1485_suggestion_rows",
+      "breakpoints": true
     }
   ]
 }

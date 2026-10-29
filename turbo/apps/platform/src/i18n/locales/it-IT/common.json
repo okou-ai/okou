@@ -543,7 +543,8 @@
       "description": "L’artefatto verrà rimosso e i suoi link Okou verranno disattivati. Le copie già scaricate o salvate in altri servizi rimarranno disponibili.",
       "hostedDescription": "Il sito e tutte le versioni pubblicate verranno messi offline. Le copie salvate in altri servizi rimarranno disponibili.",
       "menu": "Altre azioni per {{title}}",
-      "sharedDescription": "Rimuovi questa conversazione salvata dai tuoi artefatti. La conversazione originale e il relativo link di condivisione resteranno disponibili.",
+      "sharedDescription": "Elimina questa conversazione condivisa dai tuoi artefatti. Il suo link di condivisione smetterà di funzionare. La conversazione originale resterà disponibile.",
+      "success": "Artefatto eliminato",
       "title": "Eliminare {{title}}?"
     },
     "fileBadges": {
@@ -1384,12 +1385,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Inserisci un URL",
-    "blankPage": {
-      "description": "{{assistantName}} apre qui le pagine mentre lavora. Inserisci un URL qui sopra per navigare da solo.",
-      "title": "Ancora niente di aperto"
-    },
-    "blankTabTitle": "Nuova scheda",
     "cardTitle": "Browser cloud",
     "close": "Chiudi il browser cloud",
     "documentTitle": "Browser cloud",
@@ -1569,16 +1564,29 @@
       "viewAgentProfile": "Visualizza il profilo dell'agente"
     },
     "agentSuggestions": {
+      "addReason": "Add a reason",
+      "alreadyDone": "Already done",
+      "closeFeedback": "Close feedback",
       "customDirection": "Vorrei…",
       "customDirectionDescription": "Fai una domanda o descrivi cosa vorresti fare.",
       "customPlaceholder": "Cosa hai in mente?",
       "customPrepared": "Continua…",
       "customPreparedDescription": "Aggiungi il tuo messaggio qui sopra, poi invialo.",
       "dismiss": "Ignora",
+      "dismissRecorded": "Suggestion dismissed",
+      "doneRecorded": "Noted — this is already done",
+      "editReason": "Edit reason",
       "label": "Suggerimenti",
+      "lessLikeThis": "Less like this",
+      "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
       "next": "Suggerimento successivo",
+      "notPlanned": "Not planned",
+      "notPlannedRecorded": "Noted — this is not planned",
       "position": "{{current}} di {{total}}",
       "previous": "Suggerimento precedente",
+      "reasonLabel": "Add a reason (optional)",
+      "saveReason": "Save",
+      "undoFeedback": "Undo",
       "useSuggestion": "Usa suggerimento"
     },
     "attachments": {
@@ -1739,6 +1747,13 @@
       "customAmountError": "Inserisci tra $ 1 e $ 10.000",
       "customDollarAmount": "Importo in dollari personalizzato",
       "outOfCredits": "Hai esaurito i crediti",
+      "proCard": {
+        "creditsNow": "crediti · Proprio ora",
+        "description": "Crediti extra · Funzioni avanzate · 3 computer cloud",
+        "priceUnavailable": "Consulta i piani per i prezzi attuali",
+        "title": "Circa 5 attività rimaste",
+        "upgradeNow": "Passa a Pro ora"
+      },
       "redirecting": "Reindirizzamento...",
       "upgradeToContinue": "Esegui l'upgrade a Pro per continuare a chattare con {{assistantName}}.",
       "upgradeToPro": "Passa a Pro",
@@ -2125,12 +2140,12 @@
       "reconnectProvider": "Riconnetti {{provider}}",
       "reconnectToAccess": "Riconnetti {{provider}} per accedere all'e-mail: {{subject}}",
       "refreshStatus": "Aggiorna stato",
-      "sendingDescription": "Outlook non ha ancora confermato l’invio. Aggiorna lo stato o verifica in Outlook prima di continuare.",
+      "sendingDescription": "Non è stato possibile confermare l’invio. Controlla Outlook prima di riprovare.",
       "sentToast": "E-mail inviata",
       "status": {
         "deleted": "Eliminato",
         "draft": "Bozza",
-        "sending": "In attesa della conferma di invio",
+        "sending": "Invio in corso",
         "sent": "Inviato"
       },
       "toRecipients": "A: {{recipients}}",

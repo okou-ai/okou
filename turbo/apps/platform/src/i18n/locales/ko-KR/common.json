@@ -527,7 +527,8 @@
       "description": "이 작업물을 삭제하고 Okou 링크를 비활성화합니다. 이미 다운로드했거나 다른 서비스에 저장한 사본은 유지됩니다.",
       "hostedDescription": "이 웹사이트와 게시된 모든 버전을 오프라인으로 전환합니다. 다른 서비스에 저장한 사본은 유지됩니다.",
       "menu": "{{title}} 추가 작업",
-      "sharedDescription": "저장한 대화를 작업물에서 제거합니다. 원본 대화와 공유 링크는 계속 사용할 수 있습니다.",
+      "sharedDescription": "이 공유된 대화를 작업물에서 삭제합니다. 공유 링크는 더 이상 사용할 수 없습니다. 원본 대화는 유지됩니다.",
+      "success": "작업물이 삭제되었습니다",
       "title": "{{title}}을(를) 삭제할까요?"
     },
     "fileBadges": {
@@ -1360,12 +1361,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL 입력",
-    "blankPage": {
-      "description": "{{assistantName}}이(가) 작업하는 동안 여기에서 페이지를 엽니다. 위에 URL을 입력해 직접 둘러볼 수도 있습니다.",
-      "title": "아직 열린 페이지가 없습니다"
-    },
-    "blankTabTitle": "새 탭",
     "cardTitle": "클라우드 브라우저",
     "close": "클라우드 브라우저 닫기",
     "documentTitle": "클라우드 브라우저",
@@ -1544,16 +1539,29 @@
       "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
+      "addReason": "Add a reason",
+      "alreadyDone": "Already done",
+      "closeFeedback": "Close feedback",
       "customDirection": "이렇게 하고 싶어요…",
       "customDirectionDescription": "질문하거나 하고 싶은 일을 알려주세요.",
       "customPlaceholder": "어떤 생각을 하고 계신가요?",
       "customPrepared": "계속 말씀해 주세요…",
       "customPreparedDescription": "위에 메시지를 입력한 뒤 보내세요.",
       "dismiss": "무시",
+      "dismissRecorded": "Suggestion dismissed",
+      "doneRecorded": "Noted — this is already done",
+      "editReason": "Edit reason",
       "label": "제안",
+      "lessLikeThis": "Less like this",
+      "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
       "next": "다음 제안",
+      "notPlanned": "Not planned",
+      "notPlannedRecorded": "Noted — this is not planned",
       "position": "{{current}} / {{total}}",
       "previous": "이전 제안",
+      "reasonLabel": "Add a reason (optional)",
+      "saveReason": "Save",
+      "undoFeedback": "Undo",
       "useSuggestion": "제안 사용"
     },
     "attachments": {
@@ -1707,6 +1715,13 @@
       "customAmountError": "$1에서 $10,000 사이를 입력하세요",
       "customDollarAmount": "맞춤 금액",
       "outOfCredits": "크레딧이 부족합니다",
+      "proCard": {
+        "creditsNow": "크레딧 · 바로 지금",
+        "description": "추가 크레딧 · 고급 기능 · 클라우드 컴퓨터 3대",
+        "priceUnavailable": "요금제에서 현재 가격 확인",
+        "title": "남은 작업 약 5개",
+        "upgradeNow": "지금 업그레이드"
+      },
       "redirecting": "리디렉션 중...",
       "upgradeToContinue": "{{assistantName}}와 계속 대화하려면 Pro로 업그레이드하세요.",
       "upgradeToPro": "Pro로 업그레이드",
@@ -2084,12 +2099,12 @@
       "reconnectProvider": "{{provider}} 다시 연결",
       "reconnectToAccess": "이메일 접근을 위해 {{provider}} 다시 연결: {{subject}}",
       "refreshStatus": "상태 새로 고침",
-      "sendingDescription": "Outlook에서 전송 완료가 확인되지 않았습니다. 상태를 새로 고치거나 Outlook에서 확인하세요.",
+      "sendingDescription": "전송 여부를 확인하지 못했습니다. 다시 시도하기 전에 Outlook을 확인하세요.",
       "sentToast": "이메일이 전송되었습니다",
       "status": {
         "deleted": "삭제됨",
         "draft": "초안",
-        "sending": "전송 확인 대기 중",
+        "sending": "보내는 중",
         "sent": "전송됨"
       },
       "toRecipients": "받는 사람: {{recipients}}",

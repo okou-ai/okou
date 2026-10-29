@@ -6,14 +6,6 @@ requires-python = ">=3.14"
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P7D"
 
-[options.exclude-newer-package]
-certifi = "2026-10-22T06:23:08Z"
-mitmproxy = "2026-10-22T06:23:08Z"
-mitmproxy-linux = "2026-10-22T06:23:08Z"
-mitmproxy-macos = "2026-10-22T06:23:08Z"
-mitmproxy-rs = "2026-10-22T06:23:08Z"
-mitmproxy-windows = "2026-10-22T06:23:08Z"
-
 [[package]]
 name = "aioquic"
 version = "1.2.0"

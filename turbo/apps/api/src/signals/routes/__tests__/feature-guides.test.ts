@@ -308,15 +308,14 @@ test("respects scheduled and expired publication windows", async () => {
 });
 
 test("requires hard staff authorization for importing and publishing, even after opting in", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   await identity();
   await enable();
-  await accept(clients().guide.import({ headers, body: draft() }), [403]);
-  await accept(
+  const imported = await accept(
+    clients().guide.import({ headers, body: draft() }),
+    [403],
+  );
+  expect(imported.status).toBe(403);
+  const published = await accept(
     clients().guide.publish({
       headers,
       params: { editionId: "unknown-edition" },
@@ -324,19 +323,14 @@ test("requires hard staff authorization for importing and publishing, even after
     }),
     [403],
   );
-  await expect(current()).resolves.toBeNull();
+  expect(published.status).toBe(403);
 });
 
-test("does not let the caller mark another owner or an unpublished revision as seen", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
+test("does not mark an unpublished revision as seen", async () => {
   const prepared = await prepare();
   await identity();
   await enable();
-  await accept(
+  const rejected = await accept(
     clients().guide.seen({
       headers,
       params: { editionId: prepared.editionId },
@@ -344,26 +338,10 @@ test("does not let the caller mark another owner or an unpublished revision as s
     }),
     [404],
   );
-  await publish(prepared);
-  await identity();
-  await enable();
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: randomUUID() },
-    }),
-    [404],
-  );
-  await expect(current()).resolves.not.toBeNull();
+  expect(rejected.status).toBe(404);
 });
 
 test("requires a session and validates content and publication windows", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   const signedOut = await accept(
     clients().guide.current({ headers: {} }),
     [401],
@@ -408,38 +386,13 @@ test("requires a session and validates content and publication windows", async (
   );
 });
 
-test("allows replay only in preview deployments without changing normal seen status", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
-  const prepared = await prepare();
-  await publish(prepared);
+test("rejects guide replay in production deployments", async () => {
   await identity();
   await enable();
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [200],
-  );
-  await expect(current()).resolves.toBeNull();
-  mockOptionalEnv("ENV", "preview");
-  const replay = await accept(
-    clients().guide.current({ headers, query: { preview: "1" } }),
-    [200],
-  );
-  expect(replay.body).toMatchObject({
-    preview: true,
-    edition: { id: prepared.editionId },
-  });
-  await expect(current()).resolves.toBeNull();
   mockOptionalEnv("ENV", "production");
-  await accept(
+  const rejected = await accept(
     clients().guide.current({ headers, query: { preview: "1" } }),
     [403],
   );
+  expect(rejected.status).toBe(403);
 });

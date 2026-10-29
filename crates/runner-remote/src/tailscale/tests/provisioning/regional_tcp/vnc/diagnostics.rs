@@ -89,6 +89,7 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
         (foreground.session(), checked, peers, proxy, other_proxy)
     };
     assert_eq!(initial_check["status"], "passed", "{initial_check}");
+    assert!(diagnostic_text(&initial_check).contains("Check-owned cleanup: passed."));
     let mut modes = Vec::new();
     for _ in 0..2 {
         match peers.finish(h.peer.event()).await {
@@ -100,7 +101,12 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
     assert_eq!(modes, [0, 1]);
     h.peer.refuse.store(true, Ordering::SeqCst);
     let failure = peers.finish(h.start("shared")).await;
-    assert_eq!(failure.result()["reason"], "authentication_failed");
+    assert_eq!(
+        failure.result()["reason"],
+        "authentication_failed",
+        "{}",
+        failure.result()
+    );
     let automatic = diagnostic_text(failure.result());
     assert!(automatic.contains("node setup reused;"), "{automatic}");
     assert!(

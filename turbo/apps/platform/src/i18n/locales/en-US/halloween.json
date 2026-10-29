@@ -6,52 +6,54 @@
     "boo": "Boo!",
     "brand": "Okou",
     "campaign": "Spooky Halloween",
-    "climb": "The climb",
+    "climb": "THE CLIMB",
     "correct": "Correct",
     "error": "We couldn’t load the quiz. Please try again.",
     "footerAfter": " for eligibility and reward details.",
     "footerBefore": "See activity ",
     "footerLink": "rules",
     "hint": "Four right answers. One sweet finale.",
+    "intro": "A little quiz. A few surprises.",
     "language": "English",
     "leave": "Leave quiz",
     "lost": "You got tricked!",
-    "lostSub": "Okou got you this time.",
+    "lostRewardEmphasis": "But you still have a chance to win a 7-day trial!",
+    "lostRewardRest": "Keep exploring with Okou. It might give you a Halloween surprise.",
+    "lostSub": "Okou got you this time...",
+    "lostTaskTitle": "Your turn to put Okou to the test",
     "magic": "Make magic with Okou",
     "next": "Next question",
     "nudgeLabel": "Play the Halloween quiz",
-    "optional": "Keep exploring with Okou. These activities are optional.",
     "questionProgress": "Question {{current}} of {{total}}",
     "result": "See my result",
-    "resultRewardEmphasis": "7 days of Okou Pro",
-    "resultRewardRest": ", subject to review. No credits included.",
+    "resultRewardEmphasis": "A 7-day Okou Pro trial is ready!",
+    "resultRewardRest": "Subject to review.",
     "review": "Subject to eligibility review.",
-    "rewardEmphasis": "7 days of Okou Pro.",
-    "rewardPrefix": "Play for ",
+    "rewardQuestion": "Ready to get a 7-day Okou Pro trial?",
     "roundProgress": "Round {{current}} · {{title}}",
     "rules": "Activity rules",
     "rulesBrand": "Okou · Halloween",
-    "rulesHeading": "Spooky Halloween — activity rules",
+    "rulesHeading": "Spooky Halloween — Activity Rules",
     "rulesSub": "A little mischief. A few simple rules.",
     "soundOff": "Sound off",
     "soundOn": "Sound on",
-    "start": "Let’s play",
+    "start": "Let’s go",
     "subtitle": "But first, a little quiz.",
     "tagline": "Spooky Halloween · A little mischief. A lot of possibility.",
-    "taskSub": "Give her a task.",
+    "taskSub": "Give Okou a task.",
     "taskTitle": "Now it’s Okou’s turn.",
     "title": "A treat from Okou.",
     "unavailable": "A little magic is on its way.",
     "unavailableSub": "The Halloween quiz isn’t available yet. Come back soon.",
     "won": "You passed the quiz!",
-    "wonSub": "She knew you had it in you."
+    "wonSub": "Okou knew you had it in you."
   },
   "levels": {
-    "five": "Okou likes you",
-    "four": "Halloween legend",
-    "one": "Rookie",
-    "three": "Trick master",
-    "two": "Rising star"
+    "five": "OKOU LIKES YOU.",
+    "four": "HALLOWEEN LEGEND",
+    "one": "ROOKIE",
+    "three": "TRICK MASTER",
+    "two": "RISING STAR"
   },
   "nudges": {
     "one": "Take a little\nspooky break?",
@@ -87,7 +89,7 @@
       "text": "Before Okou took over, who was on the team?"
     },
     "QUIZ-04": {
-      "explanation": "Come on—research, decks, websites… she’s got more than one trick up her sleeve.",
+      "explanation": "Come on—research, decks, websites… it’s got more than one trick up its sleeve.",
       "options": {
         "A": "Making mischief",
         "B": "Making it rain candy",
@@ -96,13 +98,13 @@
       "text": "Halloween or not, what’s Okou’s real job?"
     },
     "QUIZ-05": {
-      "explanation": "Tell Okou what you want, get what you need. She puts your connected tools to work.",
+      "explanation": "Tell Okou what you want, get what you need. It puts your connected tools to work.",
       "options": {
         "A": "Just gives you advice",
         "B": "Plans the steps and gets to work",
         "C": "Ghosts you until next Halloween"
       },
-      "text": "Give Okou a job. What does she do?"
+      "text": "Give Okou a job. What does it do?"
     },
     "QUIZ-06": {
       "explanation": "More done. Same team. Less busywork.",
@@ -125,8 +127,8 @@
     "QUIZ-08": {
       "explanation": "Your laptop can rest. Okou’s work runs in the cloud.",
       "options": {
-        "A": "Yes—she turns into a pumpkin",
-        "B": "Nooo—she can keep working in the cloud",
+        "A": "Yes—it turns into a pumpkin",
+        "B": "Nooo—it can keep working in the cloud",
         "C": "Better keep that laptop open"
       },
       "text": "Does Okou “fall asleep” when you close your laptop?"
@@ -136,7 +138,7 @@
       "options": {
         "A": "Of course—tasks can run in parallel",
         "B": "No—ask again next Halloween",
-        "C": "No—she doesn’t have that many “hands”"
+        "C": "No—it doesn’t have that many “hands”"
       },
       "text": "A long research job is running. Can Okou take another task?"
     },
@@ -168,7 +170,7 @@
       "text": "A process worked like magic. How do you make it reusable?"
     },
     "QUIZ-13": {
-      "explanation": "Tell Okou when it should run. She sets up the trigger—no scheduling code needed.",
+      "explanation": "Tell Okou when it should run. It sets up the trigger—no scheduling code needed.",
       "options": {
         "A": "Write your own scheduling code",
         "B": "Set an alarm and run it yourself",
@@ -186,7 +188,7 @@
       "text": "What’s the easiest way to build a workflow with Okou?"
     },
     "QUIZ-15": {
-      "explanation": "Set it once. Okou runs the workflow automatically—no need to “summon” her every time.",
+      "explanation": "Set it once. Okou runs the workflow automatically—no need to “summon” it every time.",
       "options": {
         "A": "A scheduled Automation",
         "B": "A permanent Monday cancellation",
@@ -237,7 +239,7 @@
         "B": "A written and designed deck",
         "C": "Only tips for making it yourself"
       },
-      "text": "Ask Okou for a Halloween pitch deck. What can she build?"
+      "text": "Ask Okou for a Halloween pitch deck. What can it build?"
     },
     "QUIZ-21": {
       "explanation": "An editable PowerPoint deck? Okou won’t let you down.",
@@ -267,9 +269,9 @@
       "text": "A slide image has too much text. Easiest fix?"
     },
     "QUIZ-24": {
-      "explanation": "Send Okou your brand file or Figma link. She’ll take care of the styling.",
+      "explanation": "Send Okou your brand file or Figma link. It’ll take care of the styling.",
       "options": {
-        "A": "She can’t—only her default style",
+        "A": "It can’t—only its default style",
         "B": "No... Only if you restyle every slide",
         "C": "Just share your brand file or Figma link"
       },
@@ -321,11 +323,11 @@
       "text": "What can Okou put in your spooky campaign report?"
     },
     "QUIZ-30": {
-      "explanation": "Give Okou the new data or use a connected source. She can update the report without you rebuilding it by hand.",
+      "explanation": "Give Okou the new data or use a connected source. It can update the report without you rebuilding it by hand.",
       "options": {
         "A": "No—you have to rebuild it each time",
         "B": "Only if you edit every number yourself",
-        "C": "Yes—ask her to update it with the new data"
+        "C": "Yes—ask it to update it with the new data"
       },
       "text": "New data just came in. Can Okou update your existing report?"
     },
@@ -361,25 +363,25 @@
       "options": {
         "A": "Nope. Time to copy and paste.",
         "B": "Only if you switch to another tool",
-        "C": "Yes—just ask her to make it a deck"
+        "C": "Yes—just ask it to make it a deck"
       },
-      "text": "Can Okou turn the report she made into a presentation?"
+      "text": "Can Okou turn the report it made into a presentation?"
     },
     "QUIZ-35": {
       "explanation": "Type @Okou where your team is talking. That’s your summoning spell.",
       "options": {
-        "A": "@ her",
-        "B": "Yell at her",
-        "C": "Stare at her"
+        "A": "@Okou",
+        "B": "Yell at it",
+        "C": "Stare at it"
       },
       "text": "How do you summon Okou in a Slack thread?"
     },
     "QUIZ-36": {
-      "explanation": "@Okou in a channel for teamwork, or DM her to work on a draft privately!",
+      "explanation": "@Okou in a channel for teamwork, or DM it to work on a draft privately!",
       "options": {
         "A": "Only in a channel—no DMs allowed",
         "B": "In a channel or a DM",
-        "C": "Nowhere. She’s web-only."
+        "C": "Nowhere. It’s web-only."
       },
       "text": "Where can you find Okou in Slack?"
     },
@@ -396,7 +398,7 @@
       "explanation": "4,000+ connectors now in Okou!!!",
       "options": {
         "A": "Through connectors, of course",
-        "B": "She already has access to every app",
+        "B": "It already has access to every app",
         "C": "Just by knowing the app names"
       },
       "text": "How does Okou connect to your work apps?"
@@ -406,7 +408,7 @@
       "options": {
         "A": "Your teammates",
         "B": "You",
-        "C": "Okou herself"
+        "C": "Okou itself"
       },
       "text": "Who controls your Okou’s permissions?"
     },
@@ -458,7 +460,7 @@
     "QUIZ-45": {
       "explanation": "Okou won’t send this email without your say-so. You get the final call.",
       "options": {
-        "A": "Okou—it goes out as soon as she’s done",
+        "A": "Okou—it goes out as soon as it’s done",
         "B": "You—you review it and hit Send",
         "C": "Your team admin—every draft needs approval"
       },
@@ -474,10 +476,10 @@
       "text": "Looking for extra Okou credits? Where are the reward tasks?"
     },
     "QUIZ-47": {
-      "explanation": "Just tell Okou. She’s here to be your best AI teammate.",
+      "explanation": "Just tell Okou. It’s here to be your best AI teammate.",
       "options": {
-        "A": "Just tell her—she’ll get the idea",
-        "B": "She should know everything, even if you say nothing",
+        "A": "Just tell it—it’ll get the idea",
+        "B": "It should know everything, even if you say nothing",
         "C": "Truth or dare?"
       },
       "text": "Want Okou to get your work style? What helps most?"
@@ -498,10 +500,10 @@
         "B": "Say “A lot!” and call it a day",
         "C": "Ask for the sales data first"
       },
-      "text": "“Okou, how much did we sell?” What should she do without the sales data?"
+      "text": "“Okou, how much did we sell?” What should it do without the sales data?"
     },
     "QUIZ-50": {
-      "explanation": "Skip the blank-page panic. Give Okou the brief and let her do the research and writing—you review the plan.",
+      "explanation": "Skip the blank-page panic. Give Okou the brief and let it do the research and writing—you review the plan.",
       "options": {
         "A": "Draft the plan",
         "B": "Schedule a retrospective",
@@ -528,7 +530,7 @@
       "text": "What do you type in Okou’s chat box to open the template menu? (Hardest question. No pressure.)"
     },
     "QUIZ-53": {
-      "explanation": "Oh cool. She likes you too!",
+      "explanation": "Oh cool. Okou likes you too!",
       "options": {
         "A": "Of course.",
         "B": "You bet.",
@@ -538,11 +540,11 @@
     }
   },
   "roundTitles": {
-    "five": "Okou likes you",
-    "four": "One last trick",
-    "one": "Let’s see what you’ve got",
-    "three": "She’s impressed",
-    "two": "You’re onto her tricks"
+    "five": "OKOU LIKES YOU.",
+    "four": "ONE LAST TRICK",
+    "one": "LET’S SEE WHAT YOU’VE GOT",
+    "three": "OKOU’S IMPRESSED",
+    "two": "YOU’RE ONTO OKOU’S TRICKS"
   },
   "rules": {
     "availability": {
@@ -570,12 +572,12 @@
     },
     "createImage": {
       "prompt": "Create a Halloween image: a friendly ghost sharing candy under a glowing moon.",
-      "text": "Give her an idea. Watch it come to life.",
+      "text": "Give Okou an idea. Watch it come to life.",
       "title": "Create a Halloween image"
     },
     "explore": {
       "text": "Pick something from your to-do list.",
-      "title": "See what else she can do"
+      "title": "See what else Okou can do"
     }
   }
 }

@@ -543,7 +543,8 @@
       "description": "Cet artefact sera supprimé et ses liens Okou seront désactivés. Les copies déjà téléchargées ou enregistrées dans d’autres services seront conservées.",
       "hostedDescription": "Ce site et toutes ses versions publiées seront mis hors ligne. Les copies enregistrées dans d’autres services seront conservées.",
       "menu": "Plus d’actions pour {{title}}",
-      "sharedDescription": "Retirez cette conversation enregistrée de vos artefacts. La conversation originale et son lien de partage resteront accessibles.",
+      "sharedDescription": "Supprimez cette conversation partagée de vos artefacts. Son lien de partage ne fonctionnera plus. Votre conversation originale restera accessible.",
+      "success": "Artefact supprimé",
       "title": "Supprimer {{title}} ?"
     },
     "fileBadges": {
@@ -1384,12 +1385,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Saisir une URL",
-    "blankPage": {
-      "description": "{{assistantName}} ouvre les pages ici pendant qu’il travaille. Saisissez une URL ci-dessus pour naviguer vous-même.",
-      "title": "Rien d’ouvert pour l’instant"
-    },
-    "blankTabTitle": "Nouvel onglet",
     "cardTitle": "Navigateur cloud",
     "close": "Fermer le navigateur cloud",
     "documentTitle": "Navigateur cloud",
@@ -1569,16 +1564,29 @@
       "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
+      "addReason": "Add a reason",
+      "alreadyDone": "Already done",
+      "closeFeedback": "Close feedback",
       "customDirection": "J’aimerais…",
       "customDirectionDescription": "Posez une question ou décrivez ce que vous aimeriez faire.",
       "customPlaceholder": "Qu’avez-vous en tête ?",
       "customPrepared": "Continuez…",
       "customPreparedDescription": "Ajoutez votre message ci-dessus, puis envoyez-le.",
       "dismiss": "Ignorer",
+      "dismissRecorded": "Suggestion dismissed",
+      "doneRecorded": "Noted — this is already done",
+      "editReason": "Edit reason",
       "label": "Suggestions",
+      "lessLikeThis": "Less like this",
+      "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
       "next": "Suggestion suivante",
+      "notPlanned": "Not planned",
+      "notPlannedRecorded": "Noted — this is not planned",
       "position": "{{current}} sur {{total}}",
       "previous": "Suggestion précédente",
+      "reasonLabel": "Add a reason (optional)",
+      "saveReason": "Save",
+      "undoFeedback": "Undo",
       "useSuggestion": "Utiliser la suggestion"
     },
     "attachments": {
@@ -1739,6 +1747,13 @@
       "customAmountError": "Entrez un montant entre 1 $ et 10 000 $",
       "customDollarAmount": "Montant personnalisé en dollars",
       "outOfCredits": "Vous êtes à court de crédits",
+      "proCard": {
+        "creditsNow": "crédits · Maintenant",
+        "description": "Crédits supplémentaires · Fonctions avancées · 3 ordinateurs cloud",
+        "priceUnavailable": "Consultez les offres et leurs tarifs actuels",
+        "title": "Environ 5 tâches restantes",
+        "upgradeNow": "Passer à Pro maintenant"
+      },
       "redirecting": "Redirection...",
       "upgradeToContinue": "Passez à Pro pour continuer à discuter avec {{assistantName}}.",
       "upgradeToPro": "Passer à Pro",
@@ -2125,12 +2140,12 @@
       "reconnectProvider": "Reconnecter {{provider}}",
       "reconnectToAccess": "Reconnecter {{provider}} pour accéder à l'e-mail : {{subject}}",
       "refreshStatus": "Actualiser le statut",
-      "sendingDescription": "Outlook n’a pas encore confirmé l’envoi. Actualisez le statut ou vérifiez dans Outlook avant de continuer.",
+      "sendingDescription": "L’envoi n’a pas pu être confirmé. Vérifiez Outlook avant de réessayer.",
       "sentToast": "E-mail envoyé",
       "status": {
         "deleted": "Supprimé",
         "draft": "Brouillon",
-        "sending": "En attente de confirmation d’envoi",
+        "sending": "Envoi en cours",
         "sent": "Envoyé"
       },
       "toRecipients": "À : {{recipients}}",

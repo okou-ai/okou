@@ -29,6 +29,8 @@ export function createNativeWindowProvider(context: TestContext) {
     onSocketClose?: () => void;
     windowError?: string;
     closeSucceeds: boolean;
+    closeReply: "reply" | "withhold";
+    windowReply: "reply" | "withhold";
     createReply: "reply" | "disconnect" | "withhold";
     command?: (command: {
       readonly id: number;
@@ -45,6 +47,8 @@ export function createNativeWindowProvider(context: TestContext) {
     windowIds: [],
     windowErrors: new Map(),
     closeSucceeds: true,
+    closeReply: "reply",
+    windowReply: "reply",
     createReply: "reply",
   };
   let nextWindowId = 1;
@@ -83,6 +87,9 @@ export function createNativeWindowProvider(context: TestContext) {
         result = { targetId: target.targetId };
       } else if (command.method === "Browser.getWindowForTarget") {
         const targetId = String(command.params.targetId);
+        if (state.windowReply === "withhold") {
+          return;
+        }
         await state.beforeWindowReply?.(targetId);
         context.signal.throwIfAborted();
         const target = state.targets.get(targetId);
@@ -115,6 +122,9 @@ export function createNativeWindowProvider(context: TestContext) {
         };
       } else if (command.method === "Target.closeTarget") {
         const targetId = String(command.params.targetId);
+        if (state.closeReply === "withhold") {
+          return;
+        }
         if (state.closeSucceeds) {
           state.targets.delete(targetId);
           state.closed.push(targetId);
@@ -146,4 +156,65 @@ export function createNativeWindowProvider(context: TestContext) {
     });
   });
   return Object.assign(state, { handler });
+}
+
+export function installBrowserWindowContentCommands(
+  native: ReturnType<typeof createNativeWindowProvider>,
+) {
+  const sizes = native.contentsSizes;
+  native.command = (command) => {
+    const targetId = command.sessionId?.replace(/^page-/u, "");
+    if (command.method === "Target.attachToTarget") {
+      return { sessionId: `page-${String(command.params.targetId)}` };
+    }
+    if (command.method === "Page.getFrameTree") {
+      return {
+        frameTree: {
+          frame: { id: "frame", loaderId: "loader", url: "about:blank" },
+        },
+      };
+    }
+    if (command.method === "Page.createIsolatedWorld") {
+      return { executionContextId: 1 };
+    }
+    if (command.method === "Runtime.evaluate") {
+      const expression = String(command.params.expression);
+      if (expression.includes("window.open(")) {
+        const source = native.targets.get(String(targetId));
+        if (!source) {
+          throw new Error("Restore source missing");
+        }
+        const match =
+          /^Boolean\(window\.open\(("(?:[^"\\]|\\.)*"), "_blank"\)\)$/u.exec(
+            expression,
+          );
+        if (!match?.[1]) {
+          throw new Error("Unexpected restore expression");
+        }
+        const target = {
+          targetId: randomUUID(),
+          windowId: source.windowId,
+          url: String(JSON.parse(match[1])),
+        };
+        native.targets.set(target.targetId, target);
+        return { result: { value: true } };
+      }
+      return { result: { value: true } };
+    }
+    if (command.method === "Page.getLayoutMetrics") {
+      return {
+        cssVisualViewport: {
+          pageX: 0,
+          pageY: 0,
+          clientWidth: 1440,
+          clientHeight: 900,
+        },
+      };
+    }
+    if (command.method === "Page.captureScreenshot") {
+      return { data: Buffer.from(`preview:${targetId}`).toString("base64") };
+    }
+    throw new Error(`Unexpected external CDP operation: ${command.method}`);
+  };
+  return { sizes };
 }

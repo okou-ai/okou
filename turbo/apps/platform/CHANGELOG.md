@@ -12,6 +12,95 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1076.0](https://github.com/okou-ai/okou/compare/app-v0.1075.5...app-v0.1076.0) (2026-10-29)
+
+
+### Features
+
+* **app:** show a compact pro offer after the first task ([#43724](https://github.com/okou-ai/okou/issues/43724)) ([9388a08](https://github.com/okou-ai/okou/commit/9388a085626407cbcc8032cfd061e8527d88df17))
+
+
+### Bug Fixes
+
+* **app:** show access guidance in artifact lightboxes ([#43873](https://github.com/okou-ai/okou/issues/43873)) ([1e8cd78](https://github.com/okou-ai/okou/commit/1e8cd78ba36b66cdb44f564a267229bad4c2f1df))
+* **artifacts:** expose owner deletion on shared pages ([#43889](https://github.com/okou-ai/okou/issues/43889)) ([56f4bbe](https://github.com/okou-ai/okou/commit/56f4bbec6c59f81389ad0e158f9b090799872988))
+* **browser:** scope shared viewers and keepalive to the chat window ([#43872](https://github.com/okou-ai/okou/issues/43872)) ([21e89be](https://github.com/okou-ai/okou/commit/21e89bedb30ed755d9f41825f102607cea3635a0))
+* **mail:** treat outlook accepted sends as successful ([#43888](https://github.com/okou-ai/okou/issues/43888)) ([59d7bcb](https://github.com/okou-ai/okou/commit/59d7bcbb97937af5a48ca65c3c86153e0d73c678))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.4
+    * @okouai/core bumped to 8.800.0
+
+## [0.1075.5](https://github.com/okou-ai/okou/compare/app-v0.1075.4...app-v0.1075.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **artifacts:** revoke deleted shared conversations ([#43863](https://github.com/okou-ai/okou/issues/43863)) ([d52d7d3](https://github.com/okou-ai/okou/commit/d52d7d3b90c8b039983422d2f63afc365cc983a0))
+
+## [0.1075.4](https://github.com/okou-ai/okou/compare/app-v0.1075.3...app-v0.1075.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** align thread sharing visibility menus with artifacts ([#43862](https://github.com/okou-ai/okou/issues/43862)) ([2e5337e](https://github.com/okou-ai/okou/commit/2e5337e7c90889b37ebf9be876b7110d03574531))
+* **artifacts:** open shared conversations in a new tab ([#43869](https://github.com/okou-ai/okou/issues/43869)) ([4489875](https://github.com/okou-ai/okou/commit/448987522c29bddedc60f610817146e3cba9d5b6))
+* **platform:** show a toast after artifact deletion ([#43864](https://github.com/okou-ai/okou/issues/43864)) ([eb48cbe](https://github.com/okou-ai/okou/commit/eb48cbef75a4a6903105488039b56e2d5cc44fde))
+
+## [0.1075.3](https://github.com/okou-ai/okou/compare/app-v0.1075.2...app-v0.1075.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** align halloween quiz copy with v1 ([#43861](https://github.com/okou-ai/okou/issues/43861)) ([a44c7f3](https://github.com/okou-ai/okou/commit/a44c7f3baf50059be9a017767fa6159fe167002b))
+
+
+### Performance Improvements
+
+* **platform:** localize sidebar row status subscriptions ([#43851](https://github.com/okou-ai/okou/issues/43851)) ([7955288](https://github.com/okou-ai/okou/commit/795528843b0e17b5c68443fcb3f5bc875aa3456f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.3
+    * @okouai/core bumped to 8.799.3
+
+## [0.1075.2](https://github.com/okou-ai/okou/compare/app-v0.1075.1...app-v0.1075.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** refresh chat resources after artifact publication ([#43727](https://github.com/okou-ai/okou/issues/43727)) ([2da7f7a](https://github.com/okou-ai/okou/commit/2da7f7a765ef61cfe8d417be6733c5059ccb0fe5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.2
+    * @okouai/core bumped to 8.799.2
+
+## [0.1075.1](https://github.com/okou-ai/okou/compare/app-v0.1075.0...app-v0.1075.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **platform:** use connector in rewards label ([#43821](https://github.com/okou-ai/okou/issues/43821)) ([c846335](https://github.com/okou-ai/okou/commit/c8463354bb3470de4a0992dad42032a124db7ff8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.1
+    * @okouai/core bumped to 8.799.1
+
 ## [0.1075.0](https://github.com/okou-ai/okou/compare/app-v0.1074.0...app-v0.1075.0) (2026-10-29)
 
 

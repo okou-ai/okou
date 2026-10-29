@@ -2699,8 +2699,8 @@ export function createThreadClaimRunObjects(
     if (!selected || "status" in selected) {
       throw new Error("Run context requires an authorized ready input");
     }
+    get(db$); // Preserve initialization and the graph dependency.
     return {
-      db: get(db$),
       args: selected.args,
       timing: selected.input.timing,
     };

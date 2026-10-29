@@ -51,6 +51,8 @@ export interface ArtifactSummary {
   /** Lightweight projection URL for resource-link deduplication. */
   sourceUrl?: string;
   aliasUrl?: string;
+  /** Shared-conversation identity for direct navigation from the catalog. */
+  sharedThreadId?: string;
   /** Original video used when the catalog card cannot show a static poster. */
   videoSourceUrl?: string;
   createdAt: string;
@@ -152,11 +154,14 @@ export interface ArtifactCatalogListClientQuery {
 }
 
 export interface ArtifactCatalogGetQuery {
+  /** Resolve an owned shared conversation to its catalog identity. */
+  readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
 }
 
 export interface ArtifactCatalogGetClientQuery {
+  readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
 }
@@ -262,8 +267,9 @@ const artifactThumbnailSchema = object({
 
 /**
  * The catalog list returns only the metadata every kind shares. Kind-specific
- * attributes are loaded from the detail endpoint after a card is opened, so the
- * list query never joins a kind table and never exposes `entityId`.
+ * attributes are loaded from the detail endpoint after a card is opened. Shared
+ * conversations include their destination identity so native links need no
+ * detail request. The list query never joins a kind table.
  */
 const artifactSummarySchema = object({
   id: string().uuid(),
@@ -272,6 +278,7 @@ const artifactSummarySchema = object({
   thumbnail: artifactThumbnailSchema.nullable(),
   sourceUrl: string().optional(),
   aliasUrl: string().optional(),
+  sharedThreadId: string().uuid().optional(),
   videoSourceUrl: string().optional(),
   createdAt: string(),
   updatedAt: string(),
@@ -294,6 +301,7 @@ const artifactCatalogListQuerySchema = object({
 });
 
 const artifactCatalogGetQuerySchema = object({
+  sourceKind: literal("shared-thread").optional(),
   chatThreadId: string().uuid().optional(),
 });
 
@@ -489,3 +497,7 @@ export type ArtifactCatalogContract = {
 // explicit request and response slots to downstream API and app typechecks.
 export const artifactCatalogContract: ArtifactCatalogContract =
   artifactCatalogRuntimeContract;
+/** Invalidation only: catalog entries remain authoritative over HTTP. */
+export function chatArtifactCatalogChangedEvent(threadId: string): string {
+  return `chatArtifactCatalogChanged:${threadId}`;
+}

@@ -23,7 +23,9 @@ from mitmproxy.test import taddons, tutils
 
 import auth
 import flow_metadata_keys as metadata_keys
+import matching
 import mitm_addon
+import registry
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.mitmproxy_http_framing_helpers import start_http_layer
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
@@ -84,6 +86,108 @@ def _flow(real_flow, headers, *, ip=_IP, host=_HOST, port=80):
             ("Content-Length", "17"),
         ),
     )
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+async def test_unrelated_http_hooks_reuse_https_custom_indexes(
+    tmp_path, real_flow, headers, mitm_ctx, fake_firewall_headers, dns, mixed
+):
+    sandbox = _sandbox(tmp_path, base=f"https://{_HOST}/v1")
+    api = sandbox["firewalls"][0]["firewall"]["apis"][0]
+    sandbox["firewalls"][0]["firewall"]["apis"] = [
+        {**api, "base": f"https://{_HOST}/v{index}"} for index in range(32)
+    ]
+    if mixed:
+        ordinary = _single_firewall_sandbox(
+            tmp_path,
+            firewall_name="ordinary-http",
+            api_entry={**api, "base": f"http://{_HOST}/v1"},
+            network_policy=None,
+        )
+        sandbox["firewalls"].extend(ordinary["firewalls"])
+    reg = _write_registry(tmp_path, sandbox_info=sandbox)
+    with mitm_ctx(registry_path=str(reg)), fake_firewall_headers() as fetch:
+        state = registry.load_registry_state(str(reg))
+        assert not isinstance(state, registry.RegistryUnavailable)
+        assert not state.invalid_sandboxes
+        compiled = state.compiled_firewalls["10.200.0.5"]
+        assert compiled.firewalls[0].connector_runtime_kind == "custom"
+        assert len(compiled.firewalls[0].apis) == 32
+        # Observe real builders only after warming the production registry.
+        # Counts supplement the flow outcomes to protect the reuse contract.
+        with (
+            patch.object(
+                matching,
+                "_compile_api_candidate_index",
+                wraps=matching._compile_api_candidate_index,
+            ) as api_build,
+            patch.object(
+                matching,
+                "_compile_ordinary_credential_authority_index",
+                wraps=matching._compile_ordinary_credential_authority_index,
+            ) as authority_build,
+        ):
+            for _ in range(10):
+                flow = _flow(real_flow, headers)
+                assert mitm_addon.requestheaders(flow) is None
+                assert flow.response is None
+                await mitm_addon.request(flow)
+                assert flow.response is None
+                assert flow.request.headers["Host"] == _HOST
+                assert flow.server_conn.address == (_IP, 80)
+                assert "Authorization" not in flow.request.headers
+                assert metadata_keys.CUSTOM_HTTP_BINDING not in flow.metadata
+            assert api_build.call_count == 0
+            assert authority_build.call_count == 0
+    fetch.assert_not_called()
+    dns.assert_not_called()
+
+
+@pytest.mark.parametrize("mutation", ["base", "policy", "ownership", "unavailable"])
+async def test_custom_http_reuse_observes_registry_changes(
+    tmp_path, real_flow, headers, mitm_ctx, fake_firewall_headers, dns, mutation
+):
+    sandbox = _sandbox(tmp_path)
+    reg = _write_registry(tmp_path, sandbox_info=sandbox)
+    with mitm_ctx(registry_path=str(reg)), fake_firewall_headers() as fetch:
+        first = _flow(real_flow, headers)
+        await mitm_addon.request(first)
+        assert first.response is None
+        assert first.request.headers["Authorization"] == "Bearer x"
+        assert first.server_conn.address == (_IP, 80)
+        dns.assert_awaited_once_with(_HOST)
+        fetch.reset_mock()
+        dns.reset_mock()
+
+        if mutation == "base":
+            sandbox["firewalls"][0]["firewall"]["apis"][0]["base"] = "http://new.example.com/v1"
+        elif mutation == "policy":
+            sandbox["networkPolicies"]["custom-http"]["allow"] = []
+            sandbox["networkPolicies"]["custom-http"]["deny"] = ["items"]
+        elif mutation == "ownership":
+            sandbox["connectorRuntimeTargets"] = []
+        if mutation == "unavailable":
+            reg.unlink()
+        else:
+            _write_registry(tmp_path, sandbox_info=sandbox)
+
+        second = _flow(real_flow, headers)
+        await mitm_addon.request(second)
+        assert "Authorization" not in second.request.headers
+        fetch.assert_not_called()
+        if mutation in {"base", "ownership"}:
+            assert second.response is None
+            dns.assert_not_called()
+            assert metadata_keys.CUSTOM_HTTP_BINDING not in second.metadata
+        else:
+            assert second.response.status_code == (503 if mutation == "unavailable" else 403)
+        if mutation == "base":
+            current = _flow(real_flow, headers, host="new.example.com")
+            await mitm_addon.request(current)
+            assert current.response is None
+            assert current.request.headers["Authorization"] == "Bearer x"
+            assert current.server_conn.address == (_IP, 80)
+            dns.assert_awaited_once_with("new.example.com")
 
 
 @pytest.mark.parametrize(
@@ -184,16 +288,22 @@ async def test_http_dns_wait_does_not_authorize_a_changed_destination(
 
 
 @pytest.mark.parametrize(
-    ("alpn", "auth_mode"),
-    [(b"http/1.1", "none"), (b"http/1.1", "headers"), (b"h2", "query")],
+    ("alpn", "auth_mode", "mixed"),
+    [(b"http/1.1", "none", False), (b"http/1.1", "headers", True), (b"h2", "query", False)],
 )
 async def test_native_http_acquisition_keeps_public_ip_and_wire_authority(
-    tmp_path, monkeypatch, dns, alpn, auth_mode
+    tmp_path, monkeypatch, dns, alpn, auth_mode, mixed
 ):
-    reg = _write_registry(
-        tmp_path,
-        sandbox_info=_sandbox(tmp_path, auth_mode=auth_mode, base=f"http://{_HOST}:8080/v1"),
-    )
+    sandbox = _sandbox(tmp_path, auth_mode=auth_mode, base=f"http://{_HOST}:8080/v1")
+    if mixed:
+        ordinary = _single_firewall_sandbox(
+            tmp_path,
+            firewall_name="ordinary-http",
+            api_entry={"base": "http://ordinary.example.com", "auth": {}, "permissions": []},
+            network_policy=None,
+        )
+        sandbox["firewalls"].extend(ordinary["firewalls"])
+    reg = _write_registry(tmp_path, sandbox_info=sandbox)
     fetch = AsyncMock(
         return_value=firewall_auth_response(
             headers={"Authorization": "Bearer native-secret"} if auth_mode == "headers" else {},

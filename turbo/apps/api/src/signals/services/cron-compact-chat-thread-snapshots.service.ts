@@ -475,7 +475,7 @@ const collectChatThreadSnapshotGarbage$ = command(
         stats.deferred = true;
         break;
       }
-      const attempt = await settleIncludingAbort(async () => {
+      const pageWork = (async () => {
         workSignal.throwIfAborted();
         await db
           .insert(chatThreadSnapshotGcState)
@@ -556,7 +556,8 @@ const collectChatThreadSnapshotGarbage$ = command(
         if (!advanced || page.isTruncated) {
           stats.deferred = true;
         }
-      });
+      })();
+      const attempt = await settleIncludingAbort(pageWork);
       signal.throwIfAborted();
       if (!attempt.ok) {
         stats.deferred = true;

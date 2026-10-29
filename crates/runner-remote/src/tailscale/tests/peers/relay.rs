@@ -3,6 +3,7 @@ mod tcp;
 
 use super::{bounded, inside, local, node, own, remote, update, wire};
 use crate::tailscale::tests::derp::fixture::{self, PausedTcp, Server, WriteGate};
+use crate::tailscale::tests::socket::SocketIdentity;
 use crate::tailscale::{
     Failure,
     peers::{Binding, Clock, Frames, Peers},
@@ -331,7 +332,6 @@ async fn run_retirement_joins_a_partial_tls_sdk_frame_and_closes_the_actual_os_d
         tailscale::tests::fixture::Cache,
         tailscale::{Key, Work, registration::Registration},
     };
-    use std::os::fd::AsRawFd;
     // The synthetic service is outside the retiring native runtime, so its
     // observation cannot be satisfied by disposing both ends of the socket.
     let server = Server::secure().await;
@@ -339,13 +339,13 @@ async fn run_retirement_joins_a_partial_tls_sdk_frame_and_closes_the_actual_os_d
     let tls = server.tls.clone();
     let gate = WriteGate::new();
     let owned_gate = Arc::clone(&gate);
-    let (descriptor, fd) = tokio::sync::oneshot::channel();
+    let (descriptor, identity) = tokio::sync::oneshot::channel();
     let work: Work = Box::new(move |control| {
         Box::pin(async move {
             let profile = Registration::new();
             let keys = profile.keys().node_keys.clone();
             let socket = TcpStream::connect(address).await.unwrap();
-            descriptor.send(socket.as_raw_fd()).unwrap();
+            descriptor.send(SocketIdentity::record(&socket)).unwrap();
             let relay = connect(
                 socket,
                 address,
@@ -380,16 +380,12 @@ async fn run_retirement_joins_a_partial_tls_sdk_frame_and_closes_the_actual_os_d
     let (mut frames, _) = bounded(server.task).await.unwrap();
     bounded(node.ready()).await.unwrap();
     bounded(gate.pending()).await;
-    let fd = bounded(fd).await.unwrap();
+    let identity = bounded(identity).await.unwrap();
     run.close();
     bounded(node.physical()).await.unwrap();
     bounded(run.shutdown_native()).await.unwrap();
     bounded(gate.destroyed()).await;
-    assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
-    assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
-        Some(libc::EBADF)
-    );
+    identity.assert_closed();
     closed(frames.get_mut(), true).await;
     drop((node, access, run, cache));
 }

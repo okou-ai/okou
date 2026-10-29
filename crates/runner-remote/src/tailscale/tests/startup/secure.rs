@@ -2,6 +2,7 @@
 //! The production connector continues using the SDK's unchanged WebPKI roots.
 
 use super::fixture::{ACCEPTED, DERIVED, NoiseService, accept_tls};
+use crate::tailscale::tests::socket::SocketIdentity;
 use crate::{
     tailscale::tests::fixture::Cache,
     tailscale::{
@@ -18,8 +19,6 @@ use hyper_util::rt::TokioIo;
 use runner_types::ids::RunId;
 use std::{
     convert::Infallible,
-    os::fd::{AsRawFd, RawFd},
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -54,38 +53,6 @@ pub(in crate::tailscale::tests) enum KeyReply {
     Valid,
     Missing,
     Oversized,
-}
-
-struct SocketIdentity {
-    fd: RawFd,
-    identity: PathBuf,
-}
-
-impl SocketIdentity {
-    fn record(socket: &impl AsRawFd) -> Self {
-        let fd = socket.as_raw_fd();
-        Self {
-            fd,
-            identity: std::fs::read_link(format!("/proc/self/fd/{fd}"))
-                .expect("record control socket identity"),
-        }
-    }
-
-    fn is_open(&self) -> bool {
-        let current = match std::fs::read_link(format!("/proc/self/fd/{}", self.fd)) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
-            result => result.expect("inspect control socket identity"),
-        };
-        current == self.identity
-    }
-
-    fn assert_open(&self) {
-        assert!(self.is_open(), "original control socket must remain open");
-    }
-
-    fn assert_closed(&self) {
-        assert!(!self.is_open(), "original control socket must be closed");
-    }
 }
 
 pub(in crate::tailscale::tests) struct Service {
@@ -290,7 +257,7 @@ impl Service {
         &self,
         relay: &crate::tailscale::tests::derp::fixture::Server,
         gate: Arc<crate::tailscale::tests::derp::fixture::WriteGate>,
-        descriptors: Arc<Mutex<Vec<i32>>>,
+        descriptors: Arc<Mutex<Vec<SocketIdentity>>>,
         trusted_fixture: bool,
     ) -> Work {
         use crate::tailscale::{node_root::Root, tests::peers::shared_derp::single_connector};
@@ -468,59 +435,6 @@ impl Service {
     }
 }
 
-#[test]
-fn control_socket_assertions_follow_identity_through_descriptor_reuse() {
-    use std::{
-        fs::File,
-        io::Read,
-        net::{TcpListener, TcpStream},
-        os::fd::OwnedFd,
-        panic::catch_unwind,
-        sync::mpsc,
-        time::Duration,
-    };
-
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let socket = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-    let (mut peer, _) = listener.accept().unwrap();
-    peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-    let identity = SocketIdentity::record(&socket);
-    identity.assert_open();
-    assert!(catch_unwind(|| identity.assert_closed()).is_err());
-
-    let socket = OwnedFd::from(socket);
-    let replacement = File::open("/dev/null").unwrap();
-    std::thread::scope(|scope| {
-        let (replaced, observed) = mpsc::channel();
-        let (release, released) = mpsc::channel();
-        let worker = scope.spawn(move || {
-            let fd = socket.as_raw_fd();
-            // SAFETY: both descriptors are owned here. Atomically replacing the
-            // still-owned target closes the socket without exposing a free slot
-            // that another test could allocate before the replacement is installed.
-            assert_eq!(
-                unsafe { libc::dup3(replacement.as_raw_fd(), fd, libc::O_CLOEXEC) },
-                fd
-            );
-            replaced.send(()).unwrap();
-            released.recv_timeout(Duration::from_secs(5)).unwrap();
-        });
-
-        observed.recv_timeout(Duration::from_secs(5)).unwrap();
-        assert_eq!(peer.read(&mut [0]).unwrap(), 0);
-        assert_ne!(unsafe { libc::fcntl(identity.fd, libc::F_GETFD) }, -1);
-        assert_eq!(
-            std::fs::read_link(format!("/proc/self/fd/{}", identity.fd)).unwrap(),
-            PathBuf::from("/dev/null")
-        );
-        identity.assert_closed();
-        assert!(catch_unwind(|| identity.assert_open()).is_err());
-        release.send(()).unwrap();
-        worker.join().unwrap();
-    });
-    identity.assert_closed();
-}
-
 fn configuration() -> Key {
     Key {
         configuration: uuid::Uuid::new_v4(),
@@ -573,12 +487,7 @@ async fn one_retained_root_owns_verified_tls_noise_registration_maps_and_authent
     bounded(node.physical()).await.unwrap();
     bounded(run.shutdown_native()).await.unwrap();
     bounded(gate.destroyed()).await;
-    let fd = descriptors.lock().unwrap()[0];
-    assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
-    assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
-        Some(libc::EBADF)
-    );
+    descriptors.lock().unwrap()[0].assert_closed();
     crate::tailscale::tests::peers::relay::closed(frames.get_mut(), true).await;
     service.assert_control_closed();
     service.finish().await;

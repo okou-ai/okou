@@ -5,6 +5,7 @@ import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-a
 import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { and, asc, eq, exists, sql, type SQL } from "drizzle-orm";
@@ -81,10 +82,23 @@ export function agentDeletionIdentityCondition(args: {
 }) {
   return and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId));
 }
-export function agentDeletionAutomationCondition(args: DeleteAgentArgs) {
+export function agentDeletionWorkflowCondition(args: DeleteAgentArgs) {
   return and(
-    eq(workflows.orgId, args.orgId),
     eq(workflows.agentId, args.agentId),
+    eq(workflows.orgId, args.orgId),
+  );
+}
+export function agentDeletionAutomationCondition(args: DeleteAgentArgs) {
+  return exists(
+    new QueryBuilder()
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.id, workflowAutomations.workflowId),
+          agentDeletionWorkflowCondition(args),
+        ),
+      ),
   );
 }
 export function agentDeletionThreadSequencesSql(agentId: string) {

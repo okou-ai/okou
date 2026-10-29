@@ -384,6 +384,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .background(Color(uiColor: .systemBackground))
+    .composerWorkflowOverlay()
   }
   private func inputs(in view: UIView) -> [ComposerTextView] {
     if let view = view as? ComposerTextView { return [view] }
@@ -431,7 +432,10 @@ private struct WorkflowNewChatHost: View {
       attachmentURL: workspace.webURL, attachments: composer.attachments, draftState: composer,
       submit: { await workspace.sendNewChat() }, refresh: nil,
       mentionSource: workspace.mentionTestSource,
-      workflowSource: workspace.composerWorkflows, agentID: workspace.selectedAgentID)
+      workflowSource: workspace.composerWorkflows, agentID: workspace.selectedAgentID
+    )
+    .frame(maxHeight: .infinity, alignment: .bottom)
+    .composerWorkflowOverlay()
   }
 }
 

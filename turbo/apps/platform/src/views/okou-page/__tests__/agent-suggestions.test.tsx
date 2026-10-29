@@ -51,6 +51,8 @@ function makeSuggestion(): Suggestion {
     title: "Review the pending decision",
     rationale: "A response is needed",
     priority: 20,
+    feedbackScope: { key: "project-review", label: "project review" },
+    feedbacks: [],
     status: "active",
     selectedOptionId: null,
     createdAt: timestamp,
@@ -137,8 +139,39 @@ function queryTab(name: string) {
 }
 function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   let items = initial;
+  const retired = new Map<string, Suggestion>();
   const consumed: string[] = [];
   const selections: { id: string; optionId: string | null }[] = [];
+  context.mocks.api(
+    suggestionsContract.feedback,
+    ({ params, body, respond }) => {
+      if (body.kind === "undo") {
+        const saved = retired.get(params.id);
+        if (saved) {
+          items = [...items, saved];
+        }
+        return respond(200, { restored: saved !== undefined });
+      }
+      if (body.kind === "reason") {
+        return respond(200, { restored: false });
+      }
+      const found = items.find((item) => {
+        return item.id === params.id;
+      });
+      if (!found) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Already consumed" },
+        });
+      }
+      retired.set(params.id, found);
+      consumed.push(params.id);
+      selections.push({ id: params.id, optionId: null });
+      items = items.filter((item) => {
+        return item.id !== params.id;
+      });
+      return respond(200, { restored: false });
+    },
+  );
   context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
     return respond(200, {
       enabled: true,
@@ -723,11 +756,15 @@ test("Dismissing a suggestion consumes it without opening it and brings up the n
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
   click(button("Dismiss"));
   await waitFor(() => {
-    expect(queryTab("Suggestions")).not.toBeInTheDocument();
     expect(pool.consumed).toStrictEqual([
       "a0000000-0000-4000-a000-000000000001",
       "a0000000-0000-4000-a000-000000000002",
     ]);
+  });
+  expect(queryTab("Suggestions")).toBeInTheDocument();
+  await userEvent.setup().click(button("Close feedback"));
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).not.toBeInTheDocument();
   });
   expect(composer()).toHaveTextContent("Keep this draft");
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
@@ -807,7 +844,7 @@ test("An enabled secondary Agent does not display the user's suggestions", async
   expect(screen.queryByText(makeSuggestion().title)).not.toBeInTheDocument();
 });
 
-test("Custom direction is a full row before Dismiss and only prepares the saved composer", async () => {
+test("Custom direction stays expanded below the dismiss control and only prepares the saved composer", async () => {
   const pool = mockPool();
   const saved: UserMessageDocument[] = [];
   context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
@@ -828,7 +865,7 @@ test("Custom direction is a full row before Dismiss and only prepares the saved 
   );
   expect(
     custom.compareDocumentPosition(button("Dismiss")) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
+      Node.DOCUMENT_POSITION_PRECEDING,
   ).toBeTruthy();
   await fill(composer(), "Keep my original draft");
   await userEvent.setup().click(custom);
@@ -1095,4 +1132,134 @@ test("Suggestions stays outside More when Tasks and the creation categories over
     expect(button("Remove Image")).toBeInTheDocument();
     expect(composer()).toHaveFocus();
   });
+});
+
+test("Feedback stays available after the last card, accepts an optional reason, and undo restores the card", async () => {
+  mockPool([{ ...makeSuggestion(), consumeToken: "a".repeat(64) }]);
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(makeSuggestion().title);
+  expect(button("Already done")).toBeInTheDocument();
+  expect(button("Not planned")).toBeInTheDocument();
+  await userEvent.setup().click(button("Less like this"));
+  await screen.findByText(
+    "You’ll see fewer suggestions like this (project review).",
+  );
+  await userEvent.setup().click(button("Add a reason"));
+  await userEvent
+    .setup()
+    .type(
+      screen.getByLabelText("Add a reason (optional)"),
+      "Another teammate handles this work",
+    );
+  await userEvent.setup().click(button("Save"));
+  await screen.findByText("Edit reason");
+  await userEvent.setup().click(button("Edit reason"));
+  expect(screen.getByLabelText("Add a reason (optional)")).toHaveValue(
+    "Another teammate handles this work",
+  );
+  await userEvent.setup().click(button("Undo"));
+  await screen.findByText(makeSuggestion().title);
+  await userEvent.setup().click(button("Not planned"));
+  await screen.findByText("Noted — this is not planned");
+  await userEvent.setup().click(button("Close feedback"));
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).toBeNull();
+  });
+});
+
+test("Feedback hides a card before acknowledgment and restores only that card on failure with a stable retry ID", async () => {
+  const first = makeSuggestion();
+  const second = {
+    ...makeSuggestion(),
+    id: "a0000000-0000-4000-a000-000000000002",
+    title: "A separate action",
+  };
+  mockPool([first, second]);
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const requestIds: string[] = [];
+  let failing = true;
+  context.mocks.api(
+    suggestionsContract.feedback,
+    async ({ params, body, respond }) => {
+      if (params.id === second.id) {
+        return respond(200, { restored: false });
+      }
+      requestIds.push(body.id);
+      if (failing) {
+        requested.resolve();
+        await release.promise;
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Feedback could not be saved",
+          },
+        });
+      }
+      return respond(200, { restored: false });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(first.title);
+  await userEvent.setup().click(button("Already done"));
+  await requested.promise;
+  try {
+    await screen.findByText(second.title);
+    expect(screen.queryByText(first.title)).not.toBeInTheDocument();
+    expect(button("Not planned")).not.toBeDisabled();
+    await userEvent.setup().click(button("Not planned"));
+    await screen.findByText("Noted — this is not planned");
+  } finally {
+    release.resolve();
+  }
+  await screen.findByText("Feedback could not be saved");
+  await screen.findByText(first.title);
+  expect(screen.queryByText(second.title)).not.toBeInTheDocument();
+  failing = false;
+  await userEvent.setup().click(button("Already done"));
+  await screen.findByText("Noted — this is already done");
+  expect(requestIds).toHaveLength(2);
+  expect(requestIds[1]).toBe(requestIds[0]);
+});
+
+test("The last card stays hidden while saving and enables Undo only after acknowledgment", async () => {
+  const item = makeSuggestion();
+  mockPool([item]);
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(suggestionsContract.feedback, async ({ respond }) => {
+    requested.resolve();
+    await release.promise;
+    return respond(200, { restored: false });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(item.title);
+  await userEvent.setup().click(button("Already done"));
+  await requested.promise;
+  try {
+    await screen.findByText("Saving...");
+    expect(screen.queryByText(item.title)).not.toBeInTheDocument();
+    expect(queryTab("Suggestions")).toBeInTheDocument();
+    expect(
+      queryAllByRoleFast("button").some((node) => {
+        return node.textContent?.trim() === "Undo";
+      }),
+    ).toBeFalsy();
+  } finally {
+    release.resolve();
+  }
+  await screen.findByText("Noted — this is already done");
+  expect(button("Undo")).not.toBeDisabled();
 });

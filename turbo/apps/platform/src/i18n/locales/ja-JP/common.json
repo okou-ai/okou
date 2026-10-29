@@ -527,7 +527,8 @@
       "description": "この作品を削除し、Okou のリンクを無効にします。ダウンロード済み、または他のサービスに保存されたコピーは残ります。",
       "hostedDescription": "このウェブサイトと公開済みの全バージョンを非公開にします。他のサービスに保存されたコピーは残ります。",
       "menu": "{{title}}のその他の操作",
-      "sharedDescription": "保存した会話を作品から削除します。元の会話と共有リンクは引き続き利用できます。",
+      "sharedDescription": "この共有された会話を作品から削除します。共有リンクは利用できなくなります。元の会話は残ります。",
+      "success": "作品を削除しました",
       "title": "{{title}}を削除しますか？"
     },
     "fileBadges": {
@@ -1360,12 +1361,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL を入力",
-    "blankPage": {
-      "description": "{{assistantName}} は作業中にここでページを開きます。上で URL を入力して自分で閲覧することもできます。",
-      "title": "まだページが開かれていません"
-    },
-    "blankTabTitle": "新しいタブ",
     "cardTitle": "クラウドブラウザ",
     "close": "クラウドブラウザを閉じる",
     "documentTitle": "クラウドブラウザ",
@@ -1544,16 +1539,29 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
+      "addReason": "Add a reason",
+      "alreadyDone": "Already done",
+      "closeFeedback": "Close feedback",
       "customDirection": "こんなことがしたい…",
       "customDirectionDescription": "質問や、やりたいことを入力できます。",
       "customPlaceholder": "どんなことを考えていますか？",
       "customPrepared": "続きをどうぞ…",
       "customPreparedDescription": "上にメッセージを入力して送信してください。",
       "dismiss": "非表示にする",
+      "dismissRecorded": "Suggestion dismissed",
+      "doneRecorded": "Noted — this is already done",
+      "editReason": "Edit reason",
       "label": "提案",
+      "lessLikeThis": "Less like this",
+      "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
       "next": "次の提案",
+      "notPlanned": "Not planned",
+      "notPlannedRecorded": "Noted — this is not planned",
       "position": "{{current}} / {{total}}",
       "previous": "前の提案",
+      "reasonLabel": "Add a reason (optional)",
+      "saveReason": "Save",
+      "undoFeedback": "Undo",
       "useSuggestion": "提案を使う"
     },
     "attachments": {
@@ -1707,6 +1715,13 @@
       "customAmountError": "1 ドルから 10,000 ドルの間で入力してください",
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
+      "proCard": {
+        "creditsNow": "クレジット · 今すぐ",
+        "description": "追加クレジット · 高度な機能 · 3 台のクラウドコンピューター",
+        "priceUnavailable": "プランで最新の料金を確認",
+        "title": "残り約 5 件のタスク",
+        "upgradeNow": "今すぐアップグレード"
+      },
       "redirecting": "リダイレクト中...",
       "upgradeToContinue": "{{assistantName}} とチャットを続けるには、Pro にアップグレードしてください。",
       "upgradeToPro": "プロにアップグレード",
@@ -2084,12 +2099,12 @@
       "reconnectProvider": "{{provider}} を再接続します",
       "reconnectToAccess": "{{provider}} を再接続してメールにアクセスします: {{subject}}",
       "refreshStatus": "状態を更新",
-      "sendingDescription": "Outlook で送信完了が確認されていません。状態を更新するか、Outlook で確認してください。",
+      "sendingDescription": "送信を確認できませんでした。再試行する前に Outlook をご確認ください。",
       "sentToast": "メールを送信しました",
       "status": {
         "deleted": "削除されました",
         "draft": "草案",
-        "sending": "送信確認待ち",
+        "sending": "送信中",
         "sent": "送信済み"
       },
       "toRecipients": "宛先: {{recipients}}",

@@ -528,7 +528,8 @@
       "description": "This removes the artifact and disables its Okou links. Copies already downloaded or saved to other services will remain.",
       "hostedDescription": "This takes the website and all its published versions offline. Copies saved to other services will remain.",
       "menu": "More actions for {{title}}",
-      "sharedDescription": "Remove this saved conversation from your artifacts. The original conversation and its shared link will stay available.",
+      "sharedDescription": "Delete this shared conversation from your artifacts. Its shared link will stop working. Your original conversation will stay available.",
+      "success": "Artifact deleted",
       "title": "Delete {{title}}?"
     },
     "fileBadges": {
@@ -1362,12 +1363,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Enter a URL",
-    "blankPage": {
-      "description": "{{assistantName}} opens pages here as it works. Enter a URL above to browse yourself.",
-      "title": "Nothing open yet"
-    },
-    "blankTabTitle": "New tab",
     "cardTitle": "Cloud browser",
     "close": "Close cloud browser",
     "documentTitle": "Cloud browser",
@@ -1546,16 +1541,29 @@
       "viewAgentProfile": "View agent profile"
     },
     "agentSuggestions": {
+      "addReason": "Add a reason",
+      "alreadyDone": "Already done",
+      "closeFeedback": "Close feedback",
       "customDirection": "I’d like to…",
       "customDirectionDescription": "Ask a question or describe what you’d like to do.",
       "customPlaceholder": "What do you have in mind?",
       "customPrepared": "Go on…",
       "customPreparedDescription": "Add your message above, then send.",
       "dismiss": "Dismiss",
+      "dismissRecorded": "Suggestion dismissed",
+      "doneRecorded": "Noted — this is already done",
+      "editReason": "Edit reason",
       "label": "Suggestions",
+      "lessLikeThis": "Less like this",
+      "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
       "next": "Next suggestion",
+      "notPlanned": "Not planned",
+      "notPlannedRecorded": "Noted — this is not planned",
       "position": "{{current}} of {{total}}",
       "previous": "Previous suggestion",
+      "reasonLabel": "Add a reason (optional)",
+      "saveReason": "Save",
+      "undoFeedback": "Undo",
       "useSuggestion": "Use suggestion"
     },
     "attachments": {
@@ -1711,6 +1719,13 @@
       "customAmountError": "Enter between $1 and $10,000",
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
+      "proCard": {
+        "creditsNow": "credits · Just now",
+        "description": "Additional credits · Advanced features · 3 cloud computers",
+        "priceUnavailable": "See plans for current pricing",
+        "title": "About 5 tasks left",
+        "upgradeNow": "Upgrade now"
+      },
       "redirecting": "Redirecting...",
       "upgradeToContinue": "Upgrade to Pro to keep chatting with {{assistantName}}.",
       "upgradeToPro": "Upgrade to Pro",
@@ -2091,12 +2106,12 @@
       "reconnectProvider": "Reconnect {{provider}}",
       "reconnectToAccess": "Reconnect {{provider}} to access email: {{subject}}",
       "refreshStatus": "Refresh status",
-      "sendingDescription": "Outlook has not confirmed sending yet. Refresh the status or check Outlook before taking any further action.",
+      "sendingDescription": "Sending could not be confirmed. Check Outlook before trying again.",
       "sentToast": "Email sent",
       "status": {
         "deleted": "Deleted",
         "draft": "Draft",
-        "sending": "Awaiting send confirmation",
+        "sending": "Sending",
         "sent": "Sent"
       },
       "toRecipients": "To: {{recipients}}",

@@ -21,7 +21,8 @@ def blocks_gmail_send(host: str, request_path: str) -> bool:
     if host not in _GOOGLE_API_HOSTS:
         return False
 
-    path = request_path.partition("?")[0]
+    query_start = request_path.find("?")
+    path = request_path[:query_start] if query_start >= 0 else request_path
     if has_unsafe_path(path):
         # Preserve fail-closed handling for malformed Gmail API paths without
         # imposing Gmail policy on unrelated shared-host Google APIs.

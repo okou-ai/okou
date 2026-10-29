@@ -21,7 +21,7 @@ if [[ ! "$expected_desktop_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z.
   exit 1
 fi
 
-for artifact_path in "$artifact_dir/okou-app.tar.gz" "$manifest_path" "$ready_path"; do
+for artifact_path in "$artifact_dir/okou-app.tar.gz" "$artifact_dir/okou-dsyms.tar.gz" "$manifest_path" "$ready_path"; do
   if [[ ! -f "$artifact_path" ]]; then
     echo "Desktop artifact is missing $(basename "$artifact_path")" >&2
     exit 1
@@ -31,7 +31,7 @@ done
 jq -e \
   --arg commit_sha "$expected_commit_sha" \
   --arg desktop_version "$expected_desktop_version" \
-  '.version == 1
+  '.version == 2
     and .commitSha == $commit_sha
     and .desktopVersion == $desktop_version
     and .platform == "darwin"
@@ -39,7 +39,10 @@ jq -e \
     and .okouAppName == "Okou.app"
     and .okouArchive.path == "okou-app.tar.gz"
     and (.okouArchive.sha256 | type == "string" and test("^[0-9a-f]{64}$"))
-    and (.okouArchive.size | type == "number" and . > 0)' \
+    and (.okouArchive.size | type == "number" and . > 0)
+    and .debugSymbolsArchive.path == "okou-dsyms.tar.gz"
+    and (.debugSymbolsArchive.sha256 | type == "string" and test("^[0-9a-f]{64}$"))
+    and (.debugSymbolsArchive.size | type == "number" and . > 0)' \
   "$manifest_path" >/dev/null
 
 verify_archive() {
@@ -95,6 +98,22 @@ verify_archive \
   "$artifact_dir/okou-app.tar.gz" \
   "Okou.app" \
   '.okouArchive'
+verify_archive \
+  "$artifact_dir/okou-dsyms.tar.gz" \
+  "dSYMs" \
+  '.debugSymbolsArchive'
+
+# Unlike framework bundles, dSYMs have no link entries. Reject links before
+# extraction so symbols cannot resolve outside the SHA-bound artifact.
+python3 - "$artifact_dir/okou-dsyms.tar.gz" <<'PY'
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1]) as archive:
+    for entry in archive:
+        if not (entry.isdir() or entry.isfile()):
+            raise ValueError(f"Unexpected dSYM archive entry: {entry.name}")
+PY
 
 manifest_sha256="$(shasum -a 256 "$manifest_path" | cut -d ' ' -f 1)"
 jq -e \

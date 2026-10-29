@@ -1,18 +1,17 @@
 import { createHash } from "node:crypto";
-import type { RunnerBrowserResponse } from "@okouai/api-contracts/contracts/runner-browser";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
 import {
   browserProfiles,
   browserThreadProfiles,
 } from "@okouai/db/schema/browser-session";
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { db$ } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import {
-  authorityStillCurrent,
-  type BrowserOwnerAuthority,
+  type BrowserPublicAuthority,
+  type BrowserOwnerResult,
   controlBrowserOwner$,
 } from "./browser-owner.service";
 import {
@@ -28,7 +27,7 @@ const PROFILE_CLEANUP_TIMEOUT_MS = 15_000;
 const cleanupProfileCandidate$ = command(
   async (
     { get },
-    owner: BrowserOwnerAuthority,
+    owner: BrowserPublicAuthority,
     {
       providerProfileId,
       previousProfileId,
@@ -105,65 +104,17 @@ const cleanupProfileCandidate$ = command(
   },
 );
 
-/** Construct the graph once; the route owns authentication and admission. */
-export function createRunnerBrowserAllocation(
-  owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
-) {
-  const context$ = computed(async (get) => {
-    const owner = await get(owner$);
-    if (!owner) {
-      return null;
-    }
-    const [row] = await get(db$)
-      .select({
-        profile: {
-          providerProfileId: browserOwnerProfiles.providerProfileId,
-          instanceId: browserOwnerProfiles.instanceId,
-          status: browserOwnerProfiles.status,
-        },
-      })
-      .from(agentRuns)
-      .leftJoin(
-        browserOwnerProfiles,
-        and(
-          eq(browserOwnerProfiles.orgId, owner.orgId),
-          eq(browserOwnerProfiles.userId, owner.userId),
-        ),
-      )
-      .where(and(eq(agentRuns.id, owner.runId), authorityStillCurrent(owner)));
-    return row ? { owner, profile: row.profile } : null;
-  });
-
-  return command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<RunnerBrowserResponse> => {
-      const context = await get(context$);
-      signal.throwIfAborted();
-      if (
-        !context ||
-        (context.profile && context.profile.status !== "stopped")
-      ) {
-        return { outcome: "unavailable" };
-      }
-      const { owner, profile } = context;
-      return await set(allocateBrowserOwnerProfile$, owner, profile, signal);
-    },
-  );
-}
-
 export const allocateBrowserOwnerProfile$ = command(
   async (
     { set },
-    owner: BrowserOwnerAuthority,
+    owner: BrowserPublicAuthority,
     profile: {
       readonly providerProfileId: string;
       readonly instanceId: string;
       readonly status: string;
     } | null,
     signal: AbortSignal,
-  ): Promise<RunnerBrowserResponse> => {
+  ): Promise<BrowserOwnerResult> => {
     if (profile && profile.status !== "stopped") {
       return { outcome: "unavailable" };
     }
@@ -228,7 +179,7 @@ export const allocateBrowserOwnerProfile$ = command(
     const adopted =
       published.ok &&
       published.value.outcome === "accepted" &&
-      published.value.instance.providerProfileId === providerProfileId;
+      published.value.profile.providerProfileId === providerProfileId;
     const cleaned =
       created && !adopted
         ? await settle(
@@ -243,6 +194,15 @@ export const allocateBrowserOwnerProfile$ = command(
         : null;
     signal.throwIfAborted();
     if (!published.ok) {
+      if (
+        isUniqueViolation(published.error, "uq_browser_owner_profiles_provider")
+      ) {
+        throw new BrowserUseProviderError(
+          502,
+          "BROWSER_USE_INVALID_RESPONSE",
+          "Managed browser provider returned an already owned profile",
+        );
+      }
       throw published.error;
     }
     if (cleaned && !cleaned.ok) {

@@ -407,6 +407,35 @@ app-wide stacking belongs to the shell, and floating-layer stacking belongs to
 the shared primitives. Follow [stacking ownership](#stacking-ownership) for
 any local overlap rather than adding a z-index to a control.
 
+### Independently styled embedded components
+
+A general-purpose embedded library owns its controls, accessible interactions,
+public theme contract and standalone defaults. The App's integration adapter
+maps that contract to shared semantic tokens and owns the resulting contrast.
+Keep App palette names and values in the host; do not add an Okou dependency or
+preset to the generic library. Streamed or embedded remote content retains its
+own appearance.
+
+Use documented component props and CSS variables rather than private selectors.
+Map surfaces, foregrounds, diagnostics, hover/selection/focus, filled-action
+states and elevation by semantic role. Reuse shared disabled/loading conventions.
+A filled action's hover must retain its fill and readable foreground; a
+translucent neutral wash alone replaces that fill. An overlay whose contrast
+depends on the host surface must cover the unpredictable remote pixels beneath
+it with that surface.
+
+Keep mappings as live semantic references. Light/dark selection does not infer
+the App palette, and palette changes can happen independently of it. Avoid
+one-time computed-color snapshots and theme-keyed remounts. A theme change must
+repaint an open popup while preserving the connection and input focus. Verify
+computed paint and contrast with the compiled App stylesheet across light/dark
+and available palettes; a DOM-only page test cannot establish those colors.
+Retain independent library defaults for consumers outside the themed adapter.
+
+The viewer's [theme ownership guide](https://github.com/okou-ai/cdp-viewer/blob/main/docs/theme-design.md)
+defines its generic integration boundary; its API documentation owns the public
+variable inventory rather than a second list here.
+
 ### The composer card surface
 
 `Card` from `@okouai/ui` takes `surface="composer"` for the composer card and

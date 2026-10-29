@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.33](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.32...runner-provider-v0.11.33) (2026-10-29)
+
+
+### Documentation
+
+* **runner-provider:** clarify claim scheduling and ownership ([#43908](https://github.com/okou-ai/okou/issues/43908)) ([3f20d0b](https://github.com/okou-ai/okou/commit/3f20d0be050dc977f73ad2dc682ae346d7290800))
+
+## [0.11.32](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.31...runner-provider-v0.11.32) (2026-10-29)
+
 ## [0.11.31](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.30...runner-provider-v0.11.31) (2026-10-29)
 
 

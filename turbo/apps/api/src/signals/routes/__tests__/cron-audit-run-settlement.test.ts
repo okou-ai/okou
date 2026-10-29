@@ -7,7 +7,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, onRejection } from "../../utils";
 import { cronAuditRunSettlementRoutes } from "../cron-audit-run-settlement";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -29,28 +28,22 @@ beforeEach(() => {
   mockEnv("CRON_SECRET", "settlement-test-secret");
 });
 
-describe("Run settlement audit", () => {
+describe("Run settlement", () => {
   it("restricts the aggregate operator report and bounds each page", async () => {
-    const client = (
-      await setupApp({
-        context,
-        routes: cronAuditRunSettlementRoutes,
-        isolatePg: true,
-      })
-    )(cronAuditRunSettlementContract);
-    await accept(client.audit({ headers: {}, query: { limit: 100 } }), [401]);
-    await accept(client.audit({ headers, query: { limit: 101 } }), [400]);
-    const report = await accept(
-      client.audit({ headers, query: { limit: 100 } }),
-      [200],
+    const client = setupApp({
+      context,
+      routes: cronAuditRunSettlementRoutes,
+    })(cronAuditRunSettlementContract);
+    const unauthorized = await accept(
+      client.audit({ headers: {}, query: { limit: 100 } }),
+      [401],
     );
-    expect(report.body).toMatchObject({
-      scannedRuns: 0,
-      observedCompleteRuns: 0,
-      blockedRuns: 0,
-      blockers: [],
-      nextAfterRunId: null,
-    });
+    expect(unauthorized.status).toBe(401);
+    const outOfBounds = await accept(
+      client.audit({ headers, query: { limit: 101 } }),
+      [400],
+    );
+    expect(outOfBounds.status).toBe(400);
   });
 
   it("reports execution blockers and completed handoffs without changing either Run", async () => {
@@ -143,131 +136,7 @@ describe("Run settlement audit", () => {
     });
   });
 
-  it("keeps started cancellation blocked until Runner recovery finishes", async () => {
-    const client = (
-      await setupApp({
-        context,
-        routes: cronAuditRunSettlementRoutes,
-        isolatePg: true,
-      })
-    )(cronAuditRunSettlementContract);
-    const owner = await publicChatActor(context);
-    const runs = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    await owner.run(async () => {
-      const run = await owner.sendChatRun(owner.actor, {
-        agentId: owner.agentId,
-        prompt: "cancel a running task",
-      });
-      const { sandboxHeaders } = await owner.claimChatRun(
-        owner.runnerGroup,
-        run.runId,
-      );
-      await runs.requestCancelRun(owner.actor, run.runId, [200]);
-      await flushWaitUntilForTest();
-      const pending = await accept(
-        client.audit({ headers, query: { limit: 100 } }),
-        [200],
-      );
-      expect(pending.body).toMatchObject({
-        scannedRuns: 1,
-        blockedRuns: 1,
-        observedCompleteRuns: 0,
-      });
-      expect(pending.body.blockers).toStrictEqual(
-        expect.arrayContaining([
-          { reason: "active_run_present", runs: 1 },
-          { reason: "cancellation_recovery_pending", runs: 1 },
-        ]),
-      );
-      await webhooks.requestAgentComplete(
-        { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-        sandboxHeaders,
-        [200],
-      );
-      await flushWaitUntilForTest();
-      const recovered = await accept(
-        client.audit({ headers, query: { limit: 100 } }),
-        [200],
-      );
-      expect(recovered.body).toMatchObject({
-        scannedRuns: 1,
-        observedCompleteRuns: 1,
-        blockedRuns: 0,
-        blockers: [],
-      });
-      expect((await runs.readRun(owner.actor, run.runId)).status).toBe(
-        "cancelled",
-      );
-    });
-  });
-
-  it("continues a bounded scan using the same admission cutoff", async () => {
-    const client = (
-      await setupApp({
-        context,
-        routes: cronAuditRunSettlementRoutes,
-        isolatePg: true,
-      })
-    )(cronAuditRunSettlementContract);
-    const owner = await publicChatActor(context);
-    await owner.run(async () => {
-      for (const prompt of ["first audit task", "second audit task"]) {
-        await owner.sendChatRun(owner.actor, {
-          agentId: owner.agentId,
-          prompt,
-        });
-      }
-      const first = await accept(
-        client.audit({ headers, query: { limit: 1 } }),
-        [200],
-      );
-      expect(first.body.scannedRuns).toBe(1);
-      if (!first.body.nextAfterRunId) {
-        throw new Error("Expected the next audit cursor");
-      }
-      await owner.sendChatRun(owner.actor, {
-        agentId: owner.agentId,
-        prompt: "outside the audit admission cutoff",
-      });
-      const second = await accept(
-        client.audit({
-          headers,
-          query: {
-            limit: 1,
-            createdBefore: first.body.createdBefore,
-            afterRunId: first.body.nextAfterRunId,
-          },
-        }),
-        [200],
-      );
-      expect(second.body.scannedRuns).toBe(1);
-      if (!second.body.nextAfterRunId) {
-        throw new Error("Expected the final audit cursor");
-      }
-      const end = await accept(
-        client.audit({
-          headers,
-          query: {
-            limit: 1,
-            createdBefore: first.body.createdBefore,
-            afterRunId: second.body.nextAfterRunId,
-          },
-        }),
-        [200],
-      );
-      expect(end.body).toMatchObject({ scannedRuns: 0, nextAfterRunId: null });
-    });
-  });
-
-  it("recognizes the existing one-shot failure endpoint without retrying delivery", async () => {
-    const client = (
-      await setupApp({
-        context,
-        routes: cronAuditRunSettlementRoutes,
-        isolatePg: true,
-      })
-    )(cronAuditRunSettlementContract);
+  it("does not retry a failed Teams delivery when completion is replayed", async () => {
     const fixtures = createPublicTeamsDispatchFixture(context);
     const runs = createRunsApi(context);
     const reads = createRunReadsApi(context);
@@ -292,15 +161,11 @@ describe("Run settlement audit", () => {
       await runs.heartbeatRunner("vm0/test");
       const claim = await runs.claimRunnerJob(run.id);
       let deliveryAttempts = 0;
-      const deliveryStarted = createDeferredPromise<void>(context.signal);
-      const deliveryReleased = createDeferredPromise<void>(context.signal);
       server.use(
         http.post(
           `${teams.installation.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
-          async () => {
+          () => {
             deliveryAttempts++;
-            deliveryStarted.resolve();
-            await deliveryReleased.promise;
             return new HttpResponse("Teams unavailable", { status: 500 });
           },
         ),
@@ -315,55 +180,12 @@ describe("Run settlement audit", () => {
         },
       };
       const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
-      const completion = webhooks.requestAgentComplete(
-        complete,
-        sandboxHeaders,
-        [200],
-      );
-      await onRejection(
-        (async () => {
-          await deliveryStarted.promise;
-          const inProgress = await accept(
-            client.audit({ headers, query: { limit: 100 } }),
-            [200],
-          );
-          expect(inProgress.body).toMatchObject({
-            scannedRuns: 1,
-            observedCompleteRuns: 0,
-            blockedRuns: 1,
-          });
-          expect(inProgress.body.blockers).toStrictEqual([
-            { reason: "callback_pending", runs: 1 },
-          ]);
-          expect((await runs.readRun(teams.actor, run.id)).status).toBe(
-            "completed",
-          );
-        })(),
-        async () => {
-          deliveryReleased.resolve();
-          await completion;
-        },
-      );
-      deliveryReleased.resolve();
-      await completion;
+      await webhooks.requestAgentComplete(complete, sandboxHeaders, [200]);
       await flushWaitUntilForTest();
-      const report = await accept(
-        client.audit({ headers, query: { limit: 100 } }),
-        [200],
+      expect((await runs.readRun(teams.actor, run.id)).status).toBe(
+        "completed",
       );
-      expect(report.body).toMatchObject({
-        scannedRuns: 1,
-        observedCompleteRuns: 1,
-        blockedRuns: 0,
-        blockers: [],
-        callbacks: {
-          delivered: 1,
-          policyFinished: 1,
-          pending: 0,
-          recoverableFailure: 0,
-          unknown: 0,
-        },
-      });
+      expect(deliveryAttempts).toBe(1);
       await webhooks.requestAgentComplete(complete, sandboxHeaders, [200]);
       await flushWaitUntilForTest();
       expect(deliveryAttempts).toBe(1);

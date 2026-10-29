@@ -77,6 +77,23 @@ export class AutomationEventSourceTiming {
   }
 }
 
+export function createAutomationEventSourceTiming(
+  source: AutomationEventSource,
+  args: {
+    readonly apiStartTime: number;
+    readonly backgroundScheduledAt?: number;
+  },
+): AutomationEventSourceTiming {
+  const timing = new AutomationEventSourceTiming(source, args.apiStartTime);
+  if (args.backgroundScheduledAt !== undefined) {
+    timing.recordElapsed(
+      "api_dispatch_pre_create_agent_automation_event_background_start_gap",
+      args.backgroundScheduledAt,
+    );
+  }
+  return timing;
+}
+
 export class AutomationEventRunTiming {
   private readonly collector = new ApiDispatchTimingCollector();
   private finalized = false;

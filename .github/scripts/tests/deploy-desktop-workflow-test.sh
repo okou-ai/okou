@@ -42,6 +42,7 @@ resolve = steps.find { |step| step["id"] == "artifact" }.fetch("run")
 raise "artifact must use checked-out SHA" unless resolve.include?("resolve-build-commit-sha.sh") && resolve.include?("okou-desktop/$sha")
 upload = steps.find { |step| step["name"] == "Upload canonical Desktop artifact" }.fetch("run")
 raise "ready must be published after archive" unless upload.index("ready.json") > upload.index("okou-app.tar.gz")
+raise "ready must include the matching symbols" unless upload.index("ready.json") > upload.index("okou-dsyms.tar.gz")
 raise "ready publication must be immutable" unless upload.include?('--if-none-match "*"')
 promote = release.fetch("promote-desktop-release")
 raise "signing requires production approval" unless promote.fetch("environment") == "production"
@@ -50,11 +51,60 @@ steps = promote.fetch("steps")
 fetch = steps.find { |step| step["id"] == "desktop-app" }
 raise "promotion must address exact release SHA" unless fetch.fetch("env").fetch("ARTIFACT_SHA") == '${{ needs.release-please.outputs.release_target }}'
 raise "promotion must verify artifact" unless fetch.fetch("run").include?("verify-okou-desktop-artifact.sh")
+raise "promotion must fetch and verify canonical symbols" unless fetch.fetch("run").include?("okou-dsyms.tar.gz") && fetch.fetch("run").include?("debug_symbols.py")
 sign = steps.find { |step| step["id"] == "desktop-artifacts" }
 raise "promotion must sign the downloaded app without rebuild" unless sign.fetch("run").include?("--app") && sign.fetch("run").include?("--package --notarize")
 raise "notary credentials must be provided together" unless sign.fetch("env").keys.sort == %w[OKOU_DESKTOP_NOTARIZE_API_ISSUER OKOU_DESKTOP_NOTARIZE_API_KEY_ID OKOU_DESKTOP_NOTARIZE_API_KEY_PATH]
 verify = steps.find { |step| step["name"] == "Verify signed and notarized macOS artifacts" }.fetch("run")
 raise "installation must test mounted app" unless verify.include?('"$mount/Okou.app" --verify-only')
+symbols = steps.find { |step| step["name"] == "Verify published Desktop UUIDs and upload dSYMs to Sentry" }
+raise "symbol upload must use actual published ZIP and DMG" unless symbols.fetch("run").include?("gh release download") && symbols.fetch("run").include?("--zip") && symbols.fetch("run").include?("--dmg") && symbols.fetch("run").include?("--upload")
+raise "symbol upload must follow asset publication" unless steps.index(symbols) > steps.index(steps.find { |step| step["name"] == "Upload Desktop artifacts to GitHub Releases" })
+raise "native symbols must target Desktop" unless promote.fetch("env").fetch("SENTRY_PROJECT") == "desktop"
+# Existing readiness must never convert missing symbols into a rebuild of a
+# published SHA. Execute the real reuse step and artifact reader against R2.
+existing = deploy.fetch("steps").find { |step| step["id"] == "existing" }.fetch("run")
+Dir.mktmpdir("desktop-artifact-reuse") do |dir|
+  bin = "#{dir}/bin"
+  Dir.mkdir(bin)
+  File.write("#{bin}/aws", <<~'SH')
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "$1 $2" == "s3api head-object" ]]; then
+      if [[ "$MOCK_READY" == "false" ]]; then
+        echo '404 Not Found' >&2
+        exit 255
+      fi
+    elif [[ "$1 $2" == "s3 cp" ]]; then
+      cp "$MOCK_ARTIFACT/${3##*/}" "$4"
+    else
+      echo 'Unexpected R2 mutation' >&2
+      exit 99
+    fi
+  SH
+  File.chmod(0755, "#{bin}/aws")
+  app = "#{dir}/package/Okou.app"
+  require "fileutils"
+  FileUtils.mkdir_p(app)
+  %w[Okou.app.dSYM computer-use-helper.dSYM].each { |bundle| FileUtils.mkdir_p("#{dir}/package/dSYMs/#{bundle}") }
+  artifact = "#{dir}/artifact"
+  target = "a" * 40
+  output, status = Open3.capture2e("bash", "#{root}/.github/scripts/artifacts/build-okou-desktop-artifact.sh", target, "1.2.3", app, artifact)
+  raise "fixture artifact failed: #{output}" unless status.success?
+  [["false", true, "exists=false\n"], ["true", true, "exists=true\n"], ["true", false, ""]].each do |ready, complete, expected|
+    FileUtils.rm_f("#{artifact}/okou-dsyms.tar.gz") unless complete
+    output_file = "#{dir}/output"
+    File.write(output_file, "")
+    env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "ARTIFACT_PREFIX" => "okou-desktop/#{target}",
+      "ARTIFACT_SHA" => target, "DESKTOP_VERSION" => "1.2.3", "AWS_ACCESS_KEY_ID" => "test",
+      "AWS_SECRET_ACCESS_KEY" => "test", "R2_ACCOUNT_ID" => "test", "R2_BUCKET_NAME" => "test",
+      "GITHUB_OUTPUT" => output_file, "MOCK_ARTIFACT" => artifact, "MOCK_READY" => ready,
+      "OKOU_DESKTOP_ARTIFACT_FETCH_RETRY_DELAY_SECONDS" => "0"}
+    output, status = Open3.capture2e(env, "bash", "-c", existing, chdir: root)
+    raise "unexpected artifact reuse result: #{output}" unless status.success? == complete
+    raise "invalid artifact was selected for rebuild/reuse" unless File.read(output_file) == expected
+  end
+end
 # Run the actual promotion step against the external GitHub CLI boundary.
 # A retry preserves signed assets already published and fills partial uploads.
 publish_artifacts = steps.find { |step| step["name"] == "Upload Desktop artifacts to GitHub Releases" }.fetch("run")

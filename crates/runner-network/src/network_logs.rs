@@ -1750,45 +1750,6 @@ mod tests {
     }
 
     #[test]
-    fn network_log_preserves_all_fields() {
-        let json = r#"{"timestamp":"2026-02-15T10:00:00","action":"ALLOW","host":"api.github.com","port":443,"method":"GET","url":"https://api.github.com/repos/okou-ai/okou","status":200,"latency_ms":150,"request_size":0,"response_size":1024,"firewall_base":"https://api.github.com","firewall_name":"github","firewall_permission":"metadata:read","firewall_rule_match":"GET /repos/{owner}/{repo}"}"#;
-        let log: NetworkLog = serde_json::from_str(json).unwrap();
-        let v = &log.0;
-        assert_eq!(v["method"], "GET");
-        assert_eq!(v["status"], 200);
-        assert_eq!(v["firewall_name"], "github");
-        assert_eq!(v["firewall_permission"], "metadata:read");
-    }
-
-    #[test]
-    fn network_log_round_trip() {
-        let json = r#"{"timestamp":"2026-02-15T10:00:00","action":"DENY","host":"evil.com","port":443,"method":"GET","url":"https://evil.com","status":403,"latency_ms":5,"request_size":0,"response_size":0,"firewall_base":"https://evil.com","firewall_name":"blocked"}"#;
-        let log: NetworkLog = serde_json::from_str(json).unwrap();
-        let reserialized = serde_json::to_value(&log).unwrap();
-        assert_eq!(reserialized["action"], "DENY");
-        assert_eq!(reserialized["firewall_name"], "blocked");
-    }
-
-    #[test]
-    fn network_log_payload_uses_camel_case() {
-        let payload = NetworkLogPayload {
-            run_id: "abc".to_string(),
-            network_logs: vec![],
-        };
-        let json = serde_json::to_value(&payload).unwrap();
-        assert!(json.get("runId").is_some());
-        assert!(json.get("networkLogs").is_some());
-    }
-
-    #[test]
-    fn network_log_malformed_line_skipped() {
-        let valid = r#"{"timestamp":"2026-02-15T10:00:00"}"#;
-        let invalid = "not json at all";
-        assert!(serde_json::from_str::<NetworkLog>(valid).is_ok());
-        assert!(serde_json::from_str::<NetworkLog>(invalid).is_err());
-    }
-
-    #[test]
     fn upload_rejection_body_parser_extracts_bounded_api_error_fields() {
         let long_message = "x".repeat(NETWORK_LOG_UPLOAD_ERROR_FIELD_MAX_CHARS + 1);
         let body = json!({

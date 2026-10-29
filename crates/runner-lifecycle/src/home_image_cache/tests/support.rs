@@ -141,6 +141,10 @@ impl Fixture {
 }
 
 pub(super) fn write_image(path: &Path, marker: &[u8], size: u64) {
+    create_image(path, marker, size).sync_all().unwrap();
+}
+
+pub(super) fn create_image(path: &Path, marker: &[u8], size: u64) -> std::fs::File {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut image = std::fs::OpenOptions::new()
         .read(true)
@@ -152,7 +156,7 @@ pub(super) fn write_image(path: &Path, marker: &[u8], size: u64) {
     image.set_len(size).unwrap();
     image.seek(SeekFrom::Start(4096)).unwrap();
     image.write_all(marker).unwrap();
-    image.sync_all().unwrap();
+    image
 }
 
 pub(super) fn binding(

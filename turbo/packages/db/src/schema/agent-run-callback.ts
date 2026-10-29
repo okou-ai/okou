@@ -27,7 +27,7 @@ export const agentRunCallbacks = pgTable(
         () => {
           return agentRuns.id;
         },
-        { onDelete: "cascade" },
+        { onDelete: "no action" },
       ),
     url: text("url"),
     internalKind: varchar("internal_kind", { length: 64 }),

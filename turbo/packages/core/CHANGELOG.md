@@ -1,5 +1,51 @@
 # Changelog
 
+## [8.800.0](https://github.com/okou-ai/okou/compare/core-v8.799.3...core-v8.800.0) (2026-10-29)
+
+
+### Features
+
+* **app:** show a compact pro offer after the first task ([#43724](https://github.com/okou-ai/okou/issues/43724)) ([9388a08](https://github.com/okou-ai/okou/commit/9388a085626407cbcc8032cfd061e8527d88df17))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.4
+
+## [8.799.3](https://github.com/okou-ai/okou/compare/core-v8.799.2...core-v8.799.3) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.3
+
+## [8.799.2](https://github.com/okou-ai/okou/compare/core-v8.799.1...core-v8.799.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **cli:** select presentation templates by tone and audience ([#43692](https://github.com/okou-ai/okou/issues/43692)) ([a9bb3ba](https://github.com/okou-ai/okou/commit/a9bb3ba137099aae4f548bd38fcdd35232c3d5a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.2
+
+## [8.799.1](https://github.com/okou-ai/okou/compare/core-v8.799.0...core-v8.799.1) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.1
+
 ## [8.799.0](https://github.com/okou-ai/okou/compare/core-v8.798.0...core-v8.799.0) (2026-10-29)
 
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.29.49](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.48...runner-remote-v0.29.49) (2026-10-29)
+
+
+### Bug Fixes
+
+* **runner-remote:** await physical native vnc cleanup ([#43927](https://github.com/okou-ai/okou/issues/43927)) ([2ea53e7](https://github.com/okou-ai/okou/commit/2ea53e768fc5e66b0a59db62048e1b067889848a))
+
+## [0.29.48](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.47...runner-remote-v0.29.48) (2026-10-29)
+
 ## [0.29.47](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.46...runner-remote-v0.29.47) (2026-10-29)
 
 ## [0.29.46](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.45...runner-remote-v0.29.46) (2026-10-28)

@@ -19,13 +19,16 @@ async fn stop_after_owned_transfer_cancellation_is_quiet_and_confirms_process_ex
         result = &mut write => panic!("write completed before transfer admission: {result:?}"),
         begin = read_vsock_message(&mut peer) => assert_eq!(begin.msg_type, MSG_WRITE_FILE_STREAM_BEGIN),
     }
-    let child = tokio::process::Command::new("cat")
+    let mut child = tokio::process::Command::new("cat")
         .process_group(0)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .unwrap();
+    // Keep cat alive even if the monitor falls back to wait(), which closes owned stdin.
+    let _stdin = child.stdin.take().unwrap();
     let pid = child.id().unwrap();
     let process = monitor_process(
         &sandbox.id,
@@ -48,16 +51,33 @@ async fn stop_after_owned_transfer_cancellation_is_quiet_and_confirms_process_ex
                 .unwrap(),
             0
         );
+        assert!(
+            pid_is_running(pid),
+            "backing process must be live before stop"
+        );
         sandbox.stop().await
     })
     .await;
+    let state_after_stop = sandbox.current_state();
+    let exit_confirmed =
+        tokio::time::timeout(Duration::from_secs(5), sandbox.process_exit_confirmed()).await;
+    let running_after_stop = pid_is_running(pid);
+    // Recover before asserting, but never let cleanup repair the recorded observations.
+    let cleanup_confirmed = sandbox.terminate_process_for_cleanup().await;
     result.unwrap();
-    assert_eq!(sandbox.current_state(), SandboxState::Stopped);
+    assert_eq!(state_after_stop, SandboxState::Stopped);
     assert!(
-        sandbox.terminate_process_for_cleanup().await,
-        "exit must be physically confirmed"
+        matches!(exit_confirmed, Ok(true)),
+        "stop must confirm process exit before cleanup: {exit_confirmed:?}"
     );
-    assert!(!pid_is_running(pid));
+    assert!(
+        !running_after_stop,
+        "stop must terminate the backing process"
+    );
+    assert!(
+        cleanup_confirmed,
+        "fixture cleanup must confirm process exit"
+    );
     assert!(!has_captured_event(&events, "graceful shutdown failed"));
     let closed = captured_event(
         &events,
