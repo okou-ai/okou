@@ -75,17 +75,20 @@ export const sendAgentPhoneConnectedMessages$ = command(
         signal,
       );
       if (channel === "whatsapp") {
+        const fromNumber = optionalEnv("AGENTPHONE_PHONE_NUMBER");
+        if (!fromNumber) {
+          throw new Error("AGENTPHONE_PHONE_NUMBER is not configured");
+        }
         await set(storeOutboundAgentPhoneMessage$, {
           agentphoneMessageId: sent.id,
           conversationId: null,
           agentphoneAgentId: target.agentphoneAgentId,
           userLinkId: target.userLinkId,
           phoneHandle: target.toNumber,
-          fromNumber:
-            sent.fromNumber ?? optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
+          fromNumber,
           toNumber: sent.toNumber,
           body: message.body,
-          channel: sent.channel ?? channel,
+          channel,
           userChannel: channel,
           visibilityRecipients: [],
         });

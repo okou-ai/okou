@@ -49,7 +49,7 @@ function headers(actor: ApiTestUser) {
 function client() {
   return setupApp({ context, routes: integrationsWhatsappRoutes })(contract);
 }
-async function configure(enabled = true) {
+async function configure(enabled = true, echoRouting = true) {
   const integrations = createBddIntegrationApi(context);
   integrations.configureAgentPhoneProvider();
   integrations.configureAgentPhoneWebhook();
@@ -69,8 +69,12 @@ async function configure(enabled = true) {
       sends.push(body);
       return HttpResponse.json({
         id: `message_${randomUUID()}`,
-        channel: body.channel ?? "sms",
-        from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+        ...(echoRouting
+          ? {
+              channel: body.channel ?? "sms",
+              from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+            }
+          : {}),
         to_number: body.to_number,
       });
     }),
@@ -491,7 +495,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
   it.each(["connected", "unlink", "switch"] as const)(
     "routes WhatsApp run replies and respects connection changes (state before completion: %s)",
     async (connectionState) => {
-      const setup = await configure();
+      const setup = await configure(true, connectionState !== "connected");
       const runs = createRunsApi(context);
       setup.ap.acceptAgentPhoneObjectStorage();
       runs.acceptStorageDownloads();
@@ -537,6 +541,9 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       const run = await runs.claimRunnerJob(runId);
       expect(run.appendSystemPrompt).toContain("WhatsApp commands");
       expect(run.appendSystemPrompt).toContain("# WhatsApp Message Context");
+      expect(run.appendSystemPrompt).toContain(
+        "Your WhatsApp account is now connected",
+      );
       expect(run.appendSystemPrompt).toContain(
         "currently running inside: WhatsApp",
       );
