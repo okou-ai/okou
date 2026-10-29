@@ -1,0 +1,64 @@
+def reversed_key(flow):
+    return flow.metadata.get(*reversed(["external_key", "sandbox_run_id"]))
+
+def reversed_default(flow):
+    return flow.metadata.get(*reversed(["sandbox_run_id", "external_key"]))
+
+def nested_reversal(flow):
+    return flow.metadata.get(*reversed(tuple(reversed(["external_key", "sandbox_run_id"]))))
+
+def reversed_sorted_key(flow):
+    return flow.metadata.get(*reversed(sorted(["sandbox_run_id", "external_key"])))
+
+def sorted_key(flow):
+    return flow.metadata.get(*sorted(["sandbox_run_id", "z_external_key"]))
+
+def sorted_default(flow):
+    return flow.metadata.get(*sorted(["sandbox_run_id", "external_key"]))
+
+def sorted_reverse_key(flow):
+    return flow.metadata.get(*sorted(["sandbox_run_id", "external_key"], reverse=True))
+
+def sorted_reverse_default(flow):
+    return flow.metadata.get(*sorted(["z_external_key", "sandbox_run_id"], reverse=True))
+
+def reversed_mapping_default(flow):
+    return flow.metadata.get(*reversed({"sandbox_run_id": 1, "external_key": 2, "sandbox_run_id": 3}))
+
+def controls(flow, dynamic, condition, metadata_keys, choose_key):
+    flow.metadata.get(*reversed([]), "sandbox_run_id")
+    flow.metadata.get(*sorted([]), "sandbox_run_id")
+    flow.metadata.get(*set([]), "sandbox_run_id")
+    flow.metadata.get(*frozenset([]), "sandbox_run_id")
+    flow.metadata.get(*reversed(["external_key"]), "sandbox_run_id")
+    flow.metadata.get(*sorted(["external_key"]), "sandbox_run_id")
+    flow.metadata.get(*set(["external_key"]), "sandbox_run_id")
+    flow.metadata.get(*frozenset(["external_key"]), "sandbox_run_id")
+    flow.metadata.get(*reversed(dynamic))
+    flow.metadata.get(*sorted(dynamic))
+    flow.metadata.get(*set(dynamic))
+    flow.metadata.get(*frozenset(dynamic))
+    flow.metadata.get(*sorted([metadata_keys.SANDBOX_RUN_ID]))
+    flow.metadata.get(*reversed(["sandbox_run_id"] if condition else []), "external_key")
+    flow.metadata.get(*sorted([] if condition else ["sandbox_run_id"]), "external_key")
+    flow.metadata.get(*set(["sandbox_run_id"] if condition else []), "external_key")
+    flow.metadata.get(*frozenset([] if condition else ["sandbox_run_id"]), "external_key")
+    flow.metadata.get(*reversed(["sandbox_run_id", *dynamic]))
+    flow.metadata.get(*reversed([*dynamic, "external_key"]), "sandbox_run_id")
+    flow.metadata.get(*sorted([*(["aaa"] if condition else []), "sandbox_run_id"]))
+    flow.metadata.get(*sorted([*(["aaa"] if condition else ["zzz"]), "sandbox_run_id"]))
+    flow.metadata.get(*sorted(["aaa", *(["sandbox_run_id"] if condition else [])]))
+    flow.metadata.get(*sorted(["sandbox_run_id", "external_key"], key=choose_key))
+    flow.metadata.get(*sorted(["sandbox_run_id", "external_key"], reverse=condition))
+    flow.metadata.get(*sorted(set(["sandbox_run_id", "external_key"])))
+    flow.metadata.get(*list(reversed((args := ["external_key", "sandbox_run_id"]))))
+    flow.metadata.get(*reversed(*[["external_key", "sandbox_run_id"]]))
+    flow.metadata.get(*sorted(*[["sandbox_run_id", "z_external_key"]]))
+    flow.metadata.get(*reversed(["external_key"] or ["sandbox_run_id"]))
+    flow.metadata.get(*sorted(["sandbox_run_id", "external_key"], reverse=False, key=None))
+    flow.metadata.get(*reversed(sorted(["sandbox_run_id", "external_key"], reverse=True)))
+    flow.metadata.get(*sorted([*(["zzz"] if condition else []), "sandbox_run_id"], reverse=True))
+    flow.metadata.get(*sorted(["zzz", *(["sandbox_run_id"] if condition else [])], reverse=True))
+    flow.metadata.get(*sorted(["sandbox_run_id", *(["aaa"] if condition else [])], reverse=True))
+    flow.metadata.get(*sorted({"sandbox_run_id": 1, "external_key": 2}))
+    flow.metadata.get(*sorted(["sandbox_run_id"] if condition else ["external_key"]))
