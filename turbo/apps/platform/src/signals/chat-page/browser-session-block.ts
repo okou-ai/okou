@@ -43,6 +43,8 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly viewerConnection$: Computed<
     Promise<{
       readonly liveUrl: string;
+      readonly instanceId: string | null;
+      readonly windowId: number | null;
       readonly cdpUrl: string;
     } | null>
   >;
@@ -55,8 +57,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly start$: Command<Promise<void>, [AbortSignal]>;
   readonly close$: Command<Promise<void>, [AbortSignal]>;
   readonly subscribe$: Command<void, [AbortSignal]>;
-  // Attach to the visible panel container: the lease heartbeat lives exactly as
-  // long as that element is mounted.
+  // An open panel keeps only its own chat's Browser window alive.
   readonly keepAliveRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -100,6 +101,16 @@ function activeBrowserLiveUrl(session: BrowserSession | null): string | null {
   return session?.status === "active" && session.liveUrl
     ? session.liveUrl
     : null;
+}
+
+function sameBrowserWindow(
+  left: BrowserSession["window"],
+  right: BrowserSession["window"],
+): boolean {
+  return (
+    left?.instanceId === right?.instanceId &&
+    left?.primaryWindowId === right?.primaryWindowId
+  );
 }
 
 interface BrowserMutationSignalContext {
@@ -234,6 +245,72 @@ function createViewerSettingsSignals(): Pick<
   };
 }
 
+function createBrowserSessionKeepAliveSignals(
+  descriptor: BrowserSessionDescriptor,
+  session$: BrowserSessionSignals["session$"],
+  leaseOverride$: State<BrowserSession | undefined>,
+  reload$: BrowserSessionSignals["reload$"],
+): Pick<BrowserSessionSignals, "keepAliveRef$"> {
+  const keepAliveRef$ = onRef(
+    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+      setLoop(
+        async () => {
+          const mountedSession = await get(session$);
+          signal.throwIfAborted();
+          const response = await accept(
+            get(apiClient$)(browserContract).leaseByThread({
+              params: { threadId: descriptor.threadId },
+              body: {},
+              fetchOptions: { signal },
+            }),
+            [200, 404, 409],
+            signal,
+          );
+          const currentSession = await get(session$);
+          signal.throwIfAborted();
+          // A response from the previous lifetime cannot replace a reopened
+          // window or a newly admitted shared instance.
+          if (
+            currentSession?.liveUrl !== mountedSession?.liveUrl ||
+            !sameBrowserWindow(currentSession?.window, mountedSession?.window)
+          ) {
+            return false;
+          }
+          if (
+            response.status === 200 &&
+            sameBrowserWindow(
+              response.body.browser.window,
+              currentSession?.window,
+            )
+          ) {
+            set(
+              leaseOverride$,
+              currentSession
+                ? {
+                    ...response.body.browser,
+                    // Lease responses intentionally omit the provider live
+                    // URL, so retain the one loaded by the viewer endpoint.
+                    liveUrl: currentSession.liveUrl,
+                  }
+                : response.body.browser,
+            );
+            return false;
+          }
+          // Reclaimed windows pause the panel, but a concurrent reopen keeps
+          // the mounted panel's heartbeat alive for its new lifetime.
+          set(reload$);
+          const reloadedSession = await get(session$);
+          signal.throwIfAborted();
+          return activeBrowserLiveUrl(reloadedSession) === null;
+        },
+        LEASE_HEARTBEAT_INTERVAL_MS,
+        signal,
+      );
+    }),
+  );
+  return { keepAliveRef$ };
+}
+
 export function createBrowserSessionSignals(
   threadId: string,
 ): BrowserSessionSignals {
@@ -244,33 +321,32 @@ export function createBrowserSessionSignals(
   const reloadVersion$ = state(0);
   const screenshotImageLoad = createImageLoadSignals();
   const sessionOverride$ = state<BrowserSession | null | undefined>(undefined);
+  const leaseOverride$ = state<BrowserSession | undefined>(undefined);
+  const lifecycleSession$ = computed(
+    async (get): Promise<BrowserSession | null> => {
+      get(reloadVersion$);
+      const override = get(sessionOverride$);
+      return override === undefined
+        ? await fetchBrowserSession(get(apiClient$), descriptor.threadId)
+        : override;
+    },
+  );
   const session$ = computed(async (get): Promise<BrowserSession | null> => {
-    get(reloadVersion$);
-    const override = get(sessionOverride$);
-    return override === undefined
-      ? await fetchBrowserSession(get(apiClient$), descriptor.threadId)
-      : override;
+    return get(leaseOverride$) ?? (await get(lifecycleSession$));
   });
   const reload$ = command(({ set }) => {
+    set(leaseOverride$, undefined);
     set(sessionOverride$, undefined);
     set(reloadVersion$, (version) => {
       return version + 1;
     });
   });
 
-  // Lease responses publish fresh session data without changing the provider.
-  // Keep the resolved identity synchronous so equal URLs suppress refetches.
-  const fetchedViewerLiveUrl$ = computed(async (get) => {
-    return activeBrowserLiveUrl(await get(session$));
-  });
-  const viewerLiveUrl$ = computed((get) => {
-    const override = get(sessionOverride$);
-    return override === undefined
-      ? get(fetchedViewerLiveUrl$)
-      : activeBrowserLiveUrl(override);
-  });
+  // Lifecycle reloads (including open/close) can replace the connection. Lease
+  // responses only refresh presentation and must not interrupt live input.
   const viewerConnection$ = computed(async (get) => {
-    const liveUrl = await get(viewerLiveUrl$);
+    const lifecycleSession = await get(lifecycleSession$);
+    const liveUrl = activeBrowserLiveUrl(lifecycleSession);
     if (!liveUrl) {
       return null;
     }
@@ -281,7 +357,12 @@ export function createBrowserSessionSignals(
       [200, 409],
     );
     return response.status === 200
-      ? { cdpUrl: response.body.cdpUrl, liveUrl }
+      ? {
+          cdpUrl: response.body.cdpUrl,
+          liveUrl,
+          instanceId: lifecycleSession?.window?.instanceId ?? null,
+          windowId: lifecycleSession?.window?.primaryWindowId ?? null,
+        }
       : null;
   });
 
@@ -298,43 +379,11 @@ export function createBrowserSessionSignals(
     reload$,
   );
 
-  const keepAliveRef$ = onRef(
-    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-      setLoop(
-        async () => {
-          const response = await accept(
-            get(apiClient$)(browserContract).leaseByThread({
-              params: { threadId: descriptor.threadId },
-              body: {},
-              fetchOptions: { signal },
-            }),
-            [200, 404, 409],
-          );
-          if (response.status === 200) {
-            const currentSession = await get(session$);
-            signal.throwIfAborted();
-            set(
-              sessionOverride$,
-              currentSession
-                ? {
-                    ...response.body.browser,
-                    // Lease responses intentionally omit the provider live
-                    // URL, so retain the one loaded by the viewer endpoint.
-                    liveUrl: currentSession.liveUrl,
-                  }
-                : response.body.browser,
-            );
-            return false;
-          }
-          // The browser was reclaimed. Stop the heartbeat and let the panel
-          // offer a resume instead.
-          set(reload$);
-          return true;
-        },
-        LEASE_HEARTBEAT_INTERVAL_MS,
-        signal,
-      );
-    }),
+  const keepAliveSignals = createBrowserSessionKeepAliveSignals(
+    descriptor,
+    session$,
+    leaseOverride$,
+    reload$,
   );
 
   return {
@@ -349,7 +398,7 @@ export function createBrowserSessionSignals(
     reload$,
     reloadPanel$: reload$,
     ...subscriptionSignals,
-    keepAliveRef$,
+    ...keepAliveSignals,
   };
 }
 

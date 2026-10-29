@@ -192,12 +192,16 @@ function PanelActions({ actions }: { readonly actions: ReactNode }) {
 function BrowserCdpViewer({
   signals,
   liveUrl,
+  instanceId,
+  windowId,
   refined,
   actions,
   overlay,
 }: {
   readonly signals: BrowserSessionSignals;
   readonly liveUrl: string;
+  readonly instanceId?: string;
+  readonly windowId?: number;
   /** The Cloud browser panel switch: app tokens and presence. */
   readonly refined: boolean;
   readonly actions: ReactNode;
@@ -215,7 +219,9 @@ function BrowserCdpViewer({
     connection.state === "loading" ||
     (connection.state === "hasData" &&
       connection.data !== null &&
-      connection.data.liveUrl !== liveUrl);
+      (connection.data.liveUrl !== liveUrl ||
+        connection.data.instanceId !== (instanceId ?? null) ||
+        connection.data.windowId !== (windowId ?? null)));
   if (connecting) {
     return (
       <>
@@ -236,11 +242,13 @@ function BrowserCdpViewer({
     <>
       {actions ? <PanelActions actions={actions} /> : null}
       <div
+        key={instanceId ?? liveUrl}
         data-browser-session-cdp-viewer
         className="relative isolate flex min-h-0 flex-1"
       >
         <CdpViewer
           cdpUrl={connection.data.cdpUrl}
+          windowId={windowId}
           interactive
           showSettingsMenu
           windowSizeSync={windowSizeSync}
@@ -424,6 +432,8 @@ export function BrowserSessionPanel({
       <BrowserCdpViewer
         signals={signals}
         liveUrl={liveUrl}
+        instanceId={session.window?.instanceId}
+        windowId={session.window?.primaryWindowId}
         refined={refined}
         actions={actions}
         overlay={overlay}
