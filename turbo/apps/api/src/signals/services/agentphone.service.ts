@@ -926,9 +926,7 @@ async function refreshTypingIfSupported(
   if (event.channel !== "imessage") {
     return;
   }
-  const conversationId = isAgentPhoneGroupEvent(event)
-    ? event.groupId
-    : event.conversationId;
+  const conversationId = event.conversationId;
   if (!conversationId) {
     return;
   }
