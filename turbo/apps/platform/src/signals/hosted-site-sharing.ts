@@ -237,20 +237,23 @@ function createSiteUrlEditorSignals(
 function createHostedSiteShareSession(sourceUrl: string) {
   const signal$ = state<AbortSignal | null>(null);
   const saved$ = state<SiteUrl | null>(null);
+  const currentUrl$ = computed((get) => {
+    return currentHostedSiteUrl(
+      get(saved$)?.url ?? sourceUrl,
+      get(hostedSiteUrlChanges$),
+    );
+  });
   const details$ = computed(async (get) => {
-    const changes = get(hostedSiteUrlChanges$);
     const saved = get(saved$);
+    const currentUrl = get(currentUrl$);
     if (saved) {
-      const url = currentHostedSiteUrl(saved.url, changes);
       return {
         ...saved,
-        url,
-        publicSlug: new URL(url).hostname.split(".")[0]!,
+        url: currentUrl,
+        publicSlug: new URL(currentUrl).hostname.split(".")[0]!,
       };
     }
-    const url = new URL(
-      currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$)),
-    );
+    const url = new URL(currentUrl);
     const result = await accept(
       get(apiClient$)(hostContract).siteUrl({
         params: { publicSlug: url.hostname.split(".")[0]! },
