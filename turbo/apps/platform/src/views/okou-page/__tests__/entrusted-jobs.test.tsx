@@ -11,7 +11,6 @@ import {
   type UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
-import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
@@ -377,38 +376,26 @@ test("hides home Tasks when Planning and action is off and restores saved Tasks 
       unavailableReason: null,
     });
   });
-  context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
-    return respond(200, {
-      enabled: true,
-      status: "enabled",
-      unavailableReason: null,
-    });
-  });
   await setupPage({
     context,
     path: `/agents/${agentId}/chat?settings=preference`,
     featureSwitches: {
       [FeatureSwitchKey.ProactiveAgent]: true,
-      [FeatureSwitchKey.AgentSuggestion]: true,
     },
   });
   const jobs = await screen.findByRole("switch", { name: "Planning & action" });
-  const suggestions = await screen.findByRole("switch", {
-    name: "Suggestions",
-  });
   await waitFor(() => {
     expect(jobs).toBeChecked();
-    expect(suggestions).toBeChecked();
   });
   click(jobs);
   await waitFor(() => {
     expect(jobs).not.toBeChecked();
-    expect(suggestions).toBeChecked();
   });
   const settings = screen.getByRole("dialog", { name: "Settings" });
   click(control("Close", "button", settings));
-  await findControl("Workflow", "tab");
+  await findControl("Workflow");
   expect(queryControl("Tasks", "tab")).not.toBeInTheDocument();
+  expect(queryControl("Tasks")).not.toBeInTheDocument();
 
   const rail = await screen.findByTestId("labeled-nav-rail");
   click(within(rail).getByLabelText("Test User"));
