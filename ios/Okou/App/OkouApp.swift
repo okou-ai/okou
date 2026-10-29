@@ -201,7 +201,8 @@ private struct WorkspaceRootView: View {
               conversation: conversation, topContentInset: topContentHeight, sidebar: sidebar,
               mentionSource: ComposerMentionSource(
                 agentID: conversation.thread.agentID, agents: store.list.agents,
-                threads: store.list.threads)
+                threads: store.list.threads),
+              onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
             )
             .id(conversation.thread.id)
           } else {
@@ -215,7 +216,11 @@ private struct WorkspaceRootView: View {
                   error: store.error ?? store.list.actionError, attachmentURL: store.webURL,
                   attachments: composer.attachments,
                   draftState: composer,
-                  submit: { await store.sendNewChat() }, refresh: nil,
+                  submit: {
+                    await store.sendNewChat(
+                      sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
+                  },
+                  refresh: nil,
                   modelSelection: store.newModelSelection,
                   connectorSelection: store.newModelSelection.connectors,
                   mentionSource: ComposerMentionSource(
@@ -226,6 +231,15 @@ private struct WorkspaceRootView: View {
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
+        .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
+        .overlay {
+          if let submission = store.newChatSubmission, submission.isPresenting {
+            NewChatSubmissionView(submission: submission, webURL: store.webURL)
+              .id(submission.message.id)
+              .background { Color(uiColor: .systemBackground).ignoresSafeArea() }
+          }
+        }
         .safeAreaBar(edge: .top, spacing: 0) {
           VStack(spacing: 0) {
             ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
