@@ -961,19 +961,20 @@ function sharedBrowserLease(
           findBrowserUseSession(view.profile.providerSessionId, signal),
           signal,
         );
-        return session?.status === "active" &&
-          session.cdpUrl &&
-          (activity ||
-            (await provider(
-              browserUseWindowExists(
-                session.cdpUrl,
-                window.primaryWindowId,
-                signal,
-              ),
-              signal,
-            )))
-          ? session
-          : null;
+        if (session?.status !== "active" || !session.cdpUrl) {
+          return null;
+        }
+        const cdpUrl = session.cdpUrl;
+        if (
+          !activity &&
+          !(await provider(
+            browserUseWindowExists(cdpUrl, window.primaryWindowId, signal),
+            signal,
+          ))
+        ) {
+          return null;
+        }
+        return { session, cdpUrl };
       });
       signal.throwIfAborted();
       if (!health.ok) {
@@ -983,10 +984,7 @@ function sharedBrowserLease(
         await set(reconcileSharedBrowsers$, ctx.owner, signal);
         return unavailable();
       }
-      const cdpUrl = health.value.cdpUrl;
-      if (!cdpUrl) {
-        return unavailable();
-      }
+      const { cdpUrl, session } = health.value;
       const renewed = await settleIncludingAbort(async () => {
         if (activity) {
           return await set(
@@ -1028,7 +1026,7 @@ function sharedBrowserLease(
               ? renewed.value.expiresAt
               : window.expiresAt,
         },
-        health.value,
+        session,
         await set(loadBrowserScreenshotUrl$, ctx.owner.chatThreadId, signal),
       );
       return { kind: "ok", value: browser };
