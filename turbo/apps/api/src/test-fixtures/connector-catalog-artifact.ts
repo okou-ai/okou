@@ -2444,6 +2444,7 @@ function automaticMcpConnector(
     ? "AUTOMATIC"
     : `AUTOMATIC_${firewallAuth.toUpperCase()}`,
   staticHeaders: Readonly<Record<string, string>> = {},
+  scopes?: readonly string[],
 ): ConnectorCatalogArtifactConnector {
   const template = connectors.find((entry) => {
     return entry.slug === "public-mcp";
@@ -2474,7 +2475,12 @@ function automaticMcpConnector(
           secrets: [accessToken, refreshToken],
           variables: [],
         },
-        grant: { kind: "automatic", callbackOrigin: "api", outputs },
+        grant: {
+          kind: "automatic",
+          callbackOrigin: "api",
+          ...(scopes ? { scopes: [...scopes] } : {}),
+          outputs,
+        },
         access: { kind: "automatic", inputs: outputs, outputs },
         revoke: { kind: "none" },
       },
@@ -2541,6 +2547,14 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     ...connectors,
     automaticMcpConnector("none"),
     automaticMcpConnector("oauth"),
+    {
+      ...automaticMcpConnector("oauth", "AUTOMATIC_SCOPED", {}, [
+        "read",
+        "write",
+        "read",
+      ]),
+      slug: "automatic-mcp-declared-scopes",
+    },
     {
       ...automaticMcpConnector("oauth", "AUTOMATIC_STATIC", {
         "X-Datadog-MCP-Toolsets": "all,cases",

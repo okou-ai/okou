@@ -424,6 +424,9 @@ function runtimeMethod(
         grant: {
           kind: "automatic",
           callbackOrigin: "api",
+          ...(method.grant.scopes === undefined
+            ? {}
+            : { scopes: [...method.grant.scopes] }),
           outputs: outputBindings(method.grant.outputs),
         },
         access,
