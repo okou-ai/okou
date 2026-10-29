@@ -1229,7 +1229,7 @@ describe("Discord processing status", () => {
     const typedBeforeHeartbeat = started.provider.typingChannels.length;
     await expect(
       heartbeat(started.runId, claim.sandboxToken),
-    ).resolves.toStrictEqual({ ok: true, typingRefreshIntervalSeconds: 8 });
+    ).resolves.toStrictEqual({ ok: true, typingRefreshIntervalSeconds: 6 });
     expect(started.provider.typingChannels).toHaveLength(
       typedBeforeHeartbeat + 1,
     );
@@ -1250,6 +1250,72 @@ describe("Discord processing status", () => {
     await flushWaitUntilForTest();
     expect(started.provider.typingChannels).toHaveLength(typedAtReply);
   });
+
+  it.each([500, 4000])(
+    "keeps typing fresh when the first heartbeat arrives after %s ms",
+    async (firstHeartbeatAfterMs) => {
+      mockNow(now());
+      const started = await startDiscordRun();
+      const claim = await claimRun(started.actor, started.runId);
+      const typedOnAdmission = started.provider.typingChannels.length;
+
+      mockNow(now() + firstHeartbeatAfterMs);
+      const first = await heartbeat(started.runId, claim.sandboxToken);
+      expect(started.provider.typingChannels).toHaveLength(
+        typedOnAdmission + (firstHeartbeatAfterMs === 500 ? 0 : 1),
+      );
+      expect(first).toStrictEqual({
+        ok: true,
+        typingRefreshIntervalSeconds: 6,
+      });
+
+      mockNow(now() + 6000);
+      const typedBeforeRefresh = started.provider.typingChannels.length;
+      await heartbeat(started.runId, claim.sandboxToken);
+      expect(started.provider.typingChannels).toHaveLength(
+        typedBeforeRefresh + 1,
+      );
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "Typing remained active until the reply.",
+      });
+      expect(started.provider.sentMessages.at(-1)?.content).toContain(
+        "Typing remained active until the reply.",
+      );
+    },
+  );
+
+  it.each(["server", "network"] as const)(
+    "recovers a %s typing failure at the first heartbeat",
+    async (failure) => {
+      mockNow(now());
+      const started = await startDiscordRun({
+        configureProvider: (provider) => {
+          provider.state.typingResponse = () => {
+            return failure === "network"
+              ? HttpResponse.error()
+              : HttpResponse.json({ message: "Unavailable" }, { status: 500 });
+          };
+        },
+      });
+      const claim = await claimRun(started.actor, started.runId);
+      started.provider.state.typingResponse = undefined;
+      mockNow(now() + 4000);
+      await heartbeat(started.runId, claim.sandboxToken);
+      expect(started.provider.typingChannels).toStrictEqual([
+        started.channelId,
+      ]);
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "Delivered after typing recovered.",
+      });
+      expect(started.provider.sentMessages.at(-1)?.content).toContain(
+        "Delivered after typing recovered.",
+      );
+    },
+  );
 
   it("shows typing when a queued Discord follow-up is admitted and when it launches", async () => {
     const started = await startDiscordRun();
@@ -1444,7 +1510,7 @@ describe("Discord processing status", () => {
     expect(now() - reuseStartedAt).toBeLessThan(TYPING_ACCESS_REUSE_MS);
     await expect(
       heartbeat(started.runId, claim.sandboxToken),
-    ).resolves.toStrictEqual({ ok: true, typingRefreshIntervalSeconds: 8 });
+    ).resolves.toStrictEqual({ ok: true, typingRefreshIntervalSeconds: 6 });
     expect(typingRequests).toBe(2);
     expect(started.provider.typingChannels).toHaveLength(
       typedBeforeRefresh + 2,
