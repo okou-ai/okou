@@ -41,6 +41,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
+import postgres from "postgres";
+import { array, literal, number, object, string } from "zod";
+import { applyPendingMigrations } from "./migration-runner";
 import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
@@ -148,6 +151,70 @@ async function runMigrations(dbUrl: string): Promise<void> {
     env: { DATABASE_URL: dbUrl },
     cwd: PACKAGE_DIR,
   });
+}
+
+/** Replay 1477's unchanged transition under the schema it actually precedes. */
+async function validateHistoricalRunCleanupBeforeGuard(
+  dbUrl: string,
+): Promise<void> {
+  const journal = object({
+    entries: array(object({ tag: string(), when: number() })),
+  }).parse(
+    JSON.parse(
+      await fs.readFile(
+        path.join(MIGRATIONS_DIR, "meta/_journal.json"),
+        "utf8",
+      ),
+    ),
+  );
+  const guard = journal.entries.find((entry) => {
+    return entry.tag === "1484_threadless_run_restrictive_references";
+  });
+  assert.ok(guard, "Missing restrictive Run reference migration");
+  const client = postgres(dbUrl, { max: 1 });
+  try {
+    await applyPendingMigrations(client, { beforeMillis: guard.when });
+    await validateHistoricalRunCleanup(dbUrl);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Late callback, job and usage publication must reject Run deletion. */
+async function validateRestrictiveRunReferences(dbUrl: string): Promise<void> {
+  const names = [
+    "agent_run_callbacks_run_id_agent_runs_id_fk",
+    "runner_job_queue_run_id_agent_runs_id_fk",
+    "usage_event_run_id_agent_runs_id_fk",
+  ];
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  try {
+    const result = await client.query(
+      `SELECT conname AS name, confdeltype AS action,
+        convalidated AS validated, condeferrable AS deferrable
+      FROM pg_constraint
+      WHERE contype = 'f' AND conname = ANY($1::text[])
+      ORDER BY conname`,
+      [names],
+    );
+    const constraints = array(
+      object({
+        name: string(),
+        action: literal("a"),
+        validated: literal(true),
+        deferrable: literal(false),
+      }),
+    ).parse(result.rows);
+    assert.deepEqual(
+      constraints.map((constraint) => {
+        return constraint.name;
+      }),
+      names,
+    );
+  } finally {
+    await client.end();
+  }
 }
 
 async function resetDatabase(dbUrl: string): Promise<void> {
@@ -2816,6 +2883,7 @@ async function main(): Promise<void> {
     console.log("=== Phase 2: Test existing migrations ===\n");
     await createDatabase(TEST_DB_1);
     const dbUrl1 = createTestDbUrl(TEST_DB_1);
+    await validateHistoricalRunCleanupBeforeGuard(dbUrl1);
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
 
@@ -2845,7 +2913,7 @@ async function main(): Promise<void> {
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
     await validateCanonicalBillingSources(dbUrl1);
     await validateBillingRunLifecycle(dbUrl1);
-    await validateHistoricalRunCleanup(dbUrl1);
+    await validateRestrictiveRunReferences(dbUrl1);
     await validatePermanentArtifactThreadCatalog(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePiMemoryRetirement(dbUrl1);
@@ -2918,6 +2986,7 @@ async function main(): Promise<void> {
     await validatePermanentStorageLineage(dbUrl2);
     await validatePermanentAgentInstructions(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);
+    await validateRestrictiveRunReferences(dbUrl2);
     await validatePermanentArtifactThreadCatalog(dbUrl2);
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);

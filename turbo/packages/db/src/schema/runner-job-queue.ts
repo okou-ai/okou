@@ -24,7 +24,7 @@ export const runnerJobQueue = pgTable(
         () => {
           return agentRuns.id;
         },
-        { onDelete: "cascade" },
+        { onDelete: "no action" },
       ),
 
     // Runner routing
