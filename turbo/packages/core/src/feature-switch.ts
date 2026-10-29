@@ -50,8 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ming@okou.ai",
     displayName: "First task upgrade",
     description: "Show the Pro offer after a user's first completed chat task.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {
     maintainer: "ming@okou.ai",
