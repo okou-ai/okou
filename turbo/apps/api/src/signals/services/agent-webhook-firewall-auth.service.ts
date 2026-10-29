@@ -4479,56 +4479,61 @@ const refreshSelectedTokens$ = command(async function refreshSelectedTokens(
   context: RefreshBatchContext,
   accessSourceKeys: readonly string[],
 ): Promise<readonly RefreshExecutionResult[]> {
-  return await Promise.all(
-    accessSourceKeys.map(async (accessSourceKey) => {
-      L.debug(
-        `[${context.auth.runId}] Refreshing expired ${accessSourceKey} token`,
-      );
-      const metadata = resolveRefreshMetadata(
-        accessSourceKey,
-        context.metadataByAccessSource.get(accessSourceKey),
-      );
-      if (metadata.sourceType === "platform-secret") {
-        throw new Error("Platform secrets are not refreshable");
-      }
-      const refreshResult = await set(refreshAccessTokenForSource$, {
-        accessSourceKey,
-        orgId: context.orgId,
-        userId: context.userId,
-        sourceType: metadata.sourceType,
-        sourceUserId: metadata.sourceUserId,
-        sourceId: metadata.sourceId,
-        runId: context.auth.runId,
-        metadataKey: metadata.metadataKey,
-        connectorSecrets: context.secrets,
-        accessEnvVars: context.envVarsByAccessSource.get(accessSourceKey) ?? [],
-        forceRefresh: context.forceRefresh,
-        connectorAccessBySlug: context.connectorAccessBySlug,
-        featureSwitchContext: context.featureSwitchContext,
-      });
-      if (!refreshResult.ok) {
-        if (refreshResult.reason === "source-missing") {
+  const refreshRequests = [];
+  for (const accessSourceKey of accessSourceKeys) {
+    refreshRequests.push(
+      (async (): Promise<RefreshExecutionResult> => {
+        L.debug(
+          `[${context.auth.runId}] Refreshing expired ${accessSourceKey} token`,
+        );
+        const metadata = resolveRefreshMetadata(
+          accessSourceKey,
+          context.metadataByAccessSource.get(accessSourceKey),
+        );
+        if (metadata.sourceType === "platform-secret") {
+          throw new Error("Platform secrets are not refreshable");
+        }
+        const refreshResult = await set(refreshAccessTokenForSource$, {
+          accessSourceKey,
+          orgId: context.orgId,
+          userId: context.userId,
+          sourceType: metadata.sourceType,
+          sourceUserId: metadata.sourceUserId,
+          sourceId: metadata.sourceId,
+          runId: context.auth.runId,
+          metadataKey: metadata.metadataKey,
+          connectorSecrets: context.secrets,
+          accessEnvVars:
+            context.envVarsByAccessSource.get(accessSourceKey) ?? [],
+          forceRefresh: context.forceRefresh,
+          connectorAccessBySlug: context.connectorAccessBySlug,
+          featureSwitchContext: context.featureSwitchContext,
+        });
+        if (!refreshResult.ok) {
+          if (refreshResult.reason === "source-missing") {
+            return {
+              accessSourceKey,
+              status: "source-missing",
+            };
+          }
           return {
             accessSourceKey,
-            status: "source-missing",
+            status: "failed",
+            ...(refreshResult.failureReason
+              ? { failureReason: refreshResult.failureReason }
+              : {}),
           };
         }
-        return {
-          accessSourceKey,
-          status: "failed",
-          ...(refreshResult.failureReason
-            ? { failureReason: refreshResult.failureReason }
-            : {}),
-        };
-      }
 
-      // "current" means the stored credential differs from the request
-      // snapshot, so earlier bundle reads may be stale too.
-      context.subscriptionBundles.clear();
-      Object.assign(context.secrets, refreshResult.secrets);
-      return { accessSourceKey, status: refreshResult.status };
-    }),
-  );
+        // "current" means the stored credential differs from the request
+        // snapshot, so earlier bundle reads may be stale too.
+        context.subscriptionBundles.clear();
+        Object.assign(context.secrets, refreshResult.secrets);
+        return { accessSourceKey, status: refreshResult.status };
+      })(),
+    );
+  }
+  return await Promise.all(refreshRequests);
 });
 
 const syncSkippedTokens$ = command(async function syncSkippedTokens(
@@ -4538,51 +4543,55 @@ const syncSkippedTokens$ = command(async function syncSkippedTokens(
   sourceStateMap: Map<string, RefreshSourceState>,
 ): Promise<readonly RefreshExecutionResult[]> {
   const results: RefreshExecutionResult[] = [];
-  const currentTokens = await Promise.all(
-    skippedAccessSourceKeys.map(async (accessSourceKey) => {
-      const sourceState = sourceStateMap.get(accessSourceKey);
-      if (!sourceState) {
+  const tokenRequests = [];
+  for (const accessSourceKey of skippedAccessSourceKeys) {
+    tokenRequests.push(
+      (async () => {
+        const sourceState = sourceStateMap.get(accessSourceKey);
+        if (!sourceState) {
+          return {
+            accessSourceKey,
+            token: null,
+            sourceMissing: true as const,
+          };
+        }
+        if (sourceState?.needsReconnect) {
+          return {
+            accessSourceKey,
+            token: null,
+            failureReason: "reconnect_required" as const,
+          };
+        }
+        const metadata = resolveRefreshMetadata(
+          accessSourceKey,
+          context.metadataByAccessSource.get(accessSourceKey),
+        );
+        if (metadata.sourceType === "platform-secret") {
+          throw new Error("Platform secrets are not refreshable");
+        }
         return {
           accessSourceKey,
-          token: null,
-          sourceMissing: true as const,
+          tokens: await set(getCurrentAccessSecrets$, {
+            accessSourceKey,
+            orgId: context.orgId,
+            userId: context.userId,
+            sourceType: metadata.sourceType,
+            sourceUserId: metadata.sourceUserId,
+            sourceId: metadata.sourceId,
+            runId: context.auth.runId,
+            metadataKey: metadata.metadataKey,
+            metadata,
+            accessEnvVars:
+              context.envVarsByAccessSource.get(accessSourceKey) ?? [],
+            connectorAccessBySlug: context.connectorAccessBySlug,
+            featureSwitchContext: context.featureSwitchContext,
+            subscriptionBundles: context.subscriptionBundles,
+          }),
         };
-      }
-      if (sourceState?.needsReconnect) {
-        return {
-          accessSourceKey,
-          token: null,
-          failureReason: "reconnect_required" as const,
-        };
-      }
-      const metadata = resolveRefreshMetadata(
-        accessSourceKey,
-        context.metadataByAccessSource.get(accessSourceKey),
-      );
-      if (metadata.sourceType === "platform-secret") {
-        throw new Error("Platform secrets are not refreshable");
-      }
-      return {
-        accessSourceKey,
-        tokens: await set(getCurrentAccessSecrets$, {
-          accessSourceKey,
-          orgId: context.orgId,
-          userId: context.userId,
-          sourceType: metadata.sourceType,
-          sourceUserId: metadata.sourceUserId,
-          sourceId: metadata.sourceId,
-          runId: context.auth.runId,
-          metadataKey: metadata.metadataKey,
-          metadata,
-          accessEnvVars:
-            context.envVarsByAccessSource.get(accessSourceKey) ?? [],
-          connectorAccessBySlug: context.connectorAccessBySlug,
-          featureSwitchContext: context.featureSwitchContext,
-          subscriptionBundles: context.subscriptionBundles,
-        }),
-      };
-    }),
-  );
+      })(),
+    );
+  }
+  const currentTokens = await Promise.all(tokenRequests);
   for (const {
     accessSourceKey,
     tokens,

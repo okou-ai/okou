@@ -309,54 +309,58 @@ export const refreshPersonalModelProviderSubscriptionUsage$ = command(
     );
     signal.throwIfAborted();
 
-    const refreshed = await Promise.all(
-      args.result.modelProviders.map(async (provider) => {
-        return (
-          (await tapError(
-            set(
-              refreshProvider$,
-              {
-                orgId: args.orgId,
-                userId: args.userId,
-                provider,
-                featureSwitchContext,
-                expectedAccountIdentity: args.expectedAccountIdentity,
+    const usageRequests = [];
+    for (const provider of args.result.modelProviders) {
+      usageRequests.push(
+        (async () => {
+          return (
+            (await tapError(
+              set(
+                refreshProvider$,
+                {
+                  orgId: args.orgId,
+                  userId: args.userId,
+                  provider,
+                  featureSwitchContext,
+                  expectedAccountIdentity: args.expectedAccountIdentity,
+                },
+                signal,
+              ),
+              (error) => {
+                signal.throwIfAborted();
+                const providerFields = {
+                  ...(provider.modelProviderId
+                    ? { modelProviderAccountId: provider.id }
+                    : {}),
+                  orgId: args.orgId,
+                  providerType: provider.type,
+                  userId: args.userId,
+                };
+                // A 503 from the ChatGPT usage GET is an upstream outage this
+                // service already handles: the list response still carries the
+                // stored provider row, only without live usage. Record it so the
+                // degradation stays traceable, but not at a severity that reads
+                // as a fault here. Every other failure — including an
+                // authentication rejection, an unrecognized response, and any
+                // other provider's failure — keeps its existing severity.
+                if (isCodexUsageRequestError(error) && error.status === 503) {
+                  L.info("codex usage unavailable upstream", {
+                    status: error.status,
+                    ...providerFields,
+                  });
+                } else {
+                  L.warn(
+                    "failed to refresh personal model provider subscription usage",
+                    { error, ...providerFields },
+                  );
+                }
               },
-              signal,
-            ),
-            (error) => {
-              signal.throwIfAborted();
-              const providerFields = {
-                ...(provider.modelProviderId
-                  ? { modelProviderAccountId: provider.id }
-                  : {}),
-                orgId: args.orgId,
-                providerType: provider.type,
-                userId: args.userId,
-              };
-              // A 503 from the ChatGPT usage GET is an upstream outage this
-              // service already handles: the list response still carries the
-              // stored provider row, only without live usage. Record it so the
-              // degradation stays traceable, but not at a severity that reads
-              // as a fault here. Every other failure — including an
-              // authentication rejection, an unrecognized response, and any
-              // other provider's failure — keeps its existing severity.
-              if (isCodexUsageRequestError(error) && error.status === 503) {
-                L.info("codex usage unavailable upstream", {
-                  status: error.status,
-                  ...providerFields,
-                });
-              } else {
-                L.warn(
-                  "failed to refresh personal model provider subscription usage",
-                  { error, ...providerFields },
-                );
-              }
-            },
-          )) ?? provider
-        );
-      }),
-    );
+            )) ?? provider
+          );
+        })(),
+      );
+    }
+    const refreshed = await Promise.all(usageRequests);
     signal.throwIfAborted();
 
     return {
