@@ -9,6 +9,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.5](https://github.com/okou-ai/okou/compare/api-v2.22.4...api-v2.22.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **artifacts:** revoke deleted shared conversations ([#43863](https://github.com/okou-ai/okou/issues/43863)) ([d52d7d3](https://github.com/okou-ai/okou/commit/d52d7d3b90c8b039983422d2f63afc365cc983a0))
+
 ## [2.22.4](https://github.com/okou-ai/okou/compare/api-v2.22.3...api-v2.22.4) (2026-10-29)
 
 
