@@ -115,66 +115,72 @@ test("saving cloud browser keeps the selected send mode unchanged during refresh
   expect(getSendModeButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("saving Planning and action keeps enabled Suggestions unchanged during refresh", async () => {
-  let saved = false;
-  const refreshing = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(
-    proactiveSuggestionsContract.get,
-    async ({ respond, withSignal }) => {
-      if (saved) {
-        refreshing.resolve();
-        await withSignal(release.promise);
-      }
+test.each([false, true])(
+  "saving Planning and action (initially %s) keeps enabled Suggestions unchanged during refresh",
+  async (initialEnabled) => {
+    let saved = false;
+    let enabled = initialEnabled;
+    const refreshing = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    context.mocks.api(
+      proactiveSuggestionsContract.get,
+      async ({ respond, withSignal }) => {
+        if (saved) {
+          refreshing.resolve();
+          await withSignal(release.promise);
+        }
+        return respond(200, {
+          enabled: true,
+          status: "enabled",
+          unavailableReason: null,
+        });
+      },
+    );
+    context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
       return respond(200, {
-        enabled: true,
-        status: "enabled",
+        enabled,
+        status: enabled ? "enabled" : "paused",
         unavailableReason: null,
       });
-    },
-  );
-  context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
-    return respond(200, {
-      enabled: saved,
-      status: saved ? "enabled" : "paused",
-      unavailableReason: null,
     });
-  });
-  context.mocks.api(proactiveJobsContract.update, ({ body, respond }) => {
-    saved = body.enabled;
-    return respond(200, {
-      enabled: saved,
-      status: "enabled",
-      unavailableReason: null,
+    context.mocks.api(proactiveJobsContract.update, ({ body, respond }) => {
+      saved = true;
+      enabled = body.enabled;
+      return respond(200, {
+        enabled,
+        status: enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      });
     });
-  });
-  await setupPage({
-    context,
-    path: "/agents?settings=preference",
-    featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveAgent]: true,
-    },
-  });
-  const suggestions = await screen.findByRole("switch", {
-    name: "Suggestions",
-  });
-  const planning = screen.getByRole("switch", { name: "Planning & action" });
-  await waitFor(() => {
+    await setupPage({
+      context,
+      path: "/agents?settings=preference",
+      featureSwitches: {
+        [FeatureSwitchKey.AgentSuggestion]: true,
+        [FeatureSwitchKey.ProactiveAgent]: true,
+      },
+    });
+    const suggestions = await screen.findByRole("switch", {
+      name: "Suggestions",
+    });
+    const planning = screen.getByRole("switch", { name: "Planning & action" });
+    await waitFor(() => {
+      expect(suggestions).toBeChecked();
+      expect(planning).toBeEnabled();
+      expect(planning).toHaveAttribute("aria-checked", String(initialEnabled));
+    });
+    click(planning);
+    await refreshing.promise;
+    await waitFor(() => {
+      expect(planning).toHaveAttribute("aria-checked", String(!initialEnabled));
+      expect(planning).toBeEnabled();
+    });
     expect(suggestions).toBeChecked();
-    expect(planning).toBeEnabled();
-  });
-  click(planning);
-  await refreshing.promise;
-  await waitFor(() => {
-    expect(planning).toBeChecked();
-    expect(planning).toBeEnabled();
-  });
-  expect(suggestions).toBeChecked();
-  expect(suggestions).toBeEnabled();
-  expect(screen.getByRole("switch", { name: "Learning" })).not.toBeChecked();
-  release.resolve();
-});
+    expect(suggestions).toBeEnabled();
+    expect(screen.getByRole("switch", { name: "Learning" })).not.toBeChecked();
+    release.resolve();
+  },
+);
 
 test("saving time zone keeps enabled Morning brief unchanged during refresh", async () => {
   const { refreshing, release } = delayPreferenceRefresh();
