@@ -1685,10 +1685,9 @@
       "outOfCredits": "你的積分用完了",
       "proCard": {
         "bonusCreditsNow": "獎勵點數 · 就現在",
-        "description": "進階模型 · 自動化 · 3 個任務並行",
-        "estimatedTasksLeft_other": "預計還能完成不到 {{count}} 個任務",
+        "description": "額外積分 · 進階功能 · 3 台雲端電腦",
         "priceUnavailable": "查看方案及最新價格",
-        "title": "用 Pro 完成更多工作",
+        "title": "剩餘任務少於 5 個",
         "upgradeNow": "立即升級"
       },
       "redirecting": "正在跳轉…",

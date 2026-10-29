@@ -1689,11 +1689,9 @@
       "outOfCredits": "You're out of credits",
       "proCard": {
         "bonusCreditsNow": "bonus credits · Just now",
-        "description": "Advanced models · Automations · 3 tasks at once",
-        "estimatedTasksLeft_one": "Fewer than {{count}} task left",
-        "estimatedTasksLeft_other": "Fewer than {{count}} tasks left",
+        "description": "Additional credits · Advanced features · 3 cloud computers",
         "priceUnavailable": "See plans for current pricing",
-        "title": "Do more with Pro",
+        "title": "Fewer than 5 tasks left",
         "upgradeNow": "Upgrade now"
       },
       "redirecting": "Redirecting...",

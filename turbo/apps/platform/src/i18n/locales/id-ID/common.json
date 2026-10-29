@@ -1685,10 +1685,9 @@
       "outOfCredits": "Kredit Anda habis",
       "proCard": {
         "bonusCreditsNow": "kredit bonus · Sekarang juga",
-        "description": "Model canggih · Otomatisasi · 3 tugas sekaligus",
-        "estimatedTasksLeft_other": "Tersisa kurang dari {{count}} tugas",
+        "description": "Kredit tambahan · Fitur lanjutan · 3 komputer cloud",
         "priceUnavailable": "Lihat paket untuk harga terbaru",
-        "title": "Lakukan lebih banyak dengan Pro",
+        "title": "Tersisa kurang dari 5 tugas",
         "upgradeNow": "Upgrade sekarang"
       },
       "redirecting": "Mengarahkan...",

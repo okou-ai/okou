@@ -85,8 +85,8 @@ import { ProUpgradeCard } from "./pro-upgrade-card.tsx";
 import {
   billingStatusAsync$,
   memberUsagePackOptionsAsync$,
-  usagePackCreditsAsync$,
 } from "../../signals/okou-page/billing.ts";
+import { openSettingsBillingPlansDialog$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 
 type ChatImagePreviewLinkProps = {
   alt: string;
@@ -745,13 +745,7 @@ function ComputerUseAuthorizationCard({
   );
 }
 
-export function PlanUpgradeCard({
-  signals,
-  placement = "message",
-}: {
-  signals: PlanUpgradeSignals;
-  placement?: "message" | "result-end";
-}) {
+export function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const open = useSet(signals.open$);
@@ -766,15 +760,6 @@ export function PlanUpgradeCard({
   }
 
   if (billing.state === "hasData" && billing.data.tier === "limited-free-1") {
-    return placement === "result-end" ? (
-      <FreePlanUpgradeCard
-        onUpgrade={handleClick}
-        organizationCredits={billing.data.credits}
-      />
-    ) : null;
-  }
-
-  if (placement === "result-end") {
     return null;
   }
 
@@ -813,19 +798,12 @@ export function PlanUpgradeCard({
   );
 }
 
-// Rounded mean credit usage from the introductory task-usage benchmark.
-const FREE_TASK_BENCHMARK_CREDITS = 620;
 const INTRODUCTORY_UPGRADE_BONUS_CREDITS = 400;
 
-function FreePlanUpgradeCard({
-  onUpgrade,
-  organizationCredits,
-}: {
-  onUpgrade: () => void;
-  organizationCredits: number;
-}) {
+export function FirstTaskUpgradeCard() {
+  const pageSignal = useGet(pageSignal$);
+  const open = useSet(openSettingsBillingPlansDialog$);
   const catalog = useLastLoadable(memberUsagePackOptionsAsync$);
-  const usagePackCredits = useLastLoadable(usagePackCreditsAsync$);
   const paidPrices =
     catalog.state === "hasData"
       ? catalog.data
@@ -838,21 +816,14 @@ function FreePlanUpgradeCard({
       : [];
   const monthlyPriceUsd =
     paidPrices.length > 0 ? Math.min(...paidPrices) : undefined;
-  // The headline says "Fewer than", so use an exclusive upper bound.
-  const estimatedTasksUpperBound =
-    usagePackCredits.state === "hasData"
-      ? Math.floor(
-          (Math.max(0, organizationCredits) +
-            usagePackCredits.data.totalCredits) /
-            FREE_TASK_BENCHMARK_CREDITS,
-        ) + 1
-      : undefined;
+  const onUpgrade = () => {
+    detach(open(pageSignal), Reason.DomCallback);
+  };
 
   return (
     <ProUpgradeCard
       onUpgrade={onUpgrade}
       monthlyPriceUsd={monthlyPriceUsd}
-      estimatedTasksUpperBound={estimatedTasksUpperBound}
       bonusCredits={INTRODUCTORY_UPGRADE_BONUS_CREDITS}
     />
   );

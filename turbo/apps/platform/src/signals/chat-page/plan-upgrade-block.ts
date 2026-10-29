@@ -4,7 +4,16 @@ import {
 } from "./card-signal-map.ts";
 import { openSettingsBillingPlansDialog$ } from "../okou-page/settings/settings-dialog.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
-import type { Element, Root } from "hast";
+import { logsListContract } from "@okouai/api-contracts/contracts/logs";
+import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { computed, type Computed } from "ccstate";
+import { accept } from "../../lib/accept.ts";
+import { apiClient$ } from "../api-client.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { billingStatusAsync$ } from "../okou-page/billing.ts";
+import { pathname$ } from "../route.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
 
 export interface PlanUpgradeDescriptor {
@@ -20,27 +29,10 @@ type PlanUpgradeCardSignalsRegistry = CardSignalsRegistry<
   PlanUpgradeSignals
 >;
 
-function planUpgradeInTree(
-  node: Root | Element,
-): PlanUpgradeSignals | undefined {
-  if (node.type === "element" && node.data?.card?.kind === "plan-upgrade") {
-    return node.data.card.signals;
-  }
-  for (const child of node.children) {
-    if (child.type === "element") {
-      const upgrade = planUpgradeInTree(child);
-      if (upgrade) {
-        return upgrade;
-      }
-    }
-  }
-  return undefined;
-}
-
 /** Only the latest successfully completed response can own a trailing card. */
-export function completedResponsePlanUpgrade(
+function completedResponseRunId(
   groups: readonly ChatEventGroup[],
-): PlanUpgradeSignals | undefined {
+): string | undefined {
   const lastGroup = groups.at(-1);
   if (lastGroup?.role !== "assistant") {
     return undefined;
@@ -49,20 +41,47 @@ export function completedResponsePlanUpgrade(
     .slice()
     .reverse()
     .find((event) => {
-      return event.eventType === "run.completed";
+      return isChatRunTerminalEventType(event.eventType);
     });
-  if (!completion) {
-    return undefined;
-  }
-  for (const event of lastGroup.events) {
-    if (event.runId === completion.runId && event.tree !== undefined) {
-      const upgrade = planUpgradeInTree(event.tree);
-      if (upgrade) {
-        return upgrade;
-      }
+  return completion?.eventType === "run.completed"
+    ? completion.runId
+    : undefined;
+}
+
+export function createFirstTaskUpgradeEligibility(
+  groups$: Computed<ChatEventGroup[]>,
+) {
+  const completedRunId$ = computed((get) => {
+    return completedResponseRunId(get(groups$));
+  });
+  return computed(async (get): Promise<boolean> => {
+    const owner = get(authenticatedSessionKey$);
+    const enabled = get(featureSwitch$)[FeatureSwitchKey.FirstTaskUpgrade];
+    const runId = get(completedRunId$);
+    // Refresh the history check when returning from another chat.
+    get(pathname$);
+    if (!owner || !enabled || !runId) {
+      return false;
     }
-  }
-  return undefined;
+    const client = get(apiClient$)(logsListContract);
+    const billing = await get(billingStatusAsync$);
+    if (billing.tier !== "limited-free-1") {
+      return false;
+    }
+    // This authenticated history spans the user's chats in the workspace.
+    // Include every status so a second task never becomes a "first" offer.
+    const result = await accept(
+      client.list({ query: { limit: 2, triggerSource: "web" } }),
+      [200],
+    );
+    const onlyRun = result.body.data[0];
+    return (
+      !result.body.pagination.hasMore &&
+      result.body.data.length === 1 &&
+      onlyRun?.id === runId &&
+      onlyRun.status === "completed"
+    );
+  });
 }
 
 export function parsePlanUpgradeUrl(

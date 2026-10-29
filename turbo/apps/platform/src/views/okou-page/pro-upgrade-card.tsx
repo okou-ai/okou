@@ -8,8 +8,6 @@ import { proUpgradeSceneImg } from "./platform-assets.ts";
 interface ProUpgradeCardProps {
   readonly onUpgrade: () => void;
   readonly monthlyPriceUsd?: number;
-  // Supply a positive estimate bound derived from credits and typical task usage.
-  readonly estimatedTasksUpperBound?: number;
   // The introductory upgrade offer shown by the calling surface.
   readonly bonusCredits?: number;
 }
@@ -18,12 +16,9 @@ interface ProUpgradeCardProps {
 export function ProUpgradeCard({
   onUpgrade,
   monthlyPriceUsd,
-  estimatedTasksUpperBound,
   bonusCredits,
 }: ProUpgradeCardProps) {
   const { t } = useTranslation();
-  const hasTaskEstimate =
-    estimatedTasksUpperBound !== undefined && estimatedTasksUpperBound > 0;
   return (
     <ChatCard
       data-testid="plan-upgrade-card"
@@ -42,16 +37,9 @@ export function ProUpgradeCard({
 
       <div className="min-w-0 p-3 pb-0">
         <h3 className="text-base font-semibold tracking-tight text-foreground">
-          {hasTaskEstimate
-            ? t(
-                ($) => {
-                  return $.chat.billing.proCard.estimatedTasksLeft;
-                },
-                { count: estimatedTasksUpperBound },
-              )
-            : t(($) => {
-                return $.chat.billing.proCard.title;
-              })}
+          {t(($) => {
+            return $.chat.billing.proCard.title;
+          })}
         </h3>
         <p className="mt-0.5 text-sm leading-5 text-muted-foreground">
           {t(($) => {

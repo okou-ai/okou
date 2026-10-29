@@ -1,9 +1,13 @@
 import {
   billingStatusContract,
   billingUsagePackCatalogContract,
-  billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
-import { screen, within } from "@testing-library/react";
+import {
+  logsListContract,
+  type LogEntry,
+} from "@okouai/api-contracts/contracts/logs";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { act, screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -15,6 +19,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   completedConversation,
   FIRST_CAPABILITY_RUN_ID,
+  SECOND_CAPABILITY_RUN_ID,
   readyChat,
   RUN_PATH,
 } from "./chat-capability-test-helpers.ts";
@@ -41,22 +46,49 @@ function mockBilling(tier = "limited-free-1") {
       onboardingPaymentPending: false,
     });
   });
-  context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
-    return respond(200, {
-      totalCredits: 1000,
-      purchasedCredits: 0,
-      bonusCredits: 1000,
-      creditGrants: [],
-      hasUsagePack: false,
-    });
-  });
 }
 
-async function openUpgradeChat(tier = "limited-free-1") {
+function mockTaskHistory(runIds: readonly string[]) {
+  const historyRead = context.mocks.deferred<void>();
+  context.mocks.api(logsListContract.list, ({ respond }) => {
+    historyRead.resolve();
+    return respond(200, {
+      data: runIds.map((id): LogEntry => {
+        return {
+          id,
+          sessionId: id,
+          agentId: null,
+          displayName: "Okou",
+          framework: "claude-code",
+          triggerSource: "web",
+          status: "completed",
+          prompt: "Prepare a report",
+          createdAt: "2026-08-01T10:00:00.000Z",
+          startedAt: "2026-08-01T10:00:01.000Z",
+          completedAt: "2026-08-01T10:00:03.000Z",
+        };
+      }),
+      pagination: { hasMore: false, nextCursor: null, totalPages: 1 },
+      filters: { statuses: ["completed"], sources: ["web"], agents: [] },
+    });
+  });
+  return historyRead;
+}
+
+async function loadUpgradeChat(
+  tier = "limited-free-1",
+  history: readonly string[] = [FIRST_CAPABILITY_RUN_ID],
+  enabled = true,
+) {
   mockBilling(tier);
+  const historyRead = mockTaskHistory(history);
   installRunChat({
     chatEvents: [
-      ...completedConversation(`Your report is ready.\n\n${UPGRADE_LINK}`),
+      ...completedConversation(
+        tier === "limited-free-1"
+          ? "Your report is ready."
+          : `Your report is ready.\n\n${UPGRADE_LINK}`,
+      ),
       completedEvent({
         id: "upgrade-completed",
         runId: FIRST_CAPABILITY_RUN_ID,
@@ -72,12 +104,22 @@ async function openUpgradeChat(tier = "limited-free-1") {
       },
     ],
   });
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: enabled },
+  });
   await readyChat();
+  return { historyRead };
+}
+
+async function openUpgradeChat(tier = "limited-free-1") {
+  await loadUpgradeChat(tier);
   return screen.findByTestId("plan-upgrade-card");
 }
 
-test("Show the lowest paid catalog price and open the existing plans dialog", async () => {
+test("Automatically offer Pro after the first task without requiring an upgrade link", async () => {
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
       supportsFreeMembers: true,
@@ -129,7 +171,12 @@ test("Show the lowest paid catalog price and open the existing plans dialog", as
   ).toBeInTheDocument();
   await expect(within(card).findByText("$18")).resolves.toBeVisible();
   expect(within(card).queryByText("$0")).toBeNull();
-  expect(within(card).getByText("Fewer than 2 tasks left")).toBeInTheDocument();
+  expect(within(card).getByText("Fewer than 5 tasks left")).toBeInTheDocument();
+  expect(
+    within(card).getByText(
+      "Additional credits · Advanced features · 3 cloud computers",
+    ),
+  ).toBeInTheDocument();
   expect(within(card).getByText("+400")).toBeInTheDocument();
   expect(
     within(card).getByText(/bonus credits · Just now/u),
@@ -161,7 +208,6 @@ test("Keep the general plans action for an existing paid workspace", async () =>
   await expect(
     within(card).findByText("Upgrade your workspace"),
   ).resolves.toBeVisible();
-  expect(within(card).queryByText("Do more with Pro")).toBeNull();
   expect(within(card).queryByText("+400")).toBeNull();
   click(await findEnabledButton("Compare plans", card));
   await expect(
@@ -171,13 +217,19 @@ test("Keep the general plans action for an existing paid workspace", async () =>
 
 test("Wait for successful completion, show one trailing card, and retire it on the next task", async () => {
   mockBilling();
+  mockTaskHistory([FIRST_CAPABILITY_RUN_ID]);
   const chat = installRunChat({
     chatEvents: completedConversation(
       `Your report is ready.\n\n${UPGRADE_LINK}`,
     ),
     activeRunIds: [FIRST_CAPABILITY_RUN_ID],
   });
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: true },
+  });
   await readyChat();
   await findButton("Stop");
   expect(screen.getByText("Your report is ready.")).toBeInTheDocument();
@@ -192,7 +244,7 @@ test("Wait for successful completion, show one trailing card, and retire it on t
   await sendText("Summarize the report");
   await findButton("Stop");
   expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
-  chat.completeRun("Here is the summary.");
+  chat.completeRun(`Here is the summary.\n\n${UPGRADE_LINK}`);
   await screen.findByText("Here is the summary.");
   await findButton("Send");
   expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
@@ -216,8 +268,31 @@ test("Do not promote an upgrade link from an unsuccessful response", async () =>
       },
     ],
   });
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: true },
+  });
   await readyChat();
   await screen.findByText("The report could not be completed.");
+  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
+});
+
+test("Do not repeat the offer in another chat when the user already has task history", async () => {
+  const { historyRead } = await loadUpgradeChat("limited-free-1", [
+    FIRST_CAPABILITY_RUN_ID,
+    SECOND_CAPABILITY_RUN_ID,
+  ]);
+  await act(async () => {
+    await historyRead.promise;
+  });
+  expect(screen.getByText("Your report is ready.")).toBeInTheDocument();
+  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
+});
+
+test("Keep the automatic offer hidden when its rollout switch is disabled", async () => {
+  await loadUpgradeChat("limited-free-1", [FIRST_CAPABILITY_RUN_ID], false);
+  expect(screen.getByText("Your report is ready.")).toBeInTheDocument();
   expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
 });

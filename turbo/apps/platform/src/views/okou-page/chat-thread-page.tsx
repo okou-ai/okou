@@ -158,9 +158,8 @@ import {
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
   ChatImagePreviewLink,
   ChatVideoPreviewButton,
-  PlanUpgradeCard,
+  FirstTaskUpgradeCard,
 } from "./chat-body-cards.tsx";
-import { completedResponsePlanUpgrade } from "../../signals/chat-page/plan-upgrade-block.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   ChatConversationLandingHighlight,
@@ -4641,18 +4640,13 @@ function FinishedRunRow({
 }
 
 function CompletedResultUpgrade({ thread }: { thread: ChatPanelSignals }) {
-  const renderedGroups = useLastResolved(thread.visibleRenderedChatGroups$);
-  const billing = useLastResolved(billingStatusAsync$);
-  const planUpgrade =
-    billing?.tier === "limited-free-1"
-      ? completedResponsePlanUpgrade(renderedGroups ?? [])
-      : undefined;
-  if (!planUpgrade) {
+  const eligible = useLoadable(thread.firstTaskUpgradeEligible$);
+  if (eligible.state !== "hasData" || !eligible.data) {
     return null;
   }
   return (
     <div className="@container w-full max-w-2xl">
-      <PlanUpgradeCard signals={planUpgrade} placement="result-end" />
+      <FirstTaskUpgradeCard />
     </div>
   );
 }

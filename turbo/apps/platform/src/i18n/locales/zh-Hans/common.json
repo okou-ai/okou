@@ -1685,10 +1685,9 @@
       "outOfCredits": "你的积分用完了",
       "proCard": {
         "bonusCreditsNow": "奖励积分 · 就现在",
-        "description": "高级模型 · 自动化 · 3 个任务并行",
-        "estimatedTasksLeft_other": "预计还能完成不到 {{count}} 个任务",
+        "description": "额外积分 · 高级功能 · 3 台云电脑",
         "priceUnavailable": "查看套餐及最新价格",
-        "title": "用 Pro 完成更多工作",
+        "title": "剩余任务少于 5 个",
         "upgradeNow": "立即升级"
       },
       "redirecting": "正在跳转…",

@@ -1717,12 +1717,9 @@
       "outOfCredits": "Hai esaurito i crediti",
       "proCard": {
         "bonusCreditsNow": "crediti bonus · Proprio ora",
-        "description": "Modelli avanzati · Automazioni · 3 attività alla volta",
-        "estimatedTasksLeft_one": "Meno di {{count}} attività rimasta",
-        "estimatedTasksLeft_many": "Meno di {{count}} attività rimaste",
-        "estimatedTasksLeft_other": "Meno di {{count}} attività rimaste",
+        "description": "Crediti extra · Funzioni avanzate · 3 computer cloud",
         "priceUnavailable": "Consulta i piani per i prezzi attuali",
-        "title": "Fai di più con Pro",
+        "title": "Meno di 5 attività rimaste",
         "upgradeNow": "Passa a Pro ora"
       },
       "redirecting": "Reindirizzamento...",

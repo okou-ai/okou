@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.FirstTaskUpgrade]: {
+    maintainer: "ming@okou.ai",
+    displayName: "First task upgrade",
+    description: "Show the Pro offer after a user's first completed chat task.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.OnboardingSourceOutcomes]: {
     maintainer: "ming@okou.ai",
     displayName: "Onboarding source outcomes",

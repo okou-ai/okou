@@ -1689,11 +1689,9 @@
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
       "proCard": {
         "bonusCreditsNow": "बोनस क्रेडिट · अभी",
-        "description": "उन्नत मॉडल · ऑटोमेशन · एक साथ 3 टास्क",
-        "estimatedTasksLeft_one": "{{count}} से कम टास्क बचे हैं",
-        "estimatedTasksLeft_other": "{{count}} से कम टास्क बचे हैं",
+        "description": "अतिरिक्त क्रेडिट · उन्नत सुविधाएँ · 3 क्लाउड कंप्यूटर",
         "priceUnavailable": "मौजूदा कीमतों के लिए प्लान देखें",
-        "title": "Pro के साथ और काम करें",
+        "title": "5 से कम टास्क बचे हैं",
         "upgradeNow": "अभी अपग्रेड करें"
       },
       "redirecting": "पुनर्निर्देशन...",

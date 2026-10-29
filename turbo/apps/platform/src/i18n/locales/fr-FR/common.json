@@ -1717,12 +1717,9 @@
       "outOfCredits": "Vous êtes à court de crédits",
       "proCard": {
         "bonusCreditsNow": "crédits bonus · Maintenant",
-        "description": "Modèles avancés · Automatisations · 3 tâches à la fois",
-        "estimatedTasksLeft_one": "Moins de {{count}} tâche restante",
-        "estimatedTasksLeft_many": "Moins de {{count}} tâches restantes",
-        "estimatedTasksLeft_other": "Moins de {{count}} tâches restantes",
+        "description": "Crédits supplémentaires · Fonctions avancées · 3 ordinateurs cloud",
         "priceUnavailable": "Consultez les offres et leurs tarifs actuels",
-        "title": "Faites-en plus avec Pro",
+        "title": "Moins de 5 tâches restantes",
         "upgradeNow": "Passer à Pro maintenant"
       },
       "redirecting": "Redirection...",

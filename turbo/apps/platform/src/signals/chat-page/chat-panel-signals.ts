@@ -131,6 +131,7 @@ export interface QueueMessageOptions {
 }
 
 export interface ChatPanelSignals {
+  readonly firstTaskUpgradeEligible$: Computed<Promise<boolean>>;
   readonly mail: ThreadMailSignals;
   readonly threadId: string;
   readonly agentId: string;

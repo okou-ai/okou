@@ -218,7 +218,10 @@ import {
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
 import { createPermissionBatchCardSignalsRegistry } from "./permission-batch-signals.ts";
 import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
-import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
+import {
+  createFirstTaskUpgradeEligibility,
+  createPlanUpgradeCardSignalsRegistry,
+} from "./plan-upgrade-block.ts";
 import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import {
   createThreadActivitySummarySignals,
@@ -3832,6 +3835,9 @@ export function createChatPanelSignals(
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
+    firstTaskUpgradeEligible$: createFirstTaskUpgradeEligibility(
+      messagePipeline.allSemanticChatGroups$,
+    ),
     threadId,
     agentId,
     threadDraft$,
