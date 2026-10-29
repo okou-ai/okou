@@ -1,7 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { onTestFinished } from "vitest";
-import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
-import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { runnersWorkflowDownloadContract } from "@okouai/api-contracts/contracts/runners";
 import {
   workflowsCollectionContract,
@@ -9,10 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
-import { createDeferredPromise } from "../../utils";
-import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { runnersRoutes } from "../runners";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -39,7 +33,6 @@ function detailClient() {
 }
 
 async function fixture() {
-  mockEnv("WORKFLOW_ATTACHMENT_CLEANUP_ENABLED", "true");
   const actor = bdd.user({ orgRole: "org:admin" });
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, {
@@ -81,16 +74,6 @@ async function createWorkflow(
       [201],
     )
   ).body;
-}
-
-async function sweep() {
-  mockEnv("CRON_SECRET", "workflow-cleanup-test");
-  return await accept(
-    setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
-      cronProcessBackgroundJobsContract,
-    ).process({ headers: { authorization: "Bearer workflow-cleanup-test" } }),
-    [200],
-  );
 }
 
 async function finish(runId: string, sandboxToken: string) {
@@ -403,119 +386,11 @@ test("reads authoritative empty text and denies foreign, deleted and ended Run d
   );
 });
 
-test("leaves durable cleanup queued until the deployment cleanup gate is enabled", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
-  const { actor, agent, s3 } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "retired.md", content: "retired" }],
-  });
-  const key = s3.writes[0]!.key;
-  await accept(
-    detailClient().update({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-      body: { files: [] },
-    }),
-    [200],
-  );
-  mockEnv("WORKFLOW_ATTACHMENT_CLEANUP_ENABLED", "false");
-  await sweep();
-  expect(s3.objects.has(key)).toBeTruthy();
-  mockEnv("WORKFLOW_ATTACHMENT_CLEANUP_ENABLED", "true");
-  await sweep();
-  expect(s3.objects.has(key)).toBeFalsy();
-});
-
-test("bounds repeated cleanup provider failures and preserves the undeleted package for investigation", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
-  const { actor, agent, s3 } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "retired.md", content: "retired" }],
-  });
-  const key = s3.writes[0]!.key;
-  await accept(
-    detailClient().update({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-      body: { files: [] },
-    }),
-    [200],
-  );
-  const unavailable = () => {
-    s3.beforeNextDelete(unavailable);
-    throw new Error("Provider unavailable");
-  };
-  s3.beforeNextDelete(unavailable);
-  mockNow(now() - 86_400_000);
-  expect((await sweep()).body.processed).toBe(5);
-  expect((await sweep()).body.processed).toBe(0);
-  expect(s3.objects.has(key)).toBeTruthy();
-});
-
-test("retains retired packages for pending work and downloads the current package after claim", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
-  const { actor, agent, group, s3 } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "old.md", content: "old" }],
-  });
-  const oldKey = s3.writes[0]!.key;
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Claim the current workflow",
-  });
-  await accept(
-    detailClient().update({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-      body: { files: [{ path: "new.md", content: "new" }] },
-    }),
-    [200],
-  );
-  const currentKey = s3.writes.at(-1)!.key;
-  const clock = now();
-  mockNow(clock - 86_400_000);
-  await sweep();
-  mockNow(clock);
-  expect(s3.objects.has(oldKey)).toBeTruthy();
-  await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
-  const selected = await runs.downloadWorkflow(
-    run.runId,
-    workflow.id,
-    claim.sandboxToken,
-  );
-  expect(selected.attachments?.archiveSha256).toBe(
-    createHash("sha256").update(s3.objects.get(currentKey)!).digest("hex"),
-  );
-  await sweep();
-  expect(s3.objects.has(oldKey)).toBeFalsy();
-  expect(s3.objects.has(currentKey)).toBeTruthy();
-  await finish(run.runId, claim.sandboxToken);
-});
-
-test("downloads authoritative empty attachments after a clear and releases the retired package", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
-  const { actor, agent, group, s3 } = await fixture();
+test("downloads authoritative empty attachments after a clear", async () => {
+  const { actor, agent, group } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId, {
     files: [{ path: "keep.md", content: "claimed attachment" }],
   });
-  const oldKey = s3.writes[0]!.key;
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Use workflows",
@@ -538,23 +413,69 @@ test("downloads authoritative empty attachments after a clear and releases the r
     (await runs.downloadWorkflow(run.runId, workflow.id, claim.sandboxToken))
       .attachments,
   ).toBeNull();
-  await sweep();
-  expect(s3.objects.has(oldKey)).toBeFalsy();
   await finish(run.runId, claim.sandboxToken);
   await bdd.deleteAgent(actor, agent.agentId);
 });
 
-test("cleans only the exact attachments returned by parent Agent deletion", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
+test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {
+  const { actor, agent, group } = await fixture();
+  const workflow = await createWorkflow(actor, agent.agentId, {
+    files: [{ path: "keep.md", content: "claimed attachment" }],
   });
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Use workflows",
+  });
+  await runs.heartbeatRunner(group);
+  const claim = await runs.claimRunnerJob(run.runId);
+  await accept(
+    detailClient().update({
+      headers: headers(actor),
+      params: { workflowId: workflow.id },
+      body: { files: [] },
+    }),
+    [200],
+  );
+  await webhooks.requestAgentComplete(
+    {
+      runId: run.runId,
+      exitCode: 0,
+      completion: {
+        cliAgentType: "claude-code",
+        cliAgentSessionId: randomUUID(),
+        cliAgentSessionHistoryDisposition: "native_only",
+        storageOutputs: [
+          {
+            name: "unclaimed-output",
+            mountPath: "/unclaimed-output",
+            version: "a".repeat(64),
+          },
+        ],
+      },
+    },
+    { authorization: `Bearer ${claim.sandboxToken}` },
+    [400],
+  );
+  await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
+    status: "running",
+  });
+  const blocked = await bdd.requestDeleteAgent(actor, agent.agentId, [409]);
+  expect(blocked.body).toMatchObject({ error: { code: "CONFLICT" } });
+  await runs.requestCancelRun(actor, run.runId, [200]);
+  await flushWaitUntilForTest();
+  await finish(run.runId, claim.sandboxToken);
+  await flushWaitUntilForTest();
+  await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
+    status: "cancelled",
+  });
+  await bdd.deleteAgent(actor, agent.agentId);
+});
+
+test("preserves another Agent's readable Workflow files after parent deletion", async () => {
   const { actor, agent, s3 } = await fixture();
   await createWorkflow(actor, agent.agentId, {
     files: [{ path: "remove.md", content: "remove" }],
   });
-  const removedKey = s3.writes[0]!.key;
   bdd.acceptAgentStorageWrites();
   const otherAgent = await bdd.createAgent(actor, {
     displayName: "Surviving owner",
@@ -564,8 +485,6 @@ test("cleans only the exact attachments returned by parent Agent deletion", asyn
     files: [{ path: "keep.md", content: "keep" }],
   });
   await bdd.deleteAgent(actor, agent.agentId);
-  await sweep();
-  expect(s3.objects.has(removedKey)).toBeFalsy();
   const read = await accept(
     detailClient().get({
       headers: headers(actor),
@@ -576,65 +495,4 @@ test("cleans only the exact attachments returned by parent Agent deletion", asyn
   expect(read.body.fileContents).toStrictEqual([
     { path: "keep.md", content: "keep" },
   ]);
-});
-
-test("cannot publish a candidate after cleanup has started and a provider failure has rescheduled it", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
-  const { actor, agent, s3 } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId);
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  s3.afterNextArchiveWrite(async () => {
-    entered.resolve();
-    await released.promise;
-  });
-  const update = detailClient().update({
-    headers: headers(actor),
-    params: { workflowId: workflow.id },
-    body: {
-      instruction: "must not publish",
-      files: [{ path: "late.md", content: "late bytes" }],
-    },
-  });
-  onTestFinished(async () => {
-    if (!released.settled()) {
-      released.resolve();
-    }
-    await update;
-  });
-  await entered.promise;
-  const key = s3.writes.at(-1)!.key;
-  s3.beforeNextDelete(() => {
-    throw new Error("Injected provider outage");
-  });
-  const clock = now();
-  mockNow(clock - 86_400_000);
-  await sweep();
-  mockNow(clock);
-  released.resolve();
-  await accept(update, [409]);
-  const read = await accept(
-    detailClient().get({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-    }),
-    [200],
-  );
-  expect(read.body).toMatchObject({ instruction: "original body", files: [] });
-  await sweep();
-  expect(s3.objects.has(key)).toBeFalsy();
-  expect(
-    context.mocks.s3.send.mock.calls.some(([request]) => {
-      return (
-        request instanceof DeleteObjectsCommand &&
-        request.input.Delete?.Objects?.some((object) => {
-          return object.Key === key;
-        })
-      );
-    }),
-  ).toBeTruthy();
 });

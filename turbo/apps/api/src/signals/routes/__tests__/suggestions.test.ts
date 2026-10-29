@@ -40,7 +40,6 @@ function cleanupClient() {
   );
 }
 const cronSecret = "suggestion-retention-test-secret";
-const cronHeaders = { authorization: `Bearer ${cronSecret}` } as const;
 function input(priority = 0): SuggestionCreate {
   return {
     id: randomUUID(),
@@ -139,15 +138,9 @@ async function primaryRun(enabled = true, secondary = false) {
 }
 
 describe("Agent suggestions", () => {
-  it("renews a card for 24 hours after an update and retains it through cleanup", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
+  it("renews a card for 24 hours after an update", async () => {
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
-    mockEnv("CRON_SECRET", cronSecret);
     const fixture = await primaryRun();
     const suggestion = input();
     const created = await accept(
@@ -168,7 +161,6 @@ describe("Agent suggestions", () => {
     expect(updated.body.expiresAt).toBe("2026-10-28T00:01:00.000Z");
     expect(updated.body.createdAt).toBe(created.body.createdAt);
     mockNow(start + SUGGESTION_RETENTION_MS);
-    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
     const current = await accept(
       client().list({ headers: humanHeaders }),
       [200],
@@ -257,27 +249,23 @@ describe("Agent suggestions", () => {
   });
 
   it.each(["review", null])(
-    "records a cached choice once after physical cleanup (option %s)",
+    "records a cached choice once after publication prunes its expired card (option %s)",
     async (optionId) => {
-      await setupApp({
-        context,
-        routes: cronCleanupSuggestionsRoutes,
-        isolatePg: true,
-      });
       const start = Date.parse("2026-10-27T00:00:00.000Z");
       mockNow(start);
-      mockEnv("CRON_SECRET", cronSecret);
       const fixture = await primaryRun();
       const cached = await accept(
+        client().create({
+          headers: fixture.headers,
+          body: { ...input(), expiresAt: "2026-10-27T00:01:00.000Z" },
+        }),
+        [200],
+      );
+      mockNow(start + 60_000);
+      await accept(
         client().create({ headers: fixture.headers, body: input() }),
         [200],
       );
-      mockNow(start + SUGGESTION_RETENTION_MS);
-      const cleaned = await accept(
-        cleanupClient().cleanup({ headers: cronHeaders }),
-        [200],
-      );
-      expect(cleaned.body.deleted).toBe(1);
       const choices = await Promise.all(
         [0, 1].map(() => {
           return accept(
@@ -321,14 +309,8 @@ describe("Agent suggestions", () => {
   );
 
   it("preserves a cached choice when the same action is concurrently republished", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
-    mockEnv("CRON_SECRET", cronSecret);
     const fixture = await primaryRun();
     const suggestion = input();
     const cached = await accept(
@@ -339,7 +321,11 @@ describe("Agent suggestions", () => {
       [200],
     );
     mockNow(start + 60_000);
-    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
+    const fresh = input();
+    await accept(
+      client().create({ headers: fixture.headers, body: fresh }),
+      [200],
+    );
     const [chosen] = await Promise.all([
       accept(
         client().consume({
@@ -363,7 +349,11 @@ describe("Agent suggestions", () => {
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(listed.body.suggestions).toStrictEqual([]);
+    expect(
+      listed.body.suggestions.map((suggestion) => {
+        return suggestion.id;
+      }),
+    ).toStrictEqual([fresh.id]);
     expect(listed.body.receipts).toContainEqual(
       expect.objectContaining({
         id: suggestion.id,
@@ -373,22 +363,22 @@ describe("Agent suggestions", () => {
     );
   });
 
-  it("requires the original owner's unmodified snapshot after cleanup", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
+  it("requires the original owner's unmodified snapshot after publication prunes the expired card", async () => {
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
-    mockEnv("CRON_SECRET", cronSecret);
     const fixture = await primaryRun();
     const cached = await accept(
+      client().create({
+        headers: fixture.headers,
+        body: { ...input(), expiresAt: "2026-10-27T00:01:00.000Z" },
+      }),
+      [200],
+    );
+    mockNow(start + 60_000);
+    await accept(
       client().create({ headers: fixture.headers, body: input() }),
       [200],
     );
-    mockNow(start + SUGGESTION_RETENTION_MS);
-    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
     await accept(
       client().consume({
         headers: humanHeaders,
@@ -416,51 +406,9 @@ describe("Agent suggestions", () => {
     expect(listed.body.receipts).toStrictEqual([]);
   });
 
-  it("reclaims expired capacity when publication overlaps scheduled cleanup", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
-    mockNow(start);
-    mockEnv("CRON_SECRET", cronSecret);
-    const fixture = await primaryRun();
-    for (let index = 0; index < 10; index += 1) {
-      await accept(
-        client().create({
-          headers: fixture.headers,
-          body: { ...input(index), expiresAt: "2026-10-27T00:01:00.000Z" },
-        }),
-        [200],
-      );
-    }
-    mockNow(start + 60_000);
-    const fresh = input();
-    await Promise.all([
-      accept(client().create({ headers: fixture.headers, body: fresh }), [200]),
-      accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]),
-    ]);
-    const listed = await accept(
-      client().list({ headers: humanHeaders }),
-      [200],
-    );
-    expect(
-      listed.body.suggestions.map((item) => {
-        return item.id;
-      }),
-    ).toStrictEqual([fresh.id]);
-  });
-
   it("retains selected, dismissed and withdrawn feedback for 24 hours after processing", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
-    mockEnv("CRON_SECRET", cronSecret);
     const fixture = await primaryRun();
     const selected = input();
     const dismissed = input();
@@ -502,7 +450,6 @@ describe("Agent suggestions", () => {
     );
 
     mockNow(processedAt + SUGGESTION_RETENTION_MS - 1);
-    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
     const retained = await accept(
       client().list({ headers: humanHeaders }),
       [200],
@@ -523,69 +470,11 @@ describe("Agent suggestions", () => {
       ]),
     );
     mockNow(processedAt + SUGGESTION_RETENTION_MS);
-    const pruned = await accept(
-      cleanupClient().cleanup({ headers: cronHeaders }),
-      [200],
-    );
-    expect(pruned.body).toStrictEqual({ cleaned: 1, deleted: 1 });
     const listed = await accept(
       client().list({ headers: humanHeaders }),
       [200],
     );
     expect(listed.body.receipts).toStrictEqual([]);
-    const repeated = await accept(
-      cleanupClient().cleanup({ headers: cronHeaders }),
-      [200],
-    );
-    expect(repeated.body).toStrictEqual({ cleaned: 0, deleted: 0 });
-  });
-
-  it("preserves a newly consumed receipt while cleaning an expired card", async () => {
-    await setupApp({
-      context,
-      routes: cronCleanupSuggestionsRoutes,
-      isolatePg: true,
-    });
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
-    mockNow(start);
-    mockEnv("CRON_SECRET", cronSecret);
-    const fixture = await primaryRun();
-    await accept(
-      client().create({
-        headers: fixture.headers,
-        body: { ...input(), expiresAt: "2026-10-27T00:01:00.000Z" },
-      }),
-      [200],
-    );
-    mockNow(start + 30_000);
-    const current = input();
-    await accept(
-      client().create({ headers: fixture.headers, body: current }),
-      [200],
-    );
-    mockNow(start + 60_000);
-    await Promise.all([
-      accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]),
-      accept(
-        client().consume({
-          headers: humanHeaders,
-          params: { id: current.id },
-          body: { optionId: null },
-        }),
-        [200],
-      ),
-    ]);
-    const listed = await accept(
-      client().list({ headers: humanHeaders }),
-      [200],
-    );
-    expect(listed.body.receipts).toContainEqual(
-      expect.objectContaining({
-        id: current.id,
-        status: "consumed",
-        selectedOptionId: null,
-      }),
-    );
   });
 
   it("requires operator authentication for scheduled cleanup", async () => {

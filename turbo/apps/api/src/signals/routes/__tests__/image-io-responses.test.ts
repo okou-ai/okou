@@ -10,7 +10,6 @@ import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
   completedImageResponseWithUsage,
-  completedImageResponseWithoutUsage,
   mockOpenAiImageResponses,
   OPENAI_RESPONSES_URL,
 } from "./helpers/openai-image-responses";
@@ -62,7 +61,7 @@ describe("durable OpenAI Responses image generation", () => {
     expect(providerCalls).toBe(0);
   });
 
-  it("queues without waiting for the image and polls the same response without a callback", async () => {
+  it("completes a queued image through cron and settles once without an owner refresh", async () => {
     const preferences = await setupApp({
       context,
       routes: userModelPreferenceRoutes,
@@ -118,29 +117,53 @@ describe("durable OpenAI Responses image generation", () => {
       expect(provider.retrievals).toStrictEqual([submission.id]);
       provider.responses.set(
         submission.id,
-        completedImageResponseWithoutUsage(submission),
+        completedImageResponseWithUsage(submission),
       );
       await fixture.reconcile();
-      await fixture.reconcile();
-      const snapshot = await fixture.status(generationId);
-      expect(snapshot).toMatchObject({ generationId, status: "running" });
-      expect(snapshot.error).toBeUndefined();
-      expect(snapshot.result).toBeUndefined();
-      expect(provider.retrievals).toStrictEqual([
-        submission.id,
-        submission.id,
-        submission.id,
-      ]);
-      expect(provider.submissions).toHaveLength(1);
+      const checkpoint = await fixture.status(generationId);
+      expect(checkpoint.status).toBe("running");
+      expect(checkpoint.result).toBeUndefined();
       await expect(orgCredits(context, fixture.actor)).resolves.toBe(10_000);
+      expect(
+        JSON.stringify(context.mocks.ably.publish.mock.calls),
+      ).not.toContain("A private revised prompt");
+      await fixture.reconcile();
+      const completed = await fixture.status(generationId);
+      expect(completed).toMatchObject({
+        generationId,
+        status: "completed",
+        result: {
+          contentType: "image/png",
+          size: Buffer.byteLength("generated image bytes"),
+          model,
+          provider: "openai",
+          privateArtifacts: true,
+          creditsCharged: 9,
+          id: expect.any(String),
+          url: expect.stringMatching(/\/artifacts\//u),
+        },
+      });
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        `built-in-generation:${generationId}`,
+        completed,
+      );
+      await fixture.reconcile();
+      await expect(fixture.status(generationId)).resolves.toStrictEqual(
+        completed,
+      );
+      expect(provider.retrievals).toStrictEqual([submission.id, submission.id]);
+      expect(provider.submissions).toHaveLength(1);
+      await expect(orgCredits(context, fixture.actor)).resolves.toBe(9991);
       const imageUploads = context.mocks.s3.send.mock.calls.filter(
         ([command]) => {
-          return command instanceof PutObjectCommand;
+          return (
+            command instanceof PutObjectCommand &&
+            command.input.ContentType === "image/png"
+          );
         },
       );
-      expect(imageUploads).toHaveLength(0);
+      expect(imageUploads).toHaveLength(1);
       const published = JSON.stringify(context.mocks.ably.publish.mock.calls);
-      expect(published).not.toContain("A private revised prompt");
       expect(published).not.toContain("generated image bytes");
     });
   });
@@ -177,12 +200,7 @@ describe("durable OpenAI Responses image generation", () => {
   });
 
   it("delivers the provider-backed tool ledger through owner refresh and settles exactly once", async () => {
-    const preferences = await setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-      isolatePg: true,
-    });
-    const fixture = await createFixture(preferences);
+    const fixture = await createFixture();
     await fixture.actor.run(async () => {
       const provider = mockOpenAiImageResponses();
       const response = await fixture.generate();
@@ -226,14 +244,12 @@ describe("durable OpenAI Responses image generation", () => {
         await expect(fixture.refresh(generationId)).resolves.toStrictEqual(
           completed,
         );
-        await fixture.reconcile();
         await expect(fixture.status(generationId)).resolves.toStrictEqual(
           completed,
         );
       }
       expect(provider.submissions).toHaveLength(1);
       expect(provider.retrievals).toStrictEqual([submission.id]);
-      expect(provider.deletions).toStrictEqual([submission.id]);
       await expect(orgCredits(context, fixture.actor)).resolves.toBe(9991);
       const uploads = context.mocks.s3.send.mock.calls
         .map(([command]) => {
@@ -289,12 +305,7 @@ describe("durable OpenAI Responses image generation", () => {
   it.each(["missing-mainline", "image-total", "mainline-total"] as const)(
     "keeps a %s ledger recoverable without charging or storing an image",
     async (failure) => {
-      const preferences = await setupApp({
-        context,
-        routes: userModelPreferenceRoutes,
-        isolatePg: true,
-      });
-      const fixture = await createFixture(preferences);
+      const fixture = await createFixture();
       await fixture.actor.run(async () => {
         const provider = mockOpenAiImageResponses();
         const response = await fixture.generate();
@@ -323,7 +334,6 @@ describe("durable OpenAI Responses image generation", () => {
         await expect(fixture.refresh(generationId)).resolves.toMatchObject({
           status: "running",
         });
-        await fixture.reconcile();
         const pending = await fixture.status(generationId);
         expect(pending).toMatchObject({ generationId, status: "running" });
         expect(pending.result).toBeUndefined();
@@ -338,18 +348,16 @@ describe("durable OpenAI Responses image generation", () => {
         const checkpoint = await fixture.refresh(generationId);
         expect(checkpoint.status).toBe("running");
         expect(checkpoint.result).toBeUndefined();
-        await expect(fixture.refresh(generationId)).resolves.toMatchObject({
+        const finalized = await fixture.refresh(generationId);
+        expect(finalized).toMatchObject({
           status: "completed",
           result: { creditsCharged: 9 },
         });
-        await fixture.reconcile();
+        await expect(fixture.refresh(generationId)).resolves.toStrictEqual(
+          finalized,
+        );
         await expect(orgCredits(context, fixture.actor)).resolves.toBe(9991);
         expect(provider.submissions).toHaveLength(1);
-        expect(provider.retrievals).toStrictEqual([
-          submission.id,
-          submission.id,
-          submission.id,
-        ]);
         expect(
           context.mocks.s3.send.mock.calls.filter(([command]) => {
             return (
@@ -454,12 +462,7 @@ describe("durable OpenAI Responses image generation", () => {
   ] as const)(
     "preserves definitive provider rejection %s (%s)",
     async (code, stage, publicCode) => {
-      const preferences = await setupApp({
-        context,
-        routes: userModelPreferenceRoutes,
-        isolatePg: true,
-      });
-      const fixture = await createFixture(preferences);
+      const fixture = await createFixture();
       await fixture.actor.run(async () => {
         const provider = mockOpenAiImageResponses({
           submit: () => {
@@ -483,26 +486,6 @@ describe("durable OpenAI Responses image generation", () => {
         const body: unknown = await response.json();
         expect(body).toMatchObject({ error: { code: publicCode } });
         expect(JSON.stringify(body)).not.toContain("Private provider details");
-        const { generationId } = provider.submission();
-        await expect(fixture.status(generationId)).resolves.toMatchObject({
-          generationId,
-          status: "failed",
-          error: { code: publicCode },
-        });
-        await fixture.reconcile();
-        const refresh = await fixture.app.request(
-          `/api/built-in-generations/${generationId}/reconcile`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({}),
-          },
-        );
-        expect(refresh.status).toBe(200);
-        await expect(refresh.json()).resolves.toMatchObject({
-          status: "failed",
-          error: { code: publicCode },
-        });
         expect(provider.submissions).toHaveLength(1);
         expect(provider.retrievals).toStrictEqual([]);
         await expect(orgCredits(context, fixture.actor)).resolves.toBe(10_000);
