@@ -31,6 +31,17 @@
     "turbo/apps/api": {
       "release-type": "node"
     },
+    "turbo/apps/browser-extension": {
+      "release-type": "node",
+      "component": "browser-extension",
+      "extra-files": [
+        { "type": "json", "path": "manifest.json", "jsonpath": "$.version" }
+      ]
+    },
+    "turbo/packages/browser-extension-client": {
+      "release-type": "node",
+      "skip-changelog": true
+    },
     "turbo/apps/platform": {
       "release-type": "node"
     },

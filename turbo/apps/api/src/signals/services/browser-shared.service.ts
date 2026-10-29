@@ -308,7 +308,7 @@ const publishSharedInstance$ = command(
           profileId: profile.providerProfileId,
           proxyCountryCode: null,
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
-          extensionIds: env("OKOU_BROWSER_USE_EXTENSION_IDS"),
+          extensionId: env("OKOU_BROWSER_USE_EXTENSION_ID"),
           instanceId: profile.instanceId,
         },
         signal,

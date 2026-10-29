@@ -22,7 +22,7 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 const context = testContext();
 const PROVIDER_URL = "https://api.browser-use.com/api/v3";
 const STARTED_AT = Date.parse("2026-07-24T10:00:00.000Z");
-const EXTENSION_IDS = [randomUUID(), randomUUID(), randomUUID()] as const;
+const EXTENSION_ID = randomUUID();
 const createBrowserSchema = object({
   profileId: uuid(),
   extensionIds: array(uuid()).max(3).optional(),
@@ -170,10 +170,7 @@ async function browserOwner() {
 
 describe("Browser extensions", () => {
   it("installs configured extensions before CDP and keeps the running instance", async () => {
-    mockEnv(
-      "OKOU_BROWSER_USE_EXTENSION_IDS",
-      ` ${EXTENSION_IDS[0]}, , ${EXTENSION_IDS[1]},${EXTENSION_IDS[2]}, `,
-    );
+    mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", ` ${EXTENSION_ID} `);
     const provider = providerFixture();
     const { owned, actor, startRun } = await browserOwner();
     await owned.run(async () => {
@@ -186,9 +183,9 @@ describe("Browser extensions", () => {
         (async () => {
           await provider.created;
           expect(provider.requests).toHaveLength(1);
-          expect(provider.requests[0]?.extensionIds).toStrictEqual(
-            EXTENSION_IDS,
-          );
+          expect(provider.requests[0]?.extensionIds).toStrictEqual([
+            EXTENSION_ID,
+          ]);
           expect(provider.discoveries).toStrictEqual([]);
           provider.completeInstallation();
           return accept(pending, [200]);
@@ -201,7 +198,7 @@ describe("Browser extensions", () => {
       expect(started.body.browser.status).toBe("active");
       expect(provider.discoveries.length).toBeGreaterThan(0);
 
-      mockEnv("OKOU_BROWSER_USE_EXTENSION_IDS", randomUUID());
+      mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", randomUUID());
       const reused = await accept(client().use({ headers, body: {} }), [200]);
       expect(reused.body.browser.status).toBe("active");
       expect(provider.requests).toHaveLength(1);
@@ -209,11 +206,11 @@ describe("Browser extensions", () => {
   });
 
   it.each([
-    { name: "switch off", enabled: false, ids: EXTENSION_IDS.join(",") },
-    { name: "missing configuration", enabled: true, ids: undefined },
-    { name: "blank entries", enabled: true, ids: " , , " },
-  ])("omits extensions for $name", async ({ enabled, ids }) => {
-    mockEnv("OKOU_BROWSER_USE_EXTENSION_IDS", ids);
+    { name: "switch off", enabled: false, id: EXTENSION_ID },
+    { name: "missing configuration", enabled: true, id: undefined },
+    { name: "blank configuration", enabled: true, id: " " },
+  ])("omits extensions for $name", async ({ enabled, id }) => {
+    mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", id);
     const provider = providerFixture();
     provider.completeInstallation();
     const { owned, actor, startRun } = await browserOwner();
@@ -230,7 +227,7 @@ describe("Browser extensions", () => {
   });
 
   it("returns installation failures without CDP or an extension-free retry", async () => {
-    mockEnv("OKOU_BROWSER_USE_EXTENSION_IDS", EXTENSION_IDS[0]);
+    mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", EXTENSION_ID);
     const provider = providerFixture(true);
     provider.completeInstallation();
     const { owned, actor, startRun } = await browserOwner();
@@ -249,9 +246,7 @@ describe("Browser extensions", () => {
       });
       expect(failed.status).toBe(502);
       expect(provider.requests).toHaveLength(1);
-      expect(provider.requests[0]?.extensionIds).toStrictEqual([
-        EXTENSION_IDS[0],
-      ]);
+      expect(provider.requests[0]?.extensionIds).toStrictEqual([EXTENSION_ID]);
       expect(provider.discoveries).toStrictEqual([]);
     });
   });

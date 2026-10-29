@@ -1,0 +1,10 @@
+{
+  "extends": "@okouai/typescript-config/base.json",
+  "compilerOptions": {
+    "types": [],
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src/**/*.ts"]
+}

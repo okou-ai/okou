@@ -54,18 +54,12 @@ function coreEnvSchema() {
     OKOU_DATA_ROUTER_URL: url().optional(),
     OKOU_DATA_TOKEN: string().min(1).optional(),
     OKOU_BROWSER_USE_API_KEY: string().min(1).optional(),
-    OKOU_BROWSER_USE_EXTENSION_IDS: string()
+    OKOU_BROWSER_USE_EXTENSION_ID: string()
+      .trim()
       .transform((value) => {
-        return value
-          .split(",")
-          .map((id) => {
-            return id.trim();
-          })
-          .filter((id) => {
-            return id.length > 0;
-          });
+        return value || undefined;
       })
-      .pipe(array(uuid()).max(3))
+      .pipe(uuid().optional())
       .optional(),
     STEAM_WEB_API_KEY: string().min(1).optional(),
     LINK_OAUTH_CLIENT_ID: string().min(1).optional(),

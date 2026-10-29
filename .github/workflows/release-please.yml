@@ -87,6 +87,9 @@ jobs:
       api_contracts_release_created: ${{ steps.release.outputs['turbo/packages/api-contracts--release_created'] }}
       connectors_release_created: ${{ steps.release.outputs['turbo/packages/connectors--release_created'] }}
       db_release_created: ${{ steps.release.outputs['turbo/packages/db--release_created'] }}
+      browser_extension_release_created: ${{ steps.release.outputs['turbo/apps/browser-extension--release_created'] }}
+      browser_extension_version: ${{ steps.release.outputs['turbo/apps/browser-extension--version'] }}
+      browser_extension_tag: ${{ steps.release.outputs['turbo/apps/browser-extension--tag_name'] }}
       app_release_created: ${{ steps.release.outputs['turbo/apps/platform--release_created'] }}
       app_worker_release_created: ${{ steps.release.outputs['turbo/apps/app-worker--release_created'] }}
       app_deploy_required: ${{ steps.app-release.outputs.required }}
@@ -98,7 +101,7 @@ jobs:
       host_worker_release_created: ${{ steps.release.outputs['turbo/apps/host-worker--release_created'] }}
       runner_rs_release_created: ${{ steps.release.outputs['crates/runner--release_created'] }}
       api_runtime_dependency_release_created: ${{ steps.release.outputs['turbo/packages/core--release_created'] == 'true' || steps.release.outputs['turbo/packages/api-contracts--release_created'] == 'true' || steps.release.outputs['turbo/packages/connectors--release_created'] == 'true' }}
-      api_deploy_required: ${{ steps.release.outputs['turbo/apps/api--release_created'] == 'true' || steps.release.outputs['turbo/packages/core--release_created'] == 'true' || steps.release.outputs['turbo/packages/api-contracts--release_created'] == 'true' || steps.release.outputs['turbo/packages/connectors--release_created'] == 'true' }}
+      api_deploy_required: ${{ steps.release.outputs['turbo/apps/api--release_created'] == 'true' || steps.release.outputs['turbo/packages/core--release_created'] == 'true' || steps.release.outputs['turbo/packages/api-contracts--release_created'] == 'true' || steps.release.outputs['turbo/packages/connectors--release_created'] == 'true' || steps.release.outputs['turbo/apps/browser-extension--release_created'] == 'true' }}
       runner_rs_version: ${{ steps.release.outputs['crates/runner--version'] }}
       api_version: ${{ steps.release.outputs['turbo/apps/api--version'] }}
       app_version: ${{ steps.release.outputs['turbo/apps/platform--version'] }}
@@ -393,6 +396,61 @@ jobs:
           fi
 
           echo "DB/API release coupling validated."
+
+  publish-browser-extension:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+    permissions:
+      contents: write
+    environment: production
+    outputs:
+      extension_id: ${{ steps.publish.outputs.extension_id }}
+      repo_vars_json: ${{ steps.publish.outputs.repo_vars_json }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.release_target }}
+      - uses: ./.github/actions/toolchain-init
+      - name: Normalize CI App private key
+        id: private-key
+        env:
+          SOURCE_PRIVATE_KEY_PEM: ${{ secrets.OKOU_CI_APP_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          private_key="$(printf '%s' "$SOURCE_PRIVATE_KEY_PEM" | bash .github/scripts/normalize-github-app-private-key.sh)"
+          printf '::add-mask::%s\n' "$private_key"
+          printf 'private-key=%s\n' "$private_key" >> "$GITHUB_OUTPUT"
+      - name: Create repository Variables token
+        id: variables-token
+        env:
+          OKOU_CI_APP_ID: ${{ vars.OKOU_CI_APP_ID }}
+          OKOU_CI_APP_PRIVATE_KEY: ${{ steps.private-key.outputs.private-key }}
+        run: node .github/scripts/release/browser-extension-variable-token.mjs
+      - name: Package selected extension release
+        if: ${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}
+        run: pnpm --dir turbo --filter @okouai/browser-extension build
+      - name: Publish extension and resolve current configuration
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_VARIABLES_TOKEN: ${{ steps.variables-token.outputs.token }}
+          OKOU_BROWSER_USE_API_KEY: ${{ secrets.OKOU_BROWSER_USE_API_KEY }}
+          RELEASE_TARGET: ${{ needs.release-please.outputs.release_target }}
+          BROWSER_EXTENSION_RELEASE_CREATED: ${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}
+          BROWSER_EXTENSION_VERSION: ${{ needs.release-please.outputs.browser_extension_version }}
+          BROWSER_EXTENSION_TAG: ${{ needs.release-please.outputs.browser_extension_tag }}
+          REPO_VARS_JSON: ${{ toJSON(vars) }}
+        run: node .github/scripts/release/publish-browser-extension.mjs
+      - name: Revoke repository Variables token
+        if: ${{ always() && steps.variables-token.outputs.token != '' }}
+        env:
+          GITHUB_VARIABLES_TOKEN: ${{ steps.variables-token.outputs.token }}
+        run: node .github/scripts/release/browser-extension-variable-token.mjs --revoke
 
   publish-ios-testflight:
     name: publish-ios-testflight
@@ -1177,10 +1235,11 @@ jobs:
 
   # Build the API artifact and apply its prerequisite migrations before serving.
   promote-api-production:
-    needs: [release-please, builds-complete]
+    needs: [release-please, builds-complete, publish-browser-extension]
     if: >-
       always() &&
       !failure() && !cancelled() &&
+      needs.publish-browser-extension.result == 'success' &&
       needs.release-please.outputs.releases_created == 'true'
     runs-on: ubuntu-latest
     container:
@@ -1260,7 +1319,7 @@ jobs:
           app-url: https://app.okou.ai
           api-backend-url: ${{ vars.OKOU_API_BACKEND_URL }}
         env:
-          REPO_VARS_JSON: ${{ toJSON(vars) }}
+          REPO_VARS_JSON: ${{ needs.publish-browser-extension.outputs.repo_vars_json }}
           REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
           DOPPLER_SECRETS_JSON: ${{ toJSON(steps.doppler-oauth.outputs) }}
 

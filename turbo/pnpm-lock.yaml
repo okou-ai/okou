@@ -387,6 +387,46 @@ importers:
         specifier: ^4.129.0
         version: 4.129.0(@cloudflare/workers-types@5.20260924.1)(@types/node@24.13.4)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
+  apps/browser-extension:
+    dependencies:
+      '@okouai/browser-extension-client':
+        specifier: workspace:*
+        version: link:../../packages/browser-extension-client
+    devDependencies:
+      '@okouai/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@okouai/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+      '@playwright/test':
+        specifier: 1.64.1
+        version: 1.64.1
+      '@types/chrome':
+        specifier: 0.3.6
+        version: 0.3.6
+      '@types/node':
+        specifier: ^24.13.4
+        version: 24.13.4
+      '@typescript/native':
+        specifier: npm:typescript@7.0.2
+        version: typescript@7.0.2
+      eslint:
+        specifier: ^9.34.0
+        version: 9.39.4(jiti@2.7.0)
+      globals:
+        specifier: 16.3.0
+        version: 16.3.0
+      oxlint:
+        specifier: ^1.75.0
+        version: 1.75.0(oxlint-tsgolint@7.0.2001)
+      typescript:
+        specifier: npm:@typescript/typescript6@6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vite:
+        specifier: ^8.1.6
+        version: 8.3.4(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
+
   apps/cli:
     devDependencies:
       '@earendil-works/pi-coding-agent':
@@ -1076,6 +1116,27 @@ importers:
       vitest:
         specifier: ^5.0.5
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(happy-dom@21.0.4(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/browser-extension-client:
+    devDependencies:
+      '@okouai/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@okouai/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@typescript/native':
+        specifier: npm:typescript@7.0.2
+        version: typescript@7.0.2
+      eslint:
+        specifier: ^9.34.0
+        version: 9.39.4(jiti@2.7.0)
+      oxlint:
+        specifier: ^1.75.0
+        version: 1.75.0(oxlint-tsgolint@7.0.2001)
+      typescript:
+        specifier: npm:@typescript/typescript6@6.0.2
+        version: '@typescript/typescript6@6.0.2'
 
   packages/connectors:
     dependencies:
@@ -3688,6 +3749,11 @@ packages:
     resolution: {integrity: sha512-SEeaJLb3qBNF/OaXnaR1NmmBbFYk1zC0ZH/52fATcRPLFg/p791YrcyFFy44Bo9sLaGuSuLp5Q6axbb/O+v/RA==}
     engines: {node: ^14.18.0 || >=16.0.0}
 
+  '@playwright/test@1.64.1':
+    resolution: {integrity: sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
@@ -5125,6 +5191,9 @@ packages:
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
+  '@types/chrome@0.3.6':
+    resolution: {integrity: sha512-NXCrCBefCHCKMVbkaxfBQqyP766Wg85S2FQhixCCxq7AtjJwoEaja2y5NSqCzpihIi9mPqhaF5RuybTnrdYD2Q==}
+
   '@types/connect@3.4.38':
     resolution: {integrity: sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug==}
 
@@ -5145,6 +5214,9 @@ packages:
 
   '@types/fontkit@2.0.9':
     resolution: {integrity: sha512-qNYerFky3muCmZPq+R+B3cUDRA5OONw/oh6aGGFxx2LOBz6yu8eamKusrhkHnC6rc2fm76+G9z9QoWSB2SaQaw==}
+
+  '@types/har-format@1.2.16':
+    resolution: {integrity: sha512-fluxdy7ryD3MV6h8pTfTYpy/xQzCFC7m89nOH9y94cNqJ1mDIDPut7MnRHI3F6qRmh/cT2fUjG1MLdCNb4hE9A==}
 
   '@types/hast@3.0.5':
     resolution: {integrity: sha512-rp/ezSWaD1m44dPKICGhiskI13nVr7qTloFwDa/IYkhhf5nzwP+zIQcIJh3WIFSBOy/H1PzB40jPjMDksN4F+g==}
@@ -6938,6 +7010,10 @@ packages:
     resolution: {integrity: sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ==}
     engines: {node: '>=18'}
 
+  globals@16.3.0:
+    resolution: {integrity: sha512-bqWEnJ1Nt3neqx2q5SFfGS8r/ahumIakg3HcwtNlrVlwXIeNumWn/c7Pn/wKzGhf6SaW6H6uWXLqC30STCMchQ==}
+    engines: {node: '>=18'}
+
   globals@16.5.0:
     resolution: {integrity: sha512-c/c15i26VrJ4IRt5Z89DnIzCGDn9EcebibhAOjw5ibqEHsE1wLUgkPn9RDmNcUKyU87GeaL633nyJ+pplFR2ZQ==}
     engines: {node: '>=18'}
@@ -8354,6 +8430,16 @@ packages:
 
   platform@1.3.6:
     resolution: {integrity: sha512-fnWVljUchTro6RiCFvCXBbNhJc2NijN7oIQxbwsyL0buWJPG85v81ehlHI9fXrJsMNgTofEoWIQeClKpgxFLrg==}
+
+  playwright-core@1.64.1:
+    resolution: {integrity: sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.64.1:
+    resolution: {integrity: sha512-HCrVhHr5QQuwYoswEUGTb7gGp522yflbv/ST8nF4sFWGuLjQCt17Q/EubpGGSNKYn1tsTCPZxqHhHCfVURu7UA==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   png-js@2.0.0:
     resolution: {integrity: sha512-GdzJuUMc6ZSpxFJWVxtOH1bzYHym+TOnveqUjb+VJIbZWbZzyiRGFiKhbiielfpYbgMlhHVhsJ0FTazfuRFkMA==}
@@ -11840,6 +11926,10 @@ snapshots:
 
   '@pkgr/core@0.3.6': {}
 
+  '@playwright/test@1.64.1':
+    dependencies:
+      playwright: 1.64.1
+
   '@polka/url@1.0.0-next.29': {}
 
   '@poppinss/colors@4.1.6':
@@ -13332,6 +13422,10 @@ snapshots:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
 
+  '@types/chrome@0.3.6':
+    dependencies:
+      '@types/har-format': 1.2.16
+
   '@types/connect@3.4.38':
     dependencies:
       '@types/node': 24.13.4
@@ -13353,6 +13447,8 @@ snapshots:
   '@types/fontkit@2.0.9':
     dependencies:
       '@types/node': 24.13.4
+
+  '@types/har-format@1.2.16': {}
 
   '@types/hast@3.0.5':
     dependencies:
@@ -15218,6 +15314,8 @@ snapshots:
 
   globals@14.0.0: {}
 
+  globals@16.3.0: {}
+
   globals@16.5.0: {}
 
   globalthis@1.0.4:
@@ -16907,6 +17005,12 @@ snapshots:
       pathe: 2.0.3
 
   platform@1.3.6: {}
+
+  playwright-core@1.64.1: {}
+
+  playwright@1.64.1:
+    dependencies:
+      playwright-core: 1.64.1
 
   png-js@2.0.0:
     dependencies:

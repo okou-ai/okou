@@ -1137,6 +1137,27 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
+  test-browser-extension:
+    needs: [detect-turbo-ts-checks]
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-init
+      - name: Test extension release boundaries
+        run: node --test .github/scripts/release/browser-extension-release.test.mjs
+      - name: Test the CDP client
+        run: pnpm --dir turbo --filter @okouai/browser-extension-client test
+      - name: Install full Chromium
+        run: pnpm --dir turbo/apps/browser-extension exec playwright install --with-deps chromium
+      - name: Test native extension behavior
+        run: pnpm --dir turbo --filter @okouai/browser-extension test
+      - name: Verify deterministic extension package
+        run: pnpm --dir turbo --filter @okouai/browser-extension verify-package
+
   test-other:
     needs: [detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
@@ -2955,6 +2976,7 @@ jobs:
       - test-app
       - test-api
       - test-other
+      - test-browser-extension
       - test-discord-gateway
       - test-link-approval
       - test-wechat-gateway
@@ -3085,6 +3107,7 @@ jobs:
           check_result "test-app" "${{ needs.test-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-browser-extension" "${{ needs.test-browser-extension.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-link-approval" "${{ needs.test-link-approval.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-wechat-gateway" "${{ needs.test-wechat-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"

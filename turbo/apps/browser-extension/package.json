@@ -1,0 +1,30 @@
+{
+  "name": "@okouai/browser-extension",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings && eslint . --max-warnings 0",
+    "build": "vite build && node scripts/package-extension.mjs",
+    "test": "pnpm build && playwright test",
+    "test:provider": "pnpm build && node tests/provider-smoke.mjs",
+    "verify-package": "node scripts/verify-package.mjs"
+  },
+  "dependencies": {
+    "@okouai/browser-extension-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@okouai/eslint-config": "workspace:*",
+    "@okouai/typescript-config": "workspace:*",
+    "@playwright/test": "1.64.1",
+    "@types/chrome": "0.3.6",
+    "@types/node": "^24.13.4",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "^9.34.0",
+    "globals": "16.3.0",
+    "oxlint": "^1.75.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vite": "^8.1.6"
+  }
+}
