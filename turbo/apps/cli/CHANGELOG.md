@@ -1,5 +1,20 @@
 # Changelog
 
+## [10.10.2](https://github.com/okou-ai/okou/compare/cli-v10.10.1...cli-v10.10.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **agents:** restore editable default agent configuration ([#44033](https://github.com/okou-ai/okou/issues/44033)) ([bfada2a](https://github.com/okou-ai/okou/commit/bfada2a09f491143186a92d26e0c4878af02d941))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.800.5
+    * @okouai/pi-agent-runtime bumped to 1.51.24
+
 ## [10.10.1](https://github.com/okou-ai/okou/compare/cli-v10.10.0...cli-v10.10.1) (2026-10-29)
 
 

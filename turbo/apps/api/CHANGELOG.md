@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.25.2](https://github.com/okou-ai/okou/compare/api-v2.25.1...api-v2.25.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **agents:** restore editable default agent configuration ([#44033](https://github.com/okou-ai/okou/issues/44033)) ([bfada2a](https://github.com/okou-ai/okou/commit/bfada2a09f491143186a92d26e0c4878af02d941))
+* **api:** prevent discord typing refresh gaps ([#44036](https://github.com/okou-ai/okou/issues/44036)) ([ddc3240](https://github.com/okou-ai/okou/commit/ddc32409caa5fa06c03402bade144ec7b16a2282))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.800.5
+    * @okouai/db bumped to 2.11.4
+    * @okouai/pi-agent-runtime bumped to 1.51.24
+
 ## [2.25.1](https://github.com/okou-ai/okou/compare/api-v2.25.0...api-v2.25.1) (2026-10-29)
 
 
