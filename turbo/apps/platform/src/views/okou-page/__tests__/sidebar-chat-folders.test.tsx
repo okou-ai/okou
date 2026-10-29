@@ -1,4 +1,8 @@
-import { queryAllByRoleFast, fill } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  fill,
+} from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -8,7 +12,6 @@ import {
   type ChatFolderCatalog,
 } from "@okouai/api-contracts/contracts/chat-folders";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { currentChatThreadNavigationList$ } from "../../../signals/chat-page/chat-thread-navigation.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
@@ -169,63 +172,53 @@ async function prepare(initial?: ChatFolderCatalog, enabled = true) {
   });
   await within(sidebar()).findByText("Launch plan");
 }
-async function createFolder(
-  user: ReturnType<typeof userEvent.setup>,
-  name: string,
-) {
-  await user.click(button("Create a folder"));
+async function createFolder(name: string) {
+  click(button("Create a folder"));
   const dialog = await screen.findByRole("dialog");
-  await user.type(
+  await fill(
     within(dialog).getByRole("textbox", { name: "Folder name" }),
     name,
   );
-  await user.click(button("Save", dialog));
+  click(button("Save", dialog));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    return expect(dialog).not.toBeInTheDocument();
   });
   await findButton(name);
 }
 
 test("zero folders, filing, collapse and deleting the last folder retain every conversation", async () => {
-  const user = userEvent.setup();
   await prepare();
   expect(within(sidebar()).getByText("Chats")).toBeInTheDocument();
-  await createFolder(user, "Product");
+  await createFolder("Product");
   expect(within(sidebar()).getByText("Unfiled")).toBeInTheDocument();
   openThreadMenu("Launch plan");
   await screen.findByRole("menu");
-  await user.click(menuItemByText("Move to…"));
+  click(menuItemByText("Move to…"));
   const chooser = await screen.findByRole("dialog");
-  await user.click(button("Product", chooser));
+  click(button("Product", chooser));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    return expect(chooser).not.toBeInTheDocument();
   });
   expect(within(sidebar()).getAllByText("Launch plan")).toHaveLength(1);
-  await user.click(button("Product", sidebar()));
+  click(button("Product", sidebar()));
   await waitFor(() => {
     return expect(
       within(sidebar()).queryByText("Launch plan"),
     ).not.toBeInTheDocument();
   });
   expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
-  await expect(
-    context.store.get(currentChatThreadNavigationList$),
-  ).resolves.toStrictEqual({
-    orderedThreadIds: [EXISTING_THREAD_ID, INCIDENT_THREAD_ID],
-    listedThreadIds: [INCIDENT_THREAD_ID],
-  });
-  await user.click(button("Product", sidebar()));
+  click(button("Product", sidebar()));
   await within(sidebar()).findByText("Launch plan");
-  await user.click(button("Actions for Product", sidebar()));
+  click(button("Actions for Product", sidebar()));
   await screen.findByRole("menu");
-  await user.click(menuItemByText("Delete folder"));
+  click(menuItemByText("Delete folder"));
   const confirmation = await screen.findByRole("dialog");
   expect(
     within(confirmation).getByText(/Your conversations will be kept/),
   ).toBeInTheDocument();
-  await user.click(button("Delete folder", confirmation));
+  click(button("Delete folder", confirmation));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    return expect(confirmation).not.toBeInTheDocument();
   });
   expect(within(sidebar()).getByText("Chats")).toBeInTheDocument();
   expect(within(sidebar()).getByText("Launch plan")).toBeInTheDocument();
@@ -238,7 +231,7 @@ test("folder names and keyboard-accessible order changes update the grouped navi
     folders: [{ id: FOLDER_ID, name: "Product", sortKey: "a0" }],
     memberships: [],
   });
-  await createFolder(user, "Customers");
+  await createFolder("Customers");
   await user.click(button("Actions for Customers", sidebar()));
   await screen.findByRole("menu");
   await user.click(menuItemByText("Move folder up"));

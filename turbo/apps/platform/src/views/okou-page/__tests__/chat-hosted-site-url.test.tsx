@@ -176,12 +176,16 @@ async function setupHostedSite(
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
-  await screen.findByText("Open website");
-  const link = queryAllByRoleFast("link").find((element) => {
-    return element.textContent === "Open website";
+  const link = await waitFor(() => {
+    const link = queryAllByRoleFast("link").find((element) => {
+      return element.textContent === "Open website";
+    });
+    if (!link) {
+      throw new Error("Expected the hosted website message link");
+    }
+    return link;
   });
-  expect(link).toBeDefined();
-  click(link!);
+  click(link);
   return await screen.findByTestId(
     sidebar ? "artifact-sidebar" : "attachment-lightbox",
   );
