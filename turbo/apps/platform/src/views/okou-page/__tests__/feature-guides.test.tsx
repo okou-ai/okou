@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -63,6 +63,23 @@ function button(name: string, container: ParentNode = document.body) {
   return found;
 }
 
+function swipe(
+  target: Element,
+  start: { readonly x: number; readonly y: number },
+  end: { readonly x: number; readonly y: number },
+) {
+  fireEvent.touchStart(target, {
+    touches: [{ identifier: 0, clientX: start.x, clientY: start.y }],
+  });
+  fireEvent.touchMove(target, {
+    touches: [{ identifier: 0, clientX: end.x, clientY: end.y }],
+  });
+  fireEvent.touchEnd(target, {
+    touches: [],
+    changedTouches: [{ identifier: 0, clientX: end.x, clientY: end.y }],
+  });
+}
+
 test("shows an enabled edition, records its display, and dismisses it with Escape", async () => {
   let seen = false;
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
@@ -96,7 +113,7 @@ test("shows an enabled edition, records its display, and dismisses it with Escap
   });
 });
 
-test("cycles features in the footer, resets walkthroughs, and pre-fills a task without running it", async () => {
+test("cycles features with swipes and footer controls, resets walkthroughs, and pre-fills a task", async () => {
   const carouselEdition: FeatureGuideEdition = {
     ...edition,
     content: {
@@ -145,7 +162,11 @@ test("cycles features in the footer, resets walkthroughs, and pre-fills a task w
   await expect(
     within(dialog).findByText("Review the result"),
   ).resolves.toBeInTheDocument();
-  click(button("Next feature", navigation));
+  swipe(
+    within(dialog).getByText("Review the result"),
+    { x: 240, y: 150 },
+    { x: 100, y: 155 },
+  );
   await expect(
     within(dialog).findByRole("img", { name: "A result ready to share" }),
   ).resolves.toBeInTheDocument();
@@ -153,15 +174,29 @@ test("cycles features in the footer, resets walkthroughs, and pre-fills a task w
     "aria-current",
     "step",
   );
-  click(button("Next feature", navigation));
+  expect(queryAllByRoleFast("link", dialog)).toHaveLength(0);
+  expect(
+    queryAllByRoleFast("button", dialog).some((candidate) => {
+      return candidate.textContent?.trim() === "Try this task";
+    }),
+  ).toBeFalsy();
+  swipe(
+    within(dialog).getByRole("img", { name: "A result ready to share" }),
+    { x: 240, y: 150 },
+    { x: 100, y: 155 },
+  );
   await expect(
     within(dialog).findByRole("heading", { name: "Prepare a weekly report" }),
   ).resolves.toBeInTheDocument();
-  click(button("Previous feature", navigation));
+  swipe(
+    within(dialog).getByText("Summarize the work that matters"),
+    { x: 100, y: 150 },
+    { x: 240, y: 155 },
+  );
   await expect(
     within(dialog).findByRole("heading", { name: "Share the result" }),
   ).resolves.toBeInTheDocument();
-  click(button("See how it works", navigation));
+  click(button("Previous feature", navigation));
   await expect(
     within(dialog).findByText("Start with a goal"),
   ).resolves.toBeInTheDocument();
@@ -172,6 +207,117 @@ test("cycles features in the footer, resets walkthroughs, and pre-fills a task w
   });
   await expect(
     screen.findByText("Prepare my weekly report"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("keeps the feature selected during small, vertical, multi-touch, and cancelled gestures", async () => {
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    return respond(200, { edition, preview: true });
+  });
+  await setupPage({
+    context,
+    path: `${path}?featureGuidePreview=1`,
+    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Prepare a weekly report",
+  });
+  const description = within(dialog).getByText(
+    "Summarize the work that matters",
+  );
+  for (const end of [
+    { x: 180, y: 105 },
+    { x: 195, y: 240 },
+    { x: 130, y: 170 },
+  ]) {
+    swipe(description, { x: 200, y: 100 }, end);
+    expect(
+      within(dialog).getByRole("heading", { name: "Prepare a weekly report" }),
+    ).toBeInTheDocument();
+  }
+  fireEvent.touchStart(description, {
+    touches: [
+      { identifier: 0, clientX: 200, clientY: 100 },
+      { identifier: 1, clientX: 250, clientY: 100 },
+    ],
+  });
+  fireEvent.touchEnd(description, {
+    touches: [],
+    changedTouches: [
+      { identifier: 0, clientX: 80, clientY: 100 },
+      { identifier: 1, clientX: 280, clientY: 100 },
+    ],
+  });
+  expect(
+    within(dialog).getByRole("heading", { name: "Prepare a weekly report" }),
+  ).toBeInTheDocument();
+  fireEvent.touchStart(description, {
+    touches: [{ identifier: 0, clientX: 200, clientY: 100 }],
+  });
+  fireEvent.touchCancel(description, { touches: [], changedTouches: [] });
+  expect(
+    within(dialog).getByRole("heading", { name: "Prepare a weekly report" }),
+  ).toBeInTheDocument();
+
+  swipe(description, { x: 200, y: 100 }, { x: 70, y: 105 });
+  await expect(
+    within(dialog).findByText("Start with a goal"),
+  ).resolves.toBeInTheDocument();
+  swipe(button("Next", dialog), { x: 200, y: 100 }, { x: 70, y: 105 });
+  click(button("Next", dialog));
+  await expect(
+    within(dialog).findByText("Review the result"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("preserves video controls while allowing a swipe from the surrounding description", async () => {
+  const videoEdition: FeatureGuideEdition = {
+    ...edition,
+    content: {
+      ...edition.content,
+      items: [
+        {
+          featureId: "video",
+          title: "See Okou in action",
+          description: "Watch a short demonstration",
+          media: {
+            type: "video",
+            url: "https://example.com/demo.mp4",
+            posterUrl: "https://example.com/poster.png",
+            captionsUrl: "https://example.com/captions.vtt",
+          },
+        },
+        ...edition.content.items,
+      ],
+    },
+  };
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    return respond(200, { edition: videoEdition, preview: true });
+  });
+  await setupPage({
+    context,
+    path: `${path}?featureGuidePreview=1`,
+    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "See Okou in action",
+  });
+  const video = dialog.querySelector("video");
+  if (!video) {
+    throw new Error("Expected a demonstration video");
+  }
+  expect(video).toHaveAttribute("controls");
+  swipe(video, { x: 240, y: 150 }, { x: 100, y: 155 });
+  expect(
+    within(dialog).getByRole("heading", { name: "See Okou in action" }),
+  ).toBeInTheDocument();
+  swipe(
+    within(dialog).getByText("Watch a short demonstration"),
+    { x: 240, y: 150 },
+    { x: 100, y: 155 },
+  );
+  await expect(
+    within(dialog).findByRole("heading", { name: "Prepare a weekly report" }),
   ).resolves.toBeInTheDocument();
 });
 

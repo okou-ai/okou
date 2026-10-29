@@ -29,10 +29,6 @@
           "type": "image",
           "url": "https://a.okou.io/stviytkn3s.png",
           "alt": "Example artifact preview: Delete appears beside Download. A confirmation explains that deleting Launch brief.pdf disables its Okou links while previously downloaded copies remain."
-        },
-        "action": {
-          "type": "open-artifacts",
-          "label": "Manage your artifacts"
         }
       },
       {
@@ -43,10 +39,6 @@
           "type": "image",
           "url": "https://a.okou.io/ag1e7vcn6t.png",
           "alt": "Example conversation Share menu with Only me, Anyone at Acme, and Anyone with the link. Organization access is selected."
-        },
-        "action": {
-          "type": "open-chats",
-          "label": "Open your chats"
         }
       }
     ]

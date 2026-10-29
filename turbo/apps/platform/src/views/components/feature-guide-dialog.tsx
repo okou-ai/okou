@@ -12,7 +12,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import type { FeatureGuideMedia } from "@okouai/api-contracts/contracts/feature-guides";
+import type {
+  FeatureGuideContent,
+  FeatureGuideMedia,
+} from "@okouai/api-contracts/contracts/feature-guides";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
@@ -208,6 +211,77 @@ function FeatureGuideNavigation({
   );
 }
 
+function GuideSlide({
+  snapshot,
+  item,
+}: {
+  readonly snapshot: FeatureGuideSnapshot;
+  readonly item: FeatureGuideContent["items"][number];
+}) {
+  const beginSwipe = useSet(snapshot.selection.beginSwipe$);
+  const endSwipe = useSet(snapshot.selection.endSwipe$);
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-4",
+        snapshot.edition.content.items.length > 1 &&
+          item.media?.type !== "video" &&
+          "touch-pan-y touch-pinch-zoom",
+      )}
+      onTouchStart={(event) => {
+        const touch = event.touches[0];
+        const interactive =
+          event.target instanceof Element &&
+          event.target.closest(
+            "button, a, input, select, textarea, video, audio, [contenteditable]",
+          );
+        beginSwipe(
+          event.touches.length === 1 && touch && !interactive
+            ? {
+                identifier: touch.identifier,
+                x: touch.clientX,
+                y: touch.clientY,
+              }
+            : null,
+        );
+      }}
+      onTouchEnd={(event) => {
+        const touch = event.changedTouches[0];
+        endSwipe(
+          event.touches.length === 0 &&
+            event.changedTouches.length === 1 &&
+            touch
+            ? {
+                identifier: touch.identifier,
+                x: touch.clientX,
+                y: touch.clientY,
+              }
+            : null,
+        );
+      }}
+      onTouchCancel={() => {
+        beginSwipe(null);
+      }}
+    >
+      <div aria-live="polite">
+        <DialogHeader className="text-left">
+          <DialogTitle className="pr-7 text-2xl leading-snug sm:text-3xl">
+            {item.title}
+          </DialogTitle>
+          <DialogDescription>{item.description}</DialogDescription>
+        </DialogHeader>
+      </div>
+      {item.media && (
+        <GuideMedia
+          key={item.featureId}
+          media={item.media}
+          selection={snapshot.selection}
+        />
+      )}
+    </div>
+  );
+}
+
 function GuideContents({
   snapshot,
   onClose,
@@ -240,21 +314,7 @@ function GuideContents({
           </span>
         )}
       </div>
-      <div aria-live="polite">
-        <DialogHeader className="text-left">
-          <DialogTitle className="pr-7 text-2xl leading-snug sm:text-3xl">
-            {activeItem.title}
-          </DialogTitle>
-          <DialogDescription>{activeItem.description}</DialogDescription>
-        </DialogHeader>
-      </div>
-      {activeItem.media && (
-        <GuideMedia
-          key={activeItem.featureId}
-          media={activeItem.media}
-          selection={snapshot.selection}
-        />
-      )}
+      <GuideSlide snapshot={snapshot} item={activeItem} />
       {activeItem.action ? (
         <Link
           pathname={FEATURE_GUIDE_ACTION_ROUTES[activeItem.action.type]}
