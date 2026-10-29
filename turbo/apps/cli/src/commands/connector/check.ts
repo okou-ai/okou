@@ -777,8 +777,9 @@ Permission recovery:
   the fallback policy used. Neither label alone means access was denied.
   Follow policy.outcome: allow needs no additional permission approval; deny/ask
   blocks the request; unavailable means permission status could not be determined.
-  Only custom deny/ask outcomes need an administrator to review routing/permission
-  definitions. There is no custom unknown-endpoint approval control.
+  For custom unknown endpoints, only deny/ask outcomes need an administrator to
+  review routing/permission definitions. There is no custom unknown-endpoint
+  approval control.
   An allowed permission check does not verify credentials or upstream API success.
   Callback examples are for a single supported action in the current web chat
   for its current Agent. When multiple access actions are needed, use ordinary

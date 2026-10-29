@@ -324,8 +324,9 @@ Notes:
     > Permissions. MCP connectors have Agent access but no HTTP permission bundle.
     Custom UUIDs, full slugs, and exact unique display names, optionally prefixed
     with custom:, resolve to this settings guidance rather than a builtin approval link.
-  - Only custom deny/ask outcomes need an administrator to review the connector's
-    routing and permission definition. There is no custom unknown-endpoint approval control.
+  - For custom unknown endpoints, only deny/ask outcomes need an administrator to
+    review the connector's routing and permission definition. There is no custom
+    unknown-endpoint approval control.
   - Inside a run, --agent must match the current Agent; omit it to use OKOU_AGENT_ID.
     Outside a run, --agent selects the Agent's permission page.
     Agent selection does not change the accounts admitted to a run.

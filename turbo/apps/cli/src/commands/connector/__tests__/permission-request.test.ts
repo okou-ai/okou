@@ -177,7 +177,7 @@ describe("okou connector permission-request command", () => {
       "unavailable means permission status could not be determined",
     );
     expect(text).toContain(
-      "Only custom deny/ask outcomes need an administrator",
+      "For custom unknown endpoints, only deny/ask outcomes need an administrator",
     );
   });
 
