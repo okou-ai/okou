@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/okou-ai/okou/compare/ios-v0.22.0...ios-v0.22.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **ios:** render mermaid code blocks as native diagrams ([#43777](https://github.com/okou-ai/okou/issues/43777)) ([ac28e21](https://github.com/okou-ai/okou/commit/ac28e218a1b1205f5baa55b1e8c842dc3d95a27b))
+
 ## [0.22.0](https://github.com/okou-ai/okou/compare/ios-v0.21.3...ios-v0.22.0) (2026-10-29)
 
 
