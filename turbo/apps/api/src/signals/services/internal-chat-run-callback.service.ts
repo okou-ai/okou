@@ -2447,14 +2447,30 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
     },
     signal: AbortSignal,
   ): Promise<TerminalChatCallbackWork> => {
-    const completed = await measureChatCallbackPreCreateTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
-      "top_level",
-      () => {
-        return set(handleCompletedChatCallback$, args, signal);
-      },
-    );
+    const timing = args.timing;
+    const startedAt = now();
+    const completed = await (async () => {
+      const result = await onRejection(
+        (async () => {
+          return await set(handleCompletedChatCallback$, args, signal);
+        })(),
+        () => {
+          timing.recordElapsed({
+            actionType:
+              "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
+            spanKind: "top_level",
+            startedAt,
+          });
+        },
+      );
+      timing.recordElapsed({
+        actionType:
+          "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
+        spanKind: "top_level",
+        startedAt,
+      });
+      return result;
+    })();
     signal.throwIfAborted();
     if (completed.outcome !== "written" && completed.outcome !== "replayed") {
       return completed;
@@ -2509,27 +2525,44 @@ const prepareFailedTerminalChatCallbackWork$ = command(
     },
     signal: AbortSignal,
   ): Promise<TerminalChatCallbackWork> => {
-    const failed = await measureChatCallbackPreCreateTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_chat_callback_prepare_failed",
-      "top_level",
-      () => {
-        return set(
-          handleFailedChatCallback$,
-          {
-            ...args,
-            failureReason:
-              args.run.failureReason === "provider_insufficient_credits"
-                ? (publicProviderBalanceFailureReason(args.run.modelProvider) ??
-                  null)
-                : args.run.failureReason,
-            hasCancellationRecoveryState:
-              args.run.cancellationRecoveryCompleted !== null,
-          },
-          signal,
-        );
-      },
-    );
+    const timing = args.timing;
+    const startedAt = now();
+    const failed = await (async () => {
+      const result = await onRejection(
+        (async () => {
+          return await set(
+            handleFailedChatCallback$,
+            {
+              ...args,
+              failureReason:
+                args.run.failureReason === "provider_insufficient_credits"
+                  ? (publicProviderBalanceFailureReason(
+                      args.run.modelProvider,
+                    ) ?? null)
+                  : args.run.failureReason,
+              hasCancellationRecoveryState:
+                args.run.cancellationRecoveryCompleted !== null,
+            },
+            signal,
+          );
+        })(),
+        () => {
+          timing.recordElapsed({
+            actionType:
+              "api_dispatch_pre_create_agent_chat_callback_prepare_failed",
+            spanKind: "top_level",
+            startedAt,
+          });
+        },
+      );
+      timing.recordElapsed({
+        actionType:
+          "api_dispatch_pre_create_agent_chat_callback_prepare_failed",
+        spanKind: "top_level",
+        startedAt,
+      });
+      return result;
+    })();
     signal.throwIfAborted();
     if (failed.outcome !== "written" && failed.outcome !== "replayed") {
       return failed;

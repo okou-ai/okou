@@ -334,17 +334,6 @@ class ClaimRouteTimingCollector {
     });
   }
 
-  measure<T>(
-    actionType: ClaimRouteTimingActionType,
-    spanKind: ClaimRouteTimingSpanKind,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const startedAt = now();
-    return operation().finally(() => {
-      this.recordElapsed(actionType, spanKind, startedAt);
-    });
-  }
-
   measureInvalidKeySecretMaterialization<T>(
     operation: () => Promise<T>,
   ): Promise<T> {
@@ -1149,16 +1138,19 @@ const transitionClaimedJobToRunning$ = command(
         },
         workflowInput,
       );
-      const result = await timing.measure(
-        "claim_route_transition_execute",
-        "nested",
-        async () => {
-          const rowSchema = claimTransitionSqlRowSchema;
-          return await (async () => {
-            return parseRawRows(rowSchema, await db.execute(query));
-          })();
-        },
-      );
+      const startedAt = now();
+      const result = await (async () => {
+        const rowSchema = claimTransitionSqlRowSchema;
+        return await (async () => {
+          return parseRawRows(rowSchema, await db.execute(query));
+        })();
+      })().finally(() => {
+        timing.recordElapsed(
+          "claim_route_transition_execute",
+          "nested",
+          startedAt,
+        );
+      });
       const transition = decodeClaimTransitionResult(result);
       signal.throwIfAborted();
       return transition;
@@ -1426,32 +1418,36 @@ const buildClaimResponseBodyForClaim$ = command(
       args.timing,
     );
     signal.throwIfAborted();
-    return await args.timing.measure(
-      "claim_route_response_assembly",
-      "top_level",
-      async () => {
-        const refreshedPolicies = await set(readClaimNetworkPolicyRefreshes$, {
-          run: args.run,
-          storedContext: args.storedContext,
-          timing: args.timing,
-        });
-        signal.throwIfAborted();
-        const sandboxToken = generateSandboxToken(
-          args.run.userId,
-          args.run.id,
-          args.run.orgId,
-        );
-        signal.throwIfAborted();
-        return claimResponseBody({
-          run: args.run,
-          reuseKey: args.reuseKey,
-          storedContext: args.storedContext,
-          sandboxToken,
-          secretValues,
-          refreshedPolicies,
-        });
-      },
-    );
+    const timing = args.timing;
+    const startedAt = now();
+    return await (async () => {
+      const refreshedPolicies = await set(readClaimNetworkPolicyRefreshes$, {
+        run: args.run,
+        storedContext: args.storedContext,
+        timing: args.timing,
+      });
+      signal.throwIfAborted();
+      const sandboxToken = generateSandboxToken(
+        args.run.userId,
+        args.run.id,
+        args.run.orgId,
+      );
+      signal.throwIfAborted();
+      return claimResponseBody({
+        run: args.run,
+        reuseKey: args.reuseKey,
+        storedContext: args.storedContext,
+        sandboxToken,
+        secretValues,
+        refreshedPolicies,
+      });
+    })().finally(() => {
+      timing.recordElapsed(
+        "claim_route_response_assembly",
+        "top_level",
+        startedAt,
+      );
+    });
   },
 );
 
@@ -1996,22 +1992,25 @@ const claimAuthorizedJob$ = command(
       "parent",
       args.claimRequestStartedAtMs,
     );
-    const claimResult = await claimRouteTiming.measure(
-      "claim_route_transition_running",
-      "top_level",
-      async () => {
-        return await set(
-          transitionClaimedJobToRunning$,
-          {
-            runId,
-            workflowInput,
-            runnerAttribution: args.runnerAttribution,
-            timing: claimRouteTiming,
-          },
-          signal,
-        );
-      },
-    );
+    const transitionStartedAt = now();
+    const claimResult = await (async () => {
+      return await set(
+        transitionClaimedJobToRunning$,
+        {
+          runId,
+          workflowInput,
+          runnerAttribution: args.runnerAttribution,
+          timing: claimRouteTiming,
+        },
+        signal,
+      );
+    })().finally(() => {
+      claimRouteTiming.recordElapsed(
+        "claim_route_transition_running",
+        "top_level",
+        transitionStartedAt,
+      );
+    });
     if (signal.aborted) {
       L.debug("Runner claim request aborted after committed transition", {
         runId,
