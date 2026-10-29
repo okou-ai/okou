@@ -56,8 +56,8 @@ function ResultTasks({ won }: { readonly won: boolean }) {
   const copy = useHalloweenCopy();
   const icons = [Sparkle, Command, Zap];
   return (
-    <section className="mt-8 w-full max-w-[820px] text-left">
-      <div className="mb-5 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1.5 text-center">
+    <section className="mt-6 w-full border-t border-[#b6cae21c] pt-6 text-left">
+      <div className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         {won ? (
           <>
             <h2 className={cn("text-[#e9e8e5]", typography.labelClassName)}>
@@ -73,7 +73,7 @@ function ResultTasks({ won }: { readonly won: boolean }) {
           </p>
         )}
       </div>
-      <div className="grid gap-3 md:grid-cols-3 md:gap-4">
+      <div className="grid gap-3 md:grid-cols-3 md:gap-x-4">
         {copy.tasks.map((task, index) => {
           const Icon = icons[index]!;
           return (
@@ -88,26 +88,24 @@ function ResultTasks({ won }: { readonly won: boolean }) {
                       ? new URLSearchParams({ prompt: task.prompt })
                       : undefined,
                   }}
-                  className="group relative flex items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[linear-gradient(145deg,#ffffff07,#ffffff02)] p-4 pr-9 text-left transition-all duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07] motion-safe:hover:-translate-y-0.5 md:flex-col md:items-start md:gap-4 md:rounded-3xl md:p-5"
+                  className="group relative grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-2xl border border-[#b6cae21c] bg-[linear-gradient(145deg,#ffffff07,#ffffff02)] p-4 pr-9 text-left transition-colors duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07] md:row-span-3 md:grid-cols-1 md:grid-rows-subgrid md:gap-y-3 md:p-5"
                 />
               }
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#e8c68d1a] bg-[#e8c68d08] text-[#dbbc89]">
+              <span className="row-span-2 flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#e8c68d1a] bg-[#e8c68d08] text-[#dbbc89] md:row-span-1">
                 <Icon className="size-[18px]" />
               </span>
-              <div>
-                <h3
-                  className={cn(
-                    "mb-1.5 text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]",
-                    typography.labelClassName,
-                  )}
-                >
-                  {task.title}
-                </h3>
-                <p className={cn("text-[#92a3bb]", typography.bodyClassName)}>
-                  {task.text}
-                </p>
-              </div>
+              <h3
+                className={cn(
+                  "text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]",
+                  typography.labelClassName,
+                )}
+              >
+                {task.title}
+              </h3>
+              <p className="col-start-2 text-sm leading-5 text-[#92a3bb] md:col-start-auto">
+                {task.text}
+              </p>
               <ArrowUpRight className="absolute right-4 top-4 size-3.5 text-[#71849e] transition-colors group-hover:text-[#e8c68d] md:right-5 md:top-5" />
             </DialogClose>
           );
@@ -128,43 +126,43 @@ export function HalloweenResultScreen() {
   return (
     <>
       {won && <Confetti />}
-      <main className="relative z-10 mx-auto flex w-[calc(100%-40px)] max-w-[880px] flex-1 flex-col items-center justify-center py-10 pb-12 text-center md:w-[calc(100%-96px)]">
-        <div
-          className="mb-6 flex size-14 items-center justify-center rounded-full border border-[#e8c68d33] bg-[radial-gradient(circle_at_50%_0,#e8c68d15,#e8c68d03)] text-[#e8c68d] shadow-[0_0_40px_#e8c68d08]"
-          aria-hidden="true"
-        >
-          {won ? (
-            <Sparkle className="size-6" />
-          ) : (
-            <RotateCcw className="size-5" />
-          )}
+      <main className="relative z-10 mx-auto flex w-full max-w-[896px] flex-1 flex-col items-center justify-center px-5 py-6 text-center md:px-8 md:py-8">
+        <div className="flex max-w-full flex-col items-center gap-3 sm:flex-row sm:gap-4 sm:text-left">
+          <div
+            className="flex size-12 shrink-0 items-center justify-center rounded-full border border-[#e8c68d33] bg-[radial-gradient(circle_at_50%_0,#e8c68d15,#e8c68d03)] text-[#e8c68d]"
+            aria-hidden="true"
+          >
+            {won ? (
+              <Sparkle className="size-6" />
+            ) : (
+              <RotateCcw className="size-5" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <h1
+              className={cn(
+                "text-balance text-[#f4f1eb]",
+                typography.titleClassName,
+                "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
+              )}
+            >
+              {won ? copy.won : copy.lost}
+            </h1>
+            <p className={cn("mt-1 text-[#95a6be]", typography.bodyClassName)}>
+              {won ? copy.wonSub : copy.lostSub}
+            </p>
+          </div>
         </div>
-        <h1
-          className={cn(
-            "mb-3 text-balance text-[#f4f1eb]",
-            typography.titleClassName,
-          )}
-        >
-          {won ? copy.won : copy.lost}
-        </h1>
-        <p className={cn("text-[#95a6be]", typography.bodyClassName)}>
-          {won ? copy.wonSub : copy.lostSub}
-        </p>
-        <p
-          className={cn(
-            "text-[#95a6be]",
-            typography.bodyClassName,
-            won ? "mt-5" : "mt-6",
-          )}
-        >
-          <strong className={cn("text-[#e8c68d]", typography.bodyClassName)}>
+        <p className="mt-4 max-w-full rounded-xl border border-[#e8c68d1a] bg-[#e8c68d08] px-4 py-3 text-sm leading-5 text-[#95a6be]">
+          <strong className="font-medium text-[#e8c68d]">
             {copy.resultRewardEmphasis}
           </strong>
           {copy.resultRewardRest}
         </p>
-        <ResultTasks won={won} />
-        <div className="mt-7 flex w-full max-w-[360px] flex-col items-stretch gap-3 md:w-auto md:max-w-none md:flex-row">
-          <DialogClose render={<Button className={goldButton} />}>
+        <div className="mt-5 flex w-full flex-col items-stretch justify-center gap-3 sm:w-auto sm:flex-row sm:flex-wrap">
+          <DialogClose
+            render={<Button className={cn(goldButton, "whitespace-normal")} />}
+          >
             {copy.magic}
             <ArrowRight className="size-4" />
           </DialogClose>
@@ -172,7 +170,7 @@ export function HalloweenResultScreen() {
             <Button
               variant="quiet"
               className={cn(
-                "h-auto min-h-12 gap-3 rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-[#b9c5d6] transition-all duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]",
+                "h-auto min-h-12 gap-3 whitespace-normal rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-[#b9c5d6] transition-colors duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]",
                 typography.labelClassName,
               )}
               pending={operation.state === "loading"}
@@ -185,7 +183,8 @@ export function HalloweenResultScreen() {
             </Button>
           )}
         </div>
-        <p className={cn("mt-5 text-[#7b8da5]", typography.labelClassName)}>
+        <ResultTasks won={won} />
+        <p className={cn("mt-4 text-[#7b8da5]", typography.labelClassName)}>
           {copy.footerBefore}
           <Button
             variant="quiet"
