@@ -1441,7 +1441,7 @@
         "connector": {
           "action": "Connect",
           "description": "Gmail, Notion, and 100+ more",
-          "name": "Connect a tool",
+          "name": "Connect a connector",
           "unit": "per connector"
         },
         "howRewardsWork": "How rewards work",
