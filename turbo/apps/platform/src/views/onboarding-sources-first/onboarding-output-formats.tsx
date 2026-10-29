@@ -110,7 +110,7 @@ export function OnboardingOutputFormats({
               className="h-auto min-h-10 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left text-sm leading-5 whitespace-normal max-sm:min-h-11"
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
-              <span className="min-w-0 [overflow-wrap:anywhere]">
+              <span className="min-w-0 hyphens-auto [overflow-wrap:anywhere]">
                 {copy.options[format].label}
               </span>
             </Toggle>
