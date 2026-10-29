@@ -154,6 +154,63 @@ describe("okou connector permission-request command", () => {
     mockConsoleError.mockClear();
   });
 
+  it("explains custom unknown-endpoint outcomes in permission-request help", async () => {
+    const previous = permissionRequestCommand.configureOutput();
+    let help = "";
+    permissionRequestCommand.configureOutput({
+      ...previous,
+      writeOut: (text) => {
+        help += text;
+      },
+    });
+    try {
+      await expect(
+        permissionRequestCommand.parseAsync(["node", "okou", "--help"]),
+      ).rejects.toThrow("process.exit called");
+    } finally {
+      permissionRequestCommand.configureOutput(previous);
+    }
+    const text = help.replace(/\s+/gu, " ");
+    expect(text).toContain("Neither label alone means access was denied");
+    expect(text).toContain("allow needs no additional permission approval");
+    expect(text).toContain(
+      "unavailable means permission status could not be determined",
+    );
+    expect(text).toContain(
+      "For custom unknown endpoints, only deny/ask outcomes need an administrator",
+    );
+  });
+
+  it("keeps undiagnosed custom unknown-endpoint remediation conditional", async () => {
+    const customId = "33333333-3333-4333-8333-333333333333";
+    server.use(
+      stubCustomConnectors([customConnector()], "https://app.okou.ai"),
+    );
+    await expect(
+      permissionRequestCommand.parseAsync([
+        "node",
+        "okou",
+        `custom:${customId}`,
+        "--permission",
+        "__unknown__",
+        "--url",
+        "https://api.acme.test/items",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    const message = mockConsoleError.mock.calls.flat().join("\n");
+    expect(message).toContain(
+      "Use okou connector check to inspect policy.outcome",
+    );
+    expect(message).toContain("Only deny/ask outcomes need an administrator");
+    expect(message).toContain(
+      "allow outcome needs no additional permission approval",
+    );
+    expect(message).toContain("[Connectors](https://app.okou.ai/connectors)");
+    expect(message).not.toMatch(/connectorSlug=|action=allow|callbackPrompt=/);
+    expect(mockExit).toHaveBeenCalledWith(1);
+  });
+
   it.each([
     "custom:33333333-3333-4333-8333-333333333333",
     "33333333-3333-4333-8333-333333333333",

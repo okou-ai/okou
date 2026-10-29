@@ -27,7 +27,10 @@ import {
   loadCustomConnectorCheckContext,
   printCustomConnectorCheckStatus,
 } from "./check-custom";
-import { customConnectorSettingsGuidance } from "./custom-connector-guidance";
+import {
+  customConnectorSettingsGuidance,
+  customUnknownEndpointPolicyGuidance,
+} from "./custom-connector-guidance";
 import { printConnectorCheckJson } from "./check-json";
 import { resolveDiagnosticConnectorSelector } from "./diagnostic-connector-selector";
 import { diagnoseConnectorCheckWithContext } from "../../lib/api/domains/connectors";
@@ -543,6 +546,21 @@ function printUnknownEndpointPolicy(
   platformOrigin: string,
   suppressBuiltinUnknownAction: boolean,
 ): void {
+  if (target.kind === "custom") {
+    console.log(`Result: ${customUnknownEndpointPolicyGuidance(policy)}`);
+    if (policy.outcome === "unavailable") {
+      printUnavailablePolicy(policy);
+    } else if (policy.outcome === "deny" || policy.outcome === "ask") {
+      console.log(
+        customConnectorSettingsGuidance(
+          target.customConnectorId,
+          platformOrigin,
+          "__unknown__",
+        ),
+      );
+    }
+    return;
+  }
   switch (policy.outcome) {
     case "allow":
       console.log(
@@ -555,7 +573,7 @@ function printUnknownEndpointPolicy(
       console.log(
         "Result: No permission matched. The unknown endpoint policy denies this request.",
       );
-      if (suppressBuiltinUnknownAction && target.kind === "builtin") return;
+      if (suppressBuiltinUnknownAction) return;
       printPermissionRequestCommands(
         target,
         "__unknown__",
@@ -569,7 +587,7 @@ function printUnknownEndpointPolicy(
       console.log(
         "Result: No permission matched. The unknown endpoint policy requires approval.",
       );
-      if (suppressBuiltinUnknownAction && target.kind === "builtin") return;
+      if (suppressBuiltinUnknownAction) return;
       printPermissionRequestCommands(
         target,
         "__unknown__",
@@ -755,8 +773,14 @@ Permission recovery:
   provider OAuth errors such as missing_scope or needed into Okou permissions.
   Custom HTTP permission bundles use Connectors > agent access > Permissions.
   MCP connectors have no HTTP permission bundle.
-  Custom unknown endpoints require an administrator to review routing/permission
-  definitions; there is no custom approval control.
+  unknown-endpoint means no named permission matched; unknown-policy identifies
+  the fallback policy used. Neither label alone means access was denied.
+  Follow policy.outcome: allow needs no additional permission approval; deny/ask
+  blocks the request; unavailable means permission status could not be determined.
+  For custom unknown endpoints, only deny/ask outcomes need an administrator to
+  review routing/permission definitions. There is no custom unknown-endpoint
+  approval control.
+  An allowed permission check does not verify credentials or upstream API success.
   Callback examples are for a single supported action in the current web chat
   for its current Agent. When multiple access actions are needed, use ordinary
   links and wait for all confirmations. Return every action URL verbatim. Custom

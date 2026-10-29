@@ -29,7 +29,10 @@ import {
   requireUrlRequest,
   type ResolvedDiagnostic,
 } from "./check-diagnostic";
-import { customConnectorSettingsGuidance } from "./custom-connector-guidance";
+import {
+  customConnectorSettingsGuidance,
+  customUnknownEndpointPolicyGuidance,
+} from "./custom-connector-guidance";
 import { connectorInspectionType } from "./inspection";
 import {
   isRunBoundConnectorContext,
@@ -63,6 +66,19 @@ function diagnosticContextGuidance(
         "AWS selectors describe the intended operation only; no SigV4 signature was validated and no AWS request was sent.",
       ]
     : [];
+}
+
+function customUnknownEndpointGuidance(
+  diagnostic: ResolvedDiagnostic,
+): string[] {
+  if (
+    diagnostic.connector.target.kind === "custom" &&
+    diagnostic.mode === "url" &&
+    diagnostic.permission.kind === "unknown-endpoint"
+  ) {
+    return [customUnknownEndpointPolicyGuidance(diagnostic.permission.policy)];
+  }
+  return [];
 }
 
 function permissionActions(
@@ -370,6 +386,7 @@ export async function printConnectorCheckJson(
         authorization: agentId === undefined ? null : { agentId, authorized },
         guidance: [
           "Routing and permission diagnostics describe current intended state; they do not confirm that the runner has applied the latest update.",
+          ...customUnknownEndpointGuidance(diagnostic),
           ...diagnosticContextGuidance(request),
           ...(incompleteUnknown ? [AWS_INCOMPLETE_CONTEXT_GUIDANCE] : []),
           ...(runBound

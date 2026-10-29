@@ -6,6 +6,7 @@ import {
   connectorCheckRequestBodySchema,
   type ConnectorCheckRequestBody,
   type ConnectorCheckDiagnosticResult,
+  type ConnectorCheckPolicy,
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorAccountInspectionResult } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorMcpResponseSchema } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -573,27 +574,102 @@ describe("custom connector URL diagnostics", () => {
     expect(output()).not.toContain(DEFAULT_ACCOUNT_ID);
   });
 
-  it("retains custom unknown-endpoint remediation without inventing a permission request", async () => {
-    stubDiagnostic(
-      resolvedCustom({
-        kind: "unknown-endpoint",
-        policy: { outcome: "ask", basis: "unknown-policy" },
-      }),
-    );
-    await check("--json");
-    const json: unknown = JSON.parse(output());
-    expect(json).toMatchObject({
-      actions: expect.arrayContaining([
-        expect.objectContaining({
-          kind: "link",
-          guidance: expect.stringContaining(
-            "There is no custom unknown-endpoint approval control",
-          ),
-        }),
-      ]),
-    });
-    expect(output()).not.toContain("permission-request");
-  });
+  it.each([
+    {
+      policy: { outcome: "allow", basis: "unknown-policy" },
+      expected: "No additional permission approval is needed.",
+      blocked: false,
+    },
+    {
+      policy: { outcome: "deny", basis: "unknown-policy" },
+      expected: "The unknown endpoint policy denies this request.",
+      blocked: true,
+    },
+    {
+      policy: { outcome: "ask", basis: "unknown-policy" },
+      expected: "The unknown endpoint policy blocks this request.",
+      blocked: true,
+    },
+    {
+      policy: { outcome: "unavailable", basis: "policies-unavailable" },
+      expected:
+        "Permission policy is unavailable, so permission status cannot be determined.",
+      blocked: false,
+    },
+  ] satisfies readonly {
+    policy: ConnectorCheckPolicy;
+    expected: string;
+    blocked: boolean;
+  }[])(
+    "explains custom unknown-endpoint $policy.outcome without inventing approval",
+    async ({ policy, expected, blocked }) => {
+      stubDiagnostic(resolvedCustom({ kind: "unknown-endpoint", policy }));
+      server.use(
+        stubAgentCustomConnectors([
+          { customConnectorId: CUSTOM_ID, permissionNames: [] },
+        ]),
+      );
+
+      await check();
+      expect(output()).toContain(expected);
+      if (blocked) {
+        expect(output()).toContain(
+          "[Connectors](http://localhost:3000/connectors)",
+        );
+        expect(output()).toContain(
+          "There is no custom unknown-endpoint approval control",
+        );
+      } else {
+        expect(output()).not.toContain("administrator");
+      }
+      if (policy.outcome === "allow") {
+        expect(output()).toContain("The permission check allows this request.");
+        expect(output()).toContain(
+          "This does not verify credentials or upstream API success.",
+        );
+      } else if (policy.outcome === "unavailable") {
+        expect(output()).toContain(
+          "Network policies are unavailable for this run",
+        );
+      }
+      expect(output()).not.toMatch(
+        /permission-request|connectorSlug=|callback-prompt/,
+      );
+
+      log.mockClear();
+      await check("--json");
+      const json: unknown = JSON.parse(output());
+      expect(json).toMatchObject({
+        diagnostic: { permission: { kind: "unknown-endpoint", policy } },
+        guidance: expect.arrayContaining([expect.stringContaining(expected)]),
+      });
+      if (blocked) {
+        expect(json).toMatchObject({
+          actions: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "link",
+              label: `Review __unknown__ for custom connector ${CUSTOM_ID}`,
+              url: "http://localhost:3000/connectors",
+              guidance: expect.stringContaining(
+                "There is no custom unknown-endpoint approval control",
+              ),
+            }),
+          ]),
+        });
+      } else {
+        expect(json).toMatchObject({
+          actions: [
+            {
+              kind: "command",
+              command: expect.stringContaining("okou connector check"),
+            },
+          ],
+        });
+        expect(output()).not.toContain("administrator");
+      }
+      expect(output()).not.toMatch(/permission-request|connectorSlug=/);
+    },
+  );
 
   it("retains target-unavailable reasons and the exact custom target in JSON", async () => {
     stubDiagnostic({
@@ -1130,20 +1206,30 @@ describe("custom connector URL diagnostics", () => {
     );
   });
 
-  it("does not treat custom unknown endpoints as a grantable builtin permission", async () => {
-    stubDiagnostic(
-      resolvedCustom({
-        kind: "unknown-endpoint",
-        policy: { outcome: "ask", basis: "unknown-policy" },
-      }),
+  it("explains custom unknown-endpoint outcomes in check help", async () => {
+    const previous = checkConnectorCommand.configureOutput();
+    let help = "";
+    checkConnectorCommand.configureOutput({
+      ...previous,
+      writeOut: (text) => {
+        help += text;
+      },
+    });
+    try {
+      await expect(
+        checkConnectorCommand.parseAsync(["node", "okou", "--help"]),
+      ).rejects.toThrow("process.exit called");
+    } finally {
+      checkConnectorCommand.configureOutput(previous);
+    }
+    const text = help.replace(/\s+/gu, " ");
+    expect(text).toContain("Neither label alone means access was denied");
+    expect(text).toContain("allow needs no additional permission approval");
+    expect(text).toContain(
+      "unavailable means permission status could not be determined",
     );
-    await check();
-    expect(output()).toContain("unknown endpoint policy requires approval");
-    expect(output()).toContain(
-      "There is no custom unknown-endpoint approval control",
-    );
-    expect(output()).not.toMatch(
-      /permission-request|connectorSlug=|review Permissions/,
+    expect(text).toContain(
+      "For custom unknown endpoints, only deny/ask outcomes need an administrator",
     );
   });
 });
