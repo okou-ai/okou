@@ -2048,6 +2048,27 @@
       "sourcePartsHeading_one": "{{count}} Teil aus {{description}} zitiert",
       "sourcePartsHeading_other": "{{count}} Teile aus {{description}} zitiert"
     },
+    "folders": {
+      "actions": "Aktionen für {{name}}",
+      "chats": "Chats",
+      "create": "Ordner erstellen",
+      "delete": "Ordner löschen",
+      "deleteDescription": "„{{name}}“ löschen? Nur der Ordner wird gelöscht. Deine Chats bleiben erhalten.",
+      "description": "Ordner organisieren deine persönlichen Chats in diesem Agenten.",
+      "down": "Ordner nach unten",
+      "empty": "Noch keine Chats",
+      "failed": "Änderungen konnten nicht gespeichert werden. Versuche es erneut.",
+      "move": "Verschieben nach…",
+      "name": "Ordnername",
+      "refresh": "Ordner aktualisieren",
+      "rename": "Ordner umbenennen",
+      "running": "Laufende Chats",
+      "save": "Speichern",
+      "title": "Ordner",
+      "unfiled": "Ohne Ordner",
+      "unread": "Ungelesene Chats",
+      "up": "Ordner nach oben"
+    },
     "forward": {
       "action": "Weiterleiten",
       "agents": "Agenten",

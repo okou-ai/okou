@@ -1,3 +1,16 @@
+import type { ChatFolderCatalog } from "@okouai/api-contracts/contracts/chat-folders";
+import {
+  type ChatFolderSignals,
+  currentChatFolders$,
+  currentChatFolderCatalog$,
+  chatFoldersEnabled$,
+  revealChatFolderThread$,
+} from "./chat-folders.ts";
+import {
+  createChatFolderRows,
+  type ChatFolderRow,
+} from "./sidebar-chat-folder-rows.ts";
+import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
 import { command, computed, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
 import {
@@ -10,11 +23,12 @@ import {
   type ChatThreadVirtualListScrollAlign,
 } from "../okou-page/sidebar-state.ts";
 import {
-  currentChatThreadListIds$,
+  currentChatThreadId$,
   currentChatThreadListSignals$,
   unreadChatThreads$,
   type ChatThreadListSignals,
 } from "../agent-chat.ts";
+import { currentChatThreadListIds$ } from "./chat-thread-navigation.ts";
 import {
   sidebarChatThreadItemSignalsRegistry$,
   type SidebarChatThreadItemSignals,
@@ -38,6 +52,7 @@ export interface SidebarChatThreadWindow {
   readonly startIndex: number;
   readonly items: readonly SidebarChatThreadItemSignals[];
   readonly showAllChatsRow: boolean;
+  readonly folderRows?: readonly ChatFolderRow[];
 }
 
 export interface SidebarChatThreadListSignals {
@@ -46,6 +61,7 @@ export interface SidebarChatThreadListSignals {
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
   readonly window$: Computed<SidebarChatThreadWindow>;
+  readonly folderRows$?: Computed<readonly ChatFolderRow[]>;
 }
 
 interface SidebarChatThreadScrollMetrics {
@@ -86,14 +102,30 @@ function createSidebarChatThreadViewportSignals(
   list: ChatThreadListSignals,
   showAllChatsRow: boolean,
   rowHeight: number,
+  grouping?: {
+    readonly folders: ChatFolderSignals;
+    readonly catalog: ChatFolderCatalog;
+    readonly filtered: boolean;
+  },
 ): SidebarChatThreadListSignals {
   const itemSignals$ = computed((get) => {
     return get(sidebarChatThreadItemSignalsRegistry$).reconcile(
       get(list.threadIds$),
     );
   });
+  const folderRows$ = grouping
+    ? createChatFolderRows(
+        grouping.folders,
+        grouping.catalog,
+        itemSignals$,
+        grouping.filtered,
+      )
+    : undefined;
   const rowCount$ = computed((get) => {
-    return get(itemSignals$).length + (showAllChatsRow ? 1 : 0);
+    return (
+      (folderRows$ ? get(folderRows$).length : get(itemSignals$).length) +
+      (showAllChatsRow ? 1 : 0)
+    );
   });
   const window$ = computed((get): SidebarChatThreadWindow => {
     const itemSignals = get(itemSignals$);
@@ -120,10 +152,20 @@ function createSidebarChatThreadViewportSignals(
             startIndex + CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE,
           ),
         );
-    const threadCount = itemSignals.length;
+    const threadCount = folderRows$
+      ? get(folderRows$).length
+      : itemSignals.length;
 
     return {
       startIndex,
+      ...(folderRows$
+        ? {
+            folderRows: get(folderRows$).slice(
+              startIndex,
+              Math.min(resolvedEndIndex, threadCount),
+            ),
+          }
+        : {}),
       items: itemSignals.slice(
         startIndex,
         Math.min(resolvedEndIndex, threadCount),
@@ -136,6 +178,7 @@ function createSidebarChatThreadViewportSignals(
   });
 
   return {
+    folderRows$,
     count$: list.count$,
     rowCount$,
     currentThreadListed$: list.currentThreadListed$,
@@ -207,12 +250,46 @@ export function createSidebarChatThreadScrollSignals({
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
     const showAllChatsRow =
       get(chatThreadOnlyArchived$) || get(chatThreadOnlyMuted$);
-    const list = await get(source$);
+    const source = await get(source$);
+    const folders = await get(currentChatFolders$);
+    const catalog = folders ? await get(currentChatFolderCatalog$) : null;
+    const unread =
+      folders && get(chatThreadOnlyUnread$)
+        ? await get(unreadChatThreads$)
+        : null;
+    const unreadIds = unread?.map((thread) => {
+      return thread.id;
+    });
+    const list = unreadIds
+      ? {
+          ...source,
+          threadIds$: computed(() => {
+            return unreadIds;
+          }),
+          count$: computed(() => {
+            return unreadIds.length;
+          }),
+          currentThreadListed$: computed((get) => {
+            const id = get(currentChatThreadId$);
+            return id !== null && unreadIds.includes(id);
+          }),
+        }
+      : source;
     return createSidebarChatThreadViewportSignals(
       domSignals,
       list,
-      showAllChatsRow,
+      showAllChatsRow || (folders !== null && get(chatThreadOnlyUnread$)),
       rowHeight,
+      folders && catalog
+        ? {
+            folders,
+            catalog,
+            filtered:
+              get(chatThreadOnlyUnread$) ||
+              get(chatThreadOnlyArchived$) ||
+              get(chatThreadOnlyMuted$),
+          }
+        : undefined,
     );
   });
   const scrollListToIndex$ = createScrollListToIndexCommand(
@@ -227,10 +304,18 @@ export function createSidebarChatThreadScrollSignals({
     ) => {
       const threadId = typeof request === "string" ? request : request.threadId;
       const align = typeof request === "string" ? "top" : request.align;
+      if (get(chatFoldersEnabled$)) {
+        await set(revealChatFolderThread$, threadId, signal);
+      }
+      const list = await get(list$);
+      signal.throwIfAborted();
       const threadIds = await get(currentChatThreadListIds$);
       signal.throwIfAborted();
-
-      const index = threadIds.indexOf(threadId);
+      const index = list.folderRows$
+        ? get(list.folderRows$).findIndex((row) => {
+            return row.kind === "thread" && row.item.threadId === threadId;
+          })
+        : threadIds.indexOf(threadId);
       if (index === -1) {
         return false;
       }

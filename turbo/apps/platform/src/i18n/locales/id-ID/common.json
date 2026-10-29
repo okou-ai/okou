@@ -2041,6 +2041,27 @@
       "sourcePartsHeading_one": "{{count}} bagian dikutip dari {{description}}",
       "sourcePartsHeading_other": "{{count}} bagian dikutip dari {{description}}"
     },
+    "folders": {
+      "actions": "Tindakan untuk {{name}}",
+      "chats": "Chat",
+      "create": "Buat folder",
+      "delete": "Hapus folder",
+      "deleteDescription": "Hapus “{{name}}”? Hanya folder yang dihapus. Percakapan Anda tetap tersimpan.",
+      "description": "Folder mengatur chat pribadi Anda dalam Agen ini.",
+      "down": "Pindahkan folder ke bawah",
+      "empty": "Belum ada percakapan",
+      "failed": "Perubahan tidak dapat disimpan. Coba lagi.",
+      "move": "Pindahkan ke…",
+      "name": "Nama folder",
+      "refresh": "Muat ulang folder",
+      "rename": "Ubah nama folder",
+      "running": "Chat sedang berjalan",
+      "save": "Simpan",
+      "title": "Folder",
+      "unfiled": "Tanpa folder",
+      "unread": "Chat belum dibaca",
+      "up": "Pindahkan folder ke atas"
+    },
     "forward": {
       "action": "Teruskan",
       "agents": "Agen",

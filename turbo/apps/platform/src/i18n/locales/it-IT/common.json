@@ -2082,6 +2082,27 @@
       "sourcePartsHeading_many": "{{count}} parti citate da {{description}}",
       "sourcePartsHeading_other": "{{count}} parti citate da {{description}}"
     },
+    "folders": {
+      "actions": "Azioni per {{name}}",
+      "chats": "Chat",
+      "create": "Crea cartella",
+      "delete": "Elimina cartella",
+      "deleteDescription": "Eliminare “{{name}}”? Verrà eliminata solo la cartella. Le conversazioni saranno conservate.",
+      "description": "Le cartelle organizzano le tue chat personali in questo Agente.",
+      "down": "Sposta cartella in basso",
+      "empty": "Nessuna chat",
+      "failed": "Impossibile salvare le modifiche. Riprova.",
+      "move": "Sposta in…",
+      "name": "Nome della cartella",
+      "refresh": "Aggiorna cartelle",
+      "rename": "Rinomina cartella",
+      "running": "Chat in corso",
+      "save": "Salva",
+      "title": "Cartelle",
+      "unfiled": "Senza cartella",
+      "unread": "Chat non lette",
+      "up": "Sposta cartella in alto"
+    },
     "forward": {
       "action": "Inoltra",
       "agents": "Agenti",

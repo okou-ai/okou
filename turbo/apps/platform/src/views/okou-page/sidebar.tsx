@@ -1,3 +1,4 @@
+import { openWorkspaceSearchChat$ } from "../../signals/okou-page/workspace-chat-search.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
 import { useLastResolved, useGet, useSet } from "ccstate-react";
@@ -782,6 +783,7 @@ function LabeledNavRailFrame({
 }
 
 export function ThreeColumnSearchDialogContainer() {
+  const openSearchChat = useSet(openWorkspaceSearchChat$);
   const open = useGet(threeColumnSearchOpen$);
   const onOpenChange = useSet(setThreeColumnSearchOpen$);
   const navigate = useSet(detachedNavigateTo$);
@@ -795,9 +797,7 @@ export function ThreeColumnSearchDialogContainer() {
       open
       onOpenChange={onOpenChange}
       onSelectChatThread={(threadId) => {
-        navigate("/chats/:threadId", {
-          pathParams: { threadId },
-        });
+        openSearchChat(threadId);
       }}
       onSelectAgent={(agentId) => {
         navigate("/agents/:agentId/chat", {
