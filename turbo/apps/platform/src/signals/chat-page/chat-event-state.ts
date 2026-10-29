@@ -10,7 +10,6 @@ import type { ChatEvent } from "./chat-event-types.ts";
 
 import {
   isUsageEvent,
-  semanticChatEventsFromChatEvents,
   type SemanticChatEventState,
   type SemanticChatGroups,
 } from "@okouai/api-contracts/contracts/chat-event-semantics";
@@ -39,14 +38,6 @@ export function queuedEventsFromSemanticEvents(
   });
 }
 
-export function queuedEventsFromChatEvents(
-  events: readonly ChatEvent[],
-): QueuedChatEvent[] {
-  return queuedEventsFromSemanticEvents(
-    semanticChatEventsFromChatEvents(events),
-  );
-}
-
 export function lastAssistantCancelledFromGroups(
   groups: SemanticChatGroups,
 ): boolean {
@@ -60,12 +51,22 @@ export function lastAssistantCancelledFromGroups(
 export type RunIndicatorState = "running" | "queued" | null;
 type ActiveRunIndicatorState = "running" | null;
 
-interface RunIndicatorContext {
+interface ChatRunEventContext {
+  readonly revokedEventIds: ReadonlySet<string>;
   readonly terminatedRunIds: ReadonlySet<string>;
 }
 
+export function chatRunEventContextFromChatEvents(
+  events: readonly ChatEvent[],
+): ChatRunEventContext {
+  return {
+    revokedEventIds: revokedChatEventIds(events),
+    terminatedRunIds: terminatedChatRunIds(events),
+  };
+}
+
 function runActivityIndicatorState(
-  context: RunIndicatorContext,
+  context: ChatRunEventContext,
   runId: string,
 ): ActiveRunIndicatorState | undefined {
   if (context.terminatedRunIds.has(runId)) {
@@ -75,7 +76,7 @@ function runActivityIndicatorState(
 }
 
 function assistantRunIndicatorState(
-  context: RunIndicatorContext,
+  context: ChatRunEventContext,
   event: ChatEvent,
 ): ActiveRunIndicatorState | undefined {
   const runId = event.runId;
@@ -89,7 +90,7 @@ function assistantRunIndicatorState(
 }
 
 function nonAssistantRunIndicatorState(
-  context: RunIndicatorContext,
+  context: ChatRunEventContext,
   event: ChatEvent,
 ): ActiveRunIndicatorState | undefined {
   const { runId } = event;
@@ -123,7 +124,7 @@ function visibleRunStartIndexByRunId(
 function laterStartedRunIndicatorState(
   events: readonly ChatEvent[],
   terminatedRunId: string,
-  context: RunIndicatorContext,
+  context: ChatRunEventContext,
   revokedEventIds: ReadonlySet<string>,
   runStartIndexByRunId: ReadonlyMap<string, number>,
 ): "running" | undefined {
@@ -157,7 +158,7 @@ function laterStartedRunIndicatorState(
 function activeRunIndicatorStateFromChatEvents(
   events: readonly ChatEvent[],
   revokedEventIds: ReadonlySet<string>,
-  context: RunIndicatorContext,
+  context: ChatRunEventContext,
 ): ActiveRunIndicatorState {
   const runStartIndexByRunId = visibleRunStartIndexByRunId(
     events,
@@ -209,16 +210,19 @@ function activeRunIndicatorStateFromChatEvents(
 
 export function deriveRunIndicatorStateFromChatEvents(
   events: readonly ChatEvent[],
+  context: ChatRunEventContext,
 ): ActiveRunIndicatorState {
   return activeRunIndicatorStateFromChatEvents(
     events,
-    revokedChatEventIds(events),
-    { terminatedRunIds: terminatedChatRunIds(events) },
+    context.revokedEventIds,
+    context,
   );
 }
 
-function hasRunlessInput(events: readonly ChatEvent[]): boolean {
-  const revokedEventIds = revokedChatEventIds(events);
+function hasRunlessInput(
+  events: readonly ChatEvent[],
+  revokedEventIds: ReadonlySet<string>,
+): boolean {
   return events.some((event) => {
     return (
       isQueuedChatEvent(event) &&
@@ -236,18 +240,18 @@ function hasRunlessInput(events: readonly ChatEvent[]): boolean {
 export function deriveServerRunStateFromChatEvents(
   events: readonly ChatEvent[],
 ): RunIndicatorState {
-  const state = deriveRunIndicatorStateFromChatEvents(events);
+  const context = chatRunEventContextFromChatEvents(events);
+  const state = deriveRunIndicatorStateFromChatEvents(events, context);
   if (state !== null) {
     return state;
   }
-  return hasRunlessInput(events) ? "queued" : null;
+  return hasRunlessInput(events, context.revokedEventIds) ? "queued" : null;
 }
 
 export function liveRunIdsFromChatEvents(
   events: readonly ChatEvent[],
+  { terminatedRunIds, revokedEventIds }: ChatRunEventContext,
 ): string[] {
-  const terminatedRunIds = terminatedChatRunIds(events);
-  const revokedEventIds = revokedChatEventIds(events);
   const liveRunIds: string[] = [];
   const seenRunIds = new Set<string>();
   for (const event of events) {
@@ -271,15 +275,15 @@ export interface ChatRunModelSelection {
   readonly serviceTier?: ChatThreadServiceTier;
 }
 
-export function runningModelSelectionFromChatEvents(
+export function modelSelectionForChatRun(
   events: readonly ChatEvent[],
+  runningRunId: string | null,
+  revokedEventIds: ReadonlySet<string>,
 ): ChatRunModelSelection | null {
-  const runningRunId = liveRunIdsFromChatEvents(events).at(-1);
-  if (runningRunId === undefined) {
+  if (runningRunId === null) {
     return null;
   }
 
-  const revokedEventIds = revokedChatEventIds(events);
   for (const event of events) {
     if (
       event.eventType !== "input.prompt" ||

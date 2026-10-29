@@ -1,30 +1,22 @@
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { logger } from "../log.ts";
 import { createActiveRunSubscription } from "./active-run-subscription.ts";
-import { liveRunIdsFromChatEvents } from "./chat-event-state.ts";
 import { appendOptimisticSessionOutput$ } from "./optimistic-chat-events.ts";
 import { notifyChatEventsChanged$ } from "./chat-event-change-registry.ts";
-import type { ChatEvent } from "./chat-event-types.ts";
+import type { ChatEventSignals } from "./chat-event-signals.ts";
 
 const L = logger("SessionOutputStream");
 
-/** The run whose transient output this thread should be streaming, if any. */
-function createActiveRunId$(
-  chatEvents$: Computed<ChatEvent[]>,
-): Computed<string | null> {
-  return computed((get) => {
-    return liveRunIdsFromChatEvents(get(chatEvents$)).at(-1) ?? null;
-  });
-}
-
 export function createSessionOutputStreamSignals(
   threadId: string,
-  chatEvents$: Computed<ChatEvent[]>,
+  {
+    chatEvents$,
+    activeRunId$,
+  }: Pick<ChatEventSignals, "chatEvents$" | "activeRunId$">,
 ) {
-  const activeRunId$ = createActiveRunId$(chatEvents$);
   const receive$ = command(
     async (
       { get, set },

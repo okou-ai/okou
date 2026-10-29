@@ -121,39 +121,30 @@ export function semanticChatEventsFromChatEvents(
 export function semanticChatEventsFromChatEvents(
   events: readonly ChatEvent[],
 ): SemanticChatEventState[] {
-  const interruptedRunIds = new Set(
-    events.flatMap((event) => {
-      return isInterruptControlEvent(event) && event.interruptsRunId
-        ? [event.interruptsRunId]
-        : [];
-    }),
-  );
-  const recalledIds = new Set(
-    events.flatMap((event) => {
-      return isRecallControlEvent(event) && event.revokesEventId
-        ? [event.revokesEventId]
-        : [];
-    }),
-  );
-  const replacedIds = new Set(
-    events.flatMap((event) => {
-      return !isRecallControlEvent(event) && event.revokesEventId
-        ? [event.revokesEventId]
-        : [];
-    }),
-  );
-  const automationInputIds = new Set(
-    events.flatMap((event) => {
-      return event.eventType === "input.automation" ? [event.id] : [];
-    }),
-  );
-
-  // Resolve submission times and origins before hiding replaced inputs.
-  // Delivery appends a new event, but does not start another user-facing work
-  // interval or another user turn.
+  const interruptedRunIds = new Set<string>();
+  const recalledIds = new Set<string>();
+  const replacedIds = new Set<string>();
+  const automationInputIds = new Set<string>();
   const inputCreatedAtById = new Map<string, string>();
   const inputOriginIdById = new Map<string, string>();
   for (const event of events) {
+    if (isInterruptControlEvent(event) && event.interruptsRunId) {
+      interruptedRunIds.add(event.interruptsRunId);
+    }
+    if (event.revokesEventId) {
+      if (isRecallControlEvent(event)) {
+        recalledIds.add(event.revokesEventId);
+      } else {
+        replacedIds.add(event.revokesEventId);
+      }
+    }
+    if (event.eventType === "input.automation") {
+      automationInputIds.add(event.id);
+    }
+
+    // Resolve submission times and origins before hiding replaced inputs.
+    // Delivery appends a new event, but does not start another user-facing work
+    // interval or another user turn.
     if (isChatInputEventType(event.eventType)) {
       const previousCreatedAt = event.revokesEventId
         ? inputCreatedAtById.get(event.revokesEventId)

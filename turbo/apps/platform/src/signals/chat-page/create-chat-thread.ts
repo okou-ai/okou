@@ -70,11 +70,9 @@ import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
 import { createThreadSidebarSignals } from "./thread-sidebar.ts";
 
 import {
-  groupSemanticChatEvents,
   isInterruptControlEvent,
   isInterruptedAssistantCancellation,
   isUsageEvent,
-  semanticChatEventsFromChatEvents,
   type SemanticChatGroups as GenericSemanticChatGroups,
   type SemanticChatEventState,
 } from "@okouai/api-contracts/contracts/chat-event-semantics";
@@ -155,11 +153,7 @@ import {
   type SendChatEventInput,
   type SendInputChatEvent,
 } from "./chat-event-signals.ts";
-import {
-  liveRunIdsFromChatEvents,
-  queuedEventsFromChatEvents,
-  type RunIndicatorState,
-} from "./chat-event-state.ts";
+import type { RunIndicatorState } from "./chat-event-state.ts";
 import type {
   ChatEventGroup,
   EnrichedChatEvent,
@@ -1288,7 +1282,7 @@ function latestRecommendedFollowupsFromGroups(
 }
 
 function createEventSemanticSignals(
-  semanticEvents$: Computed<SemanticChatEventState[]>,
+  semanticGroups$: ChatEventSignals["semanticGroups$"],
   {
     serverRunState$,
     hasOptimisticUserMessage$,
@@ -1296,9 +1290,6 @@ function createEventSemanticSignals(
     runActive$,
   }: ThinkingIndicatorSources & { runActive$: Computed<boolean> },
 ) {
-  const semanticGroups$ = computed((get): SemanticChatGroups => {
-    return groupSemanticChatEvents(get(semanticEvents$));
-  });
   const thinkingIndicators$ = computed(
     async (get): Promise<ThinkingIndicators | null> => {
       const serverRunState = get(serverRunState$);
@@ -1326,13 +1317,6 @@ function createEventSemanticSignals(
       !get(runActive$) && runFinishedFromGroups(get(semanticGroups$)),
     );
   });
-  const hasEvents$ = computed((get): Promise<boolean> => {
-    return Promise.resolve(
-      get(semanticEvents$).some((entry) => {
-        return !isUsageEvent(entry.event);
-      }),
-    );
-  });
   const recommendedFollowupSource$ = computed(
     (get): Promise<RecommendedFollowupSource | null> => {
       return Promise.resolve(
@@ -1348,7 +1332,6 @@ function createEventSemanticSignals(
     return Promise.resolve(formatDonePhrase(lastEvent));
   });
   return {
-    hasEvents$,
     thinkingIndicators$,
     runFinished$,
     recommendedFollowupSource$,
@@ -2058,27 +2041,29 @@ interface ThinkingIndicatorSources {
 }
 
 function createPagedEventProjections({
-  chatEvents$,
+  chatEvents,
   thinkingSources,
   eventRenderResources$,
 }: {
-  chatEvents$: Computed<ChatEvent[]>;
+  chatEvents: ChatEventSignals;
   thinkingSources: ThinkingIndicatorSources;
   eventRenderResources$: Computed<ChatEventRenderResources>;
 }) {
+  const { chatEvents$, semanticEvents$, semanticGroups$, hasEvents$ } =
+    chatEvents;
   const rawEvents$ = createRawEventsComputed(chatEvents$);
-  const semanticEvents$ = computed((get): SemanticChatEventState[] => {
-    return semanticChatEventsFromChatEvents(get(chatEvents$));
-  });
   const { serverRunState$, hasOptimisticUserMessage$ } = thinkingSources;
+  // Transcript activity includes server-queued and unacknowledged input;
+  // unlike sending$, it is not just a live Run that has not been cancelled.
   const runActive$ = computed((get): boolean => {
     return get(serverRunState$) !== null || get(hasOptimisticUserMessage$);
   });
   return {
     rawEvents$,
     chatEvents$,
+    hasEvents$,
     ...createLatestEventSignals(rawEvents$),
-    ...createEventSemanticSignals(semanticEvents$, {
+    ...createEventSemanticSignals(semanticGroups$, {
       ...thinkingSources,
       runActive$,
     }),
@@ -2344,9 +2329,12 @@ function createChatThreadMessagePipeline({
     chatActionContext,
     connector,
   });
-  const usage = createChatRunUsageSignals(threadId, chatEvents.chatEvents$);
+  const usage = createChatRunUsageSignals(
+    threadId,
+    chatEvents.lastUsageEventIdByRunId$,
+  );
   const projections = createPagedEventProjections({
-    chatEvents$: chatEvents.chatEvents$,
+    chatEvents,
     thinkingSources: {
       serverRunState$: chatEvents.serverRunState$,
       hasOptimisticUserMessage$: chatEvents.hasOptimisticUserMessage$,
@@ -3362,21 +3350,19 @@ function createQueueMessage(deps: SendMessageDeps) {
 interface RecallMessageDeps {
   readonly threadId: string;
   readonly agentId: string;
-  chatEvents$: Computed<ChatEvent[]>;
+  readonly queuedEvents$: ChatEventSignals["queuedEvents$"];
   draft: DraftSignals;
   queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
   sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }
 
 function createRecallMessage(deps: RecallMessageDeps) {
-  const { agentId, chatEvents$, draft, queueDraftSync$, sendEvent$ } = deps;
+  const { agentId, queuedEvents$, draft, queueDraftSync$, sendEvent$ } = deps;
 
   return command(async ({ get, set }, eventId: string, signal: AbortSignal) => {
-    const event = queuedEventsFromChatEvents(get(chatEvents$)).find(
-      (candidate) => {
-        return candidate.id === eventId;
-      },
-    );
+    const event = get(queuedEvents$).find((candidate) => {
+      return candidate.id === eventId;
+    });
     if (!event || event.eventType !== "input.prompt") {
       return;
     }
@@ -3415,7 +3401,7 @@ function createRecallMessage(deps: RecallMessageDeps) {
 
 function createSkipAutomationEvent({
   agentId,
-  chatEvents$,
+  queuedEvents$,
   sendEvent$,
 }: RecallMessageDeps) {
   return command(
@@ -3424,14 +3410,11 @@ function createSkipAutomationEvent({
       eventId: string,
       signal: AbortSignal,
     ): Promise<void> => {
-      const event = queuedEventsFromChatEvents(get(chatEvents$)).find(
-        (candidate) => {
-          return (
-            candidate.id === eventId &&
-            candidate.eventType === "input.automation"
-          );
-        },
-      );
+      const event = get(queuedEvents$).find((candidate) => {
+        return (
+          candidate.id === eventId && candidate.eventType === "input.automation"
+        );
+      });
       if (!event) {
         return;
       }
@@ -3450,7 +3433,9 @@ function createSkipAutomationEvent({
   );
 }
 
-interface MessageCommandsDeps extends SendMessageDeps, RecallMessageDeps {}
+interface MessageCommandsDeps extends SendMessageDeps, RecallMessageDeps {
+  readonly liveRunIds$: ChatEventSignals["liveRunIds$"];
+}
 
 function createMessageCommands(deps: MessageCommandsDeps) {
   return {
@@ -3475,12 +3460,12 @@ function createThreadMessageActions(deps: MessageCommandsDeps) {
 function createInterruptLiveRuns({
   threadId,
   agentId,
-  chatEvents$,
+  liveRunIds$,
   sendEvent$,
 }: {
   readonly threadId: string;
   readonly agentId: string;
-  chatEvents$: Computed<ChatEvent[]>;
+  readonly liveRunIds$: ChatEventSignals["liveRunIds$"];
   sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }) {
   const optimisticCreateUnsettled$ =
@@ -3493,7 +3478,7 @@ function createInterruptLiveRuns({
       return;
     }
     await Promise.all(
-      liveRunIdsFromChatEvents(get(chatEvents$)).map((runId) => {
+      get(liveRunIds$).map((runId) => {
         return set(
           sendEvent$,
           {
@@ -3685,7 +3670,7 @@ function createChatThreadComposerSignals(
         ? noOpComposerDraftAction$
         : options.queueDraftSync$,
     },
-    chatEvents$: options.chatEvents.chatEvents$,
+    eventSignals: options.chatEvents,
     threadId: options.chatEvents.threadId,
     voiceDraftTarget: `thread:${options.chatEvents.threadId}`,
     singleLineOnMobile: true,
@@ -3751,7 +3736,8 @@ function createThreadComposerSignalsWithContext(
     threadId,
     agentId: context.agentId,
     modelSelectionForSend$,
-    chatEvents$: chatEvents.chatEvents$,
+    queuedEvents$: chatEvents.queuedEvents$,
+    liveRunIds$: chatEvents.liveRunIds$,
     draft,
     queueDraftSync$,
     cancelDraftSync$,
@@ -3826,13 +3812,10 @@ export function createChatPanelSignals(
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
   const threadMetadata = createThreadMetadata(threadMeta$);
-  const sessionOutput = createSessionOutputStreamSignals(
-    threadId,
-    chatEvents.chatEvents$,
-  );
+  const sessionOutput = createSessionOutputStreamSignals(threadId, chatEvents);
   const activity = createThreadActivitySummarySignals(
     threadId,
-    chatEvents.chatEvents$,
+    chatEvents,
     threadMeta$,
   );
   const container = createChatThreadContainerSignals();
