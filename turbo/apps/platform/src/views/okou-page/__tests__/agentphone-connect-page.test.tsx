@@ -1,5 +1,8 @@
+import userEvent from "@testing-library/user-event";
 import { act, screen, waitFor } from "@testing-library/react";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { integrationsWhatsappContract } from "@okouai/api-contracts/contracts/integrations-whatsapp";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import {
@@ -286,4 +289,171 @@ test("shows when phone connection is unavailable", async () => {
   ).resolves.toBeInTheDocument();
   expect(findConnectButton()).toBeUndefined();
   expect(getControl("link", "Back to settings")).toBeInTheDocument();
+});
+
+function whatsappPath() {
+  return connectPath(SIGNATURE)
+    .replace("/settings/agentphone", "/settings/whatsapp")
+    .replace("channel=sms", "channel=whatsapp");
+}
+
+test("connects a signed WhatsApp link through its own API and opens WhatsApp", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(
+    integrationsWhatsappContract.getConnectStatus,
+    ({ respond }) => {
+      return respond(200, { kind: "connect" });
+    },
+  );
+  context.mocks.api(
+    integrationsWhatsappContract.getLinkStatus,
+    ({ respond }) => {
+      return respond(200, {
+        linked: false,
+        agentPhoneNumber: "+19039853128",
+        configured: true,
+      });
+    },
+  );
+  context.mocks.api(
+    integrationsWhatsappContract.connectWhatsapp,
+    ({ body, respond }) => {
+      requests.push(body);
+      return respond(200, { phoneHandle: PHONE_HANDLE });
+    },
+  );
+  await setupPage({
+    context,
+    path: whatsappPath(),
+    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: true },
+  });
+  await expect(
+    screen.findByText("Connect WhatsApp"),
+  ).resolves.toBeInTheDocument();
+  click(getConnectButton());
+  await expect(
+    screen.findByText("WhatsApp connected"),
+  ).resolves.toBeInTheDocument();
+  expect(getControl("link", "Open WhatsApp")).toHaveAttribute(
+    "href",
+    "https://wa.me/19039853128",
+  );
+  expect(requests).toStrictEqual([
+    {
+      phoneHandle: PHONE_HANDLE,
+      agentphoneAgentId: AGENT_ID,
+      timestamp: TIMESTAMP,
+      signature: SIGNATURE,
+      channel: "whatsapp",
+    },
+  ]);
+});
+
+test("confirms the current WhatsApp number before replacing it", async () => {
+  const previous = "+4915123456789";
+  const requests: unknown[] = [];
+  context.mocks.api(
+    integrationsWhatsappContract.getConnectStatus,
+    ({ respond }) => {
+      return respond(200, {
+        kind: "phone_mismatch",
+        currentPhoneHandle: previous,
+      });
+    },
+  );
+  context.mocks.api(
+    integrationsWhatsappContract.getLinkStatus,
+    ({ respond }) => {
+      return respond(200, {
+        linked: true,
+        phoneHandle: previous,
+        agentPhoneNumber: "+19039853128",
+        configured: true,
+      });
+    },
+  );
+  context.mocks.api(
+    integrationsWhatsappContract.connectWhatsapp,
+    ({ body, respond }) => {
+      requests.push(body);
+      return respond(200, { phoneHandle: PHONE_HANDLE });
+    },
+  );
+  await setupPage({
+    context,
+    path: whatsappPath(),
+    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: true },
+  });
+  const action = await waitFor(() => {
+    return getControl("button", `Switch to ${PHONE_HANDLE}`);
+  });
+  expect(requests).toHaveLength(0);
+  click(action);
+  await expect(
+    screen.findByText("WhatsApp connected"),
+  ).resolves.toBeInTheDocument();
+  expect(requests).toStrictEqual([
+    expect.objectContaining({
+      replacePhoneHandle: previous,
+      channel: "whatsapp",
+    }),
+  ]);
+});
+
+test("keeps the WhatsApp connection page unavailable when its switch is off", async () => {
+  await setupPage({
+    context,
+    path: whatsappPath(),
+    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: false },
+  });
+  await expect(
+    screen.findByText("WhatsApp is not configured yet"),
+  ).resolves.toBeInTheDocument();
+  expect(findConnectButton()).toBeUndefined();
+});
+
+test("offers the existing WhatsApp QR flow from its dedicated settings page", async () => {
+  context.mocks.api(
+    integrationsWhatsappContract.getLinkStatus,
+    ({ respond }) => {
+      return respond(200, {
+        linked: false,
+        agentPhoneNumber: "+19039853128",
+        configured: true,
+      });
+    },
+  );
+  context.mocks.api(
+    integrationsWhatsappContract.createLinkCode,
+    ({ respond }) => {
+      return respond(200, {
+        code: "12345678",
+        expiresAt: "2026-10-29T01:10:00.000Z",
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/settings/whatsapp",
+    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: true },
+  });
+  await expect(
+    screen.findByText("Connect WhatsApp"),
+  ).resolves.toBeInTheDocument();
+  const connectButton = getConnectButton();
+  connectButton.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect(
+    screen.findByRole("dialog", { name: "Connect WhatsApp" }),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    waitFor(() => {
+      return getControl("link", "Open WhatsApp");
+    }),
+  ).resolves.toHaveAttribute("href", "https://wa.me/19039853128?text=12345678");
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(connectButton).toHaveFocus();
 });

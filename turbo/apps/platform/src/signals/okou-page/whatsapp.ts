@@ -54,7 +54,7 @@ export const createWhatsappLinkCode$ = command(
   },
 );
 
-const reloadWhatsappLinkStatus$ = command(({ set }) => {
+export const reloadWhatsappLinkStatus$ = command(({ set }) => {
   set(internalReload$, (prev) => {
     return prev + 1;
   });

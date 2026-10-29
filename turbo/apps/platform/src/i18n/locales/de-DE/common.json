@@ -7183,6 +7183,7 @@
     "whatsapp": {
       "codeError": "Der Verbindungscode konnte nicht erstellt werden. Versuche es erneut.",
       "connect": "WhatsApp verbinden",
+      "connectDescription": "Verbinde dein WhatsApp-Konto mit {{brandName}}, um mit deinem Agenten zu chatten.",
       "connected": "WhatsApp verbunden",
       "description": "Direkt in WhatsApp mit Okou chatten",
       "disconnected": "WhatsApp getrennt",
@@ -7195,6 +7196,7 @@
       "options": "WhatsApp-Optionen",
       "qrTitle": "Scannen, um WhatsApp zu verbinden",
       "regenerate": "Neuen Code erstellen",
+      "successDescription": "{{phone}} ist verbunden. Sende eine WhatsApp-Nachricht, um zu chatten.",
       "unavailable": "WhatsApp ist noch nicht eingerichtet"
     }
   }

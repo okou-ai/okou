@@ -11,6 +11,7 @@ import {
 } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { integrationsAgentPhoneContract } from "./integrations-agentphone";
 
 const c = initContract();
 const linkStatusSchema = discriminatedUnion("linked", [
@@ -36,6 +37,26 @@ const sendErrorSchema = apiErrorSchema.extend({
 });
 
 export const integrationsWhatsappContract = c.router({
+  getConnectStatus: {
+    ...integrationsAgentPhoneContract.getConnectStatus,
+    path: "/api/integrations/whatsapp/connect-status",
+    responses: {
+      ...integrationsAgentPhoneContract.getConnectStatus.responses,
+      404: apiErrorSchema,
+    },
+    summary: "Check a signed WhatsApp connection link before connecting",
+  },
+  connectWhatsapp: {
+    ...integrationsAgentPhoneContract.connectAgentPhone,
+    path: "/api/integrations/whatsapp/connect",
+    responses: {
+      ...integrationsAgentPhoneContract.connectAgentPhone.responses,
+      404: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary:
+      "Link the authenticated user to an independently verified WhatsApp handle",
+  },
   getLinkStatus: {
     method: "GET",
     path: "/api/integrations/whatsapp/link",

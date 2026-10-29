@@ -7159,6 +7159,7 @@
     "whatsapp": {
       "codeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
       "connect": "Hubungkan WhatsApp",
+      "connectDescription": "Hubungkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan agen Anda.",
       "connected": "WhatsApp terhubung",
       "description": "Mengobrol dengan Okou langsung dari WhatsApp",
       "disconnected": "WhatsApp terputus",
@@ -7171,6 +7172,7 @@
       "options": "Opsi WhatsApp",
       "qrTitle": "Pindai untuk menghubungkan WhatsApp",
       "regenerate": "Buat kode baru",
+      "successDescription": "{{phone}} terhubung. Kirim pesan WhatsApp untuk mulai mengobrol.",
       "unavailable": "WhatsApp belum dikonfigurasi"
     }
   }

@@ -7181,6 +7181,7 @@
     "whatsapp": {
       "codeError": "Could not create a connection code. Try again.",
       "connect": "Connect WhatsApp",
+      "connectDescription": "Link your WhatsApp account to {{brandName}} to chat with your agent.",
       "connected": "WhatsApp connected",
       "description": "Chat with Okou directly from WhatsApp",
       "disconnected": "WhatsApp disconnected",
@@ -7193,6 +7194,7 @@
       "options": "WhatsApp options",
       "qrTitle": "Scan to connect WhatsApp",
       "regenerate": "Generate a new code",
+      "successDescription": "{{phone}} is connected. Send a WhatsApp message to start chatting.",
       "unavailable": "WhatsApp is not configured yet"
     }
   }

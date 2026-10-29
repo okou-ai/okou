@@ -7159,6 +7159,7 @@
     "whatsapp": {
       "codeError": "연결 코드를 생성하지 못했습니다. 다시 시도하세요.",
       "connect": "WhatsApp 연결",
+      "connectDescription": "WhatsApp 계정을 {{brandName}}에 연결하여 에이전트와 채팅하세요.",
       "connected": "WhatsApp 연결됨",
       "description": "WhatsApp에서 Okou와 바로 대화하세요",
       "disconnected": "WhatsApp 연결 해제됨",
@@ -7171,6 +7172,7 @@
       "options": "WhatsApp 옵션",
       "qrTitle": "스캔하여 WhatsApp 연결",
       "regenerate": "새 코드 생성",
+      "successDescription": "{{phone}}이(가) 연결되었습니다. WhatsApp 메시지를 보내 채팅을 시작하세요.",
       "unavailable": "WhatsApp이 아직 설정되지 않았습니다"
     }
   }

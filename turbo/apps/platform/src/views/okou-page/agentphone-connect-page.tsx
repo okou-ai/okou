@@ -6,6 +6,8 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import {
   agentPhoneConnectStatus$,
+  isWhatsappConnectPage$,
+  phoneConnectionLinkStatus$,
   connectAgentPhoneAccount$,
 } from "../../signals/okou-page/agentphone-connect-signals.ts";
 import {
@@ -18,6 +20,18 @@ import {
   setAgentPhoneConnectDialogOpen$,
 } from "../../signals/okou-page/agentphone.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { Dialog } from "@okouai/ui/components/ui/dialog";
+import { WhatsappMark } from "./components/whatsapp-mark.tsx";
+import { WhatsappConnectContent } from "./whatsapp-card.tsx";
+import {
+  whatsappLinkStatus$,
+  whatsappConnectDialogOpen$,
+  setWhatsappConnectDialogOpen$,
+  createWhatsappLinkCode$,
+} from "../../signals/okou-page/whatsapp.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { AgentPhoneConnectDialog } from "./agentphone-connect-dialog.tsx";
 import {
@@ -39,7 +53,12 @@ import {
 const imessageIconImg = settingsIconAssetUrl("imessage");
 
 function MessageIcon({ size = 40 }: { size?: number }) {
-  return <img src={imessageIconImg} alt="" width={size} height={size} />;
+  const whatsapp = useGet(isWhatsappConnectPage$);
+  return whatsapp ? (
+    <WhatsappMark size={size} className="text-green-600" />
+  ) : (
+    <img src={imessageIconImg} alt="" width={size} height={size} />
+  );
 }
 
 function MessageMark({ state }: { state?: MarkState }) {
@@ -68,7 +87,8 @@ function AgentPhoneSuccess({
   channel: string | null;
 }) {
   const { t } = useTranslation();
-  const status = useLoadable(agentPhoneLinkStatus$);
+  const whatsapp = useGet(isWhatsappConnectPage$);
+  const status = useLoadable(phoneConnectionLinkStatus$);
   if (status.state === "hasError") {
     return (
       <ConnectErrorState
@@ -88,17 +108,29 @@ function AgentPhoneSuccess({
   return (
     <ConnectSuccessState
       title={t(($) => {
-        return $.connectors.providerConnect.agentphone.successTitle;
+        return whatsapp
+          ? $.works.whatsapp.connected
+          : $.connectors.providerConnect.agentphone.successTitle;
       })}
       description={t(
         ($) => {
-          return $.connectors.providerConnect.agentphone.successDescription;
+          return whatsapp
+            ? $.works.whatsapp.successDescription
+            : $.connectors.providerConnect.agentphone.successDescription;
         },
         { phone },
       )}
-      openHref={number ? `sms:${number}` : null}
+      openHref={
+        number
+          ? whatsapp
+            ? `https://wa.me/${number.replace(/^\+/u, "")}`
+            : `sms:${number}`
+          : null
+      }
       openLabel={t(($) => {
-        return $.connectors.providerSettings.agentphone.openMessages;
+        return whatsapp
+          ? $.works.whatsapp.open
+          : $.connectors.providerSettings.agentphone.openMessages;
       })}
       openIcon={<MessageIcon size={16} />}
       notice={<SmsMmsRiskNotice channel={channel} />}
@@ -170,6 +202,74 @@ function AgentPhoneOverview() {
   );
 }
 
+function WhatsappOverview() {
+  const { t } = useTranslation();
+  const status = useLoadable(whatsappLinkStatus$);
+  const [codeLoadable, createCode] = useLoadableSet(createWhatsappLinkCode$);
+  const signal = useGet(pageSignal$);
+  const open = useGet(whatsappConnectDialogOpen$);
+  const setOpen = useSet(setWhatsappConnectDialogOpen$);
+  const generateCode = () => {
+    detach(createCode(signal), Reason.DomCallback);
+  };
+  if (status.state === "hasError") {
+    return (
+      <ConnectErrorState
+        message={connectErrorMessage(
+          status.error,
+          t(($) => {
+            return $.works.whatsapp.codeError;
+          }),
+        )}
+      />
+    );
+  }
+  if (status.state !== "hasData") {
+    return <ConnectCheckingState />;
+  }
+  if (status.data.linked) {
+    return (
+      <AgentPhoneSuccess phone={status.data.phoneHandle} channel="whatsapp" />
+    );
+  }
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <MessageMark />
+      <CenterText
+        title={t(($) => {
+          return $.works.whatsapp.connect;
+        })}
+        body={t(($) => {
+          return $.works.whatsapp.description;
+        })}
+      />
+      {status.data.configured ? (
+        <ConnectSubmitButton
+          connecting={codeLoadable.state === "loading"}
+          onConnect={() => {
+            setOpen(true);
+            generateCode();
+          }}
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.works.whatsapp.unavailable;
+          })}
+        </p>
+      )}
+      <SettingsBackLink />
+      <WhatsappConnectContent
+        phone={status.data.agentPhoneNumber}
+        code={codeLoadable.state === "hasData" ? codeLoadable.data : null}
+        loading={codeLoadable.state === "loading"}
+        failed={codeLoadable.state === "hasError"}
+        onGenerate={generateCode}
+      />
+    </Dialog>
+  );
+}
+
 function PhoneMismatchState({
   currentPhone,
   requestedPhone,
@@ -232,6 +332,24 @@ function PhoneMismatchState({
   );
 }
 
+function PhoneInUseState() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <MessageMark state="error" />
+      <CenterText
+        title={t(($) => {
+          return $.connectors.providerConnect.agentphone.phoneInUseTitle;
+        })}
+        body={t(($) => {
+          return $.connectors.providerConnect.agentphone.phoneInUseDescription;
+        })}
+      />
+      <SettingsBackLink />
+    </>
+  );
+}
+
 export function AgentPhoneConnectPage() {
   return (
     <PageShell>
@@ -244,7 +362,14 @@ function PageContent() {
   const { t } = useTranslation();
   const brandName = useGet(brandName$);
   const params = useGet(searchParams$);
-  const parsed = parseAgentPhoneConnectParams(params);
+  const whatsapp = useGet(isWhatsappConnectPage$);
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.WhatsappIntegration];
+  const parsed = parseAgentPhoneConnectParams(
+    params,
+    whatsapp
+      ? INTEGRATION_SETTINGS_PATHS.whatsapp
+      : INTEGRATION_SETTINGS_PATHS.agentphone,
+  );
   const statusLoadable = useLoadable(agentPhoneConnectStatus$);
   const [connectLoadable, connectAgentPhone] = useLoadableSet(
     connectAgentPhoneAccount$,
@@ -262,12 +387,21 @@ function PageContent() {
           }),
         )
       : null;
+  if (whatsapp && !enabled) {
+    return (
+      <ConnectErrorState
+        message={t(($) => {
+          return $.works.whatsapp.unavailable;
+        })}
+      />
+    );
+  }
   if (
     !["handle", "agent", "ts", "sig", "channel"].some((key) => {
       return params.has(key);
     })
   ) {
-    return <AgentPhoneOverview />;
+    return whatsapp ? <WhatsappOverview /> : <AgentPhoneOverview />;
   }
   if (!parsed.ok) {
     return <ConnectInvalidLinkState description={parsed.error.message} />;
@@ -297,21 +431,7 @@ function PageContent() {
     );
   }
   if (status.kind === "phone_in_use") {
-    return (
-      <>
-        <MessageMark state="error" />
-        <CenterText
-          title={t(($) => {
-            return $.connectors.providerConnect.agentphone.phoneInUseTitle;
-          })}
-          body={t(($) => {
-            return $.connectors.providerConnect.agentphone
-              .phoneInUseDescription;
-          })}
-        />
-        <SettingsBackLink />
-      </>
-    );
+    return <PhoneInUseState />;
   }
   if (status.kind === "phone_mismatch") {
     return (
@@ -335,11 +455,15 @@ function PageContent() {
       <MessageMark />
       <CenterText
         title={t(($) => {
-          return $.connectors.providerConnect.agentphone.connectTitle;
+          return whatsapp
+            ? $.works.whatsapp.connect
+            : $.connectors.providerConnect.agentphone.connectTitle;
         })}
         body={t(
           ($) => {
-            return $.connectors.providerConnect.agentphone.connectDescription;
+            return whatsapp
+              ? $.works.whatsapp.connectDescription
+              : $.connectors.providerConnect.agentphone.connectDescription;
           },
           { brandName },
         )}
