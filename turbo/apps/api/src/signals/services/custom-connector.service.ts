@@ -1200,7 +1200,7 @@ function validateAndNormalizePrefixTemplate(args: {
         : "not a valid URL";
     return badRequestMessage(`Invalid prefix URL: ${args.raw}: ${message}`);
   }
-  return normalised;
+  return trimmed;
 }
 
 function validateAndNormalizeMcpEndpoint(
