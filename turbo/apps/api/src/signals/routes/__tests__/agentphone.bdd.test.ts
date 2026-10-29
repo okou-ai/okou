@@ -4247,6 +4247,194 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     }
   });
 
+  it("opens new iMessage group threads and resumes user, nested, and bot replies in the original thread", async () => {
+    const { actor, phone, runnerGroup, sends, ap } =
+      await entitledLinkedActor();
+    const chat = createChatFilesBddApi(context);
+    const conversationId = uniqueConversationId();
+    const rootPrompt = "@Okou plan the launch";
+    const rootMessageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: rootPrompt,
+      conversationId,
+      isGroup: true,
+    });
+    const first = await claimDispatchedRun(runnerGroup);
+    await completeSandboxRun(first.sandboxToken, first.runId, 0);
+    await flushWaitUntilForTest();
+    const answerMessageId = lastSend(sends).messageId;
+    const originalSession = await waitForRunSessionIdPresent(
+      actor,
+      first.runId,
+    );
+
+    const independentPrompt = "@Okou start a separate budget review";
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: independentPrompt,
+      conversationId,
+      isGroup: true,
+    });
+    const independent = await claimDispatchedRun(runnerGroup);
+    expect(independent.resumedSessionId).toBeUndefined();
+    await completeSandboxRun(independent.sandboxToken, independent.runId, 0);
+    const independentSession = await waitForRunSessionIdPresent(
+      actor,
+      independent.runId,
+    );
+    expect(independentSession).not.toBe(originalSession);
+
+    const replyPrompts = [
+      "@Okou add a launch date",
+      "@Okou move that date one week later",
+      "@Okou expand your original answer",
+    ];
+    let previousMessageId = rootMessageId;
+    for (const [index, body] of replyPrompts.entries()) {
+      previousMessageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body,
+        conversationId,
+        isGroup: true,
+        replyToMessageId: index === 2 ? answerMessageId : previousMessageId,
+      });
+      const reply = await claimDispatchedRun(runnerGroup);
+      expect(reply.resumedSessionId).toBe(originalSession);
+      await completeSandboxRun(reply.sandboxToken, reply.runId, 0);
+      await waitForRunSessionId(actor, reply.runId, originalSession);
+    }
+
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected iMessage group threads to be listed");
+    }
+    const threads = lifecycle.body.events.filter((event) => {
+      return event.kind === "created";
+    });
+    expect(threads).toHaveLength(2);
+    const threadPrompts = await Promise.all(
+      threads.map(async (thread) => {
+        const history = await chat.listThreadEvents(actor, thread.chatThreadId);
+        return history.events
+          .filter((event) => {
+            return event.eventType === "input.prompt";
+          })
+          .filter((event) => {
+            return event.runId !== undefined;
+          })
+          .flatMap((event) => {
+            return event.userMessage.parts;
+          })
+          .flatMap((part) => {
+            return part.type === "text" ? [part.text] : [];
+          });
+      }),
+    );
+    expect(threadPrompts).toStrictEqual(
+      expect.arrayContaining([
+        [rootPrompt, ...replyPrompts],
+        [independentPrompt],
+      ]),
+    );
+  });
+
+  it("anchors iMessage group replies to an ambient message without an existing web thread", async () => {
+    const { actor, phone, runnerGroup, ap } = await entitledLinkedActor();
+    const chat = createChatFilesBddApi(context);
+    const conversationId = uniqueConversationId();
+    const ambientMessageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "The launch is scheduled for Friday",
+      conversationId,
+      isGroup: true,
+    });
+    let sessionId: string | undefined;
+    for (const body of ["@Okou summarize this plan", "@Okou list the risks"]) {
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body,
+        conversationId,
+        isGroup: true,
+        replyToMessageId: ambientMessageId,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.resumedSessionId).toBe(sessionId);
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      sessionId = await waitForRunSessionIdPresent(actor, run.runId);
+    }
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error(
+        "Expected the ambient message's reply thread to be listed",
+      );
+    }
+    expect(
+      lifecycle.body.events.filter((event) => {
+        return event.kind === "created";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("scopes iMessage reply routing to the linked sender and group conversation", async () => {
+    const owner = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
+    const rootMessageId = await owner.ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: owner.phone,
+      body: "@Okou keep this owner's thread",
+      conversationId,
+      isGroup: true,
+    });
+    const ownerRun = await claimDispatchedRun(owner.runnerGroup);
+    await completeSandboxRun(ownerRun.sandboxToken, ownerRun.runId, 0);
+    const ownerSession = await waitForRunSessionIdPresent(
+      owner.actor,
+      ownerRun.runId,
+    );
+
+    const member = await entitledLinkedActor();
+    for (const { linked, conversation } of [
+      { linked: member, conversation: conversationId },
+      { linked: owner, conversation: uniqueConversationId() },
+    ]) {
+      await linked.ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: linked.phone,
+        body: "@Okou start my own discussion",
+        conversationId: conversation,
+        isGroup: true,
+        replyToMessageId: rootMessageId,
+      });
+      const run = await claimDispatchedRun(member.runnerGroup);
+      expect(run.resumedSessionId).toBeUndefined();
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      const session = await waitForRunSessionIdPresent(linked.actor, run.runId);
+      expect(session).not.toBe(ownerSession);
+    }
+    const chat = createChatFilesBddApi(context);
+    for (const { linked, count } of [
+      { linked: owner, count: 2 },
+      { linked: member, count: 1 },
+    ]) {
+      const lifecycle = await chat.requestThreadEvents(linked.actor, {}, [200]);
+      if (lifecycle.status !== 200) {
+        throw new Error(
+          "Expected the linked sender's own threads to be listed",
+        );
+      }
+      expect(
+        lifecycle.body.events.filter((event) => {
+          return event.kind === "created";
+        }),
+      ).toHaveLength(count);
+    }
+  });
+
   it("handles the iMessage group lifecycle: mentions, stored context, ambient silence, and account-command guards", async () => {
     const runs = createRunsApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -4350,12 +4538,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(groupReply.body).toBe("Task completed successfully.");
     const groupSession = await waitForRunSessionIdPresent(actor, run1.runId);
 
-    // A second mention without provider history renders the stored group
+    // A reply without provider history renders the stored group
     // context with sender handles and the bot reply.
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
       body: "@Okou what changed since then",
+      replyToMessageId: groupMessageId,
       conversationId,
       isGroup: true,
     });

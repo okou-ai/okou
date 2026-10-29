@@ -442,17 +442,6 @@ export default [
     },
   },
   {
-    files: ["src/signals/routes/integrations-agentphone.ts"],
-    rules: {
-      // Temporary content-free receipt to verify iMessage inbound reply IDs.
-      // Debug is dropped by Axiom; remove after confirming the upstream contract.
-      "api/no-logger-info": [
-        "error",
-        { allowedMessages: ["AgentPhone iMessage group reply metadata"] },
-      ],
-    },
-  },
-  {
     files: ["src/signals/services/telegram-data.service.ts"],
     rules: {
       // #39897 needs both failed and successful readiness probes to explain

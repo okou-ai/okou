@@ -43,6 +43,7 @@ export const AGENTPHONE_BDD_PHONE_NUMBER = "+19039853128";
 const AGENTPHONE_API_BASE_URL = "https://api.agentphone.test";
 
 export interface AgentPhoneProviderSend {
+  readonly messageId: string;
   readonly agentId: string | undefined;
   readonly toNumber: string | undefined;
   readonly conversationId: string | undefined;
@@ -62,6 +63,7 @@ interface AgentPhoneInboundMessage {
   readonly from: string;
   readonly body: string;
   readonly messageId?: string | null;
+  readonly replyToMessageId?: string;
   readonly webhookId?: string | null;
   readonly conversationId?: string;
   readonly isGroup?: boolean;
@@ -160,6 +162,9 @@ function buildAgentPhoneInboundWebhookBody(args: {
     ...(message.recentHistory ? { recentHistory: message.recentHistory } : {}),
     data: {
       ...(messageId === undefined ? {} : { messageId }),
+      ...(message.replyToMessageId
+        ? { replyTo: { messageId: message.replyToMessageId } }
+        : {}),
       from: message.from,
       to: AGENTPHONE_BDD_PHONE_NUMBER,
       message: message.body,
@@ -322,6 +327,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
             const raw: unknown = await request.json();
             const record = isRecord(raw) ? raw : {};
             const send: AgentPhoneProviderSend = {
+              messageId: `apmsg_${randomUUID()}`,
               agentId: stringField(record, "agent_id"),
               toNumber: stringField(record, "to_number"),
               conversationId: stringField(record, "conversation_id"),
@@ -342,7 +348,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
             }
             messages.push(send);
             return HttpResponse.json({
-              id: `apmsg_${randomUUID()}`,
+              id: send.messageId,
               status: "sent",
               channel: send.toNumber.startsWith("grp_") ? "imessage" : "sms",
               from_number: AGENTPHONE_BDD_PHONE_NUMBER,

@@ -1,13 +1,15 @@
 import {
   agentPhoneRouteLinkColumn,
+  agentPhoneGroupMessageRouteKey,
   type AgentPhoneChannel,
 } from "./agentphone-shared.service";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
+import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, sql } from "drizzle-orm";
 import { object, string, uuid } from "zod";
 
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
@@ -32,6 +34,64 @@ interface AgentPhoneChatThreadBinding {
 interface AgentPhoneChatThreadCreateArgs extends IntegrationChatThreadCreation {
   readonly conversationId: string | null;
 }
+
+export const resolveAgentPhoneGroupChatRoot$ = command(
+  async (
+    { get },
+    args: {
+      readonly userLinkId: string;
+      readonly conversationId: string;
+      readonly messageId: string;
+      readonly replyToMessageId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const replyToMessageId = args.replyToMessageId;
+    if (!replyToMessageId) {
+      return agentPhoneGroupMessageRouteKey(
+        args.conversationId,
+        args.messageId,
+      );
+    }
+    // Input contexts retain the route used by every prompt, including replies
+    // to replies and messages accepted before per-message group routing.
+    const [parent] = await get(db$)
+      .select({ rootMessageId: agentphoneChatThreadRoutes.rootMessageId })
+      .from(agentphoneChatThreadRoutes)
+      .innerJoin(
+        chatAgentphoneContext,
+        and(
+          eq(
+            chatAgentphoneContext.chatThreadId,
+            agentphoneChatThreadRoutes.chatThreadId,
+          ),
+          eq(
+            chatAgentphoneContext.rootMessageId,
+            agentphoneChatThreadRoutes.rootMessageId,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(agentphoneChatThreadRoutes.agentphoneUserLinkId, args.userLinkId),
+          eq(agentphoneChatThreadRoutes.conversationId, args.conversationId),
+          eq(chatAgentphoneContext.userLinkId, args.userLinkId),
+          eq(chatAgentphoneContext.conversationId, args.conversationId),
+          eq(chatAgentphoneContext.messageId, replyToMessageId),
+          eq(chatAgentphoneContext.channel, "imessage"),
+          eq(chatAgentphoneContext.isGroup, true),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    // A reply to an unprocessed message starts a thread anchored to that
+    // provider ID. Sent answers have their own persisted route.
+    return (
+      parent?.rootMessageId ??
+      agentPhoneGroupMessageRouteKey(args.conversationId, replyToMessageId)
+    );
+  },
+);
 
 function routeWhere(key: AgentPhoneChatThreadRouteKey) {
   return and(
