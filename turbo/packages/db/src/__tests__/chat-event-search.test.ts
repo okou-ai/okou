@@ -6,6 +6,7 @@ import {
   chatEventSearchMessages,
   chatEventSearchMessageWatermarks,
 } from "../schema/chat-event-search";
+import { chatThreads } from "../schema/chat-thread";
 
 describe("chat event search projection schema", () => {
   it("uses thread sequence identity for durable searchable messages", () => {
@@ -51,10 +52,19 @@ describe("chat event search projection schema", () => {
         );
       })?.config.with,
     ).toStrictEqual({ fastupdate: false });
-    expect(config.foreignKeys).toStrictEqual([]);
+    expect(config.foreignKeys).toHaveLength(1);
+    const [threadReference] = config.foreignKeys;
+    expect(threadReference?.onDelete).toBe("cascade");
+    expect(threadReference?.reference().columns).toStrictEqual([
+      chatEventSearchMessages.chatThreadId,
+    ]);
+    expect(threadReference?.reference().foreignTable).toBe(chatThreads);
+    expect(threadReference?.reference().foreignColumns).toStrictEqual([
+      chatThreads.id,
+    ]);
   });
 
-  it("keeps an independent per-thread durable watermark", () => {
+  it("keeps a durable watermark for the owning thread's lifetime", () => {
     const config = getTableConfig(chatEventSearchMessageWatermarks);
 
     expect(schema.chatEventSearchMessageWatermarks).toBe(
@@ -66,6 +76,15 @@ describe("chat event search projection schema", () => {
       }),
     ).toStrictEqual(["chat_thread_id", "indexed_seq_id"]);
     expect(chatEventSearchMessageWatermarks.chatThreadId.primary).toBeTruthy();
-    expect(config.foreignKeys).toStrictEqual([]);
+    expect(config.foreignKeys).toHaveLength(1);
+    const [threadReference] = config.foreignKeys;
+    expect(threadReference?.onDelete).toBe("cascade");
+    expect(threadReference?.reference().columns).toStrictEqual([
+      chatEventSearchMessageWatermarks.chatThreadId,
+    ]);
+    expect(threadReference?.reference().foreignTable).toBe(chatThreads);
+    expect(threadReference?.reference().foreignColumns).toStrictEqual([
+      chatThreads.id,
+    ]);
   });
 });

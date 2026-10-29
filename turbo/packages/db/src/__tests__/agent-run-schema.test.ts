@@ -38,7 +38,7 @@ describe("agentRuns ownership", () => {
       runtimeAgentRuns,
       "chat_thread_id",
     );
-    expect(runtimeThread.foreignKey.onDelete).toBe("set null");
+    expect(runtimeThread.foreignKey.onDelete).toBe("no action");
     expect(runtimeThread.reference.foreignTable).toBe(chatThreads);
     expect(runtimeThread.reference.foreignColumns).toEqual([chatThreads.id]);
     expect(schema.chatThreads).toBe(runtimeChatThreads);
@@ -47,7 +47,7 @@ describe("agentRuns ownership", () => {
     expect(chatThread.foreignKey.getName()).toBe(
       "agent_runs_chat_thread_id_chat_threads_id_fk",
     );
-    expect(chatThread.foreignKey.onDelete).toBe("set null");
+    expect(chatThread.foreignKey.onDelete).toBe("no action");
     expect(chatThread.reference.columns).toEqual([agentRuns.chatThreadId]);
     expect(chatThread.reference.foreignTable).toBe(chatThreads);
     expect(chatThread.reference.foreignColumns).toEqual([chatThreads.id]);
