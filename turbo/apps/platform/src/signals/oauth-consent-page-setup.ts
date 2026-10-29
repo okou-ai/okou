@@ -25,6 +25,7 @@ export const setupOAuthConsentPage$ = command(
       return;
     }
 
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const uiLoad = await settle(set(ensureClerkUiLoaded$, signal), signal);
     if (!uiLoad.ok) {
       L.error("Clerk OAuth consent UI failed to load", uiLoad.error);

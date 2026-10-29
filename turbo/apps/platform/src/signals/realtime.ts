@@ -407,6 +407,7 @@ const runSubscriptionBaseline$ = command(
     initializeCommand$: Command<Promise<boolean> | boolean, [AbortSignal]>,
     signal: AbortSignal,
   ): Promise<boolean> => {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const initialized = await settle(
       (async () => {
         return await set(initializeCommand$, signal);
@@ -774,6 +775,7 @@ async function attachRealtimeChannels(
 ): Promise<void> {
   await Promise.all(
     realtimeChannelList(channels).map(async (channel) => {
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const result = await settle(channel.attach());
       if (result.ok) {
         return;
@@ -873,6 +875,7 @@ const connectRealtimeClient$ = command(
       }
     });
 
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const initialConnectionResult = await settle(deferred.promise, signal);
     if (!initialConnectionResult.ok) {
       closeConnection();
@@ -1135,6 +1138,7 @@ async function observeAblySubscription(
   options: RealtimeSubscribeOptions | undefined,
   signal: AbortSignal,
 ): Promise<void> {
+  // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
   const result = await settle(subscription, signal);
   signal.throwIfAborted();
   if (!result.ok) {

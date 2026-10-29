@@ -111,6 +111,7 @@ export const startDiscordAuthorization$ = command(
         // Callback verification alone cannot bind an account. Complete under
         // the current authenticated owner with the original browser's proof.
         // Approval-required is the API's pending state, not a failed attempt.
+        // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
         const completed = await settle(
           waitLoopUntil(
             async () => {

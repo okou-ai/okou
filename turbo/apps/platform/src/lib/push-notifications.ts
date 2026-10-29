@@ -27,6 +27,7 @@ export const registerServiceWorker$ = command(
 
     signal.throwIfAborted();
 
+    // eslint-disable-next-line ccstate/no-best-effort -- Legacy 20261029: existing bestEffort only; do not add new usages.
     await bestEffort(
       (async () => {
         const registration = await navigator.serviceWorker.register("/sw.js", {

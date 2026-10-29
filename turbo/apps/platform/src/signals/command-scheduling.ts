@@ -81,6 +81,7 @@ export function throttleCommand<T, Args extends unknown[]>(
     ): Promise<Awaited<T>> => {
       signal.throwIfAborted();
       if (previous) {
+        // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
         await settle(previous, signal);
       }
       const lastStartedAt = get(lastStartedAt$);

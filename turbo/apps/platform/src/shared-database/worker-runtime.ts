@@ -269,6 +269,7 @@ export class SharedDatabaseWorkerRuntime {
     signal.throwIfAborted();
     const dataKey = scopeSharedDatabaseDataKey(query.dataKey, this.identity);
     const startedAt = now();
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(this.queryData(query, dataKey, signal), signal);
     if (!result.ok) {
       reportDataKeyError(dataKey, "query.error", result.error);
@@ -324,6 +325,7 @@ export class SharedDatabaseWorkerRuntime {
     if (!diagnosticDataKey) {
       throw new Error("ChatEvent catch-up requires a diagnostic data key");
     }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const cachedCursorsResult = await settle(
       this.runChatIdbOperation(
         createIdbEventRowStores,
@@ -468,6 +470,7 @@ export class SharedDatabaseWorkerRuntime {
     if (writes.length === 0) {
       return true;
     }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const written = await settle(
       this.runChatIdbOperation(
         createIdbEventRowStores,
@@ -503,6 +506,7 @@ export class SharedDatabaseWorkerRuntime {
     dataKey: ScopedChatEventDataKey,
     signal: AbortSignal,
   ): Promise<boolean> {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const snapshot = await settle(
       this.fetchChatEventSnapshot(client, dataKey, signal),
       signal,
@@ -513,6 +517,7 @@ export class SharedDatabaseWorkerRuntime {
       }
       throw snapshot.error;
     }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const state = await settle(
       this.fetchChatEventRows(
         { client, dataKey },
@@ -543,6 +548,7 @@ export class SharedDatabaseWorkerRuntime {
     dataKey: ScopedChatEventDataKey,
     signal: AbortSignal,
   ): Promise<boolean> {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const cleared = await settle(
       this.runChatIdbOperation(
         createIdbEventRowStores,
@@ -622,6 +628,7 @@ export class SharedDatabaseWorkerRuntime {
     dataKey: ScopedChatEventDataKey,
     signal: AbortSignal,
   ): Promise<readonly ChatEventRow[]> {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const cachedCursorResult = await settle(
       this.runChatIdbOperation(
         createIdbEventRowStores,
@@ -683,6 +690,7 @@ export class SharedDatabaseWorkerRuntime {
     if (!state.replacedCache && state.remoteRows.length === 0) {
       return false;
     }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const written = await settle(
       this.runChatIdbOperation(
         createIdbEventRowStores,
@@ -890,6 +898,7 @@ export class SharedDatabaseWorkerRuntime {
       if (!snapshot) {
         throw new Error("ChatThreadEvent synchronization requires a snapshot");
       }
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const written = await settle(
         this.runChatIdbOperation(
           createStrictIdbChatThreadEventStores,
@@ -991,6 +1000,7 @@ export class SharedDatabaseWorkerRuntime {
     ) {
       return state;
     }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const rebasedSnapshot = await settle(
       this.fetchChatThreadSnapshot(context.client, signal),
       signal,
@@ -1054,6 +1064,7 @@ export class SharedDatabaseWorkerRuntime {
     afterSeqId: number | null,
     signal: AbortSignal,
   ): Promise<ChatEventRow[]> {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
       this.runChatIdbOperation(
         createIdbEventRowStores,
@@ -1079,6 +1090,7 @@ export class SharedDatabaseWorkerRuntime {
     dataKey: ScopedChatThreadEventDataKey,
     signal: AbortSignal,
   ): Promise<ChatThreadEventCache> {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
       this.runChatIdbOperation(
         createStrictIdbChatThreadEventStores,

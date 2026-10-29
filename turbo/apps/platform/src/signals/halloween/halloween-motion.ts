@@ -256,6 +256,7 @@ export const playHalloweenClick$ = command(
       }
     };
     signal.addEventListener("abort", close, { once: true });
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const resumed = await settle(audio.resume(), signal);
     if (!resumed.ok || audio.state !== "running") {
       close();

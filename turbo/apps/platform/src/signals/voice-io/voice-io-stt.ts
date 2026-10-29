@@ -186,6 +186,7 @@ function voiceActivityLevel(value: number): number {
 async function closeAudioContextQuietly(
   audioContext: AudioContext,
 ): Promise<void> {
+  // eslint-disable-next-line ccstate/no-best-effort -- Legacy 20261029: existing bestEffort only; do not add new usages.
   await bestEffort(audioContext.close());
 }
 
@@ -348,6 +349,7 @@ export async function openMedia(signal: AbortSignal) {
   signal.throwIfAborted();
   // getUserMedia cannot be cancelled. Release a late stream before propagating
   // cancellation, and own every acquired track before recorder setup can fail.
+  // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
   const opened = await settle(
     navigator.mediaDevices.getUserMedia({ audio: audioConfig.constraints }),
   );

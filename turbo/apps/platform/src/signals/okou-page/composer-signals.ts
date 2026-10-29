@@ -923,6 +923,7 @@ function createSubmitCurrentInput({
       );
       if (submitted && workflowUse) {
         // Browser history must never turn an accepted send into a send error.
+        // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
         await settle(() => {
           set(recordRecentWorkflowUse$, workflowUse, signal);
         }, signal);

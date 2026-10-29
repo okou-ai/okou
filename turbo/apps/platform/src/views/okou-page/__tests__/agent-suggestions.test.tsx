@@ -146,6 +146,13 @@ function queryTab(name: string) {
     }) ?? null
   );
 }
+const SUGGESTIONS_TOPIC = "agentSuggestionsChanged";
+
+// The API publishes every committed suggestion change.
+function notifySuggestionsChanged(): void {
+  context.mocks.ably.trigger(SUGGESTIONS_TOPIC);
+}
+
 function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   let items = initial;
   const retired = new Map<string, Suggestion>();
@@ -158,6 +165,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
         const saved = retired.get(params.id);
         if (saved) {
           items = [...items, saved];
+          notifySuggestionsChanged();
         }
         return respond(200, { restored: saved !== undefined });
       }
@@ -178,6 +186,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
       items = items.filter((item) => {
         return item.id !== params.id;
       });
+      notifySuggestionsChanged();
       return respond(200, { restored: false });
     },
   );
@@ -213,6 +222,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
       items = items.filter((entry) => {
         return entry.id !== params.id;
       });
+      notifySuggestionsChanged();
       return respond(200, {
         ...found,
         status: "consumed",
@@ -532,8 +542,11 @@ test("A consumed suggestion reaches its saved draft before target metadata is av
   expect(pool.consumed).toStrictEqual([suggestion.id]);
 });
 test("A conflicting consumption does not send or change the home draft", async () => {
-  mockPool();
+  const pool = mockPool();
   context.mocks.api(suggestionsContract.consume, ({ respond }) => {
+    // Another session consumed it first and the API announced the change.
+    pool.withdrawAll();
+    notifySuggestionsChanged();
     return respond(409, {
       error: { code: "CONFLICT", message: "Already consumed" },
     });
@@ -1125,73 +1138,49 @@ test("Feedback stays available after the last card, accepts an optional reason, 
   });
 });
 
-test("Feedback hides a card before acknowledgment and restores only that card on failure with a stable retry ID", async () => {
-  const first = makeSuggestion();
-  const second = {
-    ...makeSuggestion(),
-    id: "a0000000-0000-4000-a000-000000000002",
-    title: "A separate action",
-  };
-  mockPool([first, second]);
-  const requested = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  const requestIds: string[] = [];
+test("Failed feedback keeps the card and a later attempt records it", async () => {
+  const item = makeSuggestion();
+  mockPool([item]);
   let failing = true;
-  context.mocks.api(
-    suggestionsContract.feedback,
-    async ({ params, body, respond }) => {
-      if (params.id === second.id) {
-        return respond(200, { restored: false });
-      }
-      requestIds.push(body.id);
-      if (failing) {
-        requested.resolve();
-        await release.promise;
-        return respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Feedback could not be saved",
-          },
-        });
-      }
-      return respond(200, { restored: false });
-    },
-  );
+  context.mocks.api(suggestionsContract.feedback, ({ respond }) => {
+    if (failing) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Feedback could not be saved",
+        },
+      });
+    }
+    notifySuggestionsChanged();
+    return respond(200, { restored: false });
+  });
   await setupPage({
     context,
     path: `/agents/${agentId}/chat`,
     featureSwitches: features,
   });
-  await screen.findByText(first.title);
+  await screen.findByText(item.title);
   await userEvent.setup().click(button("Already done"));
-  await requested.promise;
-  try {
-    await screen.findByText(second.title);
-    expect(screen.queryByText(first.title)).not.toBeInTheDocument();
-    expect(button("Not planned")).not.toBeDisabled();
-    await userEvent.setup().click(button("Not planned"));
-    await screen.findByText("Noted — this is not planned");
-  } finally {
-    release.resolve();
-  }
   await screen.findByText("Feedback could not be saved");
-  await screen.findByText(first.title);
-  expect(screen.queryByText(second.title)).not.toBeInTheDocument();
+  expect(screen.getByText(item.title)).toBeInTheDocument();
+  await waitFor(() => {
+    expect(button("Already done")).not.toBeDisabled();
+  });
   failing = false;
   await userEvent.setup().click(button("Already done"));
   await screen.findByText("Noted — this is already done");
-  expect(requestIds).toHaveLength(2);
-  expect(requestIds[1]).toBe(requestIds[0]);
 });
 
-test("The last card stays hidden while saving and enables Undo only after acknowledgment", async () => {
+test("A card stays disabled while feedback saves and Undo follows acknowledgment", async () => {
   const item = makeSuggestion();
-  mockPool([item]);
+  const pool = mockPool([item]);
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   context.mocks.api(suggestionsContract.feedback, async ({ respond }) => {
     requested.resolve();
     await release.promise;
+    pool.withdrawAll();
+    notifySuggestionsChanged();
     return respond(200, { restored: false });
   });
   await setupPage({
@@ -1203,9 +1192,8 @@ test("The last card stays hidden while saving and enables Undo only after acknow
   await userEvent.setup().click(button("Already done"));
   await requested.promise;
   try {
-    await screen.findByText("Saving...");
-    expect(screen.queryByText(item.title)).not.toBeInTheDocument();
-    expect(queryTab("Suggestions")).toBeInTheDocument();
+    expect(screen.getByText(item.title)).toBeInTheDocument();
+    expect(button("Not planned")).toBeDisabled();
     expect(
       queryAllByRoleFast("button").some((node) => {
         return node.textContent?.trim() === "Undo";
@@ -1215,5 +1203,6 @@ test("The last card stays hidden while saving and enables Undo only after acknow
     release.resolve();
   }
   await screen.findByText("Noted — this is already done");
+  expect(screen.queryByText(item.title)).not.toBeInTheDocument();
   expect(button("Undo")).not.toBeDisabled();
 });

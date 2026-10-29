@@ -28,7 +28,6 @@ import {
   visibleAgentSuggestions$,
   submitAgentSuggestionFeedback$,
   suggestionFeedbackConfirmation$,
-  savingSuggestionFeedback$,
   suggestionFeedbackReasonOpen$,
   closeSuggestionFeedback$,
   openSuggestionFeedbackReason$,
@@ -269,7 +268,6 @@ function SuggestionFeedbackReason({
 function SuggestionFeedbackNotice() {
   const { t } = useTranslation();
   const last = useGet(suggestionFeedbackConfirmation$);
-  const pending = useGet(savingSuggestionFeedback$);
   const reasonOpen = useGet(suggestionFeedbackReasonOpen$);
   const openReason = useSet(openSuggestionFeedbackReason$);
   const close = useSet(closeSuggestionFeedback$);
@@ -277,13 +275,7 @@ function SuggestionFeedbackNotice() {
   const [saving, save] = useLoadableSet(saveSuggestionFeedbackReason$);
   const signal = useGet(pageSignal$);
   if (!last) {
-    return pending ? (
-      <p role="status" className="mt-4 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.actions.saving;
-        })}
-      </p>
-    ) : null;
+    return null;
   }
   const busy = undoing.state === "loading" || saving.state === "loading";
   const message =
@@ -438,12 +430,17 @@ export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(visibleAgentSuggestions$);
   const [operation, start] = useLoadableSet(startAgentSuggestion$);
-  const [, dismiss] = useLoadableSet(dismissAgentSuggestion$);
+  const [dismissal, dismiss] = useLoadableSet(dismissAgentSuggestion$);
   const [preparation, prepare] = useLoadableSet(prepareAgentSuggestion$);
-  const [, submitFeedback] = useLoadableSet(submitAgentSuggestionFeedback$);
+  const [feedback, submitFeedback] = useLoadableSet(
+    submitAgentSuggestionFeedback$,
+  );
   const preparedId = useGet(preparedAgentSuggestionId$);
   const preparing = preparation.state === "loading";
   const starting = operation.state === "loading";
+  // The card stays until the server's change notification re-reads the list.
+  const recording =
+    dismissal.state === "loading" || feedback.state === "loading";
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   if (result.state !== "hasData" || result.data.length === 0) {
@@ -469,7 +466,7 @@ export function AgentSuggestions() {
           <div aria-hidden className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")} />
         )}
         <fieldset
-          disabled={starting || preparing}
+          disabled={starting || preparing || recording}
           className="@container/suggestion relative min-w-0"
         >
           <article className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4">

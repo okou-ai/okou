@@ -123,6 +123,7 @@ export class SharedDatabaseMessagePortServer {
       requestId: message.requestId,
       type: message.type,
     });
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
       (async (): Promise<unknown> => {
         return await operation();
