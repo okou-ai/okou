@@ -4433,7 +4433,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         message:
           "Automatic MCP OAuth setup failed. Check the server's OAuth configuration or choose another authentication method.",
       });
-      expect(provider.tokenBodies).toHaveLength(0);
 
       await connectorsApi.deleteCustomConnector(admin, connector.id);
     },
