@@ -12,7 +12,7 @@ export const ARTIFACT_OG_BRAND = {
   title: "Okou",
   description: "Okou, your team's shared AI teammate.",
   imageUrl:
-    "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png",
+    "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png",
 } as const;
 
 export const GENERIC_ARTIFACT_DESCRIPTION =

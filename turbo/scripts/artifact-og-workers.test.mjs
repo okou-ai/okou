@@ -12,7 +12,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const siteId = "00000000-0000-4000-8000-000000000001";
 const deploymentId = "00000000-0000-4000-8000-000000000002";
 const brandImage =
-  "https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png";
+  "https://static.okou.io/web/okou-og-image-more-done-b7e36e66ad2b.png";
 const body = '<body><img src="cover.png">Public report</body>';
 const hostedHtml =
   "<!doctype html><html><head><title>Authored report</title>" +
