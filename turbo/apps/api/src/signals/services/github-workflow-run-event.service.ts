@@ -314,6 +314,44 @@ const startGithubWorkflowRunAutomation$ = command(
   },
 );
 
+const recordGithubWorkflowRunReceipt$ = command(
+  async (
+    { set },
+    automation: GithubWorkflowRunAutomationRow,
+    args: {
+      readonly deliveryId: string;
+      readonly payload: GithubWorkflowRunEventPayload;
+    },
+    runTiming: AutomationEventRunTiming,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const startedAt = performance.now();
+    const receiptId = await (async () => {
+      const row = resolveImmutableDedupeInsert(
+        await settle(
+          db
+            .insert(workflowGithubProcessedEvents)
+            .values({
+              ...processedDeliveryValues(automation, args),
+              createdAt: nowDate(),
+            })
+            .returning({ id: workflowGithubProcessedEvents.id }),
+        ),
+      );
+      return row?.id ?? null;
+    })().finally(() => {
+      runTiming.recordDuration(
+        "api_dispatch_pre_create_agent_automation_event_record_processed_event",
+        performance.now() - startedAt,
+        now(),
+      );
+    });
+    signal.throwIfAborted();
+    return receiptId;
+  },
+);
+
 export const dispatchGithubWorkflowRunAutomations$ = command(
   async (
     { set },
@@ -407,24 +445,13 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
       if (!matches) {
         continue;
       }
-      const processedId = await runTiming.measure(
-        "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-        async () => {
-          const row = resolveImmutableDedupeInsert(
-            await settle(
-              db
-                .insert(workflowGithubProcessedEvents)
-                .values({
-                  ...processedDeliveryValues(automation, args),
-                  createdAt: nowDate(),
-                })
-                .returning({ id: workflowGithubProcessedEvents.id }),
-            ),
-          );
-          return row?.id ?? null;
-        },
+      const processedId = await set(
+        recordGithubWorkflowRunReceipt$,
+        automation,
+        args,
+        runTiming,
+        signal,
       );
-      signal.throwIfAborted();
       if (!processedId) {
         duplicates += 1;
         continue;

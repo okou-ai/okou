@@ -126,6 +126,20 @@ export class AutomationEventRunTiming {
     );
   }
 
+  recordDuration(
+    actionType: AutomationEventSourceTimingActionType,
+    durationMs: number,
+    finishedAt: number,
+  ): void {
+    this.collector.recordDuration(
+      actionType,
+      "nested",
+      durationMs,
+      finishedAt,
+      automationEventSourceDimensions(this.source),
+    );
+  }
+
   async measure<T>(
     actionType: AutomationEventSourceTimingActionType,
     operation: () => T | Promise<T>,
