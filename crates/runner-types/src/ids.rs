@@ -74,4 +74,23 @@ mod tests {
         let parsed: RunId = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, id);
     }
+
+    #[test]
+    fn display_matches_uuid() {
+        let uuid = Uuid::new_v4();
+        let id = RunId::from(uuid);
+        assert_eq!(id.to_string(), uuid.to_string());
+    }
+
+    #[test]
+    fn from_str_roundtrip() {
+        let id = RunId::new_v4();
+        let parsed: RunId = id.to_string().parse().unwrap();
+        assert_eq!(parsed, id);
+    }
+
+    #[test]
+    fn from_str_invalid() {
+        assert!("not-a-uuid".parse::<RunId>().is_err());
+    }
 }
