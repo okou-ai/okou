@@ -1,5 +1,28 @@
 # Changelog
 
+## [8.799.3](https://github.com/okou-ai/okou/compare/core-v8.799.2...core-v8.799.3) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.3
+
+## [8.799.2](https://github.com/okou-ai/okou/compare/core-v8.799.1...core-v8.799.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **cli:** select presentation templates by tone and audience ([#43692](https://github.com/okou-ai/okou/issues/43692)) ([a9bb3ba](https://github.com/okou-ai/okou/commit/a9bb3ba137099aae4f548bd38fcdd35232c3d5a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.2
+
 ## [8.799.1](https://github.com/okou-ai/okou/compare/core-v8.799.0...core-v8.799.1) (2026-10-29)
 
 

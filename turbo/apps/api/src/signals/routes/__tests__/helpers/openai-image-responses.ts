@@ -104,7 +104,7 @@ export function completedImageResponseWithUsage(
 }
 
 /** No invented image-tool usage: only the documented mainline usage is present. */
-export function completedImageResponseWithoutUsage(
+function completedImageResponseWithoutUsage(
   submission: ImageResponseSubmission,
 ) {
   return {

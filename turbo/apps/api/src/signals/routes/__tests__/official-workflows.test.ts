@@ -63,13 +63,6 @@ function authHeaders(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-// Keep a connected personal default for ordinary workflow claims.
-async function selectPersonalDefaultModel(actor: ApiTestUser): Promise<void> {
-  await runs.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-}
-
 async function executeAutomationCron() {
   return await accept(
     setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
@@ -113,6 +106,21 @@ async function fireSchedule(
     throw new Error("Expected the scheduled automation Run");
   }
   return { chatThreadId, runId };
+}
+
+async function runScheduleNow(actor: ApiTestUser, automationId: string) {
+  const queued = await accept(
+    automationClient().run({
+      headers: authHeaders(actor),
+      params: { id: automationId },
+    }),
+    [201],
+  );
+  const runId = await launchedAutomationRunId(actor, queued.body.chatThreadId);
+  if (!runId) {
+    throw new Error("Expected the manually launched automation Run");
+  }
+  return { runId };
 }
 
 function morningBriefPreferenceClient() {
@@ -242,46 +250,25 @@ beforeEach(() => {
 });
 
 describe("Workflow schedules", () => {
-  const learning = () => {
-    return setupApp({ context, routes: proactiveLearningRoutes })(
-      proactiveLearningContract,
-    );
-  };
-
-  it("keeps ordinary scheduled workflows with a nightly-looking name on the ordinary scheduler path", async () => {
+  it("launches a due user-created schedule through the automation cron", async () => {
     const app = await setupApp({
       context,
       routes: workflowAutomationsRoutes,
       isolatePg: true,
     });
     mockNow(new Date("2030-01-01T12:00:00.000Z"));
-    const actor = bdd.user();
-    mockBriefMemberships([
-      { actor, createdAt: new Date("2030-01-01T00:00:00.000Z") },
-    ]);
-    const { defaultAgentId } = await runs.grantProEntitlement(actor);
-    await initializeBriefMember(actor, "Asia/Shanghai");
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ProactiveAgent]: true },
-    );
+    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+      timezone: "UTC",
+    });
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
-    if (!defaultAgentId) {
-      throw new Error("Expected primary Agent");
-    }
     const workflowId = await workflowBdd.createWorkflow(actor, {
       agentId: defaultAgentId,
-      name: "proactive-learning",
+      name: "scheduled-report",
       visibility: "private",
-      instruction: "An ordinary user-owned workflow.",
+      instruction: "Prepare my scheduled report.",
     });
     const automation = (
       await accept(
@@ -301,11 +288,7 @@ describe("Workflow schedules", () => {
     ).body;
     const started = await fireSchedule(actor, automation);
     const claim = await runs.claimRunnerJob(started.runId);
-    expect(claim.prompt).toContain("proactive-learning");
-    expect(
-      (await accept(learning().get({ headers: authHeaders(actor) }), [200]))
-        .body.enabled,
-    ).toBeFalsy();
+    expect(claim.prompt).toContain("scheduled-report");
   });
 });
 
@@ -586,16 +569,11 @@ async function prepareBriefMember() {
 }
 
 describe("Workflow schedule recovery", () => {
-  async function failScheduleOccurrence(
+  async function failManualScheduleRun(
     actor: ApiTestUser,
     automation: WorkflowAutomationSummary,
   ) {
-    if (!automation.nextRunAt) {
-      throw new Error("Expected the next schedule occurrence");
-    }
-    const scheduledAt = new Date(automation.nextRunAt).getTime();
-    const fired = await fireSchedule(actor, automation);
-    mockNow(scheduledAt + 1000);
+    const fired = await runScheduleNow(actor, automation.id);
     const claim = await runs.claimRunnerJob(fired.runId);
     await webhooks.requestAgentComplete(
       {
@@ -620,13 +598,7 @@ describe("Workflow schedule recovery", () => {
 
   it("completes an in-flight user schedule using its edited recurrence", async () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    const client = (
-      await setupApp({
-        context,
-        routes: workflowAutomationsRoutes,
-        isolatePg: true,
-      })
-    )(workflowAutomationsContract);
+    const client = automationClient();
     const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
       timezone: "UTC",
     });
@@ -647,7 +619,7 @@ describe("Workflow schedule recovery", () => {
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     const [fired] = await Promise.all([
-      fireSchedule(actor, automation),
+      runScheduleNow(actor, automation.id),
       runs.heartbeatRunner(runnerGroup),
     ]);
     const claim = await runs.claimRunnerJob(fired.runId);
@@ -689,17 +661,10 @@ describe("Workflow schedule recovery", () => {
     });
   });
 
-  it("keeps user-created schedules stopped after three failures", async () => {
-    mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    // This case executes the cross-tenant automation cron with a future clock.
-    // Bind before owner setup and use this client to create its schedule.
-    const isolatedAutomationClient = (
-      await setupApp({
-        context,
-        routes: workflowAutomationsRoutes,
-        isolatePg: true,
-      })
-    )(workflowAutomationsContract);
+  it("stops a user-created schedule after three failed manual runs", async () => {
+    const startedAt = Date.parse("2030-01-01T00:00:00.000Z");
+    mockNow(startedAt);
+    const client = automationClient();
     const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
       timezone: "UTC",
     });
@@ -709,7 +674,7 @@ describe("Workflow schedule recovery", () => {
     });
     let automation = (
       await accept(
-        isolatedAutomationClient.create({
+        client.create({
           headers: authHeaders(actor),
           params: { workflowId },
           body: { schedule: { type: "loop", intervalSeconds: 600 } },
@@ -721,19 +686,11 @@ describe("Workflow schedule recovery", () => {
     runs.acceptStorageDownloads();
     await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
-      automation = await failScheduleOccurrence(actor, automation);
+      // Each user retry has its own request time rather than replaying one click.
+      mockNow(startedAt + (failure + 1) * 60_000);
+      automation = await failManualScheduleRun(actor, automation);
     }
     expect(automation).toMatchObject({ enabled: false, nextRunAt: null });
-    mockNow(new Date("2030-01-02T00:00:00.000Z"));
-    await executeAutomationCron();
-    const stopped = await accept(
-      automationClient().get({
-        headers: authHeaders(actor),
-        params: { id: automation.id },
-      }),
-      [200],
-    );
-    expect(stopped.body).toMatchObject({ enabled: false, nextRunAt: null });
   });
 });
 

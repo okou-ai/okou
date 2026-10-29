@@ -41,7 +41,8 @@ Notes:
   - Authenticates via OKOU_TOKEN and requires host:write
   - Only the site's owner can delete it, from any chat in the organization that published it
   - The site URL and every version URL stop serving immediately
-  - Files are kept: redeploy with okou host <dir> --site <slug> --title "<display title>" from the chat that published the site to put it back online as a new version
+  - Files are kept: current-domain sites can be redeployed with okou host <dir> --site <slug> --title "<display title>" from the chat that published the site
+  - Legacy-domain sites can be deleted, but cannot be restored at their old address
   - Deleted versions stay offline after a redeploy`,
   )
   .action(
@@ -65,7 +66,7 @@ Notes:
         }
         console.log(
           chalk.dim(
-            `Restore it from the chat that published it: okou host <dir> --site ${result.site} --title "<display title>"`,
+            `For current-domain sites, restore from the chat that published it: okou host <dir> --site ${result.site} --title "<display title>"`,
           ),
         );
       },

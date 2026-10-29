@@ -112,14 +112,14 @@ ROOTFS_DIR=""
 CACHE_TMP_TAR=""
 
 # Pinned versions (changes here invalidate the template cache via script hash)
-NODE_VERSION="24.22.1"
+NODE_VERSION="26.13.0"
 GO_VERSION="1.27.3"
 CLAUDE_CODE_VERSION="2.1.312"
 CODEX_CLI_VERSION="0.165.0"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.39.4-vm0.1"
-PNPM_VERSION="12.15.0"
+PNPM_VERSION="12.16.1"
 UV_VERSION="0.13.6"
 CHROMIUM_VERSION="156.0.8078.47-1~deb12u1"
 CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261024T014305Z"
@@ -324,10 +324,10 @@ install_packages() {
 
   # Step 2: Add external APT repositories (needs curl and gpg from step 1).
   sudo chroot "$ROOTFS_DIR" bash -c 'set -e
-  # NodeSource repository (Node.js 24)
+  # NodeSource repository (Node.js 26)
   curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
     | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
-  echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" \
+  echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_26.x nodistro main" \
     > /etc/apt/sources.list.d/nodesource.list
   printf "Package: nodejs\nPin: origin deb.nodesource.com\nPin-Priority: 600\n" \
     > /etc/apt/preferences.d/nodesource

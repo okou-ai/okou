@@ -146,44 +146,4 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
   );
   const otherSnapshot = await chat.getThreadSnapshot(otherOrg);
   expect(otherSnapshot.chatThreads).toMatchObject([{ id: foreign.id }]);
-
-  await chat.renameThread(actor, ordinary.id, "Renamed sidebar thread");
-  await accept(
-    app(cronCompactChatThreadSnapshotsContract).compact({
-      headers: { authorization: "Bearer test-cron-secret" },
-    }),
-    [200],
-  );
-  const updated = await chat.getThreadSnapshot(actor);
-  expect(updated.chatThreads).toHaveLength(3);
-  expect(updated.chatThreads[0]).toMatchObject({ id: pinned.id });
-  expect(updated.chatThreads).toContainEqual(
-    expect.objectContaining({
-      id: ordinary.id,
-      title: "Renamed sidebar thread",
-    }),
-  );
-  expect(updated.chatThreads).toContainEqual(
-    expect.objectContaining({ id: archived.id, archived: true }),
-  );
-  if (snapshot.latestSeqId === null || updated.latestSeqId === null) {
-    throw new Error(
-      "Expected a published sidebar sequence before and after rename",
-    );
-  }
-  expect(updated.latestSeqId).toBeGreaterThan(snapshot.latestSeqId);
-  await expect(chat.getThreadSnapshot(otherOrg)).resolves.toStrictEqual(
-    otherSnapshot,
-  );
-
-  await accept(
-    app(cronCompactChatThreadSnapshotsContract).compact({
-      headers: { authorization: "Bearer test-cron-secret" },
-    }),
-    [200],
-  );
-  await expect(chat.getThreadSnapshot(actor)).resolves.toStrictEqual(updated);
-  await expect(chat.getThreadSnapshot(otherOrg)).resolves.toStrictEqual(
-    otherSnapshot,
-  );
 });

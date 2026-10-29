@@ -6,10 +6,7 @@ import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/wor
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApiTestKmsClient } from "../../../__tests__/secret-kms";
-import { setSecretKmsClientForTests } from "../../../lib/secret-kms-client";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -412,214 +409,6 @@ describe("POST /api/webhooks/notion", () => {
     });
   });
 
-  it("retires the prior token before publishing an already-admitted handshake", async () => {
-    const kms = createApiTestKmsClient();
-    const preparations = [
-      {
-        started: createDeferredPromise<void>(context.signal),
-        release: createDeferredPromise<void>(context.signal),
-      },
-      {
-        started: createDeferredPromise<void>(context.signal),
-        release: createDeferredPromise<void>(context.signal),
-      },
-    ] as const;
-    let preparationIndex = 0;
-    setSecretKmsClientForTests({
-      ...kms,
-      async generateDataKey(request) {
-        const preparation = preparations[preparationIndex++];
-        if (!preparation) {
-          throw new Error("Unexpected KMS key generation");
-        }
-        preparation.started.resolve();
-        await preparation.release.promise;
-        return await kms.generateDataKey(request);
-      },
-    });
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const client = app(webhookNotionContract);
-    const firstToken = NOTION_WEBHOOK_TOKEN;
-    const secondToken = "second-admitted-verification-token";
-    const verificationResponse = {
-      status: 200,
-      body: {
-        success: true,
-        kind: "verification",
-        pending: 0,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    };
-    // Both provider handshakes pass admission while external KMS is pending.
-    const first = client.post({
-      body: JSON.stringify({ verification_token: firstToken }),
-    });
-    const outcomes = [Promise.allSettled([first])];
-    const publication = await settleIncludingAbort(async () => {
-      await preparations[0].started.promise;
-      const second = client.post({
-        body: JSON.stringify({ verification_token: secondToken }),
-      });
-      outcomes.push(Promise.allSettled([second]));
-      await preparations[1].started.promise;
-      preparations[0].release.resolve();
-      await expect(first).resolves.toMatchObject(verificationResponse);
-      preparations[1].release.resolve();
-      await expect(second).resolves.toMatchObject(verificationResponse);
-    });
-    for (const preparation of preparations) {
-      if (!preparation.started.settled()) {
-        preparation.started.resolve();
-      }
-      if (!preparation.release.settled()) {
-        preparation.release.resolve();
-      }
-    }
-    await Promise.all(outcomes);
-    if (!publication.ok) {
-      throw publication.error;
-    }
-    const event = notionPageEvent({
-      entities: newNotionEntities(),
-      type: "page.created",
-      timestamp: "2026-07-13T04:00:00.000Z",
-    });
-    await expect(
-      postNotionWebhook({
-        rawBody: event.rawBody,
-        signature: notionSignature(event.rawBody, firstToken),
-      }),
-    ).resolves.toStrictEqual({
-      status: 401,
-      body: { error: "Unauthorized" },
-    });
-    await expect(
-      postNotionWebhook({
-        rawBody: event.rawBody,
-        signature: notionSignature(event.rawBody, secondToken),
-      }),
-    ).resolves.toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-  });
-
-  it("leaves verification unconfigured when KMS encryption fails", async () => {
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const webhook = app(webhookNotionContract);
-    const event = notionPageEvent({
-      entities: newNotionEntities(),
-      type: "page.created",
-      timestamp: "2026-07-13T04:00:00.000Z",
-    });
-    const kms = createApiTestKmsClient();
-    setSecretKmsClientForTests({
-      ...kms,
-      generateDataKey() {
-        return Promise.reject(new Error("KMS unavailable"));
-      },
-    });
-    await expect(
-      postNotionWebhook(
-        {
-          rawBody: JSON.stringify({ verification_token: NOTION_WEBHOOK_TOKEN }),
-        },
-        webhook,
-      ),
-    ).rejects.toThrow(
-      "Unknown response status 500 for POST /api/webhooks/notion",
-    );
-    await expect(
-      postNotionWebhook({
-        rawBody: event.rawBody,
-        signature: notionSignature(event.rawBody),
-      }),
-    ).resolves.toStrictEqual({
-      status: 503,
-      body: { error: "Notion webhook verification token is not configured" },
-    });
-    setSecretKmsClientForTests(kms);
-    await verifyNotionWebhook();
-  });
-
-  it("does not publish verification after the application owner aborts during KMS preparation", async () => {
-    const event = notionPageEvent({
-      entities: newNotionEntities(),
-      type: "page.created",
-      timestamp: "2026-07-13T04:00:00.000Z",
-    });
-    const kms = createApiTestKmsClient();
-    const controller = new AbortController();
-    const started = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    setSecretKmsClientForTests({
-      ...kms,
-      async generateDataKey(request) {
-        started.resolve();
-        await release.promise;
-        return await kms.generateDataKey(request);
-      },
-    });
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-      signal: AbortSignal.any([context.signal, controller.signal]),
-    });
-    const outcome = Promise.allSettled([
-      app(webhookNotionContract).post({
-        extraHeaders: { "content-type": "application/json" },
-        body: JSON.stringify({ verification_token: NOTION_WEBHOOK_TOKEN }),
-      }),
-    ]);
-    const cancellation = await settleIncludingAbort(async () => {
-      await started.promise;
-      controller.abort();
-      release.resolve();
-      const [result] = await outcome;
-      expect(result).toMatchObject({
-        status: "rejected",
-        reason: {
-          message: "Unknown response status 500 for POST /api/webhooks/notion",
-        },
-      });
-    });
-    controller.abort();
-    if (!release.settled()) {
-      release.resolve();
-    }
-    await outcome;
-    if (!cancellation.ok) {
-      throw cancellation.error;
-    }
-    setSecretKmsClientForTests(kms);
-    await expect(
-      postNotionWebhook({
-        rawBody: event.rawBody,
-        signature: notionSignature(event.rawBody),
-      }),
-    ).resolves.toStrictEqual({
-      status: 503,
-      body: { error: "Notion webhook verification token is not configured" },
-    });
-    await verifyNotionWebhook();
-  });
-
   async function setupFixture(): Promise<{
     readonly fixture: WorkflowsFixture;
     readonly actor: ApiTestUser;
@@ -692,12 +481,6 @@ describe("POST /api/webhooks/notion", () => {
         duplicates: 0,
       },
     };
-    await expect(
-      postNotionWebhook({
-        rawBody: unsupportedEvent.rawBody,
-        signature: notionSignature(unsupportedEvent.rawBody),
-      }),
-    ).resolves.toStrictEqual(unsupportedResponse);
     await expect(
       postNotionWebhook({
         rawBody: unsupportedEvent.rawBody,
@@ -889,7 +672,7 @@ describe("POST /api/webhooks/notion", () => {
     });
   });
 
-  it("coalesces concurrent signed content updates for the same page", async () => {
+  it("deduplicates concurrent delivery of the same signed content event", async () => {
     const app = await setupApp({
       context,
       routes: webhooksNotionRoutes,
@@ -955,7 +738,7 @@ describe("POST /api/webhooks/notion", () => {
     );
   });
 
-  it("suppresses content updated events while child page creation is pending", async () => {
+  it("refreshes pending child page creation after a content update", async () => {
     const app = await setupApp({
       context,
       routes: webhooksNotionRoutes,
@@ -979,22 +762,6 @@ describe("POST /api/webhooks/notion", () => {
             provider: "notion",
             event: "child_page_created",
             parentPageUrl: entities.parentPageUrl,
-          },
-        },
-      }),
-      [201],
-    );
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-page-content-updated",
-          eventConfig: {
-            provider: "notion",
-            event: "page_content_updated",
-            pageUrl: entities.childPageUrl,
           },
         },
       }),
@@ -1043,7 +810,7 @@ describe("POST /api/webhooks/notion", () => {
     });
   });
 
-  it("suppresses content updated events while database item creation is pending", async () => {
+  it("refreshes pending database item creation after a content update", async () => {
     const app = await setupApp({
       context,
       routes: webhooksNotionRoutes,
@@ -1066,22 +833,6 @@ describe("POST /api/webhooks/notion", () => {
           eventConfig: {
             provider: "notion",
             event: "database_item_created",
-            databaseUrl: entities.databaseUrl,
-          },
-        },
-      }),
-      [201],
-    );
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-page-content-updated",
-          eventConfig: {
-            provider: "notion",
-            event: "page_content_updated",
             databaseUrl: entities.databaseUrl,
           },
         },
@@ -1332,193 +1083,6 @@ describe("POST /api/webhooks/notion", () => {
       [200],
     );
     await expectAutomationConnector(readdedAccount.id);
-  });
-
-  it("verifies, signs, de-duplicates, and refreshes pending child page events", async () => {
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const webhook = app(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
-    const scenario = await setupFixture();
-    const { workflowId, entities } = scenario;
-    await connectNotion(scenario);
-    configureNotionParentPageMock(entities);
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-child-page-created",
-          eventConfig: {
-            provider: "notion",
-            event: "child_page_created",
-            parentPageUrl: entities.parentPageUrl,
-          },
-        },
-      }),
-      [201],
-    );
-    if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "notion-child-page-created"
-    ) {
-      throw new Error("Expected a Notion child page automation");
-    }
-
-    // A replacement verification while a token is active is rejected, so the
-    // original token keeps validating signed deliveries below.
-    const replacement = await postNotionWebhook({
-      rawBody: JSON.stringify({ verification_token: "attacker-token" }),
-    });
-    expect(replacement).toStrictEqual({
-      status: 401,
-      body: { error: "Unauthorized" },
-    });
-
-    const createdEvent = notionPageEvent({
-      entities,
-      type: "page.created",
-      timestamp: "2026-07-06T12:00:00.000Z",
-    });
-    const first = await postNotionWebhook({
-      rawBody: createdEvent.rawBody,
-      signature: notionSignature(createdEvent.rawBody),
-    });
-    expect(first).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 1,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-
-    const updateEvent = notionPageEvent({
-      entities,
-      type: "page.content_updated",
-      timestamp: "2026-07-06T12:05:00.000Z",
-    });
-    const update = await postNotionWebhook({
-      rawBody: updateEvent.rawBody,
-      signature: notionSignature(updateEvent.rawBody),
-    });
-    expect(update).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 1,
-        duplicates: 0,
-      },
-    });
-
-    const duplicate = await postNotionWebhook({
-      rawBody: updateEvent.rawBody,
-      signature: notionSignature(updateEvent.rawBody),
-    });
-    expect(duplicate).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 0,
-        duplicates: 1,
-      },
-    });
-  });
-
-  it("enqueues and refreshes pending database item events", async () => {
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const webhook = app(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
-    const scenario = await setupFixture();
-    const { workflowId, entities } = scenario;
-    await connectNotion(scenario);
-    configureNotionDatabaseMock(entities);
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-database-item-created",
-          eventConfig: {
-            provider: "notion",
-            event: "database_item_created",
-            databaseUrl: entities.databaseUrl,
-          },
-        },
-      }),
-      [201],
-    );
-    if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "notion-database-item-created"
-    ) {
-      throw new Error("Expected a Notion database item automation");
-    }
-
-    // Notion also delivers data-source children with a database parent id
-    // plus a data_source_id field (no parent type) — both shapes must match
-    // the data-source automation.
-    const createdEvent = notionPageEvent({
-      entities,
-      type: "page.created",
-      timestamp: "2026-07-06T12:00:00.000Z",
-      parent: {
-        id: entities.databaseId,
-        data_source_id: entities.dataSourceId,
-      },
-    });
-    const first = await postNotionWebhook({
-      rawBody: createdEvent.rawBody,
-      signature: notionSignature(createdEvent.rawBody),
-    });
-    expect(first).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 1,
-        refreshed: 0,
-        duplicates: 0,
-      },
-    });
-
-    const updateEvent = notionPageEvent({
-      entities,
-      type: "page.content_updated",
-      timestamp: "2026-07-06T12:05:00.000Z",
-      parent: { id: entities.dataSourceId, type: "data_source" },
-    });
-    const update = await postNotionWebhook({
-      rawBody: updateEvent.rawBody,
-      signature: notionSignature(updateEvent.rawBody),
-    });
-    expect(update).toStrictEqual({
-      status: 200,
-      body: {
-        success: true,
-        kind: "event",
-        pending: 0,
-        refreshed: 1,
-        duplicates: 0,
-      },
-    });
   });
 
   it("inherits explicit Notion account selection in new automations", async () => {

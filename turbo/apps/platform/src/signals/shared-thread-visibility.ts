@@ -9,6 +9,7 @@ import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { currentUserInfo$ } from "./auth.ts";
+import { throttleCommand } from "./command-scheduling.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
 
@@ -33,7 +34,7 @@ export function createSharedThreadVisibilitySignals(id: string) {
     );
     return result.status === 200 ? result.body : null;
   });
-  const change$ = command(
+  const persist$ = command(
     async (
       { get, set },
       audience: SharedThreadAudience,
@@ -78,6 +79,7 @@ export function createSharedThreadVisibilitySignals(id: string) {
       );
     },
   );
+  const save$ = throttleCommand(persist$, 0);
   const url = new URL(
     `/share/threads/${encodeURIComponent(id)}`,
     window.location.origin,
@@ -88,7 +90,12 @@ export function createSharedThreadVisibilitySignals(id: string) {
     saveError$: computed((get) => {
       return get(saveError$);
     }),
-    change$,
+    change$: command(
+      ({ set }, audience: SharedThreadAudience, signal: AbortSignal) => {
+        set(copy.clear$);
+        return set(save$, audience, signal);
+      },
+    ),
     url,
     copied$: computed((get) => {
       return get(copy.copiedUrl$) === url;

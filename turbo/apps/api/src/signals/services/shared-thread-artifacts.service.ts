@@ -568,7 +568,8 @@ export const deleteSharedThread$ = command(
     );
     await database
       .with(removed)
-      .delete(artifacts)
+      .update(artifacts)
+      .set({ deletedAt: nowDate() })
       .where(
         and(
           eq(artifacts.logicalKey, sharedThreadArtifactLogicalKey(row.id)),

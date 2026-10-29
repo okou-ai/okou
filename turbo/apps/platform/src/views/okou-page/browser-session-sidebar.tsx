@@ -15,7 +15,7 @@ import { IconTooltip } from "../components/icon-tooltip.tsx";
 interface BrowserSessionSidebarProps {
   readonly signals: BrowserSessionSignals;
   readonly onClose: () => void;
-  /** Status layered over the live page, such as who is in control. */
+  /** Status layered over the live viewer, such as who is in control. */
   readonly overlay?: ReactNode;
 }
 

@@ -19,6 +19,29 @@ import {
 
 const context = testContext();
 
+test.each([403, 404] as const)(
+  "An unavailable shared conversation uses the same access page (%s)",
+  async (status) => {
+    context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+      return respond(status, {
+        error: { code: "NOT_FOUND", message: "Shared conversation not found" },
+      });
+    });
+
+    await setupSharedThreadPage(context);
+
+    await expect(
+      screen.findByRole("heading", {
+        name: "You can’t view this conversation",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(/It may be private or no longer available\./),
+    ).toBeInTheDocument();
+    expect(getLinkByName("Sign in")).toBeInTheDocument();
+  },
+);
+
 function getButtonByName(name: string): HTMLElement {
   const button = queryAllByRoleFast("button").find((candidate) => {
     return (
@@ -203,12 +226,20 @@ test("A visitor can copy the public conversation link", async () => {
 });
 
 test("The creator can manage visibility after reopening a shared conversation", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const update = context.mocks.deferred<void>();
+  const refreshRequested = context.mocks.deferred<void>();
+  const refresh = context.mocks.deferred<void>();
   let audience: SharedThreadAudience = "organization";
-  const revision = "30000000-0000-4000-8000-000000000703";
+  let revision = "30000000-0000-4000-8000-000000000703";
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(200, sharedThread());
   });
-  context.mocks.api(sharedThreadVisibilityContract.get, ({ respond }) => {
+  context.mocks.api(sharedThreadVisibilityContract.get, async ({ respond }) => {
+    if (audience === "private") {
+      refreshRequested.resolve();
+      await refresh.promise;
+    }
     return respond(200, {
       id: SHARED_THREAD_ID,
       audience,
@@ -218,8 +249,13 @@ test("The creator can manage visibility after reopening a shared conversation", 
   });
   context.mocks.api(
     sharedThreadVisibilityContract.update,
-    ({ body, respond }) => {
+    async ({ body, respond }) => {
+      expect(body.expectedRevision).toBe(revision);
+      if (body.audience === "private") {
+        await update.promise;
+      }
       audience = body.audience;
+      revision = "30000000-0000-4000-8000-000000000704";
       return respond(200, {
         id: SHARED_THREAD_ID,
         audience,
@@ -237,9 +273,88 @@ test("The creator can manage visibility after reopening a shared conversation", 
   await waitFor(() => {
     expect(getRadioByName("Anyone at Original workspace")).toBeChecked();
   });
-  click(getRadioByName("Only me"));
+  click(getButtonByName("Copy link"));
   await waitFor(() => {
-    expect(getRadioByName("Only me")).toBeChecked();
+    expect(getButtonByName("Copied")).toBeInTheDocument();
   });
-  expect(audience).toBe("private");
+  expect(clipboard.writes).toStrictEqual([
+    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
+  ]);
+  click(getRadioByName("Only me"));
+  const choices = screen.getByRole("radiogroup", { name: "Who can access" });
+  expect(choices).toHaveAttribute("aria-busy", "true");
+  for (const option of queryAllByRoleFast("radio", choices)) {
+    expect(option).not.toBeChecked();
+    expect(option).toBeEnabled();
+  }
+  expect(getButtonByName("Copy link")).toBeEnabled();
+  click(getRadioByName("Anyone with the link"));
+  update.resolve();
+  await refreshRequested.promise;
+  expect(getRadioByName("Anyone at Original workspace")).toBeInTheDocument();
+  expect(choices).toHaveAttribute("aria-busy", "true");
+  expect(
+    screen.queryByRole("status", { name: "Loading permissions" }),
+  ).not.toBeInTheDocument();
+  refresh.resolve();
+  await waitFor(() => {
+    expect(getRadioByName("Anyone with the link")).toBeChecked();
+  });
+  expect(choices).toHaveAttribute("aria-busy", "false");
+});
+
+test("An unavailable conversation permission read keeps access unknown", async () => {
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(200, sharedThread());
+  });
+  context.mocks.api(sharedThreadVisibilityContract.get, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Permissions unavailable",
+      },
+    });
+  });
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "user_owner", fullName: "Owner" } },
+    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
+  });
+  click(getButtonByName("Share"));
+  await screen.findByText("Unable to load permissions");
+  const choices = screen.getByRole("radiogroup", { name: "Who can access" });
+  const options = queryAllByRoleFast("radio", choices);
+  expect(options).toHaveLength(3);
+  for (const option of options) {
+    expect(option).toBeDisabled();
+    expect(option).not.toBeChecked();
+  }
+  expect(screen.queryByText("Copy link")).not.toBeInTheDocument();
+});
+
+test("A signed-in recipient can copy the shared link without access controls", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(200, sharedThread());
+  });
+  context.mocks.api(sharedThreadVisibilityContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Shared conversation not found" },
+    });
+  });
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "user_recipient", fullName: "Recipient" } },
+    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
+  });
+  click(getButtonByName("Share"));
+  await screen.findByText("Copy link");
+  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(getButtonByName("Copied")).toBeInTheDocument();
+  });
+  expect(clipboard.writes).toStrictEqual([
+    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
+  ]);
 });

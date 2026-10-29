@@ -69,7 +69,7 @@ function ResultTasks({ won }: { readonly won: boolean }) {
           </>
         ) : (
           <p className={cn("text-[#8e9fb6]", typography.labelClassName)}>
-            {copy.optional}
+            {copy.lostTaskTitle}
           </p>
         )}
       </div>
@@ -158,9 +158,10 @@ export function HalloweenResultScreen() {
           )}
         >
           <strong className={cn("text-[#e8c68d]", typography.bodyClassName)}>
-            {copy.resultRewardEmphasis}
+            {won ? copy.resultRewardEmphasis : copy.lostRewardEmphasis}
           </strong>
-          {copy.resultRewardRest}
+          <br />
+          {won ? copy.resultRewardRest : copy.lostRewardRest}
         </p>
         <ResultTasks won={won} />
         <div className="mt-7 flex w-full max-w-[360px] flex-col items-stretch gap-3 md:w-auto md:max-w-none md:flex-row">

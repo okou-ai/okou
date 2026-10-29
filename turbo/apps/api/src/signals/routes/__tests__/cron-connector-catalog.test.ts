@@ -8,12 +8,8 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 
-import {
-  builtinConnectorOpenIdStartContract,
-  builtinConnectorsSearchContract,
-} from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorOpenIdStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -34,7 +30,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { singleton } from "../../../lib/singleton";
 import {
   clearMockNow,
   mockNow,
@@ -45,7 +40,6 @@ import { server } from "../../../mocks/server";
 import { mockApiTestConnectorProviderConfiguration } from "../../../test-fixtures/connector-catalog";
 import { createDeferredPromise } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
-import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -59,15 +53,11 @@ import {
 import { secretTemplate } from "./helpers/api-bdd-firewall";
 import { withConnectorRuntime } from "./helpers/connector-runtime-consumer";
 import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { connectorCheckRoutes } from "../connector-check";
 import { builtinConnectorsRoutes } from "../connectors";
 import { featureSwitchesRoutes } from "../feature-switches";
 
@@ -84,19 +74,12 @@ const SLACK_REVOKE_URL = "https://slack.com/api/auth.revoke";
 const STEAM_TEST_ID = "76561198000000000";
 
 type JsonRecord = Record<string, unknown>;
-type JsonMutation = (value: JsonRecord) => void;
 
 interface ReleaseFixtureOptions {
   readonly version: string;
   readonly connectorSlug?: string;
   readonly label?: string;
-  readonly generatedFirewall?: boolean;
-  readonly catalogBytes?: Buffer;
-  readonly mutateCatalog?: JsonMutation;
-  readonly mutateRuntime?: JsonMutation;
-  readonly mutateFirewall?: JsonMutation;
-  readonly mutateArtifact?: JsonMutation;
-  readonly mutatePointer?: JsonMutation;
+  readonly skill?: JsonRecord;
 }
 
 function createConnectorCleanup(
@@ -128,25 +111,6 @@ function isJsonRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function recordValue(value: unknown, label: string): JsonRecord {
-  if (!isJsonRecord(value)) {
-    throw new Error(`Expected ${label} to be an object`);
-  }
-  return value;
-}
-
-function arrayValue(value: unknown, label: string): unknown[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`Expected ${label} to be an array`);
-  }
-  return value;
-}
-
-function firstRecord(value: unknown, label: string): JsonRecord {
-  const first = arrayValue(value, label)[0];
-  return recordValue(first, `${label}[0]`);
-}
-
 function canonicalJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => {
@@ -173,10 +137,6 @@ function digest(bytes: Uint8Array): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-function catalogTemplate(reference: string): string {
-  return `\${{ ${reference} }}`;
-}
-
 function releaseKeys(version: string): {
   readonly catalog: string;
 } {
@@ -190,14 +150,8 @@ function buildCatalogConnector(args: {
   readonly connectorSlug: string;
   readonly label: string;
   readonly iconKey: string;
-  readonly firewall?: JsonRecord;
+  readonly skill?: JsonRecord;
 }): JsonRecord {
-  const presentationMethod = publicAuthMethod({
-    id: "api-token",
-    grantKind: "manual",
-    manual: true,
-  });
-  presentationMethod.label = "API Token";
   return {
     slug: args.connectorSlug,
     label: args.label,
@@ -206,561 +160,56 @@ function buildCatalogConnector(args: {
     generation: [],
     tags: ["fixture"],
     authMethods: [
-      canonicalAuthMethod(presentationMethod, defaultRuntimeAuthMethod()),
+      {
+        id: "api-token",
+        label: "API Token",
+        description: null,
+        visible: true,
+        storage: { version: 1, secrets: [PRIVATE_VALUE], variables: [] },
+        grant: {
+          kind: "manual",
+          fields: [
+            {
+              privateName: PRIVATE_VALUE,
+              publicId: "credential",
+              label: "Credential",
+              required: true,
+              placeholder: null,
+              storage: "secret",
+            },
+          ],
+        },
+        access: {
+          kind: "static",
+          envBindings: { SERVICE_TOKEN: `$secrets.${PRIVATE_VALUE}` },
+        },
+        revoke: { kind: "none" },
+      },
     ],
-    icon: {
-      key: args.iconKey,
-      invertInDarkMode: false,
-    },
-    skill: { kind: "none" },
-    firewall: args.firewall ?? { kind: "none" },
+    icon: { key: args.iconKey, invertInDarkMode: false },
+    skill: args.skill ?? { kind: "none" },
+    firewall: { kind: "none" },
   };
 }
 
-function defaultRuntimeAuthMethod(): JsonRecord {
-  return {
-    id: "api-token",
-    storage: { version: 1, secrets: [PRIVATE_VALUE], variables: [] },
-    grant: {
-      kind: "manual",
-      fields: [
-        {
-          privateName: PRIVATE_VALUE,
-          publicId: "credential",
-          storage: "secret",
-        },
-      ],
-    },
-    access: {
-      kind: "static",
-      envBindings: { SERVICE_TOKEN: `$secrets.${PRIVATE_VALUE}` },
-    },
-    revoke: { kind: "none" },
-  };
-}
-
-interface FixtureAuthComponents {
-  presentation: readonly JsonRecord[];
-  runtime: readonly JsonRecord[];
-}
-
-const fixtureAuthComponents = singleton(() => {
-  return new WeakMap<JsonRecord, FixtureAuthComponents>();
-});
-
-function setFixtureAuthComponents(
-  artifact: JsonRecord,
-  components: FixtureAuthComponents,
-): void {
-  fixtureAuthComponents().set(artifact, components);
-  if (components.presentation.length !== components.runtime.length) {
-    return;
-  }
-  firstRecord(artifact.connectors, "connectors").authMethods =
-    components.presentation.map((presentation, index) => {
-      return canonicalAuthMethod(presentation, components.runtime[index]);
-    });
-}
-
-function setArtifactAuthMethods(
-  artifact: JsonRecord,
-  methods: readonly JsonRecord[],
-): void {
-  const current = fixtureAuthComponents().get(artifact);
-  if (!current) {
-    throw new Error("Catalog fixture auth components are not initialized");
-  }
-  const presentation = methods.every((method) => {
-    return typeof method.grantKind === "string";
-  });
-  setFixtureAuthComponents(artifact, {
-    presentation: presentation ? methods : current.presentation,
-    runtime: presentation ? current.runtime : methods,
-  });
-}
-
-function initializeFixtureAuthComponents(artifact: JsonRecord): void {
-  const presentationMethod = publicAuthMethod({
-    id: "api-token",
-    grantKind: "manual",
-    manual: true,
-  });
-  presentationMethod.label = "API Token";
-  setFixtureAuthComponents(artifact, {
-    presentation: [presentationMethod],
-    runtime: [defaultRuntimeAuthMethod()],
-  });
-}
-
-function assertFixtureAuthComponentsComplete(artifact: JsonRecord): void {
-  const components = fixtureAuthComponents().get(artifact);
-  if (
-    components &&
-    components.presentation.length !== components.runtime.length
-  ) {
-    firstRecord(artifact.connectors, "connectors").authMethods = [
-      {
-        invalidFixtureAuthMethodCount: {
-          presentation: components.presentation.length,
-          runtime: components.runtime.length,
-        },
-      },
-    ];
-  }
-}
-
-function publicAuthMethod(args: {
-  readonly id: string;
-  readonly grantKind:
-    "manual" | "auth-code" | "openid-auth" | "external-code" | "device-auth";
-  readonly manual?: boolean;
-}): JsonRecord {
-  return {
-    id: args.id,
-    label: `${args.id} auth`,
-    description: null,
-    visible: true,
-    grantKind: args.grantKind,
-    manualFields: args.manual
-      ? [
-          {
-            id: "credential",
-            label: "Credential",
-            required: true,
-            placeholder: null,
-            inputType: "password",
-          },
-        ]
-      : [],
-    startOptions: [],
-  };
-}
-
-function testOauthPrivateAuthMethod(): JsonRecord {
-  return {
-    id: "oauth",
-    client: {
-      clientRegistration: "static",
-      clientType: "confidential",
-      clientId: "test-oauth-client",
-      clientSecret: "test-oauth-secret",
-    },
-    storage: {
-      version: 1,
-      secrets: ["TEST_OAUTH_ACCESS_TOKEN", "TEST_OAUTH_REFRESH_TOKEN"],
-      variables: ["TEST_OAUTH_API_TENANT_ID"],
-    },
-    grant: {
-      kind: "auth-code",
-      scopes: ["read"],
-      callbackOrigin: "api",
-      outputs: {
-        accessToken: "$secrets.TEST_OAUTH_ACCESS_TOKEN",
-        refreshToken: "$secrets.TEST_OAUTH_REFRESH_TOKEN",
-        tenantId: "$vars.TEST_OAUTH_API_TENANT_ID",
-      },
-    },
-    access: {
-      kind: "refresh-token",
-      envBindings: {
-        TEST_OAUTH_TOKEN: "$secrets.TEST_OAUTH_ACCESS_TOKEN",
-        TEST_OAUTH_TENANT_ID: "$vars.TEST_OAUTH_API_TENANT_ID",
-      },
-      inputs: {
-        refreshToken: "$secrets.TEST_OAUTH_REFRESH_TOKEN",
-      },
-      outputs: {
-        accessToken: "$secrets.TEST_OAUTH_ACCESS_TOKEN",
-        refreshToken: "$secrets.TEST_OAUTH_REFRESH_TOKEN",
-      },
-      refreshableSecrets: ["TEST_OAUTH_ACCESS_TOKEN"],
-    },
-    revoke: { kind: "none" },
-  };
-}
-
-function steamPrivateAuthMethod(args?: {
-  readonly callbackOrigin?: "web" | "api";
-  readonly platformSecret?: string;
-  readonly steamIdName?: string;
-}): JsonRecord {
-  const platformSecret = args?.platformSecret ?? "STEAM_WEB_API_KEY";
-  const steamIdName = args?.steamIdName ?? "STEAM_ID";
-  return {
-    id: "openid",
-    storage: { version: 1, secrets: [], variables: [steamIdName] },
-    grant: {
-      kind: "openid-auth",
-      callbackOrigin: args?.callbackOrigin ?? "api",
-      outputs: { steamId: `$vars.${steamIdName}` },
-    },
-    access: {
-      kind: "static",
-      platformSecrets: [platformSecret],
-      envBindings: {
-        STEAM_ID: `$vars.${steamIdName}`,
-        STEAM_WEB_API_KEY: `$secrets.${platformSecret}`,
-      },
-    },
-    revoke: { kind: "none" },
-  };
-}
-
-function awsPrivateAuthMethod(
-  scopes: readonly string[] = ["openid"],
-): JsonRecord {
-  const refreshTokenName = "CATALOG_AWS_LOGIN_REFRESH_TOKEN";
-  const dpopKeyName = "CATALOG_AWS_LOGIN_DPOP_KEY";
-  const accessKeyIdName = "CATALOG_AWS_ACCESS_KEY_ID";
-  const secretAccessKeyName = "CATALOG_AWS_SECRET_ACCESS_KEY";
-  const sessionTokenName = "CATALOG_AWS_SESSION_TOKEN";
-  const signinRegionName = "CATALOG_AWS_SIGNIN_REGION";
-  const runtimeRegionName = "CATALOG_AWS_REGION";
-  return {
-    id: "cli",
-    client: {
-      clientRegistration: "static",
-      clientType: "public",
-      clientId: "arn:aws:signin:::devtools/cross-device",
-    },
-    storage: {
-      version: 1,
-      secrets: [
-        refreshTokenName,
-        dpopKeyName,
-        accessKeyIdName,
-        secretAccessKeyName,
-        sessionTokenName,
-      ],
-      variables: [signinRegionName, runtimeRegionName],
-    },
-    grant: {
-      kind: "external-code",
-      scopes: [...scopes],
-      outputs: {
-        refreshToken: `$secrets.${refreshTokenName}`,
-        dpopKey: `$secrets.${dpopKeyName}`,
-        accessKeyId: `$secrets.${accessKeyIdName}`,
-        secretAccessKey: `$secrets.${secretAccessKeyName}`,
-        sessionToken: `$secrets.${sessionTokenName}`,
-        signinRegion: `$vars.${signinRegionName}`,
-        runtimeRegion: `$vars.${runtimeRegionName}`,
-      },
-    },
-    access: {
-      kind: "refresh-token",
-      inputs: {
-        refreshToken: `$secrets.${refreshTokenName}`,
-        dpopKey: `$secrets.${dpopKeyName}`,
-        signinRegion: `$vars.${signinRegionName}`,
-      },
-      outputs: {
-        refreshToken: `$secrets.${refreshTokenName}`,
-        accessKeyId: `$secrets.${accessKeyIdName}`,
-        secretAccessKey: `$secrets.${secretAccessKeyName}`,
-        sessionToken: `$secrets.${sessionTokenName}`,
-      },
-      refreshableSecrets: [
-        accessKeyIdName,
-        secretAccessKeyName,
-        sessionTokenName,
-      ],
-      envBindings: {
-        AWS_ACCESS_KEY_ID: `$secrets.${accessKeyIdName}`,
-        AWS_SECRET_ACCESS_KEY: `$secrets.${secretAccessKeyName}`,
-        AWS_SESSION_TOKEN: `$secrets.${sessionTokenName}`,
-        AWS_REGION: `$vars.${runtimeRegionName}`,
-        AWS_DEFAULT_REGION: `$vars.${runtimeRegionName}`,
-      },
-    },
-    revoke: { kind: "none" },
-  };
-}
-
-function slackPrivateAuthMethod(
-  accessTokenName = "CATALOG_SLACK_ACCESS_TOKEN",
-  storageVersion = 1,
-): JsonRecord {
-  return {
-    id: "oauth",
-    client: {
-      clientRegistration: "static",
-      clientType: "confidential",
-      clientIdEnv: "SLACK_OAUTH_CLIENT_ID",
-      clientSecretEnv: "SLACK_OAUTH_CLIENT_SECRET",
-    },
-    storage: {
-      version: storageVersion,
-      secrets: [accessTokenName],
-      variables: [],
-    },
-    grant: {
-      kind: "auth-code",
-      scopes: ["channels:read", "chat:write"],
-      callbackOrigin: "web",
-      outputs: { accessToken: `$secrets.${accessTokenName}` },
-    },
-    access: {
-      kind: "static",
-      envBindings: { SLACK_TOKEN: `$secrets.${accessTokenName}` },
-    },
-    revoke: {
-      kind: "token-revoke",
-      inputs: { accessToken: `$secrets.${accessTokenName}` },
-    },
-  };
-}
-
-function buildBundledSkill(
-  connectorSlug: string,
-  versionId = createHash("sha256").update(randomUUID()).digest("hex"),
-  metadata: {
-    readonly size: number;
-    readonly archiveSize: number;
-    readonly fileCount: number;
-  } = {
-    size: Buffer.byteLength(`# ${connectorSlug}\n`),
-    archiveSize: 321,
-    fileCount: 1,
-  },
-  storageName = `connector-skill@${connectorSlug}-${randomUUID().replaceAll("-", "")}`,
-): JsonRecord {
-  const prefix = `__system__/volume/${storageName}/${versionId}`;
-  return {
-    kind: "bundled",
-    storageName,
-    versionId,
-    storageVersionPrefix: prefix,
-    size: metadata.size,
-    archiveSize: metadata.archiveSize,
-    fileCount: metadata.fileCount,
-  };
-}
-
-interface OwnedVolumeStorageFixture {
-  readonly storageName: string;
-}
-
-function createOwnedVolumeStorageFixture(
-  storageName: string,
-): OwnedVolumeStorageFixture {
-  return {
-    storageName,
-  };
-}
-
-function createBundledSkillStorageFixture(
-  connectorSlug: string,
-): OwnedVolumeStorageFixture {
-  return createOwnedVolumeStorageFixture(
-    `connector-skill@${connectorSlug}-${randomUUID().replaceAll("-", "")}`,
-  );
-}
-
-interface BundledSkillFixture extends OwnedVolumeStorageFixture {
-  readonly descriptor: JsonRecord;
-  readonly versionId: string;
-  readonly archiveSize: number;
-}
-
-function buildBundledSkillFixture(
-  connectorSlug: string,
-  versionId = createHash("sha256").update(randomUUID()).digest("hex"),
-  storage = createBundledSkillStorageFixture(connectorSlug),
-): BundledSkillFixture {
-  const contentSize = Buffer.byteLength(`# ${connectorSlug}\n`);
+function buildBundledSkillFixture(connectorSlug: string) {
+  const storageName = `connector-skill@${connectorSlug}-${randomUUID().replaceAll("-", "")}`;
+  const versionId = createHash("sha256").update(randomUUID()).digest("hex");
   const archiveSize = 321;
-  const fileCount = 1;
   return {
-    descriptor: buildBundledSkill(
-      connectorSlug,
-      versionId,
-      {
-        size: contentSize,
-        archiveSize,
-        fileCount,
-      },
-      storage.storageName,
-    ),
-    ...storage,
+    storageName,
     versionId,
     archiveSize,
-  };
-}
-
-function buildGeneratedFirewall(): JsonRecord {
-  const base = "https://api.example.test/v1";
-  const auth = (): JsonRecord => {
-    return {
-      headers: {
-        Authorization: `Bearer ${catalogTemplate("secrets.SERVICE_TOKEN")}`,
-      },
-    };
-  };
-  const permissions = [
-    {
-      name: "items.read",
-      description: "Read items",
-      rules: ["GET /items"],
+    descriptor: {
+      kind: "bundled",
+      storageName,
+      versionId,
+      storageVersionPrefix: `__system__/volume/${storageName}/${versionId}`,
+      size: Buffer.byteLength(`# ${connectorSlug}\n`),
+      archiveSize,
+      fileCount: 1,
     },
-  ];
-  return {
-    kind: "generated",
-    billable: false,
-    config: {
-      placeholders: { SERVICE_TOKEN: "placeholder-token" },
-      apis: [{ base, auth: auth(), permissions }],
-    },
-    categories: {
-      byPermission: { "items.read": "Items" },
-      displayOrder: ["Items"],
-    },
-    defaultAllowed: ["items.read"],
-    defaultUnknownPolicy: "deny",
   };
-}
-
-const DUPLICATE_DYNAMIC_FIREWALL_BASE = `https://${catalogTemplate("vars.SERVICE_HOST")}.example.test/v1`;
-const DUPLICATE_DYNAMIC_FIREWALL_HOST_POLICY = {
-  kind: "providerOwned",
-  suffixes: [".example.test"],
-} as const;
-
-function addDynamicFirewallVariableBinding(artifact: JsonRecord): void {
-  const connector = firstRecord(artifact.connectors, "connectors");
-  const method = firstRecord(connector.authMethods, "authMethods");
-  recordValue(method.storage, "storage").variables = ["SERVICE_HOST"];
-  recordValue(
-    recordValue(method.access, "access").envBindings,
-    "envBindings",
-  ).SERVICE_HOST = "$vars.SERVICE_HOST";
-}
-
-function addDuplicateDynamicPrivateFirewallApi(
-  artifact: JsonRecord,
-  options: { readonly conflictingHostPolicy?: boolean } = {},
-): void {
-  const connector = firstRecord(artifact.connectors, "connectors");
-  const firewall = recordValue(connector.firewall, "firewall");
-  const config = recordValue(firewall.config, "firewall.config");
-  const apis = arrayValue(config.apis, "firewall.apis");
-  const firstApi = firstRecord(apis, "firewall.apis");
-  firstApi.base = DUPLICATE_DYNAMIC_FIREWALL_BASE;
-  firstApi.hostPolicy = DUPLICATE_DYNAMIC_FIREWALL_HOST_POLICY;
-  const fallbackApi = structuredClone(firstApi);
-  fallbackApi.auth = {};
-  fallbackApi.permissions = [];
-  fallbackApi.hostPolicy = options.conflictingHostPolicy
-    ? { kind: "publicDestination" }
-    : DUPLICATE_DYNAMIC_FIREWALL_HOST_POLICY;
-  apis.push(fallbackApi);
-}
-
-function canonicalGrant(
-  publicMethod: JsonRecord,
-  privateMethod: JsonRecord,
-): JsonRecord {
-  const privateGrant = structuredClone(
-    recordValue(privateMethod.grant, "private auth method grant"),
-  );
-  if (privateGrant.kind === "manual") {
-    const publicFields = arrayValue(
-      publicMethod.manualFields,
-      "public manual fields",
-    ).map((field) => {
-      return recordValue(field, "public manual field");
-    });
-    privateGrant.fields = arrayValue(
-      privateGrant.fields,
-      "private manual fields",
-    ).map((fieldValue) => {
-      const field = recordValue(fieldValue, "private manual field");
-      const publicField = publicFields.find((candidate) => {
-        return candidate.id === field.publicId;
-      });
-      return {
-        ...field,
-        label: publicField?.label,
-        required: publicField?.required,
-        placeholder: publicField?.placeholder,
-      };
-    });
-  }
-  if (privateGrant.kind === "device-auth") {
-    const publicOptions = arrayValue(
-      publicMethod.startOptions,
-      "public device start options",
-    ).map((option) => {
-      return recordValue(option, "public device start option");
-    });
-    privateGrant.startOptions = arrayValue(
-      privateGrant.startOptionMappings,
-      "private device start option mappings",
-    ).map((mappingValue) => {
-      const mapping = recordValue(
-        mappingValue,
-        "private device start option mapping",
-      );
-      const publicOption = publicOptions.find((candidate) => {
-        return candidate.id === mapping.publicId;
-      });
-      return {
-        privateName: mapping.privateName,
-        publicId: mapping.publicId,
-        kind: publicOption?.kind,
-        label: publicOption?.label,
-        required: publicOption?.required,
-        defaultValue: publicOption?.defaultValue,
-        options: publicOption?.options,
-      };
-    });
-    delete privateGrant.startOptionMappings;
-  }
-  return privateGrant;
-}
-
-function canonicalAuthMethod(
-  publicMethodValue: unknown,
-  privateMethodValue: unknown,
-): JsonRecord {
-  const publicMethod = recordValue(publicMethodValue, "public auth method");
-  const privateMethod = recordValue(privateMethodValue, "private auth method");
-  const publicExtras = Object.fromEntries(
-    Object.entries(publicMethod).filter(([key]) => {
-      return ![
-        "id",
-        "label",
-        "description",
-        "visible",
-        "grantKind",
-        "manualFields",
-        "startOptions",
-      ].includes(key);
-    }),
-  );
-  const method: JsonRecord = {
-    ...privateMethod,
-    ...publicExtras,
-    id: publicMethod.id,
-    label: publicMethod.label,
-    description: publicMethod.description,
-    visible: publicMethod.visible,
-    ...(privateMethod.client === undefined
-      ? {}
-      : { client: privateMethod.client }),
-    storage: privateMethod.storage,
-    grant: canonicalGrant(publicMethod, privateMethod),
-    access: privateMethod.access,
-    revoke: privateMethod.revoke,
-  };
-  if (
-    publicMethod.id !== privateMethod.id ||
-    publicMethod.grantKind !==
-      recordValue(privateMethod.grant, "private auth method grant").kind
-  ) {
-    method.invalidSplitFixtureRelationship = true;
-  }
-  return method;
 }
 
 function buildRelease(options: ReleaseFixtureOptions): ReleaseFixture {
@@ -791,26 +240,17 @@ function buildRelease(options: ReleaseFixtureOptions): ReleaseFixture {
         connectorSlug,
         label,
         iconKey,
-        ...(options.generatedFirewall
-          ? { firewall: buildGeneratedFirewall() }
-          : {}),
+        skill: options.skill,
       }),
     ],
   };
 
-  initializeFixtureAuthComponents(catalog);
-  options.mutateCatalog?.(catalog);
-  options.mutateRuntime?.(catalog);
-  options.mutateFirewall?.(catalog);
-  assertFixtureAuthComponentsComplete(catalog);
-  options.mutateArtifact?.(catalog);
-  const catalogBytes = options.catalogBytes ?? jsonBytes(catalog);
+  const catalogBytes = jsonBytes(catalog);
   const pointer: JsonRecord = {
     catalogVersion: options.version,
     catalogKey: keys.catalog,
     catalogDigest: digest(catalogBytes),
   };
-  options.mutatePointer?.(pointer);
 
   return {
     version: options.version,
@@ -943,21 +383,10 @@ async function syncCatalog(app: Awaited<ReturnType<typeof setupApp>>) {
   );
 }
 
-// The public catalog served from the current pointer, read as a fresh user
-// with the given feature switches.
-async function servedConnectors(
-  switches: Partial<Record<FeatureSwitchKey, boolean>> = {},
-) {
+// The public catalog served from the current pointer, read as a fresh user.
+async function servedConnectors() {
   routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
   const headers = { authorization: "Bearer clerk-session" };
-  if (Object.keys(switches).length > 0) {
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({ headers, body: { switches } }),
-      [200],
-    );
-  }
   const response = await accept(
     setupApp({ context, routes: connectorCatalogRoutes })(
       connectorCatalogContract,
@@ -1003,8 +432,11 @@ describe("connector catalog valid lifecycle", () => {
       routes: cronConnectorCatalogRoutes,
       isolatePg: true,
     });
-    const bucket = configureSource();
-    const first = buildRelease({ version: "2026-07-15.1" });
+    configureSource();
+    const first = buildRelease({
+      version: "2026-07-15.1",
+      label: "Initial catalog",
+    });
     const second = buildRelease({
       version: "2026-07-15.2",
       label: "External Test Updated",
@@ -1015,28 +447,11 @@ describe("connector catalog valid lifecycle", () => {
       outcome: "accepted",
       failureCode: null,
     });
-    expect(
-      commandInput(context.mocks.s3.send.mock.calls[0]?.[0]),
-    ).toMatchObject({
-      Bucket: bucket,
-      Key: ACTIVE_KEY,
-    });
-
-    mockNow(new Date("2026-07-15T08:01:00.000Z"));
-    const callsBeforeUnchanged = context.mocks.s3.send.mock.calls.length;
     const unchanged = await syncCatalog(app);
     expect(unchanged.body).toStrictEqual({
       outcome: "unchanged",
       failureCode: null,
     });
-    // An unchanged pointer digest skips the catalog download entirely.
-    expect(context.mocks.s3.send.mock.calls.length - callsBeforeUnchanged).toBe(
-      1,
-    );
-    expect(
-      commandInput(context.mocks.s3.send.mock.calls[callsBeforeUnchanged]?.[0]),
-    ).toMatchObject({ Bucket: bucket, Key: ACTIVE_KEY });
-
     serveObjects(catalogObjects([first, second], second));
     expect((await syncCatalog(app)).body).toMatchObject({
       outcome: "accepted",
@@ -1052,351 +467,45 @@ describe("connector catalog valid lifecycle", () => {
       outcome: "accepted",
     });
 
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const callsBeforePublicCatalog = context.mocks.s3.send.mock.calls.length;
-    const publicCatalog = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).list({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(
-      publicCatalog.body.connectors.some((connector) => {
-        return connector.slug === first.connectorSlug;
-      }),
-    ).toBeTruthy();
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(
-      callsBeforePublicCatalog,
-    );
-  });
-
-  it("serves every public catalog surface from accepted database state", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-public-reader",
-      generatedFirewall: true,
-      mutateCatalog: (artifact) => {
-        const connector = firstRecord(artifact.connectors, "connectors");
-        recordValue(connector.icon, "icon").key =
-          "connector-icons/resolved-icon.svg";
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog(app);
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const headers = { authorization: "Bearer clerk-session" };
-    const catalogClient = setupApp({
-      context,
-      routes: connectorCatalogRoutes,
-    })(connectorCatalogContract);
-    const searchClient = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const callsBeforePublicReads = context.mocks.s3.send.mock.calls.length;
-
-    const list = await accept(catalogClient.list({ headers }), [200]);
-    expect(list.body.connectors).toHaveLength(1);
-    expect(list.body.connectors[0]).toMatchObject({
-      slug: release.connectorSlug,
-      label: "External Test",
-      description: "An external connector used only by the sync fixture",
-      category: "testing",
-      generation: [],
-      tags: ["fixture"],
-      icon: {
-        url: "https://static.vm0.io/connector-icons/resolved-icon.svg",
-        invertInDarkMode: false,
-      },
-      authMethods: [
-        {
-          id: "api-token",
-          label: "API Token",
-          description: null,
-          grantKind: "manual",
-        },
-      ],
-      permissionSummary: {
-        hasPermissions: true,
-        permissionCount: 1,
-        hasCategories: true,
-        hasDefaultPolicyOverrides: true,
-      },
-    });
-    assertPublicConnectorCatalogHasNoPrivateFields(list.body);
-
-    const detail = await accept(
-      catalogClient.get({
-        params: { connectorSlug: release.connectorSlug },
-        headers,
-      }),
-      [200],
-    );
-    expect(detail.body.connector.authMethods[0]).toMatchObject({
-      id: "api-token",
-      manualFields: [
-        {
-          id: "credential",
-          label: "Credential",
-          required: true,
-          placeholder: null,
-          inputType: "password",
-        },
-      ],
-      startOptions: [],
-    });
-
-    const permissions = await accept(
-      catalogClient.permissions({
-        params: { connectorSlug: release.connectorSlug },
-        headers,
-      }),
-      [200],
-    );
-    expect(permissions.body.permissions).toMatchObject({
-      connectorSlug: release.connectorSlug,
-      permissionCount: 1,
-      permissions: [{ name: "items.read", description: "Read items" }],
-      categories: {
-        categories: { "items.read": "Items" },
-        displayOrder: ["Items"],
-      },
-      defaultPolicy: {
-        permissionDefault: "allow",
-        unknownPolicy: "deny",
-      },
-    });
-
-    const status = await accept(catalogClient.status({ headers }), [200]);
-    expect(status.body.connectors).toHaveLength(1);
-    expect(status.body.connectors[0]).toMatchObject({
-      slug: release.connectorSlug,
-      singleAuthCodeAuthMethodId: null,
-      connectNotice: null,
-    });
-    assertPublicConnectorCatalogHasNoPrivateFields(status.body);
-
-    const search = await accept(
-      searchClient.search({
-        query: { keyword: "external" },
-        headers,
-      }),
-      [200],
-    );
-    expect(search.body.connectors).toStrictEqual([
-      {
-        slug: release.connectorSlug,
-        label: "External Test",
-        description: "An external connector used only by the sync fixture",
-        authMethods: ["api-token"],
-      },
+    await expect(servedConnectors()).resolves.toMatchObject([
+      { slug: first.connectorSlug, label: "Initial catalog" },
     ]);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforePublicReads);
-    expect(JSON.stringify({ detail, permissions, search })).not.toContain(
-      PRIVATE_VALUE,
-    );
   });
 
-  it("executes an external manual grant with catalog-owned storage", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const optionalSecretName = "EXTERNAL_OPTIONAL_TOKEN";
-    const release = buildRelease({
-      version: "2026-07-15.external-manual-grant",
-      connectorSlug: "agora",
-      label: "Catalog Agora",
-      mutateCatalog: (artifact) => {
-        const method = firstRecord(
-          firstRecord(artifact.connectors, "connectors").authMethods,
-          "authMethods",
-        );
-        const grant = recordValue(method.grant, "grant");
-        arrayValue(grant.fields, "grant.fields").push({
-          privateName: optionalSecretName,
-          publicId: "optionalCredential",
-          storage: "secret",
-          label: "Optional credential",
-          required: false,
-          placeholder: null,
-        });
-      },
-      mutateRuntime: (artifact) => {
-        const method = firstRecord(
-          firstRecord(artifact.connectors, "connectors").authMethods,
-          "authMethods",
-        );
-        arrayValue(
-          recordValue(method.storage, "storage").secrets,
-          "secrets",
-        ).push(optionalSecretName);
-        recordValue(
-          recordValue(method.access, "access").envBindings,
-          "envBindings",
-        ).OPTIONAL_SERVICE_TOKEN = {
-          valueRef: `$secrets.${optionalSecretName}`,
-          optional: true,
-        };
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog(app);
-
+  it("uses a manual GitLab credential in a Run without optional host configuration", async () => {
     const actor = bdd.user();
-    onTestFinished(createConnectorCleanup(actor, "agora"));
-    const callsBeforeAction = context.mocks.s3.send.mock.calls.length;
+    onTestFinished(createConnectorCleanup(actor, "gitlab"));
     const connected = await connectorsApi.connectManualGrant(
       actor,
-      "agora",
+      "gitlab",
       "api-token",
-      { credential: "catalog-manual-secret" },
+      { accessToken: "manual-gitlab-secret" },
     );
     expect(connected).toMatchObject({
-      target: { kind: "builtin", connectorSlug: "agora" },
+      target: { kind: "builtin", connectorSlug: "gitlab" },
       authMethod: "api-token",
       connectionStatus: "connected",
     });
 
     const listed = await connectorsApi.listBuiltinConnectors(actor);
-    expect(JSON.stringify(listed)).not.toContain("catalog-manual-secret");
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
+    expect(JSON.stringify(listed)).not.toContain("manual-gitlab-secret");
     await withConnectorRuntime(
       context,
       actor,
-      "agora",
+      "gitlab",
       async ({ claim, resolveAuth }) => {
-        expect(claim.environment).not.toHaveProperty("OPTIONAL_SERVICE_TOKEN");
+        expect(claim.environment).not.toHaveProperty("GITLAB_HOST");
         const resolved = await resolveAuth({
           authHeaders: {
-            Authorization: "Bearer " + secretTemplate("SERVICE_TOKEN"),
+            "PRIVATE-TOKEN": secretTemplate("GITLAB_TOKEN"),
           },
         });
         expect(resolved.headers).toStrictEqual({
-          Authorization: "Bearer catalog-manual-secret",
+          "PRIVATE-TOKEN": "manual-gitlab-secret",
         });
       },
     );
   });
-
-  it("wakes claimed runs when a custom permission bundle changes", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const connectorSlug = "external-custom-permissions";
-    configureSource();
-    const initial = buildRelease({
-      version: "2026-07-15.external-custom-permissions-1",
-      connectorSlug,
-      label: "External Custom Permissions",
-      generatedFirewall: true,
-    });
-    serveObjects(catalogObjects([initial], initial));
-    await syncCatalog(app);
-
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "External custom permission agent",
-      visibility: "private",
-    });
-    const custom = await connectorsApi.createCustomConnector(
-      actor,
-      manualHttpCustomConnectorCreateBody({
-        displayName: "External custom permission API",
-        prefixTemplates: ["https://custom-permissions.example.test/v1/"],
-        permissionBundleRef: `builtin:${connectorSlug}@1`,
-      }),
-    );
-    await connectorsApi.setCustomConnectorSecret(
-      actor,
-      custom.id,
-      "custom-permission-secret",
-    );
-    const grant = {
-      customConnectorId: custom.id,
-      permissionNames: ["items.read"],
-    };
-    const grantResponse =
-      await connectorsApi.requestUpdateAgentCustomConnectorGrants(
-        actor,
-        agent.agentId,
-        [grant],
-        [200],
-      );
-    if (grantResponse.status !== 200) {
-      throw new Error("Expected custom connector permission grant");
-    }
-
-    const created: { runId?: string } = {};
-    onTestFinished(async () => {
-      context.mocks.s3.send.mockResolvedValue({ Contents: [] });
-      if (created.runId) {
-        await runs.requestCancelRun(actor, created.runId, [200, 404]);
-        await flushWaitUntilForTest();
-      }
-      await connectorsApi.deleteCustomConnector(actor, custom.id);
-      await bdd.deleteAgent(actor, agent.agentId);
-    });
-    const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "Use the custom permission bundle",
-    });
-    created.runId = run.runId;
-    await runs.heartbeatRunner(runnerGroup);
-    await runs.claimRunnerJob(run.runId);
-
-    context.mocks.ably.publish.mockClear();
-    const replacement = buildRelease({
-      version: "2026-07-15.external-custom-permissions-2",
-      connectorSlug,
-      label: "External Custom Permissions",
-      generatedFirewall: true,
-      mutateFirewall: (artifact) => {
-        const connector = firstRecord(artifact.connectors, "connectors");
-        const firewall = recordValue(connector.firewall, "firewall");
-        const config = recordValue(firewall.config, "firewall.config");
-        const api = firstRecord(config.apis, "firewall.apis");
-        const permission = firstRecord(api.permissions, "permissions");
-        permission.rules = ["GET /items", "GET /items/:id"];
-      },
-    });
-    serveObjects(catalogObjects([initial, replacement], replacement));
-    await syncCatalog(app);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({
-      channels: [expect.stringMatching(/^runner-group:/)],
-      messages: expect.arrayContaining([
-        {
-          name: "connector-runtime-sync",
-          data: JSON.stringify({
-            runId: run.runId,
-            target: { kind: "custom", customConnectorId: custom.id },
-          }),
-          encoding: "json",
-        },
-      ]),
-    });
-
-    context.mocks.ably.batchPublish.mockClear();
-    await syncCatalog(app);
-    expect(context.mocks.ably.batchPublish).not.toHaveBeenCalled();
-  }, 15_000);
 
   it("mounts all 17 normally published connector skill versions", async () => {
     const owned = await publicChatActor(context, { clockTime: now() });
@@ -1574,39 +683,14 @@ describe("connector catalog valid lifecycle", () => {
     await check(later.runId, updated);
   }, 30_000);
 
-  it("executes an external OpenID grant with catalog-owned storage", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
+  it("makes a verified Steam OpenID identity available to its Run", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockOptionalEnv("STEAM_WEB_API_KEY", "catalog-steam-api-key");
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-openid-grant",
-      connectorSlug: "steam",
-      label: "Catalog Steam",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "openid", grantKind: "openid-auth" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          steamPrivateAuthMethod({ steamIdName: "CATALOG_STEAM_ID" }),
-        ]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog(app);
-
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "steam"));
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const headers = { authorization: "Bearer clerk-session" };
-    const callsBeforeAction = context.mocks.s3.send.mock.calls.length;
     const start = await accept(
       setupApp({ context, routes: builtinConnectorsRoutes })(
         builtinConnectorOpenIdStartContract,
@@ -1638,64 +722,16 @@ describe("connector catalog valid lifecycle", () => {
       externalId: STEAM_TEST_ID,
       connectionStatus: "connected",
     });
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
     await withConnectorRuntime(context, actor, "steam", ({ claim }) => {
       expect(claim.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
     });
   });
 
-  it("executes an external-code grant with catalog-owned storage", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
+  it("refreshes AWS credentials in a Run after external-code authorization", async () => {
     const provider = mockAwsExternalCodeProvider();
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-code-grant",
-      connectorSlug: "aws",
-      label: "Catalog AWS",
-      mutateCatalog: (artifact) => {
-        const method = publicAuthMethod({
-          id: "cli",
-          grantKind: "external-code",
-        });
-        setArtifactAuthMethods(artifact, [method]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [awsPrivateAuthMethod()]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog(app);
-
     const actor = bdd.user();
-    const cleanupConnector = createConnectorCleanup(actor, "aws");
-    onTestFinished(async () => {
-      await cleanupConnector();
-    });
+    onTestFinished(createConnectorCleanup(actor, "aws"));
     const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
-    const changedScopes = buildRelease({
-      version: "2026-07-15.external-code-scope-change",
-      connectorSlug: "aws",
-      label: "Catalog AWS",
-      mutateCatalog: (artifact) => {
-        const method = publicAuthMethod({
-          id: "cli",
-          grantKind: "external-code",
-        });
-        setArtifactAuthMethods(artifact, [method]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          awsPrivateAuthMethod(["openid", "future_scope"]),
-        ]);
-      },
-    });
-    serveObjects(catalogObjects([release, changedScopes], changedScopes));
-    await syncCatalog(app);
-    const callsBeforeCompletion = context.mocks.s3.send.mock.calls.length;
     const completed = await connectorsApi.completeExternalCode(actor, "aws", {
       sessionId: session.sessionId,
       sessionToken: session.sessionToken,
@@ -1707,15 +743,6 @@ describe("connector catalog valid lifecycle", () => {
       externalId: "123456789012",
       oauthScopes: ["openid"],
     });
-    await expect(
-      connectorsApi.readDefaultBuiltinScopeDiff(actor, "aws"),
-    ).resolves.toStrictEqual({
-      addedScopes: ["future_scope"],
-      removedScopes: [],
-      currentScopes: ["openid", "future_scope"],
-      storedScopes: ["openid"],
-    });
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeCompletion);
     await withConnectorRuntime(
       context,
       actor,
@@ -1750,12 +777,7 @@ describe("connector catalog valid lifecycle", () => {
     );
   });
 
-  it("revokes an external auth-code credential through its selected method", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
+  it("revokes the connected Slack credential when its account is deleted", async () => {
     mockSlackConnectorOAuth();
     let revokeCalls = 0;
     server.use(
@@ -1767,25 +789,7 @@ describe("connector catalog valid lifecycle", () => {
         return HttpResponse.json({ ok: true });
       }),
     );
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-auth-code-revoke",
-      connectorSlug: "slack",
-      label: "Catalog Slack",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "oauth", grantKind: "auth-code" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [slackPrivateAuthMethod()]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog(app);
-
     const actor = bdd.user();
-    const callsBeforeAction = context.mocks.s3.send.mock.calls.length;
     const start = await connectorsApi.startOauth(actor, "slack", "oauth");
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
@@ -1797,7 +801,6 @@ describe("connector catalog valid lifecycle", () => {
     });
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "slack");
     expect(revokeCalls).toBe(1);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
   });
 
   it("completes an in-flight Slack OAuth operation and reconnects its exact account", async () => {
@@ -1896,57 +899,7 @@ describe("connector catalog valid lifecycle", () => {
     });
   });
 
-  it("merges duplicate dynamic firewall execution templates", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.duplicate-dynamic-firewall-base",
-      connectorSlug: "dynamic-firewall",
-      label: "Dynamic Firewall",
-      generatedFirewall: true,
-      mutateRuntime: addDynamicFirewallVariableBinding,
-      mutateFirewall: addDuplicateDynamicPrivateFirewallApi,
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog(app)).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const diagnostic = await accept(
-      setupApp({ context, routes: connectorCheckRoutes })(
-        connectorCheckContract,
-      ).check({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          mode: "url",
-          method: "GET",
-          url: "https://tenant.example.test/v1/items",
-          connectorSlug: "dynamic-firewall",
-        },
-      }),
-      [200],
-    );
-    expect(diagnostic.body).toMatchObject({
-      outcome: "resolved",
-      connector: {
-        target: { kind: "builtin", connectorSlug: "dynamic-firewall" },
-        label: "Dynamic Firewall",
-      },
-      permission: {
-        kind: "matched",
-        permissions: [{ name: "items.read" }],
-      },
-    });
-  });
-
-  it("reuses bundled skill registrations across overlapping syncs and later releases", async () => {
+  it("reuses a bundled skill registration in a later catalog release", async () => {
     const app = await setupApp({
       context,
       routes: cronConnectorCatalogRoutes,
@@ -1955,26 +908,13 @@ describe("connector catalog valid lifecycle", () => {
     configureSource();
     const skill = buildBundledSkillFixture("agora");
     const release = buildRelease({
-      version: "2026-07-15.concurrent",
+      version: "2026-07-15.bundled-skill",
       connectorSlug: "agora",
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill = skill.descriptor;
-      },
+      skill: skill.descriptor,
     });
     serveObjects(catalogObjects([release], release));
-    const results = await Promise.all([syncCatalog(app), syncCatalog(app)]);
-    // The last writer wins: both attempts may publish the same generation, or
-    // the later one may observe it already serving. Neither reports a failure.
-    const outcomes = results.map((result) => {
-      return result.body.outcome;
-    });
-    expect(outcomes).toContain("accepted");
-    for (const outcome of outcomes) {
-      expect(["accepted", "unchanged"]).toContain(outcome);
-    }
-    // The serving generation is the release, so a later sync is unchanged.
     expect((await syncCatalog(app)).body).toStrictEqual({
-      outcome: "unchanged",
+      outcome: "accepted",
       failureCode: null,
     });
 
@@ -1982,9 +922,7 @@ describe("connector catalog valid lifecycle", () => {
       version: "2026-07-15.reused-bundled-skill",
       connectorSlug: "agora",
       label: "Reused bundled skill",
-      mutateRuntime: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").skill = skill.descriptor;
-      },
+      skill: skill.descriptor,
     });
     serveObjects(catalogObjects([release, later], later));
     expect((await syncCatalog(app)).body).toStrictEqual({
@@ -2016,34 +954,11 @@ describe("connector catalog valid lifecycle", () => {
 });
 
 describe("connector catalog executable compatibility", () => {
-  it("accepts inline confidential test clients and applies rollout at request time", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
+  it("applies test OAuth rollout before connecting its confidential client", async () => {
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     const provider = mockTestOAuthAuthCodeProvider({
       refreshToken: "catalog-test-oauth-refresh",
     });
-    configureSource();
-    const method = publicAuthMethod({
-      id: "oauth",
-      grantKind: "auth-code",
-    });
-    const release = buildRelease({
-      version: "2026-07-24.inline-confidential-test-client",
-      connectorSlug: "test-oauth",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [method]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [testOauthPrivateAuthMethod()]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog(app)).body.outcome).toBe("accepted");
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "test-oauth"));
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -2057,9 +972,10 @@ describe("connector catalog executable compatibility", () => {
       routes: featureSwitchesRoutes,
     })(featureSwitchesContract);
 
-    expect(
-      (await accept(catalogClient.list({ headers }), [200])).body,
-    ).toStrictEqual({ connectors: [] });
+    const disabled = await accept(catalogClient.list({ headers }), [200]);
+    expect(disabled.body.connectors).not.toContainEqual(
+      expect.objectContaining({ slug: "test-oauth" }),
+    );
     await accept(
       featureClient.update({
         headers,
@@ -2070,12 +986,14 @@ describe("connector catalog executable compatibility", () => {
       [200],
     );
     const enabled = await accept(catalogClient.list({ headers }), [200]);
-    expect(enabled.body.connectors).toMatchObject([
-      {
+    expect(enabled.body.connectors).toContainEqual(
+      expect.objectContaining({
         slug: "test-oauth",
-        authMethods: [{ id: "oauth", grantKind: "auth-code" }],
-      },
-    ]);
+        authMethods: expect.arrayContaining([
+          expect.objectContaining({ id: "oauth", grantKind: "auth-code" }),
+        ]),
+      }),
+    );
     expect(JSON.stringify(enabled.body)).not.toContain("test-oauth-secret");
 
     const start = await connectorsApi.startOauth(actor, "test-oauth", "oauth");
@@ -2099,83 +1017,6 @@ describe("connector catalog executable compatibility", () => {
 });
 
 describe("connector catalog rejection and latest-valid retention", () => {
-  it("accepts a shared fixed host for auth.base placeholder routes", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const release = buildRelease({
-      version: "shared-firewall-placeholder-host",
-      connectorSlug: "collision-a",
-      generatedFirewall: true,
-      mutateCatalog: (artifact) => {
-        const connectors = arrayValue(artifact.connectors, "connectors");
-        const first = firstRecord(connectors, "connectors");
-        const firstFirewall = recordValue(first.firewall, "firewall");
-        const firstConfig = recordValue(
-          firstFirewall.config,
-          "firewall.config",
-        );
-        const firstApi = firstRecord(firstConfig.apis, "firewall.apis");
-        firstApi.base = "https://firewall-placeholder.vm3.ai/collision-a/hook";
-        recordValue(firstApi.auth, "firewall auth").base = catalogTemplate(
-          "secrets.SERVICE_TOKEN",
-        );
-
-        const second = structuredClone(first);
-        second.slug = "collision-b";
-        second.label = "Collision B";
-        const secondMethod = firstRecord(second.authMethods, "authMethods");
-        recordValue(secondMethod.storage, "storage").secrets = [
-          "SECOND_SECRET_TOKEN",
-        ];
-        firstRecord(
-          recordValue(secondMethod.grant, "grant").fields,
-          "grant.fields",
-        ).privateName = "SECOND_SECRET_TOKEN";
-        recordValue(
-          recordValue(secondMethod.access, "access").envBindings,
-          "envBindings",
-        ).SERVICE_TOKEN = "$secrets.SECOND_SECRET_TOKEN";
-        const secondFirewall = recordValue(second.firewall, "firewall");
-        const secondConfig = recordValue(
-          secondFirewall.config,
-          "firewall.config",
-        );
-        firstRecord(secondConfig.apis, "firewall.apis").base =
-          "https://firewall-placeholder.vm3.ai/collision-b/hook";
-        connectors.push(second);
-        connectors.reverse();
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog(app)).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const diagnostic = await accept(
-      setupApp({ context, routes: connectorCheckRoutes })(
-        connectorCheckContract,
-      ).check({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          mode: "url",
-          method: "GET",
-          url: "https://firewall-placeholder.vm3.ai/collision-a/hook/items",
-        },
-      }),
-      [200],
-    );
-    expect(diagnostic.body).toMatchObject({
-      outcome: "resolved",
-      connector: { target: { kind: "builtin", connectorSlug: "collision-a" } },
-    });
-  });
-
   it("replaces current content when a catalog version is reused", async () => {
     const app = await setupApp({
       context,

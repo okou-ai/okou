@@ -1,17 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  runnersJobClaimContract,
-  runnersWorkflowDownloadContract,
-} from "@okouai/api-contracts/contracts/runners";
-import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
-import { workflowSkillDocumentSchema } from "@okouai/api-contracts/contracts/workflow-attachments";
+import { runnersWorkflowDownloadContract } from "@okouai/api-contracts/contracts/runners";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env } from "../../../lib/env";
 import { runnersRoutes } from "../runners";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -280,35 +274,6 @@ test("does not redirect a queued invocation when its renamed Workflow slug is re
   await finish(fresh.runId, claim.sandboxToken);
 });
 
-test("leaves a job pending for a preceding Runner and lets the document reader claim it", async () => {
-  const { actor, agent, group } = await fixture();
-  await createWorkflow(actor, agent.agentId);
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Use workflows",
-  });
-  await runs.heartbeatRunner(group);
-  await accept(
-    setupApp({ context, routes: runnersRoutes })(runnersJobClaimContract).claim(
-      {
-        headers: {
-          authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
-        },
-        params: { id: run.runId },
-        body: {
-          runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 1 },
-          capabilities: { piModelConfigGenerations: [2, 3, 5] },
-        },
-      },
-    ),
-    [404],
-  );
-  expect((await runs.readRun(actor, run.runId)).status).toBe("pending");
-  const claim = await runs.claimRunnerJob(run.runId);
-  expect(claim.storageManifest?.workflowSkills).toHaveLength(1);
-  await finish(run.runId, claim.sandboxToken);
-});
-
 test("keeps a large non-ASCII instruction out of claim and downloads it without truncation", async () => {
   const { actor, agent, group } = await fixture();
   const instruction = "指令\n".repeat(800_000);
@@ -330,58 +295,6 @@ test("keeps a large non-ASCII instruction out of claim and downloads it without 
   expect(skill.skillMd.endsWith(`${instruction.trim()}\n`)).toBeTruthy();
   expect(Buffer.byteLength(skill.skillMd)).toBeGreaterThan(4.5 * 1024 * 1024);
   await finish(run.runId, claim.sandboxToken);
-});
-
-test("serves outgoing and download readers together", async () => {
-  const { actor, agent, group, s3 } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "reference.md", content: "outgoing attachment" }],
-  });
-  const oldKey = s3.writes.at(-1)!.key;
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Capability handoff",
-  });
-  await runs.heartbeatRunner(group);
-  const oldClaim = await runs.claimRunnerJob(run.runId, {}, undefined, "1");
-  const outgoing = workflowSkillDocumentSchema.parse(
-    oldClaim.storageManifest?.workflowSkills?.[0],
-  );
-  expect(outgoing.skillMd).toContain("original body");
-  expect(outgoing.attachments?.archiveSha256).toBe(
-    createHash("sha256").update(s3.objects.get(oldKey)!).digest("hex"),
-  );
-  await accept(
-    detailClient().update({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-      body: {
-        instruction: "download reader body",
-        files: [{ path: "reference.md", content: "current attachment" }],
-      },
-    }),
-    [200],
-  );
-  await finish(run.runId, oldClaim.sandboxToken);
-
-  const currentRun = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Use the download reader",
-  });
-  const claimed = await runs.claimRunnerJob(currentRun.runId);
-  expect(claimed.storageManifest?.workflowSkills).toStrictEqual([
-    { workflowId: workflow.id, mountPath: outgoing.mountPath },
-  ]);
-  expect(
-    (
-      await runs.downloadWorkflow(
-        currentRun.runId,
-        workflow.id,
-        claimed.sandboxToken,
-      )
-    ).skillMd,
-  ).toContain("download reader body");
-  await finish(currentRun.runId, claimed.sandboxToken);
 });
 
 test("reads authoritative empty text and denies foreign, deleted and ended Run downloads", async () => {
@@ -513,7 +426,7 @@ test("waits for Runner acknowledgement before Agent deletion after rejected comp
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId, {}, undefined, "1");
+  const claim = await runs.claimRunnerJob(run.runId);
   await accept(
     detailClient().update({
       headers: headers(actor),

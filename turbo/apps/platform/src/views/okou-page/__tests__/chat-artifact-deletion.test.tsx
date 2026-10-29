@@ -132,6 +132,9 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
       name: `Delete ${report.title}?`,
     });
     click(buttonNamed("Delete", confirmed));
+    await expect(
+      screen.findByText("Artifact deleted"),
+    ).resolves.toBeInTheDocument();
     await waitFor(() => {
       return expect(screen.queryByTestId(previewId)).not.toBeInTheDocument();
     });

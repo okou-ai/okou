@@ -1,5 +1,40 @@
 # Changelog
 
+## [10.7.4](https://github.com/okou-ai/okou/compare/cli-v10.7.3...cli-v10.7.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **api:** allow owners to delete legacy hosted sites ([#43867](https://github.com/okou-ai/okou/issues/43867)) ([0b9fc2b](https://github.com/okou-ai/okou/commit/0b9fc2b60d72207c7b2508eadaef295c76f83b62))
+
+## [10.7.3](https://github.com/okou-ai/okou/compare/cli-v10.7.2...cli-v10.7.3) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.17.3
+    * @okouai/core bumped to 8.799.3
+    * @okouai/pi-agent-runtime bumped to 1.51.18
+
+## [10.7.2](https://github.com/okou-ai/okou/compare/cli-v10.7.1...cli-v10.7.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **browser:** emit email login guidance only for connected mail accounts ([#43742](https://github.com/okou-ai/okou/issues/43742)) ([2a24645](https://github.com/okou-ai/okou/commit/2a2464593fdca474a0c06b7c55eb65e78ad7874d))
+* **cli:** select presentation templates by tone and audience ([#43692](https://github.com/okou-ai/okou/issues/43692)) ([a9bb3ba](https://github.com/okou-ai/okou/commit/a9bb3ba137099aae4f548bd38fcdd35232c3d5a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.17.2
+    * @okouai/core bumped to 8.799.2
+    * @okouai/pi-agent-runtime bumped to 1.51.17
+
 ## [10.7.1](https://github.com/okou-ai/okou/compare/cli-v10.7.0...cli-v10.7.1) (2026-10-29)
 
 

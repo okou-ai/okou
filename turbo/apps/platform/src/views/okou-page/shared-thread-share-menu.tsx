@@ -1,5 +1,5 @@
 import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
-import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
+import { Button, Popover, PopoverTrigger } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Share2 } from "lucide-react";
@@ -8,12 +8,7 @@ import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  ShareCopyButton,
-  ShareLoadError,
-  SharePermissionChoices,
-  ShareSkeleton,
-} from "./artifact-share-menu.tsx";
+import { ShareMenuContent } from "./artifact-share-menu.tsx";
 
 export function SharedThreadAudiencePicker({
   audience,
@@ -52,15 +47,15 @@ export function SharedThreadAudiencePicker({
                 return $.artifacts.sharing.organizationOptionUnnamed;
               })}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-2">
-        <SharePermissionChoices
-          selected={audience}
-          organizationName={organization?.name ?? null}
-          saving={false}
-          unavailable={disabled}
-          onChange={onChange}
-        />
-      </PopoverContent>
+      <ShareMenuContent
+        label={t(($) => {
+          return $.artifacts.sharing.accessLabel;
+        })}
+        selected={audience}
+        organizationName={organization?.name ?? null}
+        unavailable={disabled}
+        onChange={onChange}
+      />
     </Popover>
   );
 }
@@ -76,13 +71,14 @@ export function SharedThreadShareMenu({
 }) {
   const { t } = useTranslation();
   const status = useLoadable(session.status$);
+  const details = useLastResolved(session.status$);
   const [changeState, change] = useLoadableSet(session.change$);
   const copy = useSet(session.copy$);
   const copied = useGet(session.copied$);
   const signal = useGet(pageSignal$);
   const saving = changeState.state === "loading";
   const saveError = useGet(session.saveError$);
-  const details = status.state === "hasData" ? status.data : null;
+  const recipient = status.state === "hasData" && !status.data;
   return (
     <Popover defaultOpen={defaultOpen}>
       <PopoverTrigger
@@ -103,41 +99,35 @@ export function SharedThreadShareMenu({
             })
           : null}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-2">
-        {status.state === "loading" ? (
-          <ShareSkeleton showCopyButton={false} />
-        ) : details ? (
-          <SharePermissionChoices
-            selected={details.audience}
-            organizationName={details.organization.name}
-            saving={saving}
-            unavailable={saving}
-            onChange={(audience) => {
-              detach(change(audience, signal), Reason.DomCallback);
-            }}
-          />
-        ) : status.state === "hasError" ? (
-          <ShareLoadError />
-        ) : null}
-        {saveError ? (
-          <ShareLoadError message={saveError} />
-        ) : changeState.state === "hasError" ? (
-          <ShareLoadError
-            message={t(($) => {
-              return $.artifacts.sharing.updateFailed;
-            })}
-          />
-        ) : null}
-        <div className="mt-1.5 flex justify-end">
-          <ShareCopyButton
-            copied={copied}
-            disabled={saving}
-            onCopy={() => {
-              detach(copy(signal), Reason.DomCallback);
-            }}
-          />
-        </div>
-      </PopoverContent>
+      <ShareMenuContent
+        label={t(($) => {
+          return $.sharedThread.share;
+        })}
+        selected={details?.audience}
+        organizationName={details?.organization.name ?? null}
+        loading={!details && status.state === "loading"}
+        saving={saving}
+        failed={status.state === "hasError"}
+        showPermissions={!recipient}
+        errorMessage={
+          saveError ??
+          (changeState.state === "hasError"
+            ? t(($) => {
+                return $.artifacts.sharing.updateFailed;
+              })
+            : null)
+        }
+        onChange={(audience) => {
+          detach(change(audience, signal), Reason.DomCallback);
+        }}
+        copy={{
+          copied,
+          disabled: !details && !recipient,
+          onCopy: () => {
+            detach(copy(signal), Reason.DomCallback);
+          },
+        }}
+      />
     </Popover>
   );
 }

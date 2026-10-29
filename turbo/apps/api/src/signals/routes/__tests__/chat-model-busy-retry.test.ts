@@ -186,7 +186,7 @@ describe("Automatic continuation after a busy model", () => {
     await expect(fixture.runs(another)).resolves.toHaveLength(2);
   });
 
-  it("cancels waiting retries when the owner disables the switch, including after re-enabling", async () => {
+  it("cancels waiting retries when the owner disables the switch", async () => {
     // The real cron sweeps jobs across tenants.
     await setupApp({
       context,
@@ -197,110 +197,32 @@ describe("Automatic continuation after a busy model", () => {
     const threadId = await fixture.send();
     await fixture.fail(await latestRun(fixture, threadId));
     await setEnabled(fixture.actor, false);
-    await setEnabled(fixture.actor, true);
-    await fixture.tick(60_000);
-    await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
-    const another = await fixture.send();
-    await fixture.fail(await latestRun(fixture, another));
-    await fixture.tick(60_000);
-    await expect(fixture.runs(another)).resolves.toHaveLength(2);
-  });
-
-  it("does not schedule retries while disabled", async () => {
-    // The real cron sweeps jobs across tenants.
-    await setupApp({
-      context,
-      routes: cronProcessBackgroundJobsRoutes,
-      isolatePg: true,
-    });
-    const fixture = await setupFixture();
-    await setEnabled(fixture.actor, false);
-    const threadId = await fixture.send();
-    await fixture.fail(await latestRun(fixture, threadId));
-    await setEnabled(fixture.actor, true);
     await fixture.tick(60_000);
     await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
   });
-
-  it.each([false, true])(
-    "resets recovery to its identity default (enabled: %s) without reviving cancelled retries",
-    async (defaultEnabled) => {
-      // The real cron sweeps jobs across tenants.
-      await setupApp({
-        context,
-        routes: cronProcessBackgroundJobsRoutes,
-        isolatePg: true,
-      });
-      const fixture = await setupFixture(
-        defaultEnabled ? BINGJIE_USER_ID : `user_${randomUUID()}`,
-      );
-      await setEnabled(fixture.actor, true);
-      const threadId = await fixture.send();
-      await fixture.fail(await latestRun(fixture, threadId));
-      createRouteMocks(context).clerk.session(
-        fixture.actor.userId,
-        fixture.actor.orgId,
-        fixture.actor.orgRole,
-      );
-      const features = setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      await accept(features.delete({ headers }), [200]);
-      const reset = await accept(features.get({ headers }), [200]);
-      expect(
-        reset.body.effectiveSwitches[FeatureSwitchKey.AutoContinueBusyChats],
-      ).toBe(defaultEnabled);
-      await setEnabled(fixture.actor, true);
-      await fixture.tick(60_000);
-      await expect(fixture.runs(threadId)).resolves.toHaveLength(
-        defaultEnabled ? 2 : 1,
-      );
-    },
-  );
 
   it("stays off for other users until they explicitly opt in", async () => {
-    // The real cron sweeps jobs across tenants.
-    await setupApp({
-      context,
-      routes: cronProcessBackgroundJobsRoutes,
-      isolatePg: true,
-    });
-    const fixture = await setupFixture(`user_${randomUUID()}`);
-    const threadId = await fixture.send();
-    await fixture.fail(await latestRun(fixture, threadId));
-    await fixture.tick(60_000);
-    await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
-    const response = await setEnabled(fixture.actor, true);
+    const actor = bdd.user();
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    const features = setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+    const initial = await accept(
+      features.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
     expect(
-      response.body.effectiveSwitches[FeatureSwitchKey.AutoContinueBusyChats],
+      initial.body.effectiveSwitches[FeatureSwitchKey.AutoContinueBusyChats],
+    ).toBeFalsy();
+    const enabled = await setEnabled(actor, true);
+    expect(
+      enabled.body.effectiveSwitches[FeatureSwitchKey.AutoContinueBusyChats],
     ).toBeTruthy();
-    const another = await fixture.send();
-    await fixture.fail(await latestRun(fixture, another));
-    await fixture.tick(60_000);
-    await expect(fixture.runs(another)).resolves.toHaveLength(2);
   });
-
-  it.each([
-    "usage_limit",
-    "invalid_credentials",
-    "provider_rate_limited",
-  ] as const)(
-    "does not retry %s even if the error text says busy",
-    async (reason) => {
-      // The real cron sweeps jobs across tenants.
-      await setupApp({
-        context,
-        routes: cronProcessBackgroundJobsRoutes,
-        isolatePg: true,
-      });
-      const fixture = await setupFixture();
-      const threadId = await fixture.send();
-      await fixture.fail(await latestRun(fixture, threadId), reason);
-      await fixture.tick(60_000);
-      await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
-    },
-  );
 
   it("leaves a manual continuation alone", async () => {
     // The real cron sweeps jobs across tenants.

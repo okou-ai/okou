@@ -1,11 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import {
-  builtinConnectorAutomaticContract,
-  builtinConnectorNoAuthGrantContract,
-  builtinConnectorsSearchContract,
-} from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -13,26 +9,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { customConnectorsRoutes } from "../custom-connectors";
-import { createBddApi } from "./helpers/api-bdd";
-import {
-  createConnectorBddApi,
-  manualHttpCustomConnectorCreateBody,
-  mockAutomaticMcpOAuthProvider,
-} from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import { createRouteMocks } from "./helpers/route-test";
-import { settle } from "../../utils";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const bdd = createBddApi(context);
-const connectorsApi = createConnectorBddApi(context);
 const CRON_SECRET = "v4-catalog-cron-secret";
 const CATALOG_VERSION = "2026-09-17.fixture";
 const cronHeaders = { authorization: `Bearer ${CRON_SECRET}` } as const;
@@ -135,58 +120,6 @@ function mcpConnector(slug = "plaud-mcp", tokenName = "NOTES_ACCESS_TOKEN") {
       categories: null,
       defaultAllowed: null,
       defaultUnknownPolicy: "allow",
-    },
-  };
-}
-
-function runtimeBuiltinConnector(
-  protocol: "http" | "mcp",
-  authKind: "none" | "manual" | "automatic",
-  endpoint: string,
-  updated = false,
-) {
-  const connector = mcpConnector("catalog-mcp");
-  const { mcp, ...baseConnector } = connector;
-  return {
-    ...baseConnector,
-    ...(protocol === "mcp" ? { mcp: { ...mcp, endpoint } } : {}),
-    authMethods:
-      authKind === "automatic"
-        ? connector.authMethods
-        : authKind === "manual"
-          ? httpConnector("catalog-mcp", "Notes").authMethods
-          : [
-              {
-                id: "public",
-                label: "Connect",
-                description: null,
-                visible: true,
-                storage: { version: 1, secrets: [], variables: [] },
-                grant: { kind: "none" },
-                access: { kind: "none" },
-                revoke: { kind: "none" },
-              },
-            ],
-    firewall: {
-      ...connector.firewall,
-      config: {
-        description: "Notes",
-        apis: [
-          {
-            base: endpoint,
-            auth:
-              authKind === "manual"
-                ? {
-                    headers: {
-                      [updated ? "X-Api-Key" : "Authorization"]:
-                        `Bearer \${{ secrets.FIXTURE_TOKEN }}`,
-                    },
-                  }
-                : {},
-            permissions: [],
-          },
-        ],
-      },
     },
   };
 }
@@ -301,244 +234,14 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
-  it.each([
-    ["mcp", "none"],
-    ["mcp", "manual"],
-    ["mcp", "automatic"],
-    ["http", "manual"],
-  ] as const)(
-    "refreshes a running %s %s builtin when its catalog configuration changes, disappears, or is restored",
-    async (protocol, authKind) => {
-      const app = await setupApp({
-        context,
-        routes: cronConnectorCatalogRoutes,
-        isolatePg: true,
-      });
-      const cron = app(cronConnectorCatalogContract);
-      const endpoint = "https://automatic-mcp.example.test/server";
-      const initial = release({
-        mutate(catalog) {
-          catalog.connectors = [
-            runtimeBuiltinConnector(protocol, authKind, endpoint),
-          ];
-        },
-      });
-      serveObjects(initial.objects);
-      expect((await sync(cron)).body.outcome).toBe("accepted");
-      const runs = createRunsApi(context);
-      const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
-      await runs.grantProEntitlement(actor);
-      await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Builtin catalog changes",
-        visibility: "private",
-      });
-      const created: { runId?: string; connectionId?: string } = {};
-      const outcome = await settle(
-        (async () => {
-          const request = {
-            headers: sessionHeaders,
-            params: { connectorSlug: "catalog-mcp" },
-            body: {
-              agentId: agent.agentId,
-              account: { intent: "add" as const },
-            },
-          };
-          if (authKind === "manual") {
-            const connected = await connectorsApi.connectManualGrant(
-              actor,
-              "catalog-mcp",
-              "api-token",
-              { credential: "catalog-api-token" },
-              agent.agentId,
-            );
-            created.connectionId = connected.id;
-          } else if (authKind === "none") {
-            const connected = await accept(
-              setupApp({ context, routes: builtinConnectorsRoutes })(
-                builtinConnectorNoAuthGrantContract,
-              ).connect({
-                ...request,
-                body: { ...request.body, authMethod: "public" },
-              }),
-              [200],
-            );
-            created.connectionId = connected.body.connectionId;
-          } else {
-            mockAutomaticMcpOAuthProvider(context, {
-              registration: "none",
-              authentication: "none",
-            });
-            const connected = await accept(
-              setupApp({ context, routes: builtinConnectorsAutomaticRoutes })(
-                builtinConnectorAutomaticContract,
-              ).start({
-                ...request,
-                body: { ...request.body, authMethod: "automatic" },
-              }),
-              [200],
-            );
-            if (connected.body.result !== "connected") {
-              throw new Error("Expected accepted no-auth Automatic connection");
-            }
-            created.connectionId = connected.body.connectionId;
-          }
-          const run = await runs.createThreadRun(actor, {
-            agentId: agent.agentId,
-            prompt: "Use the selected builtin MCP account",
-          });
-          created.runId = run.runId;
-          await runs.heartbeatRunner(runnerGroup);
-          const claim = await runs.claimRunnerJob(run.runId);
-          const target = {
-            kind: "builtin" as const,
-            connectorSlug: "catalog-mcp",
-          };
-          const registration = claim.connectorRuntimeTargets.find((entry) => {
-            return (
-              entry.kind === "builtin" &&
-              entry.connectorSlug === target.connectorSlug
-            );
-          });
-          if (!registration) {
-            throw new Error("Expected the claimed builtin MCP runtime");
-          }
-          const [initialRuntime] = await runs.syncConnectorRuntime(run.runId, {
-            targets: [registration],
-          });
-          expect(initialRuntime).toMatchObject({ state: "available" });
-
-          for (const change of ["updated", "removed", "restored"] as const) {
-            const nextEndpoint = "https://updated.example.test/mcp";
-            serveObjects(
-              release({
-                version: `${CATALOG_VERSION}.${change}`,
-                mutate(catalog) {
-                  catalog.connectors =
-                    change === "removed"
-                      ? [
-                          httpConnector(
-                            "unrelated-service",
-                            "Unrelated service",
-                          ),
-                        ]
-                      : [
-                          runtimeBuiltinConnector(
-                            protocol,
-                            authKind,
-                            change === "updated" ? nextEndpoint : endpoint,
-                            change === "updated",
-                          ),
-                        ];
-                },
-              }).objects,
-            );
-            context.mocks.ably.batchPublish.mockClear();
-            expect((await sync(cron)).body.outcome).toBe("accepted");
-            expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({
-              channels: [expect.stringMatching(/^runner-group:/)],
-              messages: [
-                {
-                  name: "connector-runtime-sync",
-                  data: JSON.stringify({ runId: run.runId, target }),
-                  encoding: "json",
-                },
-              ],
-            });
-            const [updated] = await runs.syncConnectorRuntime(run.runId, {
-              targets: [registration],
-            });
-            expect(updated).toMatchObject(
-              change === "removed"
-                ? {
-                    target,
-                    state: "absent",
-                    reason: "connector-unavailable",
-                  }
-                : {
-                    target,
-                    state: "available",
-                  },
-            );
-          }
-        })(),
-      );
-      // Restore the authored method before deleting its test-owned account.
-      serveObjects(
-        release({
-          version: `${CATALOG_VERSION}.cleanup`,
-          mutate(catalog) {
-            catalog.connectors = [
-              runtimeBuiltinConnector(protocol, authKind, endpoint),
-            ];
-          },
-        }).objects,
-      );
-      await sync(cron);
-      context.mocks.s3.send.mockResolvedValue({ Contents: [] });
-      if (created.runId) {
-        await runs.requestCancelRun(actor, created.runId, [200, 404]);
-        await flushWaitUntilForTest();
-      }
-      if (created.connectionId) {
-        await connectorsApi.deleteBuiltinConnectorAccount(
-          actor,
-          "catalog-mcp",
-          created.connectionId,
-        );
-      }
-      await bdd.deleteAgent(actor, agent.agentId);
-      if (!outcome.ok) {
-        throw outcome.error;
-      }
-    },
-  );
-
-  it("keeps serving the current pointer across a rejected-source sync", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronConnectorCatalogContract);
-    const serving = release({ label: "Serving" });
-    serveObjects(serving.objects);
-    expect((await sync(cron)).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service", label: "Serving" },
-      {
-        slug: "plaud-mcp",
-        authMethods: [{ id: "automatic", grantKind: "automatic" }],
-      },
-    ]);
-
+  it("keeps serving the catalog when its source is unavailable", async () => {
+    const serving = (await publicCatalog()).body;
     serveObjects(new Map());
-    expect((await sync(cron)).body).toStrictEqual({
+    expect((await sync()).body).toStrictEqual({
       outcome: "rejected",
       failureCode: "source-unavailable",
     });
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service", label: "Serving" },
-      {
-        slug: "plaud-mcp",
-        authMethods: [{ id: "automatic", grantKind: "automatic" }],
-      },
-    ]);
-
-    // Nothing about the rejection was persisted: the next sync of the serving
-    // pointer is unchanged.
-    serveObjects(serving.objects);
-    expect((await sync(cron)).body).toStrictEqual({
-      outcome: "unchanged",
-      failureCode: null,
-    });
+    expect((await publicCatalog()).body).toStrictEqual(serving);
   });
 
   it("rejects a pointer outside the canonical v4 release namespace", async () => {

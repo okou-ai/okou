@@ -2,7 +2,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-attachment";
 import { and, eq, exists, isNull, or, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
@@ -105,17 +104,6 @@ function buildClaimThreadStartSql(): SQL {
              started_thread AS (${threadStart})`;
 }
 
-/** Outgoing readers still own the exact package selected by their claim. */
-function retainClaimedWorkflowAttachmentsSql(): SQL {
-  return sql`retained_workflow_attachments AS (
-            INSERT INTO ${claimedWorkflowAttachments} (run_id, org_id, object_key)
-            SELECT updated_run.id, locked_run."orgId", selected_workflows.attachments->>'objectKey'
-            FROM updated_run CROSS JOIN locked_run CROSS JOIN selected_workflows
-            WHERE selected_workflows.attachments->>'kind' = 'bundle'
-            RETURNING run_id
-          )`;
-}
-
 export function buildClaimTransitionSql(
   runId: string,
   runner: {
@@ -192,7 +180,6 @@ export function buildClaimTransitionSql(
             )}
             RETURNING ${agentRuns.id} AS "id", ${agentRuns.startedAt} AS "claimedAt"
           ),
-          ${workflowInput.delivery === "inline" ? sql`${retainClaimedWorkflowAttachmentsSql()},` : sql``}
           deleted_job AS (
             DELETE FROM ${runnerJobQueue}
             USING locked_run, locked_job

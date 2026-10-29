@@ -283,18 +283,13 @@ const ensureInboundBotIdentity$ = command(
     }
     const bot = await tapError(
       (async () => {
-        const inboundContextArgs = {
-          db,
-          installationId: args.config.id,
-        };
+        const inboundInstallationId = args.config.id;
         const inboundContextSignal = signal;
         const inboundContextRead = (async () => {
-          const [installation] = await inboundContextArgs.db
+          const [installation] = await db
             .select()
             .from(feishuOrgInstallations)
-            .where(
-              eq(feishuOrgInstallations.id, inboundContextArgs.installationId),
-            )
+            .where(eq(feishuOrgInstallations.id, inboundInstallationId))
             .limit(1);
           inboundContextSignal.throwIfAborted();
           if (!installation) {
@@ -306,7 +301,7 @@ const ensureInboundBotIdentity$ = command(
               if (plan.kind === "resolved") {
                 return plan.enabled;
               }
-              const rows = await inboundContextArgs.db
+              const rows = await db
                 .select(plan.columns)
                 .from(userFeatureSwitches)
                 .where(plan.condition);
@@ -320,15 +315,10 @@ const ensureInboundBotIdentity$ = command(
             inboundContextSignal,
           );
           if (credentials.refreshedToken) {
-            await inboundContextArgs.db
+            await db
               .update(feishuOrgInstallations)
               .set(feishuTokenUpdateValues(credentials.refreshedToken))
-              .where(
-                eq(
-                  feishuOrgInstallations.id,
-                  inboundContextArgs.installationId,
-                ),
-              );
+              .where(eq(feishuOrgInstallations.id, inboundInstallationId));
             inboundContextSignal.throwIfAborted();
           }
           return credentials.context;

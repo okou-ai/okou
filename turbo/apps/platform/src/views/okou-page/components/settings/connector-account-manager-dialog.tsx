@@ -24,6 +24,7 @@ import {
   Input,
   Radio,
   RadioGroup,
+  Skeleton,
 } from "@okouai/ui";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
@@ -413,25 +414,59 @@ function AccountsCard({
   );
 }
 
+function AccountsSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.connectors.accounts.loading;
+      })}
+      className="overflow-hidden rounded-xl bg-card border border-surface-border"
+    >
+      <div aria-hidden="true">
+        {Array.from({ length: 2 }, (_, index) => {
+          return (
+            <div key={index}>
+              {index > 0 ? (
+                <div className="mx-5 h-0 border-t border-t-gray-400" />
+              ) : null}
+              <div className="flex items-center justify-between gap-4 px-5 py-4">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-40 max-w-full" />
+                  <Skeleton className="h-3.5 w-56 max-w-full" />
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <Skeleton className="size-4 rounded-full" />
+                  <Skeleton className="size-8" />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AccountsMessage({
   messageKey,
 }: {
   readonly messageKey: "accountsUnavailable" | "loading" | "noAccountsFound";
 }) {
   const { t } = useTranslation();
+  if (messageKey === "loading") {
+    return <AccountsSkeleton />;
+  }
   return (
     <p className="py-8 text-center text-sm text-muted-foreground">
       {messageKey === "accountsUnavailable"
         ? t(($) => {
             return $.connectors.accounts.accountsUnavailable;
           })
-        : messageKey === "loading"
-          ? t(($) => {
-              return $.connectors.accounts.loading;
-            })
-          : t(($) => {
-              return $.connectors.accounts.noAccountsFound;
-            })}
+        : t(($) => {
+            return $.connectors.accounts.noAccountsFound;
+          })}
     </p>
   );
 }

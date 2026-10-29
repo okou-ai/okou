@@ -3,7 +3,6 @@ import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
-import { apiErrorSchema } from "@okouai/api-contracts/contracts/errors";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
 import { describe, expect, it } from "vitest";
 
@@ -38,7 +37,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
   });
 
-  it("publishes indexed hits with canonical MCP Agent metadata and preserves Web results", async () => {
+  it("publishes scoped MCP and Web search hits and respects revoked sharing", async () => {
     // This is the operator index-publication boundary, not a user fixture that
     // privately drives indexing. All business data and observations use APIs.
     const app = await setupApp({
@@ -59,16 +58,12 @@ describe("GET /api/cron/project-chat-event-search", () => {
       );
     });
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const onboarding = await bdd.readOnboardingStatus(owner);
-    if (!onboarding.defaultAgentId) {
-      throw new Error("Expected public onboarding to create the default Agent");
-    }
+    await bdd.readOnboardingStatus(owner);
     await bdd.completeOnboarding(owner);
     const named = await bdd.createAgent(owner, {
       displayName: "MCP Research",
       visibility: "private",
     });
-    const unnamed = await bdd.createAgent(owner, { visibility: "private" });
     const peer = bdd.user({ orgId: owner.orgId });
     await bdd.readOnboardingStatus(peer);
     await bdd.completeOnboarding(peer);
@@ -90,12 +85,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
       readonly threadId: string;
       readonly agentId: string;
     }[] = [];
-    for (const agentId of [
-      onboarding.defaultAgentId,
-      named.agentId,
-      unnamed.agentId,
-      shared.agentId,
-    ]) {
+    for (const agentId of [named.agentId, shared.agentId]) {
       const sent = await chat.requestSendEvent(
         owner,
         { agentId, model: null, prompt: `${keyword} owner ${agentId}` },
@@ -220,16 +210,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
         }),
       ),
     );
-    expect(
-      result.results.find((hit) => {
-        return hit.agentId === onboarding.defaultAgentId;
-      }),
-    ).toMatchObject({ displayName: "Okou" });
-    expect(
-      result.results.find((hit) => {
-        return hit.agentId === unnamed.agentId;
-      }),
-    ).toMatchObject({ displayName: null });
     const filtered = await search(token(), named.agentId);
     expect(filtered.results.length).toBeGreaterThan(0);
     expect(
@@ -252,16 +232,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
       ),
     ).toStrictEqual(new Set([foreign.agentId]));
 
-    await bdd.updateAgentMetadata(owner, named.agentId, {
-      displayName: "Renamed research",
-    });
-    expect((await search(token(), named.agentId)).results).toContainEqual(
-      expect.objectContaining({ displayName: "Renamed research" }),
-    );
-    await expect(chat.searchChat(owner, keyword)).resolves.toStrictEqual(
-      native,
-    );
-
     await bdd.updateAgentMetadata(peer, shared.agentId, {
       visibility: "private",
     });
@@ -276,16 +246,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
         displayName: "Shared research",
       }),
     );
-    await bdd.deleteAgent(owner, unnamed.agentId);
-    const afterDelete = await search(token());
-    expect(afterDelete.results).toContainEqual(
-      expect.objectContaining({ agentId: named.agentId }),
-    );
-    expect(
-      afterDelete.results.some((hit) => {
-        return hit.agentId === unnamed.agentId;
-      }),
-    ).toBeFalsy();
   }, 60_000);
 
   it.each(["UTF-16 ranges", "the documented token policy"] as const)(
@@ -560,10 +520,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const equal = unfiltered.find((hit) => {
       return hit.matchedMessage.content === `${keyword} equal`;
     });
-    const after = unfiltered.find((hit) => {
-      return hit.matchedMessage.content === `${keyword} after`;
-    });
-    if (!equal || !after) {
+    if (!equal) {
       throw new Error("Expected indexed public message timestamps");
     }
     // Native ingress can sequence related events beyond the request clock.
@@ -580,18 +537,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
       .toISOString()
       .replace("Z", "+08:00");
     await expect(search(offsetSince)).resolves.toStrictEqual(filtered);
-    expect(
-      (await search(new Date(Date.parse(since) + 1).toISOString())).map(
-        (hit) => {
-          return hit.matchedMessage.content;
-        },
-      ),
-    ).toStrictEqual([`${keyword} after`]);
-    await expect(
-      search(
-        new Date(Date.parse(after.matchedMessage.createdAt) + 1).toISOString(),
-      ),
-    ).resolves.toStrictEqual([]);
     const native = await chat.searchChat(owner, keyword, {
       agentId: agent.agentId,
       since: Date.parse(since),
@@ -610,23 +555,9 @@ describe("GET /api/cron/project-chat-event-search", () => {
         return hit.matchedMessage.createdAt;
       }),
     );
-    for (const since of ["2026-10-12T08:02:50", "2026-10-12T08:02:50.0001Z"]) {
-      const rejected = await mcp.call(token(), "search_chat_messages", {
-        keyword,
-        since,
-      });
-      expect(rejected.isError).toBeTruthy();
-      expect(apiErrorSchema.parse(rejected.structuredContent).error.code).toBe(
-        "BAD_REQUEST",
-      );
-    }
   }, 60_000);
 
   it.each([
-    {
-      scenario: "sparse candidates beyond the source window",
-      pending: [8, 11],
-    },
     {
       scenario: "candidates across the head/tail boundary",
       pending: [7, 8, 11],

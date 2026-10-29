@@ -16,6 +16,9 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import {
@@ -33,6 +36,8 @@ import { artifactOgRoutes } from "../artifact-og";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
 import { sharedThreadRoutes } from "../shared-threads";
+import { artifactCatalogRoutes } from "../artifact-catalog";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -63,6 +68,8 @@ function api(rethrowErrors = false, signal = context.signal) {
     rethrowErrors,
     routes: [
       ...sharedThreadRoutes,
+      ...artifactCatalogRoutes,
+      ...featureSwitchesRoutes,
       ...artifactShareRoutes,
       ...artifactOgRoutes,
       ...artifactReferenceRoutes,
@@ -885,40 +892,77 @@ test("independent thread snapshots use different short references and revoke sep
   expect(retainedArtifact.body.url).toContain(second.body.id);
 });
 
-test("owner deletion revokes a snapshot and preserves the private original", async () => {
-  const f = await fixture();
-  const file = await f.upload();
-  const selection = await f.selection(file.url);
-  const created = await accept(share(f.actor, selection), [201]);
-  await accept(
-    api()(sharedThreadsContract).delete({
-      headers: headers(bdd.user({ orgId: f.actor.orgId })),
-      params: { id: created.body.id },
-    }),
-    [404],
-  );
-  await accept(
-    api()(sharedThreadsContract).delete({
-      headers: headers(f.actor),
-      params: { id: created.body.id },
-    }),
-    [204],
-  );
-  await accept(
-    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-    [404],
-  );
-  await accept(
-    api()(sharedThreadsContract).meta({ params: { id: created.body.id } }),
-    [404],
-  );
-  expect(
-    [...f.objects.keys()].filter((key) => {
-      return key.includes("/thread-shares/");
-    }),
-  ).toStrictEqual([]);
-  expect(f.objects.has(file.key)).toBeTruthy();
-});
+test.each(["share", "catalog"] as const)(
+  "%s owner deletion revokes a snapshot and preserves the private original",
+  async (surface) => {
+    const f = await fixture();
+    const file = await f.upload();
+    const selection = await f.selection(file.url);
+    const created = await accept(share(f.actor, selection), [201]);
+    await accept(
+      api()(sharedThreadsContract).delete({
+        headers: headers(bdd.user({ orgId: f.actor.orgId })),
+        params: { id: created.body.id },
+      }),
+      [404],
+    );
+    const shared = await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [200],
+    );
+    const reference = referenceName(shared.body.messages[0]!.content);
+    if (surface === "catalog") {
+      await accept(
+        api()(featureSwitchesContract).update({
+          headers: headers(f.actor),
+          body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: true } },
+        }),
+        [200],
+      );
+      const catalog = await chat.listArtifactCatalog(f.actor, {
+        kind: "shared-thread",
+      });
+      const artifact = catalog.artifacts[0]!;
+      await accept(
+        api()(artifactCatalogContract).delete({
+          headers: headers(f.actor),
+          params: { artifactId: artifact.id },
+        }),
+        [200],
+      );
+    } else {
+      await accept(
+        api()(sharedThreadsContract).delete({
+          headers: headers(f.actor),
+          params: { id: created.body.id },
+        }),
+        [204],
+      );
+    }
+    await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [404],
+    );
+    await accept(
+      api()(sharedThreadsContract).meta({ params: { id: created.body.id } }),
+      [404],
+    );
+    await accept(
+      api()(artifactReferencesContract).resolve({ params: { reference } }),
+      [404],
+    );
+    await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [404],
+    );
+    expect(
+      [...f.objects.keys()].filter((key) => {
+        return key.includes("/thread-shares/");
+      }),
+    ).toStrictEqual([]);
+    expect(f.objects.has(file.key)).toBeTruthy();
+  },
+);
 
 test.each(["organization", "user"] as const)(
   "clerk %s deletion preserves published snapshot access and bytes",

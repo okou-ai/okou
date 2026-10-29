@@ -4,8 +4,10 @@ import {
   artifactCatalogContract,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { toast } from "@okouai/ui/components/ui/sonner";
 
 import { accept } from "../lib/accept.ts";
+import { i18n } from "../i18n/index.ts";
 import { apiClient$ } from "./api-client.ts";
 import { onRef, resetSignal } from "./utils.ts";
 import { pageSignal$ } from "./page-signal.ts";
@@ -99,6 +101,11 @@ const deleteOwnedArtifact$ = command(
       signal,
     );
     signal.throwIfAborted();
+    toast.success(
+      i18n.t(($) => {
+        return $.artifacts.deletion.success;
+      }),
+    );
     set(internalArtifactCatalogRevision$, (revision) => {
       return revision + 1;
     });
