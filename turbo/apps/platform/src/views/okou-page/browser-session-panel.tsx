@@ -185,6 +185,9 @@ function okouViewerStyle(): CdpViewerStyle {
 }
 
 function PanelActions({ actions }: { readonly actions: ReactNode }) {
+  if (!actions) {
+    return null;
+  }
   return (
     <div className="flex h-11 shrink-0 items-center justify-end gap-0.5 px-1.5">
       {actions}
@@ -228,7 +231,7 @@ function BrowserCdpViewer({
   if (connecting) {
     return (
       <>
-        {actions ? <PanelActions actions={actions} /> : null}
+        <PanelActions actions={actions} />
         <LoadingBody />
       </>
     );
@@ -236,14 +239,14 @@ function BrowserCdpViewer({
   if (connection.state === "hasError" || !connection.data) {
     return (
       <>
-        {actions ? <PanelActions actions={actions} /> : null}
+        <PanelActions actions={actions} />
         <UnavailableBody quiet={refined} />
       </>
     );
   }
   return (
     <>
-      {!refined && actions ? <PanelActions actions={actions} /> : null}
+      {refined ? null : <PanelActions actions={actions} />}
       <div
         key={instanceId ?? liveUrl}
         data-browser-session-cdp-viewer
@@ -357,14 +360,14 @@ function PausedBrowserSession({
   if (!showScreenshot) {
     return (
       <PanelFrame>
-        {actions ? <PanelActions actions={actions} /> : null}
+        <PanelActions actions={actions} />
         {pausedMessage}
       </PanelFrame>
     );
   }
   return (
     <PanelFrame>
-      {actions ? <PanelActions actions={actions} /> : null}
+      <PanelActions actions={actions} />
       <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/20">
         <ArtifactThumbnailImage
           src={screenshotUrl}
@@ -394,7 +397,7 @@ export function BrowserSessionPanel({
   const starting = startOperation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
-  const actionsRow = actions ? <PanelActions actions={actions} /> : null;
+  const actionsRow = <PanelActions actions={actions} />;
   if (sessionLoadable.state === "loading") {
     return (
       <PanelFrame>
