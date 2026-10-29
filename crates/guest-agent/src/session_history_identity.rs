@@ -354,18 +354,6 @@ mod tests {
         path
     }
 
-    fn repeated_byte_sha256(byte: u8, len: u64) -> String {
-        let mut hasher = Sha256::new();
-        let buffer = [byte; 8192];
-        let mut remaining = len;
-        while remaining > 0 {
-            let chunk_len = remaining.min(buffer.len() as u64) as usize;
-            hasher.update(&buffer[..chunk_len]);
-            remaining -= chunk_len as u64;
-        }
-        hex::encode(hasher.finalize())
-    }
-
     fn session_hash(session_id: &str) -> String {
         hex::encode(Sha256::digest(session_id.as_bytes()))
     }
@@ -593,7 +581,12 @@ mod tests {
             .unwrap()
             .set_len(history_size)
             .unwrap();
-        let identity = claude_identity(source, repeated_byte_sha256(0, history_size), history_size);
+        // head -c 33554433 /dev/zero | sha256sum
+        let identity = claude_identity(
+            source,
+            "bdf7fbb54387c24608fd757a1b31c32cabcd7b6bee8ff3345c897139fffc072a",
+            history_size,
+        );
         let metadata_path = write_metadata(&dir, &identity);
 
         verify_final_session_history_identity_file(metadata_path, None).unwrap();
