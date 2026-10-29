@@ -13,7 +13,8 @@ final class NativeProcessTests: XCTestCase {
 
   private func nativeFixture(
     _ source: String, purpose: NativeProcess.Purpose = .computerUse,
-    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+    awakeNow: @escaping @Sendable () -> SuspendingClock.Instant = { .now }
   ) throws -> (NativeProcess, URL) {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -22,7 +23,7 @@ final class NativeProcessTests: XCTestCase {
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
     let helper = NativeProcess(
       executable: executable, environment: ["OKOU_NATIVE_TEST_DIRECTORY": directory.path],
-      purpose: purpose, now: now)
+      purpose: purpose, now: now, awakeNow: awakeNow)
     addTeardownBlock {
       await helper.stop()
       try FileManager.default.removeItem(at: directory)
@@ -369,6 +370,13 @@ final class NativeProcessTests: XCTestCase {
       XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["elapsedMs"].number), 100)
       XCTAssertEqual(diagnostics["timeoutDetectedBy"].string, "timer")
       XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["deadlineOverrunMs"].number), 0)
+      XCTAssertGreaterThanOrEqual(
+        try XCTUnwrap(diagnostics["deadlineDetectedElapsedMs"].number), 100)
+      XCTAssertGreaterThanOrEqual(
+        try XCTUnwrap(diagnostics["helperRetiredElapsedMs"].number),
+        try XCTUnwrap(diagnostics["deadlineDetectedElapsedMs"].number))
+      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["timeoutSettlementDelayMs"].number), 0)
+      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["awakeElapsedMs"].number), 0)
       XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["writeElapsedMs"].number), 0)
       XCTAssertEqual(diagnostics["stdoutBytesRead"].number, 0)
       XCTAssertEqual(diagnostics["stdoutBytesProcessed"].number, 0)
@@ -377,11 +385,59 @@ final class NativeProcessTests: XCTestCase {
     }
   }
 
+  func testBlockedStdinWriteExpiresAndReapsTheHelperBeforeRecovery() async throws {
+    let collector = try telemetry()
+    let (helper, directory) = try nativeFixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, pathlib, signal, sys
+      root = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY'])
+      first = not (root / 'blocked').exists()
+      for line in sys.stdin:
+          request = json.loads(line)
+          with (root / 'attempts').open('a') as stream:
+              stream.write(request['kind'] + '\n')
+          print(json.dumps({'id': request['id'], 'status': 'succeeded',
+                            'result': {'pid': os.getpid()}}), flush=True)
+          if first:
+              (root / 'blocked').touch()
+              signal.pause()
+      """#)
+    let ready = try await helper.request(.object(["kind": .string("ready")]))
+    let retiredPID = try XCTUnwrap(ready["result"]["pid"].number.flatMap(Int32.init(exactly:)))
+    do {
+      _ = try await helper.request(
+        .object([
+          "kind": .string("keyboard.type_text"),
+          "text": .string(String(repeating: "x", count: 1_048_576)),
+        ]), timeout: 0.2)
+      XCTFail("A helper that stops reading stdin must still be retired at the deadline")
+    } catch let failure as DesktopFailure {
+      XCTAssertEqual(failure.code, "command_timeout")
+      XCTAssertTrue(failure.message.contains("do not replay"))
+    }
+    XCTAssertEqual(kill(retiredPID, 0), -1)
+    XCTAssertEqual(errno, ESRCH)
+    let recovered = try await helper.request(.object(["kind": .string("recovery")]))
+    XCTAssertNotEqual(recovered["result"]["pid"], ready["result"]["pid"])
+    let attempts = try String(
+      contentsOf: directory.appendingPathComponent("attempts"), encoding: .utf8)
+    XCTAssertEqual(attempts.split(separator: "\n"), ["ready", "recovery"])
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 1)
+    let event = try XCTUnwrap(events.first)
+    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "timeout")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["timeoutDetectedBy"].string, "timer")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["operation"].string, "keyboard.type_text")
+    XCTAssertNil(event["contexts"]["nativeHelper"]["writeElapsedMs"].number)
+  }
+
   func testReadyResponseCannotSucceedAfterDeadlineAndOnlyANewCommandRestartsHelper() async throws {
     let collector = try telemetry()
     let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     addTeardownBlock { try FileManager.default.removeItem(at: marker) }
     let started = ContinuousClock.now
+    let awakeStarted = SuspendingClock.now
     let (helper, directory) = try nativeFixture(
       #"""
       #!/usr/bin/python3
@@ -400,6 +456,11 @@ final class NativeProcessTests: XCTestCase {
         // Advance the OS clock boundary only after the helper handles the input.
         started.advanced(
           by: .seconds(FileManager.default.fileExists(atPath: marker.path) ? 31 : 0))
+      },
+      awakeNow: {
+        // Model 30 seconds of system sleep plus one awake second at the clock boundary.
+        awakeStarted.advanced(
+          by: .seconds(FileManager.default.fileExists(atPath: marker.path) ? 1 : 0))
       })
 
     do {
@@ -433,6 +494,11 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertEqual(diagnostics["timeoutMs"].number, 30000)
     XCTAssertEqual(diagnostics["elapsedMs"].number, 31000)
     XCTAssertEqual(diagnostics["deadlineOverrunMs"].number, 1000)
+    XCTAssertEqual(diagnostics["deadlineDetectedElapsedMs"].number, 31000)
+    XCTAssertEqual(diagnostics["deadlineDetectionOverrunMs"].number, 1000)
+    XCTAssertEqual(diagnostics["awakeElapsedMs"].number, 1000)
+    XCTAssertEqual(diagnostics["systemSuspendedMs"].number, 30000)
+    XCTAssertEqual(diagnostics["timeoutSettlementDelayMs"].number, 0)
     XCTAssertGreaterThan(try XCTUnwrap(diagnostics["stdoutBytesRead"].number), 0)
     XCTAssertEqual(diagnostics["stdoutBytesRead"], diagnostics["stdoutBytesProcessed"])
     XCTAssertEqual(diagnostics["lastStdoutReadElapsedMs"].number, 31000)
