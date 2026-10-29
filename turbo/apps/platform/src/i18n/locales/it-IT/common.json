@@ -1384,6 +1384,12 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Inserisci un URL",
+    "blankPage": {
+      "description": "{{assistantName}} apre qui le pagine mentre lavora. Inserisci un URL qui sopra per navigare da solo.",
+      "title": "Ancora niente di aperto"
+    },
+    "blankTabTitle": "Nuova scheda",
     "cardTitle": "Browser cloud",
     "close": "Chiudi il browser cloud",
     "documentTitle": "Browser cloud",

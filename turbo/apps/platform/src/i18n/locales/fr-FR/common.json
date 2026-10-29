@@ -1384,6 +1384,12 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Saisir une URL",
+    "blankPage": {
+      "description": "{{assistantName}} ouvre les pages ici pendant qu’il travaille. Saisissez une URL ci-dessus pour naviguer vous-même.",
+      "title": "Rien d’ouvert pour l’instant"
+    },
+    "blankTabTitle": "Nouvel onglet",
     "cardTitle": "Navigateur cloud",
     "close": "Fermer le navigateur cloud",
     "documentTitle": "Navigateur cloud",

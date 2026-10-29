@@ -7,6 +7,7 @@ import {
 import {
   chatEventCompatibilityRole,
   isChatEventContentTextType,
+  isChatInputEventType,
   isChatRunTerminalEventType,
   revokedChatEventIds,
 } from "@okouai/api-contracts/contracts/chat-events";
@@ -1397,20 +1398,26 @@ function latestAssistantTextCreatedAtFromRaw(
 }
 
 /**
- * The newest Run that any thread event names, live or finished. Input carries
- * its Run once one consumes it, so a new message moves this on before its
- * Run produces output.
+ * A Run starts at its first consumed input. Later steering, output or usage
+ * from that Run cannot move it ahead of a newer Run.
  */
 function latestRunIdFromRaw(
   raw: readonly ChatEventProjectionEntry[],
 ): string | null {
-  for (let index = raw.length - 1; index >= 0; index--) {
-    const event = raw[index]!.event;
-    if ("runId" in event && typeof event.runId === "string") {
-      return event.runId;
+  const seenRunIds = new Set<string>();
+  let latestRunId: string | null = null;
+  for (const { event } of raw) {
+    if (
+      isChatInputEventType(event.eventType) &&
+      "runId" in event &&
+      typeof event.runId === "string" &&
+      !seenRunIds.has(event.runId)
+    ) {
+      seenRunIds.add(event.runId);
+      latestRunId = event.runId;
     }
   }
-  return null;
+  return latestRunId;
 }
 
 /** The newest Run while nothing has ended or interrupted it yet. */

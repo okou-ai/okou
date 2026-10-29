@@ -6,6 +6,7 @@ import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-thr
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -138,6 +139,59 @@ test("The interactive Okou viewer lets the owner change automatic sizing", async
     within(sizingMenu).getByText("Do not sync automatically"),
   ).toHaveAttribute("aria-checked", "false");
   await selectViewerSizingOption(sizingMenu, "Do not sync automatically");
+});
+
+test("The Okou viewer shows its host blank page only while the blank tab is selected", async () => {
+  const activeSession = browserSession();
+  const cdpUrl = "wss://cdp.browser-use.com/blank-page";
+  mockBrowserSession(activeSession);
+  mockBrowserCdp(context, cdpUrl, {
+    streaming: true,
+    targets: [
+      { targetId: "blank-page", title: "about:blank", url: "about:blank" },
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+      },
+    ],
+  });
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: activeSession });
+  });
+
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+
+  const viewer = await screen.findByRole("region", {
+    name: "Remote browser viewer",
+  });
+  await within(viewer).findByText("Nothing open yet");
+  expect(
+    within(viewer).getByText(
+      "Okou opens pages here as it works. Enter a URL above to browse yourself.",
+    ),
+  ).toBeInTheDocument();
+  expect(within(viewer).getByPlaceholderText("Enter a URL")).toBeEnabled();
+  const blankTab = within(viewer).getByLabelText("New tab", {
+    selector: '[role="tab"]',
+  });
+  expect(blankTab).toHaveAttribute("aria-selected", "true");
+
+  click(within(viewer).getByLabelText("Example", { selector: '[role="tab"]' }));
+  await within(viewer).findByDisplayValue("https://example.com");
+  expect(within(viewer).queryByText("Nothing open yet")).toBeNull();
+
+  click(blankTab);
+  await within(viewer).findByText("Nothing open yet");
+  expect(blankTab).toHaveAttribute("aria-selected", "true");
 });
 
 test("The Okou viewer starts with WebP and lets the owner change capture settings", async () => {
@@ -600,7 +654,9 @@ test.each(["legacy", "instance", "window"] as const)(
     await userEvent.keyboard("{End}x");
     expect(screen.getByLabelText("Remote page address")).toHaveFocus();
     expect(screen.getByLabelText("Remote page address")).toHaveValue(
-      "https://example.comx",
+      previous === "window"
+        ? "https://other.example.comx"
+        : "https://example.comx",
     );
   },
 );

@@ -1360,6 +1360,12 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "URL を入力",
+    "blankPage": {
+      "description": "{{assistantName}} は作業中にここでページを開きます。上で URL を入力して自分で閲覧することもできます。",
+      "title": "まだページが開かれていません"
+    },
+    "blankTabTitle": "新しいタブ",
     "cardTitle": "クラウドブラウザ",
     "close": "クラウドブラウザを閉じる",
     "documentTitle": "クラウドブラウザ",

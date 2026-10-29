@@ -1362,6 +1362,12 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "URL दर्ज करें",
+    "blankPage": {
+      "description": "{{assistantName}} काम करते समय यहां पेज खोलता है। खुद ब्राउज़ करने के लिए ऊपर URL दर्ज करें।",
+      "title": "अभी कुछ नहीं खुला है"
+    },
+    "blankTabTitle": "नया टैब",
     "cardTitle": "क्लाउड ब्राउज़र",
     "close": "क्लाउड ब्राउज़र बंद करें",
     "documentTitle": "क्लाउड ब्राउज़र",

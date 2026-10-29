@@ -2,7 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
@@ -17,6 +17,7 @@ import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
+import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
 
@@ -150,7 +151,10 @@ function mockWideScreen(): void {
   });
 }
 
-function openConversation(chatEvents: MockChatEventInput[]): Promise<void> {
+function openConversation(
+  chatEvents: MockChatEventInput[],
+  refined = false,
+): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
@@ -160,6 +164,7 @@ function openConversation(chatEvents: MockChatEventInput[]): Promise<void> {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: refined },
   });
 }
 
@@ -340,7 +345,7 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
 test("Start and close a browser from the thread sidebar", async () => {
   mockWideScreen();
   const browser = mockBrowserApi(null);
-  await openConversation(completedConversationEvents());
+  await openConversation(completedConversationEvents(), true);
   await expectConversationReady();
 
   click(buttonByName("Open browser"));
@@ -410,20 +415,56 @@ test("Take over the cloud browser from a working run and hand it back through th
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
   );
   const browser = mockBrowserApi(liveBrowserSession());
-  const runId = "navigation-browser-live-run";
+  const runId = "d0000000-0000-4000-a000-000000000902";
+  const previousRunId = "d0000000-0000-4000-a000-000000000901";
+  const chatEvents: MockChatEventInput[] = [
+    {
+      id: "navigation-browser-previous-user",
+      role: "user",
+      content: "Research the release notes",
+      runId: previousRunId,
+      seqId: 1,
+      createdAt: "2026-09-01T12:00:00.000Z",
+    },
+    {
+      id: "navigation-browser-budget-input",
+      eventType: "input.budget",
+      role: "user",
+      content: "Finish this run before its runtime limit",
+      runId: undefined,
+      seqId: 2,
+      createdAt: "2026-09-01T12:00:01.000Z",
+    },
+    {
+      id: "navigation-browser-previous-reply",
+      role: "assistant",
+      content: "I am checking the release notes now.",
+      runId: previousRunId,
+      seqId: 3,
+      createdAt: "2026-09-01T12:00:02.000Z",
+    },
+    {
+      id: "navigation-browser-previous-complete",
+      role: "assistant",
+      content: null,
+      runId: previousRunId,
+      runLifecycleEvent: "completed",
+      seqId: 4,
+      createdAt: "2026-09-01T12:00:03.000Z",
+    },
+    {
+      id: "navigation-browser-live-user",
+      role: "user",
+      content: "Book a table for two",
+      runId,
+      seqId: 5,
+      createdAt: "2026-09-01T12:00:04.000Z",
+    },
+  ];
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
-    chatEvents: [
-      {
-        id: "navigation-browser-live-user",
-        role: "user",
-        content: "Book a table for two",
-        runId,
-        seqId: 1,
-        createdAt: "2026-09-01T12:00:00.000Z",
-      },
-    ],
+    chatEvents,
     activeRunIds: [runId],
   });
   await setupPage({
@@ -436,27 +477,78 @@ test("Take over the cloud browser from a working run and hand it back through th
   click(buttonByName("Open browser"));
   const sidebar = liveBrowserSidebar();
   await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  expect(
+    within(viewer).getByLabelText("Open this browser in a new page"),
+  ).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
   await expect(
-    within(sidebar).findByText(/is working$/u),
+    within(viewer).findByText(/is working$/u),
   ).resolves.toBeInTheDocument();
 
-  click(buttonByName("Take over", sidebar));
+  click(buttonByName("Take over", viewer));
   await expect(
-    within(sidebar).findByText("You're in control"),
+    within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
 
-  click(buttonByName("Hand back", sidebar));
+  // An earlier Run's final output, budget declaration and usage can arrive late.
+  act(() => {
+    chatEvents.push(
+      {
+        id: "navigation-browser-previous-final-output",
+        role: "assistant",
+        content: "The release notes review is complete.",
+        runId: previousRunId,
+        seqId: 98,
+        createdAt: "2026-09-01T12:00:58.000Z",
+      },
+      {
+        id: "navigation-browser-previous-budget",
+        eventType: "input.budget",
+        role: "user",
+        content: "Finish this run before its runtime limit",
+        runId: previousRunId,
+        revokesEventId: "navigation-browser-budget-input",
+        seqId: 99,
+        createdAt: "2026-09-01T12:00:59.000Z",
+      },
+      {
+        id: "navigation-browser-previous-usage",
+        role: "assistant",
+        content: null,
+        runId: previousRunId,
+        seqId: 100,
+        createdAt: "2026-09-01T12:01:00.000Z",
+        usage: {
+          version: 1,
+          totalCredits: 7,
+          settledAt: "2026-09-01T12:01:00.000Z",
+          breakdown: [
+            {
+              kind: "model/gpt-6-luna/tokens.output",
+              credits: 7,
+              providers: [{ provider: "openai", credits: 7 }],
+            },
+          ],
+        },
+      },
+    );
+    createChatEvent(THREAD_ID);
+  });
+  await within(screen.getByRole("main")).findByText(
+    "The release notes review is complete.",
+  );
+  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
+
+  click(buttonByName("Hand back", viewer));
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
       "I'm done in the browser. Please continue.",
     );
   });
   expect(within(sidebar).queryByText("You're in control")).toBeNull();
-  expect(
-    within(sidebar).getByLabelText("Open this browser in a new page"),
-  ).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
-
-  click(buttonByName("Close cloud browser", sidebar));
+  click(buttonByName("Close cloud browser", viewer));
   await waitFor(() => {
     expect(sidebar).not.toBeInTheDocument();
   });
