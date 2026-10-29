@@ -47,7 +47,23 @@ function Confetti() {
 
 function ResultTasks({ won }: { readonly won: boolean }) {
   const copy = useHalloweenCopy();
-  const icons = [Sparkle, Command, Zap];
+  const destinations = [
+    {
+      Icon: Sparkle,
+      pathname: "/",
+      searchParams: new URLSearchParams({ prompt: copy.tasks[0].prompt }),
+    },
+    {
+      Icon: Command,
+      pathname: "/connectors",
+      searchParams: undefined,
+    },
+    {
+      Icon: Zap,
+      pathname: "/",
+      searchParams: new URLSearchParams({ templatePicker: "slides" }),
+    },
+  ] as const;
   return (
     <section className="min-w-0">
       <div className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm leading-5">
@@ -62,19 +78,15 @@ function ResultTasks({ won }: { readonly won: boolean }) {
       </div>
       <div className="grid gap-3">
         {copy.tasks.map((task, index) => {
-          const Icon = icons[index]!;
+          const { Icon, pathname, searchParams } = destinations[index]!;
           return (
             <DialogClose
               key={task.title}
               nativeButton={false}
               render={
                 <Link
-                  pathname="/"
-                  options={{
-                    searchParams: task.prompt
-                      ? new URLSearchParams({ prompt: task.prompt })
-                      : undefined,
-                  }}
+                  pathname={pathname}
+                  options={{ searchParams }}
                   className="group grid min-h-[84px] min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_1rem] items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[#ffffff03] px-5 py-4 text-left transition-colors duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07]"
                 />
               }
