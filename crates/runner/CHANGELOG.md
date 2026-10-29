@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.240.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.5...runner-rs-v0.240.6) (2026-10-29)
+
+
+### Performance Improvements
+
+* **runner:** reuse custom http matcher indexes per registry snapshot ([#43841](https://github.com/okou-ai/okou/issues/43841)) ([7efa323](https://github.com/okou-ai/okou/commit/7efa323f3bb0fa5eb0feeb9122f9518adb3e2045))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.240.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.4...runner-rs-v0.240.5) (2026-10-29)
 
 

@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.3](https://github.com/okou-ai/okou/compare/api-v2.22.2...api-v2.22.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** align halloween quiz copy with v1 ([#43861](https://github.com/okou-ai/okou/issues/43861)) ([a44c7f3](https://github.com/okou-ai/okou/commit/a44c7f3baf50059be9a017767fa6159fe167002b))
+
+
+### Refactoring
+
+* **api:** localize threadless run deletion ownership ([#43833](https://github.com/okou-ai/okou/issues/43833)) ([4e1c4af](https://github.com/okou-ai/okou/commit/4e1c4af2d9be762f3f22c2199981fe6c92a8c22d))
+* **api:** retire inline workflow claim compatibility ([#43857](https://github.com/okou-ai/okou/issues/43857)) ([39aa90b](https://github.com/okou-ai/okou/commit/39aa90b52ca549653b95dcfc30696175c27995ac))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.3
+    * @okouai/core bumped to 8.799.3
+    * @okouai/db bumped to 2.10.3
+    * @okouai/pi-agent-runtime bumped to 1.51.18
+
 ## [2.22.2](https://github.com/okou-ai/okou/compare/api-v2.22.1...api-v2.22.2) (2026-10-29)
 
 
