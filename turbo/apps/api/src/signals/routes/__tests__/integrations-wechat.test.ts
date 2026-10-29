@@ -305,7 +305,8 @@ async function responseFixture() {
           exitCode,
           completion: {
             cliAgentType: "claude-code",
-            cliAgentSessionId: randomUUID(),
+            // Replayed completion must preserve the committed output identity.
+            cliAgentSessionId: run.runId,
             cliAgentSessionHistoryDisposition: "native_only",
           },
           lastEventSequence: 0,

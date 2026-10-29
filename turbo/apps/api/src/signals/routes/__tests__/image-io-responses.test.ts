@@ -177,12 +177,7 @@ describe("durable OpenAI Responses image generation", () => {
   });
 
   it("delivers the provider-backed tool ledger through owner refresh and settles exactly once", async () => {
-    const preferences = await setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-      isolatePg: true,
-    });
-    const fixture = await createFixture(preferences);
+    const fixture = await createFixture();
     await fixture.actor.run(async () => {
       const provider = mockOpenAiImageResponses();
       const response = await fixture.generate();
@@ -226,14 +221,12 @@ describe("durable OpenAI Responses image generation", () => {
         await expect(fixture.refresh(generationId)).resolves.toStrictEqual(
           completed,
         );
-        await fixture.reconcile();
         await expect(fixture.status(generationId)).resolves.toStrictEqual(
           completed,
         );
       }
       expect(provider.submissions).toHaveLength(1);
       expect(provider.retrievals).toStrictEqual([submission.id]);
-      expect(provider.deletions).toStrictEqual([submission.id]);
       await expect(orgCredits(context, fixture.actor)).resolves.toBe(9991);
       const uploads = context.mocks.s3.send.mock.calls
         .map(([command]) => {

@@ -13,8 +13,6 @@ const harness =
 const behaviorTest = "/app/src/signals/routes/__tests__/workflows.test.ts";
 const sandboxCleanupImport =
   'import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";';
-const computerUseRetention =
-  "/repo/turbo/apps/api/src/signals/routes/__tests__/computer-use-retention.test.ts";
 const computerUseCleanupImport =
   'import { cronComputerUseScreenshotCleanupRoutes } from "../cron-computer-use-screenshot-cleanup";';
 
@@ -27,14 +25,6 @@ const routeImport = `
 
 ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
   valid: [
-    {
-      name: "the isolated Computer Use retention suite mounts its real operator",
-      filename: computerUseRetention,
-      code: `${computerUseCleanupImport}
-        import { setupApp } from "../../../__tests__/test-helpers";
-        setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes, isolatePg: true })(contract);
-      `,
-    },
     {
       name: "isolated Official system coverage uses the canonical automation cron",
       filename: "/app/src/signals/routes/__tests__/official-workflows.test.ts",
@@ -137,17 +127,17 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
   ],
   invalid: [
     {
-      name: "retention coverage must explicitly isolate its database",
-      filename: computerUseRetention,
+      name: "isolation does not authorize a global screenshot cleanup operator",
+      filename: behaviorTest,
       code: `${computerUseCleanupImport}
         import { setupApp } from "../../../__tests__/test-helpers";
-        setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes });
+        setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes, isolatePg: true });
       `,
       errors: [{ messageId: "globalSweep" }],
     },
     {
-      name: "retention coverage cannot override isolation through a spread",
-      filename: computerUseRetention,
+      name: "spread options do not authorize a global screenshot cleanup operator",
+      filename: behaviorTest,
       code: `${computerUseCleanupImport}
         import { setupApp } from "../../../__tests__/test-helpers";
         setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes, isolatePg: true, ...options });
@@ -161,14 +151,8 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       errors: [{ messageId: "globalSweep" }],
     },
     {
-      name: "retention coverage cannot import an unrelated global operator",
-      filename: computerUseRetention,
-      code: sandboxCleanupImport,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "retention coverage cannot use a private operator driver",
-      filename: computerUseRetention,
+      name: "ordinary coverage cannot use a private operator driver",
+      filename: behaviorTest,
       code: `${computerUseCleanupImport}
         import { setupApp } from "./private-driver";
         setupApp({ routes: cronComputerUseScreenshotCleanupRoutes });

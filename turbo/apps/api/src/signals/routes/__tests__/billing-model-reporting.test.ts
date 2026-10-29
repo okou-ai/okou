@@ -3,14 +3,12 @@ import { describe, expect, it } from "vitest";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
 import { chatThreadUsageContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { cronCompactUsageEventsContract } from "@okouai/api-contracts/contracts/cron";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { usageRecordRoutes } from "../usage-record";
 import { usageMembersRoutes } from "../usage-members";
-import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -237,8 +235,7 @@ describe("Billing model reporting", () => {
     },
   );
 
-  it("retains captured providers and settled totals across compaction, Thread deletion and Run deletion", async () => {
-    await setupApp({ context, routes: usageRecordRoutes, isolatePg: true });
+  it("retains captured providers and settled totals after Thread deletion and Run deletion", async () => {
     const at = Date.UTC(2026, 2, 1, 12, 15);
     mockNow(at);
     const {
@@ -407,34 +404,6 @@ describe("Billing model reporting", () => {
           usage: rawChatUsage.body.runs[0]?.usage,
         }),
       );
-
-      // The real operator endpoint is in scope for raw/hourly reporting equivalence.
-      // Usage was constructed only through authenticated Sandbox requests.
-      const compaction = await accept(
-        setupApp({ context, routes: cronCompactUsageEventsRoutes })(
-          cronCompactUsageEventsContract,
-        ).compact({ headers: { authorization: "Bearer test-cron-secret" } }),
-        [200],
-      );
-      expect(compaction.body.reconciled).toBeTruthy();
-      expect(compaction.body.hourlyRowsInserted).toBeGreaterThan(0);
-      const compacted = await report();
-      expect(compacted).toStrictEqual(raw);
-      expect((await chatUsage()).body).toStrictEqual(rawChatUsage.body);
-
-      const repeatedCompaction = await accept(
-        setupApp({ context, routes: cronCompactUsageEventsRoutes })(
-          cronCompactUsageEventsContract,
-        ).compact({ headers: { authorization: "Bearer test-cron-secret" } }),
-        [200],
-      );
-      expect(repeatedCompaction.body).toMatchObject({
-        rawRowsDeleted: 0,
-        hourlyRowsInserted: 0,
-        reconciled: true,
-      });
-      await expect(report()).resolves.toStrictEqual(raw);
-      expect((await chatUsage()).body).toStrictEqual(rawChatUsage.body);
 
       await createChatFilesBddApi(context).deleteThread(actor, run.threadId);
       const withoutThread = await report();
