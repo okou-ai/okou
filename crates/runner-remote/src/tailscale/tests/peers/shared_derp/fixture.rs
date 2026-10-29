@@ -2,6 +2,7 @@
 use super::super::{bounded, node, wire};
 use super::{Connections, relay};
 use crate::tailscale::tests::derp::fixture::{Server, WriteGate};
+use crate::tailscale::tests::socket::SocketIdentity;
 use crate::tailscale::{
     Failure,
     map_reader::MapReader,
@@ -142,7 +143,7 @@ pub(super) struct Shared {
     pub(super) sides: [wire::DerpSide; 2],
     services: [Service; 2],
     pub(super) gates: [Arc<WriteGate>; 2],
-    pub(super) descriptors: Arc<Mutex<Vec<i32>>>,
+    pub(super) descriptors: Arc<Mutex<Vec<SocketIdentity>>>,
     epoch: Instant,
     secure: bool,
 }
@@ -294,15 +295,14 @@ impl Shared {
         let connections = self.descriptors.lock().unwrap().len();
         assert!((1..=2).contains(&connections));
         bounded(self.gates[connections - 1].destroyed()).await;
-        // Previous descriptor numbers may now belong to an external accepted
-        // socket. Their exact closure was checked before the next dial; only
-        // the last native socket still has an unambiguous identity here.
-        let fd = *self.descriptors.lock().unwrap().last().unwrap();
-        assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
-        assert_eq!(
-            std::io::Error::last_os_error().raw_os_error(),
-            Some(libc::EBADF)
-        );
+        // Another test may already own the same fd number. Check the exact
+        // original socket, as connect does before opening a replacement.
+        self.descriptors
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .assert_closed();
         for service in &mut self.services {
             // A replacement that was never used is an external fixture
             // listener, not native work. Abort and join that exact fixture.

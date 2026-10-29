@@ -109,7 +109,6 @@ export interface ComputerUseS3Fake {
   readonly puts: readonly RecordedComputerUseS3Put[];
   readonly holdNextPutObject: () => ComputerUseS3Barrier;
   readonly failNextPutObject: (error: unknown) => void;
-  readonly failNextDeleteObjects: (error: unknown) => void;
 }
 
 interface PendingComputerUseS3Barrier {
@@ -379,8 +378,8 @@ export function createComputerUseBddApi(
       });
     },
     /**
-     * S3 fake for screenshot offload and retention. Records uploaded bytes
-     * and supports upload barriers and upload/deletion failures.
+     * S3 fake for screenshot offload. Records uploaded bytes
+     * and supports upload barriers and upload failures.
      * Installed on the vi mock, so the global afterEach mockReset uninstalls
      * it; install inside the test that needs it.
      */
@@ -388,7 +387,6 @@ export function createComputerUseBddApi(
       const puts: RecordedComputerUseS3Put[] = [];
       let heldPutObject: PendingComputerUseS3Barrier | undefined;
       let putObjectFailure: unknown | undefined;
-      let deleteObjectsFailure: unknown | undefined;
 
       context.mocks.s3.send.mockImplementation(
         async (command: unknown, options?: unknown) => {
@@ -418,14 +416,6 @@ export function createComputerUseBddApi(
             puts.push({ bucket, key, body, contentType });
             return {};
           }
-          if (name === "DeleteObjectsCommand") {
-            if (deleteObjectsFailure !== undefined) {
-              const error = deleteObjectsFailure;
-              deleteObjectsFailure = undefined;
-              throw error;
-            }
-            return {};
-          }
           return {};
         },
       );
@@ -447,14 +437,6 @@ export function createComputerUseBddApi(
             throw new Error("Computer-use S3 PutObject failure is already set");
           }
           putObjectFailure = error;
-        },
-        failNextDeleteObjects: (error) => {
-          if (deleteObjectsFailure !== undefined) {
-            throw new Error(
-              "Computer-use S3 DeleteObjects failure is already set",
-            );
-          }
-          deleteObjectsFailure = error;
         },
       };
     },

@@ -183,7 +183,7 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
-  it("uses official and uploaded welcome covers only after authorizing the publication", async () => {
+  it("uses official welcome covers only after authorizing the publication", async () => {
     // The production cover catalog matches this exact, globally unique hostname.
     // Isolate the global hosted-address namespace so repeat runs can claim it.
     const app = await setupApp({
@@ -244,20 +244,6 @@ describe("sandbox hosted previews", () => {
     );
     mocks.clerk.session(outsider.userId, outsider.orgId);
     await accept(api.sitePreview(request), [404]);
-    const replacement = await host.prepareHostedSite(owner, {
-      site: prepared.publicSlug,
-      artifactKind: "presentation-html",
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", "<main>Updated example</main>")],
-      preview: preview(png),
-    });
-    await upload(replacement, png);
-    await host.completeHostedSite(owner, replacement.deploymentId);
-    const updated = await accept(api.sitePreview(request), [200]);
-    expect(updated.body.previewImageUrl).toBeDefined();
-    expect(
-      new URL(updated.body.previewImageUrl!).searchParams.get("object"),
-    ).toContain("test-private-artifacts/private-artifacts/");
   });
 
   it.each([

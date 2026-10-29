@@ -543,7 +543,8 @@
       "description": "Cet artefact sera supprimé et ses liens Okou seront désactivés. Les copies déjà téléchargées ou enregistrées dans d’autres services seront conservées.",
       "hostedDescription": "Ce site et toutes ses versions publiées seront mis hors ligne. Les copies enregistrées dans d’autres services seront conservées.",
       "menu": "Plus d’actions pour {{title}}",
-      "sharedDescription": "Retirez cette conversation enregistrée de vos artefacts. La conversation originale et son lien de partage resteront accessibles.",
+      "sharedDescription": "Supprimez cette conversation partagée de vos artefacts. Son lien de partage ne fonctionnera plus. Votre conversation originale restera accessible.",
+      "success": "Artefact supprimé",
       "title": "Supprimer {{title}} ?"
     },
     "fileBadges": {
@@ -1384,12 +1385,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Saisir une URL",
-    "blankPage": {
-      "description": "{{assistantName}} ouvre les pages ici pendant qu’il travaille. Saisissez une URL ci-dessus pour naviguer vous-même.",
-      "title": "Rien d’ouvert pour l’instant"
-    },
-    "blankTabTitle": "Nouvel onglet",
     "cardTitle": "Navigateur cloud",
     "close": "Fermer le navigateur cloud",
     "documentTitle": "Navigateur cloud",
@@ -1752,6 +1747,13 @@
       "customAmountError": "Entrez un montant entre 1 $ et 10 000 $",
       "customDollarAmount": "Montant personnalisé en dollars",
       "outOfCredits": "Vous êtes à court de crédits",
+      "proCard": {
+        "creditsNow": "crédits · Maintenant",
+        "description": "Crédits supplémentaires · Fonctions avancées · 3 ordinateurs cloud",
+        "priceUnavailable": "Consultez les offres et leurs tarifs actuels",
+        "title": "Environ 5 tâches restantes",
+        "upgradeNow": "Passer à Pro maintenant"
+      },
       "redirecting": "Redirection...",
       "upgradeToContinue": "Passez à Pro pour continuer à discuter avec {{assistantName}}.",
       "upgradeToPro": "Passer à Pro",

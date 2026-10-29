@@ -2,6 +2,7 @@ import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artif
 import {
   artifactReferencePath,
   artifactReferencesContract,
+  artifactShareReferencePath,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   hostContract,
@@ -786,6 +787,73 @@ test.each([false, true])(
     );
   },
 );
+
+test.each([
+  { filename: "restricted.png", status: 404, code: "NOT_FOUND" },
+  { filename: "restricted.pdf", status: 403, code: "FORBIDDEN" },
+  {
+    filename: "restricted.txt",
+    status: 401,
+    code: "UNAUTHORIZED",
+  },
+] as const)(
+  "an inaccessible $filename ($status) shows an access card in the lightbox",
+  async ({ filename, status, code }) => {
+    const reference = artifactShareReferencePath("restricted", filename);
+    const url = new URL(reference, "http://localhost").href;
+    mockAttachmentChat(context, {
+      chatEvents: [assistantMessage(`[Restricted artifact](${url})`)],
+    });
+    context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+      return respond(status, {
+        error: { code, message: "Artifact unavailable" },
+      });
+    });
+
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    click(await findNamedLink("Restricted artifact"));
+
+    const dialog = await screen.findByTestId("attachment-lightbox");
+    await expect(
+      within(dialog).findByRole("heading", {
+        name: "You can’t view this artifact",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        /It may not exist, or it may be shared with a different account or organization\./,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        /Ask the person who shared this link to check access\./,
+      ),
+    ).toBeInTheDocument();
+    expect(getNamedButton("Switch account", dialog)).toBeEnabled();
+    await closeFocusedPreview();
+  },
+);
+
+test("an artifact service failure ends loading with a preview error", async () => {
+  const reference = artifactShareReferencePath("failed0001", "unavailable.png");
+  const url = new URL(reference, "http://localhost").href;
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`[Unavailable artifact](${url})`)],
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Temporary failure" },
+    });
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  click(await findNamedLink("Unavailable artifact"));
+
+  const dialog = await screen.findByTestId("attachment-lightbox");
+  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
+    "Preview unavailable.",
+  );
+});
 
 test.each([
   { status: 404, sidebar: false },

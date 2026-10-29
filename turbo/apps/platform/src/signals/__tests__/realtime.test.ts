@@ -776,6 +776,7 @@ test("Chat thread notifications invalidate their matching resources", async () =
           recordInvalidation("connector-preference"),
         ],
         automations: [recordInvalidation("automations")],
+        artifactCatalog: [noopInvalidation$],
       },
       handlers: { onWorkflowsChanged$: keepAliveLoop$ },
     },
@@ -825,6 +826,7 @@ test("An initial refresh failure does not destroy live subscriptions", async () 
         invalidations: {
           threadDetail: [noopInvalidation$],
           automations: [noopInvalidation$],
+          artifactCatalog: [noopInvalidation$],
         },
         handlers: {
           onWorkflowsChanged$: keepAliveLoop$,

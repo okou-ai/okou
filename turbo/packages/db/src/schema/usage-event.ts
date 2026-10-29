@@ -56,7 +56,7 @@ export const usageEvent = pgTable(
       () => {
         return agentRuns.id;
       },
-      { onDelete: "set null" },
+      { onDelete: "no action" },
     ),
   },
   (table) => {

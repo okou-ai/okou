@@ -527,7 +527,8 @@
       "description": "이 작업물을 삭제하고 Okou 링크를 비활성화합니다. 이미 다운로드했거나 다른 서비스에 저장한 사본은 유지됩니다.",
       "hostedDescription": "이 웹사이트와 게시된 모든 버전을 오프라인으로 전환합니다. 다른 서비스에 저장한 사본은 유지됩니다.",
       "menu": "{{title}} 추가 작업",
-      "sharedDescription": "저장한 대화를 작업물에서 제거합니다. 원본 대화와 공유 링크는 계속 사용할 수 있습니다.",
+      "sharedDescription": "이 공유된 대화를 작업물에서 삭제합니다. 공유 링크는 더 이상 사용할 수 없습니다. 원본 대화는 유지됩니다.",
+      "success": "작업물이 삭제되었습니다",
       "title": "{{title}}을(를) 삭제할까요?"
     },
     "fileBadges": {
@@ -1360,12 +1361,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL 입력",
-    "blankPage": {
-      "description": "{{assistantName}}이(가) 작업하는 동안 여기에서 페이지를 엽니다. 위에 URL을 입력해 직접 둘러볼 수도 있습니다.",
-      "title": "아직 열린 페이지가 없습니다"
-    },
-    "blankTabTitle": "새 탭",
     "cardTitle": "클라우드 브라우저",
     "close": "클라우드 브라우저 닫기",
     "documentTitle": "클라우드 브라우저",
@@ -1720,6 +1715,13 @@
       "customAmountError": "$1에서 $10,000 사이를 입력하세요",
       "customDollarAmount": "맞춤 금액",
       "outOfCredits": "크레딧이 부족합니다",
+      "proCard": {
+        "creditsNow": "크레딧 · 바로 지금",
+        "description": "추가 크레딧 · 고급 기능 · 클라우드 컴퓨터 3대",
+        "priceUnavailable": "요금제에서 현재 가격 확인",
+        "title": "남은 작업 약 5개",
+        "upgradeNow": "지금 업그레이드"
+      },
       "redirecting": "리디렉션 중...",
       "upgradeToContinue": "{{assistantName}}와 계속 대화하려면 Pro로 업그레이드하세요.",
       "upgradeToPro": "Pro로 업그레이드",

@@ -29,15 +29,6 @@ package = false
 required-version = "==0.12.17"
 exclude-newer = "7 days"
 
-[tool.uv.exclude-newer-package]
-# Explicit 12.3.0 upgrade; remove once the seven-day window covers these releases.
-mitmproxy = "2026-10-22T06:23:08Z"
-certifi = "2026-10-22T06:23:08Z"
-mitmproxy-rs = "2026-10-22T06:23:08Z"
-mitmproxy-linux = "2026-10-22T06:23:08Z"
-mitmproxy-macos = "2026-10-22T06:23:08Z"
-mitmproxy-windows = "2026-10-22T06:23:08Z"
-
 [tool.ruff]
 line-length = 100
 target-version = "py314"

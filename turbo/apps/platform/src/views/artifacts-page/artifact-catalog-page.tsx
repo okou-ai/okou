@@ -36,6 +36,7 @@ import {
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
@@ -394,12 +395,10 @@ function ArtifactCatalogCard({
 
 function ArtifactSharedConversationList({
   artifacts,
-  onOpen,
   canDelete = false,
   scrollToArtifactId,
 }: {
   readonly artifacts: readonly CatalogArtifact[];
-  readonly onOpen: (artifactId: string) => void;
   readonly canDelete?: boolean;
   readonly scrollToArtifactId: string | null;
 }) {
@@ -414,13 +413,15 @@ function ArtifactSharedConversationList({
       {artifacts.map((artifact) => {
         return (
           <li key={artifact.id} className="flex items-center">
-            <button
+            <a
               ref={
                 artifact.id === scrollToArtifactId
                   ? scrollArtifactCardIntoViewRef
                   : undefined
               }
-              type="button"
+              href={`${ROUTES.artifacts}?tab=shared-thread&artifact=${encodeURIComponent(artifact.id)}`}
+              target="_blank"
+              rel="noopener noreferrer"
               data-artifact-id={artifact.id}
               aria-label={t(
                 ($) => {
@@ -428,9 +429,6 @@ function ArtifactSharedConversationList({
                 },
                 { title: artifact.title },
               )}
-              onClick={() => {
-                onOpen(artifact.id);
-              }}
               className="group flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground transition-colors group-hover:text-foreground">
@@ -444,7 +442,7 @@ function ArtifactSharedConversationList({
                 aria-hidden
                 className="shrink-0 transition-colors group-hover:text-foreground"
               />
-            </button>
+            </a>
             {canDelete && (
               <div className="pr-3">
                 <ArtifactDeleteMenu artifact={artifact} />
@@ -785,13 +783,6 @@ export function ArtifactCatalogPage({
                 artifacts={artifacts}
                 canDelete={deletionEnabled}
                 scrollToArtifactId={scrollToArtifactId}
-                onOpen={(artifactId) => {
-                  detach(
-                    openArtifact(artifactId, pageSignal),
-                    Reason.DomCallback,
-                    "artifact catalog open",
-                  );
-                }}
               />
             ) : (
               <ArtifactCatalogGrid

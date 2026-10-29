@@ -543,7 +543,8 @@
       "description": "Isso remove o artefato e desativa seus links do Okou. Cópias já baixadas ou salvas em outros serviços serão mantidas.",
       "hostedDescription": "Isso tira o site e todas as versões publicadas do ar. Cópias salvas em outros serviços serão mantidas.",
       "menu": "Mais ações para {{title}}",
-      "sharedDescription": "Remova esta conversa salva dos seus artefatos. A conversa original e seu link compartilhado continuarão disponíveis.",
+      "sharedDescription": "Exclua esta conversa compartilhada dos seus artefatos. Seu link de compartilhamento deixará de funcionar. Sua conversa original continuará disponível.",
+      "success": "Artefato excluído",
       "title": "Excluir {{title}}?"
     },
     "fileBadges": {
@@ -1384,12 +1385,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Digite uma URL",
-    "blankPage": {
-      "description": "{{assistantName}} abre páginas aqui enquanto trabalha. Digite uma URL acima para navegar por conta própria.",
-      "title": "Nada aberto ainda"
-    },
-    "blankTabTitle": "Nova guia",
     "cardTitle": "Navegador na nuvem",
     "close": "Fechar navegador na nuvem",
     "documentTitle": "Navegador na nuvem",
@@ -1752,6 +1747,13 @@
       "customAmountError": "Insira um valor entre US$ 1 e US$ 10.000",
       "customDollarAmount": "Valor personalizado em dólares",
       "outOfCredits": "Seus créditos acabaram",
+      "proCard": {
+        "creditsNow": "créditos · Agora mesmo",
+        "description": "Créditos extras · Recursos avançados · 3 computadores na nuvem",
+        "priceUnavailable": "Veja os preços atuais dos planos",
+        "title": "Restam cerca de 5 tarefas",
+        "upgradeNow": "Fazer upgrade agora"
+      },
       "redirecting": "Redirecionando...",
       "upgradeToContinue": "Faça upgrade para o Pro para continuar conversando com o {{assistantName}}.",
       "upgradeToPro": "Fazer upgrade para o Pro",

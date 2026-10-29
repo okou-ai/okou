@@ -1873,10 +1873,9 @@ interface DeleteHostedSiteArgs {
 type DeleteHostedSiteResult =
   | { readonly status: "ok"; readonly body: HostedSiteDeleteResponse }
   | { readonly status: "not_found"; readonly message: string }
-  | { readonly status: "bad_request"; readonly message: string }
   | { readonly status: "config_error"; readonly message: string };
 
-/** Only the creator may take a site offline, as only the creator may redeploy it. */
+/** Only the creator may take a site offline. */
 const ownedHostedSiteForDeletion$ = command(
   async (
     { get },
@@ -1993,8 +1992,8 @@ const ownedDeliveryRecordKeys$ = command(
 
 /**
  * Soft-delete a site: every version stops serving while its rows and bytes are
- * kept. The site keeps its name, so redeploying it publishes a new active
- * version at the same address. Deleted versions never serve again.
+ * kept. Current-domain sites keep their name for redeployment; legacy-domain
+ * sites cannot be redeployed. Deleted versions never serve again.
  */
 export const deleteHostedSite$ = command(
   async (
@@ -2014,14 +2013,6 @@ export const deleteHostedSite$ = command(
     signal.throwIfAborted();
     if (!candidate) {
       return notFound;
-    }
-    // Legacy-layout sites are never redeployed, so deletion could not be undone.
-    if (rowLinkLayout(candidate) !== CURRENT_LINK_LAYOUT) {
-      return {
-        status: "bad_request",
-        message:
-          "Hosted sites on the legacy domain cannot be redeployed, so they cannot be deleted",
-      };
     }
     await set(revokeHostedSiteShare$, candidate, signal);
     signal.throwIfAborted();

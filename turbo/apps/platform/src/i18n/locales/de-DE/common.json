@@ -528,7 +528,8 @@
       "description": "Das Artefakt wird entfernt und seine Okou-Links werden deaktiviert. Bereits heruntergeladene oder in anderen Diensten gespeicherte Kopien bleiben erhalten.",
       "hostedDescription": "Die Website und alle veröffentlichten Versionen werden offline genommen. In anderen Diensten gespeicherte Kopien bleiben erhalten.",
       "menu": "Weitere Aktionen für {{title}}",
-      "sharedDescription": "Diese gespeicherte Unterhaltung wird aus deinen Artefakten entfernt. Die ursprüngliche Unterhaltung und ihr Freigabelink bleiben verfügbar.",
+      "sharedDescription": "Lösche diese geteilte Unterhaltung aus deinen Artefakten. Ihr Freigabelink funktioniert danach nicht mehr. Deine ursprüngliche Unterhaltung bleibt erhalten.",
+      "success": "Artefakt gelöscht",
       "title": "{{title}} löschen?"
     },
     "fileBadges": {
@@ -1362,12 +1363,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL eingeben",
-    "blankPage": {
-      "description": "{{assistantName}} öffnet hier Seiten, während es arbeitet. Gib oben eine URL ein, um selbst zu surfen.",
-      "title": "Noch nichts geöffnet"
-    },
-    "blankTabTitle": "Neuer Tab",
     "cardTitle": "Cloud-Browser",
     "close": "Cloud-Browser schließen",
     "documentTitle": "Cloud-Browser",
@@ -1724,6 +1719,13 @@
       "customAmountError": "Geben Sie zwischen 1 und 10.000 US-Dollar ein",
       "customDollarAmount": "Benutzerdefinierter Dollarbetrag",
       "outOfCredits": "Ihre Credits sind aufgebraucht",
+      "proCard": {
+        "creditsNow": "Credits · Jetzt gleich",
+        "description": "Zusätzliche Credits · Erweiterte Funktionen · 3 Cloud-Computer",
+        "priceUnavailable": "Aktuelle Preise in den Tarifen ansehen",
+        "title": "Noch etwa 5 Aufgaben",
+        "upgradeNow": "Jetzt upgraden"
+      },
       "redirecting": "Weiterleitung...",
       "upgradeToContinue": "Führen Sie ein Upgrade auf Pro durch, um weiterhin mit {{assistantName}} chatten zu können.",
       "upgradeToPro": "Upgrade auf Pro",

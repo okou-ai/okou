@@ -1,4 +1,5 @@
 import { ArtifactBanner } from "@okouai/ui/components/ui/artifact-banner";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   PreserveScrollAnchor,
   Button,
@@ -14,26 +15,21 @@ import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   ArrowLeft,
-  ArrowRightLeft,
   ArrowUpRight,
-  LogIn,
   Maximize2,
   Minimize2,
   Share2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { currentUserInfo$ } from "../../signals/auth.ts";
-import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
-import {
-  signInToSharedArtifact$,
-  type SharedArtifactPreview,
-  type SharedArtifactViewerSignals,
+import type {
+  SharedArtifactPreview,
+  SharedArtifactViewerSignals,
 } from "../../signals/shared-artifact-page.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ResourceAccessCard } from "../components/resource-access-card.tsx";
+import { ArtifactAccessCard } from "../components/artifact-access-card.tsx";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { ArtifactPreviewBody } from "../okou-page/attachment-chips.tsx";
@@ -42,6 +38,7 @@ import {
   ArtifactDownloadMenu,
 } from "../okou-page/artifact-actions.tsx";
 import { ArtifactShareMenu } from "../okou-page/artifact-share-menu.tsx";
+import { ArtifactPageDeleteButton } from "../okou-page/artifact-deletion.tsx";
 import {
   getArtifactShareScope,
   type ArtifactShareSession,
@@ -61,6 +58,10 @@ function ArtifactViewerActions({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
+  const reference = parseArtifactReference(
+    artifact.preview.url,
+    location.origin,
+  );
   const [enterLoadable, enterFullscreen] = useLoadableSet(
     viewer.fullscreen.enter$,
   );
@@ -118,6 +119,12 @@ function ArtifactViewerActions({
         iconSize={18}
         showGoogleDriveAction={false}
       />
+      {reference && !artifact.sharedThreadSnapshot && (
+        <ArtifactPageDeleteButton
+          artifactId={`${reference.hash}${reference.extension}`}
+          sourceKind="reference"
+        />
+      )}
       {artifactSupportsFullscreen(artifact.preview.kind) && (
         <Button
           ref={enterButtonRef}
@@ -220,68 +227,6 @@ function ArtifactVisibilityLabel({
   return session ? <ArtifactShareAudienceLabel session={session} /> : null;
 }
 
-function ArtifactAccessPage() {
-  const { t } = useTranslation();
-  const user = useLastResolved(currentUserInfo$);
-  const pageSignal = useGet(pageSignal$);
-  const [accessLoadable, openAccess] = useLoadableSet(
-    user ? openClerkAddAccount$ : signInToSharedArtifact$,
-  );
-  return (
-    <ResourceAccessCard
-      title={t(($) => {
-        return $.artifacts.access.title;
-      })}
-      description={
-        user
-          ? t(($) => {
-              return $.artifacts.access.signedInDescription;
-            })
-          : t(($) => {
-              return $.artifacts.access.description;
-            })
-      }
-      help={t(($) => {
-        return $.artifacts.access.help;
-      })}
-      email={user?.primaryEmailAddress?.emailAddress}
-      error={
-        accessLoadable.state === "hasError"
-          ? user
-            ? t(($) => {
-                return $.artifacts.access.switchAccountFailed;
-              })
-            : t(($) => {
-                return $.artifacts.access.signInFailed;
-              })
-          : undefined
-      }
-    >
-      <Button
-        type="button"
-        variant={user ? "outline" : "default"}
-        disabled={accessLoadable.state === "loading"}
-        aria-busy={accessLoadable.state === "loading"}
-        onClick={() => {
-          detach(
-            openAccess(window.location.href, pageSignal),
-            Reason.DomCallback,
-          );
-        }}
-      >
-        {user ? <ArrowRightLeft aria-hidden /> : <LogIn aria-hidden />}
-        {user
-          ? t(($) => {
-              return $.artifacts.access.switchAccount;
-            })
-          : t(($) => {
-              return $.artifacts.access.signIn;
-            })}
-      </Button>
-    </ResourceAccessCard>
-  );
-}
-
 export function SharedArtifactPage({
   artifact,
   viewer,
@@ -381,7 +326,7 @@ export function SharedArtifactPage({
               preview={artifact.preview}
             />
           ) : (
-            <ArtifactAccessPage />
+            <ArtifactAccessCard />
           )}
           {artifact !== null && fullscreen && (
             <IconButton

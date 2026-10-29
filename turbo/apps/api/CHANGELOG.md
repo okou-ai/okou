@@ -9,6 +9,76 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.6](https://github.com/okou-ai/okou/compare/api-v2.22.5...api-v2.22.6) (2026-10-29)
+
+
+### Refactoring
+
+* **api:** atomically retire threadless runs ([#43894](https://github.com/okou-ai/okou/issues/43894)) ([fd47188](https://github.com/okou-ai/okou/commit/fd47188ffa3209c3ab559e65599538b7a63e2e8d))
+* **api:** keep snapshot gc page work in its owning commands ([#43898](https://github.com/okou-ai/okou/issues/43898)) ([5878e11](https://github.com/okou-ai/okou/commit/5878e1199f7ee0599227a535ee9415f01100b366))
+* **api:** localize shared browser creation work before settlement ([#43906](https://github.com/okou-ai/okou/issues/43906)) ([d8d5b87](https://github.com/okou-ai/okou/commit/d8d5b8761fd296634cadfe31fc48153248bedb1b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.10.4
+
+## [2.22.5](https://github.com/okou-ai/okou/compare/api-v2.22.4...api-v2.22.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **artifacts:** revoke deleted shared conversations ([#43863](https://github.com/okou-ai/okou/issues/43863)) ([d52d7d3](https://github.com/okou-ai/okou/commit/d52d7d3b90c8b039983422d2f63afc365cc983a0))
+
+## [2.22.4](https://github.com/okou-ai/okou/compare/api-v2.22.3...api-v2.22.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **api:** allow owners to delete legacy hosted sites ([#43867](https://github.com/okou-ai/okou/issues/43867)) ([0b9fc2b](https://github.com/okou-ai/okou/commit/0b9fc2b60d72207c7b2508eadaef295c76f83b62))
+
+## [2.22.3](https://github.com/okou-ai/okou/compare/api-v2.22.2...api-v2.22.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** align halloween quiz copy with v1 ([#43861](https://github.com/okou-ai/okou/issues/43861)) ([a44c7f3](https://github.com/okou-ai/okou/commit/a44c7f3baf50059be9a017767fa6159fe167002b))
+
+
+### Refactoring
+
+* **api:** localize threadless run deletion ownership ([#43833](https://github.com/okou-ai/okou/issues/43833)) ([4e1c4af](https://github.com/okou-ai/okou/commit/4e1c4af2d9be762f3f22c2199981fe6c92a8c22d))
+* **api:** retire inline workflow claim compatibility ([#43857](https://github.com/okou-ai/okou/issues/43857)) ([39aa90b](https://github.com/okou-ai/okou/commit/39aa90b52ca549653b95dcfc30696175c27995ac))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.3
+    * @okouai/core bumped to 8.799.3
+    * @okouai/db bumped to 2.10.3
+    * @okouai/pi-agent-runtime bumped to 1.51.18
+
+## [2.22.2](https://github.com/okou-ai/okou/compare/api-v2.22.1...api-v2.22.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** refresh chat resources after artifact publication ([#43727](https://github.com/okou-ai/okou/issues/43727)) ([2da7f7a](https://github.com/okou-ai/okou/commit/2da7f7a765ef61cfe8d417be6733c5059ccb0fe5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.2
+    * @okouai/core bumped to 8.799.2
+    * @okouai/db bumped to 2.10.2
+    * @okouai/pi-agent-runtime bumped to 1.51.17
+
 ## [2.22.1](https://github.com/okou-ai/okou/compare/api-v2.22.0...api-v2.22.1) (2026-10-29)
 
 

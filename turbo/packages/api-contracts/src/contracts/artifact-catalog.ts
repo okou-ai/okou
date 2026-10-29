@@ -152,11 +152,14 @@ export interface ArtifactCatalogListClientQuery {
 }
 
 export interface ArtifactCatalogGetQuery {
+  /** Resolve an owned shared conversation to its catalog identity. */
+  readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
 }
 
 export interface ArtifactCatalogGetClientQuery {
+  readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
 }
@@ -294,6 +297,7 @@ const artifactCatalogListQuerySchema = object({
 });
 
 const artifactCatalogGetQuerySchema = object({
+  sourceKind: literal("shared-thread").optional(),
   chatThreadId: string().uuid().optional(),
 });
 
@@ -489,3 +493,7 @@ export type ArtifactCatalogContract = {
 // explicit request and response slots to downstream API and app typechecks.
 export const artifactCatalogContract: ArtifactCatalogContract =
   artifactCatalogRuntimeContract;
+/** Invalidation only: catalog entries remain authoritative over HTTP. */
+export function chatArtifactCatalogChangedEvent(threadId: string): string {
+  return `chatArtifactCatalogChanged:${threadId}`;
+}

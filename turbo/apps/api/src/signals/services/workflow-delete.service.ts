@@ -99,6 +99,18 @@ const deleteWorkflowRows$ = command(
         })
         .from(workflowAutomations)
         .where(eq(workflowAutomations.workflowId, workflow.id));
+      // Preserve the observed watch targets and capture the rows actually removed
+      // before the Workflow cascade can discard their cleanup identities.
+      const removedAutomations = await tx
+        .delete(workflowAutomations)
+        .where(eq(workflowAutomations.workflowId, workflow.id))
+        .returning({
+          orgId: workflowAutomations.orgId,
+          ownerUserId: workflowAutomations.ownerUserId,
+          eventType: workflowAutomations.eventType,
+          eventConfig: workflowAutomations.eventConfig,
+          eventConnectorId: workflowAutomations.eventConnectorId,
+        });
       await tx.delete(workflows).where(eq(workflows.id, workflow.id));
       await tx.execute(
         retireWorkflowAttachmentSql(
@@ -126,7 +138,7 @@ const deleteWorkflowRows$ = command(
         );
       return {
         deleted: true as const,
-        automations,
+        automations: [...automations, ...removedAutomations],
       };
     });
     signal.throwIfAborted();

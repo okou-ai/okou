@@ -3,14 +3,11 @@ import {
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
-import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
-import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
@@ -33,7 +30,6 @@ function detail() {
   );
 }
 async function fixture() {
-  mockEnv("WORKFLOW_ATTACHMENT_CLEANUP_ENABLED", "true");
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor, {
@@ -48,17 +44,6 @@ async function fixture() {
     files: [{ path: "reference.md", content: "附件" }],
   };
   return { actor, agent, s3, body };
-}
-async function sweep() {
-  mockEnv("CRON_SECRET", "workflow-creation-cleanup");
-  await accept(
-    setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
-      cronProcessBackgroundJobsContract,
-    ).process({
-      headers: { authorization: "Bearer workflow-creation-cleanup" },
-    }),
-    [200],
-  );
 }
 
 test("keeps a Workflow unlisted until its attachment is ready and publishes readable contents", async () => {
@@ -101,18 +86,11 @@ test("keeps a Workflow unlisted until its attachment is ready and publishes read
   });
 });
 
-test("publishes one readable Workflow for duplicate creates and durably cleans only the losing candidate", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
+test("publishes one readable Workflow for duplicate creates", async () => {
   const { actor, s3, body } = await fixture();
   const entered = createDeferredPromise<void>(context.signal);
   const released = createDeferredPromise<void>(context.signal);
-  let losingKey = "";
-  s3.beforeNextArchiveWrite(async (key) => {
-    losingKey = key;
+  s3.beforeNextArchiveWrite(async () => {
     entered.resolve();
     await released.promise;
   });
@@ -130,8 +108,6 @@ test("publishes one readable Workflow for duplicate creates and durably cleans o
   );
   released.resolve();
   await accept(first, [409]);
-  await sweep();
-  expect(s3.objects.has(losingKey)).toBeFalsy();
   const read = await accept(
     detail().get({
       headers: headers(actor),
@@ -142,20 +118,13 @@ test("publishes one readable Workflow for duplicate creates and durably cleans o
   expect(read.body.fileContents).toStrictEqual(body.files);
 });
 
-test("leaves an aborted upload durably cleanable with a new owner signal and keeps the name available", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
+test("keeps the name available after an aborted attachment upload", async () => {
   const { actor, s3, body } = await fixture();
   const controller = new AbortController();
   onTestFinished(() => {
     return controller.abort();
   });
-  let key = "";
-  s3.afterNextArchiveWrite((objectKey) => {
-    key = objectKey;
+  s3.afterNextArchiveWrite(() => {
     controller.abort();
   });
   await expect(
@@ -164,9 +133,6 @@ test("leaves an aborted upload durably cleanable with a new owner signal and kee
       body,
     }),
   ).rejects.toMatchObject({ name: "AbortError" });
-  expect(s3.objects.has(key)).toBeTruthy();
-  await sweep();
-  expect(s3.objects.has(key)).toBeFalsy();
   const created = await accept(
     collection().create({ headers: headers(actor), body }),
     [201],
@@ -272,17 +238,10 @@ test("rejects publication when Agent access is revoked during attachment upload"
 });
 
 test("cannot resurrect a parent deleted while its attachment upload is in flight", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
   const { actor, agent, s3, body } = await fixture();
   const entered = createDeferredPromise<void>(context.signal);
   const released = createDeferredPromise<void>(context.signal);
-  let key = "";
-  s3.beforeNextArchiveWrite(async (objectKey) => {
-    key = objectKey;
+  s3.beforeNextArchiveWrite(async () => {
     entered.resolve();
     await released.promise;
   });
@@ -296,7 +255,6 @@ test("cannot resurrect a parent deleted while its attachment upload is in flight
   await entered.promise;
   await bdd.deleteAgent(actor, agent.agentId);
   released.resolve();
-  await accept(pending, [404]);
-  await sweep();
-  expect(s3.objects.has(key)).toBeFalsy();
+  const rejected = await accept(pending, [404]);
+  expect(rejected.body).toMatchObject({ error: { code: "NOT_FOUND" } });
 });

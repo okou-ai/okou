@@ -264,9 +264,6 @@ const deleteSiteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  if (result.status === "bad_request") {
-    return badRequestMessage(result.message);
-  }
   if (result.status === "not_found") {
     return notFound(result.message);
   }

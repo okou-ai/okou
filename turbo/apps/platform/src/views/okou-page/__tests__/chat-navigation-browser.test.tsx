@@ -80,7 +80,27 @@ function mockBrowserApi(
       : respond(200, { browser: currentSession });
   });
   const cdpUrl = "wss://cdp.browser-use.com/sidebar";
-  mockBrowserCdp(context, cdpUrl);
+  mockBrowserCdp(context, cdpUrl, {
+    streaming: initialSession?.window !== undefined,
+    ...(initialSession?.window
+      ? {
+          targets: [
+            {
+              targetId: "example-page",
+              title: "Example",
+              url: "https://example.com",
+              windowId: 0,
+            },
+            {
+              targetId: "other-chat-page",
+              title: "Other chat",
+              url: "https://other.example.com",
+              windowId: 1,
+            },
+          ],
+        }
+      : {}),
+  });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, { cdpUrl });
   });
@@ -245,6 +265,47 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   });
 });
 
+test("The shared sidebar shows only its chat window and keeps it alive without input", async () => {
+  mockWideScreen();
+  const session: BrowserSession = {
+    ...liveBrowserSession(),
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
+  };
+  mockBrowserApi(session);
+  const bodies: unknown[] = [];
+  const entered = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    browserContract.leaseByThread,
+    async ({ params, body, respond }) => {
+      expect(params.threadId).toBe(session.threadId);
+      bodies.push(body);
+      entered.resolve();
+      await release.promise;
+      return respond(200, { browser: session });
+    },
+  );
+  await openConversation([]);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  await entered.promise;
+  expect(bodies).toStrictEqual([{}]);
+  expect(
+    queryAllByRoleFast("tab", sidebar).map((tab) => {
+      return tab.getAttribute("aria-label");
+    }),
+  ).toStrictEqual(["Example"]);
+});
+
 test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
   const user = userEvent.setup({ delay: null });
   mockWideScreen();
@@ -348,7 +409,7 @@ test("Take over the cloud browser from a working run and hand it back through th
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
   );
-  mockBrowserApi(liveBrowserSession());
+  const browser = mockBrowserApi(liveBrowserSession());
   const runId = "navigation-browser-live-run";
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -391,4 +452,13 @@ test("Take over the cloud browser from a working run and hand it back through th
     );
   });
   expect(within(sidebar).queryByText("You're in control")).toBeNull();
+  expect(
+    within(sidebar).getByLabelText("Open this browser in a new page"),
+  ).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
+
+  click(buttonByName("Close cloud browser", sidebar));
+  await waitFor(() => {
+    expect(sidebar).not.toBeInTheDocument();
+  });
+  expect(browser.closeRequests()).toBe(1);
 });

@@ -10,7 +10,7 @@ import {
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { hostedSites } from "@okouai/db/runtime/hosted-site";
 
-import { badRequestMessage, notConfigured, notFound } from "../../lib/error";
+import { notConfigured, notFound } from "../../lib/error";
 import { env } from "../../lib/env";
 import {
   isSharedThreadArtifactLogicalKey,
@@ -21,6 +21,7 @@ import { db$, writeDb$ } from "../external/db";
 import { deleteS3Objects } from "../external/s3";
 import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
 import { revokeDeletedFileArtifactShare$ } from "./artifact-shares.service";
+import { deleteSharedThread$ } from "./shared-thread-artifacts.service";
 import { deleteHostedSite$ } from "./host.service";
 
 interface ArtifactOwner {
@@ -87,9 +88,6 @@ const withdrawHostedArtifact$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.status === "bad_request") {
-      return badRequestMessage(result.message);
-    }
     if (result.status === "config_error") {
       return notConfigured(result.message);
     }
@@ -241,8 +239,14 @@ export const deleteArtifact$ = command(
         return denied;
       }
     }
-    // Removing a saved conversation must never revoke the original author's link.
-    if (!hosted && !isSharedThreadArtifactLogicalKey(artifact.logicalKey)) {
+    if (isSharedThreadArtifactLogicalKey(artifact.logicalKey)) {
+      await set(
+        deleteSharedThread$,
+        { id: artifact.entityId, userId: args.userId, orgId: args.orgId },
+        signal,
+      );
+      signal.throwIfAborted();
+    } else if (!hosted) {
       await set(withdrawFileArtifact$, withdrawal, signal);
       signal.throwIfAborted();
     }

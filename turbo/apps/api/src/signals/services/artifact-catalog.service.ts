@@ -1,4 +1,7 @@
 import { command } from "ccstate";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactShares } from "@okouai/db/schema/artifact-share";
+import { artifactReferenceRecord$ } from "./artifact-reference.service";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import {
@@ -15,15 +18,17 @@ import {
   isNotNull,
   ne,
   notExists,
+  or,
   lt,
   lte,
   sql,
   type SQL,
 } from "drizzle-orm";
-import type {
-  ArtifactCatalogKind,
-  ArtifactDetail,
-  ArtifactSummary,
+import {
+  chatArtifactCatalogChangedEvent,
+  type ArtifactCatalogKind,
+  type ArtifactDetail,
+  type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   artifactCatalogPendingFiles,
@@ -60,8 +65,10 @@ import { logger } from "../../lib/log";
 import {
   isSharedThreadArtifactLogicalKey,
   sharedThreadArtifactAuthorUserId,
+  sharedThreadArtifactLogicalKey,
 } from "../../lib/shared-thread-artifact";
 import { db$, writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import { safeUrlParse, settle } from "../utils";
 import {
   inferMimetype,
@@ -466,10 +473,27 @@ interface UpsertArtifactArgs {
 /**
  * Idempotent registry write. `created_at` is never updated, so re-running the
  * sync (redeploy, preview render, backfill replay) keeps the artifact in its
- * original list position. Thread ownership is also insert-only: a replacement
- * projection cannot move the artifact, including after deletion clears its FK.
+ * original list position. A private upload's unscoped ownership record can gain
+ * its first producing thread. Subsequent projections cannot move the artifact,
+ * including after thread deletion clears its FK.
  */
 function artifactUpsertPlan(args: UpsertArtifactArgs) {
+  const qb = new QueryBuilder();
+  const unscopedPrivateUpload = exists(
+    qb
+      .select({ id: runUploadedFiles.id })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.id, artifacts.projectionFileId),
+          isNull(runUploadedFiles.runId),
+          eq(
+            sql`${runUploadedFiles.metadata}->>'storage'`,
+            "private-artifact-v1",
+          ),
+        ),
+      ),
+  );
   return {
     values: {
       kind: args.kind,
@@ -491,6 +515,11 @@ function artifactUpsertPlan(args: UpsertArtifactArgs) {
     conflict: {
       target: [artifacts.orgId, artifacts.authorUserId, artifacts.logicalKey],
       set: {
+        chatThreadId: sql`case
+          when ${isNull(artifacts.chatThreadId)} and ${unscopedPrivateUpload}
+          then excluded.chat_thread_id
+          else ${artifacts.chatThreadId}
+        end`,
         kind: args.kind,
         displayKind: args.displayKind,
         sourceUrl: args.sourceUrl,
@@ -944,6 +973,28 @@ const finishPendingArtifactFile$ = command(
   },
 );
 
+const notifyArtifactCatalogChanged$ = command(
+  async ({ get }, fileId: string, signal: AbortSignal): Promise<void> => {
+    // A redeploy can retain an earlier thread and author. Notify the committed
+    // catalog owner, not the replacement file's producing thread.
+    const [artifact] = await get(db$)
+      .select({
+        authorUserId: artifacts.authorUserId,
+        chatThreadId: artifacts.chatThreadId,
+      })
+      .from(artifacts)
+      .where(eq(artifacts.projectionFileId, fileId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (artifact?.chatThreadId) {
+      await publishUserSignal(
+        [artifact.authorUserId],
+        chatArtifactCatalogChangedEvent(artifact.chatThreadId),
+      );
+    }
+  },
+);
+
 const syncFileArtifact$ = command(
   async (
     { set },
@@ -1116,6 +1167,7 @@ export const syncArtifactCatalogForFile$ = command(
       }
       await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
       signal.throwIfAborted();
+      await set(notifyArtifactCatalogChanged$, fileId, signal);
       return;
     }
 
@@ -1155,6 +1207,7 @@ export const syncArtifactCatalogForFile$ = command(
     }
     await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
     signal.throwIfAborted();
+    await set(notifyArtifactCatalogChanged$, fileId, signal);
   },
 );
 
@@ -1337,9 +1390,157 @@ export const listArtifactCatalog$ = command(
 
 interface GetArtifactCatalogEntryArgs {
   readonly artifactId: string;
+  readonly sourceKind?: "file" | "html" | "shared-thread" | "site";
   readonly orgId: string;
   readonly userId: string;
 }
+
+function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
+  switch (args.sourceKind) {
+    case "file": {
+      const qb = new QueryBuilder();
+      return or(
+        eq(artifacts.projectionFileId, args.artifactId),
+        and(
+          artifactCatalogKindFilter("file"),
+          eq(artifacts.entityId, args.artifactId),
+        ),
+        and(
+          eq(artifacts.kind, "image"),
+          inArray(
+            artifacts.entityId,
+            qb
+              .select({ id: imageArtifacts.id })
+              .from(imageArtifacts)
+              .where(eq(imageArtifacts.fileId, args.artifactId)),
+          ),
+        ),
+        and(
+          eq(artifacts.kind, "video"),
+          inArray(
+            artifacts.entityId,
+            qb
+              .select({ id: videoArtifacts.id })
+              .from(videoArtifacts)
+              .where(eq(videoArtifacts.fileId, args.artifactId)),
+          ),
+        ),
+      );
+    }
+    case "html": {
+      const qb = new QueryBuilder();
+      const sites = qb
+        .select({
+          logicalKey: sql`'site:' || ${privateHostedDeployments.siteId}::text`
+            .mapWith(artifacts.logicalKey)
+            .as("logical_key"),
+        })
+        .from(privateHostedDeployments)
+        .where(
+          and(
+            eq(privateHostedDeployments.id, args.artifactId),
+            eq(privateHostedDeployments.orgId, args.orgId),
+            eq(privateHostedDeployments.userId, args.userId),
+          ),
+        );
+      return inArray(artifacts.logicalKey, sites);
+    }
+    case "shared-thread": {
+      return eq(
+        artifacts.logicalKey,
+        sharedThreadArtifactLogicalKey(args.artifactId),
+      );
+    }
+    case "site": {
+      return eq(artifacts.logicalKey, `site:${args.artifactId}`);
+    }
+    case undefined: {
+      return eq(artifacts.id, args.artifactId);
+    }
+  }
+}
+
+export const getOwnedArtifactCatalogFromReference$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly reference: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ArtifactDetail | null> => {
+    const parsed = parseArtifactReference(`/artifacts/${args.reference}`);
+    if (!parsed) {
+      return null;
+    }
+    const record =
+      parsed.id === null
+        ? await set(artifactReferenceRecord$, parsed.hash, signal)
+        : null;
+    signal.throwIfAborted();
+    // Conversation snapshot resources never grant management of their source.
+    if ((parsed.id === null && !record) || record?.version === 3) {
+      return null;
+    }
+    if (record?.version === 2) {
+      return await set(
+        getArtifactCatalogEntry$,
+        {
+          ...args,
+          artifactId: record.target.id,
+          sourceKind: record.target.kind,
+        },
+        signal,
+      );
+    }
+    if (parsed.id) {
+      const file = await set(
+        getArtifactCatalogEntry$,
+        {
+          ...args,
+          artifactId: parsed.id,
+          sourceKind: "file",
+        },
+        signal,
+      );
+      if (file) {
+        return file;
+      }
+    }
+    const shareId =
+      parsed.id ?? (record?.version === 1 ? record.shareId : null);
+    if (!shareId) {
+      return null;
+    }
+    const [share] = await get(db$)
+      .select({
+        kind: artifactShares.targetKind,
+        id: artifactShares.targetId,
+      })
+      .from(artifactShares)
+      .where(
+        and(
+          eq(artifactShares.id, shareId),
+          eq(artifactShares.userId, args.userId),
+          eq(artifactShares.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return share
+      ? await set(
+          getArtifactCatalogEntry$,
+          {
+            ...args,
+            artifactId: share.id,
+            sourceKind: share.kind === "file" ? "file" : "site",
+          },
+          signal,
+        )
+      : null;
+  },
+);
 
 const fileDetail$ = command(
   async (
@@ -1574,7 +1775,7 @@ export const getArtifactCatalogEntry$ = command(
       )
       .where(
         and(
-          eq(artifacts.id, args.artifactId),
+          artifactCatalogIdentityFilter(args),
           eq(artifacts.orgId, args.orgId),
           artifactCatalogOwnerFilter(args.userId),
           isNull(artifacts.deletedAt),

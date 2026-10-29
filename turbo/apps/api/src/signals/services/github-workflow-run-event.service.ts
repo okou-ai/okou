@@ -14,11 +14,11 @@ import { command } from "ccstate";
 import { and, asc, eq } from "drizzle-orm";
 import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
-  AutomationEventSourceTiming,
+  createAutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -336,21 +336,12 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
       return { kind: "ok", dispatched: 0, duplicates: 0 };
     }
 
-    const sourceTiming = new AutomationEventSourceTiming(
-      "github",
-      args.apiStartTime,
-    );
-    if (args.backgroundScheduledAt !== undefined) {
-      sourceTiming.recordElapsed(
-        "api_dispatch_pre_create_agent_automation_event_background_start_gap",
-        args.backgroundScheduledAt,
-      );
-    }
+    const sourceTiming = createAutomationEventSourceTiming("github", args);
 
     const db = set(writeDb$);
-    const installation = await sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      async () => {
+    const installation = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         const ghInstallationId = String(args.payload.installation.id);
         const [installation] = await db
           .select()
@@ -363,8 +354,13 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
           )
           .limit(1);
         return installation ?? null;
-      },
-    );
+      })();
+      sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_source_state",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     if (!installation) {
       log.debug("Ignoring GitHub workflow run for unbound installation", {
@@ -375,9 +371,9 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
       return { kind: "ok", dispatched: 0, duplicates: 0 };
     }
 
-    const automations = await sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_automations",
-      async () => {
+    const automations = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           loadGithubWorkflowRunAutomations$,
           {
@@ -385,8 +381,13 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
           },
           signal,
         );
-      },
-    );
+      })();
+      sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_automations",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
 
     let dispatched = 0;

@@ -527,7 +527,8 @@
       "description": "刪除此作品並停用其 Okou 連結。已下載或儲存至其他服務的副本會保留。",
       "hostedDescription": "此網站及其所有已發佈版本將下線。儲存至其他服務的副本會保留。",
       "menu": "{{title}}的更多操作",
-      "sharedDescription": "從你的作品中移除此收藏對話。原始對話及其分享連結仍可存取。",
+      "sharedDescription": "從你的作品中刪除此分享對話，其分享連結將失效。原始對話仍會保留。",
+      "success": "作品已刪除",
       "title": "刪除{{title}}？"
     },
     "fileBadges": {
@@ -1360,12 +1361,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "輸入網址",
-    "blankPage": {
-      "description": "{{assistantName}} 工作時會在這裡開啟網頁。你也可以在上方輸入網址自行瀏覽。",
-      "title": "尚未開啟網頁"
-    },
-    "blankTabTitle": "新分頁",
     "cardTitle": "雲端瀏覽器",
     "close": "關閉雲端瀏覽器",
     "documentTitle": "雲端瀏覽器",
@@ -1720,6 +1715,13 @@
       "customAmountError": "請輸入 $1 到 $10,000 之間的金額",
       "customDollarAmount": "自定義金額（美元）",
       "outOfCredits": "你的積分用完了",
+      "proCard": {
+        "creditsNow": "點數 · 就現在",
+        "description": "額外積分 · 進階功能 · 3 台雲端電腦",
+        "priceUnavailable": "查看方案及最新價格",
+        "title": "大約還剩 5 個任務",
+        "upgradeNow": "立即升級"
+      },
       "redirecting": "正在跳轉…",
       "upgradeToContinue": "升級到 Pro，繼續和 {{assistantName}} 對話。",
       "upgradeToPro": "升級到 Pro",

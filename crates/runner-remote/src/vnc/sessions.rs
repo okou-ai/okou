@@ -28,6 +28,9 @@ use crate::ssh::DirectTcpIpStream;
 use runner_types::ids::RunId;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(test)]
+mod tests;
+
 pub(super) enum Carrier {
     Direct(TcpStream),
     Ssh(Box<DirectTcpIpStream>),
@@ -80,7 +83,7 @@ impl AsyncWrite for Carrier {
 
 pub(super) type Engine = rfb_client::Session<Carrier>;
 
-/// Kept by lifecycle cleanup and pending DNS, independently of guest streams.
+/// Kept until lifecycle cleanup, DNS, and native work physically finish.
 struct Capacity {
     _host: OwnedSemaphorePermit,
     _run: OwnedSemaphorePermit,
@@ -91,6 +94,7 @@ pub(super) struct NativeWork {
     root: Option<tempfile::TempDir>,
     _capacity: Arc<Capacity>,
     _operation: Arc<OwnedSemaphorePermit>,
+    // Must drop last: closing the channel wakes waiters only after custody ends.
     completion: Option<tokio::sync::oneshot::Sender<()>>,
 }
 impl Drop for NativeWork {
@@ -102,10 +106,6 @@ impl Drop for NativeWork {
             if let Some(completion) = self.completion.take() {
                 std::mem::forget(completion);
             }
-            return;
-        }
-        if let Some(completion) = self.completion.take() {
-            let _ = completion.send(());
         }
     }
 }
@@ -645,8 +645,11 @@ impl Run {
             _operation: Arc::clone(&operation),
             completion: Some(completion),
         });
+        let native_closed = CancellationToken::new();
+        let completed = native_closed.clone();
         self.tasks.spawn(async move {
             let _ = done.await;
+            completed.cancel();
         });
         let native_owner: Arc<dyn kerberos_worker::WorkOwner> = native_work.clone();
         evidence.begin(Stage::Credential);
@@ -1016,6 +1019,7 @@ impl Run {
                 scope.sandbox.clone(),
                 expires,
                 capacity,
+                native_closed,
             ));
             Ok(session)
         }
@@ -1086,6 +1090,7 @@ async fn cleanup(
     sandbox: CancellationToken,
     expires: Instant,
     capacity: Arc<Capacity>,
+    native_closed: CancellationToken,
 ) {
     tokio::select! { biased;
         () = session.cancel.cancelled() => {},
@@ -1099,6 +1104,9 @@ async fn cleanup(
     // Active operations observe the same cancellation before releasing this
     // mutex. Taking it proves no RFB operation still owns the socket.
     session.engine.lock().await.close();
+    // Dropping the byte stream only cancels native TCP; its owning thread must
+    // still destroy the SDK connection and release its NativeWork lease.
+    native_closed.cancelled().await;
     if let Ok(mut entries) = registry.lock() {
         entries.sessions.remove(&session.info.session_id);
     }

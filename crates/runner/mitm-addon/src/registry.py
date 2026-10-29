@@ -74,6 +74,7 @@ class _RegistrySnapshot:
     sandboxes: dict
     invalid_sandboxes: dict[str, InvalidSandboxEntry]
     compiled_firewalls: dict[str, matching.CompiledFirewallSet]
+    compiled_custom_firewalls: dict[str, matching.CompiledFirewallSet]
     compiled_network_policies: dict[str, matching.CompiledNetworkPolicies]
     omitted_builtin_firewalls: dict[str, frozenset[str]]
     omitted_custom_connector_ids: dict[str, frozenset[str]]
@@ -110,7 +111,7 @@ RegistryState = _RegistrySnapshot | RegistryUnavailable
 
 
 def _empty_snapshot() -> _RegistrySnapshot:
-    return _RegistrySnapshot({}, {}, {}, {}, {}, {}, None, None)
+    return _RegistrySnapshot({}, {}, {}, {}, {}, {}, {}, None, None)
 
 
 @dataclass
@@ -189,9 +190,11 @@ def _compile_registry(
     ],
 ) -> tuple[
     dict[str, matching.CompiledFirewallSet],
+    dict[str, matching.CompiledFirewallSet],
     dict[str, matching.CompiledNetworkPolicies],
 ]:
     compiled_firewall_registry: dict[str, matching.CompiledFirewallSet] = {}
+    compiled_custom_firewall_registry: dict[str, matching.CompiledFirewallSet] = {}
     compiled_policy_registry: dict[str, matching.CompiledNetworkPolicies] = {}
     for client_ip, sandbox in new_registry.items():
         firewalls = sandbox.get("firewalls")
@@ -202,10 +205,22 @@ def _compile_registry(
         )
         if compiled_firewalls is not None:
             compiled_firewall_registry[client_ip] = compiled_firewalls
+            custom_firewalls = tuple(
+                firewall
+                for firewall in compiled_firewalls.firewalls
+                if firewall.connector_runtime_kind == "custom"
+            )
+            if custom_firewalls:
+                # Keep the projection with its snapshot, not on the request path.
+                compiled_custom_firewall_registry[client_ip] = (
+                    compiled_firewalls
+                    if len(custom_firewalls) == len(compiled_firewalls.firewalls)
+                    else matching.CompiledFirewallSet(custom_firewalls)
+                )
         network_policies = sandbox.get("networkPolicies")
         compiled_policy_registry[client_ip] = matching.compile_network_policies(network_policies)
     _prune_builtin_firewall_core_cache(builtin_firewall_core_cache, builtin_cache_keys.values())
-    return compiled_firewall_registry, compiled_policy_registry
+    return compiled_firewall_registry, compiled_custom_firewall_registry, compiled_policy_registry
 
 
 def _prune_builtin_firewall_core_cache(
@@ -633,10 +648,12 @@ def _load_registry_state(registry_path: str) -> RegistryState:
             "warn",
             f"Rejected {len(invalid_sandboxes)} invalid proxy registry sandbox entries",
         )
-    new_compiled_registry, new_compiled_policy_registry = _compile_registry(
-        new_registry,
-        builtin_cache_keys,
-        state.builtin_firewall_core_cache,
+    new_compiled_registry, new_compiled_custom_registry, new_compiled_policy_registry = (
+        _compile_registry(
+            new_registry,
+            builtin_cache_keys,
+            state.builtin_firewall_core_cache,
+        )
     )
 
     firewall_auth_registry_generation = _allocate_firewall_auth_registry_generation()
@@ -656,6 +673,7 @@ def _load_registry_state(registry_path: str) -> RegistryState:
         new_registry,
         invalid_sandboxes,
         new_compiled_registry,
+        new_compiled_custom_registry,
         new_compiled_policy_registry,
         omitted_builtin_firewalls,
         omitted_custom_connector_ids,

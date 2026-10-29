@@ -9,7 +9,8 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { array, string } from "zod";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
@@ -127,6 +128,16 @@ export const createBrowserOwnerWindow$ = command(
           eq(browserOwnerProfiles.userId, input.owner.userId),
           eq(browserOwnerProfiles.instanceId, input.instanceId),
           eq(browserOwnerProfiles.status, "active"),
+          // The creating request owns first-window setup. Other admissions
+          // need a registered window, not just a published provider session.
+          input.initial
+            ? undefined
+            : exists(
+                new QueryBuilder()
+                  .select({ chatThreadId: browserOwnerWindows.chatThreadId })
+                  .from(browserOwnerWindows)
+                  .where(eq(browserOwnerWindows.instanceId, input.instanceId)),
+              ),
         ),
       );
     signal.throwIfAborted();
@@ -138,7 +149,7 @@ export const createBrowserOwnerWindow$ = command(
       cdpUrl: input.cdpUrl,
       publicationUncertain: false,
     };
-    const result = await settleIncludingAbort(async () => {
+    const creationWork = (async () => {
       const candidate = input.initial
         ? await initialBrowserUseWindow(input.cdpUrl, signal)
         : await createBrowserUseWindow(input.cdpUrl, signal);
@@ -164,7 +175,8 @@ export const createBrowserOwnerWindow$ = command(
       );
       cleanup.publicationUncertain = false;
       return published;
-    });
+    })();
+    const result = await settleIncludingAbort(creationWork);
     if (signal.aborted) {
       await settleIncludingAbort(
         set(

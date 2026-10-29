@@ -527,7 +527,8 @@
       "description": "Artefak ini akan dihapus dan tautan Okou-nya dinonaktifkan. Salinan yang sudah diunduh atau disimpan di layanan lain akan tetap ada.",
       "hostedDescription": "Situs web dan semua versi yang dipublikasikan akan dinonaktifkan. Salinan yang disimpan di layanan lain akan tetap ada.",
       "menu": "Tindakan lainnya untuk {{title}}",
-      "sharedDescription": "Hapus percakapan tersimpan ini dari artefak Anda. Percakapan asli dan tautan berbaginya akan tetap tersedia.",
+      "sharedDescription": "Hapus percakapan yang dibagikan ini dari artefak Anda. Tautan berbaginya tidak akan berfungsi lagi. Percakapan asli Anda akan tetap tersedia.",
+      "success": "Artefak dihapus",
       "title": "Hapus {{title}}?"
     },
     "fileBadges": {
@@ -1360,12 +1361,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Masukkan URL",
-    "blankPage": {
-      "description": "{{assistantName}} membuka halaman di sini saat bekerja. Masukkan URL di atas untuk menjelajah sendiri.",
-      "title": "Belum ada yang dibuka"
-    },
-    "blankTabTitle": "Tab baru",
     "cardTitle": "Browser cloud",
     "close": "Tutup browser cloud",
     "documentTitle": "Browser cloud",
@@ -1720,6 +1715,13 @@
       "customAmountError": "Masukkan antara $1 dan $10.000",
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
+      "proCard": {
+        "creditsNow": "kredit · Sekarang juga",
+        "description": "Kredit tambahan · Fitur lanjutan · 3 komputer cloud",
+        "priceUnavailable": "Lihat paket untuk harga terbaru",
+        "title": "Tersisa sekitar 5 tugas",
+        "upgradeNow": "Upgrade sekarang"
+      },
       "redirecting": "Mengarahkan...",
       "upgradeToContinue": "Upgrade ke Pro agar tetap bisa mengobrol dengan {{assistantName}}.",
       "upgradeToPro": "Upgrade ke Pro",

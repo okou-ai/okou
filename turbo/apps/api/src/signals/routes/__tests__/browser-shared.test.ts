@@ -63,6 +63,16 @@ describe("shared Browser public consumers", () => {
       expect(f.provider.stoppedSessionIds.size).toBe(0);
 
       f.provider.native.windowReply = "reply";
+      const retry = await client().use({ headers: runHeaders(a), body: {} });
+      expect({
+        status: retry.status,
+        windows: new Set(
+          [...f.provider.native.targets.values()].map((target) => {
+            return target.windowId;
+          }),
+        ).size,
+      }).toStrictEqual({ status: 409, windows: 1 });
+      expect(f.provider.sessionRequests).toHaveLength(1);
       mockNow(START + 2 * MINUTE);
       const recovered = await use(a);
       expect(recovered.browser.status).toBe("active");
@@ -75,6 +85,77 @@ describe("shared Browser public consumers", () => {
       ]);
     });
   }, 20_000);
+
+  it("waits for the first window before admitting a sibling into a newly published instance", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let hold = true;
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/:id`, async ({ params }) => {
+          if (hold && f.provider.sessionIds.has(String(params.id))) {
+            hold = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return;
+        }),
+      );
+      const opening = settleIncludingAbort(
+        accept(client().use({ headers: runHeaders(a), body: {} }), [200]),
+      );
+      const waiting = await settleIncludingAbort(async () => {
+        await Promise.race([
+          entered.promise,
+          opening.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error("The first open never reached its provider read");
+          }),
+        ]);
+        expect(
+          (await client().use({ headers: runHeaders(b), body: {} })).status,
+        ).toBe(409);
+        expect([...f.provider.native.targets.values()]).toHaveLength(1);
+        expect(f.provider.sessionRequests).toHaveLength(1);
+      });
+      if (!release.settled()) {
+        release.resolve();
+      }
+      const completed = await opening;
+      if (!waiting.ok) {
+        throw waiting.error;
+      }
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      const first = completed.value.body.browser;
+      const sibling = (await use(b)).browser;
+      expect(sibling.window?.instanceId).toBe(first.window?.instanceId);
+      expect(sibling.window?.primaryWindowId).not.toBe(
+        first.window?.primaryWindowId,
+      );
+      expect(
+        new Set(
+          [...f.provider.native.targets.values()].map((target) => {
+            return target.windowId;
+          }),
+        ),
+      ).toStrictEqual(
+        new Set([
+          first.window?.primaryWindowId,
+          sibling.window?.primaryWindowId,
+        ]),
+      );
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  });
 
   it.each([true, false])(
     "creates a Browser with the mode's egress when shared admission enabled=%s",
@@ -840,69 +921,72 @@ describe("shared Browser capture publication and admission", () => {
           f.provider.native.targets.delete(id);
         }
       }
+      const firstCandidate = createDeferredPromise<void>(context.signal);
       const both = createDeferredPromise<void>(context.signal);
-      let arrivals = 0;
-      f.provider.native.beforeCreateReply = async () => {
-        if (++arrivals === 2) {
+      const nativeArrivals: number[] = [];
+      f.provider.native.beforeCreateReply = async (target) => {
+        nativeArrivals.push(target.windowId);
+        if (nativeArrivals.length === 1) {
+          firstCandidate.resolve();
+        }
+        if (nativeArrivals.length === 2) {
           both.resolve();
         }
         await both.promise;
       };
-      const opened = settleIncludingAbort(
-        client().use({ headers: runHeaders(a), body: {} }),
-      );
-      const admitted = settleIncludingAbort(
-        client().use({ headers: runHeaders(a), body: {} }),
-      );
-      const coordinated = await settleIncludingAbort(
-        Promise.race([
+      function startOpen() {
+        return settleIncludingAbort(
+          client().use({ headers: runHeaders(a), body: {} }),
+        );
+      }
+      const opened = startOpen();
+      const requests = [opened];
+      function completedEarly(request: ReturnType<typeof startOpen>) {
+        return request.then((result) => {
+          if (!result.ok) {
+            throw result.error;
+          }
+          throw new Error(
+            `Admission completed before both native candidates: ${JSON.stringify({ status: result.value.status, body: result.value.body, nativeArrivals })}`,
+          );
+        });
+      }
+      const coordinated = await settleIncludingAbort(async () => {
+        // Retirement may legitimately reject another open before creation.
+        // Compete only once the first candidate exists, before publication.
+        await Promise.race([firstCandidate.promise, completedEarly(opened)]);
+        const admitted = startOpen();
+        requests.push(admitted);
+        await Promise.race([
           both.promise,
-          opened.then((result) => {
-            if (!result.ok) {
-              throw result.error;
-            }
-            throw new Error("Public admission did not reach native creation");
-          }),
-          admitted.then((result) => {
-            if (!result.ok) {
-              throw result.error;
-            }
-            throw new Error(
-              "Concurrent admission did not reach native creation",
-            );
-          }),
-        ]),
-      );
+          completedEarly(opened),
+          completedEarly(admitted),
+        ]);
+      });
       if (!both.settled()) {
         both.resolve();
       }
-      const [publicResult, runnerResult] = await Promise.all([
-        opened,
-        admitted,
-      ]);
+      const completed = await Promise.all(requests);
       if (!coordinated.ok) {
         throw coordinated.error;
       }
-      if (!publicResult.ok) {
-        throw publicResult.error;
-      }
-      if (!runnerResult.ok) {
-        throw runnerResult.error;
-      }
-      expect([200, 409]).toContain(publicResult.value.status);
-      expect([200, 409]).toContain(runnerResult.value.status);
-      expect(
-        Number(publicResult.value.status === 200) +
-          Number(runnerResult.value.status === 200),
-      ).toBe(1);
+      const results = completed.map((result) => {
+        if (!result.ok) {
+          throw result.error;
+        }
+        return result.value;
+      });
+      const [successful, conflict] = results.sort((left, right) => {
+        return left.status - right.status;
+      });
+      expect(results).toHaveLength(2);
+      expect(successful?.status).toBe(200);
+      expect(conflict).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_RECLAIMING" } },
+      });
       const winner = await view(a);
-      const current = await accept(
-        client().get({ headers, params: { threadId: a.threadId } }),
-        [200],
-      );
-      expect(current.body.browser.window?.primaryWindowId).toBe(
-        winner.window?.primaryWindowId,
-      );
+      expect(winner.window).toStrictEqual(successful?.body.browser.window);
       const pages = [...f.provider.native.targets.values()];
       expect(
         pages
@@ -929,6 +1013,9 @@ describe("shared Browser capture publication and admission", () => {
           sibling.browser.window?.primaryWindowId,
         ]),
       );
+      const siblingAfter = await view(b);
+      expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
+      expect(siblingAfter.idleExpiresAt).toBe(sibling.browser.idleExpiresAt);
       expect(f.provider.sessionRequests).toHaveLength(1);
     });
   });
