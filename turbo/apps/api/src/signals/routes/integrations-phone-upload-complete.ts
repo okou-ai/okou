@@ -1,9 +1,11 @@
 import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { command } from "ccstate";
 import { optionalEnv } from "../../lib/env";
+import { nowDate } from "../../lib/time";
 import {
   integrationsPhoneUploadCompleteContract,
   type PhoneUploadCompleteBody,
@@ -14,6 +16,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { db$ } from "../external/db";
 import {
+  getAgentPhoneConversationParticipants,
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
 } from "../external/agentphone-client";
@@ -27,6 +30,10 @@ import {
   normalizeAgentPhoneHandle,
   storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
+import {
+  resolveAgentPhoneParticipantVisibilityRecipients$,
+  type AgentPhoneMessageVisibilityRecipient,
+} from "../services/agentphone-shared.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 
@@ -91,9 +98,128 @@ interface PhoneFileDelivery {
   readonly layout: LinkLayout;
   readonly sent: Awaited<ReturnType<typeof sendAgentPhoneMessage>>;
   readonly phoneHandle: string;
+  readonly toNumber: string;
   readonly userChannel: ReturnType<typeof agentPhoneChannelForLinkedHandle>;
   readonly agentphoneAgentId: string;
+  readonly group: PhoneFileGroup | undefined;
 }
+
+interface PhoneFileGroup {
+  readonly groupId: string;
+  readonly conversationId: string;
+  readonly agentphoneAgentId: string;
+  readonly visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[];
+}
+
+const resolvePhoneFileGroup$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly groupId: string;
+      readonly agentphoneAgentId?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const [group] = await get(db$)
+      .select({
+        conversationId: agentphoneMessages.conversationId,
+        agentphoneAgentId: agentphoneMessages.agentphoneAgentId,
+      })
+      .from(agentphoneMessages)
+      .innerJoin(
+        agentphoneMessageVisibility,
+        eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+      )
+      .where(
+        and(
+          eq(agentphoneMessages.groupId, args.groupId),
+          eq(agentphoneMessages.channel, "imessage"),
+          isNotNull(agentphoneMessages.conversationId),
+          eq(agentphoneMessageVisibility.orgId, args.orgId),
+          eq(agentphoneMessageVisibility.userId, args.userId),
+          args.agentphoneAgentId
+            ? eq(agentphoneMessages.agentphoneAgentId, args.agentphoneAgentId)
+            : undefined,
+        ),
+      )
+      .orderBy(
+        desc(agentphoneMessages.receivedAt),
+        desc(agentphoneMessages.createdAt),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!group?.conversationId) {
+      return {
+        ok: false as const,
+        response: routeError(404, "iMessage group not found", "NOT_FOUND"),
+      };
+    }
+
+    const roster = await settle(
+      getAgentPhoneConversationParticipants(
+        { conversationId: group.conversationId },
+        signal,
+      ),
+      signal,
+    );
+    if (!roster.ok) {
+      if (isAgentPhoneApiError(roster.error) && roster.error.status === 404) {
+        return {
+          ok: false as const,
+          response: routeError(404, "iMessage group not found", "NOT_FOUND"),
+        };
+      }
+      if (
+        isAgentPhoneApiError(roster.error) ||
+        roster.error instanceof TypeError ||
+        roster.error instanceof SyntaxError
+      ) {
+        return {
+          ok: false as const,
+          response: routeError(
+            502,
+            "Unable to verify current iMessage group membership",
+            "BAD_GATEWAY",
+          ),
+        };
+      }
+      throw roster.error;
+    }
+    const visibilityRecipients = await set(
+      resolveAgentPhoneParticipantVisibilityRecipients$,
+      roster.value,
+      nowDate(),
+      signal,
+    );
+    if (
+      !visibilityRecipients.some((recipient) => {
+        return (
+          recipient.orgId === args.orgId && recipient.userId === args.userId
+        );
+      })
+    ) {
+      return {
+        ok: false as const,
+        response: routeError(
+          403,
+          "Your connected phone must be a current member of this iMessage group",
+          "FORBIDDEN",
+        ),
+      };
+    }
+    return {
+      ok: true as const,
+      group: {
+        groupId: args.groupId,
+        conversationId: group.conversationId,
+        agentphoneAgentId: group.agentphoneAgentId,
+        visibilityRecipients,
+      } satisfies PhoneFileGroup,
+    };
+  },
+);
 
 function uploadedFileRecordValues(args: PhoneFileDelivery) {
   return {
@@ -108,7 +234,7 @@ function uploadedFileRecordValues(args: PhoneFileDelivery) {
     layout: args.layout,
     metadata: buildMetadata({
       body: args.body,
-      toNumber: args.phoneHandle,
+      toNumber: args.toNumber,
       uploadId: args.body.uploadId,
       s3Key: args.uploadedFile.key,
       sourceUrl: args.uploadedFile.fileUrl,
@@ -120,17 +246,18 @@ function uploadedFileRecordValues(args: PhoneFileDelivery) {
 function outboundPhoneFileValues(args: PhoneFileDelivery) {
   return {
     agentphoneMessageId: args.sent.id,
-    conversationId: null,
+    conversationId: args.group?.conversationId ?? null,
+    groupId: args.group?.groupId,
     agentphoneAgentId: args.agentphoneAgentId,
     userLinkId: args.userLinkId,
     phoneHandle: args.phoneHandle,
     fromNumber: args.sent.fromNumber ?? "",
-    toNumber: args.sent.toNumber ?? args.phoneHandle,
+    toNumber: args.group?.groupId ?? args.sent.toNumber ?? args.phoneHandle,
     body: args.body.caption,
     channel: args.sent.channel,
     userChannel: args.userChannel,
     mediaUrl: args.uploadedFile.fileUrl,
-    visibilityRecipients: [],
+    visibilityRecipients: args.group?.visibilityRecipients ?? [],
   };
 }
 
@@ -140,140 +267,224 @@ const phoneNotConnected = routeError(
   "NOT_FOUND",
 );
 
-const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const runId =
-    "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
-  const bodyResult = await get(
-    bodyResultOf(integrationsPhoneUploadCompleteContract.complete),
-  );
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-  const body = bodyResult.data;
-
-  const object = await set(
-    materializeUploadedArtifact$,
-    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
-    signal,
-  );
-  if (!object) {
-    return uploadedFileNotFound();
-  }
-
-  const uploadedFile: UploadedFileInfo = {
-    key: object.key,
-    size: object.size,
-    filename: object.filename,
-    fileUrl: object.url,
-  };
-
-  const db = get(db$);
-  const [userLink] = await db
-    .select()
-    .from(agentphoneUserLinks)
-    .where(
-      and(
-        eq(agentphoneUserLinks.userId, auth.userId),
-        eq(agentphoneUserLinks.orgId, auth.orgId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!userLink) {
-    return phoneNotConnected;
-  }
-  const phoneHandle = userLink.phoneHandle;
-  const userChannel = agentPhoneChannelForLinkedHandle(phoneHandle);
-
-  const [message] = await db
-    .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
-    .from(agentphoneMessages)
-    .where(
-      and(
-        eq(agentphoneMessages.agentphoneUserLinkId, userLink.id),
-        body.agentphoneAgentId
-          ? eq(agentphoneMessages.agentphoneAgentId, body.agentphoneAgentId)
-          : undefined,
-        eq(
-          agentphoneMessages.phoneHandle,
-          normalizeAgentPhoneHandle(phoneHandle, userChannel),
+const resolvePhoneFileDestination$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly groupId?: string;
+      readonly agentphoneAgentId?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = get(db$);
+    const [userLink] = await db
+      .select()
+      .from(agentphoneUserLinks)
+      .where(
+        and(
+          eq(agentphoneUserLinks.userId, args.userId),
+          eq(agentphoneUserLinks.orgId, args.orgId),
         ),
-      ),
-    )
-    .orderBy(desc(agentphoneMessages.createdAt))
-    .limit(1);
-  signal.throwIfAborted();
-  const agentphoneAgentId =
-    body.agentphoneAgentId &&
-    body.agentphoneAgentId === optionalEnv("AGENTPHONE_AGENT_ID")
-      ? body.agentphoneAgentId
-      : (message?.agentphoneAgentId ?? null);
-  if (!agentphoneAgentId) {
-    return routeError(404, "Phone agent not found", "NOT_FOUND");
-  }
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!userLink) {
+      return { ok: false as const, response: phoneNotConnected };
+    }
+    const phoneHandle = userLink.phoneHandle;
+    const groupId = args.groupId;
+    let group: PhoneFileGroup | undefined;
+    if (groupId) {
+      const resolved = await set(
+        resolvePhoneFileGroup$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          groupId,
+          agentphoneAgentId: args.agentphoneAgentId,
+        },
+        signal,
+      );
+      if (!resolved.ok) {
+        return resolved;
+      }
+      group = resolved.group;
+    }
+    const userChannel = group
+      ? "imessage"
+      : agentPhoneChannelForLinkedHandle(phoneHandle);
 
-  const mimetype = body.contentType ?? object.contentType;
-  const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
-  signal.throwIfAborted();
-  const sendResult = await settle(
-    sendAgentPhoneMessage(
-      {
+    let agentphoneAgentId = group?.agentphoneAgentId;
+    if (!group) {
+      const [message] = await db
+        .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
+        .from(agentphoneMessages)
+        .where(
+          and(
+            eq(agentphoneMessages.agentphoneUserLinkId, userLink.id),
+            args.agentphoneAgentId
+              ? eq(agentphoneMessages.agentphoneAgentId, args.agentphoneAgentId)
+              : undefined,
+            eq(
+              agentphoneMessages.phoneHandle,
+              normalizeAgentPhoneHandle(phoneHandle, userChannel),
+            ),
+          ),
+        )
+        .orderBy(desc(agentphoneMessages.createdAt))
+        .limit(1);
+      signal.throwIfAborted();
+      agentphoneAgentId =
+        args.agentphoneAgentId &&
+        args.agentphoneAgentId === optionalEnv("AGENTPHONE_AGENT_ID")
+          ? args.agentphoneAgentId
+          : message?.agentphoneAgentId;
+    }
+    if (!agentphoneAgentId) {
+      return {
+        ok: false as const,
+        response: routeError(404, "Phone agent not found", "NOT_FOUND"),
+      };
+    }
+
+    return {
+      ok: true as const,
+      destination: {
+        userLinkId: userLink.id,
+        phoneHandle,
+        userChannel,
         agentphoneAgentId,
-        toNumber: phoneHandle,
-        body: body.caption ?? "",
-        mediaUrl: fetchUrl,
+        group,
+        toNumber: group?.groupId ?? phoneHandle,
+      },
+    };
+  },
+);
+
+const complete$ = command(
+  async (
+    { get, set },
+    body: PhoneUploadCompleteBody & { readonly groupId?: string },
+    signal: AbortSignal,
+  ) => {
+    const auth = get(organizationAuthContext$);
+    const runId =
+      "runId" in auth && typeof auth.runId === "string"
+        ? auth.runId
+        : undefined;
+
+    const object = await set(
+      materializeUploadedArtifact$,
+      { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
+      signal,
+    );
+    if (!object) {
+      return uploadedFileNotFound();
+    }
+
+    const uploadedFile: UploadedFileInfo = {
+      key: object.key,
+      size: object.size,
+      filename: object.filename,
+      fileUrl: object.url,
+    };
+
+    const resolved = await set(
+      resolvePhoneFileDestination$,
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        groupId: body.groupId,
+        agentphoneAgentId: body.agentphoneAgentId,
       },
       signal,
-    ),
-  );
-  signal.throwIfAborted();
-  if (!sendResult.ok) {
-    const routeErr = agentPhoneRouteError(sendResult.error);
-    if (routeErr) {
-      return routeErr;
+    );
+    if (!resolved.ok) {
+      return resolved.response;
     }
-    throw sendResult.error;
-  }
-  const sent = sendResult.value;
+    const destination = resolved.destination;
 
-  const delivery: PhoneFileDelivery = {
-    runId,
-    auth,
-    userLinkId: userLink.id,
-    mimetype,
-    body,
-    uploadedFile,
-    layout: object.layout,
-    sent,
-    phoneHandle,
-    userChannel,
-    agentphoneAgentId,
-  };
-  await set(
-    recordAgentPhoneUploadedFile$,
-    uploadedFileRecordValues(delivery),
-    signal,
-  );
-  signal.throwIfAborted();
+    const mimetype = body.contentType ?? object.contentType;
+    const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
+    signal.throwIfAborted();
+    const sendResult = await settle(
+      sendAgentPhoneMessage(
+        {
+          agentphoneAgentId: destination.agentphoneAgentId,
+          toNumber: destination.toNumber,
+          body: body.caption ?? "",
+          mediaUrl: fetchUrl,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!sendResult.ok) {
+      const routeErr = agentPhoneRouteError(sendResult.error);
+      if (routeErr) {
+        return routeErr;
+      }
+      throw sendResult.error;
+    }
+    const sent = sendResult.value;
 
-  await set(storeOutboundAgentPhoneMessage$, outboundPhoneFileValues(delivery));
-  signal.throwIfAborted();
-
-  return {
-    status: 200 as const,
-    body: {
-      messageId: sent.id,
-      channel: sent.channel,
-      toNumber: sent.toNumber ?? phoneHandle,
-      filename: uploadedFile.filename,
+    const delivery: PhoneFileDelivery = {
+      runId,
+      auth,
+      ...destination,
       mimetype,
-      size: uploadedFile.size,
-      url: uploadedFile.fileUrl,
-    },
-  };
-});
+      body,
+      uploadedFile,
+      layout: object.layout,
+      sent,
+    };
+    await set(
+      recordAgentPhoneUploadedFile$,
+      uploadedFileRecordValues(delivery),
+      signal,
+    );
+    signal.throwIfAborted();
+
+    await set(
+      storeOutboundAgentPhoneMessage$,
+      outboundPhoneFileValues(delivery),
+    );
+    signal.throwIfAborted();
+
+    return {
+      status: 200 as const,
+      body: {
+        messageId: sent.id,
+        channel: sent.channel,
+        toNumber:
+          destination.group?.groupId ??
+          sent.toNumber ??
+          destination.phoneHandle,
+        filename: uploadedFile.filename,
+        mimetype,
+        size: uploadedFile.size,
+        url: uploadedFile.fileUrl,
+      },
+    };
+  },
+);
+
+function createCompleteHandler(
+  route:
+    | typeof integrationsPhoneUploadCompleteContract.complete
+    | typeof integrationsPhoneUploadCompleteContract.completeGroup,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    const bodyResult = await get(bodyResultOf(route));
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    return await set(complete$, bodyResult.data, signal);
+  });
+}
 
 const phoneWriteAuth = {
   requireOrganization: true,
@@ -284,6 +495,18 @@ const phoneWriteAuth = {
 export const integrationsPhoneUploadCompleteRoutes: readonly RouteEntry[] = [
   {
     route: integrationsPhoneUploadCompleteContract.complete,
-    handler: authRoute(phoneWriteAuth, complete$),
+    handler: authRoute(
+      phoneWriteAuth,
+      createCompleteHandler(integrationsPhoneUploadCompleteContract.complete),
+    ),
+  },
+  {
+    route: integrationsPhoneUploadCompleteContract.completeGroup,
+    handler: authRoute(
+      phoneWriteAuth,
+      createCompleteHandler(
+        integrationsPhoneUploadCompleteContract.completeGroup,
+      ),
+    ),
   },
 ];

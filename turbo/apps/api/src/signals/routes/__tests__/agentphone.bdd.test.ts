@@ -418,7 +418,7 @@ async function connectFromReceivedLink(
 const AGENTPHONE_INTEGRATION_NOTE = [
   "# Integration Note",
   "",
-  "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
+  "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.",
   "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in the phone channel. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to the phone channel unless the user explicitly requests it. A private `/artifacts/...` address is not openable from the phone channel, so a link alone shows the user nothing. When you judge that the phone channel can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou phone upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou phone upload-file`, so the owner can open the original artifact after returning to the web app.",
 ].join("\n");
 
@@ -4114,6 +4114,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     await waitForTyping(sends, [conversationId]);
     const run = await claimDispatchedRun(runnerGroup);
+    expect(run.appendSystemPrompt).toContain(`Group ID: ${groupId}`);
 
     server.use(
       http.get("https://api.agentphone.test/v1/conversations/:id", () => {
@@ -4852,98 +4853,275 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
-  it("uploads phone media and resolves its storage URL with a real run-scoped agent token", async () => {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { actor, phone, runnerGroup, sends, storage } =
-      await entitledLinkedActor();
+  it.each([false, true])(
+    "uploads phone media with a real run-scoped agent token (group: %s)",
+    async (isGroup) => {
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const integrations = createBddIntegrationApi(context);
+      const { actor, phone, runnerGroup, sends, storage, ap } =
+        await entitledLinkedActor();
+      const conversationId = uniqueConversationId();
+      const groupId = isGroup ? bddGroupId(conversationId) : undefined;
+      if (groupId) {
+        await ap.postAgentPhoneInboundMessage({
+          channel: "imessage",
+          from: phone,
+          body: "shared group attachment context",
+          conversationId,
+          isGroup: true,
+          groupId,
+          participants: [{ identifier: phone }],
+        });
+      }
 
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD agentphone upload agent",
-      visibility: "private",
-    });
-    const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "deliver a phone attachment",
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
-    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
-    if (!okouToken) {
-      throw new Error("Expected the claimed run to expose OKOU_TOKEN");
-    }
+      const agent = await bdd.createAgent(actor, {
+        displayName: "BDD agentphone upload agent",
+        visibility: "private",
+      });
+      const run = await runs.createThreadRun(actor, {
+        agentId: agent.agentId,
+        prompt: "deliver a phone attachment",
+      });
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(run.runId);
+      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      if (!okouToken) {
+        throw new Error("Expected the claimed run to expose OKOU_TOKEN");
+      }
 
-    const init = await ap.requestPhoneUploadInitWithToken(
-      okouToken,
-      { filename: "screen shot.png", contentType: "image/png", length: 123 },
-      [200],
-    );
-    expect(init.body).toMatchObject({
-      filename: "screen_shot.png",
-      contentType: "image/png",
-      size: 123,
-    });
-    expect(init.body.uploadUrl).toMatch(/^https?:\/\//u);
-    expect(init.body.fileUrl).toMatch(
-      /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
-    );
-
-    storage.addArtifactObject({
-      uploadId: init.body.uploadId,
-      filename: "screen_shot.png",
-      size: 456,
-    });
-    const completed = await ap.requestPhoneUploadCompleteWithToken(
-      okouToken,
-      {
-        uploadId: init.body.uploadId,
-        agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
-        caption: "see attached",
+      const init = await ap.requestPhoneUploadInitWithToken(
+        okouToken,
+        { filename: "screen shot.png", contentType: "image/png", length: 123 },
+        [200],
+      );
+      expect(init.body).toMatchObject({
+        filename: "screen_shot.png",
         contentType: "image/png",
-      },
+        size: 123,
+      });
+      expect(init.body.uploadUrl).toMatch(/^https?:\/\//u);
+      expect(init.body.fileUrl).toMatch(
+        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+      );
+
+      storage.addArtifactObject({
+        uploadId: init.body.uploadId,
+        filename: "screen_shot.png",
+        size: 456,
+      });
+      const completed = await ap.requestPhoneUploadCompleteWithToken(
+        okouToken,
+        {
+          uploadId: init.body.uploadId,
+          groupId,
+          agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+          caption: "see attached",
+          contentType: "image/png",
+        },
+        [200],
+      );
+      expect(completed.body).toMatchObject({
+        filename: "screen shot.png",
+        mimetype: "image/png",
+        size: 456,
+        toNumber: groupId ?? phone,
+      });
+      const mediaSend = lastSend(sends);
+      expect(mediaSend.body).toBe("see attached");
+      expect(completed.body.url).toBe(init.body.fileUrl);
+      expect(mediaSend.toNumber).toBe(groupId ?? phone);
+      if (!mediaSend.mediaUrl) {
+        throw new Error("Expected a provider-fetchable phone file");
+      }
+      expect(new URL(mediaSend.mediaUrl).searchParams.get("object")).toBe(
+        `test-private-artifacts/private-artifacts/${init.body.uploadId}/screen_shot.png`,
+      );
+
+      if (groupId) {
+        const history = await integrations.requestAgentPhoneGroupHistory(
+          actor,
+          { groupId, limit: 100 },
+          [200],
+        );
+        expect(
+          history.status === 200 ? history.body.messages : [],
+        ).toContainEqual(
+          expect.objectContaining({
+            id: completed.body.messageId,
+            conversationId,
+            toNumber: groupId,
+            channel: "imessage",
+            mediaUrl: init.body.fileUrl,
+            body: "see attached",
+          }),
+        );
+      }
+
+      const downloaded = await ap.downloadPhoneFileRaw(
+        okouToken,
+        completed.body.messageId,
+      );
+      expect(downloaded.status).toBe(302);
+      expect(downloaded.headers.get("content-type")).toBe("image/png");
+      expect(downloaded.headers.get("x-file-name")).toBe("screen%20shot.png");
+      expect(downloaded.headers.get("x-file-size")).toBe("456");
+      expect(
+        new URL(downloaded.headers.get("location") ?? "").searchParams.get(
+          "object",
+        ),
+      ).toBe(new URL(mediaSend.mediaUrl).searchParams.get("object"));
+
+      const unauthorized = await integrations.requestPhoneDownloadFile(
+        null,
+        completed.body.messageId,
+        [401],
+      );
+      expectApiError(unauthorized.body);
+
+      await completeSandboxRun(claim.sandboxToken, run.runId, 0);
+    },
+  );
+
+  it("requires current group membership and keeps group uploads scoped to the user, organization, agent, and file owner", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const { actor, phone, sends, storage, ap } = await entitledLinkedActor();
+    const member = bdd.user();
+    const outsider = bdd.user();
+    const memberPhone = uniquePhoneHandle();
+    const outsiderPhone = uniquePhoneHandle();
+    await ap.linkViaWebhookConnectPrompt(member, memberPhone, sends);
+    await ap.linkViaWebhookConnectPrompt(outsider, outsiderPhone, sends);
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "file sharing group",
+      conversationId,
+      isGroup: true,
+      participants: [{ identifier: phone }, { identifier: memberPhone }],
+    });
+
+    async function uploadFor(owner: ApiTestUser) {
+      const init = await integrations.requestPhoneUploadInit(
+        owner,
+        {
+          filename: "photo.png",
+          contentType: "image/png",
+          length: 11,
+        },
+        [200],
+      );
+      if (init.status !== 200) {
+        throw new Error("Expected an owned upload URL");
+      }
+      storage.addArtifactObject({
+        uploadId: init.body.uploadId,
+        filename: "photo.png",
+        size: 11,
+      });
+      return { uploadId: init.body.uploadId, groupId, caption: "Group photo" };
+    }
+    const body = await uploadFor(actor);
+    const outsiderBody = await uploadFor(outsider);
+    const sendsBeforeDenials = sends.messages.length;
+    await integrations.requestPhoneUploadComplete(null, body, [401]);
+    await integrations.requestPhoneUploadComplete(member, body, [404]);
+    await integrations.requestPhoneUploadComplete(
+      outsider,
+      outsiderBody,
+      [404],
+    );
+    await integrations.requestPhoneUploadComplete(
+      { ...actor, orgId: `org_${randomUUID()}` },
+      body,
+      [404],
+    );
+    await integrations.requestPhoneUploadComplete(
+      actor,
+      { ...body, agentphoneAgentId: "agt_unrelated" },
+      [404],
+    );
+    expect(sends.messages).toHaveLength(sendsBeforeDenials);
+
+    const conversationUrl = `https://api.agentphone.test/v1/conversations/${conversationId}`;
+    // History visibility survives leaving, but it must not authorize a new send.
+    server.use(
+      http.get(conversationUrl, () => {
+        return HttpResponse.json({ participants: [memberPhone] });
+      }),
+    );
+    const removed = await integrations.requestPhoneUploadComplete(
+      actor,
+      body,
+      [403],
+    );
+    expectApiError(removed.body);
+    expect(sends.messages).toHaveLength(sendsBeforeDenials);
+
+    for (const status of [404, 503]) {
+      server.use(
+        http.get(conversationUrl, () => {
+          return new HttpResponse(null, { status });
+        }),
+      );
+      await integrations.requestPhoneUploadComplete(actor, body, [
+        status === 404 ? 404 : 502,
+      ]);
+      expect(sends.messages).toHaveLength(sendsBeforeDenials);
+    }
+    server.use(
+      http.get(conversationUrl, () => {
+        return HttpResponse.error();
+      }),
+    );
+    await integrations.requestPhoneUploadComplete(actor, body, [502]);
+    expect(sends.messages).toHaveLength(sendsBeforeDenials);
+
+    server.use(
+      http.get(conversationUrl, () => {
+        return HttpResponse.json({ participants: [phone, memberPhone] });
+      }),
+    );
+    const completed = await integrations.requestPhoneUploadComplete(
+      actor,
+      body,
       [200],
     );
-    expect(completed.body).toMatchObject({
-      filename: "screen shot.png",
-      mimetype: "image/png",
-      size: 456,
-      toNumber: phone,
-    });
-    const mediaSend = lastSend(sends);
-    expect(mediaSend.body).toBe("see attached");
-    expect(completed.body.url).toBe(init.body.fileUrl);
-    expect(mediaSend.toNumber).toBe(phone);
-    if (!mediaSend.mediaUrl) {
-      throw new Error("Expected a provider-fetchable phone file");
+    if (completed.status !== 200) {
+      throw new Error("Expected an authorized group upload");
     }
-    expect(new URL(mediaSend.mediaUrl).searchParams.get("object")).toBe(
-      `test-private-artifacts/private-artifacts/${init.body.uploadId}/screen_shot.png`,
+    expect(completed.body.toNumber).toBe(groupId);
+    expect(lastSend(sends)).toMatchObject({
+      toNumber: groupId,
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      body: "Group photo",
+      mediaUrl: expect.stringMatching(/^https?:\/\//u),
+    });
+    const memberHistory = await integrations.requestAgentPhoneGroupHistory(
+      member,
+      { groupId, limit: 100 },
+      [200],
     );
-
-    const downloaded = await ap.downloadPhoneFileRaw(
-      okouToken,
-      completed.body.messageId,
-    );
-    expect(downloaded.status).toBe(302);
-    expect(downloaded.headers.get("content-type")).toBe("image/png");
-    expect(downloaded.headers.get("x-file-name")).toBe("screen%20shot.png");
-    expect(downloaded.headers.get("x-file-size")).toBe("456");
     expect(
-      new URL(downloaded.headers.get("location") ?? "").searchParams.get(
-        "object",
-      ),
-    ).toBe(new URL(mediaSend.mediaUrl).searchParams.get("object"));
-
-    const unauthorized = await integrations.requestPhoneDownloadFile(
-      null,
-      completed.body.messageId,
-      [401],
+      memberHistory.status === 200 ? memberHistory.body.messages : [],
+    ).toContainEqual(
+      expect.objectContaining({
+        id: completed.body.messageId,
+        mediaUrl: completed.body.url,
+        toNumber: groupId,
+      }),
     );
-    expectApiError(unauthorized.body);
-
-    await completeSandboxRun(claim.sandboxToken, run.runId, 0);
+    const outsiderHistory = await integrations.requestAgentPhoneGroupHistory(
+      outsider,
+      { groupId, limit: 100 },
+      [200],
+    );
+    expect(
+      outsiderHistory.status === 200 ? outsiderHistory.body.messages : [],
+    ).toStrictEqual([]);
   });
 
   it("guards startLink against foreign-owner handles and provider network failures", async () => {

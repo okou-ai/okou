@@ -16,6 +16,8 @@ const UPLOAD_INIT_URL =
   "http://localhost:3000/api/integrations/phone/upload-file/init";
 const UPLOAD_COMPLETE_URL =
   "http://localhost:3000/api/integrations/phone/upload-file/complete";
+const GROUP_UPLOAD_COMPLETE_URL =
+  "http://localhost:3000/api/integrations/phone/upload-file/complete-group";
 const R2_UPLOAD_URL = "https://mock-r2.test/phone-upload";
 
 describe("okou phone commands", () => {
@@ -33,6 +35,10 @@ describe("okou phone commands", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    uploadFileCommand.setOptionValue("to", "me");
+    uploadFileCommand.setOptionValue("as", undefined);
+    uploadFileCommand.setOptionValue("text", undefined);
+    uploadFileCommand.setOptionValue("json", false);
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
     tmpDir = join(tmpdir(), `phone-command-test-${Date.now()}`);
@@ -273,5 +279,149 @@ describe("okou phone commands", () => {
         url: expectedUrl,
       },
     });
+  });
+
+  it.each(["grp_upload", "chat:grp_upload"])(
+    "uploads an image to %s and prints the group destination",
+    async (target) => {
+      const path = join(tmpDir, "photo.png");
+      writeFileSync(path, "image bytes");
+      server.use(
+        http.post(UPLOAD_INIT_URL, () => {
+          return HttpResponse.json({
+            uploadId: "00000000-0000-4000-8000-000000000001",
+            uploadUrl: R2_UPLOAD_URL,
+            fileUrl: "https://files.example/photo.png",
+            filename: "photo.png",
+            contentType: "image/png",
+            size: 11,
+            uploadHeaders: {},
+          });
+        }),
+        http.put(R2_UPLOAD_URL, async ({ request }) => {
+          expect(await request.text()).toBe("image bytes");
+          return new HttpResponse(null, { status: 200 });
+        }),
+        http.post(GROUP_UPLOAD_COMPLETE_URL, async ({ request }) => {
+          expect(await request.json()).toEqual({
+            uploadId: "00000000-0000-4000-8000-000000000001",
+            groupId: "grp_upload",
+            agentphoneAgentId: "agt_group",
+            contentType: "image/png",
+            caption: "For the team",
+          });
+          return HttpResponse.json({
+            messageId: "apmsg_group_file",
+            channel: "imessage",
+            toNumber: "grp_upload",
+            filename: "photo.png",
+            mimetype: "image/png",
+            size: 11,
+            url: "https://files.example/photo.png",
+          });
+        }),
+      );
+
+      await uploadFileCommand.parseAsync([
+        "node",
+        "okou",
+        "--to",
+        target,
+        "-f",
+        path,
+        "--as",
+        "agt_group",
+        "--text",
+        "For the team",
+        "--json",
+      ]);
+      expect(JSON.parse(mockConsoleLog.mock.calls.flat().join("\n"))).toEqual({
+        integration: "phone",
+        chatId: "grp_upload",
+        messages: [{ id: "apmsg_group_file", url: null }],
+        file: {
+          name: "photo.png",
+          contentType: "image/png",
+          size: 11,
+          url: "https://files.example/photo.png",
+        },
+      });
+    },
+  );
+
+  it.each([
+    {
+      status: 403,
+      code: "FORBIDDEN",
+      message:
+        "Your connected phone must be a current member of this iMessage group",
+    },
+    { status: 404, code: "NOT_FOUND", message: "Not found" },
+  ])(
+    "reports a group error ($status) without sending to the linked phone",
+    async ({ status, code, message }) => {
+      const path = join(tmpDir, "photo.png");
+      writeFileSync(path, "image bytes");
+      let directSends = 0;
+      server.use(
+        http.post(UPLOAD_INIT_URL, () => {
+          return HttpResponse.json({
+            uploadId: "00000000-0000-4000-8000-000000000001",
+            uploadUrl: R2_UPLOAD_URL,
+            fileUrl: "https://files.example/photo.png",
+            filename: "photo.png",
+            contentType: "image/png",
+            size: 11,
+            uploadHeaders: {},
+          });
+        }),
+        http.put(R2_UPLOAD_URL, () => {
+          return new HttpResponse(null, { status: 200 });
+        }),
+        http.post(GROUP_UPLOAD_COMPLETE_URL, () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code,
+                message,
+              },
+            },
+            { status },
+          );
+        }),
+        http.post(UPLOAD_COMPLETE_URL, () => {
+          directSends++;
+          return new HttpResponse(null, { status: 500 });
+        }),
+      );
+      await expect(
+        uploadFileCommand.parseAsync([
+          "node",
+          "okou",
+          "--to",
+          "grp_upload",
+          "-f",
+          path,
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(message);
+      expect(directSends).toBe(0);
+    },
+  );
+
+  it("rejects arbitrary recipient phone numbers for file uploads", async () => {
+    await expect(
+      uploadFileCommand.parseAsync([
+        "node",
+        "okou",
+        "--to",
+        "+15551234567",
+        "-f",
+        "/unused/photo.png",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Use --to me or --to chat:grp_<id>",
+    );
   });
 });
