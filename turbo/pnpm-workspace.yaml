@@ -40,9 +40,6 @@ auditConfig:
     - GHSA-ch52-4w7c-c8xp
 
 overrides:
-  # Restore the view version from before #42843: 1.42.7/1.42.8 interrupt IME
-  # backspace in Tiptap. Remove after an upstream fix passes the native IME smoke test.
-  prosemirror-view: 1.42.3
   # speech-rule-engine 4.1.4 pins xmldom 0.9.10, which has XML injection and
   # parser DoS advisories. Remove when upstream requires xmldom >=0.9.12.
   "speech-rule-engine>@xmldom/xmldom": ^0.9.12
@@ -98,6 +95,9 @@ patchedDependencies:
   "@earendil-works/pi-coding-agent@1.1.0": patches/@earendil-works__pi-coding-agent@1.1.0.patch
   # Remove when upstream jest-dom declarations support Vitest 5's Matchers.
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch
+  # Backport prosemirror-view@df03e40059 to avoid repeated key dispatch.
+  # Remove after its upstream release passes the native IME smoke test.
+  "prosemirror-view@1.42.8": patches/prosemirror-view@1.42.8.patch
   # Remove when upstream centerView and resetTransform persist recalculated pan bounds.
   "react-zoom-pan-pinch@4.0.3": patches/react-zoom-pan-pinch@4.0.3.patch
 

@@ -58,6 +58,8 @@ test("receive a reply and compose with an IME", async ({ page }) => {
       });
       await expect(composer).toHaveText(text);
     }
+    await page.keyboard.press("Backspace");
+    await expect(composer).toHaveText("s");
     await cdp.send("Input.insertText", { text: "啥" });
     await expect(composer).toHaveText("啥");
     await expect(composer).toBeFocused();
