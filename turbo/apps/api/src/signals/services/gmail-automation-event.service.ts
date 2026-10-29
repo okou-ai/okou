@@ -1428,12 +1428,17 @@ const dispatchGmailWatchState$ = command(
       return { kind: "ok", dispatched: 0, duplicates: 0 };
     }
 
-    const automations = await args.sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_automations",
-      async () => {
+    const automations = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(loadGmailEventAutomations$, args, signal);
-      },
-    );
+      })();
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_automations",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     const result = await set(
       dispatchGmailHistoryEvents$,
@@ -1619,9 +1624,9 @@ export const dispatchGmailPubSubPush$ = command(
       "gmail",
       args.apiStartTime,
     );
-    const states = await sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      async () => {
+    const states = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           loadGmailWatchStates$,
           {
@@ -1630,8 +1635,13 @@ export const dispatchGmailPubSubPush$ = command(
           },
           signal,
         );
-      },
-    );
+      })();
+      sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_source_state",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     let dispatched = 0;
     let duplicates = 0;

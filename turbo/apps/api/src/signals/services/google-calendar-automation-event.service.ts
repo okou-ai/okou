@@ -13,7 +13,7 @@ import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import type { infer as zInfer } from "zod";
-import { nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
@@ -915,9 +915,9 @@ const dispatchGoogleCalendarChanges$ = command(
     signal: AbortSignal,
   ): Promise<GoogleCalendarDispatchStateResult> => {
     const db = set(writeDb$);
-    const snapshotMap = await args.sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_external_events",
-      async () => {
+    const snapshotMap = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           loadCalendarEventSnapshotMap$,
           {
@@ -926,8 +926,13 @@ const dispatchGoogleCalendarChanges$ = command(
           },
           signal,
         );
-      },
-    );
+      })();
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_external_events",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     const calendarEventChanges = args.changes.events
       .map((event) => {
@@ -939,9 +944,9 @@ const dispatchGoogleCalendarChanges$ = command(
       .filter((change): change is CalendarEventChange => {
         return change !== null;
       });
-    const automations = await args.sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_automations",
-      async () => {
+    const automations = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           loadGoogleCalendarEventAutomations$,
           {
@@ -949,8 +954,13 @@ const dispatchGoogleCalendarChanges$ = command(
           },
           signal,
         );
-      },
-    );
+      })();
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_automations",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     const result = await set(
       dispatchCalendarEventChanges$,
@@ -1079,9 +1089,9 @@ const dispatchGoogleCalendarWatchState$ = command(
       });
       return { kind: "ok", dispatched: 0, duplicates: 0 };
     }
-    const access = await args.sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      async () => {
+    const access = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           resolveGoogleCalendarAccess$,
           {
@@ -1091,8 +1101,13 @@ const dispatchGoogleCalendarWatchState$ = command(
           },
           signal,
         );
-      },
-    );
+      })();
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_source_state",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     if (access.kind !== "ok") {
       return { kind: "ok", dispatched: 0, duplicates: 0 };
@@ -1109,16 +1124,21 @@ const dispatchGoogleCalendarWatchState$ = command(
       signal.throwIfAborted();
       return { kind: "ok", dispatched: 0, duplicates: 0 };
     }
-    const changes = await args.sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_external_events",
-      async () => {
+    const changes = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           prepareCalendarNotificationChanges$,
           baselineInput,
           signal,
         );
-      },
-    );
+      })();
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_external_events",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     if (changes === null) {
       return { kind: "ok", dispatched: 0, duplicates: 0 };
@@ -1146,9 +1166,9 @@ const hasCurrentGoogleCalendarWatchConsumer$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const hasConsumer = await args.sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_automations",
-      async () => {
+    const hasConsumer = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           hasEnabledGoogleCalendarConsumer$,
           {
@@ -1159,8 +1179,13 @@ const hasCurrentGoogleCalendarWatchConsumer$ = command(
           },
           signal,
         );
-      },
-    );
+      })();
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_automations",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     if (hasConsumer) {
       return true;
@@ -1204,9 +1229,9 @@ export const dispatchGoogleCalendarWebhook$ = command(
       "google_calendar",
       args.apiStartTime,
     );
-    const state = await sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      async () => {
+    const state = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           loadCalendarWatchStateForNotification$,
           {
@@ -1214,8 +1239,13 @@ export const dispatchGoogleCalendarWebhook$ = command(
           },
           signal,
         );
-      },
-    );
+      })();
+      sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_source_state",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     if (!state) {
       return { kind: "unauthorized" };

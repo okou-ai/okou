@@ -21,7 +21,7 @@ import { literal, object, string, type infer as zInfer } from "zod";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
-import { nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { safeJsonParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -620,16 +620,21 @@ const dispatchGoogleFormsWatchState$ = command(
     },
     signal: AbortSignal,
   ): Promise<GoogleFormsDispatchStateResult> => {
-    const automations = await args.sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_automations",
-      async () => {
+    const automations = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(
           loadGoogleFormsEventAutomations$,
           { state: args.state },
           signal,
         );
-      },
-    );
+      })();
+      args.sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_automations",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     let dispatched = 0;
     let duplicates = 0;
@@ -699,12 +704,17 @@ export const dispatchGoogleFormsPubSubPush$ = command(
       "google_forms",
       args.apiStartTime,
     );
-    const states = await sourceTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      async () => {
+    const states = await (async () => {
+      const startedAt = now();
+      const result = await (async () => {
         return await set(loadGoogleFormsWatchStates$, { decoded }, signal);
-      },
-    );
+      })();
+      sourceTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_source_state",
+        startedAt,
+      );
+      return result;
+    })();
     signal.throwIfAborted();
     let dispatched = 0;
     let duplicates = 0;
