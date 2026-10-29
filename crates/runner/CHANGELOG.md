@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.240.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.7...runner-rs-v0.240.8) (2026-10-29)
+
+
+### Refactoring
+
+* **runner:** separate rootfs script test source ownership ([#43902](https://github.com/okou-ai/okou/issues/43902)) ([ab1b84f](https://github.com/okou-ai/okou/commit/ab1b84f9c8050b3757e7b1d6e4a9d941b2f0f01a))
+
 ## [0.240.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.6...runner-rs-v0.240.7) (2026-10-29)
 
 ### Release Dependencies

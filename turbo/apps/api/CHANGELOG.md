@@ -9,6 +9,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.6](https://github.com/okou-ai/okou/compare/api-v2.22.5...api-v2.22.6) (2026-10-29)
+
+
+### Refactoring
+
+* **api:** atomically retire threadless runs ([#43894](https://github.com/okou-ai/okou/issues/43894)) ([fd47188](https://github.com/okou-ai/okou/commit/fd47188ffa3209c3ab559e65599538b7a63e2e8d))
+* **api:** keep snapshot gc page work in its owning commands ([#43898](https://github.com/okou-ai/okou/issues/43898)) ([5878e11](https://github.com/okou-ai/okou/commit/5878e1199f7ee0599227a535ee9415f01100b366))
+* **api:** localize shared browser creation work before settlement ([#43906](https://github.com/okou-ai/okou/issues/43906)) ([d8d5b87](https://github.com/okou-ai/okou/commit/d8d5b8761fd296634cadfe31fc48153248bedb1b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.10.4
+
 ## [2.22.5](https://github.com/okou-ai/okou/compare/api-v2.22.4...api-v2.22.5) (2026-10-29)
 
 
