@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ChatThinkingBrandMotion]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Chat thinking brand motion",
+    description:
+      "Use a textured, breathing brand mark with subtle scaling, sheen, and cycling brand colors in chat thinking states.",
+    enabled: false,
+  },
   [FeatureSwitchKey.HalloweenQuiz]: {
     maintainer: "ming@okou.ai",
     displayName: "Halloween quiz",

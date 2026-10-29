@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  ChatThinkingBrandMotion = "chatThinkingBrandMotion",
   HalloweenQuiz = "halloweenQuiz",
   FeatureGuides = "featureGuides",
   OnboardingSourceOutcomes = "onboardingSourceOutcomes",
