@@ -461,17 +461,24 @@ mod tests {
     #[test]
     fn home_cache_positive_hint_retains_observed_entries_beyond_wire_projection() {
         let snapshot = HomeCacheStateSnapshot::new();
-        let scan = inventory(
-            (0..MAX_HELD_HOME_STATES)
-                .map(|index| {
-                    held_home_state(
-                        &format!("group-{index:04}"),
-                        &timestamp_for_index(index),
-                        &["vm0/default", "vm0/large"],
-                    )
-                })
-                .collect(),
-        );
+        // Seed the complete scan once; incremental admission is not the
+        // snapshot contract and repeatedly scans the growing fixture map.
+        let mut scan = HomeCacheInventory {
+            truncated: true,
+            ..Default::default()
+        };
+        for index in 0..MAX_HELD_HOME_STATES {
+            let reuse_key = format!("group-{index:04}");
+            let timestamp = timestamp_for_index(index);
+            scan.completion_times
+                .insert(reuse_key.clone(), timestamp.clone());
+            for profile in ["vm0/default", "vm0/large"] {
+                scan.entries.insert(
+                    format!("{reuse_key}:{profile}"),
+                    held_home_state(&reuse_key, &timestamp, &[profile]),
+                );
+            }
+        }
         assert_eq!(scan.entries.len(), MAX_HELD_HOME_STATES * 2);
         let token = snapshot.begin_home_cache_refresh();
         let advertised = snapshot.finish_home_cache_refresh(token, scan).states;
