@@ -66,7 +66,7 @@ async function openViewerSizingMenu(): Promise<HTMLElement> {
   return screen.findByRole("menu", { name: "Fit to this viewer" });
 }
 
-async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
+async function setupInteractiveViewer(): Promise<void> {
   const activeSession = browserSession();
   const cdpUrl = "wss://cdp.browser-use.com/test";
   mockBrowserSession(activeSession);
@@ -90,6 +90,10 @@ async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
     screen.findByDisplayValue("https://example.com"),
   ).resolves.toBeEnabled();
   expect(screen.getByLabelText("New tab")).toBeInTheDocument();
+}
+
+async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
+  await setupInteractiveViewer();
   const sizingMenu = await openViewerSizingMenu();
   expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
     "aria-checked",
@@ -132,6 +136,28 @@ test("The interactive Okou viewer lets the owner change automatic sizing", async
     within(sizingMenu).getByText("Do not sync automatically"),
   ).toHaveAttribute("aria-checked", "false");
   await selectViewerSizingOption(sizingMenu, "Do not sync automatically");
+});
+
+test("The Okou viewer starts with WebP and lets the owner change capture settings", async () => {
+  await setupInteractiveViewer();
+  click(screen.getByLabelText("Browser menu"));
+  const menu = await screen.findByRole("menu", { name: "Browser menu" });
+  click(within(menu).getByText("Capture quality"));
+  const capture = await screen.findByRole("dialog", {
+    name: "Capture quality",
+  });
+  expect(within(capture).getByRole("radio", { name: "WebP" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(within(capture).getByRole("slider")).toBeEnabled();
+
+  click(within(capture).getByRole("radio", { name: "JPEG" }));
+  await waitFor(() => {
+    expect(
+      within(capture).getByRole("radio", { name: "JPEG" }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
 });
 
 test("The browser viewer keeps one-time sizing after automatic sizing is disabled", async () => {

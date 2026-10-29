@@ -1384,12 +1384,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Introduce una URL",
-    "blankPage": {
-      "description": "{{assistantName}} abre páginas aquí mientras trabaja. Introduce una URL arriba para navegar por tu cuenta.",
-      "title": "Aún no hay nada abierto"
-    },
-    "blankTabTitle": "Nueva pestaña",
     "cardTitle": "Navegador en la nube",
     "close": "Cerrar el navegador en la nube",
     "documentTitle": "Navegador en la nube",

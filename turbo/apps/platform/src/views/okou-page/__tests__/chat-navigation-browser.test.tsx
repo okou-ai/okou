@@ -348,7 +348,7 @@ test("Take over the cloud browser from a working run and hand it back through th
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
   );
-  mockBrowserApi(liveBrowserSession());
+  const browser = mockBrowserApi(liveBrowserSession());
   const runId = "navigation-browser-live-run";
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -391,4 +391,13 @@ test("Take over the cloud browser from a working run and hand it back through th
     );
   });
   expect(within(sidebar).queryByText("You're in control")).toBeNull();
+  expect(
+    within(sidebar).getByLabelText("Open this browser in a new page"),
+  ).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
+
+  click(buttonByName("Close cloud browser", sidebar));
+  await waitFor(() => {
+    expect(sidebar).not.toBeInTheDocument();
+  });
+  expect(browser.closeRequests()).toBe(1);
 });

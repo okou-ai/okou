@@ -1362,12 +1362,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL eingeben",
-    "blankPage": {
-      "description": "{{assistantName}} öffnet hier Seiten, während es arbeitet. Gib oben eine URL ein, um selbst zu surfen.",
-      "title": "Noch nichts geöffnet"
-    },
-    "blankTabTitle": "Neuer Tab",
     "cardTitle": "Cloud-Browser",
     "close": "Cloud-Browser schließen",
     "documentTitle": "Cloud-Browser",
