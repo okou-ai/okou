@@ -9,6 +9,7 @@ mod peers;
 pub(super) mod provisioning;
 mod registration;
 pub(super) mod relay_projection;
+mod socket;
 pub(super) mod startup;
 
 use super::{Control, Failure, Key, Work};
