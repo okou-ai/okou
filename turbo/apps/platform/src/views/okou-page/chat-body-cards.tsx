@@ -85,6 +85,7 @@ import { ProUpgradeCard } from "./pro-upgrade-card.tsx";
 import {
   billingStatusAsync$,
   memberUsagePackOptionsAsync$,
+  usagePackCreditsAsync$,
 } from "../../signals/okou-page/billing.ts";
 
 type ChatImagePreviewLinkProps = {
@@ -768,7 +769,7 @@ export function PlanUpgradeCard({
     return placement === "result-end" ? (
       <FreePlanUpgradeCard
         onUpgrade={handleClick}
-        remainingCredits={billing.data.credits}
+        organizationCredits={billing.data.credits}
       />
     ) : null;
   }
@@ -818,12 +819,13 @@ const INTRODUCTORY_UPGRADE_BONUS_CREDITS = 400;
 
 function FreePlanUpgradeCard({
   onUpgrade,
-  remainingCredits,
+  organizationCredits,
 }: {
   onUpgrade: () => void;
-  remainingCredits: number;
+  organizationCredits: number;
 }) {
   const catalog = useLastLoadable(memberUsagePackOptionsAsync$);
+  const usagePackCredits = useLastLoadable(usagePackCreditsAsync$);
   const paidPrices =
     catalog.state === "hasData"
       ? catalog.data
@@ -838,7 +840,13 @@ function FreePlanUpgradeCard({
     paidPrices.length > 0 ? Math.min(...paidPrices) : undefined;
   // The headline says "Fewer than", so use an exclusive upper bound.
   const estimatedTasksUpperBound =
-    Math.floor(Math.max(0, remainingCredits) / FREE_TASK_BENCHMARK_CREDITS) + 1;
+    usagePackCredits.state === "hasData"
+      ? Math.floor(
+          (Math.max(0, organizationCredits) +
+            usagePackCredits.data.totalCredits) /
+            FREE_TASK_BENCHMARK_CREDITS,
+        ) + 1
+      : undefined;
 
   return (
     <ProUpgradeCard

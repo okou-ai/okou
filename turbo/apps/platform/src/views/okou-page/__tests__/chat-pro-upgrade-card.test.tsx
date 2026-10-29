@@ -1,6 +1,7 @@
 import {
   billingStatusContract,
   billingUsagePackCatalogContract,
+  billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -30,14 +31,23 @@ const { installRunChat } = createChatRunFixtures(context);
 const UPGRADE_LINK =
   "[Compare plans](https://app.okou.ai/?settings=billing&billingView=plans)";
 
-function mockBilling(tier = "limited-free-1", credits = 1000) {
+function mockBilling(tier = "limited-free-1") {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       ...defaultBillingStatus(),
       tier,
-      credits,
+      credits: 0,
       ...billingPlanCapabilities(tier),
       onboardingPaymentPending: false,
+    });
+  });
+  context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+    return respond(200, {
+      totalCredits: 1000,
+      purchasedCredits: 0,
+      bonusCredits: 1000,
+      creditGrants: [],
+      hasUsagePack: false,
     });
   });
 }
