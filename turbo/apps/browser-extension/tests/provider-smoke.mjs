@@ -205,7 +205,7 @@ try {
   const pages = await eventually(async () => {
     const result = await wire.request("Target.getTargets");
     const matches = result.targetInfos.filter((t) => {
-      return t.type === "page" && t.url.startsWith("https://example.com");
+      return t.type === "page" && t.url === "https://example.com/";
     });
     if (matches.length !== 2) return false;
     for (const target of matches) {
