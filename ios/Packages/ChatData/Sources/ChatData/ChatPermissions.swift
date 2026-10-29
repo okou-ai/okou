@@ -65,7 +65,6 @@ public struct ChatPermissions: Sendable {
   public init(client: APIClient) { self.client = client }
 
   public func load(_ action: ChatPermissionAction) async throws -> ChatPermissionSnapshot {
-    try await validateContext(action)
     struct Agent: Decodable, Sendable {
       let agentId: String
       let displayName: String?
@@ -94,6 +93,7 @@ public struct ChatPermissions: Sendable {
     async throws -> ChatPermissionGrant
   {
     // Revalidate before writing: the thread may have moved to another Agent while the sheet was open.
+    try await validateContext(action)
     let current = try await load(action)
     guard let metadata = current.metadata, metadata.contains(action.permission) else {
       throw ChatError.invalidContract("This permission is no longer available.")

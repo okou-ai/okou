@@ -235,8 +235,6 @@ final class ConversationStore {
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
-          await permissionActions.refresh()
-          guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
           if !pending.contains(where: \.needsRetry) { error = nil }
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
           if suppressAutomaticRead, let unreadThrough {
@@ -516,6 +514,7 @@ final class ConversationStore {
   func setDetailVisible(_ visible: Bool, owner: UUID) {
     if visible {
       detailOwner = owner
+      permissionActions.activate(owner: owner)
       composer.requestSync()
     } else {
       // A previous view can disappear after its replacement has already appeared.

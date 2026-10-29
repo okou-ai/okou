@@ -90,13 +90,7 @@ struct PermissionActionCard: View {
     }
     .accessibilityIdentifier("permission-action-card")
     .sheet(isPresented: $showsDetails) { PermissionActionDetails(store: store) }
-    .task { if loadsState { await store.refresh() } }
-    .task(id: store.grant?.expiresAt) {
-      guard loadsState, let expiry = store.grant?.expiresAt, expiry > .now else { return }
-      try? await Task.sleep(for: .seconds(expiry.timeIntervalSinceNow))
-      guard !Task.isCancelled else { return }
-      await store.refresh()
-    }
+    .task(id: store.isActive) { if loadsState { await store.loadIfNeeded() } }
   }
 }
 

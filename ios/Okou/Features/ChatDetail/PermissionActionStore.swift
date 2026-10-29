@@ -11,6 +11,7 @@ final class PermissionActionRegistry {
   private let didFail: @MainActor (Error) -> Void
   private let didContinue: @MainActor () async -> Void
   private var cards: [ChatPermissionAction: PermissionActionStore] = [:]
+  private var owner: UUID?
   private var closed = false
 
   init(
@@ -30,13 +31,26 @@ final class PermissionActionRegistry {
     let card = PermissionActionStore(
       action: action, commands: commands, sync: sync,
       didFail: didFail, didContinue: didContinue)
-    if closed { card.close() }
+    if closed {
+      card.close()
+    } else if owner != nil {
+      card.activate()
+    }
     cards[action] = card
     return card
   }
 
-  func refresh() async { for card in cards.values { await card.refresh() } }
-  func deactivate() { for card in cards.values { card.deactivate() } }
+  func activate(owner: UUID) {
+    guard !closed, self.owner != owner else { return }
+    if self.owner != nil { deactivate() }
+    self.owner = owner
+    for card in cards.values { card.activate() }
+  }
+
+  func deactivate() {
+    owner = nil
+    for card in cards.values { card.deactivate() }
+  }
   func close() {
     closed = true
     for card in cards.values { card.close() }
@@ -48,6 +62,7 @@ final class PermissionActionStore {
   let action: ChatPermissionAction
   var duration: ChatPermissionAction.Duration
   private(set) var snapshot: ChatPermissionSnapshot?
+  private(set) var isActive = false
   private(set) var isLoading = false
   private(set) var isSaving = false
   private(set) var error: String?
@@ -59,6 +74,8 @@ final class PermissionActionStore {
   private let clientEventID = UUID().uuidString.lowercased()
   private let sortEventID = UUID().uuidString.lowercased()
   private var operation: Task<Void, Never>?
+  private var read: Task<Void, Never>?
+  private var requested = false
   private var generation = UUID()
   private var closed = false
 
@@ -92,25 +109,51 @@ final class PermissionActionStore {
     !closed && !isLoading && !isSaving && hasPermission && (!applied || needsContinuation)
   }
 
+  func activate() {
+    guard !closed else { return }
+    isActive = true
+  }
+
+  func loadIfNeeded() async {
+    guard isActive, !requested, !Task.isCancelled else { return }
+    requested = true
+    await refresh()
+  }
+
   func refresh() async {
-    guard !closed, operation == nil, !isLoading, !Task.isCancelled else { return }
+    guard !closed, operation == nil, !Task.isCancelled else { return }
+    if let read {
+      await read.value
+      return
+    }
     isLoading = true
     let generation = generation
-    defer { if self.generation == generation { isLoading = false } }
-    do {
-      let value = try await commands.permissions.load(action)
-      try Task.checkCancellation()
-      guard !closed, self.generation == generation else { return }
-      snapshot = value
-      error = nil
-      if !applied { needsContinuation = false }
-    } catch is CancellationError {
-    } catch {
-      guard !closed, self.generation == generation else { return }
-      snapshot = nil
-      self.error = error.localizedDescription
-      didFail(error)
+    // A reused row can stop awaiting this read without canceling the page-owned request.
+    let task = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        if self.generation == generation {
+          isLoading = false
+          read = nil
+        }
+      }
+      do {
+        let value = try await commands.permissions.load(action)
+        try Task.checkCancellation()
+        guard !closed, self.generation == generation else { return }
+        snapshot = value
+        error = nil
+        if !applied { needsContinuation = false }
+      } catch is CancellationError {
+      } catch {
+        guard !closed, self.generation == generation else { return }
+        snapshot = nil
+        self.error = error.localizedDescription
+        didFail(error)
+      }
     }
+    read = task
+    await task.value
   }
 
   func confirm() async {
@@ -128,6 +171,7 @@ final class PermissionActionStore {
       }
       do {
         // Refresh before every explicit retry, including an ambiguous write response.
+        try await commands.permissions.validateContext(action)
         let current = try await commands.permissions.load(action)
         try Task.checkCancellation()
         guard !closed, self.generation == generation else { return }
@@ -177,7 +221,11 @@ final class PermissionActionStore {
   }
 
   func deactivate() {
+    isActive = false
+    requested = false
     generation = UUID()
+    read?.cancel()
+    read = nil
     operation?.cancel()
     operation = nil
     isLoading = false
