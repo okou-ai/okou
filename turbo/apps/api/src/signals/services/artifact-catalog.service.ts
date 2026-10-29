@@ -1,4 +1,7 @@
 import { command } from "ccstate";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactShares } from "@okouai/db/schema/artifact-share";
+import { artifactReferenceRecord$ } from "./artifact-reference.service";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import {
@@ -15,6 +18,7 @@ import {
   isNotNull,
   ne,
   notExists,
+  or,
   lt,
   lte,
   sql,
@@ -61,6 +65,7 @@ import { logger } from "../../lib/log";
 import {
   isSharedThreadArtifactLogicalKey,
   sharedThreadArtifactAuthorUserId,
+  sharedThreadArtifactLogicalKey,
 } from "../../lib/shared-thread-artifact";
 import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
@@ -1385,9 +1390,157 @@ export const listArtifactCatalog$ = command(
 
 interface GetArtifactCatalogEntryArgs {
   readonly artifactId: string;
+  readonly sourceKind?: "file" | "html" | "shared-thread" | "site";
   readonly orgId: string;
   readonly userId: string;
 }
+
+function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
+  switch (args.sourceKind) {
+    case "file": {
+      const qb = new QueryBuilder();
+      return or(
+        eq(artifacts.projectionFileId, args.artifactId),
+        and(
+          artifactCatalogKindFilter("file"),
+          eq(artifacts.entityId, args.artifactId),
+        ),
+        and(
+          eq(artifacts.kind, "image"),
+          inArray(
+            artifacts.entityId,
+            qb
+              .select({ id: imageArtifacts.id })
+              .from(imageArtifacts)
+              .where(eq(imageArtifacts.fileId, args.artifactId)),
+          ),
+        ),
+        and(
+          eq(artifacts.kind, "video"),
+          inArray(
+            artifacts.entityId,
+            qb
+              .select({ id: videoArtifacts.id })
+              .from(videoArtifacts)
+              .where(eq(videoArtifacts.fileId, args.artifactId)),
+          ),
+        ),
+      );
+    }
+    case "html": {
+      const qb = new QueryBuilder();
+      const sites = qb
+        .select({
+          logicalKey: sql`'site:' || ${privateHostedDeployments.siteId}::text`
+            .mapWith(artifacts.logicalKey)
+            .as("logical_key"),
+        })
+        .from(privateHostedDeployments)
+        .where(
+          and(
+            eq(privateHostedDeployments.id, args.artifactId),
+            eq(privateHostedDeployments.orgId, args.orgId),
+            eq(privateHostedDeployments.userId, args.userId),
+          ),
+        );
+      return inArray(artifacts.logicalKey, sites);
+    }
+    case "shared-thread": {
+      return eq(
+        artifacts.logicalKey,
+        sharedThreadArtifactLogicalKey(args.artifactId),
+      );
+    }
+    case "site": {
+      return eq(artifacts.logicalKey, `site:${args.artifactId}`);
+    }
+    case undefined: {
+      return eq(artifacts.id, args.artifactId);
+    }
+  }
+}
+
+export const getOwnedArtifactCatalogFromReference$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly reference: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ArtifactDetail | null> => {
+    const parsed = parseArtifactReference(`/artifacts/${args.reference}`);
+    if (!parsed) {
+      return null;
+    }
+    const record =
+      parsed.id === null
+        ? await set(artifactReferenceRecord$, parsed.hash, signal)
+        : null;
+    signal.throwIfAborted();
+    // Conversation snapshot resources never grant management of their source.
+    if ((parsed.id === null && !record) || record?.version === 3) {
+      return null;
+    }
+    if (record?.version === 2) {
+      return await set(
+        getArtifactCatalogEntry$,
+        {
+          ...args,
+          artifactId: record.target.id,
+          sourceKind: record.target.kind,
+        },
+        signal,
+      );
+    }
+    if (parsed.id) {
+      const file = await set(
+        getArtifactCatalogEntry$,
+        {
+          ...args,
+          artifactId: parsed.id,
+          sourceKind: "file",
+        },
+        signal,
+      );
+      if (file) {
+        return file;
+      }
+    }
+    const shareId =
+      parsed.id ?? (record?.version === 1 ? record.shareId : null);
+    if (!shareId) {
+      return null;
+    }
+    const [share] = await get(db$)
+      .select({
+        kind: artifactShares.targetKind,
+        id: artifactShares.targetId,
+      })
+      .from(artifactShares)
+      .where(
+        and(
+          eq(artifactShares.id, shareId),
+          eq(artifactShares.userId, args.userId),
+          eq(artifactShares.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return share
+      ? await set(
+          getArtifactCatalogEntry$,
+          {
+            ...args,
+            artifactId: share.id,
+            sourceKind: share.kind === "file" ? "file" : "site",
+          },
+          signal,
+        )
+      : null;
+  },
+);
 
 const fileDetail$ = command(
   async (
@@ -1622,7 +1775,7 @@ export const getArtifactCatalogEntry$ = command(
       )
       .where(
         and(
-          eq(artifacts.id, args.artifactId),
+          artifactCatalogIdentityFilter(args),
           eq(artifacts.orgId, args.orgId),
           artifactCatalogOwnerFilter(args.userId),
           isNull(artifacts.deletedAt),

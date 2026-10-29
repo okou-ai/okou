@@ -1,4 +1,5 @@
 import { ArtifactBanner } from "@okouai/ui/components/ui/artifact-banner";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   PreserveScrollAnchor,
   Button,
@@ -37,6 +38,7 @@ import {
   ArtifactDownloadMenu,
 } from "../okou-page/artifact-actions.tsx";
 import { ArtifactShareMenu } from "../okou-page/artifact-share-menu.tsx";
+import { ArtifactPageDeleteButton } from "../okou-page/artifact-deletion.tsx";
 import {
   getArtifactShareScope,
   type ArtifactShareSession,
@@ -56,6 +58,10 @@ function ArtifactViewerActions({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
+  const reference = parseArtifactReference(
+    artifact.preview.url,
+    location.origin,
+  );
   const [enterLoadable, enterFullscreen] = useLoadableSet(
     viewer.fullscreen.enter$,
   );
@@ -113,6 +119,12 @@ function ArtifactViewerActions({
         iconSize={18}
         showGoogleDriveAction={false}
       />
+      {reference && !artifact.sharedThreadSnapshot && (
+        <ArtifactPageDeleteButton
+          artifactId={`${reference.hash}${reference.extension}`}
+          sourceKind="reference"
+        />
+      )}
       {artifactSupportsFullscreen(artifact.preview.kind) && (
         <Button
           ref={enterButtonRef}

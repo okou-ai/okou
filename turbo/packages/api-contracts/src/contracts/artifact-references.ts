@@ -70,6 +70,23 @@ export const artifactUrlSchema = union([zUrl(), artifactReferenceSchema]);
 
 const c = initContract();
 export const artifactReferencesContract = c.router({
+  ownerArtifact: {
+    method: "GET",
+    path: "/api/artifact-references/:reference/owner-artifact",
+    headers: authHeadersSchema,
+    pathParams: object({
+      reference: string().regex(
+        /^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u,
+      ),
+    }),
+    responses: {
+      200: object({ artifactId: uuid() }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Resolve an artifact reference to its owner's catalog entry",
+  },
   read: {
     method: "GET",
     path: "/api/artifact-references/:reference/read",

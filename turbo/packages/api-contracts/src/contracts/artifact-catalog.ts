@@ -152,11 +152,14 @@ export interface ArtifactCatalogListClientQuery {
 }
 
 export interface ArtifactCatalogGetQuery {
+  /** Resolve an owned shared conversation to its catalog identity. */
+  readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
 }
 
 export interface ArtifactCatalogGetClientQuery {
+  readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
 }
@@ -294,6 +297,7 @@ const artifactCatalogListQuerySchema = object({
 });
 
 const artifactCatalogGetQuerySchema = object({
+  sourceKind: literal("shared-thread").optional(),
   chatThreadId: string().uuid().optional(),
 });
 
