@@ -786,7 +786,6 @@ describe("shared Browser public consumers", () => {
         expect(preview).toBe(
           `https://screenshots.example.test/${encodeURIComponent(newUpload.key)}`,
         );
-        expect(preview).not.toBeNull();
         return preview;
       });
       if (!release.settled()) {
