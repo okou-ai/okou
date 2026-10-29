@@ -2127,12 +2127,12 @@
       "reconnectProvider": "Reconectar {{provider}}",
       "reconnectToAccess": "Reconecte o {{provider}} para acessar o e-mail: {{subject}}",
       "refreshStatus": "Atualizar status",
-      "sendingDescription": "O Outlook ainda não confirmou o envio. Atualize o status ou verifique no Outlook antes de continuar.",
+      "sendingDescription": "Não foi possível confirmar o envio. Confira o Outlook antes de tentar novamente.",
       "sentToast": "E-mail enviado",
       "status": {
         "deleted": "Excluído",
         "draft": "Rascunho",
-        "sending": "Aguardando confirmação de envio",
+        "sending": "Enviando",
         "sent": "Enviado"
       },
       "toRecipients": "Para: {{recipients}}",

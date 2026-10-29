@@ -2093,12 +2093,12 @@
       "reconnectProvider": "Reconnect {{provider}}",
       "reconnectToAccess": "Reconnect {{provider}} to access email: {{subject}}",
       "refreshStatus": "Refresh status",
-      "sendingDescription": "Outlook has not confirmed sending yet. Refresh the status or check Outlook before taking any further action.",
+      "sendingDescription": "Sending could not be confirmed. Check Outlook before trying again.",
       "sentToast": "Email sent",
       "status": {
         "deleted": "Deleted",
         "draft": "Draft",
-        "sending": "Awaiting send confirmation",
+        "sending": "Sending",
         "sent": "Sent"
       },
       "toRecipients": "To: {{recipients}}",

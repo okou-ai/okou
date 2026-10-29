@@ -13,6 +13,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const MAIL_ID = "e0000000-0000-4000-a000-000000000901";
@@ -50,6 +51,22 @@ function mailResponse(draft: MailDraft) {
     mailDraftId: MAIL_ID,
     mailDraftUrl: `https://app.okou.ai${MAIL_PATH}`,
     mailDraft: draft,
+  };
+}
+
+function outlookDraft(): Extract<MailDraft, { provider: "outlook" }> {
+  const {
+    gmailDraftId: _draftId,
+    gmailThreadId: _threadId,
+    gmailMessageId: _messageId,
+    ...common
+  } = mailDraft();
+  return {
+    ...common,
+    provider: "outlook",
+    outlookMessageId: "outlook-immutable-901",
+    outlookConversationId: "outlook-conversation-901",
+    outlookWebLink: "https://outlook.live.com/mail/0/id/outlook-immutable-901",
   };
 }
 
@@ -207,6 +224,65 @@ test("Deleting from the standalone page removes the email without opening a chat
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText("Review the invitation")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe(MAIL_PATH);
+});
+
+test("An accepted Outlook send appears as sent immediately on the standalone page", async () => {
+  const confirmation = createDeferredPromise<void>(context.signal);
+  let current = outlookDraft();
+  context.mocks.api(mailContract.getDraft, ({ respond }) => {
+    return respond(200, mailResponse(current));
+  });
+  context.mocks.api(mailContract.sendDraft, async ({ respond }) => {
+    await confirmation.promise;
+    current = {
+      ...current,
+      status: "sent",
+      sentAt: "2026-10-29T04:00:00.000Z",
+    };
+    return respond(200, mailResponse(current));
+  });
+  await setupPage({ context, path: MAIL_PATH });
+
+  const details = await screen.findByRole("region", { name: "Email details" });
+  click(control("button", "Send", details));
+  expect(control("button", "Send", details)).toBeDisabled();
+
+  confirmation.resolve();
+
+  await expect(within(details).findByText("Sent")).resolves.toBeInTheDocument();
+  expect(control("link", "Open in Outlook", details)).toHaveAttribute(
+    "href",
+    current.outlookWebLink,
+  );
+  expect(window.location.pathname).toBe(MAIL_PATH);
+});
+
+test("An uncertain Outlook send offers a status check without resending", async () => {
+  let current = outlookDraft();
+  context.mocks.api(mailContract.getDraft, ({ respond }) => {
+    return respond(200, mailResponse(current));
+  });
+  context.mocks.api(mailContract.sendDraft, ({ respond }) => {
+    current = { ...current, status: "sending" };
+    return respond(200, mailResponse(current));
+  });
+  await setupPage({ context, path: MAIL_PATH });
+
+  const details = await screen.findByRole("region", { name: "Email details" });
+  click(control("button", "Send", details));
+
+  const refresh = await waitFor(() => {
+    return control("button", "Refresh status", details);
+  });
+  expect(
+    within(details).getByText(
+      "Sending could not be confirmed. Check Outlook before trying again.",
+    ),
+  ).toBeInTheDocument();
+  current = { ...current, status: "sent", sentAt: "2026-10-29T04:00:00.000Z" };
+  click(refresh);
+
+  await expect(within(details).findByText("Sent")).resolves.toBeInTheDocument();
 });
 
 test("An inaccessible mail link cannot expose email actions", async () => {

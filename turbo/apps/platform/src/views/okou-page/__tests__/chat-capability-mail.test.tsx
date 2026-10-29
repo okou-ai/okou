@@ -22,6 +22,7 @@ import {
   RUN_PATH,
   createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
@@ -579,7 +580,8 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
   await expect(findMailCard(firstSubject)).resolves.toHaveTextContent("Sent");
 });
 
-test("Review an Outlook draft and reconcile an accepted send from chat", async () => {
+test("An accepted Outlook send appears as sent immediately in chat", async () => {
+  const confirmation = createDeferredPromise<void>(context.signal);
   const {
     gmailDraftId: _gmailDraftId,
     gmailThreadId: _gmailThreadId,
@@ -601,8 +603,13 @@ test("Review an Outlook draft and reconcile an accepted send from chat", async (
   context.mocks.api(mailContract.getDraft, ({ respond }) => {
     return respond(200, mailResponse(FIRST_MAIL_ID, current));
   });
-  context.mocks.api(mailContract.sendDraft, ({ respond }) => {
-    current = { ...current, status: "sending" };
+  context.mocks.api(mailContract.sendDraft, async ({ respond }) => {
+    await confirmation.promise;
+    current = {
+      ...current,
+      status: "sent",
+      sentAt: "2026-10-28T10:00:00.000Z",
+    };
     return respond(200, mailResponse(FIRST_MAIL_ID, current));
   });
   await setupPage({ context, path: RUN_PATH, host: APP_HOST });
@@ -616,14 +623,13 @@ test("Review an Outlook draft and reconcile an accepted send from chat", async (
     findControl("link", "Open in Outlook", sidebar),
   ).resolves.toHaveAttribute("href", current.outlookWebLink);
   click(await findControl("button", "Send", sidebar));
-  await expect(
-    within(sidebar).findByText("Awaiting send confirmation"),
-  ).resolves.toBeInTheDocument();
-  expect(queryControl("button", "Send", sidebar)).toBeNull();
+  await expect(findControl("button", "Send", sidebar)).resolves.toBeDisabled();
   expect(within(sidebar).queryByText("Sent")).not.toBeInTheDocument();
-  current = { ...current, status: "sent", sentAt: "2026-10-28T10:00:00.000Z" };
-  click(await findControl("button", "Refresh status", sidebar));
+  confirmation.resolve();
   await expect(within(sidebar).findByText("Sent")).resolves.toBeInTheDocument();
+  await expect(findMailCard(current.subject)).resolves.toHaveTextContent(
+    "Sent",
+  );
   expect(queryControl("button", "Send", sidebar)).toBeNull();
 });
 

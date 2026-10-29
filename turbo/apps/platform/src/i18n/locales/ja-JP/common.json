@@ -2086,12 +2086,12 @@
       "reconnectProvider": "{{provider}} を再接続します",
       "reconnectToAccess": "{{provider}} を再接続してメールにアクセスします: {{subject}}",
       "refreshStatus": "状態を更新",
-      "sendingDescription": "Outlook で送信完了が確認されていません。状態を更新するか、Outlook で確認してください。",
+      "sendingDescription": "送信を確認できませんでした。再試行する前に Outlook をご確認ください。",
       "sentToast": "メールを送信しました",
       "status": {
         "deleted": "削除されました",
         "draft": "草案",
-        "sending": "送信確認待ち",
+        "sending": "送信中",
         "sent": "送信済み"
       },
       "toRecipients": "宛先: {{recipients}}",

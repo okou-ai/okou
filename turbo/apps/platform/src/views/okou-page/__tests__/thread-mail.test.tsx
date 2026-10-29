@@ -720,7 +720,7 @@ describe("thread email manager", () => {
     expect(fixture.sent).toStrictEqual([id(1), id(2)]);
   });
 
-  it("reports accepted Outlook sends as awaiting confirmation rather than completed", async () => {
+  it("reports uncertain Outlook sends as awaiting confirmation rather than completed", async () => {
     const fixture = installMails(1);
     const {
       gmailDraftId: _draftId,
@@ -753,9 +753,7 @@ describe("thread email manager", () => {
         screen.getByText("0 completed · 1 awaiting confirmation · 0 failed"),
       ).toBeInTheDocument();
       const refreshedList = screen.getByRole("dialog", { name: "Emails" });
-      expect(
-        within(refreshedList).getByText("Awaiting send confirmation"),
-      ).toBeInTheDocument();
+      expect(within(refreshedList).getByText("Sending")).toBeInTheDocument();
       expect(
         within(refreshedList).queryByRole("checkbox"),
       ).not.toBeInTheDocument();
