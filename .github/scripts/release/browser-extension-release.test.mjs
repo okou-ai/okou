@@ -23,16 +23,16 @@ const newId = "22222222-2222-4222-8222-222222222222";
 const variable = "OKOU_BROWSER_USE_EXTENSION_ID";
 
 async function run(t, script, env, args = []) {
-  return runCommand(t, process.execPath, [script, ...args], env);
-}
-
-async function runCommand(t, command, args, env) {
-  const child = spawn(command, args, {
+  const child = spawn(process.execPath, [script, ...args], {
     cwd: root,
     env: { ...process.env, ...env },
     signal: t.signal,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  return completed(child);
+}
+
+function completed(child) {
   let stdout = "",
     stderr = "";
   child.stdout.on("data", (data) => {
@@ -262,14 +262,21 @@ async function fixture(t) {
       );
       const file = resolve(directory, "api-output");
       await writeFile(file, "");
-      const resolved = await runCommand(t, "bash", ["-c", step.run], {
-        REPO_VARS_JSON: JSON.stringify({
-          [variable]: oldId,
-          OTHER: "retained",
-        }),
-        BROWSER_EXTENSION_ID: (await readOutputs(output)).extension_id,
-        GITHUB_OUTPUT: file,
+      const child = spawn("bash", ["-c", step.run], {
+        cwd: root,
+        env: {
+          ...process.env,
+          REPO_VARS_JSON: JSON.stringify({
+            [variable]: oldId,
+            OTHER: "retained",
+          }),
+          BROWSER_EXTENSION_ID: (await readOutputs(output)).extension_id,
+          GITHUB_OUTPUT: file,
+        },
+        signal: t.signal,
+        stdio: ["ignore", "pipe", "pipe"],
       });
+      const resolved = await completed(child);
       assert.equal(resolved.code, 0, resolved.stderr);
       return JSON.parse((await readOutputs(file)).json);
     },
