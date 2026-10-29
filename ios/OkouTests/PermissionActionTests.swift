@@ -22,6 +22,73 @@ final class PermissionActionTests: XCTestCase {
       isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
   }
 
+  func testPermissionReadsAreReusedUntilTheDetailIsReopened() async throws {
+    let fixture = PermissionHTTPFixture()
+    let conversation = makeConversation(fixture)
+    defer { conversation.close() }
+    let owner = UUID()
+    conversation.setDetailVisible(true, owner: owner)
+    let action = try descriptor(fixture)
+    let card = conversation.permissionActions.card(action)
+    await card.loadIfNeeded()
+    XCTAssertTrue(card.hasPermission)
+    XCTAssertFalse(card.applied)
+    assertPermissionReadCounts(fixture, count: 1)
+    XCTAssertEqual(fixture.state.withLock { $0.requests.count }, 3)
+
+    fixture.state.withLock { $0.grants = PermissionHTTPFixture.grant() }
+    // Reused rows and ordinary history updates retain the current visit's result.
+    await conversation.permissionActions.card(action).loadIfNeeded()
+    await conversation.refresh()
+    await card.loadIfNeeded()
+    XCTAssertFalse(card.applied)
+    assertPermissionReadCounts(fixture, count: 1)
+
+    conversation.setDetailVisible(false, owner: owner)
+    conversation.setDetailVisible(true, owner: UUID())
+    await card.loadIfNeeded()
+    XCTAssertTrue(card.applied)
+    assertPermissionReadCounts(fixture, count: 2)
+  }
+
+  func testReusingARowDoesNotCancelItsPageOwnedPermissionRead() async throws {
+    let gate = ModelResponseGate()
+    let started = expectation(description: "Permission read started")
+    let fixture = PermissionHTTPFixture { request in
+      if request.url!.path == "/api/agents/\(PermissionHTTPFixture.agentID)" {
+        started.fulfill()
+        await gate.wait()
+      }
+    }
+    let conversation = makeConversation(fixture)
+    defer {
+      gate.open()
+      conversation.close()
+    }
+    conversation.setDetailVisible(true, owner: UUID())
+    let card = conversation.permissionActions.card(try descriptor(fixture))
+    let row = Task { await card.loadIfNeeded() }
+    await fulfillment(of: [started], timeout: 3)
+    row.cancel()
+    let reused = Task { await card.loadIfNeeded() }
+    gate.open()
+    await row.value
+    await reused.value
+    XCTAssertTrue(card.hasPermission)
+    assertPermissionReadCounts(fixture, count: 1)
+  }
+
+  func testConfirmRevalidatesTheConversationAfterLoadingTheCard() async throws {
+    let fixture = PermissionHTTPFixture()
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    fixture.state.withLock { $0.threadAgentID = UUID().uuidString }
+    await card.confirm()
+    XCTAssertNotNil(card.error)
+    XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+    XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
+  }
+
   func testClosingDuringAWriteCancelsItWithoutContinuingTheChat() async throws {
     let gate = ModelResponseGate()
     let started = expectation(description: "Permission write started")
@@ -157,18 +224,37 @@ final class PermissionActionTests: XCTestCase {
     -> (ConversationStore, PermissionActionStore)
   {
     let conversation = makeConversation(fixture)
-    let thread = conversation.thread
     await conversation.refresh()
+    let card = conversation.permissionActions.card(
+      try descriptor(fixture, action: action, callback: callback))
+    await card.refresh()
+    XCTAssertNil(card.error)
+    return (conversation, card)
+  }
+
+  private func descriptor(
+    _ fixture: PermissionHTTPFixture, action: String = "allow", callback: Bool = true
+  ) throws -> ChatPermissionAction {
     let url = try XCTUnwrap(
       URL(
         string: PermissionHTTPFixture.actionURL(action: action, callback: callback),
         relativeTo: fixture.http.baseURL)
     )
-    let descriptor = try XCTUnwrap(
-      ChatPermissionAction(url: url, agentID: thread.agentID, threadID: thread.id))
-    let card = conversation.permissionActions.card(descriptor)
-    await card.refresh()
-    XCTAssertNil(card.error)
-    return (conversation, card)
+    return try XCTUnwrap(
+      ChatPermissionAction(
+        url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID))
+  }
+
+  private func assertPermissionReadCounts(
+    _ fixture: PermissionHTTPFixture, count: Int, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let requests = fixture.state.withLock { $0.requests }
+    for path in [
+      "/api/agents/\(PermissionHTTPFixture.agentID)", "/api/user-permission-grants",
+      "/api/connector-catalog/gmail/permissions",
+    ] {
+      XCTAssertEqual(
+        requests.filter { $0.url!.path == path }.count, count, path, file: file, line: line)
+    }
   }
 }
