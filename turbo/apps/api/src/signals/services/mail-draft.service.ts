@@ -1672,7 +1672,10 @@ const publishOutlookMessage$ = command(
         senderAddress: args.mail.details.from,
         subject: args.mail.details.subject,
         ...(status === "sent" || status === "sending"
-          ? { status, sentAt }
+          ? {
+              status: sql`CASE WHEN ${mailDrafts.status} = 'sent' THEN 'sent' ELSE ${status} END`,
+              sentAt: sql`COALESCE(${sql.param(sentAt, mailDrafts.sentAt)}, ${mailDrafts.sentAt})`,
+            }
           : {}),
         updatedAt,
       })
@@ -1682,16 +1685,17 @@ const publishOutlookMessage$ = command(
           inArray(mailDrafts.status, ["draft", "sending", "sent"]),
         ),
       )
-      .returning({ status: mailDrafts.status });
+      .returning({ status: mailDrafts.status, sentAt: mailDrafts.sentAt });
     signal.throwIfAborted();
+    const storedSentAt = stored?.sentAt ?? sentAt;
     const row: MailDraftRow = {
       ...args.row,
       status: stored?.status ?? "deleted",
       draftId: args.mail.draftId,
       messageId: args.mail.messageId,
       threadId: args.mail.threadId,
-      sentAt,
-      sentMessageId: sentAt ? args.mail.messageId : null,
+      sentAt: storedSentAt,
+      sentMessageId: storedSentAt ? args.mail.messageId : null,
       webLink: args.mail.webLink ?? args.row.webLink,
       senderName: args.mail.details.fromName ?? null,
       senderAddress: args.mail.details.from,
@@ -1733,7 +1737,6 @@ const sendOutlookDraft$ = command(
         message: "This mail draft can no longer be sent",
       };
     }
-    const sendingRow: MailDraftRow = { ...args.row, status: "sending" };
     // The business transition selects one sender. Unknown network/provider
     // outcomes remain sending and can only be reconciled by reading Outlook.
     const result = await settle(
@@ -1780,13 +1783,22 @@ const sendOutlookDraft$ = command(
       }
       return okResult(args.row.id, { ...current.mailDraft, status: "sending" });
     }
-    const confirmed = await settle(
-      set(loadOutlookDraftDetails$, { ...args, row: sendingRow }, signal),
-      signal,
-    );
-    return confirmed.ok
-      ? confirmed.value
-      : okResult(args.row.id, { ...current.mailDraft, status: "sending" });
+    // A 202 is a successful send submission, just as Gmail's 200 is. It does
+    // not promise recipient delivery or require waiting for Sent Items.
+    const sentAt = nowDate();
+    await set(writeDb$)
+      .update(mailDrafts)
+      .set({ status: "sent", sentAt, updatedAt: sentAt })
+      .where(
+        and(eq(mailDrafts.id, args.row.id), eq(mailDrafts.status, "sending")),
+      );
+    signal.throwIfAborted();
+    return okResult(args.row.id, {
+      ...current.mailDraft,
+      status: "sent",
+      sentAt: sentAt.toISOString(),
+      updatedAt: sentAt.toISOString(),
+    });
   },
 );
 

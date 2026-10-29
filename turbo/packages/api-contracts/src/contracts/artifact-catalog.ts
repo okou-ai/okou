@@ -51,6 +51,8 @@ export interface ArtifactSummary {
   /** Lightweight projection URL for resource-link deduplication. */
   sourceUrl?: string;
   aliasUrl?: string;
+  /** Shared-conversation identity for direct navigation from the catalog. */
+  sharedThreadId?: string;
   /** Original video used when the catalog card cannot show a static poster. */
   videoSourceUrl?: string;
   createdAt: string;
@@ -265,8 +267,9 @@ const artifactThumbnailSchema = object({
 
 /**
  * The catalog list returns only the metadata every kind shares. Kind-specific
- * attributes are loaded from the detail endpoint after a card is opened, so the
- * list query never joins a kind table and never exposes `entityId`.
+ * attributes are loaded from the detail endpoint after a card is opened. Shared
+ * conversations include their destination identity so native links need no
+ * detail request. The list query never joins a kind table.
  */
 const artifactSummarySchema = object({
   id: string().uuid(),
@@ -275,6 +278,7 @@ const artifactSummarySchema = object({
   thumbnail: artifactThumbnailSchema.nullable(),
   sourceUrl: string().optional(),
   aliasUrl: string().optional(),
+  sharedThreadId: string().uuid().optional(),
   videoSourceUrl: string().optional(),
   createdAt: string(),
   updatedAt: string(),

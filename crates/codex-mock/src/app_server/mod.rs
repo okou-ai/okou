@@ -52,7 +52,8 @@ pub fn run_app_server(listen: &str) -> io::Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut state = AppServerState::new(scenario);
-    state.run(stdin.lock(), stdout.lock())
+    // Batch serializer writes while retaining each protocol flush.
+    state.run(stdin.lock(), io::BufWriter::new(stdout.lock()))
 }
 
 #[derive(Debug)]

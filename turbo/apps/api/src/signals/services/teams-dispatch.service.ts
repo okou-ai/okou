@@ -187,7 +187,6 @@ interface TeamsDispatchMessage {
   readonly kind: "dispatch";
   readonly activity: TeamsMessageActivity;
   readonly command: TeamsBotCommand | null;
-  readonly isGreeting: boolean;
   readonly prompt: string;
   readonly promptFiles: readonly TeamsPromptFile[];
 }
@@ -244,15 +243,6 @@ function commandHelpNotice(args: {
       `- \`@${botName} <message>\` - Send a message to your agent`,
       `- Send a DM to ${botName} to chat without mentioning the bot`,
     ].join("\n"),
-  };
-}
-
-function greetingNotice(
-  installation: TeamsInstallation | null | undefined,
-): TeamsMessageDispatchResult {
-  return {
-    kind: "notice",
-    replyText: teamsWelcomeText(installation),
   };
 }
 
@@ -1138,6 +1128,7 @@ function shouldDispatchTeamsMessage(activity: TeamsMessageActivity): boolean {
 }
 
 function teamsValidationFallbackNotice(args: {
+  readonly activity: TeamsMessageActivity;
   readonly command: TeamsBotCommand | null;
   readonly isGreeting: boolean;
   readonly installation?: TeamsInstallation | null;
@@ -1148,7 +1139,7 @@ function teamsValidationFallbackNotice(args: {
     });
   }
   if (args.isGreeting) {
-    return greetingNotice(args.installation);
+    return connectNotice(args.activity, args.installation ?? null);
   }
   return null;
 }
@@ -1647,9 +1638,6 @@ function unboundInstallationNotice(
   if (message.command === "connect" && !installation) {
     return notInstalledNotice(installation);
   }
-  if (message.isGreeting) {
-    return greetingNotice(installation);
-  }
   return connectNotice(message.activity, installation);
 }
 
@@ -1661,9 +1649,6 @@ function missingConnectionNotice(
     return commandHelpNotice({
       installation: installation,
     });
-  }
-  if (message.isGreeting) {
-    return greetingNotice(installation);
   }
   return connectNotice(message.activity, installation);
 }
@@ -1802,9 +1787,12 @@ function prepareTeamsMessage(
   const commandText = activity.text.trim();
   const prompt = teamsAgentPrompt(activity);
   const command = parseTeamsBotCommand(commandText);
-  const isGreeting = isTeamsBotGreeting(commandText);
   if (!shouldDispatchTeamsMessage(activity)) {
-    return { kind: "validation", command, isGreeting };
+    return {
+      kind: "validation",
+      command,
+      isGreeting: isTeamsBotGreeting(commandText),
+    };
   }
 
   const promptFiles = teamsPromptFiles(activity);
@@ -1816,7 +1804,6 @@ function prepareTeamsMessage(
     kind: "dispatch",
     activity,
     command,
-    isGreeting,
     prompt,
     promptFiles,
   };
@@ -1824,6 +1811,7 @@ function prepareTeamsMessage(
 
 function preparedTeamsNotice(
   preparation: Exclude<TeamsMessagePreparation, TeamsDispatchMessage>,
+  activity: TeamsMessageActivity,
   installation: TeamsInstallation | null | undefined,
 ): TeamsMessageDispatchResult {
   if (preparation.kind === "empty") {
@@ -1831,6 +1819,7 @@ function preparedTeamsNotice(
   }
   return (
     teamsValidationFallbackNotice({
+      activity,
       command: preparation.command,
       isGreeting: preparation.isGreeting,
       installation,
@@ -1965,7 +1954,7 @@ export const dispatchTeamsMessageToAgent$ = command(
 
     const message = prepareTeamsMessage(activity);
     if (message.kind !== "dispatch") {
-      return preparedTeamsNotice(message, args.installation);
+      return preparedTeamsNotice(message, activity, args.installation);
     }
     const { command, prompt, promptFiles } = message;
 

@@ -1146,12 +1146,6 @@ function MailDraftActions({
             return $.chat.mail.sentToast;
           }),
         );
-      } else if (status === "sending") {
-        toast.info(
-          t(($) => {
-            return $.chat.mail.sendingDescription;
-          }),
-        );
       }
     };
     detach(sendAndNotify(), Reason.DomCallback);

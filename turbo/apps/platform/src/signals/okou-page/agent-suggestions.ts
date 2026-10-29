@@ -5,6 +5,7 @@ import {
   getSuggestionExpiresAt,
   type Suggestion,
   type SuggestionOption,
+  type SuggestionFeedbackRequest,
 } from "@okouai/api-contracts/contracts/suggestions";
 import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -21,7 +22,7 @@ import {
 } from "../chat-page/create-chat-thread.ts";
 import { ensureAgentDraft$ } from "./agent-draft.ts";
 import { now } from "../../lib/time.ts";
-import { setLoop } from "../utils.ts";
+import { setLoop, settle } from "../utils.ts";
 import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
 import {
@@ -199,6 +200,186 @@ export const agentSuggestionsEnabled$ = computed(async (get) => {
 const revision$ = state(0);
 const expiryRevision$ = state(0);
 const consumedIds$ = state<readonly string[]>([]);
+interface OptimisticFeedback {
+  readonly suggestionId: string;
+  readonly feedbackId: string;
+}
+const optimisticFeedbacks$ = state<readonly OptimisticFeedback[]>([]);
+const latestFeedbackIntent$ = state<string | null>(null);
+export const savingSuggestionFeedback$ = computed((get) => {
+  return get(optimisticFeedbacks$).length > 0;
+});
+
+interface FeedbackConfirmation {
+  readonly item: Suggestion;
+  readonly id: string;
+  readonly undoId: string;
+  readonly kind:
+    "already_done" | "not_planned" | "less_like_this" | "dismissed";
+  readonly reasonSaved: boolean;
+  readonly note: string;
+}
+const feedbackConfirmation$ = state<FeedbackConfirmation | null>(null);
+export const suggestionFeedbackConfirmation$ = computed((get) => {
+  return get(feedbackConfirmation$);
+});
+const feedbackReasonOpen$ = state(false);
+export const suggestionFeedbackReasonOpen$ = computed((get) => {
+  return get(feedbackReasonOpen$);
+});
+const feedbackRequests$ = state<Readonly<Record<string, string>>>({});
+export const closeSuggestionFeedback$ = command(({ set }) => {
+  set(feedbackConfirmation$, null);
+  set(feedbackReasonOpen$, false);
+});
+export const openSuggestionFeedbackReason$ = command(({ set }) => {
+  set(feedbackReasonOpen$, true);
+});
+const feedbackRequestId$ = command(({ get, set }, key: string) => {
+  const existing = get(feedbackRequests$)[key];
+  if (existing) {
+    return existing;
+  }
+  const id = crypto.randomUUID();
+  set(feedbackRequests$, { ...get(feedbackRequests$), [key]: id });
+  return id;
+});
+export const submitAgentSuggestionFeedback$ = command(
+  async (
+    { get, set },
+    item: Suggestion,
+    kind: "already_done" | "not_planned" | "less_like_this" | "dismissed",
+    signal: AbortSignal,
+  ) => {
+    const key = `${item.id}:${kind}`;
+    const id = set(feedbackRequestId$, key);
+    if (
+      get(optimisticFeedbacks$).some((entry) => {
+        return entry.suggestionId === item.id;
+      })
+    ) {
+      return;
+    }
+    set(latestFeedbackIntent$, id);
+    set(optimisticFeedbacks$, [
+      ...get(optimisticFeedbacks$),
+      { suggestionId: item.id, feedbackId: id },
+    ]);
+    const outcome = await settle(
+      accept(
+        get(apiClient$)(suggestionsContract).feedback({
+          params: { id: item.id },
+          body: {
+            id,
+            kind,
+            targetId: null,
+            note: "",
+            snapshot: item.consumeToken ? item : undefined,
+          },
+          fetchOptions: { signal },
+        }),
+        [200, 409],
+        signal,
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    set(
+      optimisticFeedbacks$,
+      get(optimisticFeedbacks$).filter((entry) => {
+        return entry.feedbackId !== id;
+      }),
+    );
+    if (!outcome.ok) {
+      set(reload$);
+      throw outcome.error;
+    }
+    const result = outcome.value;
+    set(consumedIds$, [...get(consumedIds$), item.id]);
+    if (result.status === 200 && get(latestFeedbackIntent$) === id) {
+      set(
+        feedbackRequests$,
+        Object.fromEntries(
+          Object.entries(get(feedbackRequests$)).filter(([entryKey]) => {
+            return entryKey !== key;
+          }),
+        ),
+      );
+      set(feedbackConfirmation$, {
+        item,
+        id,
+        undoId: crypto.randomUUID(),
+        kind,
+        reasonSaved: false,
+        note: "",
+      });
+      set(feedbackReasonOpen$, false);
+    }
+    set(reload$);
+  },
+);
+export const undoSuggestionFeedback$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const last = get(suggestionFeedbackConfirmation$);
+    if (!last) {
+      return;
+    }
+    const result = await accept(
+      get(apiClient$)(suggestionsContract).feedback({
+        params: { id: last.item.id },
+        body: {
+          id: last.undoId,
+          kind: "undo",
+          targetId: last.id,
+          note: "",
+          snapshot: last.item.consumeToken ? last.item : undefined,
+        },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    if (result.body.restored) {
+      set(
+        consumedIds$,
+        get(consumedIds$).filter((id) => {
+          return id !== last.item.id;
+        }),
+      );
+    }
+    if (get(suggestionFeedbackConfirmation$)?.id === last.id) {
+      set(closeSuggestionFeedback$);
+    }
+    set(reload$);
+  },
+);
+export const saveSuggestionFeedbackReason$ = command(
+  async ({ get, set }, note: string, signal: AbortSignal) => {
+    const last = get(suggestionFeedbackConfirmation$);
+    if (!last) {
+      return;
+    }
+    const request: SuggestionFeedbackRequest = {
+      id: set(feedbackRequestId$, `${last.id}:${note}`),
+      kind: "reason",
+      targetId: last.id,
+      note,
+    };
+    await accept(
+      get(apiClient$)(suggestionsContract).feedback({
+        params: { id: last.item.id },
+        body: request,
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    if (get(suggestionFeedbackConfirmation$)?.id === last.id) {
+      set(feedbackConfirmation$, { ...last, reasonSaved: true, note });
+      set(feedbackReasonOpen$, false);
+    }
+  },
+);
 // The panel shows one suggestion at a time. A position rather than an id, so
 // consuming the card on screen brings up the one after it, and consuming the
 // last one falls back to the one before.
@@ -227,8 +408,15 @@ const agentSuggestions$ = computed(async (get) => {
 export const visibleAgentSuggestions$ = computed(async (get) => {
   get(expiryRevision$);
   const consumed = get(consumedIds$);
+  const optimistic = get(optimisticFeedbacks$);
   return (await get(agentSuggestions$)).filter((item) => {
-    return !consumed.includes(item.id) && getSuggestionExpiresAt(item) > now();
+    return (
+      !consumed.includes(item.id) &&
+      !optimistic.some((entry) => {
+        return entry.suggestionId === item.id;
+      }) &&
+      getSuggestionExpiresAt(item) > now()
+    );
   });
 });
 const reload$ = command(({ set }) => {
@@ -239,6 +427,10 @@ const reload$ = command(({ set }) => {
 export const enterAgentSuggestions$ = command(({ set }) => {
   set(index$, 0);
   set(consumedIds$, []);
+  set(optimisticFeedbacks$, []);
+  set(latestFeedbackIntent$, null);
+  set(feedbackRequests$, {});
+  set(closeSuggestionFeedback$);
   set(reload$);
 });
 export const subscribeAgentSuggestions$ = command(
@@ -384,6 +576,6 @@ export const startAgentSuggestion$ = command(
 
 export const dismissAgentSuggestion$ = command(
   async ({ set }, item: Suggestion, signal: AbortSignal) => {
-    await set(consumeAgentSuggestion$, item, null, signal);
+    await set(submitAgentSuggestionFeedback$, item, "dismissed", signal);
   },
 );
