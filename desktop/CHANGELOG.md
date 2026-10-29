@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.11](https://github.com/okou-ai/okou/compare/desktop-v0.54.10...desktop-v0.54.11) (2026-10-29)
+
+
+### Bug Fixes
+
+* **desktop:** retain and upload matching native debug symbols ([#43664](https://github.com/okou-ai/okou/issues/43664)) ([afffb54](https://github.com/okou-ai/okou/commit/afffb5496c5269ab197f51386a2fae8f488b778e))
+
 ## [0.54.10](https://github.com/okou-ai/okou/compare/desktop-v0.54.9...desktop-v0.54.10) (2026-10-28)
 
 

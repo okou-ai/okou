@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.240.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.3...runner-rs-v0.240.4) (2026-10-29)
+
+
+### Refactoring
+
+* **runner:** separate active jobs gate test source ownership ([#43830](https://github.com/okou-ai/okou/issues/43830)) ([c728faf](https://github.com/okou-ai/okou/commit/c728fafdf90339cff0fc071634a84f4949f0b9ea))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.240.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.2...runner-rs-v0.240.3) (2026-10-29)
 
 ### Release Dependencies
