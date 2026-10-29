@@ -1829,18 +1829,21 @@ export function createBddIntegrationApi(context: TestContext) {
 
     async requestPhoneUploadComplete(
       actor: ApiTestUser | null,
-      body: PhoneUploadCompleteBody,
+      body: PhoneUploadCompleteBody & { groupId?: string },
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 502)[],
     ) {
       const client = setupApp({
         context,
         routes: integrationsPhoneUploadCompleteRoutes,
       })(integrationsPhoneUploadCompleteContract);
+      const headers = authenticate(context, routeMocks, actor);
       return await accept(
-        client.complete({
-          headers: authenticate(context, routeMocks, actor),
-          body,
-        }),
+        body.groupId
+          ? client.completeGroup({
+              headers,
+              body: { ...body, groupId: body.groupId },
+            })
+          : client.complete({ headers, body }),
         statuses,
       );
     },

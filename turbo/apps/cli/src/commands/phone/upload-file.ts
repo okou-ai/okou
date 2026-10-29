@@ -11,7 +11,7 @@ import {
   JSON_OPTION_FLAGS,
   printMessageOutput,
 } from "../../lib/command/message-output";
-import { assertPhoneTarget, phoneToOption } from "./target";
+import { phoneFileGroupId, phoneFileToOption } from "./target";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".png": "image/png",
@@ -37,9 +37,9 @@ function inferContentType(localPath: string): string {
 
 export const uploadFileCommand = new Command()
   .name("upload-file")
-  .description("Send a local file to your connected phone")
+  .description("Send a local file to your connected phone or an iMessage group")
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  .addOption(phoneToOption())
+  .addOption(phoneFileToOption())
   .option(
     "--as <agent-id>",
     "Phone agent ID to send as (inferred when omitted)",
@@ -53,9 +53,11 @@ export const uploadFileCommand = new Command()
 Examples:
   Upload a file:    okou phone upload-file -f /tmp/report.pdf
   With a caption:   okou phone upload-file -f /tmp/photo.jpg -t "Here it is"
+  To a group:       okou phone upload-file --to grp_abc123 -f /tmp/photo.jpg
 
 Notes:
   - --as selects the official bot or an agent already used in your linked conversation
+  - Group uploads require a connected phone that is currently in the group and visible group history
 
 Output:
   Prints "✓ File uploaded" with the message ID, destination number, and file URL.
@@ -72,7 +74,7 @@ Output:
         contentType?: string;
         json?: boolean;
       }) => {
-        assertPhoneTarget(options.to);
+        const groupId = phoneFileGroupId(options.to);
         let fileSize: number;
         try {
           const stat = statSync(options.file);
@@ -119,6 +121,7 @@ Output:
 
         const result = await completePhoneFileUpload({
           uploadId: prepared.uploadId,
+          groupId,
           agentphoneAgentId: options.as,
           contentType: prepared.contentType,
           caption: options.text,

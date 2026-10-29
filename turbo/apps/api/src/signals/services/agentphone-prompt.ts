@@ -5,6 +5,7 @@ export function buildAgentPhonePrompt(
     readonly sharedNumber: string;
     readonly phoneHandle: string;
     readonly conversationId?: string | null;
+    readonly groupId?: string | null;
     readonly channel?: string | null;
     readonly isGroup?: boolean;
     readonly messageId?: string;
@@ -31,6 +32,9 @@ export function buildAgentPhonePrompt(
   }
   if (opts.conversationId) {
     headerParts.push(`Conversation ID: ${opts.conversationId}`);
+  }
+  if (opts.isGroup && opts.groupId) {
+    headerParts.push(`Group ID: ${opts.groupId}`);
   }
   if (opts.messageId) {
     headerParts.push(`Message ID: ${opts.messageId}`);

@@ -72,12 +72,17 @@ export async function initPhoneFileUpload(
 }
 
 export async function completePhoneFileUpload(
-  body: PhoneUploadCompleteBody,
+  body: PhoneUploadCompleteBody & { groupId?: string },
 ): Promise<PhoneUploadCompleteResponse> {
   const config = await getClientConfig();
   const client = initClient(integrationsPhoneUploadCompleteContract, config);
 
-  const result = await client.complete({ body, headers: {} });
+  const result = body.groupId
+    ? await client.completeGroup({
+        body: { ...body, groupId: body.groupId },
+        headers: {},
+      })
+    : await client.complete({ body, headers: {} });
 
   if (result.status === 200) {
     return result.body;

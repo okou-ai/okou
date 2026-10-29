@@ -1271,6 +1271,12 @@ const phoneUploadCompleteBodySchema = object({
   caption: string().max(1024).optional(),
 });
 
+const phoneGroupUploadCompleteBodySchema = phoneUploadCompleteBodySchema.extend(
+  {
+    groupId: string().min(5).max(255).startsWith("grp_"),
+  },
+);
+
 export type PhoneUploadCompleteBody = zInfer<
   typeof phoneUploadCompleteBodySchema
 >;
@@ -1304,6 +1310,21 @@ export const integrationsPhoneUploadCompleteContract = c.router({
       502: apiErrorSchema,
     },
     summary: "Finalize phone file upload and send it to a phone handle",
+  },
+  completeGroup: {
+    method: "POST",
+    path: "/api/integrations/phone/upload-file/complete-group",
+    headers: authHeadersSchema,
+    body: phoneGroupUploadCompleteBodySchema,
+    responses: {
+      200: phoneUploadCompleteResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary: "Send an uploaded file to an iMessage group the caller belongs to",
   },
 });
 

@@ -344,7 +344,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
             return HttpResponse.json({
               id: `apmsg_${randomUUID()}`,
               status: "sent",
-              channel: "sms",
+              channel: send.toNumber.startsWith("grp_") ? "imessage" : "sms",
               from_number: AGENTPHONE_BDD_PHONE_NUMBER,
               to_number: send.toNumber ?? null,
               media_urls: send.mediaUrl ? [send.mediaUrl] : send.mediaUrls,
@@ -427,18 +427,21 @@ export function createAgentPhoneBddApi(context: TestContext) {
       Status extends 200 | 400 | 401 | 403 | 404 | 502,
     >(
       token: string,
-      body: PhoneUploadCompleteBody,
+      body: PhoneUploadCompleteBody & { groupId?: string },
       statuses: readonly Status[],
     ) {
       const client = setupApp({
         context,
         routes: integrationsPhoneUploadCompleteRoutes,
       })(integrationsPhoneUploadCompleteContract);
+      const headers = { authorization: `Bearer ${token}` };
       return await accept(
-        client.complete({
-          headers: { authorization: `Bearer ${token}` },
-          body,
-        }),
+        body.groupId
+          ? client.completeGroup({
+              headers,
+              body: { ...body, groupId: body.groupId },
+            })
+          : client.complete({ headers, body }),
         statuses,
       );
     },
