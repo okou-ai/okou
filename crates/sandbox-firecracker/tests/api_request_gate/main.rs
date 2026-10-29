@@ -158,14 +158,28 @@ async fn release_control_loss_before_client_arrival_joins_without_dispatch() {
 async fn release_control_loss_during_partial_request_joins_without_dispatch() {
     let mut fixture = Fixture::new(Transition::Resume).unwrap();
     let mut client = UnixStream::connect(&fixture.front).await.unwrap();
-    client
-        .write_all(b"PATCH /vm HTTP/1.1\r\nContent-Length: 19\r\n\r\n{")
+    let partial = b"PATCH /vm HTTP/1.1\r\nContent-Length: 19\r\n\r\n{";
+    client.write_all(partial).await.unwrap();
+    let pending = tokio::time::timeout(Duration::from_secs(5), &mut fixture.control.body_pending)
         .await
+        .expect("gate did not consume the partial body and await the remainder")
         .unwrap();
-    assert!(fixture.producer.join().now_or_never().is_none());
+    assert_eq!(pending.raw, partial);
+    assert_eq!(pending.remaining_body_bytes, 18);
     drop(fixture.control.release);
+    let outcome = tokio::time::timeout(Duration::from_secs(5), fixture.producer.join()).await;
+    // Withhold EOF until cancellation has been observed, even on regression.
+    drop(client);
+    if outcome.is_err() {
+        tokio::time::timeout(Duration::from_secs(5), fixture.producer.join())
+            .await
+            .expect("producer did not join after closing the partial client")
+            .unwrap_err();
+    }
     assert!(matches!(
-        fixture.producer.join().await.unwrap(),
+        outcome
+            .expect("release loss did not cancel the pending body read")
+            .unwrap(),
         RequestOutcome::NotForwarded(None)
     ));
     assert!(fixture.backend.accept().now_or_never().is_none());

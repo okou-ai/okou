@@ -1,4 +1,4 @@
-//! The guarded map byte stream's size and pre-body rejection contract.
+//! The guarded map byte stream's size and pre-SDK validation contract.
 
 use crate::tailscale::map_reader::MapReader;
 use std::{
@@ -67,6 +67,45 @@ async fn a_complete_valid_frame_one_byte_over_one_mib_releases_nothing() {
         io::ErrorKind::InvalidData
     );
     assert!(output.is_empty(), "rejected frame must release no bytes");
+}
+
+#[tokio::test]
+async fn regional_node_limit_is_enforced_before_releasing_map_bytes() {
+    for count in [8, 9] {
+        let nodes: Vec<_> = (0..count)
+            .map(|index| {
+                serde_json::json!({
+                    "Name": format!("1-{index}"),
+                    "RegionID": 1,
+                    "HostName": "derp.synthetic.invalid",
+                    "DERPPort": 443,
+                    "IPv4": "127.0.0.1",
+                    "IPv6": "none"
+                })
+            })
+            .collect();
+        let body = serde_json::to_vec(&serde_json::json!({
+            "DERPMap": {"Regions": {"1": {
+                "RegionID": 1,
+                "RegionCode": "synthetic",
+                "RegionName": "Synthetic",
+                "Nodes": nodes
+            }}}
+        }))
+        .unwrap();
+        let mut frame = u32::try_from(body.len()).unwrap().to_le_bytes().to_vec();
+        frame.extend_from_slice(&body);
+        let mut reader = MapReader::new(Cursor::new(&frame));
+        let mut output = Vec::new();
+        let result = reader.read_to_end(&mut output).await;
+        if count == 8 {
+            result.unwrap();
+            assert_eq!(output, frame);
+        } else {
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
+            assert!(output.is_empty(), "oversized region must release no bytes");
+        }
+    }
 }
 
 #[tokio::test]

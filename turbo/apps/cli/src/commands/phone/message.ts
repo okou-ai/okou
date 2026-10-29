@@ -1,7 +1,14 @@
-import { Command } from "commander";
-import { sendPhoneMessage } from "../../lib/api/domains/integrations-phone";
+import { Command, Option } from "commander";
+import {
+  sendAgentPhoneGroupMessage,
+  sendPhoneMessage,
+} from "../../lib/api/domains/integrations-phone";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { readMessageText } from "../../lib/command/message-target";
+import {
+  parseMessageTarget,
+  readMessageText,
+  unsupportedTargetError,
+} from "../../lib/command/message-target";
 import {
   JSON_OPTION_DESCRIPTION,
   JSON_OPTION_FLAGS,
@@ -24,8 +31,19 @@ export function createPhoneMessageCommand(
       : `okou ${integration} message send`;
   return new Command()
     .name(integration === "phone" ? "message" : "send")
-    .description("Send a text message to your connected phone")
-    .addOption(phoneToOption())
+    .description(
+      integration === "imessage"
+        ? "Send text to your connected phone or an existing iMessage group"
+        : "Send a text message to your connected phone",
+    )
+    .addOption(
+      integration === "imessage"
+        ? new Option(
+            "--to <target>",
+            "Destination: me, chat:<group-id>, or a group ID (grp_...)",
+          ).default("me")
+        : phoneToOption(),
+    )
     .option(
       "--as <agent-id>",
       "Phone agent ID to send as (inferred when omitted)",
@@ -37,12 +55,20 @@ export function createPhoneMessageCommand(
       `
 Examples:
   Send a message: ${usage} -t "Hello!"
-  From stdin:     printf "Hello!" | ${usage}
+  From stdin:     printf "Hello!" | ${usage}${
+    integration === "imessage"
+      ? `\n  To a group:    ${usage} --to grp_abc123 -t "Team update"`
+      : ""
+  }
 
 Notes:
-  - Sends to the phone connected to your Okou account; connect one first
+  - The default destination is the phone connected to your Okou account; connect one first
   - --as selects the official bot or an agent already used in your linked conversation
-  - --as is inferred from the conversation when omitted`,
+  - --as is inferred from the conversation when omitted${
+    integration === "imessage"
+      ? "\n  - Group sends require a group already visible to your account and current membership\n  - Use the Group ID in the current integration context; group sends never fall back to a DM"
+      : ""
+  }`,
     )
     .action(
       withErrorHandler(
@@ -52,7 +78,24 @@ Notes:
           text?: string;
           json?: boolean;
         }) => {
-          assertPhoneTarget(options.to);
+          let groupId: string | undefined;
+          if (integration === "imessage") {
+            const target = parseMessageTarget(options.to, () => {
+              return false;
+            });
+            if (target.kind !== "me") {
+              if (target.kind !== "chat" || !target.id.startsWith("grp_")) {
+                throw unsupportedTargetError(
+                  "iMessage",
+                  target,
+                  "Use --to me or --to grp_<group-id> for an existing group",
+                );
+              }
+              groupId = target.id;
+            }
+          } else {
+            assertPhoneTarget(options.to);
+          }
           const text = readMessageText(options.text);
           if (!text) {
             throw new Error("Either --text or piped stdin must be provided", {
@@ -60,10 +103,16 @@ Notes:
             });
           }
 
-          const result = await sendPhoneMessage({
-            text,
-            agentphoneAgentId: options.as,
-          });
+          const result = groupId
+            ? await sendAgentPhoneGroupMessage({
+                groupId,
+                text,
+                agentphoneAgentId: options.as,
+              })
+            : await sendPhoneMessage({
+                text,
+                agentphoneAgentId: options.as,
+              });
 
           printMessageOutput(
             {

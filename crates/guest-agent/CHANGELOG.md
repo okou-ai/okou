@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.109.20](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.19...guest-agent-v0.109.20) (2026-10-29)
+
+
+### Bug Fixes
+
+* **guest-agent:** mask terminal cli failures before completion ([#43991](https://github.com/okou-ai/okou/issues/43991)) ([d43db38](https://github.com/okou-ai/okou/commit/d43db38287f9899510bd353d75475ee41ae7bf9a))
+
+
+### Refactoring
+
+* **guest-agent:** retire non-rpc pi maintenance routing ([#43993](https://github.com/okou-ai/okou/issues/43993)) ([19db183](https://github.com/okou-ai/okou/commit/19db183150dff97f80d5021acb11f15152f47d3d)) [#43985](https://github.com/okou-ai/okou/issues/43985)
+
 ## [0.109.19](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.18...guest-agent-v0.109.19) (2026-10-29)
 
 ## [0.109.18](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.17...guest-agent-v0.109.18) (2026-10-29)

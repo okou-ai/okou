@@ -142,30 +142,16 @@ export interface AgentPhoneMessageVisibilityRecipient {
   readonly userId: string;
 }
 
-export const resolveAgentPhoneConversationVisibilityRecipients$ = command(
+export const resolveAgentPhoneParticipantVisibilityRecipients$ = command(
   async (
     { get },
-    conversationId: string,
+    participants: readonly string[],
     asOf: Date,
     signal: AbortSignal,
   ): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> => {
-    const result = await settle(
-      getAgentPhoneConversationParticipants({ conversationId }, signal),
-      signal,
-    );
-    if (!result.ok) {
-      if (
-        isAgentPhoneApiError(result.error) ||
-        result.error instanceof TypeError ||
-        result.error instanceof SyntaxError
-      ) {
-        return [];
-      }
-      throw result.error;
-    }
     const normalizedHandles = [
       ...new Set(
-        result.value
+        participants
           .map((handle) => {
             return normalizeAgentPhoneHandle(handle, "imessage");
           })
@@ -200,6 +186,36 @@ export const resolveAgentPhoneConversationVisibilityRecipients$ = command(
       ).values(),
     ];
     return recipients;
+  },
+);
+
+export const resolveAgentPhoneConversationVisibilityRecipients$ = command(
+  async (
+    { set },
+    conversationId: string,
+    asOf: Date,
+    signal: AbortSignal,
+  ): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> => {
+    const result = await settle(
+      getAgentPhoneConversationParticipants({ conversationId }, signal),
+      signal,
+    );
+    if (!result.ok) {
+      if (
+        isAgentPhoneApiError(result.error) ||
+        result.error instanceof TypeError ||
+        result.error instanceof SyntaxError
+      ) {
+        return [];
+      }
+      throw result.error;
+    }
+    return await set(
+      resolveAgentPhoneParticipantVisibilityRecipients$,
+      result.value,
+      asOf,
+      signal,
+    );
   },
 );
 

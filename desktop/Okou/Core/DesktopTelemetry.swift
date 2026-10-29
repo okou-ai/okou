@@ -81,6 +81,18 @@ public enum DesktopTelemetry {
       }
       if let timeout {
         diagnostics["timeoutDetectedBy"] = timeout.trigger.rawValue
+        let elapsed = request.started.duration(to: observed).seconds * 1000
+        let awakeElapsed = request.awakeStarted.duration(to: timeout.awakeObservedAt).seconds * 1000
+        diagnostics["awakeElapsedMs"] = awakeElapsed
+        diagnostics["systemSuspendedMs"] = max(0, elapsed - awakeElapsed)
+        diagnostics["deadlineDetectedElapsedMs"] =
+          request.started.duration(to: timeout.detectedAt).seconds * 1000
+        diagnostics["deadlineDetectionOverrunMs"] = max(
+          0, request.deadline.duration(to: timeout.detectedAt).seconds * 1000)
+        diagnostics["helperRetiredElapsedMs"] =
+          request.started.duration(to: timeout.retiredAt).seconds * 1000
+        diagnostics["timeoutSettlementDelayMs"] = max(
+          0, timeout.detectedAt.duration(to: observed).seconds * 1000)
         diagnostics["deadlineOverrunMs"] = max(
           0, request.deadline.duration(to: observed).seconds * 1000)
         // Stdout counters describe this helper generation, not a particular request.

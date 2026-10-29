@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.24.0](https://github.com/okou-ai/okou/compare/api-v2.23.0...api-v2.24.0) (2026-10-29)
+
+
+### Features
+
+* **cli:** send text to existing imessage groups ([#43990](https://github.com/okou-ai/okou/issues/43990)) ([846f53f](https://github.com/okou-ai/okou/commit/846f53f4c20a2d641d53ad459ec4ac6c729410ac))
+
+
+### Bug Fixes
+
+* configure whatsapp regions and standardize unsupported replies ([#43971](https://github.com/okou-ai/okou/issues/43971)) ([37fffbf](https://github.com/okou-ai/okou/commit/37fffbf81e095bbebee1b5cec13d30a468f3cd80))
+
+
+### Refactoring
+
+* **api:** localize run connector and model snapshot timing ([#43978](https://github.com/okou-ai/okou/issues/43978)) ([e17db34](https://github.com/okou-ai/okou/commit/e17db34d252cf32127d77ad002365122b95e4361))
+* remove hosted site visibility feature switch ([#43947](https://github.com/okou-ai/okou/issues/43947)) ([4aade90](https://github.com/okou-ai/okou/commit/4aade9015eaf2e73d9b63fab530758ca155fed07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.19.0
+    * @okouai/core bumped to 8.800.2
+    * @okouai/db bumped to 2.11.1
+    * @okouai/pi-agent-runtime bumped to 1.51.21
+
 ## [2.23.0](https://github.com/okou-ai/okou/compare/api-v2.22.7...api-v2.23.0) (2026-10-29)
 
 

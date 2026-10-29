@@ -75,7 +75,7 @@ export function HalloweenHeader() {
   return (
     <header
       className={cn(
-        "relative z-20 flex min-h-[76px] shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-4 py-4 text-[#eef1f5] md:px-8",
+        "relative z-20 flex min-h-16 shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-5 py-3 text-[#eef1f5] md:px-8",
       )}
     >
       <HalloweenBrand />
@@ -169,7 +169,7 @@ export function HalloweenFooter() {
   return (
     <footer
       className={cn(
-        "relative z-10 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[#c0d1e512] px-5 py-4 text-[#7c8ba1] md:px-12",
+        "relative z-10 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[#c0d1e512] px-5 py-4 text-[#7c8ba1] md:px-8",
         typography.labelClassName,
       )}
     >
