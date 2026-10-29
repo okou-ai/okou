@@ -2,7 +2,6 @@
 
 @import "tailwindcss";
 @import "@okouai/ui/styles/globals.css";
-/* Keep viewer styles in the application preload to preserve bootstrap ordering. */
 
 @custom-variant pointer-coarse (@media (pointer: coarse));
 
