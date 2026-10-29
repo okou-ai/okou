@@ -53,7 +53,6 @@ async function createOutlookMailFixture() {
       "MICROSOFT_OAUTH_CLIENT_SECRET",
     ],
   });
-  owner.ownsFeatureSwitches();
   return await owner.run(async () => {
     mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_ID", "outlook-client");
     mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_SECRET", "outlook-client-secret");
@@ -172,9 +171,6 @@ async function createOutlookMailFixture() {
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    await connectors.updateFeatureSwitches(owner.actor, {
-      outlookChatMail: true,
-    });
     const agent = await bdd.createAgent(owner.actor, {
       displayName: "Outlook Mail agent",
       visibility: "private",
@@ -410,7 +406,7 @@ describe("Outlook mail in chat", () => {
     },
   );
 
-  it("requires reconnect for revoked access and hides disabled Outlook mail", async () => {
+  it("requires reconnect for revoked Outlook access", async () => {
     const fixture = await createOutlookMailFixture();
     await fixture.run(async () => {
       const linked = await accept(fixture.link(), [200]);
@@ -424,21 +420,6 @@ describe("Outlook mail in chat", () => {
         provider: "outlook",
         accessStatus: "reconnect",
       });
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        outlookChatMail: false,
-      });
-      await accept(
-        client().getDraft({ headers: authHeaders(), params }),
-        [404],
-      );
-      const list = await accept(
-        client().listThreadMail({
-          headers: authHeaders(),
-          params: { threadId: fixture.thread.id },
-        }),
-        [200],
-      );
-      expect(list.body.mails).toStrictEqual([]);
     });
   });
 

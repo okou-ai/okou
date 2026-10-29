@@ -597,7 +597,7 @@ def _classify_request(
     ):
         return BrowserAllow(sandbox_info=sandbox_info)
 
-    if sandbox_info.get("outlookMailReviewEnabled") is True and outlook_send.blocks_outlook_send(
+    if outlook_send.blocks_outlook_send(
         trusted_authority.host, flow.request.path, None, defer_batch=True
     ):
         return OutlookSendBlocked(sandbox_info=sandbox_info)
@@ -655,17 +655,14 @@ def _classify_request(
                 )
             ):
                 return platform_connector_api_fallback
-            if sandbox_info.get("outlookMailReviewEnabled") is True:
-                identities = {
-                    firewall.intent_identity
-                    for firewall in compiled_firewalls.firewalls
-                    if firewall.name == firewall_allow.name
-                }
-                owner = firewall_allow.name if identities == {firewall_allow.name} else None
-                if outlook_send.blocks_outlook_send(
-                    trusted_authority.host, flow.request.path, owner
-                ):
-                    return OutlookSendBlocked(sandbox_info=sandbox_info)
+            identities = {
+                firewall.intent_identity
+                for firewall in compiled_firewalls.firewalls
+                if firewall.name == firewall_allow.name
+            }
+            owner = firewall_allow.name if identities == {firewall_allow.name} else None
+            if outlook_send.blocks_outlook_send(trusted_authority.host, flow.request.path, owner):
+                return OutlookSendBlocked(sandbox_info=sandbox_info)
             public_destination_denial = _public_destination_denial(
                 flow,
                 firewall_allow,
@@ -694,9 +691,7 @@ def _classify_request(
     if platform_connector_api_fallback is not None:
         return platform_connector_api_fallback
 
-    if sandbox_info.get("outlookMailReviewEnabled") is True and outlook_send.blocks_outlook_send(
-        trusted_authority.host, flow.request.path, None
-    ):
+    if outlook_send.blocks_outlook_send(trusted_authority.host, flow.request.path, None):
         return OutlookSendBlocked(sandbox_info=sandbox_info)
 
     # No firewall owner was selected. Keep ordinary network fallback separate

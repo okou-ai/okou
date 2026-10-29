@@ -256,7 +256,6 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
         secret_connector_metadata_map: None,
         vars: None,
         capture_network_bodies: false,
-        outlook_mail_review_enabled: false,
         billable_firewalls: &[],
         model_usage_provider: None,
         model_usage_long_context_min_total_input_tokens: None,

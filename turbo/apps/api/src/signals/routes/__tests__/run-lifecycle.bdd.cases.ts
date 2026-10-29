@@ -11323,34 +11323,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(cancelled.status).toBe("cancelled");
       });
 
-      it("advertises Outlook draft review only while the rollout is enabled", async () => {
+      it("advertises Outlook draft review to web chat runs", async () => {
         const api = createRunsApi(context);
-        const connectors = createConnectorBddApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
-        const disabled = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "prepare an email",
-        });
-        const disabledRun = await api.readRun(actor, disabled.runId);
-        expect(disabledRun.appendSystemPrompt).not.toContain(
-          "Outlook email from web chat",
-        );
-        expect(disabledRun.appendSystemPrompt).toContain(
-          "Gmail email from web chat: use the Gmail skill",
-        );
-        await api.requestCancelRun(actor, disabled.runId, [200]);
-
-        await connectors.updateFeatureSwitches(actor, {
-          [FeatureSwitchKey.OutlookChatMail]: true,
-        });
-        const enabled = await api.createThreadRun(actor, {
+        const run = await api.createThreadRun(actor, {
           agentId,
           prompt: "prepare an Outlook email",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(enabled.runId);
-        expect(claim.featureFlags).toMatchObject({ outlookChatMail: true });
+        const claim = await api.claimRunnerJob(run.runId);
         for (const hint of [
+          "Gmail email from web chat: use the Gmail skill",
           "Outlook email from web chat",
           "X-Okou-Connector-Intent: outlook-mail",
           'Prefer: IdType="ImmutableId"',
@@ -11360,7 +11343,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]) {
           expect(claim.appendSystemPrompt).toContain(hint);
         }
-        await api.requestCancelRun(actor, enabled.runId, [200]);
+        await api.requestCancelRun(actor, run.runId, [200]);
       });
 
       it("appends the restricted explicit content policy last", async () => {
