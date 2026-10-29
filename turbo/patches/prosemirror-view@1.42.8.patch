@@ -1,7 +1,27 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..dbb5c2b7d40c47b19ba05206e0878ec1e7253ce6 100644
+index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..a0a686b01b526d8444f425d28a1e08ad508290b2 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
+@@ -1063,16 +1063,16 @@ var ViewDesc = function () {
+           var startInside = offset + child.border,
+             endInside = end - child.border;
+           if (from >= startInside && to <= endInside) {
+-            this.dirty = from == offset || to == end ? CONTENT_DIRTY : CHILD_DIRTY;
++            this.dirty = Math.max(this.dirty, from == offset || to == end ? CONTENT_DIRTY : CHILD_DIRTY);
+             if (from == startInside && to == endInside && (child.contentLost || child.dom.parentNode != this.contentDOM)) child.dirty = NODE_DIRTY;else child.markDirty(from - startInside, to - startInside);
+             return;
+           } else {
+-            child.dirty = child.dom == child.contentDOM && child.dom.parentNode == this.contentDOM && !child.children.length ? CONTENT_DIRTY : NODE_DIRTY;
++            child.dirty = Math.max(child.dirty, child.dom == child.contentDOM && child.dom.parentNode == this.contentDOM && !child.children.length ? CONTENT_DIRTY : NODE_DIRTY);
+           }
+         }
+         offset = end;
+       }
+-      this.dirty = CONTENT_DIRTY;
++      this.dirty = Math.max(this.dirty, CONTENT_DIRTY);
+     }
+   }, {
+     key: "markParentsDirty",
 @@ -1395,7 +1395,7 @@ var NodeViewDesc = function (_ViewDesc4) {
        if (!(view.state.selection instanceof prosemirrorState.TextSelection) || from < pos || to > pos + this.node.content.size) return null;
        var textNode = view.input.compositionNode;
@@ -16,7 +36,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..dbb5c2b7d40c47b19ba05206e0878ec1
      value: function updateNodeAt(node, outerDeco, innerDeco, index, view) {
        var child = this.top.children[index];
 -      if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM) child.dirty = CONTENT_DIRTY;
-+      if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM || child.contentDOM && contains(child.contentDOM, view.input.compositionNode))) child.dirty = CONTENT_DIRTY;
++      if (child.dirty == NODE_DIRTY && child.node.isBlock && child.dom == child.contentDOM) child.dirty = CONTENT_DIRTY;
        if (!child.update(node, outerDeco, innerDeco, view)) return false;
        this.destroyBetween(this.index, index);
        this.index++;
@@ -80,7 +100,36 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..dbb5c2b7d40c47b19ba05206e0878ec1
        var $cursor = view.state.selection.$cursor;
        if ($cursor && $cursor.pos > 0) view.dispatch(view.state.tr["delete"]($cursor.pos - 1, $cursor.pos).scrollIntoView());
      }, 50);
-@@ -4875,9 +4880,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -4557,10 +4562,12 @@ var DOMObserver = function () {
+         to = -1,
+         typeOver = false,
+         added = [];
++      var dirtyRanges = view.composing ? [] : null;
+       if (view.editable) {
+         for (var i = 0; i < mutations.length; i++) {
+           var result = this.registerMutation(mutations[i], added);
+           if (result) {
++            if (dirtyRanges) dirtyRanges.push(result);
+             from = from < 0 ? result.from : Math.min(result.from, from);
+             to = to < 0 ? result.to : Math.max(result.to, to);
+             if (result.typeOver) typeOver = true;
+@@ -4627,7 +4634,14 @@ var DOMObserver = function () {
+         view.scrollToSelection();
+       } else if (from > -1 || newSel) {
+         if (from > -1) {
+-          view.docView.markDirty(from, to);
++          if (dirtyRanges) {
++            for (var dirtyRangeIndex = 0; dirtyRangeIndex < dirtyRanges.length; dirtyRangeIndex++) {
++              var dirtyRange = dirtyRanges[dirtyRangeIndex];
++              view.docView.markDirty(dirtyRange.from, dirtyRange.to);
++            }
++          } else {
++            view.docView.markDirty(from, to);
++          }
+           checkCSS(view);
+         }
+         if (view.input.badSafariComposition) {
+@@ -4875,9 +4889,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
      var origin = view.input.lastSelectionTime > Date.now() - 50 ? view.input.lastSelectionOrigin : null;
      var newSel = selectionFromDOM(view, origin);
      if (newSel && !view.state.selection.eq(newSel)) {
@@ -91,7 +140,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..dbb5c2b7d40c47b19ba05206e0878ec1
        var tr = view.state.tr.setSelection(newSel);
        if (origin == "pointer") tr.setMeta("pointer", true);else if (origin == "key") tr.scrollIntoView();
        if (compositionID) tr.setMeta("composition", compositionID);
-@@ -4906,9 +4909,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -4906,9 +4918,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
    if (change) view.input.domChangeCount++;
    if ((ios && view.input.lastIOSEnter > Date.now() - 225 || android) && addedNodes.some(function (n) {
      return isElt(n) && !isInline.test(n.nodeName);
@@ -102,7 +151,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..dbb5c2b7d40c47b19ba05206e0878ec1
      view.input.lastIOSEnter = 0;
      return;
    }
-@@ -4950,15 +4951,11 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -4950,15 +4960,11 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
    var inlineChange = $from.sameParent($to) && $from.parent.inlineContent && $fromA.end() >= change.endA;
    if ((ios && view.input.lastIOSEnter > Date.now() - 225 && (!inlineChange || addedNodes.some(function (n) {
      return n.nodeName == "DIV" || n.nodeName == "P";
@@ -120,7 +169,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..dbb5c2b7d40c47b19ba05206e0878ec1
      if (android && chrome) view.domObserver.suppressSelectionUpdates();
      return;
    }
-@@ -4967,9 +4964,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -4967,9 +4973,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
      change.endB -= 2;
      $to = parse.doc.resolveNoCache(change.endB - parse.from);
      setTimeout(function () {
@@ -132,9 +181,35 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..dbb5c2b7d40c47b19ba05206e0878ec1
    }
    var chFrom = change.start,
 diff --git a/dist/index.js b/dist/index.js
-index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2dbb8b14e6 100644
+index 37521100e6800b065f48f551ceddfae2f9b48386..417d7165eb195de2befb9a49a6d4bcd8545c9efc 100644
 --- a/dist/index.js
 +++ b/dist/index.js
+@@ -1135,7 +1135,7 @@ class ViewDesc {
+             if (offset == end ? from <= end && to >= offset : from < end && to > offset) {
+                 let startInside = offset + child.border, endInside = end - child.border;
+                 if (from >= startInside && to <= endInside) {
+-                    this.dirty = from == offset || to == end ? CONTENT_DIRTY : CHILD_DIRTY;
++                    this.dirty = Math.max(this.dirty, from == offset || to == end ? CONTENT_DIRTY : CHILD_DIRTY);
+                     if (from == startInside && to == endInside &&
+                         (child.contentLost || child.dom.parentNode != this.contentDOM))
+                         child.dirty = NODE_DIRTY;
+@@ -1144,13 +1144,13 @@ class ViewDesc {
+                     return;
+                 }
+                 else {
+-                    child.dirty = child.dom == child.contentDOM && child.dom.parentNode == this.contentDOM && !child.children.length
+-                        ? CONTENT_DIRTY : NODE_DIRTY;
++                    child.dirty = Math.max(child.dirty, child.dom == child.contentDOM && child.dom.parentNode == this.contentDOM && !child.children.length
++                        ? CONTENT_DIRTY : NODE_DIRTY);
+                 }
+             }
+             offset = end;
+         }
+-        this.dirty = CONTENT_DIRTY;
++        this.dirty = Math.max(this.dirty, CONTENT_DIRTY);
+     }
+     markParentsDirty() {
+         let level = 1;
 @@ -1452,7 +1452,8 @@ class NodeViewDesc extends ViewDesc {
          let textNode = view.input.compositionNode;
          if (!textNode || !this.dom.contains(textNode.parentNode))
@@ -145,17 +220,16 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
              // Find the text in the focused node in the node, stop if it's not
              // there (may have been modified through other means, in which
              // case it should overwritten)
-@@ -1901,7 +1902,8 @@ class ViewTreeUpdater {
+@@ -1901,7 +1902,7 @@ class ViewTreeUpdater {
      }
      updateNodeAt(node, outerDeco, innerDeco, index, view) {
          let child = this.top.children[index];
 -        if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM)
-+        if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM ||
-+            child.contentDOM && contains(child.contentDOM, view.input.compositionNode)))
++        if (child.dirty == NODE_DIRTY && child.node.isBlock && child.dom == child.contentDOM)
              child.dirty = CONTENT_DIRTY;
          if (!child.update(node, outerDeco, innerDeco, view))
              return false;
-@@ -3137,6 +3139,7 @@ class InputState {
+@@ -3137,6 +3138,7 @@ class InputState {
          this.mouseDown = null;
          this.lastKeyCode = null;
          this.lastKeyCodeTime = 0;
@@ -163,7 +237,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
          this.lastClick = { time: 0, x: 0, y: 0, type: "", button: 0 };
          this.lastSelectionOrigin = null;
          this.lastSelectionTime = 0;
-@@ -3217,6 +3220,15 @@ function dispatchEvent(view, event) {
+@@ -3217,6 +3219,15 @@ function dispatchEvent(view, event) {
          (view.editable || !(event.type in editHandlers)))
          handlers[event.type](view, event);
  }
@@ -179,7 +253,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
  editHandlers.keydown = (view, _event) => {
      let event = _event;
      view.input.shiftKey = event.keyCode == 16 || event.shiftKey;
-@@ -3224,6 +3236,7 @@ editHandlers.keydown = (view, _event) => {
+@@ -3224,6 +3235,7 @@ editHandlers.keydown = (view, _event) => {
          return;
      view.input.lastKeyCode = event.keyCode;
      view.input.lastKeyCodeTime = Date.now();
@@ -187,7 +261,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
      // Suppress enter key events on Chrome Android, because those tend
      // to be part of a confused sequence of composition events fired,
      // and handling them eagerly tends to corrupt the input.
-@@ -3240,12 +3253,12 @@ editHandlers.keydown = (view, _event) => {
+@@ -3240,12 +3252,12 @@ editHandlers.keydown = (view, _event) => {
          view.input.lastIOSEnter = now;
          view.input.lastIOSEnterFallbackTimeout = setTimeout(() => {
              if (view.input.lastIOSEnter == now) {
@@ -202,7 +276,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
          event.preventDefault();
      }
      else {
-@@ -3970,7 +3983,7 @@ handlers.beforeinput = (view, _event) => {
+@@ -3970,7 +3982,7 @@ handlers.beforeinput = (view, _event) => {
              // This bug tends to close the virtual keyboard, so we refocus
              view.dom.blur();
              view.focus();
@@ -211,7 +285,37 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
                  return;
              let { $cursor } = view.state.selection;
              // Crude approximation of backspace behavior when no command handled it
-@@ -5172,7 +5185,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -4865,10 +4877,13 @@ class DOMObserver {
+             newSel = !this.currentSelection.eq(selRange) && !this.ignoreSelectionChange(selRange);
+         }
+         let from = -1, to = -1, typeOver = false, added = [];
++        let dirtyRanges = view.composing ? [] : null;
+         if (view.editable) {
+             for (let i = 0; i < mutations.length; i++) {
+                 let result = this.registerMutation(mutations[i], added);
+                 if (result) {
++                    if (dirtyRanges)
++                        dirtyRanges.push(result);
+                     from = from < 0 ? result.from : Math.min(result.from, from);
+                     to = to < 0 ? result.to : Math.max(result.to, to);
+                     if (result.typeOver)
+@@ -4927,7 +4942,14 @@ class DOMObserver {
+         }
+         else if (from > -1 || newSel) {
+             if (from > -1) {
+-                view.docView.markDirty(from, to);
++                // Keep separate mutations from invalidating a composing node's wrapper.
++                if (dirtyRanges) {
++                    for (let range of dirtyRanges)
++                        view.docView.markDirty(range.from, range.to);
++                }
++                else {
++                    view.docView.markDirty(from, to);
++                }
+                 checkCSS(view);
+             }
+             if (view.input.badSafariComposition) {
+@@ -5172,7 +5194,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
          if (newSel && !view.state.selection.eq(newSel)) {
              if (chrome && android &&
                  view.input.lastKeyCode === 13 && Date.now() - 100 < view.input.lastKeyCodeTime &&
@@ -220,7 +324,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
                  return;
              let tr = view.state.tr.setSelection(newSel);
              if (origin == "pointer")
-@@ -5209,7 +5222,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -5209,7 +5231,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
      if ((ios && view.input.lastIOSEnter > Date.now() - 225 || android) &&
          addedNodes.some(n => isElt(n) && !isInline.test(n.nodeName)) &&
          (!change || change.endA >= change.endB) &&
@@ -229,7 +333,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
          view.input.lastIOSEnter = 0;
          return;
      }
-@@ -5266,15 +5279,15 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -5266,15 +5288,15 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
      if (((ios && view.input.lastIOSEnter > Date.now() - 225 &&
          (!inlineChange || addedNodes.some(n => n.nodeName == "DIV" || n.nodeName == "P"))) ||
          (!inlineChange && looksLikeEnter(parse.doc, $from.pos, $to.pos))) &&
@@ -248,7 +352,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..c3362e16fc54e62e26a699b3eb6c8f2d
          if (android && chrome)
              view.domObserver.suppressSelectionUpdates(); // #820
          return;
-@@ -5296,9 +5309,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -5296,9 +5318,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
          parse.sel && parse.sel.anchor == parse.sel.head && parse.sel.head == change.endA) {
          change.endB -= 2;
          $to = parse.doc.resolveNoCache(change.endB - parse.from);
@@ -323,6 +427,37 @@ index 5e441c3e9219185ad647cae11c1c85f8a3b48474..50bd30265e318a50ff87e9fcba63c31d
    }
  
    let chFrom = change.start, chTo = change.endA
+diff --git a/src/domobserver.ts b/src/domobserver.ts
+index 618f2cff6ad02951fe80bd4f4c4c113ac22142d1..40168c782c9159700c5422792279c5f2dea3255c 100644
+--- a/src/domobserver.ts
++++ b/src/domobserver.ts
+@@ -184,10 +184,12 @@ export class DOMObserver {
+     }
+ 
+     let from = -1, to = -1, typeOver = false, added: Node[] = []
++    let dirtyRanges: {from: number, to: number}[] | null = view.composing ? [] : null
+     if (view.editable) {
+       for (let i = 0; i < mutations.length; i++) {
+         let result = this.registerMutation(mutations[i], added)
+         if (result) {
++          if (dirtyRanges) dirtyRanges.push(result)
+           from = from < 0 ? result.from : Math.min(result.from, from)
+           to = to < 0 ? result.to : Math.max(result.to, to)
+           if (result.typeOver) typeOver = true
+@@ -241,7 +243,12 @@ export class DOMObserver {
+       view.scrollToSelection()
+     } else if (from > -1 || newSel) {
+       if (from > -1) {
+-        view.docView.markDirty(from, to)
++        // Keep separate mutations from invalidating a composing node's wrapper.
++        if (dirtyRanges) {
++          for (let range of dirtyRanges) view.docView.markDirty(range.from, range.to)
++        } else {
++          view.docView.markDirty(from, to)
++        }
+         checkCSS(view)
+       }
+       if (view.input.badSafariComposition) {
 diff --git a/src/input.ts b/src/input.ts
 index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..965db969ce342355cab57d4353f7909d5547ca5c 100644
 --- a/src/input.ts
@@ -381,9 +516,33 @@ index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..965db969ce342355cab57d4353f7909d
        // Crude approximation of backspace behavior when no command handled it
        if ($cursor && $cursor.pos > 0) view.dispatch(view.state.tr.delete($cursor.pos - 1, $cursor.pos).scrollIntoView())
 diff --git a/src/viewdesc.ts b/src/viewdesc.ts
-index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..1b1dabcc73ae6946557a7c8212ce0cca3f78fa88 100644
+index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0841e97784ac9d7102c7053b8a9dbd1b90a06e22 100644
 --- a/src/viewdesc.ts
 +++ b/src/viewdesc.ts
+@@ -517,19 +517,19 @@ export class ViewDesc {
+       if (offset == end ? from <= end && to >= offset : from < end && to > offset) {
+         let startInside = offset + child.border, endInside = end - child.border
+         if (from >= startInside && to <= endInside) {
+-          this.dirty = from == offset || to == end ? CONTENT_DIRTY : CHILD_DIRTY
++          this.dirty = Math.max(this.dirty, from == offset || to == end ? CONTENT_DIRTY : CHILD_DIRTY)
+           if (from == startInside && to == endInside &&
+               (child.contentLost || child.dom.parentNode != this.contentDOM)) child.dirty = NODE_DIRTY
+           else child.markDirty(from - startInside, to - startInside)
+           return
+         } else {
+-          child.dirty = child.dom == child.contentDOM && child.dom.parentNode == this.contentDOM && !child.children.length
+-            ? CONTENT_DIRTY : NODE_DIRTY
++          child.dirty = Math.max(child.dirty, child.dom == child.contentDOM && child.dom.parentNode == this.contentDOM && !child.children.length
++            ? CONTENT_DIRTY : NODE_DIRTY)
+         }
+       }
+       offset = end
+     }
+-    this.dirty = CONTENT_DIRTY
++    this.dirty = Math.max(this.dirty, CONTENT_DIRTY)
+   }
+ 
+   markParentsDirty() {
 @@ -842,7 +842,8 @@ export class NodeViewDesc extends ViewDesc {
      let textNode = view.input.compositionNode
      if (!textNode || !this.dom.contains(textNode.parentNode)) return null
@@ -394,13 +553,12 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..1b1dabcc73ae6946557a7c8212ce0cca
        // Find the text in the focused node in the node, stop if it's not
        // there (may have been modified through other means, in which
        // case it should overwritten)
-@@ -1296,7 +1297,8 @@ class ViewTreeUpdater {
+@@ -1296,7 +1297,7 @@ class ViewTreeUpdater {
  
    updateNodeAt(node: Node, outerDeco: readonly Decoration[], innerDeco: DecorationSource, index: number, view: EditorView) {
      let child = this.top.children[index] as NodeViewDesc
 -    if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM) child.dirty = CONTENT_DIRTY
-+    if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM ||
-+        child.contentDOM && contains(child.contentDOM, view.input.compositionNode))) child.dirty = CONTENT_DIRTY
++    if (child.dirty == NODE_DIRTY && child.node.isBlock && child.dom == child.contentDOM) child.dirty = CONTENT_DIRTY
      if (!child.update(node, outerDeco, innerDeco, view)) return false
      this.destroyBetween(this.index, index)
      this.index++
