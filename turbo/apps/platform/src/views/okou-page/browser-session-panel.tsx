@@ -176,6 +176,7 @@ function BrowserCdpViewer({
   signals,
   liveUrl,
   instanceId,
+  windowId,
   refined,
   actions,
   overlay,
@@ -183,6 +184,7 @@ function BrowserCdpViewer({
   readonly signals: BrowserSessionSignals;
   readonly liveUrl: string;
   readonly instanceId?: string;
+  readonly windowId?: number;
   /** The Cloud browser panel switch: app tokens and presence. */
   readonly refined: boolean;
   readonly actions: ReactNode;
@@ -194,8 +196,6 @@ function BrowserCdpViewer({
   const capture = useGet(signals.viewerCapture$);
   const setCapture = useSet(signals.setViewerCapture$);
   const theme = useGet(theme$);
-  const viewerActivityRef = useSet(signals.viewerActivityRef$);
-  const setViewerStatus = useSet(signals.setViewerStatus$);
   // Keep the stream during lease refreshes, but never reuse an endpoint from a
   // previous provider instance while its replacement connection is loading.
   const connecting =
@@ -203,7 +203,8 @@ function BrowserCdpViewer({
     (connection.state === "hasData" &&
       connection.data !== null &&
       (connection.data.liveUrl !== liveUrl ||
-        connection.data.instanceId !== (instanceId ?? null)));
+        connection.data.instanceId !== (instanceId ?? null) ||
+        connection.data.windowId !== (windowId ?? null)));
   if (connecting) {
     return (
       <>
@@ -225,21 +226,18 @@ function BrowserCdpViewer({
       {actions ? <PanelActions actions={actions} /> : null}
       <div
         key={instanceId ?? liveUrl}
-        ref={viewerActivityRef}
         data-browser-session-cdp-viewer
         className="relative isolate flex min-h-0 flex-1"
       >
         <CdpViewer
           cdpUrl={connection.data.cdpUrl}
+          windowId={windowId}
           interactive
           showSettingsMenu
           windowSizeSync={windowSizeSync}
           onWindowSizeSyncChange={setWindowSizeSync}
           capture={capture}
           onCaptureChange={setCapture}
-          onStatusChange={(snapshot) => {
-            setViewerStatus(snapshot, liveUrl, instanceId);
-          }}
           extensions={[browserUse()]}
           colorScheme={theme}
           className="w-full flex-1"
@@ -415,15 +413,15 @@ export function BrowserSessionPanel({
   return (
     <PanelFrame panelRef={keepAliveRef}>
       <BrowserCdpViewer
-        key={signals.viewerKey}
         signals={signals}
         liveUrl={liveUrl}
         instanceId={session.window?.instanceId}
+        windowId={session.window?.primaryWindowId}
         refined={refined}
         actions={actions}
         overlay={overlay}
       />
-      {refined || session.window ? null : (
+      {refined ? null : (
         <p className="border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
           {browserSessionReclaimHint(session)}
         </p>

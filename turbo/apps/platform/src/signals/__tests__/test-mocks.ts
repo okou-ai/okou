@@ -1546,13 +1546,6 @@ function mockBrowserWebSocket(
         }
       }
     },
-    disconnect(url: string): void {
-      for (const socket of sockets) {
-        if (socket.url === url) {
-          socket.close();
-        }
-      }
-    },
   };
 }
 

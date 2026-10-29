@@ -651,33 +651,6 @@ async function browserUseInputWindowMatches(
   );
 }
 
-/** Resolve a viewer's selected page at the lease boundary, never from inventory. */
-export async function browserUseTargetWindow(
-  cdpUrl: string,
-  pageTargetId: string,
-  signal: AbortSignal,
-): Promise<number | null> {
-  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
-    return await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
-      const sequence = { next: 1 };
-      const targets = await browserWindowTargets(socket, sequence, deadline);
-      if (
-        !targets.some((target) => {
-          return target.type === "page" && target.targetId === pageTargetId;
-        })
-      ) {
-        return null;
-      }
-      return await nativeWindowForTarget(
-        socket,
-        pageTargetId,
-        sequence,
-        deadline,
-      );
-    });
-  });
-}
-
 /** Only a newly created, unpublished owner instance may adopt its blank page. */
 export async function initialBrowserUseWindow(
   cdpUrl: string,

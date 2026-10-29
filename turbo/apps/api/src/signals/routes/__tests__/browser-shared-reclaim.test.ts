@@ -59,8 +59,9 @@ function navigate(f: Fixture, windowId: number, url: string) {
 }
 async function renew(chat: Chat) {
   return await accept(
-    client().lease({
-      headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
+    client().leaseByThread({
+      headers,
+      params: { threadId: chat.threadId },
       body: {},
     }),
     [200],

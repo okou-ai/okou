@@ -11,6 +11,7 @@ export function mockBrowserCdp(
       readonly targetId: string;
       readonly title: string;
       readonly url: string;
+      readonly windowId?: number;
     }[];
   } = {},
 ) {
@@ -53,6 +54,19 @@ export function mockBrowserCdp(
         result = {
           sessionId: `${request.params?.targetId ?? "example-page"}-session`,
         };
+        break;
+      }
+      case "Browser.getWindowForTarget": {
+        const target = targets.find((candidate) => {
+          return candidate.targetId === request.params?.targetId;
+        });
+        if (!target) {
+          return JSON.stringify({
+            id: request.id,
+            error: { code: -32_000, message: "No target with given id found" },
+          });
+        }
+        result = { windowId: target.windowId ?? 0 };
         break;
       }
       case "Page.startScreencast": {
@@ -126,5 +140,4 @@ export function mockBrowserCdp(
     }
     return JSON.stringify({ id: request.id, result });
   });
-  return socket;
 }

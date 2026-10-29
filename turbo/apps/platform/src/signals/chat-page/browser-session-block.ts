@@ -25,10 +25,6 @@ import {
   type ImageLoadSignals,
 } from "../image-load.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
-import {
-  createBrowserViewerActivitySignals,
-  type BrowserViewerActivitySignals,
-} from "./browser-viewer-activity.ts";
 
 // One heartbeat per minute keeps an open browser panel comfortably inside its
 // ten-minute idle lease without making the lease itself stackable.
@@ -39,10 +35,7 @@ export interface BrowserSessionDescriptor {
   readonly href: string;
 }
 
-export interface BrowserSessionSignals
-  extends BrowserSessionDescriptor, BrowserViewerActivitySignals {
-  /** A fresh signal owner needs its own viewer even on the same provider. */
-  readonly viewerKey: string;
+export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   /** Load state of the session's screenshot thumbnail. */
   readonly screenshotImageLoad: ImageLoadSignals;
   readonly session$: Computed<Promise<BrowserSession | null>>;
@@ -51,6 +44,7 @@ export interface BrowserSessionSignals
     Promise<{
       readonly liveUrl: string;
       readonly instanceId: string | null;
+      readonly windowId: number | null;
       readonly cdpUrl: string;
     } | null>
   >;
@@ -63,8 +57,7 @@ export interface BrowserSessionSignals
   readonly start$: Command<Promise<void>, [AbortSignal]>;
   readonly close$: Command<Promise<void>, [AbortSignal]>;
   readonly subscribe$: Command<void, [AbortSignal]>;
-  // Legacy thread Browsers keep their heartbeat while this panel is mounted.
-  // Shared windows use the selected-page activity lifetime instead.
+  // An open panel keeps only its own chat's Browser window alive.
   readonly keepAliveRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -108,6 +101,16 @@ function activeBrowserLiveUrl(session: BrowserSession | null): string | null {
   return session?.status === "active" && session.liveUrl
     ? session.liveUrl
     : null;
+}
+
+function sameBrowserWindow(
+  left: BrowserSession["window"],
+  right: BrowserSession["window"],
+): boolean {
+  return (
+    left?.instanceId === right?.instanceId &&
+    left?.primaryWindowId === right?.primaryWindowId
+  );
 }
 
 interface BrowserMutationSignalContext {
@@ -242,6 +245,72 @@ function createViewerSettingsSignals(): Pick<
   };
 }
 
+function createBrowserSessionKeepAliveSignals(
+  descriptor: BrowserSessionDescriptor,
+  session$: BrowserSessionSignals["session$"],
+  leaseOverride$: State<BrowserSession | undefined>,
+  reload$: BrowserSessionSignals["reload$"],
+): Pick<BrowserSessionSignals, "keepAliveRef$"> {
+  const keepAliveRef$ = onRef(
+    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+      setLoop(
+        async () => {
+          const mountedSession = await get(session$);
+          signal.throwIfAborted();
+          const response = await accept(
+            get(apiClient$)(browserContract).leaseByThread({
+              params: { threadId: descriptor.threadId },
+              body: {},
+              fetchOptions: { signal },
+            }),
+            [200, 404, 409],
+            signal,
+          );
+          const currentSession = await get(session$);
+          signal.throwIfAborted();
+          // A response from the previous lifetime cannot replace a reopened
+          // window or a newly admitted shared instance.
+          if (
+            currentSession?.liveUrl !== mountedSession?.liveUrl ||
+            !sameBrowserWindow(currentSession?.window, mountedSession?.window)
+          ) {
+            return false;
+          }
+          if (
+            response.status === 200 &&
+            sameBrowserWindow(
+              response.body.browser.window,
+              currentSession?.window,
+            )
+          ) {
+            set(
+              leaseOverride$,
+              currentSession
+                ? {
+                    ...response.body.browser,
+                    // Lease responses intentionally omit the provider live
+                    // URL, so retain the one loaded by the viewer endpoint.
+                    liveUrl: currentSession.liveUrl,
+                  }
+                : response.body.browser,
+            );
+            return false;
+          }
+          // Reclaimed windows pause the panel, but a concurrent reopen keeps
+          // the mounted panel's heartbeat alive for its new lifetime.
+          set(reload$);
+          const reloadedSession = await get(session$);
+          signal.throwIfAborted();
+          return activeBrowserLiveUrl(reloadedSession) === null;
+        },
+        LEASE_HEARTBEAT_INTERVAL_MS,
+        signal,
+      );
+    }),
+  );
+  return { keepAliveRef$ };
+}
+
 export function createBrowserSessionSignals(
   threadId: string,
 ): BrowserSessionSignals {
@@ -292,6 +361,7 @@ export function createBrowserSessionSignals(
           cdpUrl: response.body.cdpUrl,
           liveUrl,
           instanceId: lifecycleSession?.window?.instanceId ?? null,
+          windowId: lifecycleSession?.window?.primaryWindowId ?? null,
         }
       : null;
   });
@@ -309,58 +379,15 @@ export function createBrowserSessionSignals(
     reload$,
   );
 
-  const keepAliveRef$ = onRef(
-    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-      setLoop(
-        async () => {
-          const mountedSession = await get(session$);
-          signal.throwIfAborted();
-          // Shared viewers renew only from selected-page input, never mounting.
-          if (mountedSession?.window) {
-            return true;
-          }
-          const response = await accept(
-            get(apiClient$)(browserContract).leaseByThread({
-              params: { threadId: descriptor.threadId },
-              body: {},
-              fetchOptions: { signal },
-            }),
-            [200, 404, 409],
-          );
-          if (response.status === 200) {
-            const currentSession = await get(session$);
-            signal.throwIfAborted();
-            // Shared admission can replace the legacy lifetime during IO.
-            if (currentSession?.window) {
-              return true;
-            }
-            set(
-              leaseOverride$,
-              currentSession
-                ? {
-                    ...response.body.browser,
-                    // Lease responses intentionally omit the provider live
-                    // URL, so retain the one loaded by the viewer endpoint.
-                    liveUrl: currentSession.liveUrl,
-                  }
-                : response.body.browser,
-            );
-            return false;
-          }
-          // The browser was reclaimed. Stop the heartbeat and let the panel
-          // offer a resume instead.
-          set(reload$);
-          return true;
-        },
-        LEASE_HEARTBEAT_INTERVAL_MS,
-        signal,
-      );
-    }),
+  const keepAliveSignals = createBrowserSessionKeepAliveSignals(
+    descriptor,
+    session$,
+    leaseOverride$,
+    reload$,
   );
 
   return {
     ...descriptor,
-    viewerKey: crypto.randomUUID(),
     screenshotImageLoad,
     session$,
     panelSession$: session$,
@@ -371,13 +398,7 @@ export function createBrowserSessionSignals(
     reload$,
     reloadPanel$: reload$,
     ...subscriptionSignals,
-    keepAliveRef$,
-    ...createBrowserViewerActivitySignals({
-      threadId,
-      session$,
-      leaseOverride$,
-      reload$,
-    }),
+    ...keepAliveSignals,
   };
 }
 
