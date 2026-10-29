@@ -94,8 +94,10 @@ describe("server-owned shared Browser recovery", () => {
     );
     await second.owned.run(async () => {
       const b = await second.start();
-      const rejected = await accept(use(b), [502]);
-      expect(rejected.body.error.code).toBe("BROWSER_USE_INVALID_RESPONSE");
+      await expect(use(b)).resolves.toMatchObject({
+        status: 502,
+        body: { error: { code: "BROWSER_USE_INVALID_RESPONSE" } },
+      });
       expect(
         (await fetch(`${PROVIDER_URL}/profiles/${profileId}`)).status,
       ).toBe(200);
