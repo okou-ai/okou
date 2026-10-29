@@ -1,4 +1,20 @@
 import { uuid } from "zod";
+import type { ConnectorCheckPolicy } from "@okouai/api-contracts/contracts/connector-check";
+
+export function customUnknownEndpointPolicyGuidance(
+  policy: ConnectorCheckPolicy,
+): string {
+  switch (policy.outcome) {
+    case "allow":
+      return "The permission check allows this request. No additional permission approval is needed. This does not verify credentials or upstream API success.";
+    case "deny":
+      return "The unknown endpoint policy denies this request.";
+    case "ask":
+      return "The unknown endpoint policy blocks this request.";
+    case "unavailable":
+      return "Permission policy is unavailable, so permission status cannot be determined.";
+  }
+}
 
 export function customConnectorIdFromSelector(
   selector: string | undefined,
@@ -25,7 +41,7 @@ export function customConnectorSettingsGuidance(
     permission === undefined
       ? "Review its accounts and agent access. Reconnect or select an available account as needed."
       : permission === "__unknown__"
-        ? "There is no custom unknown-endpoint approval control. Ask an administrator to review the connector's routing and permission definition."
+        ? "There is no custom unknown-endpoint approval control. Use okou connector check to inspect policy.outcome. Only deny/ask outcomes need an administrator to review the connector's routing and permission definition. An allow outcome needs no additional permission approval; unavailable means the permission status could not be determined."
         : "Open the custom connector's agent access management, select the affected agent, and review Permissions.";
   return `Custom connector ${customConnectorId} uses the existing connector settings flow, not a builtin permission approval link.\nOpen [Connectors](${url}) and select this custom connector. ${steps}`;
 }

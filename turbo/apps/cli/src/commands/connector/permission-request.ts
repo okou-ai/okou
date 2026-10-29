@@ -314,13 +314,18 @@ Notes:
   - A platform URL is output only when that request maps to a denied or approval-required permission
   - Builtin requests require --url and run-scoped policy data; an unavailable
     non-run diagnostic cannot produce a builtin permission approval
-  - Use --permission __unknown__ for diagnosed builtin unknown endpoints
+  - Use --permission __unknown__ only for diagnosed builtin deny/ask unknown endpoints
+  - unknown-endpoint means no named permission matched; unknown-policy identifies
+    the fallback policy used. Neither label alone means access was denied.
+    Follow policy.outcome: allow needs no additional permission approval; deny/ask
+    blocks the request; unavailable means permission status could not be determined.
+    An allowed permission check does not verify credentials or upstream API success.
   - Custom HTTP connectors with permission bundles use Connectors > agent access
     > Permissions. MCP connectors have Agent access but no HTTP permission bundle.
     Custom UUIDs, full slugs, and exact unique display names, optionally prefixed
     with custom:, resolve to this settings guidance rather than a builtin approval link.
-  - Custom unknown endpoints have no approval control; ask an administrator
-    to review the connector's routing and permission definition
+  - Only custom deny/ask outcomes need an administrator to review the connector's
+    routing and permission definition. There is no custom unknown-endpoint approval control.
   - Inside a run, --agent must match the current Agent; omit it to use OKOU_AGENT_ID.
     Outside a run, --agent selects the Agent's permission page.
     Agent selection does not change the accounts admitted to a run.
