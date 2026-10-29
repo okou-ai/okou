@@ -798,7 +798,7 @@ test("An enabled secondary Agent does not display the user's suggestions", async
   expect(screen.queryByText(makeSuggestion().title)).not.toBeInTheDocument();
 });
 
-test("Custom direction stays expanded below the dismiss control and only prepares the saved composer", async () => {
+test("Custom direction stays expanded above the feedback actions and only prepares the saved composer", async () => {
   const pool = mockPool();
   const saved: UserMessageDocument[] = [];
   context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
@@ -819,7 +819,7 @@ test("Custom direction stays expanded below the dismiss control and only prepare
   );
   expect(
     custom.compareDocumentPosition(button("Dismiss")) &
-      Node.DOCUMENT_POSITION_PRECEDING,
+      Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   await fill(composer(), "Keep my original draft");
   await userEvent.setup().click(custom);
@@ -1096,8 +1096,17 @@ test("Feedback stays available after the last card, accepts an optional reason, 
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
-  expect(button("Already done")).toBeInTheDocument();
-  expect(button("Not planned")).toBeInTheDocument();
+  const actions = ["Dismiss", "Already done", "Not planned", "Less like this"];
+  const suggestion = screen.getByRole("region", { name: "Suggestions" });
+  expect(
+    queryAllByRoleFast("button", suggestion)
+      .map((action) => {
+        return action.textContent?.trim();
+      })
+      .filter((label) => {
+        return label !== undefined && actions.includes(label);
+      }),
+  ).toStrictEqual(actions);
   await userEvent.setup().click(button("Less like this"));
   await screen.findByText(
     "You’ll see fewer suggestions like this (project review).",
