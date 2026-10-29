@@ -1,12 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { isDeepStrictEqual } from "node:util";
-import { array, union } from "zod";
 import { command } from "ccstate";
-import { and, eq, exists, not, sql } from "drizzle-orm";
+import { and, arrayContains, eq, not, sql } from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
@@ -15,13 +14,13 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   suggestionSchema,
-  suggestionReceiptSchema,
   getSuggestionExpiresAt,
-  SUGGESTION_RETENTION_MS,
   type Suggestion,
   type SuggestionCreate,
   type SuggestionUpdate,
   type SuggestionConsume,
+  type SuggestionFeedback,
+  type SuggestionFeedbackRequest,
 } from "@okouai/api-contracts/contracts/suggestions";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
@@ -32,14 +31,22 @@ import {
   resourceUnavailable,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { settle } from "../utils";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
-import { retainedSuggestionEntry } from "./agent-suggestions-lifecycle";
+import {
+  liveSuggestion,
+  retainedSuggestion,
+  suggestionRow,
+  suggestionContent,
+} from "./agent-suggestions-lifecycle";
+import {
+  storedSuggestion$,
+  suggestionOwner,
+} from "./agent-suggestion-read.service";
 import {
   hasValidSuggestionConsumeToken,
   withSuggestionConsumeToken,
@@ -53,46 +60,44 @@ interface Owner {
   readonly userId: string;
   readonly orgId: string;
 }
-const entriesSchema = array(union([suggestionSchema, suggestionReceiptSchema]));
-
-function scope(owner: Owner) {
-  return and(
-    eq(agentSuggestions.orgId, owner.orgId),
-    eq(agentSuggestions.userId, owner.userId),
+function scope(owner: Owner, id: string) {
+  return and(suggestionOwner(owner), eq(agentSuggestions.id, id));
+}
+function containsOption(optionId: string) {
+  return optionId === "custom"
+    ? sql`${agentSuggestions.content}->'customOption'->>'id' = 'custom'`
+    : sql`${agentSuggestions.content}->'options' @> ${sql.param(JSON.stringify([{ id: optionId }]))}::jsonb`;
+}
+function feedbackIdentity(id: string) {
+  return arrayContains(
+    agentSuggestions.feedbacks,
+    sql`${sql.param(JSON.stringify([{ id }]))}::jsonb`,
   );
 }
-function contains(id: string, active: boolean, at: Date) {
-  const status = active ? sql`AND item->>'status' = 'active'` : sql.empty();
-  return exists(
-    sql`(SELECT 1 FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${eq(sql`item->>'id'`, id)} AND ${retainedSuggestionEntry(at)} ${status})`,
-  );
+/** Feedback context is captured from the canonical card in the same write. */
+type NewFeedback = Omit<SuggestionFeedback, "context">;
+function feedbackInput(
+  kind: SuggestionFeedback["kind"],
+  id: string = randomUUID(),
+  targetId: string | null = null,
+  note = "",
+): NewFeedback {
+  return {
+    id,
+    kind,
+    targetId,
+    note,
+    learnedAt: null,
+    createdAt: nowDate().toISOString(),
+  };
 }
-function containsOption(id: string, optionId: string) {
-  const option =
-    optionId === "custom"
-      ? { id, customOption: { id: optionId } }
-      : { id, options: [{ id: optionId }] };
-  return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([option]))}::jsonb`;
+function storedFeedback(feedback: NewFeedback, optionId?: string | null) {
+  const context =
+    feedback.targetId === null
+      ? sql`jsonb_build_object('title', ${agentSuggestions.content}->'title', 'rationale', ${agentSuggestions.content}->'rationale', 'scope', ${agentSuggestions.content}->'feedbackScope', 'optionLabel', (SELECT choice->'label' FROM jsonb_array_elements(${agentSuggestions.content}->'options') AS choice WHERE choice->>'id' = ${optionId ?? ""} LIMIT 1))`
+      : sql`(SELECT previous->'context' FROM jsonb_array_elements(${agentSuggestions.feedbacks}) AS previous WHERE previous->>'id' = ${feedback.targetId} LIMIT 1)`;
+  return sql`(${sql.param(JSON.stringify(feedback))}::jsonb || jsonb_build_object('context', ${context}))`;
 }
-function containsActive(id: string) {
-  return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([{ id, status: "active" }]))}::jsonb`;
-}
-/** Compact terminal receipts and prune entries outside their lifetime. */
-function compactEntries(at: Date) {
-  return sql`COALESCE((SELECT jsonb_agg(CASE WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${retainedSuggestionEntry(at)}), '[]'::jsonb)`;
-}
-function capacityViolation(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    "code" in error.cause &&
-    error.cause.code === "23514" &&
-    "constraint" in error.cause &&
-    error.cause.constraint === "agent_suggestions_entries_bound"
-  );
-}
-
 export const suggestionAccess$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -207,57 +212,6 @@ const validateThread$ = command(
   },
 );
 
-const storedEntries$ = command(
-  async ({ get }, owner: Owner, signal: AbortSignal) => {
-    const [row] = await get(db$)
-      .select({ entries: agentSuggestions.entries })
-      .from(agentSuggestions)
-      .where(scope(owner))
-      .limit(1);
-    signal.throwIfAborted();
-    return entriesSchema.parse(row?.entries ?? []);
-  },
-);
-
-export const readSuggestions$ = command(
-  async ({ set }, owner: Owner, signal: AbortSignal) => {
-    const entries = await set(storedEntries$, owner, signal);
-    const at = nowDate().getTime();
-    const suggestions = entries
-      .filter((item): item is Suggestion => {
-        return item.status === "active" && getSuggestionExpiresAt(item) > at;
-      })
-      .map((item) => {
-        return withSuggestionConsumeToken(owner, {
-          ...item,
-          expiresAt: new Date(getSuggestionExpiresAt(item)).toISOString(),
-        });
-      })
-      .sort((a, b) => {
-        return (
-          b.priority - a.priority ||
-          a.createdAt.localeCompare(b.createdAt) ||
-          a.id.localeCompare(b.id)
-        );
-      });
-    const receipts = entries
-      .filter((item) => {
-        return (
-          item.status !== "active" &&
-          Date.parse(item.updatedAt) + SUGGESTION_RETENTION_MS > at
-        );
-      })
-      .sort((a, b) => {
-        return b.updatedAt.localeCompare(a.updatedAt);
-      })
-      .slice(0, 100)
-      .map((item) => {
-        return suggestionReceiptSchema.parse(item);
-      });
-    return { status: 200 as const, body: { suggestions, receipts } };
-  },
-);
-
 export const createSuggestion$ = command(
   async (
     { set },
@@ -295,31 +249,41 @@ export const createSuggestion$ = command(
       createdAt: timestamp,
       updatedAt: timestamp,
     });
-    const inserted = await settle(
-      set(writeDb$)
-        .insert(agentSuggestions)
-        .values({ ...owner, entries: [item] })
-        .onConflictDoUpdate({
-          target: [agentSuggestions.orgId, agentSuggestions.userId],
-          set: {
-            entries: sql`${compactEntries(at)} || ${sql.param(JSON.stringify([item]))}::jsonb`,
-          },
-          setWhere: not(contains(input.id, false, at)),
-        })
-        .returning({ entries: agentSuggestions.entries }),
-      signal,
-    );
+    const [inserted] = await set(writeDb$)
+      .insert(agentSuggestions)
+      .values({
+        ...owner,
+        id: item.id,
+        status: item.status,
+        priority: item.priority,
+        content: suggestionContent(item),
+        selectedOptionId: null,
+        feedbacks: [],
+        createdAt: at,
+        updatedAt: at,
+        expiresAt: new Date(expiresAt),
+      })
+      .onConflictDoUpdate({
+        target: [
+          agentSuggestions.orgId,
+          agentSuggestions.userId,
+          agentSuggestions.id,
+        ],
+        set: {
+          status: "active",
+          priority: item.priority,
+          content: suggestionContent(item),
+          selectedOptionId: null,
+          feedbacks: [],
+          createdAt: at,
+          updatedAt: at,
+          expiresAt: new Date(expiresAt),
+        },
+        setWhere: not(retainedSuggestion(at)),
+      })
+      .returning();
     signal.throwIfAborted();
-    if (!inserted.ok) {
-      if (capacityViolation(inserted.error)) {
-        return conflict(
-          "The pool already contains ten active suggestions. List the pool and explicitly delete an item before creating another.",
-        );
-      }
-      throw inserted.error;
-    }
-    const rows = inserted.value;
-    if (rows.length > 0) {
+    if (inserted) {
       await publishAgentSuggestionsChangedSafely(owner);
       signal.throwIfAborted();
       return {
@@ -327,15 +291,13 @@ export const createSuggestion$ = command(
         body: withSuggestionConsumeToken(owner, item),
       };
     }
-    const entries = await set(storedEntries$, owner, signal);
-    const existing = entries.find((entry) => {
-      return entry.id === input.id;
-    });
+    const existing = await set(storedSuggestion$, owner, input.id, signal);
     if (
       existing?.status === "active" &&
       existing.title === input.title &&
       existing.rationale === input.rationale &&
       existing.priority === input.priority &&
+      isDeepStrictEqual(existing.feedbackScope, input.feedbackScope) &&
       isDeepStrictEqual(existing.options, input.options) &&
       isDeepStrictEqual(existing.customOption, input.customOption)
     ) {
@@ -358,50 +320,69 @@ const changeSuggestion$ = command(
     patch: SuggestionUpdate & {
       readonly status?: "consumed" | "removed";
       readonly selectedOptionId?: string | null;
+      readonly feedback?: NewFeedback;
     },
     signal: AbortSignal,
   ) => {
     const at = nowDate();
     const timestamp = at.toISOString();
-    const data = {
-      ...patch,
-      updatedAt: timestamp,
-      ...(patch.status === undefined
-        ? {
-            expiresAt: new Date(
-              getSuggestionExpiresAt({
-                updatedAt: timestamp,
-                expiresAt: patch.expiresAt,
-              }),
-            ).toISOString(),
-          }
-        : {}),
-    };
+    const {
+      feedback,
+      status,
+      selectedOptionId,
+      priority,
+      expiresAt,
+      ...content
+    } = patch;
     const [row] = await set(writeDb$)
       .update(agentSuggestions)
       .set({
-        entries: sql`(SELECT jsonb_agg(CASE WHEN item->>'id' = ${id} THEN item || ${sql.param(JSON.stringify(data))}::jsonb WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${eq(sql`item->>'id'`, id)} OR ${retainedSuggestionEntry(at)})`,
+        content: Object.keys(content).length
+          ? sql`${agentSuggestions.content} || ${sql.param(JSON.stringify(content))}::jsonb`
+          : undefined,
+        priority,
+        status,
+        selectedOptionId,
+        updatedAt: at,
+        expiresAt:
+          status === undefined
+            ? new Date(
+                getSuggestionExpiresAt({ updatedAt: timestamp, expiresAt }),
+              )
+            : undefined,
+        feedbacks: feedback
+          ? sql`${agentSuggestions.feedbacks} || jsonb_build_array(${storedFeedback(feedback, selectedOptionId)})`
+          : undefined,
       })
       .where(
         and(
-          scope(owner),
-          patch.status === "consumed"
-            ? containsActive(id)
-            : contains(id, true, at),
-          typeof patch.selectedOptionId === "string"
-            ? containsOption(id, patch.selectedOptionId)
+          scope(owner, id),
+          patch.feedbackScope
+            ? eq(
+                sql`${agentSuggestions.content}->'feedbackScope'->>'key'`,
+                patch.feedbackScope.key,
+              )
+            : undefined,
+          feedback
+            ? and(
+                sql`jsonb_array_length(${agentSuggestions.feedbacks}) < 100`,
+                not(feedbackIdentity(feedback.id)),
+              )
+            : undefined,
+          status === "consumed"
+            ? eq(agentSuggestions.status, "active")
+            : liveSuggestion(at),
+          typeof selectedOptionId === "string"
+            ? containsOption(selectedOptionId)
             : undefined,
         ),
       )
-      .returning({ entries: agentSuggestions.entries });
+      .returning();
     signal.throwIfAborted();
     if (!row) {
       return null;
     }
-    const item = entriesSchema.parse(row.entries).find((entry) => {
-      return entry.id === id;
-    });
-    const result = suggestionSchema.parse(item);
+    const result = suggestionSchema.parse(suggestionRow(row));
     await publishAgentSuggestionsChangedSafely(owner);
     signal.throwIfAborted();
     return result;
@@ -453,40 +434,78 @@ const consumeCachedSuggestion$ = command(
     { set },
     owner: Owner,
     snapshot: Suggestion,
-    optionId: string | null,
+    action: {
+      readonly optionId: string | null;
+      readonly feedback: NewFeedback;
+    },
     signal: AbortSignal,
   ) => {
+    const { optionId, feedback } = action;
     const at = nowDate();
     const item = suggestionSchema.parse({
       ...snapshot,
       consumeToken: undefined,
       status: "consumed",
       selectedOptionId: optionId,
+      feedbacks: [
+        ...snapshot.feedbacks,
+        {
+          ...feedback,
+          context: {
+            title: snapshot.title,
+            rationale: snapshot.rationale,
+            scope: snapshot.feedbackScope,
+            optionLabel:
+              snapshot.options.find((option) => {
+                return option.id === optionId;
+              })?.label ?? null,
+          },
+        },
+      ],
       updatedAt: at.toISOString(),
     });
-    const rows = await set(writeDb$)
+    const [inserted] = await set(writeDb$)
       .insert(agentSuggestions)
-      .values({ ...owner, entries: [item] })
-      .onConflictDoUpdate({
-        target: [agentSuggestions.orgId, agentSuggestions.userId],
-        set: {
-          entries: sql`${compactEntries(at)} || ${sql.param(JSON.stringify([item]))}::jsonb`,
-        },
-        setWhere: and(
-          not(contains(snapshot.id, false, at)),
-          not(containsActive(snapshot.id)),
-        ),
+      .values({
+        ...owner,
+        id: item.id,
+        status: "consumed",
+        priority: item.priority,
+        content: suggestionContent(item),
+        selectedOptionId: optionId,
+        feedbacks: item.feedbacks,
+        createdAt: new Date(item.createdAt),
+        updatedAt: at,
+        expiresAt: new Date(getSuggestionExpiresAt(snapshot)),
       })
-      .returning({ entries: agentSuggestions.entries });
+      .onConflictDoUpdate({
+        target: [
+          agentSuggestions.orgId,
+          agentSuggestions.userId,
+          agentSuggestions.id,
+        ],
+        set: {
+          status: "consumed",
+          priority: item.priority,
+          content: suggestionContent(item),
+          selectedOptionId: optionId,
+          feedbacks: item.feedbacks,
+          createdAt: new Date(item.createdAt),
+          updatedAt: at,
+          expiresAt: new Date(getSuggestionExpiresAt(snapshot)),
+        },
+        setWhere: not(retainedSuggestion(at)),
+      })
+      .returning({ id: agentSuggestions.id });
     signal.throwIfAborted();
-    if (rows.length === 0) {
+    if (!inserted) {
       // Publication may have won after the first consume found no active card.
       // Consume its canonical value rather than replacing it with cached data.
       return await set(
         changeSuggestion$,
         owner,
         snapshot.id,
-        { status: "consumed", selectedOptionId: optionId },
+        { status: "consumed", selectedOptionId: optionId, feedback },
         signal,
       );
     }
@@ -505,6 +524,9 @@ export const consumeSuggestion$ = command(
     signal: AbortSignal,
   ) => {
     const { optionId, snapshot } = input;
+    const feedback = feedbackInput(
+      optionId === null ? "dismissed" : "option_selected",
+    );
     if (optionId === "custom") {
       return conflict(
         "Send your question or direction to choose the custom option.",
@@ -514,7 +536,7 @@ export const consumeSuggestion$ = command(
       changeSuggestion$,
       owner,
       id,
-      { status: "consumed", selectedOptionId: optionId },
+      { status: "consumed", selectedOptionId: optionId, feedback },
       signal,
     );
     if (
@@ -530,13 +552,218 @@ export const consumeSuggestion$ = command(
         consumeCachedSuggestion$,
         owner,
         snapshot,
-        optionId,
+        { optionId, feedback },
         signal,
       );
     }
     return item
       ? { status: 200 as const, body: item }
       : conflict("Suggestion or selected option is no longer available.");
+  },
+);
+
+type FeedbackRequest = SuggestionFeedbackRequest & {
+  readonly snapshot?: Suggestion;
+};
+
+const recordInitialSuggestionFeedback$ = command(
+  async (
+    { set },
+    owner: Owner,
+    id: string,
+    input: FeedbackRequest,
+    signal: AbortSignal,
+  ) => {
+    const feedback = feedbackInput(
+      input.kind,
+      input.id,
+      input.targetId,
+      input.note,
+    );
+    if (input.targetId !== null) {
+      return badRequestMessage(
+        "This feedback does not target an earlier response.",
+      );
+    }
+    const [saved] = await set(writeDb$)
+      .update(agentSuggestions)
+      .set({
+        status: "consumed",
+        selectedOptionId: null,
+        updatedAt: nowDate(),
+        feedbacks: sql`${agentSuggestions.feedbacks} || jsonb_build_array(${storedFeedback(feedback)})`,
+      })
+      .where(
+        and(
+          scope(owner, id),
+          eq(agentSuggestions.status, "active"),
+          sql`jsonb_array_length(${agentSuggestions.feedbacks}) < 100`,
+          not(feedbackIdentity(input.id)),
+        ),
+      )
+      .returning({ id: agentSuggestions.id });
+    signal.throwIfAborted();
+    if (saved) {
+      await publishAgentSuggestionsChangedSafely(owner);
+      signal.throwIfAborted();
+      return { status: 200 as const, body: { restored: false } };
+    }
+    let changed: Suggestion | null = null;
+    if (
+      input.snapshot?.id === id &&
+      hasValidSuggestionConsumeToken(owner, input.snapshot)
+    ) {
+      changed = await set(
+        consumeCachedSuggestion$,
+        owner,
+        input.snapshot,
+        { optionId: null, feedback },
+        signal,
+      );
+    }
+    if (changed) {
+      return { status: 200 as const, body: { restored: false } };
+    }
+    const current = await set(storedSuggestion$, owner, id, signal);
+    return current?.feedbacks.some((item) => {
+      return (
+        item.id === input.id &&
+        item.kind === input.kind &&
+        item.targetId === input.targetId &&
+        item.note === input.note
+      );
+    })
+      ? { status: 200 as const, body: { restored: false } }
+      : conflict(
+          "Suggestion is no longer available. Refresh your suggestions.",
+        );
+  },
+);
+
+const reviseSuggestionFeedback$ = command(
+  async (
+    { set },
+    owner: Owner,
+    id: string,
+    revision: {
+      readonly input: FeedbackRequest;
+      readonly feedbacks: readonly SuggestionFeedback[];
+    },
+    signal: AbortSignal,
+  ) => {
+    const { input, feedbacks } = revision;
+    const feedback = feedbackInput(
+      input.kind,
+      input.id,
+      input.targetId,
+      input.note,
+    );
+    const target = feedbacks.find((item) => {
+      return item.id === input.targetId;
+    });
+    if (
+      !target ||
+      target.kind === "undo" ||
+      target.kind === "reason" ||
+      feedbacks.some((item) => {
+        return item.kind === "undo" && item.targetId === input.targetId;
+      })
+    ) {
+      return conflict("This feedback is no longer available to change.");
+    }
+    if (input.kind === "reason" && input.note.length === 0) {
+      return badRequestMessage("Provide a reason to save.");
+    }
+    const snapshot = input.snapshot;
+    const canRestore =
+      input.kind === "undo" &&
+      snapshot?.id === id &&
+      hasValidSuggestionConsumeToken(owner, snapshot) &&
+      getSuggestionExpiresAt(snapshot) > nowDate().getTime();
+    const restore = canRestore
+      ? eq(agentSuggestions.status, "consumed")
+      : sql`false`;
+    const at = nowDate();
+    const [row] = await set(writeDb$)
+      .update(agentSuggestions)
+      .set({
+        status: sql`CASE WHEN ${restore} THEN 'active' ELSE ${agentSuggestions.status} END`,
+        content: canRestore
+          ? sql`CASE WHEN ${restore} THEN ${sql.param(JSON.stringify(suggestionContent(snapshot)))}::jsonb ELSE ${agentSuggestions.content} END`
+          : undefined,
+        selectedOptionId: sql`CASE WHEN ${restore} THEN NULL ELSE ${agentSuggestions.selectedOptionId} END`,
+        expiresAt: canRestore
+          ? sql`CASE WHEN ${restore} THEN ${new Date(getSuggestionExpiresAt(snapshot)).toISOString()}::timestamptz ELSE ${agentSuggestions.expiresAt} END`
+          : undefined,
+        updatedAt: at,
+        feedbacks: sql`${agentSuggestions.feedbacks} || jsonb_build_array(${storedFeedback(feedback)})`,
+      })
+      .where(
+        and(
+          scope(owner, id),
+          sql`jsonb_array_length(${agentSuggestions.feedbacks}) < 100`,
+          feedbackIdentity(input.targetId ?? ""),
+          not(feedbackIdentity(input.id)),
+          sql`NOT EXISTS (SELECT 1 FROM jsonb_array_elements(${agentSuggestions.feedbacks}) AS response WHERE response->>'kind' = 'undo' AND response->>'targetId' = ${input.targetId})`,
+        ),
+      )
+      .returning({ status: agentSuggestions.status });
+    signal.throwIfAborted();
+    if (!row) {
+      return conflict("The feedback changed. Refresh your suggestions.");
+    }
+    await publishAgentSuggestionsChangedSafely(owner);
+    signal.throwIfAborted();
+    return {
+      status: 200 as const,
+      body: { restored: row.status === "active" },
+    };
+  },
+);
+
+export const recordSuggestionFeedback$ = command(
+  async (
+    { set },
+    owner: Owner,
+    id: string,
+    input: FeedbackRequest,
+    signal: AbortSignal,
+  ) => {
+    if (input.kind !== "undo" && input.kind !== "reason") {
+      return await set(
+        recordInitialSuggestionFeedback$,
+        owner,
+        id,
+        input,
+        signal,
+      );
+    }
+    const existing = await set(storedSuggestion$, owner, id, signal);
+    const duplicate = existing?.feedbacks.find((feedback) => {
+      return feedback.id === input.id;
+    });
+    if (duplicate && existing) {
+      if (
+        duplicate.kind !== input.kind ||
+        duplicate.targetId !== input.targetId ||
+        duplicate.note !== input.note
+      ) {
+        return conflict(
+          "Feedback identity already exists with a different response.",
+        );
+      }
+      return {
+        status: 200 as const,
+        body: { restored: existing.status === "active" },
+      };
+    }
+    return await set(
+      reviseSuggestionFeedback$,
+      owner,
+      id,
+      { input, feedbacks: existing?.feedbacks ?? [] },
+      signal,
+    );
   },
 );
 
@@ -584,11 +811,14 @@ export const validateSuggestionFollowup$ = command(
     ) {
       return null;
     }
-    const entries = await set(storedEntries$, owner, signal);
     for (const { context, part } of suggestionFeedbacks(document)) {
-      const item = entries.find((entry): entry is Suggestion => {
-        return entry.id === context.suggestionId && entry.status === "active";
-      });
+      const entry = await set(
+        storedSuggestion$,
+        owner,
+        context.suggestionId,
+        signal,
+      );
+      const item = entry?.status === "active" ? entry : null;
       // A saved quote is self-contained and can outlive its disposable card.
       // Retired or absent cards grant no new authority and keep their receipt.
       if (!item) {
@@ -651,7 +881,11 @@ export const recordAcceptedSuggestionFollowup$ = command(
         changeSuggestion$,
         owner,
         context.suggestionId,
-        { status: "consumed", selectedOptionId: "custom" },
+        {
+          status: "consumed",
+          selectedOptionId: "custom",
+          feedback: feedbackInput("custom_sent", eventId),
+        },
         signal,
       );
     }

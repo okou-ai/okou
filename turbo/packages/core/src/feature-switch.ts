@@ -124,12 +124,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Review Outlook drafts and confirm sending from chat.",
     enabled: false,
   },
-  [FeatureSwitchKey.ThreadEmailManager]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Thread email manager",
-    description: "Browse thread emails and send or delete selected drafts.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",
@@ -313,13 +307,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Garmin Connect wellness connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.ICloudConnector]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "iCloud Calendar and Contacts",
-    description:
-      "Connect iCloud calendars and contacts with an app-specific password.",
-    enabled: true,
   },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",

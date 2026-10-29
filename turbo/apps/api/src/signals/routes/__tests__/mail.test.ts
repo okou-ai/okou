@@ -86,7 +86,7 @@ async function createOutlookMailFixture() {
       exists: true,
       unauthorized: false,
       sendCount: 0,
-      sendStatus: 202,
+      sendStatus: 202 as number | "network-error",
       propagating: false,
     };
     const files = [
@@ -163,7 +163,9 @@ async function createOutlookMailFixture() {
       ),
       http.post(`${base}/messages/:messageId/send`, () => {
         state.sendCount += 1;
-        return new HttpResponse(null, { status: state.sendStatus });
+        return state.sendStatus === "network-error"
+          ? HttpResponse.error()
+          : new HttpResponse(null, { status: state.sendStatus });
       }),
       http.delete(`${base}/messages/:messageId`, () => {
         state.exists = false;
@@ -263,7 +265,7 @@ describe("Outlook mail in chat", () => {
     });
   });
 
-  it("keeps accepted sends pending, prevents duplicate sends, and reconciles the sent copy", async () => {
+  it("marks a 202 send successful immediately and prevents duplicate sends", async () => {
     const fixture = await createOutlookMailFixture();
     await fixture.run(async () => {
       const linked = await accept(fixture.link(), [200]);
@@ -279,16 +281,20 @@ describe("Outlook mail in chat", () => {
       ).toBeTruthy();
       expect(
         results.find((result) => {
-          return result.status === 200;
+          return (
+            result.status === 200 && result.body.mailDraft.status === "sent"
+          );
         })?.body,
-      ).toMatchObject({ mailDraft: { status: "sending" } });
+      ).toMatchObject({
+        mailDraft: { status: "sent", sentAt: expect.any(String) },
+      });
       expect(fixture.state.sendCount).toBe(1);
       fixture.state.propagating = true;
-      const pending = await accept(
+      const accepted = await accept(
         client().getDraft({ headers: authHeaders(), params }),
         [200],
       );
-      expect(pending.body.mailDraft.status).toBe("sending");
+      expect(accepted.body.mailDraft.status).toBe("sent");
       await accept(
         client().sendDraft({ headers: authHeaders(), params }),
         [409],
@@ -312,53 +318,68 @@ describe("Outlook mail in chat", () => {
     });
   });
 
-  it("keeps a send visible when an earlier draft read reports a temporary provider miss", async () => {
-    const fixture = await createOutlookMailFixture();
-    await fixture.run(async () => {
-      const linked = await accept(fixture.link(), [200]);
-      const params = { mailDraftId: linked.body.mailDraftId };
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      let reads = 0;
-      server.use(
-        http.get(
-          "https://graph.microsoft.com/v1.0/me/messages/:messageId",
-          async () => {
-            reads += 1;
-            if (reads === 1) {
-              entered.resolve();
-              await release.promise;
-              return new HttpResponse(null, { status: 404 });
-            }
-            return HttpResponse.json(fixture.message);
+  it.each(["missing", "draft", "incomplete-sent"] as const)(
+    "preserves an accepted send across an earlier %s provider read",
+    async (staleState) => {
+      const fixture = await createOutlookMailFixture();
+      await fixture.run(async () => {
+        const linked = await accept(fixture.link(), [200]);
+        const params = { mailDraftId: linked.body.mailDraftId };
+        const entered = createDeferredPromise<void>(context.signal);
+        const release = createDeferredPromise<void>(context.signal);
+        let reads = 0;
+        server.use(
+          http.get(
+            "https://graph.microsoft.com/v1.0/me/messages/:messageId",
+            async () => {
+              reads += 1;
+              if (reads === 1) {
+                entered.resolve();
+                await release.promise;
+                return staleState === "missing"
+                  ? new HttpResponse(null, { status: 404 })
+                  : HttpResponse.json({
+                      ...fixture.message,
+                      isDraft: staleState === "draft",
+                      sentDateTime: null,
+                    });
+              }
+              return HttpResponse.json(fixture.message);
+            },
+          ),
+        );
+        const earlierRead = client().getDraft({
+          headers: authHeaders(),
+          params,
+        });
+        await entered.promise;
+        const sent = await onRejection(
+          accept(client().sendDraft({ headers: authHeaders(), params }), [200]),
+          () => {
+            return release.resolve();
           },
-        ),
-      );
-      const earlierRead = client().getDraft({ headers: authHeaders(), params });
-      await entered.promise;
-      const sent = await onRejection(
-        accept(client().sendDraft({ headers: authHeaders(), params }), [200]),
-        () => {
-          return release.resolve();
-        },
-      );
-      release.resolve();
-      expect(sent.body.mailDraft.status).toBe("sending");
-      const stale = await accept(earlierRead, [200]);
-      expect(stale.body.mailDraft.status).toBe("sending");
-      fixture.message.isDraft = false;
-      fixture.message.sentDateTime = "2026-10-28T10:00:00.000Z";
-      const confirmed = await accept(
-        client().getDraft({ headers: authHeaders(), params }),
-        [200],
-      );
-      expect(confirmed.body.mailDraft.status).toBe("sent");
-      expect(fixture.state.sendCount).toBe(1);
-    });
-  });
+        );
+        release.resolve();
+        expect(sent.body.mailDraft.status).toBe("sent");
+        const stale = await accept(earlierRead, [200]);
+        expect(stale.body.mailDraft).toMatchObject({
+          status: "sent",
+          sentAt: sent.body.mailDraft.sentAt,
+        });
+        fixture.message.isDraft = false;
+        fixture.message.sentDateTime = "2026-10-28T10:00:00.000Z";
+        const confirmed = await accept(
+          client().getDraft({ headers: authHeaders(), params }),
+          [200],
+        );
+        expect(confirmed.body.mailDraft.status).toBe("sent");
+        expect(fixture.state.sendCount).toBe(1);
+      });
+    },
+  );
 
-  it.each([408, 503])(
-    "preserves an uncertain HTTP %i send without retrying and lets explicit rejections be corrected",
+  it.each([408, 503, "network-error"] as const)(
+    "preserves an uncertain %s send without retrying and lets explicit rejections be corrected",
     async (sendStatus) => {
       const fixture = await createOutlookMailFixture();
       await fixture.run(async () => {
@@ -510,10 +531,6 @@ describe("thread email list", () => {
   it("keeps sent mail when an earlier deletion finishes after sending", async () => {
     const fixture = await createPublicGmailMailCardFixture();
     await fixture.run(async () => {
-      fixture.ownsFeatureSwitches();
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: true,
-      });
       mockGmailDraftApi();
       const linked = await linkDraft(fixture);
       const deleteReached = createDeferredPromise<void>(context.signal);
@@ -564,10 +581,6 @@ describe("thread email list", () => {
   it("omits deleted drafts immediately and keeps their original links unavailable", async () => {
     const fixture = await createPublicGmailMailCardFixture();
     await fixture.run(async () => {
-      fixture.ownsFeatureSwitches();
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: true,
-      });
       mockGmailDraftApi();
       const linked = await linkDraft(fixture);
       await accept(
@@ -599,25 +612,11 @@ describe("thread email list", () => {
     });
   });
 
-  it("checks the feature switch and does not disclose another user's thread", async () => {
+  it("does not disclose another user's thread", async () => {
     const fixture = await createPublicGmailMailCardFixture();
     const other = await createPublicGmailMailCardFixture();
     await fixture.run(async () => {
-      fixture.ownsFeatureSwitches();
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: false,
-      });
-      const disabled = await accept(
-        client().listThreadMail({
-          headers: authHeaders(),
-          params: { threadId: fixture.thread.id },
-        }),
-        [403],
-      );
-      expect(disabled.body.error.code).toBe("FORBIDDEN");
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: true,
-      });
+      mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
       const missing = await accept(
         client().listThreadMail({
           headers: authHeaders(),

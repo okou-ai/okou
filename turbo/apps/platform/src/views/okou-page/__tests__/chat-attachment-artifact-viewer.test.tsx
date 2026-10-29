@@ -859,7 +859,7 @@ test.each([
   { status: 500, sidebar: false },
   { status: 404, sidebar: true },
 ] as const)(
-  "a website preview failure ($status, sidebar=$sidebar) shows the access or availability error",
+  "a website preview failure ($status, sidebar=$sidebar) shows its error inline without a toast",
   async ({ status, sidebar }) => {
     const site = "https://unavailable-report.okou.app/";
     mockAttachmentChat(context, {
@@ -893,6 +893,7 @@ test.each([
             : "This website is temporarily unavailable",
       }),
     ).resolves.toBeInTheDocument();
+    expect(screen.queryByText("Website preview is unavailable")).toBeNull();
     expect(
       screen.getByTestId("attachment-preview-html").querySelector("iframe"),
     ).toBeNull();

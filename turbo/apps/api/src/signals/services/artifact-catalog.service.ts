@@ -1287,6 +1287,7 @@ export const reconcileArtifactCatalogFiles$ = command(
 
 function toArtifactSummary(row: {
   readonly id: string;
+  readonly entityId: string;
   readonly kind: ArtifactKind;
   readonly logicalKey: string;
   readonly displayKind: ArtifactCatalogKind | null;
@@ -1305,6 +1306,7 @@ function toArtifactSummary(row: {
     kind,
     title: row.title,
     thumbnail: row.thumbnail,
+    ...(kind === "shared-thread" ? { sharedThreadId: row.entityId } : {}),
     ...(row.sourceUrl ? { sourceUrl: row.sourceUrl } : {}),
     ...(row.aliasUrl ? { aliasUrl: row.aliasUrl } : {}),
     ...(row.videoSourceUrl ? { videoSourceUrl: row.videoSourceUrl } : {}),
@@ -1338,6 +1340,7 @@ export const listArtifactCatalog$ = command(
     const rows = await db
       .select({
         id: artifacts.id,
+        entityId: artifacts.entityId,
         kind: artifacts.kind,
         logicalKey: artifacts.logicalKey,
         displayKind: artifacts.displayKind,

@@ -9,6 +9,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.22.7](https://github.com/okou-ai/okou/compare/api-v2.22.6...api-v2.22.7) (2026-10-29)
+
+
+### Bug Fixes
+
+* **artifacts:** expose owner deletion on shared pages ([#43889](https://github.com/okou-ai/okou/issues/43889)) ([56f4bbe](https://github.com/okou-ai/okou/commit/56f4bbec6c59f81389ad0e158f9b090799872988))
+* **browser:** scope shared viewers and keepalive to the chat window ([#43872](https://github.com/okou-ai/okou/issues/43872)) ([21e89be](https://github.com/okou-ai/okou/commit/21e89bedb30ed755d9f41825f102607cea3635a0))
+* **mail:** treat outlook accepted sends as successful ([#43888](https://github.com/okou-ai/okou/issues/43888)) ([59d7bcb](https://github.com/okou-ai/okou/commit/59d7bcbb97937af5a48ca65c3c86153e0d73c678))
+
+
+### Refactoring
+
+* **api:** capture automation cleanup targets before deleting workflows ([#43919](https://github.com/okou-ai/okou/issues/43919)) ([b2df651](https://github.com/okou-ai/okou/commit/b2df6512e157f6ff9367fcbe99964719364e7fe1))
+* **api:** keep github source preflight timing in its owning commands ([#43926](https://github.com/okou-ai/okou/issues/43926)) ([b5a4c8f](https://github.com/okou-ai/okou/commit/b5a4c8f5b87b74878ae4f55ce3af1509706e4942))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.4
+    * @okouai/core bumped to 8.800.0
+    * @okouai/db bumped to 2.10.5
+    * @okouai/pi-agent-runtime bumped to 1.51.19
+
 ## [2.22.6](https://github.com/okou-ai/okou/compare/api-v2.22.5...api-v2.22.6) (2026-10-29)
 
 

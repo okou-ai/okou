@@ -11,9 +11,12 @@ import {
   MessageSquarePlus,
   LoaderCircle,
   X,
+  CircleCheck,
+  CircleMinus,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { SuggestionOption } from "@okouai/api-contracts/contracts/suggestions";
-import { Button } from "@okouai/ui";
+import { Button, Textarea } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
@@ -23,6 +26,14 @@ import {
   showAgentSuggestion$,
   startAgentSuggestion$,
   visibleAgentSuggestions$,
+  submitAgentSuggestionFeedback$,
+  suggestionFeedbackConfirmation$,
+  savingSuggestionFeedback$,
+  suggestionFeedbackReasonOpen$,
+  closeSuggestionFeedback$,
+  openSuggestionFeedbackReason$,
+  undoSuggestionFeedback$,
+  saveSuggestionFeedbackReason$,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -34,9 +45,11 @@ const DECK_EDGE =
 function AgentSuggestionHeader({
   index,
   total,
+  onDismiss,
 }: {
   readonly index: number;
   readonly total: number;
+  readonly onDismiss: () => void;
 }) {
   const { t } = useTranslation();
   const show = useSet(showAgentSuggestion$);
@@ -84,6 +97,19 @@ function AgentSuggestionHeader({
           }}
         >
           <ChevronRight />
+        </Button>
+        <span aria-hidden className="mx-1.5 h-3 w-px bg-divider" />
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          showTooltip
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.dismiss;
+          })}
+          onClick={onDismiss}
+        >
+          <X aria-hidden />
         </Button>
       </div>
     </div>
@@ -184,110 +210,332 @@ function CustomDirectionOption({
   );
 }
 
+function SuggestionFeedbackReason({
+  feedbackId,
+  initialNote,
+  busy,
+  onSave,
+}: {
+  readonly feedbackId: string;
+  readonly initialNote: string;
+  readonly busy: boolean;
+  readonly onSave: (note: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <form
+      key={feedbackId}
+      className="mt-3 flex flex-col gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const note = new FormData(event.currentTarget).get("reason");
+        if (typeof note === "string" && note.trim()) {
+          onSave(note.trim());
+        }
+      }}
+    >
+      <label
+        htmlFor={`feedback-reason-${feedbackId}`}
+        className="text-xs text-muted-foreground"
+      >
+        {t(($) => {
+          return $.chat.agentSuggestions.reasonLabel;
+        })}
+      </label>
+      <Textarea
+        id={`feedback-reason-${feedbackId}`}
+        name="reason"
+        defaultValue={initialNote}
+        maxLength={512}
+        required
+        rows={2}
+        disabled={busy}
+      />
+      <Button
+        type="submit"
+        variant="neutral"
+        size="sm"
+        disabled={busy}
+        className="self-end"
+      >
+        {t(($) => {
+          return $.chat.agentSuggestions.saveReason;
+        })}
+      </Button>
+    </form>
+  );
+}
+
+function SuggestionFeedbackNotice() {
+  const { t } = useTranslation();
+  const last = useGet(suggestionFeedbackConfirmation$);
+  const pending = useGet(savingSuggestionFeedback$);
+  const reasonOpen = useGet(suggestionFeedbackReasonOpen$);
+  const openReason = useSet(openSuggestionFeedbackReason$);
+  const close = useSet(closeSuggestionFeedback$);
+  const [undoing, undo] = useLoadableSet(undoSuggestionFeedback$);
+  const [saving, save] = useLoadableSet(saveSuggestionFeedbackReason$);
+  const signal = useGet(pageSignal$);
+  if (!last) {
+    return pending ? (
+      <p role="status" className="mt-4 text-sm text-muted-foreground">
+        {t(($) => {
+          return $.chat.actions.saving;
+        })}
+      </p>
+    ) : null;
+  }
+  const busy = undoing.state === "loading" || saving.state === "loading";
+  const message =
+    last.kind === "already_done"
+      ? t(($) => {
+          return $.chat.agentSuggestions.doneRecorded;
+        })
+      : last.kind === "not_planned"
+        ? t(($) => {
+            return $.chat.agentSuggestions.notPlannedRecorded;
+          })
+        : last.kind === "less_like_this"
+          ? t(
+              ($) => {
+                return $.chat.agentSuggestions.lessRecorded;
+              },
+              { scope: last.item.feedbackScope.label },
+            )
+          : t(($) => {
+              return $.chat.agentSuggestions.dismissRecorded;
+            });
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-card p-3">
+      <div className="flex items-start gap-2">
+        <Check
+          aria-hidden
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        />
+        <p
+          role="status"
+          className="flex-1 text-sm leading-5 text-muted-foreground"
+        >
+          {message}
+        </p>
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            detach(undo(signal), Reason.DomCallback);
+          }}
+        >
+          {t(($) => {
+            return $.chat.agentSuggestions.undoFeedback;
+          })}
+        </Button>
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          showTooltip
+          disabled={busy}
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.closeFeedback;
+          })}
+          onClick={() => {
+            close();
+          }}
+        >
+          <X />
+        </Button>
+      </div>
+      {last.kind !== "dismissed" && !reasonOpen && (
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          onClick={() => {
+            openReason();
+          }}
+        >
+          {last.reasonSaved
+            ? t(($) => {
+                return $.chat.agentSuggestions.editReason;
+              })
+            : t(($) => {
+                return $.chat.agentSuggestions.addReason;
+              })}
+        </Button>
+      )}
+      {reasonOpen && (
+        <SuggestionFeedbackReason
+          feedbackId={last.id}
+          initialNote={last.note}
+          busy={busy}
+          onSave={(note) => {
+            detach(save(note, signal), Reason.DomCallback);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+type FeedbackKind = "already_done" | "not_planned" | "less_like_this";
+function AgentSuggestionFeedbackActions({
+  onSelect,
+}: {
+  readonly onSelect: (kind: FeedbackKind) => void;
+}) {
+  const { t } = useTranslation();
+  const feedbackActions = [
+    {
+      kind: "already_done" as const,
+      label: t(($) => {
+        return $.chat.agentSuggestions.alreadyDone;
+      }),
+      Icon: CircleCheck,
+    },
+    {
+      kind: "not_planned" as const,
+      label: t(($) => {
+        return $.chat.agentSuggestions.notPlanned;
+      }),
+      Icon: CircleMinus,
+    },
+    {
+      kind: "less_like_this" as const,
+      label: t(($) => {
+        return $.chat.agentSuggestions.lessLikeThis;
+      }),
+      Icon: SlidersHorizontal,
+    },
+  ];
+  return (
+    <div className="flex flex-nowrap items-center justify-between gap-1 border-t border-border pt-2">
+      {feedbackActions.map(({ kind, label, Icon }) => {
+        return (
+          <Button
+            key={kind}
+            type="button"
+            variant="quiet"
+            className="min-h-11 shrink-0 gap-1 whitespace-nowrap px-0.5 text-xs font-normal @min-[421px]/suggestion:min-h-9 @min-[421px]/suggestion:gap-2 @min-[421px]/suggestion:px-2"
+            onClick={() => {
+              onSelect(kind);
+            }}
+          >
+            <Icon
+              aria-hidden
+              className="hidden @min-[421px]/suggestion:block"
+            />
+            {label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(visibleAgentSuggestions$);
   const [operation, start] = useLoadableSet(startAgentSuggestion$);
-  const [dismissal, dismiss] = useLoadableSet(dismissAgentSuggestion$);
+  const [, dismiss] = useLoadableSet(dismissAgentSuggestion$);
   const [preparation, prepare] = useLoadableSet(prepareAgentSuggestion$);
+  const [, submitFeedback] = useLoadableSet(submitAgentSuggestionFeedback$);
   const preparedId = useGet(preparedAgentSuggestionId$);
   const preparing = preparation.state === "loading";
   const starting = operation.state === "loading";
-  const dismissing = dismissal.state === "loading";
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   if (result.state !== "hasData" || result.data.length === 0) {
-    return null;
+    return <SuggestionFeedbackNotice />;
   }
   const items = result.data;
   const index = Math.min(requested, items.length - 1);
   const item = items[index];
   const behind = Math.min(items.length - 1, 2);
+
   return (
-    <section
-      aria-label={t(($) => {
-        return $.chat.agentSuggestions.label;
-      })}
-      className={cn("relative", behind > 0 && "pb-3")}
-    >
-      {behind >= 2 && (
-        <div aria-hidden className={cn(DECK_EDGE, "inset-x-6 bottom-0")} />
-      )}
-      {behind >= 1 && (
-        <div aria-hidden className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")} />
-      )}
-      <fieldset
-        disabled={starting || dismissing || preparing}
-        className="relative min-w-0"
+    <>
+      <section
+        aria-label={t(($) => {
+          return $.chat.agentSuggestions.label;
+        })}
+        className={cn("relative", behind > 0 && "pb-3")}
       >
-        <article className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4">
-          <AgentSuggestionHeader index={index} total={items.length} />
-          <div
-            key={item.id}
-            className="flex flex-col gap-3 motion-safe:animate-composer-panel-in"
-          >
-            <div className="flex flex-col gap-2">
-              <h3 className="text-base font-medium leading-6 text-foreground">
-                {item.title}
-              </h3>
-              <p className="line-clamp-4 text-sm leading-5 text-muted-foreground">
-                {item.rationale}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 pt-1">
-              <p className="text-xs text-muted-foreground">
-                {t(($) => {
-                  return $.chat.agentSuggestions.useSuggestion;
-                })}
-              </p>
-              {item.options.map((option) => {
-                return (
-                  <AgentSuggestionOption
-                    key={option.id}
-                    option={option}
-                    starting={starting}
-                    disabled={starting || dismissing || preparing}
-                    onClick={() => {
-                      detach(
-                        start(item, option.id, signal),
-                        Reason.DomCallback,
-                      );
-                    }}
-                  />
-                );
-              })}
-              <CustomDirectionOption
-                selected={preparedId === item.id}
-                preparing={preparing}
-                disabled={starting || dismissing || preparing}
-                onClick={() => {
-                  detach(prepare(item, signal), Reason.DomCallback);
-                }}
-              />
-              <div className="border-t border-border pt-1">
-                <Button
-                  type="button"
-                  variant="quiet"
-                  className="w-full justify-start gap-2 px-3 text-xs font-normal"
-                  disabled={dismissing}
-                  onClick={() => {
-                    detach(dismiss(item, signal), Reason.DomCallback);
-                  }}
-                >
-                  {dismissing ? (
-                    <LoaderCircle aria-hidden className="animate-spin" />
-                  ) : (
-                    <X aria-hidden />
-                  )}
+        {behind >= 2 && (
+          <div aria-hidden className={cn(DECK_EDGE, "inset-x-6 bottom-0")} />
+        )}
+        {behind >= 1 && (
+          <div aria-hidden className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")} />
+        )}
+        <fieldset
+          disabled={starting || preparing}
+          className="@container/suggestion relative min-w-0"
+        >
+          <article className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4">
+            <AgentSuggestionHeader
+              index={index}
+              total={items.length}
+              onDismiss={() => {
+                detach(dismiss(item, signal), Reason.DomCallback);
+              }}
+            />
+            <div
+              key={item.id}
+              className="flex flex-col gap-3 motion-safe:animate-composer-panel-in"
+            >
+              <div className="flex flex-col gap-2">
+                <h3 className="text-base font-medium leading-6 text-foreground">
+                  {item.title}
+                </h3>
+                <p className="line-clamp-4 text-sm leading-5 text-muted-foreground">
+                  {item.rationale}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 pt-1">
+                <p className="text-xs text-muted-foreground">
                   {t(($) => {
-                    return $.chat.agentSuggestions.dismiss;
+                    return $.chat.agentSuggestions.useSuggestion;
                   })}
-                </Button>
+                </p>
+                {item.options.map((option) => {
+                  return (
+                    <AgentSuggestionOption
+                      key={option.id}
+                      option={option}
+                      starting={starting}
+                      disabled={starting || preparing}
+                      onClick={() => {
+                        detach(
+                          start(item, option.id, signal),
+                          Reason.DomCallback,
+                        );
+                      }}
+                    />
+                  );
+                })}
+                <CustomDirectionOption
+                  selected={preparedId === item.id}
+                  preparing={preparing}
+                  disabled={starting || preparing}
+                  onClick={() => {
+                    detach(prepare(item, signal), Reason.DomCallback);
+                  }}
+                />
+                <AgentSuggestionFeedbackActions
+                  onSelect={(kind) => {
+                    detach(
+                      submitFeedback(item, kind, signal),
+                      Reason.DomCallback,
+                    );
+                  }}
+                />
               </div>
             </div>
-          </div>
-        </article>
-      </fieldset>
-    </section>
+          </article>
+        </fieldset>
+      </section>
+      <SuggestionFeedbackNotice />
+    </>
   );
 }
