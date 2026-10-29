@@ -60,7 +60,7 @@ export function ProUpgradeCard({
         </p>
       </div>
 
-      <div className="col-span-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 p-3 pt-2 @[480px]:col-span-1 @[480px]:col-start-2">
+      <div className="col-span-2 flex flex-wrap items-center justify-between gap-1 p-3 pt-2 @[480px]:col-span-1 @[480px]:col-start-2 @[480px]:gap-x-3">
         <p className="order-1 flex min-w-0 flex-wrap items-baseline gap-1 text-sm text-muted-foreground">
           {monthlyPriceUsd !== undefined ? (
             <>
