@@ -6,12 +6,23 @@ import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-de
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   officialWorkflowAutomationIdentities,
+  workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
-import { and, asc, eq, exists, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   boolean as zBoolean,
@@ -127,6 +138,37 @@ export function agentDeletionThreadSequencesSql(agentId: string) {
     .for("update", { of: chatEventSequences })
     .getSQL();
 }
+
+/** Preserve the thread cascade's SET NULL effects for retained references. */
+export function agentDeletionCascadeSql(args: {
+  readonly agentId: string;
+  readonly orgId: string;
+}) {
+  const deletedAgentThreads = new QueryBuilder()
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .innerJoin(agents, eq(chatThreads.agentId, agents.id))
+    .where(agentDeletionIdentityCondition(args));
+  return sql`WITH detached_runs AS (
+      UPDATE ${agentRuns}
+      SET ${sql.identifier(agentRuns.chatThreadId.name)} = NULL
+      WHERE ${inArray(agentRuns.chatThreadId, deletedAgentThreads)}
+      RETURNING ${agentRuns.id}
+    ), detached_bindings AS (
+      UPDATE ${workflowUserAutomationThreads}
+      SET ${sql.identifier(workflowUserAutomationThreads.chatThreadId.name)} = NULL
+      WHERE ${inArray(workflowUserAutomationThreads.chatThreadId, deletedAgentThreads)}
+      RETURNING ${workflowUserAutomationThreads.id}
+    )
+    DELETE FROM ${agents}
+    WHERE ${eq(agents.id, args.agentId)} AND ${eq(agents.orgId, args.orgId)}
+      AND ${gte(
+        sql`(SELECT ${count()} FROM detached_runs) +
+          (SELECT ${count()} FROM detached_bindings)`,
+        sql`0`,
+      )}`;
+}
+
 function agentSnapshotSql(args: DeleteAgentArgs, lock = false) {
   const query = new QueryBuilder()
     .select({

@@ -22,6 +22,7 @@ import {
   agentDeletionWorkflowCondition,
   agentDeletionWorkflowIdentityCondition,
   agentDeletionThreadSequencesSql,
+  agentDeletionCascadeSql,
   type DeleteAgentArgs,
 } from "./agent-deletion-queries";
 import { conflict } from "../../lib/error";
@@ -176,7 +177,7 @@ const deleteAgentRows$ = command(
           .insert(backgroundJobs)
           .values(workflowAttachmentCleanupValues(input));
       }
-      await tx.delete(agents).where(agentDeletionIdentityCondition(args));
+      await tx.execute(agentDeletionCascadeSql(args));
       signal.throwIfAborted();
       // The cascade drains already-owned Workflow rows. Sweep their late fence
       // initialization after the cascade, preserving generation-before-token order.
