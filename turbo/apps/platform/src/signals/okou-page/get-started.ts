@@ -153,7 +153,8 @@ export const getStartedQuests$ = computed(
     // Slack read leaves the quest as the API reported it instead of taking the
     // whole list down; the Slack surfaces own reporting that failure.
     const slackOrg = slack?.canEarnMore
-      ? await settle(get(slackOrgData$))
+      ? // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
+        await settle(get(slackOrgData$))
       : null;
     const withSlack =
       slack && slackOrg?.ok

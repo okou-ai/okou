@@ -89,6 +89,7 @@ export function createArtifactViewerFullscreenSignals(
       container.ownerDocument.fullscreenEnabled &&
       typeof container.requestFullscreen === "function"
     ) {
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       const result = await settle(container.requestFullscreen(), signal);
       if (!result.ok) {
         // Browsers may reject fullscreen even when the API is available.

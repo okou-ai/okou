@@ -4040,11 +4040,13 @@
   },
   "featureGuide": {
     "close": "新機能ガイドを閉じる",
-    "dismiss": "わかりました",
     "label": "新機能",
+    "navigation": "今回のアップデートの機能",
     "next": "次へ",
+    "nextFeature": "次の機能",
     "preview": "プレビュー",
     "previous": "前へ",
+    "previousFeature": "前の機能",
     "tryPrompt": "このタスクを試す"
   },
   "global": {

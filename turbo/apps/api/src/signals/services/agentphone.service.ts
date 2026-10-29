@@ -40,7 +40,10 @@ import {
   publishUserSignal,
 } from "../external/realtime";
 import { bestEffort, safeUrlParse, settle } from "../utils";
-import { ensureAgentPhoneChatThreadRoute$ } from "./agentphone-chat-ingress.service";
+import {
+  ensureAgentPhoneChatThreadRoute$,
+  resolveAgentPhoneGroupChatRoot$,
+} from "./agentphone-chat-ingress.service";
 import {
   agentPhoneChannelForLinkedHandle,
   agentPhoneUserLinksForChannel,
@@ -89,8 +92,6 @@ const AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE =
 const AGENTPHONE_CHAT_MESSAGE_ID_NAMESPACE =
   "3208d609-59a7-4b0e-9c3b-3db20e9c924f";
 
-const AGENTPHONE_DM_ROOT_MESSAGE_ID = "dm";
-
 export {
   agentPhoneChannelForLinkedHandle,
   describeAgentPhoneHandleShape,
@@ -115,6 +116,7 @@ export interface AgentPhoneMessageEvent {
   readonly webhookId: string | null;
   readonly channel: AgentPhoneChannel;
   readonly messageId: string;
+  readonly replyToMessageId: string | null;
   readonly conversationId: string | null;
   readonly groupId: string | null;
   readonly isGroup: boolean;
@@ -141,32 +143,31 @@ function isAgentPhoneGroupEvent(event: AgentPhoneMessageEvent): boolean {
   return event.channel === "imessage" && event.isGroup;
 }
 
-function agentPhoneThreadRootMessageId(event: AgentPhoneMessageEvent): string {
-  if (!isAgentPhoneGroupEvent(event)) {
-    return AGENTPHONE_DM_ROOT_MESSAGE_ID;
-  }
-  if (!event.conversationId) {
-    throw new Error("AgentPhone group message is missing a conversation id");
-  }
-
-  const root = `group:${event.conversationId}`;
-  if (root.length <= 255) {
-    return root;
-  }
-
-  return `group:${createHash("sha256")
-    .update(event.conversationId)
-    .digest("hex")}`;
-}
-
-/** Chat thread route key: group conversations by id, DMs share the main key. */
-function agentPhoneChatRouteRootMessageId(
-  event: AgentPhoneMessageEvent,
-): string {
-  return isAgentPhoneGroupEvent(event)
-    ? agentPhoneThreadRootMessageId(event)
-    : INTEGRATION_DM_SESSION_KEY;
-}
+const agentPhoneChatRouteRootMessageId$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    userLinkId: string,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (!isAgentPhoneGroupEvent(event)) {
+      return INTEGRATION_DM_SESSION_KEY;
+    }
+    if (!event.conversationId) {
+      throw new Error("AgentPhone group message is missing a conversation id");
+    }
+    return await set(
+      resolveAgentPhoneGroupChatRoot$,
+      {
+        userLinkId,
+        conversationId: event.conversationId,
+        messageId: event.messageId,
+        replyToMessageId: event.replyToMessageId,
+      },
+      signal,
+    );
+  },
+);
 
 function shouldIgnoreAgentPhoneGroupMessage(
   event: AgentPhoneMessageEvent,
@@ -1667,7 +1668,12 @@ export const handleAgentPhoneMessage$ = command(
     signal.throwIfAborted();
 
     const isGroup = isAgentPhoneGroupEvent(params.event);
-    const rootMessageId = agentPhoneChatRouteRootMessageId(params.event);
+    const rootMessageId = await set(
+      agentPhoneChatRouteRootMessageId$,
+      params.event,
+      userLink.id,
+      signal,
+    );
     const userLinkId = userLink.id;
     const contextRead = set(fetchAgentPhoneContext$, {
       userLinkId,

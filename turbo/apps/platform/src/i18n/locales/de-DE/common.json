@@ -4055,11 +4055,13 @@
   },
   "featureGuide": {
     "close": "Funktionsübersicht schließen",
-    "dismiss": "Verstanden",
     "label": "Was gibt es Neues?",
+    "navigation": "Funktionen in diesem Update",
     "next": "Weiter",
+    "nextFeature": "Nächste Funktion",
     "preview": "Vorschau",
     "previous": "Zurück",
+    "previousFeature": "Vorherige Funktion",
     "tryPrompt": "Diese Aufgabe ausprobieren"
   },
   "global": {

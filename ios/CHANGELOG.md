@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.4](https://github.com/okou-ai/okou/compare/ios-v0.22.3...ios-v0.22.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **ios:** show and animate the first message before chat creation completes ([#44027](https://github.com/okou-ai/okou/issues/44027)) ([2f94563](https://github.com/okou-ai/okou/commit/2f94563e6ab9c72727b10a2ef233fecffbd529cb))
+
 ## [0.22.3](https://github.com/okou-ai/okou/compare/ios-v0.22.2...ios-v0.22.3) (2026-10-29)
 
 

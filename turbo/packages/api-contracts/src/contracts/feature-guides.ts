@@ -89,7 +89,7 @@ export const featureGuideContentSchema = object({
       media: featureGuideMediaSchema.optional(),
       prompt: string().min(1).max(4000).optional(),
       action: object({
-        type: literal("connect-discord"),
+        type: literal(["connect-discord", "open-artifacts", "open-chats"]),
         label: string().min(1).max(80),
       })
         .strict()

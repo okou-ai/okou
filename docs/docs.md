@@ -107,6 +107,9 @@ owning surface.
   request state, and reviewed infrastructure exceptions.
 - [withCleanup](app/signals/withCleanup.md): cleanup anti-patterns, derived request
   state, resource ownership, and the reduction-only legacy-use lint boundary.
+- [settle and bestEffort](app/signals/settle.md): settled-result and swallowed
+  failure anti-patterns, notification-driven state, and the reduction-only
+  legacy-use lint boundary.
 - [Platform testing](app/app-testing.md): real page setup, user-visible assertions,
   and [deployed preview access](app/app-testing.md#deployed-preview-access).
 

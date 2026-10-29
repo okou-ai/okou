@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -63,6 +63,23 @@ function button(name: string, container: ParentNode = document.body) {
   return found;
 }
 
+function swipe(
+  target: Element,
+  start: { readonly x: number; readonly y: number },
+  end: { readonly x: number; readonly y: number },
+) {
+  fireEvent.touchStart(target, {
+    touches: [{ identifier: 0, clientX: start.x, clientY: start.y }],
+  });
+  fireEvent.touchMove(target, {
+    touches: [{ identifier: 0, clientX: end.x, clientY: end.y }],
+  });
+  fireEvent.touchEnd(target, {
+    touches: [],
+    changedTouches: [{ identifier: 0, clientX: end.x, clientY: end.y }],
+  });
+}
+
 test("shows an enabled edition, records its display, and dismisses it with Escape", async () => {
   let seen = false;
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
@@ -79,28 +96,45 @@ test("shows an enabled edition, records its display, and dismisses it with Escap
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
-    name: edition.content.title,
+    name: "Prepare a weekly report",
   });
   expect(
-    within(dialog).getByText(edition.content.description),
+    within(dialog).getByText("Summarize the work that matters"),
   ).toBeInTheDocument();
   await waitFor(() => {
     expect(seen).toBeTruthy();
   });
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
-    return expect(
-      screen.queryByRole("dialog", { name: edition.content.title }),
-    ).not.toBeInTheDocument();
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   await waitFor(() => {
     return expect(seen).toBeTruthy();
   });
 });
 
-test("supports click-through media and pre-fills a task without running it", async () => {
+test("cycles features with swipes and footer controls, resets walkthroughs, and pre-fills a task", async () => {
+  const carouselEdition: FeatureGuideEdition = {
+    ...edition,
+    content: {
+      ...edition.content,
+      items: [
+        ...edition.content.items,
+        {
+          featureId: "share",
+          title: "Share the result",
+          description: "Give your team a result they can open",
+          media: {
+            type: "image",
+            url: "https://example.com/share.png",
+            alt: "A result ready to share",
+          },
+        },
+      ],
+    },
+  };
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
-    return respond(200, { edition });
+    return respond(200, { edition: carouselEdition });
   });
   context.mocks.api(featureGuidesContract.seen, ({ respond }) => {
     return respond(200, { seen: true });
@@ -111,17 +145,16 @@ test("supports click-through media and pre-fills a task without running it", asy
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
-    name: edition.content.title,
+    name: "Prepare a weekly report",
   });
-  const cards = queryAllByRoleFast("button", dialog);
-  const walkthrough = cards.find((b) => {
-    return b.textContent?.includes("See how it works");
+  const navigation = within(dialog).getByRole("group", {
+    name: "Features in this update",
   });
-  if (!walkthrough) {
-    throw new Error("Walkthrough card not found");
-  }
-  click(walkthrough);
-  expect(walkthrough).toHaveAttribute("aria-pressed", "true");
+  expect(button("Prepare a weekly report", navigation)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  click(button("Next feature", navigation));
   await expect(
     within(dialog).findByText("Start with a goal"),
   ).resolves.toBeInTheDocument();
@@ -129,85 +162,184 @@ test("supports click-through media and pre-fills a task without running it", asy
   await expect(
     within(dialog).findByText("Review the result"),
   ).resolves.toBeInTheDocument();
-  const report = queryAllByRoleFast("button", dialog).find((b) => {
-    return b.textContent?.includes("Prepare a weekly report");
-  });
-  if (!report) {
-    throw new Error("Report card not found");
-  }
-  click(report);
+  swipe(
+    within(dialog).getByText("Review the result"),
+    { x: 240, y: 150 },
+    { x: 100, y: 155 },
+  );
+  await expect(
+    within(dialog).findByRole("img", { name: "A result ready to share" }),
+  ).resolves.toBeInTheDocument();
+  expect(button("Share the result", navigation)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  expect(queryAllByRoleFast("link", dialog)).toHaveLength(0);
+  expect(
+    queryAllByRoleFast("button", dialog).some((candidate) => {
+      return candidate.textContent?.trim() === "Try this task";
+    }),
+  ).toBeFalsy();
+  swipe(
+    within(dialog).getByRole("img", { name: "A result ready to share" }),
+    { x: 240, y: 150 },
+    { x: 100, y: 155 },
+  );
+  await expect(
+    within(dialog).findByRole("heading", { name: "Prepare a weekly report" }),
+  ).resolves.toBeInTheDocument();
+  swipe(
+    within(dialog).getByText("Summarize the work that matters"),
+    { x: 100, y: 150 },
+    { x: 240, y: 155 },
+  );
+  await expect(
+    within(dialog).findByRole("heading", { name: "Share the result" }),
+  ).resolves.toBeInTheDocument();
+  click(button("Previous feature", navigation));
+  await expect(
+    within(dialog).findByText("Start with a goal"),
+  ).resolves.toBeInTheDocument();
+  click(button("Prepare a weekly report", navigation));
   click(button("Try this task", dialog));
   await waitFor(() => {
-    return expect(
-      screen.queryByRole("dialog", { name: edition.content.title }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   await expect(
     screen.findByText("Prepare my weekly report"),
   ).resolves.toBeInTheDocument();
 });
 
-test("shows Discord conversation examples and opens its setup from the guide", async () => {
-  const conversation = {
-    provider: "discord" as const,
-    label: "Example conversation",
-    title: "#launch",
-    subtitle: "Launch planning",
+test("keeps the feature selected during small, vertical, multi-touch, and cancelled gestures", async () => {
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    return respond(200, { edition, preview: true });
+  });
+  await setupPage({
+    context,
+    path: `${path}?featureGuidePreview=1`,
+    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Prepare a weekly report",
+  });
+  const description = within(dialog).getByText(
+    "Summarize the work that matters",
+  );
+  for (const end of [
+    { x: 180, y: 105 },
+    { x: 195, y: 240 },
+    { x: 130, y: 170 },
+  ]) {
+    swipe(description, { x: 200, y: 100 }, end);
+    expect(
+      within(dialog).getByRole("heading", { name: "Prepare a weekly report" }),
+    ).toBeInTheDocument();
+  }
+  fireEvent.touchStart(description, {
+    touches: [
+      { identifier: 0, clientX: 200, clientY: 100 },
+      { identifier: 1, clientX: 250, clientY: 100 },
+    ],
+  });
+  fireEvent.touchEnd(description, {
+    touches: [],
+    changedTouches: [
+      { identifier: 0, clientX: 80, clientY: 100 },
+      { identifier: 1, clientX: 280, clientY: 100 },
+    ],
+  });
+  expect(
+    within(dialog).getByRole("heading", { name: "Prepare a weekly report" }),
+  ).toBeInTheDocument();
+  fireEvent.touchStart(description, {
+    touches: [{ identifier: 0, clientX: 200, clientY: 100 }],
+  });
+  fireEvent.touchCancel(description, { touches: [], changedTouches: [] });
+  expect(
+    within(dialog).getByRole("heading", { name: "Prepare a weekly report" }),
+  ).toBeInTheDocument();
+
+  swipe(description, { x: 200, y: 100 }, { x: 70, y: 105 });
+  await expect(
+    within(dialog).findByText("Start with a goal"),
+  ).resolves.toBeInTheDocument();
+  swipe(button("Next", dialog), { x: 200, y: 100 }, { x: 70, y: 105 });
+  click(button("Next", dialog));
+  await expect(
+    within(dialog).findByText("Review the result"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("preserves video controls while allowing a swipe from the surrounding description", async () => {
+  const videoEdition: FeatureGuideEdition = {
+    ...edition,
+    content: {
+      ...edition.content,
+      items: [
+        {
+          featureId: "video",
+          title: "See Okou in action",
+          description: "Watch a short demonstration",
+          media: {
+            type: "video",
+            url: "https://example.com/demo.mp4",
+            posterUrl: "https://example.com/poster.png",
+            captionsUrl: "https://example.com/captions.vtt",
+          },
+        },
+        ...edition.content.items,
+      ],
+    },
   };
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    return respond(200, { edition: videoEdition, preview: true });
+  });
+  await setupPage({
+    context,
+    path: `${path}?featureGuidePreview=1`,
+    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "See Okou in action",
+  });
+  const video = dialog.querySelector("video");
+  if (!video) {
+    throw new Error("Expected a demonstration video");
+  }
+  expect(video).toHaveAttribute("controls");
+  swipe(video, { x: 240, y: 150 }, { x: 100, y: 155 });
+  expect(
+    within(dialog).getByRole("heading", { name: "See Okou in action" }),
+  ).toBeInTheDocument();
+  swipe(
+    within(dialog).getByText("Watch a short demonstration"),
+    { x: 240, y: 150 },
+    { x: 100, y: 155 },
+  );
+  await expect(
+    within(dialog).findByRole("heading", { name: "Prepare a weekly report" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("shows a Discord image, hides single-feature navigation, and opens setup with a text link", async () => {
   const discordEdition: FeatureGuideEdition = {
     id: "discord-guide",
     revisionId: "33333333-3333-4333-8333-333333333333",
     content: {
       schemaVersion: 1,
-      title: "Your teammate in Discord",
-      description: "Get work done in the conversation",
+      title: "This month's updates",
+      description: "Fresh ways to work with Okou",
       items: [
         {
           featureId: "discord-integration",
-          title: "A launch checklist",
-          description: "An example with your team",
+          title: "Your teammate, now in Discord",
+          description: "Get work done in the conversation",
           media: {
-            type: "walkthrough",
-            steps: [
-              {
-                title: "Ask in the conversation",
-                description: "Mention Okou in a thread",
-                conversation: {
-                  ...conversation,
-                  messages: [
-                    {
-                      id: "request",
-                      role: "user",
-                      author: "Sam",
-                      text: "@Okou Make a launch checklist",
-                    },
-                    {
-                      id: "reply",
-                      role: "assistant",
-                      author: "Okou",
-                      text: "Review the launch email by Friday",
-                    },
-                  ],
-                },
-              },
-              {
-                title: "Keep the thread moving",
-                description: "Ask for a follow-up draft",
-                conversation: {
-                  ...conversation,
-                  messages: [
-                    {
-                      id: "reply",
-                      role: "assistant",
-                      author: "Okou",
-                      text: "Hi Maya, could you review the launch email?",
-                    },
-                  ],
-                },
-              },
-            ],
+            type: "image",
+            url: "https://example.com/discord.png",
+            alt: "Okou turns a Discord mention into a launch checklist",
           },
-          action: { type: "connect-discord", label: "Connect Discord" },
+          action: { type: "connect-discord", label: "Explore Discord" },
         },
       ],
     },
@@ -222,28 +354,25 @@ test("shows Discord conversation examples and opens its setup from the guide", a
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
-    name: discordEdition.content.title,
+    name: "Your teammate, now in Discord",
   });
-  const example = within(dialog).getByRole("group", {
-    name: "Example conversation",
+  const image = within(dialog).getByRole("img", {
+    name: "Okou turns a Discord mention into a launch checklist",
   });
+  expect(image).toHaveAttribute("src", "https://example.com/discord.png");
   expect(
-    within(example).getByText("@Okou Make a launch checklist"),
-  ).toBeInTheDocument();
-  expect(
-    within(example).getByText("Review the launch email by Friday"),
-  ).toBeInTheDocument();
-  click(button("Next", dialog));
-  await expect(
-    within(dialog).findByText("Hi Maya, could you review the launch email?"),
-  ).resolves.toBeInTheDocument();
+    within(dialog).queryByRole("group", { name: "Features in this update" }),
+  ).not.toBeInTheDocument();
   const connect = queryAllByRoleFast("link", dialog).find((link) => {
-    return link.textContent?.trim() === "Connect Discord";
+    return link.textContent?.trim() === "Explore Discord";
   });
   if (!connect) {
     throw new Error("Expected a Discord setup link");
   }
-  expect(connect).toHaveAttribute("href", "/settings/discord");
+  expect(connect).toHaveAttribute(
+    "href",
+    "/settings/discord?featureGuidePreview=1",
+  );
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Meta>}");
   await user.click(connect);
@@ -254,11 +383,96 @@ test("shows Discord conversation examples and opens its setup from the guide", a
     screen.findByRole("heading", { name: "Connect to Discord" }),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: discordEdition.content.title }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
+
+test.each([
+  {
+    target: "artifacts",
+    action: "open-artifacts",
+    title: "Delete artifacts you no longer need",
+    label: "Manage your artifacts",
+    href: "/artifacts?featureGuidePreview=1",
+    destinationRole: "heading",
+    destinationName: "Artifacts",
+  },
+  {
+    target: "chats",
+    action: "open-chats",
+    title: "Choose who can view a shared chat",
+    label: "Open your chats",
+    href: "/?featureGuidePreview=1",
+    destinationRole: "textbox",
+    destinationName: "Message",
+  },
+] as const)(
+  "opens $target from the feature guide text link",
+  async (example) => {
+    let seen = false;
+    const navigationEdition: FeatureGuideEdition = {
+      ...edition,
+      content: {
+        ...edition.content,
+        items: [
+          {
+            featureId: "overview",
+            title: "This week's updates",
+            description: "Explore the new capabilities",
+          },
+          {
+            featureId: example.action,
+            title: example.title,
+            description: "Manage your work in Okou",
+            action: { type: example.action, label: example.label },
+          },
+        ],
+      },
+    };
+    context.mocks.api(featureGuidesContract.current, ({ query, respond }) => {
+      return respond(200, {
+        edition: navigationEdition,
+        preview: query?.preview === "1",
+      });
+    });
+    context.mocks.api(featureGuidesContract.seen, ({ respond }) => {
+      seen = true;
+      return respond(200, { seen: true });
+    });
+    await setupPage({
+      context,
+      path: `${path}?featureGuidePreview=1`,
+      featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: "This week's updates",
+    });
+    const navigation = within(dialog).getByRole("group", {
+      name: "Features in this update",
+    });
+    click(button(example.title, navigation));
+    await expect(
+      within(dialog).findByRole("heading", { name: example.title }),
+    ).resolves.toBeInTheDocument();
+    const link = queryAllByRoleFast("link", dialog).find((candidate) => {
+      return candidate.textContent?.trim() === example.label;
+    });
+    if (!link) {
+      throw new Error("Expected a feature navigation link");
+    }
+    expect(link).toHaveAttribute("href", example.href);
+    click(link);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    await expect(
+      screen.findByRole(example.destinationRole, {
+        name: example.destinationName,
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(seen).toBeFalsy();
+  },
+);
 
 test("keeps an already-seen edition closed based on the server response", async () => {
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
@@ -269,9 +483,7 @@ test("keeps an already-seen edition closed based on the server response", async 
     path,
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
-  expect(
-    screen.queryByRole("dialog", { name: edition.content.title }),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
 test("keeps the UI hidden while the feature switch is off", async () => {
@@ -283,9 +495,7 @@ test("keeps the UI hidden while the feature switch is off", async () => {
     path,
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: false },
   });
-  expect(
-    screen.queryByRole("dialog", { name: edition.content.title }),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
 test("replays a preview from the home link without acknowledging a real impression", async () => {
@@ -304,14 +514,12 @@ test("replays a preview from the home link without acknowledging a real impressi
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
-    name: edition.content.title,
+    name: "Prepare a weekly report",
   });
   expect(within(dialog).getByText("Preview")).toBeInTheDocument();
-  click(button("Got it", dialog));
+  click(button("Close feature guide", dialog));
   await waitFor(() => {
-    return expect(
-      screen.queryByRole("dialog", { name: edition.content.title }),
-    ).not.toBeInTheDocument();
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   expect(seen).toBeFalsy();
 });
@@ -353,25 +561,17 @@ test("starts a newly loaded edition at its first card and walkthrough step", asy
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
-    name: edition.content.title,
+    name: "Prepare a weekly report",
   });
-  const walkthrough = queryAllByRoleFast("button", dialog).find((candidate) => {
-    return candidate.textContent?.includes("See how it works");
-  });
-  if (!walkthrough) {
-    throw new Error("Walkthrough card not found");
-  }
-  click(walkthrough);
+  click(button("See how it works", dialog));
   await expect(
     within(dialog).findByText("Start with a goal"),
   ).resolves.toBeInTheDocument();
   click(button("Next", dialog));
   await expect(within(dialog).findByText("2 / 2")).resolves.toBeInTheDocument();
-  click(button("Got it", dialog));
+  click(button("Close feature guide", dialog));
   await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: edition.content.title }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   const chatLink = queryAllByRoleFast("link").find((candidate) => {
     return candidate.textContent?.trim() === "Chat";
@@ -381,7 +581,7 @@ test("starts a newly loaded edition at its first card and walkthrough step", asy
   }
   click(chatLink);
   const nextDialog = await screen.findByRole("dialog", {
-    name: nextEdition.content.title,
+    name: "A new guide",
   });
   expect(within(nextDialog).getByText("New edition start")).toBeInTheDocument();
   expect(within(nextDialog).getByText("1 / 1")).toBeInTheDocument();

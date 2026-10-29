@@ -316,6 +316,7 @@ export const requestTokenFromTabs$ = command(
         requestConnectionToken(connection.getToken, connection.signal, signal),
       );
     }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const response = await settle(Promise.any(attempts), signal);
     if (!response.ok) {
       throw response.error;

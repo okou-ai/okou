@@ -1050,6 +1050,8 @@ function extractAgentPhoneEvent(
     webhookId,
     channel,
     messageId,
+    replyToMessageId:
+      stringValue(valueObject(data.replyTo), ["messageId"]) ?? null,
     conversationId,
     groupId,
     isGroup: fields.isGroup,
@@ -1505,35 +1507,6 @@ const acceptsWhatsappSender$ = command(
   },
 );
 
-function logAgentPhoneGroupReplyMetadata(
-  body: Record<string, unknown>,
-  event: AgentPhoneMessageEvent,
-): void {
-  if (event.channel !== "imessage" || !event.isGroup) {
-    return;
-  }
-
-  const data = valueObject(body.data);
-  const replyTo = valueObject(data.replyTo);
-  // Inspect reply metadata omitted by normalization without logging message text.
-  log.info("AgentPhone iMessage group reply metadata", {
-    webhookId: event.webhookId,
-    messageId: event.messageId,
-    conversationId: event.conversationId,
-    groupId: event.groupId,
-    mentioned: event.mentioned,
-    bodyKeys: Object.keys(body),
-    dataKeys: Object.keys(data),
-    replyToKeys: Object.keys(replyTo),
-    replyToMessageId: stringValue(replyTo, ["messageId"]) ?? null,
-    replyToMessageIdCamel: stringValue(data, ["replyToMessageId"]) ?? null,
-    replyToMessageIdSnake: stringValue(data, ["reply_to_message_id"]) ?? null,
-    threadId: stringValue(data, ["threadId"]) ?? null,
-    threadRootMessageId: stringValue(data, ["threadRootMessageId"]) ?? null,
-    threadOriginatorGuid: stringValue(data, ["threadOriginatorGuid"]) ?? null,
-  });
-}
-
 const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const apiStartTime = now();
   const config = agentPhoneWebhookConfig();
@@ -1601,8 +1574,6 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (admissionResponse) {
     return admissionResponse;
   }
-
-  logAgentPhoneGroupReplyMetadata(body, event);
 
   if (await set(handleUnsupportedWhatsappEvent$, event, signal)) {
     return okText();

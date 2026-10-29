@@ -162,6 +162,7 @@ const readWorkerChatThreadIndicators$ = command(
     if (pendingRefresh) {
       // Readers must not use a stale unread watermark while the coalesced
       // refresh is pending. A failed refresh must not poison later reads.
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       await settle(pendingRefresh, signal);
     }
     const indicators = await get(chatThreadIndicators$);
@@ -405,6 +406,7 @@ const setupWorkerForegroundPresence$ = command(
 
 const runSharedDatabaseWorkerDaemons$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const setup = await settle(set(setupRealtime$, signal), signal);
     if (!setup.ok) {
       L.warn("shared database realtime setup failed", setup.error);

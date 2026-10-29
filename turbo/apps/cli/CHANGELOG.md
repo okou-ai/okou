@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.10.1](https://github.com/okou-ai/okou/compare/cli-v10.10.0...cli-v10.10.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* preserve whatsapp partial send outcomes ([#43970](https://github.com/okou-ai/okou/issues/43970)) ([6ad1188](https://github.com/okou-ai/okou/commit/6ad1188fa8b397a28c350285765f8ee938512b7c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.20.1
+    * @okouai/core bumped to 8.800.4
+    * @okouai/pi-agent-runtime bumped to 1.51.23
+
 ## [10.10.0](https://github.com/okou-ai/okou/compare/cli-v10.9.0...cli-v10.10.0) (2026-10-29)
 
 

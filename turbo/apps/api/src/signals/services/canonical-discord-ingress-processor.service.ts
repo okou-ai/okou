@@ -882,6 +882,8 @@ const persistClaimedIngress$ = command(
     scheduleDiscordAdmissionTyping({
       botToken: source.botToken,
       channelId: route.destinationChannelId ?? message.channel_id,
+      ingressId: ingress.id,
+      admittedAt: ingress.createdAt,
     });
     const accessArgs = {
       connectionId: binding.connectionId,

@@ -159,6 +159,7 @@ const downloadHostedPublication$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const attempt = await settle(
       (async (): Promise<boolean | null> => {
         const site = await set(

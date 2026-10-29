@@ -119,6 +119,7 @@ export const importSshPrivateKeyFile$ = command(
     const aborted = createDeferredPromise<never>(signal);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const result = await withCleanup(
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       settle(Promise.race([file.text(), aborted.promise]), signal),
       () => {
         signal.removeEventListener("abort", clearReadConstraint);
@@ -493,6 +494,7 @@ const initializeSshSelection$ = command(
     if (!dialog || (dialog.kind !== "create" && dialog.kind !== "edit")) {
       return;
     }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle<readonly { readonly id: string }[] | null>(
       resource === "credential"
         ? get(sshCredentials$)

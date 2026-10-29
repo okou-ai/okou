@@ -540,10 +540,12 @@ const joinAccountMenuCreditResources$ = command(
   ): Promise<void> => {
     const [billingResult, usagePackResult] = await Promise.all([
       resources.billing
-        ? settle(resources.billing.promise, signal)
+        ? // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
+          settle(resources.billing.promise, signal)
         : Promise.resolve(null),
       resources.usagePack
-        ? settle(resources.usagePack.promise, signal)
+        ? // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
+          settle(resources.usagePack.promise, signal)
         : Promise.resolve(null),
     ]);
     signal.throwIfAborted();

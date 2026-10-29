@@ -248,6 +248,7 @@ export const setChatThreadPinned$ = command(
     }
     // Render every click immediately, but preserve the order of header saves.
     if (after) {
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       await settle(after, signal);
     }
     signal.throwIfAborted();

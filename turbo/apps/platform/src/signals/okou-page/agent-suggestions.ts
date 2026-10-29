@@ -21,7 +21,7 @@ import {
 } from "../chat-page/create-chat-thread.ts";
 import { ensureAgentDraft$ } from "./agent-draft.ts";
 import { now } from "../../lib/time.ts";
-import { settle } from "../utils.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
 import {
@@ -197,17 +197,6 @@ export const agentSuggestionsEnabled$ = computed(async (get) => {
   return primary !== null && current === primary;
 });
 const revision$ = state(0);
-const consumedIds$ = state<readonly string[]>([]);
-interface OptimisticFeedback {
-  readonly suggestionId: string;
-  readonly feedbackId: string;
-}
-const optimisticFeedbacks$ = state<readonly OptimisticFeedback[]>([]);
-const latestFeedbackIntent$ = state<string | null>(null);
-export const savingSuggestionFeedback$ = computed((get) => {
-  return get(optimisticFeedbacks$).length > 0;
-});
-
 interface FeedbackConfirmation {
   readonly item: Suggestion;
   readonly id: string;
@@ -225,22 +214,12 @@ const feedbackReasonOpen$ = state(false);
 export const suggestionFeedbackReasonOpen$ = computed((get) => {
   return get(feedbackReasonOpen$);
 });
-const feedbackRequests$ = state<Readonly<Record<string, string>>>({});
 export const closeSuggestionFeedback$ = command(({ set }) => {
   set(feedbackConfirmation$, null);
   set(feedbackReasonOpen$, false);
 });
 export const openSuggestionFeedbackReason$ = command(({ set }) => {
   set(feedbackReasonOpen$, true);
-});
-const feedbackRequestId$ = command(({ get, set }, key: string) => {
-  const existing = get(feedbackRequests$)[key];
-  if (existing) {
-    return existing;
-  }
-  const id = crypto.randomUUID();
-  set(feedbackRequests$, { ...get(feedbackRequests$), [key]: id });
-  return id;
 });
 export const submitAgentSuggestionFeedback$ = command(
   async (
@@ -249,60 +228,25 @@ export const submitAgentSuggestionFeedback$ = command(
     kind: "already_done" | "not_planned" | "less_like_this" | "dismissed",
     signal: AbortSignal,
   ) => {
-    const key = `${item.id}:${kind}`;
-    const id = set(feedbackRequestId$, key);
-    if (
-      get(optimisticFeedbacks$).some((entry) => {
-        return entry.suggestionId === item.id;
-      })
-    ) {
-      return;
-    }
-    set(latestFeedbackIntent$, id);
-    set(optimisticFeedbacks$, [
-      ...get(optimisticFeedbacks$),
-      { suggestionId: item.id, feedbackId: id },
-    ]);
-    const outcome = await settle(
-      accept(
-        get(apiClient$)(suggestionsContract).feedback({
-          params: { id: item.id },
-          body: {
-            id,
-            kind,
-            targetId: null,
-            note: "",
-            snapshot: item.consumeToken ? item : undefined,
-          },
-          fetchOptions: { signal },
-        }),
-        [200, 409],
-        signal,
-      ),
+    const id = crypto.randomUUID();
+    const result = await accept(
+      get(apiClient$)(suggestionsContract).feedback({
+        params: { id: item.id },
+        body: {
+          id,
+          kind,
+          targetId: null,
+          note: "",
+          snapshot: item.consumeToken ? item : undefined,
+        },
+        fetchOptions: { signal },
+      }),
+      [200, 409],
       signal,
     );
     signal.throwIfAborted();
-    set(
-      optimisticFeedbacks$,
-      get(optimisticFeedbacks$).filter((entry) => {
-        return entry.feedbackId !== id;
-      }),
-    );
-    if (!outcome.ok) {
-      set(reload$);
-      throw outcome.error;
-    }
-    const result = outcome.value;
-    set(consumedIds$, [...get(consumedIds$), item.id]);
-    if (result.status === 200 && get(latestFeedbackIntent$) === id) {
-      set(
-        feedbackRequests$,
-        Object.fromEntries(
-          Object.entries(get(feedbackRequests$)).filter(([entryKey]) => {
-            return entryKey !== key;
-          }),
-        ),
-      );
+    // The suggestion list follows the server through agentSuggestionsChanged.
+    if (result.status === 200) {
       set(feedbackConfirmation$, {
         item,
         id,
@@ -313,7 +257,6 @@ export const submitAgentSuggestionFeedback$ = command(
       });
       set(feedbackReasonOpen$, false);
     }
-    set(reload$);
   },
 );
 export const undoSuggestionFeedback$ = command(
@@ -322,7 +265,7 @@ export const undoSuggestionFeedback$ = command(
     if (!last) {
       return;
     }
-    const result = await accept(
+    await accept(
       get(apiClient$)(suggestionsContract).feedback({
         params: { id: last.item.id },
         body: {
@@ -337,18 +280,10 @@ export const undoSuggestionFeedback$ = command(
       [200],
       signal,
     );
-    if (result.body.restored) {
-      set(
-        consumedIds$,
-        get(consumedIds$).filter((id) => {
-          return id !== last.item.id;
-        }),
-      );
-    }
+    signal.throwIfAborted();
     if (get(suggestionFeedbackConfirmation$)?.id === last.id) {
       set(closeSuggestionFeedback$);
     }
-    set(reload$);
   },
 );
 export const saveSuggestionFeedbackReason$ = command(
@@ -358,7 +293,7 @@ export const saveSuggestionFeedbackReason$ = command(
       return;
     }
     const request: SuggestionFeedbackRequest = {
-      id: set(feedbackRequestId$, `${last.id}:${note}`),
+      id: crypto.randomUUID(),
       kind: "reason",
       targetId: last.id,
       note,
@@ -404,49 +339,51 @@ const agentSuggestions$ = computed(async (get) => {
   return result.status === 200 ? result.body.suggestions : [];
 });
 export const visibleAgentSuggestions$ = computed(async (get) => {
-  const consumed = get(consumedIds$);
-  const optimistic = get(optimisticFeedbacks$);
   return (await get(agentSuggestions$)).filter((item) => {
-    return (
-      !consumed.includes(item.id) &&
-      !optimistic.some((entry) => {
-        return entry.suggestionId === item.id;
-      }) &&
-      getSuggestionExpiresAt(item) > now()
-    );
+    return getSuggestionExpiresAt(item) > now();
   });
 });
-const reload$ = command(({ set }) => {
+const reloadAgentSuggestions$ = command(({ set }) => {
   set(revision$, (value) => {
     return value + 1;
   });
 });
 export const enterAgentSuggestions$ = command(({ set }) => {
   set(index$, 0);
-  set(consumedIds$, []);
-  set(optimisticFeedbacks$, []);
-  set(latestFeedbackIntent$, null);
-  set(feedbackRequests$, {});
   set(closeSuggestionFeedback$);
-  set(reload$);
 });
+/** The API notifies every suggestion change, including this page's own. */
+export const subscribeAgentSuggestions$ = command(
+  ({ get, set }, signal: AbortSignal) => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
+      return;
+    }
+    set(
+      setAblyInvalidationLoop$,
+      {
+        scope: "credential",
+        topic: "agentSuggestionsChanged",
+        invalidations: [reloadAgentSuggestions$],
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  },
+);
 /**
- * Consume the suggestion on the server, then remove it from the panel.
- * Dismissing stops here; using a suggestion adds its content to a draft. Resolves to
- * the consumed suggestion, or to null when it was already consumed here or
- * elsewhere.
+ * Consume the suggestion on the server; the panel drops it when the change
+ * notification re-reads the list. Using a suggestion adds its content to a
+ * draft. Resolves to the consumed suggestion, or to null when it was already
+ * consumed elsewhere.
  */
 const consumeAgentSuggestion$ = command(
   async (
-    { get, set },
+    { get },
     item: Suggestion,
     optionId: string | null,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    if (get(consumedIds$).includes(item.id)) {
-      return null;
-    }
     const result = await accept(
       get(apiClient$)(suggestionsContract).consume({
         params: { id: item.id },
@@ -459,11 +396,7 @@ const consumeAgentSuggestion$ = command(
       [200, 409],
       signal,
     );
-    set(consumedIds$, (ids) => {
-      return [...ids, item.id];
-    });
     signal.throwIfAborted();
-    set(reload$);
     return result.status === 200 ? result.body : null;
   },
 );

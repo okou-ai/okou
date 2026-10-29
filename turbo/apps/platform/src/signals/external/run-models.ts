@@ -25,6 +25,7 @@ export const availableRunModels$ = computed(async (get) => {
   const client = get(apiClient$)(runModelsMainContract, { apiBase: "api" });
   const resource = await pendingResource;
   const generation = ++resource.generation;
+  // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
   const result = await settle(accept(client.list(), [200]));
   if (result.ok) {
     // Keep the composer's nullable Auto representation against both API releases.

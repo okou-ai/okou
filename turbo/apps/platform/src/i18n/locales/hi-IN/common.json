@@ -4055,11 +4055,13 @@
   },
   "featureGuide": {
     "close": "नई सुविधाओं की गाइड बंद करें",
-    "dismiss": "समझ गया",
     "label": "नया क्या है",
+    "navigation": "इस अपडेट की सुविधाएँ",
     "next": "अगला",
+    "nextFeature": "अगली सुविधा",
     "preview": "पूर्वावलोकन",
     "previous": "पिछला",
+    "previousFeature": "पिछली सुविधा",
     "tryPrompt": "यह काम आज़माएँ"
   },
   "global": {

@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1077.3](https://github.com/okou-ai/okou/compare/app-v0.1077.2...app-v0.1077.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* group suggestion actions on the left with dismiss first ([#44029](https://github.com/okou-ai/okou/issues/44029)) ([cf32c13](https://github.com/okou-ai/okou/commit/cf32c133c84653c53cb7a84730b0ff2e8c9244ba))
+
+
+### Performance Improvements
+
+* **app:** avoid redundant hosted site permission reloads ([#44022](https://github.com/okou-ai/okou/issues/44022)) ([1f75c65](https://github.com/okou-ai/okou/commit/1f75c653b6e38ced2c70b477a50fbcba48b0e3e1))
+* **app:** share thread-owned chat event projections ([#44012](https://github.com/okou-ai/okou/issues/44012)) ([d3e2306](https://github.com/okou-ai/okou/commit/d3e2306fef27fbabab1a52e1c2ab5b6848266716))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.20.1
+    * @okouai/core bumped to 8.800.4
+
 ## [0.1077.2](https://github.com/okou-ai/okou/compare/app-v0.1077.1...app-v0.1077.2) (2026-10-29)
 
 

@@ -14,9 +14,21 @@ import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { talkDraft$ } from "./okou-page/chat-draft.ts";
 
-function createFeatureGuideSelection() {
+interface SwipePoint {
+  readonly identifier: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+function createFeatureGuideSelection(itemCount: number) {
   const item$ = state(0);
   const step$ = state(0);
+  const swipeStart$ = state<SwipePoint | null>(null);
+  const selectItem$ = command(({ set }, index: number) => {
+    set(item$, index);
+    set(step$, 0);
+    set(swipeStart$, null);
+  });
   return {
     itemIndex$: computed((get) => {
       return get(item$);
@@ -24,12 +36,28 @@ function createFeatureGuideSelection() {
     stepIndex$: computed((get) => {
       return get(step$);
     }),
-    selectItem$: command(({ set }, index: number) => {
-      set(item$, index);
-      set(step$, 0);
-    }),
+    selectItem$,
     selectStep$: command(({ set }, index: number) => {
       set(step$, index);
+    }),
+    beginSwipe$: command(({ set }, point: SwipePoint | null) => {
+      set(swipeStart$, itemCount > 1 ? point : null);
+    }),
+    endSwipe$: command(({ get, set }, point: SwipePoint | null) => {
+      const start = get(swipeStart$);
+      set(swipeStart$, null);
+      if (!start || !point || start.identifier !== point.identifier) {
+        return;
+      }
+      const deltaX = point.x - start.x;
+      const deltaY = point.y - start.y;
+      if (Math.abs(deltaX) < 48 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.5) {
+        return;
+      }
+      set(
+        selectItem$,
+        (get(item$) + (deltaX < 0 ? 1 : itemCount - 1)) % itemCount,
+      );
     }),
   };
 }
@@ -67,7 +95,9 @@ export const featureGuide$ = computed(
       owner,
       edition: response.body.edition,
       preview: response.body.preview === true,
-      selection: createFeatureGuideSelection(),
+      selection: createFeatureGuideSelection(
+        response.body.edition.content.items.length,
+      ),
     };
   },
 );

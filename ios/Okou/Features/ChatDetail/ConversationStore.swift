@@ -296,6 +296,7 @@ final class ConversationStore {
   /// A first send carries the selection acknowledged by thread creation. It must not
   /// wait for the new detail view's independent metadata read to become sendable.
   func send(
+    initialMessage: PendingMessage? = nil,
     initialSelection: ChatModelSelection? = nil, initialComputerAccess: ChatComputerAccess? = nil,
     willSend: (@MainActor (String) -> Void)? = nil
   ) async {
@@ -303,14 +304,16 @@ final class ConversationStore {
       !isSending, !isRecoveringFailure, !closed, !needsUpgrade, !Task.isCancelled
     else { return }
     guard initialSelection != nil || modelSelection?.canSend != false else { return }
-    let messageID = UUID().uuidString.lowercased()
+    let messageID = initialMessage?.id ?? UUID().uuidString.lowercased()
     willSend?(messageID)
     // Resigning can commit marked text. Capture the message after native editing ends.
     composer.editor.dismissKeyboard()
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    var message = PendingMessage(
-      id: messageID, text: text, createdAt: Date(),
-      attachments: attachmentDraft.uploaded, document: composer.value.draftUserMessage)
+    var message =
+      initialMessage
+      ?? PendingMessage(
+        id: messageID, text: text, createdAt: Date(),
+        attachments: attachmentDraft.uploaded, document: composer.value.draftUserMessage)
     if let initialSelection {
       message.modelSelection = initialSelection
       message.reasoningEffort = modelSelection?.models.configuration?.requestedEffort(

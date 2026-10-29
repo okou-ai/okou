@@ -23,6 +23,7 @@ import {
   agentPhoneReplyDestination,
   agentPhoneRouteLinkColumn,
   agentPhoneReplyChunks,
+  recordAgentPhoneGroupReplyRoute$,
   agentPhoneUserLinksForChannel,
   markdownToImessagePlain,
   resolveAgentPhoneConversationVisibilityRecipients$,
@@ -317,6 +318,7 @@ const sendAgentPhoneReply$ = command(
     args: {
       readonly target: AgentPhoneDeliveryTarget;
       readonly body: string;
+      readonly chatThreadId: string;
     },
     signal: AbortSignal,
   ): Promise<AgentPhoneChatSendResult> => {
@@ -357,6 +359,14 @@ const sendAgentPhoneReply$ = command(
       );
       // Preserve each accepted part before attempting the next one; failures do
       // not erase earlier receipts or trigger an automatic resend.
+      if (args.target.channel === "imessage" && args.target.isGroup) {
+        await set(recordAgentPhoneGroupReplyRoute$, {
+          userLinkId: args.target.userLinkId,
+          conversationId: args.target.conversationId!,
+          messageId: message.id,
+          chatThreadId: args.chatThreadId,
+        });
+      }
       if (args.target.channel === "whatsapp") {
         await set(
           storeOutboundAgentPhoneMessage$,
@@ -456,6 +466,7 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
       {
         target: payload,
         body,
+        chatThreadId: run.chatThreadId,
       },
       signal,
     );
@@ -652,6 +663,7 @@ export const deliverAgentPhoneChatAdmissionFailure$ = command(
       {
         target: args.target,
         body,
+        chatThreadId: args.chatThreadId,
       },
       signal,
     );

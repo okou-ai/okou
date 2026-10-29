@@ -157,6 +157,7 @@ const loadConnectorCallbackIcon$ = command(
     if (connectorSlug === "link") {
       return undefined;
     }
+    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const catalogItem = await settle(
       set(loadConnectorCatalogItem$, connectorSlug, signal),
       signal,

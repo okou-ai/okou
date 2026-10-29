@@ -38,6 +38,13 @@ do not copy it to new work. See [withCleanup](signals/withCleanup.md) for the
 anti-patterns and alternatives. A local `finally` is not a migration if it merely
 moves duplicated loading/error state or redundant cancellation bookkeeping.
 
+`ccstate/no-settle` and `ccstate/no-best-effort` prohibit new `settle` and
+`bestEffort` usages. Existing references have next-line waivers dated
+`20261029`; remove the waiver with the reference. See
+[settle and bestEffort](signals/settle.md) for alternatives: let failures
+propagate, derive request UI from loadables, and follow server change
+notifications instead of rolling back optimistic state.
+
 `readImageDimensions` inherits the workspace dialog signal. Load, decode error,
 and cancellation all release the image listeners and object URL. Browser event
 adaptation uses `createDeferredPromise`; it does not justify a file exemption.
