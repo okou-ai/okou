@@ -19,7 +19,7 @@ describe("desktop update routes", () => {
     expect(shipped.status).toBe(200);
     expect(shipped.headers.get("cache-control")).toBe("no-store");
     await expect(shipped.json()).resolves.toStrictEqual({
-      minimumSupportedVersion: "0.51.0",
+      minimumSupportedVersion: "0.54.0",
     });
     desktopCompatibility.minimumSupportedVersion = null;
     const disabled = await appRequest("/api/desktop/compatibility");

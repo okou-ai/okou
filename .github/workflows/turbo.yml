@@ -2876,11 +2876,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          url=https://api.okou.ai/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json
+          url=https://api.okou.ai/api/desktop/updates/stable/darwin/arm64/release
           # A missing version only fails PRs that raise the Desktop floor or
           # rely on a transform maxVersion; the lint names this oracle.
-          if releases=$(curl -fsS --retry 2 --max-time 20 "$url") &&
-            version=$(printf '%s' "$releases" | jq -er '.currentRelease | strings'); then
+          if release_url=$(curl -fsS --retry 2 --max-time 20 -o /dev/null -w '%{redirect_url}' "$url") &&
+            [[ "$release_url" =~ ^https://github\.com/okou-ai/okou/releases/tag/okou-desktop-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version=${BASH_REMATCH[1]}
             echo "Published Desktop version: $version"
             echo "version=$version" >> "$GITHUB_OUTPUT"
           else

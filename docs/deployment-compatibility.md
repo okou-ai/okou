@@ -302,9 +302,11 @@ error code, declare that response's `error.code` as an enum of every code the
 handler returns, as the command-completion `409` does, so that a renamed or
 added code becomes a finding.
 
-The published Desktop version is `currentRelease` of
-`GET https://api.okou.ai/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json`,
-which the API serves only after the Desktop update manifest is published. When
+The published Desktop version is the release tag version in the redirect from
+`GET https://api.okou.ai/api/desktop/updates/stable/darwin/arm64/release`.
+This native release selector reads the published update manifest and excludes
+blocked releases and releases without a matching platform asset. The frozen
+Electron migration feed is not an oracle for current Native releases. When
 it cannot be read, a PR that raises the floor or relies on a non-null
 `maxVersion` fails and names the oracle; other PRs are unaffected. A lowered,
 removed, or non-stable floor fails even without findings.
@@ -320,8 +322,10 @@ Transform lifecycle: a shape-only break registers its transform with
 `maxVersion: null`, the Desktop PR that adopts the new shape sets `maxVersion`
 as defined in
 [`client-transforms/types.ts`](../turbo/packages/api-contracts/src/client-transforms/types.ts),
-and once a floor raise passes `maxVersion` the gate reports the transform as
-unreachable until it is deleted.
+and once a floor raise passes `maxVersion` the gate rejects the unreachable
+transform. Remove its entry, runtime wiring, and retired tests together with the
+floor raise, verifying that the owning admission boundary rejects unsupported
+clients before producing the changed response.
 
 ### Coupled Guest Disk and Retained-Image Contracts
 

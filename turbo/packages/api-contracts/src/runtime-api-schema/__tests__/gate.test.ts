@@ -252,7 +252,7 @@ describe("runtime API Desktop contract gate", () => {
     });
 
     expect(result.passed).toBe(false);
-    expect(result.errors[0]?.message).toContain("RELEASES.json");
+    expect(result.errors[0]?.message).toContain("darwin/arm64/release");
   });
 
   it("does not need the published version oracle when the floor is unchanged", () => {
