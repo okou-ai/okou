@@ -115,11 +115,9 @@ async fn claude_content_blocks_are_masked_and_sequenced_in_source_order()
 
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
     assert!(result.control_error.is_none());
+    assert!(result.event_delivery.is_none());
     assert_eq!(result.last_event_sequence, Some(7));
 
-    server
-        .wait_for_quiet(Duration::from_millis(50), Duration::from_secs(5))
-        .await?;
     let delivered = server
         .requests()?
         .into_iter()

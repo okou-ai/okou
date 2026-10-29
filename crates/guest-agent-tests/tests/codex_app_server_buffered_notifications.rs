@@ -85,15 +85,10 @@ async fn codex_app_server_delivers_buffered_notifications_before_turn_start_resp
     assert_eq!(local_order, expected_order);
     drop(log);
 
-    let requests = server
-        .wait_for_quiet(Duration::from_millis(50), Duration::from_secs(5))
-        .await?;
+    let requests = server.requests()?;
     let mut delivered_order = Vec::new();
     let mut delivered_warnings = 0;
     for request in requests {
-        let common::RecordedHttpEvent::Request(request) = request else {
-            continue;
-        };
         if request.path != "/api/webhooks/agent/events" {
             continue;
         }

@@ -4,7 +4,7 @@ use std::sync::{
     Arc, Mutex, MutexGuard,
     atomic::{AtomicUsize, Ordering},
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
@@ -121,36 +121,6 @@ impl RecordingServer {
                 RecordedHttpEvent::Response { .. } => None,
             })
             .collect())
-    }
-
-    pub async fn wait_for_quiet(
-        &self,
-        quiet_for: Duration,
-        timeout: Duration,
-    ) -> Result<Vec<RecordedHttpEvent>, String> {
-        let started_at = Instant::now();
-        let mut last_len = self.lock_events()?.len();
-        let mut quiet_started_at = Instant::now();
-
-        loop {
-            {
-                let events = self.lock_events()?;
-                if events.len() != last_len {
-                    last_len = events.len();
-                    quiet_started_at = Instant::now();
-                } else if quiet_started_at.elapsed() >= quiet_for {
-                    return Ok(events.clone());
-                }
-            }
-
-            if started_at.elapsed() >= timeout {
-                return Err(format!(
-                    "recording server did not become quiet within {timeout:?}; observed {last_len} events"
-                ));
-            }
-
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
     }
 }
 

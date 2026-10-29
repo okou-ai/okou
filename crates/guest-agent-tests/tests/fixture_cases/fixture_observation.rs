@@ -266,9 +266,6 @@ async fn quiet_recording_returns_complete_independent_http_snapshots()
         .timeout(Duration::from_secs(5))
         .build()?;
     let body = format!("large-fixture-head-{}-tail", "α".repeat(1024 * 1024));
-    let waiting = server.wait_for_quiet(Duration::from_millis(20), Duration::from_secs(5));
-    tokio::pin!(waiting);
-    assert!(futures_util::poll!(&mut waiting).is_pending());
     for path in ["/first", "/second"] {
         assert_eq!(
             client
@@ -282,28 +279,19 @@ async fn quiet_recording_returns_complete_independent_http_snapshots()
             reqwest::StatusCode::OK
         );
     }
-    let snapshot = waiting.await?;
+    // Acknowledged posts have already published their complete request records.
+    let snapshot = server.requests()?;
     let expected = ["/first", "/second"]
         .into_iter()
-        .flat_map(|path| {
-            [
-                RecordedHttpEvent::Request(RecordedRequest {
-                    path: path.into(),
-                    authorization: Some("Bearer fixture-token".into()),
-                    content_type: Some("text/plain".into()),
-                    client_request_id: None,
-                    body: body.clone(),
-                }),
-                RecordedHttpEvent::Response {
-                    path: path.into(),
-                    status: 200,
-                },
-            ]
+        .map(|path| RecordedRequest {
+            path: path.into(),
+            authorization: Some("Bearer fixture-token".into()),
+            content_type: Some("text/plain".into()),
+            client_request_id: None,
+            body: body.clone(),
         })
         .collect::<Vec<_>>();
     assert_eq!(snapshot, expected);
-    assert_eq!(server.events()?, expected);
-    assert_eq!(server.requests()?.len(), 2);
     assert_eq!(
         client
             .post(format!("{}/third", server.base_url))
@@ -313,24 +301,10 @@ async fn quiet_recording_returns_complete_independent_http_snapshots()
             .status(),
         reqwest::StatusCode::OK
     );
-    let next = server
-        .wait_for_quiet(Duration::from_millis(20), Duration::from_secs(5))
-        .await?;
-    assert_eq!(next.len(), 6);
+    let next = server.requests()?;
+    assert_eq!(next.len(), 3);
+    assert_eq!(next[2].path, "/third");
+    assert_eq!(next[2].body, "third-body");
     assert_eq!(snapshot, expected);
-    Ok(())
-}
-
-#[tokio::test]
-async fn quiet_recording_preserves_timeout_error() -> Result<(), String> {
-    let server = RecordingServer::start(200, Duration::ZERO).await?;
-    let error = server
-        .wait_for_quiet(Duration::from_secs(60), Duration::ZERO)
-        .await
-        .expect_err("a zero timeout cannot establish a nonzero quiet period");
-    assert_eq!(
-        error,
-        "recording server did not become quiet within 0ns; observed 0 events"
-    );
     Ok(())
 }

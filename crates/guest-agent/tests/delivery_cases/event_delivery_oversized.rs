@@ -122,15 +122,11 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     assert!(!stderr.contains("protected-identity-"));
     assert!(!stderr.contains("protected-tail-"));
 
-    let requests = server
-        .wait_for_quiet(Duration::from_millis(50), Duration::from_secs(5))
-        .await?;
+    // The process has exited after delivery drained; requests precede responses.
+    let requests = server.requests()?;
     let mut delivered = Vec::new();
     let mut completions = Vec::new();
-    for request in requests.into_iter().filter_map(|record| match record {
-        common::RecordedHttpEvent::Request(request) => Some(request),
-        _ => None,
-    }) {
+    for request in requests {
         if request.path == "/api/webhooks/agent/events" {
             assert!(request.body.len() <= LIMIT);
             assert!(!request.body.contains(SECRET));

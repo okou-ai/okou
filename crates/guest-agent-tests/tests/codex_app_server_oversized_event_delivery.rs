@@ -173,18 +173,11 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     assert!(result.event_delivery.is_none());
     assert_eq!(result.last_event_sequence, Some(19));
 
+    // Execution joined delivery, and the server records before responding.
     let requests = server
-        .wait_for_quiet(Duration::from_millis(50), Duration::from_secs(5))
-        .await?
+        .requests()?
         .into_iter()
-        .filter_map(|event| match event {
-            common::RecordedHttpEvent::Request(request)
-                if request.path == "/api/webhooks/agent/events" =>
-            {
-                Some(request)
-            }
-            _ => None,
-        })
+        .filter(|request| request.path == "/api/webhooks/agent/events")
         .collect::<Vec<_>>();
     assert!(!requests.is_empty());
     assert!(
