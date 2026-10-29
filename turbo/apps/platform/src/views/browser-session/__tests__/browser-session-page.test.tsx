@@ -241,9 +241,6 @@ test.each(["url", "instance", "window"] as const)(
     await expect(
       screen.findByDisplayValue("https://example.com"),
     ).resolves.toBeEnabled();
-    const previousViewer = screen.getByRole("region", {
-      name: "Remote browser viewer",
-    });
     currentSession = browserSession(
       identity === "url"
         ? { liveUrl: "https://viewer.example/live?token=replacement" }
@@ -265,7 +262,9 @@ test.each(["url", "instance", "window"] as const)(
     });
     await connectionStarted.promise;
     await waitFor(() => {
-      expect(previousViewer).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: "Remote browser viewer" }),
+      ).not.toBeInTheDocument();
     });
     releaseConnection.resolve();
     await expect(
@@ -359,7 +358,7 @@ function mockSharedViewer() {
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, { cdpUrl });
   });
-  return { session };
+  return { session, cdpUrl };
 }
 
 test("Shared panels keep their own chat alive without input and show only its native window", async () => {
@@ -504,20 +503,18 @@ test.each([200, 404, 409] as const)(
     await setupPage({ context, path: `/browsers/${THREAD_ID}` });
     await expectStreamingViewer();
     await entered.promise;
-    const previousInput = screen.getByLabelText("Remote browser input");
     currentSession = browserSession({
       window: { instanceId: INSTANCE_ID, primaryWindowId: 1 },
     });
     release.resolve();
     await waitFor(() => {
-      expect(previousInput).not.toBeInTheDocument();
+      expect(
+        queryAllByRoleFast("tab").map((tab) => {
+          return tab.getAttribute("aria-label");
+        }),
+      ).toStrictEqual(["Other chat"]);
     });
     await expectStreamingViewer();
-    expect(
-      queryAllByRoleFast("tab").map((tab) => {
-        return tab.getAttribute("aria-label");
-      }),
-    ).toStrictEqual(["Other chat"]);
     await next.promise;
   },
 );
@@ -525,11 +522,21 @@ test.each([200, 404, 409] as const)(
 test.each(["legacy", "instance", "window"] as const)(
   "A late %s heartbeat preserves the replacement window and continues renewal",
   async (previous) => {
-    const { session } = mockSharedViewer();
+    const { session, cdpUrl } = mockSharedViewer();
     const initialSession = previous === "legacy" ? browserSession() : session;
     let currentSession = initialSession;
+    let replacing = false;
+    const connectionStarted = context.mocks.deferred<void>();
+    const releaseConnection = context.mocks.deferred<void>();
     context.mocks.api(browserContract.get, ({ respond }) => {
       return respond(200, { browser: currentSession });
+    });
+    context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+      if (replacing) {
+        connectionStarted.resolve();
+        await releaseConnection.promise;
+      }
+      return respond(200, { cdpUrl });
     });
     const entered = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
@@ -560,7 +567,6 @@ test.each(["legacy", "instance", "window"] as const)(
     await setupPage({ context, path: `/browsers/${THREAD_ID}` });
     await expectStreamingViewer();
     await entered.promise;
-    const previousInput = screen.getByLabelText("Remote browser input");
     currentSession = browserSession({
       liveUrl:
         previous === "legacy"
@@ -574,14 +580,19 @@ test.each(["legacy", "instance", "window"] as const)(
         primaryWindowId: previous === "window" ? 1 : 0,
       },
     });
+    replacing = true;
     act(() => {
       context.mocks.ably.trigger("browserSessionChanged", {
         threadId: THREAD_ID,
       });
     });
+    await connectionStarted.promise;
     await waitFor(() => {
-      expect(previousInput).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText("Remote browser input"),
+      ).not.toBeInTheDocument();
     });
+    releaseConnection.resolve();
     await expectStreamingViewer();
     release.resolve();
     await next.promise;
