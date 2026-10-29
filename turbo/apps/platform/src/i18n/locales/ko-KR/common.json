@@ -4040,11 +4040,13 @@
   },
   "featureGuide": {
     "close": "새 기능 가이드 닫기",
-    "dismiss": "확인",
     "label": "새로운 기능",
+    "navigation": "이번 업데이트의 기능",
     "next": "다음",
+    "nextFeature": "다음 기능",
     "preview": "미리 보기",
     "previous": "이전",
+    "previousFeature": "이전 기능",
     "tryPrompt": "이 작업 시작하기"
   },
   "global": {

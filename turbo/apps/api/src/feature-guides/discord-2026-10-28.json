@@ -9,88 +9,16 @@
     "items": [
       {
         "featureId": "discord-integration",
-        "title": "From launch chatter to a checklist",
-        "description": "A quick look at mentions, follow-ups, and direct messages.",
+        "title": "Your teammate, now in Discord",
+        "description": "Mention @Okou in a channel or send a DM. Get useful work back in the conversation.",
         "media": {
-          "type": "walkthrough",
-          "steps": [
-            {
-              "title": "Ask in the conversation",
-              "description": "Mention @Okou. Get a useful reply in the same thread.",
-              "conversation": {
-                "provider": "discord",
-                "label": "Example conversation",
-                "title": "#launch",
-                "subtitle": "Launch planning",
-                "messages": [
-                  {
-                    "id": "ask",
-                    "role": "user",
-                    "author": "Sam",
-                    "text": "@Okou Make a launch checklist: Maya reviews the email. Leo finishes the FAQ by Friday."
-                  },
-                  {
-                    "id": "reply",
-                    "role": "assistant",
-                    "author": "Okou",
-                    "text": "Launch checklist\n☐ Maya: review the email\n☐ Leo: finish the FAQ by Friday"
-                  }
-                ]
-              }
-            },
-            {
-              "title": "Keep the thread moving",
-              "description": "Ask a follow-up. Get a draft your teammate can use.",
-              "conversation": {
-                "provider": "discord",
-                "label": "Example conversation",
-                "title": "#launch",
-                "subtitle": "Launch planning",
-                "messages": [
-                  {
-                    "id": "ask",
-                    "role": "user",
-                    "author": "Sam",
-                    "text": "@Okou Draft a friendly reminder for Maya to review the launch email by Friday."
-                  },
-                  {
-                    "id": "reply",
-                    "role": "assistant",
-                    "author": "Okou",
-                    "text": "Hi Maya! Could you review the launch email by Friday? Thanks for helping us get ready."
-                  }
-                ]
-              }
-            },
-            {
-              "title": "Or just send a DM",
-              "description": "Connect your account to start a one-to-one conversation with Okou.",
-              "conversation": {
-                "provider": "discord",
-                "label": "Example conversation",
-                "title": "Direct messages",
-                "subtitle": "Okou",
-                "messages": [
-                  {
-                    "id": "ask",
-                    "role": "user",
-                    "author": "You",
-                    "text": "Help me get ready for my launch check-in."
-                  },
-                  {
-                    "id": "reply",
-                    "role": "assistant",
-                    "author": "Okou",
-                    "text": "Let's cover three things:\n1. Progress since last time\n2. Open decisions\n3. Next steps"
-                  }
-                ]
-              }
-            }
-          ]
+          "type": "image",
+          "url": "https://a.okou.io/fn5f5ohreu.png",
+          "alt": "Example Discord conversation: Sam asks @Okou for a launch checklist. Okou turns the request into tasks for Maya to review the launch email and Leo to finish the FAQ."
         },
         "action": {
           "type": "connect-discord",
-          "label": "Connect Discord"
+          "label": "Explore Discord"
         }
       }
     ]

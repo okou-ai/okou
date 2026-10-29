@@ -4040,11 +4040,13 @@
   },
   "featureGuide": {
     "close": "关闭新功能指南",
-    "dismiss": "知道了",
     "label": "新功能",
+    "navigation": "本期新功能",
     "next": "下一步",
+    "nextFeature": "下一个功能",
     "preview": "预览",
     "previous": "上一步",
+    "previousFeature": "上一个功能",
     "tryPrompt": "试试这个任务"
   },
   "global": {

@@ -4109,11 +4109,13 @@
   },
   "featureGuide": {
     "close": "Cerrar guía de novedades",
-    "dismiss": "Entendido",
     "label": "Novedades",
+    "navigation": "Funciones de esta actualización",
     "next": "Siguiente",
+    "nextFeature": "Siguiente función",
     "preview": "Vista previa",
     "previous": "Anterior",
+    "previousFeature": "Función anterior",
     "tryPrompt": "Probar esta tarea"
   },
   "global": {

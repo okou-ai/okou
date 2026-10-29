@@ -4053,11 +4053,13 @@
   },
   "featureGuide": {
     "close": "Close feature guide",
-    "dismiss": "Got it",
     "label": "What's new",
+    "navigation": "Features in this update",
     "next": "Next",
+    "nextFeature": "Next feature",
     "preview": "Preview",
     "previous": "Previous",
+    "previousFeature": "Previous feature",
     "tryPrompt": "Try this task"
   },
   "global": {

@@ -1,9 +1,9 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
-import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Sparkles } from "lucide-react";
+import { Button } from "@okouai/ui/components/ui/button";
+import { IconButton } from "@okouai/ui/components/ui/icon-button";
 import { cn } from "@okouai/ui/lib/utils";
-import { ToggleButton } from "@okouai/ui/components/ui/toggle-button";
 import {
   Dialog,
   DialogContent,
@@ -46,8 +46,7 @@ function GuideMedia({
       <img
         src={media.url}
         alt={media.alt}
-        loading="lazy"
-        className="max-h-64 w-full rounded-xl object-contain"
+        className="aspect-video w-full rounded-xl bg-gray-50 object-contain"
       />
     );
   }
@@ -58,7 +57,7 @@ function GuideMedia({
         playsInline
         preload="none"
         poster={media.posterUrl}
-        className="max-h-64 w-full rounded-xl"
+        className="aspect-video w-full rounded-xl bg-gray-50"
       >
         <source src={media.url} type="video/mp4" />
         <track kind="captions" src={media.captionsUrl} srcLang="en" default />
@@ -132,6 +131,77 @@ function GuideMedia({
   );
 }
 
+function FeatureGuideNavigation({
+  snapshot,
+}: {
+  readonly snapshot: FeatureGuideSnapshot;
+}) {
+  const { t } = useTranslation();
+  const itemIndex = useGet(snapshot.selection.itemIndex$);
+  const selectItem = useSet(snapshot.selection.selectItem$);
+  const items = snapshot.edition.content.items;
+  if (items.length < 2) {
+    return null;
+  }
+  return (
+    <DialogFooter
+      role="group"
+      aria-label={t(($) => {
+        return $.featureGuide.navigation;
+      })}
+      className="flex-row items-center justify-between gap-2 border-t border-border pt-3 sm:justify-between"
+    >
+      <IconButton
+        aria-label={t(($) => {
+          return $.featureGuide.previousFeature;
+        })}
+        className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          return selectItem((itemIndex + items.length - 1) % items.length);
+        }}
+      >
+        <ArrowLeft size={16} aria-hidden="true" />
+      </IconButton>
+      <div className="flex min-w-0 items-center gap-0.5">
+        {items.map((item, index) => {
+          return (
+            <IconButton
+              key={item.featureId}
+              aria-label={item.title}
+              aria-current={index === itemIndex ? "step" : undefined}
+              className="size-6 rounded-full"
+              onClick={() => {
+                return selectItem(index);
+              }}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "h-1.5 rounded-full",
+                  index === itemIndex
+                    ? "w-4 bg-foreground"
+                    : "w-1.5 bg-gray-300",
+                )}
+              />
+            </IconButton>
+          );
+        })}
+      </div>
+      <IconButton
+        aria-label={t(($) => {
+          return $.featureGuide.nextFeature;
+        })}
+        className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          return selectItem((itemIndex + 1) % items.length);
+        }}
+      >
+        <ArrowRight size={16} aria-hidden="true" />
+      </IconButton>
+    </DialogFooter>
+  );
+}
+
 function GuideContents({
   snapshot,
   onClose,
@@ -143,7 +213,6 @@ function GuideContents({
 }) {
   const { t } = useTranslation();
   const itemIndex = useGet(snapshot.selection.itemIndex$);
-  const selectItem = useSet(snapshot.selection.selectItem$);
   const { edition } = snapshot;
   const activeItem = edition.content.items[itemIndex];
   if (!activeItem) {
@@ -165,36 +234,14 @@ function GuideContents({
           </span>
         )}
       </div>
-      <DialogHeader>
-        <DialogTitle className="pr-7 text-2xl leading-snug sm:text-3xl">
-          {edition.content.title}
-        </DialogTitle>
-        <DialogDescription>{edition.content.description}</DialogDescription>
-      </DialogHeader>
-      {edition.content.items.length === 1 ? (
-        <h3 className="text-sm font-medium">{activeItem.title}</h3>
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-3">
-          {edition.content.items.map((item, index) => {
-            return (
-              <ToggleButton
-                key={item.featureId}
-                layout="tile"
-                className="flex h-auto min-h-20 flex-col items-start justify-start gap-1 whitespace-normal rounded-xl p-3 text-left"
-                selected={index === itemIndex}
-                onClick={() => {
-                  return selectItem(index);
-                }}
-              >
-                <span className="text-sm font-medium">{item.title}</span>
-                <span className="text-xs font-normal text-muted-foreground">
-                  {item.description}
-                </span>
-              </ToggleButton>
-            );
-          })}
-        </div>
-      )}
+      <div aria-live="polite">
+        <DialogHeader className="text-left">
+          <DialogTitle className="pr-7 text-2xl leading-snug sm:text-3xl">
+            {activeItem.title}
+          </DialogTitle>
+          <DialogDescription>{activeItem.description}</DialogDescription>
+        </DialogHeader>
+      </div>
       {activeItem.media && (
         <GuideMedia
           key={activeItem.featureId}
@@ -202,38 +249,34 @@ function GuideContents({
           selection={snapshot.selection}
         />
       )}
-      <DialogFooter>
-        <Button variant="quiet" onClick={onClose}>
+      {activeItem.action?.type === "connect-discord" ? (
+        <Link
+          pathname={ROUTES.settingsDiscord}
+          className="inline-flex min-h-8 w-fit items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+          onClick={(event) => {
+            if (shouldHandleLinkClick(event)) {
+              onClose();
+            }
+          }}
+        >
+          {activeItem.action.label}
+          <ArrowUpRight size={14} aria-hidden="true" />
+        </Link>
+      ) : prompt ? (
+        <Button
+          variant="link"
+          className="h-auto w-fit px-0 py-1 text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            return onTry(prompt);
+          }}
+        >
           {t(($) => {
-            return $.featureGuide.dismiss;
+            return $.featureGuide.tryPrompt;
           })}
+          <ArrowUpRight aria-hidden="true" />
         </Button>
-        {activeItem.action?.type === "connect-discord" ? (
-          <Link
-            pathname={ROUTES.settingsDiscord}
-            className={buttonVariants()}
-            onClick={(event) => {
-              if (shouldHandleLinkClick(event)) {
-                onClose();
-              }
-            }}
-          >
-            {activeItem.action.label}
-            <ArrowRight />
-          </Link>
-        ) : prompt ? (
-          <Button
-            onClick={() => {
-              return onTry(prompt);
-            }}
-          >
-            {t(($) => {
-              return $.featureGuide.tryPrompt;
-            })}
-            <ArrowRight />
-          </Button>
-        ) : null}
-      </DialogFooter>
+      ) : null}
+      <FeatureGuideNavigation snapshot={snapshot} />
     </>
   );
 }
