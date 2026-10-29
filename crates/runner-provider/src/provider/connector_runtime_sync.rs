@@ -4193,6 +4193,17 @@ mod tests {
                     .scheduled_sync
                     .is_some()
             );
+            let retry_at = active_runs[&run_id].connectors[&target]
+                .scheduled_sync
+                .as_ref()
+                .unwrap()
+                .deadline;
+            drop(active_runs);
+            // HTTP has completed; advance only the admitted retry timer.
+            raw_http_test_support::clock::advance_timer_phase(
+                retry_at.saturating_duration_since(tokio::time::Instant::now()),
+            )
+            .await;
         }
 
         unresolved_sync.delete_async().await;
