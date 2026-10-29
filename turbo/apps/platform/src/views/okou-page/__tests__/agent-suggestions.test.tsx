@@ -1074,7 +1074,7 @@ test("Removing custom context preserves the member's original draft and files", 
 });
 
 test("Suggestions stays outside More when Tasks and the creation categories overflow", async () => {
-  mockTaskChipLayout(220);
+  mockTaskChipLayout(280);
   mockPool();
   const user = userEvent.setup();
   await setupPage({

@@ -14,12 +14,17 @@ export function createComposerTaskOverflowSignals() {
       return;
     }
     const sizing = root.querySelector<HTMLElement>("[data-task-sizing]");
-    const more = root.querySelector<HTMLElement>("[data-more-sizing]");
-    if (!sizing || !more) {
+    if (!sizing) {
       return;
     }
     const items = Array.from(
       sizing.querySelectorAll<HTMLElement>("[data-task-sizing-item]"),
+    );
+    const moreWidths = Array.from(
+      sizing.querySelectorAll<HTMLElement>("[data-more-sizing]"),
+      (item) => {
+        return item.getBoundingClientRect().width;
+      },
     );
     const style = getComputedStyle(sizing);
     const gap = Number.parseFloat(style.columnGap);
@@ -40,8 +45,7 @@ export function createComposerTaskOverflowSignals() {
         visible.add(index);
       }
     } else {
-      let available =
-        root.clientWidth - padding - more.getBoundingClientRect().width;
+      const available = root.clientWidth - padding;
       // Suggestions stays outside More whenever it fits. The remaining choices
       // retain their original order, including Tasks when that rollout is on.
       const priority = items.findIndex((item) => {
@@ -54,13 +58,23 @@ export function createComposerTaskOverflowSignals() {
         order.splice(priority, 1);
         order.unshift(priority);
       }
-      for (const index of order) {
+      // The trigger shrinks with its hidden count. Measure all candidates in
+      // one pass instead of letting the previous stack determine the next fit.
+      let usedWidth = 0;
+      let visibleCount = 0;
+      for (const [position, index] of order.entries()) {
+        const moreWidth = moreWidths[items.length - position - 1];
+        if (moreWidth !== undefined && usedWidth + moreWidth <= available) {
+          visibleCount = position;
+        }
         const width = widths[index];
-        if (width === undefined || width + gap > available) {
+        if (width === undefined) {
           break;
         }
+        usedWidth += width + gap;
+      }
+      for (const index of order.slice(0, visibleCount)) {
         visible.add(index);
-        available -= width + gap;
       }
     }
     const hidden = items

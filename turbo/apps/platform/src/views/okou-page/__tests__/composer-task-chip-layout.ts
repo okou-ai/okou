@@ -18,7 +18,9 @@ export function mockTaskChipLayout(initialWidth: number) {
         return new DOMRect(0, 0, labelWidth, 36);
       }
       if (this.dataset.moreSizing !== undefined) {
-        return new DOMRect(0, 0, 80, 36);
+        const count = Number(this.dataset.moreSizing);
+        const stackWidth = 74 + 18 * Math.min(count - 1, 2);
+        return new DOMRect(0, 0, stackWidth + (count > 3 ? 20 : 0), 36);
       }
       return originalRect.call(this);
     },

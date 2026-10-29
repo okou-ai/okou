@@ -742,7 +742,7 @@ test("Reply tracking prepares a custom workflow request without an unrelated tem
 });
 
 test("More exposes only overflowing tasks and hands the selected task to the composer", async () => {
-  mockTaskChipLayout(350);
+  mockTaskChipLayout(390);
   mockTemplateChat();
   const user = userEvent.setup();
   const editor = await setupChips();
@@ -753,6 +753,14 @@ test("More exposes only overflowing tasks and hands the selected task to the com
       return item.textContent?.trim();
     }),
   ).toStrictEqual(["Workflow", "Presentation"]);
+  expect(button("More")).toHaveTextContent("+1");
+  await user.hover(button("More"));
+  await expect(
+    screen.findByText("Document, Image, Website, Visualization", {
+      selector: '[data-slot="tooltip-content"]',
+    }),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(button("More"));
   await user.click(button("More"));
   const menu = await screen.findByRole("menu");
   expect(
@@ -782,22 +790,49 @@ test("More exposes only overflowing tasks and hands the selected task to the com
   expect(button("More")).toBeInTheDocument();
 });
 
-test("More adapts to window and font changes and disappears when all tasks fit", async () => {
-  const layout = mockTaskChipLayout(350);
+test("More fits its changing stack width and adapts to window and font changes", async () => {
+  const layout = mockTaskChipLayout(390);
   mockTemplateChat();
   const user = userEvent.setup();
   await setupChips();
   expect(button("More")).toBeInTheDocument();
+  const choices = screen.getByRole("group", { name: "Choose a task" });
+  // Five chips plus a one-icon trigger fit exactly. Reserving the previous
+  // four-item stack's width would incorrectly leave Website inside More.
+  layout.setWidth(672);
+  fireEvent(window, new Event("resize"));
+  await waitFor(() => {
+    expect(queryAllByRoleFast("button", choices)).toHaveLength(5);
+  });
+  await user.hover(button("More"));
+  await expect(
+    screen.findByText("Visualization", {
+      selector: '[data-slot="tooltip-content"]',
+    }),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(button("More"));
+  layout.setWidth(671);
+  fireEvent(window, new Event("resize"));
+  await waitFor(() => {
+    expect(queryAllByRoleFast("button", choices)).toHaveLength(4);
+  });
+  await user.click(button("More"));
+  const resizedMenu = await screen.findByRole("menu");
+  expect(
+    queryAllByRoleFast("menuitem", resizedMenu).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual(["Website", "Visualization"]);
+  await user.keyboard("{Escape}");
   layout.setWidth(900);
   fireEvent(window, new Event("resize"));
   await waitFor(() => {
     expect(
       queryAllByRoleFast("button").some((item) => {
-        return item.textContent?.trim() === "More";
+        return item.getAttribute("aria-label") === "More";
       }),
     ).toBeFalsy();
   });
-  const choices = screen.getByRole("group", { name: "Choose a task" });
   expect(queryAllByRoleFast("button", choices)).toHaveLength(6);
   layout.setLabelWidth(150);
   act(() => {
