@@ -340,7 +340,7 @@ test("Correlate token bridge failures without reporting raw error text", async (
   const requestId = tokenRequestId(workerPort);
   tokenResponse.reject(failure);
   await expect(rejected).resolves.toMatchObject([
-    { status: "rejected", reason: { message: failure.message } },
+    { status: "rejected", reason: { name: "AggregateError" } },
   ]);
   const events = tokenRequestTelemetry();
   expectTokenRequestTelemetry(events, requestId, "error");
@@ -409,7 +409,7 @@ test.each([
             status: "rejected",
             reason:
               outcome === "error"
-                ? { message: failure.message }
+                ? { name: "AggregateError" }
                 : { name: "AbortError" },
           };
     await expect(result).resolves.toMatchObject([expectedResult]);
@@ -778,38 +778,82 @@ const deferHeartbeatLoop: SharedDatabaseHeartbeatLoop = (
   signal.throwIfAborted();
 };
 
-test.each([
-  { response: "second-tab-token", outcome: "a token" },
-  { response: null, outcome: "null" },
-])(
-  "Authenticate a shared read with the first tab response returning $outcome",
-  async ({ response }) => {
+test("Authenticate a shared read with the first successful tab without waiting for its sibling", async () => {
+  initializeWorker();
+  const delayedToken = context.mocks.deferred<string | null>();
+  const firstRequested = context.mocks.deferred<void>();
+  const first = connectProtocolTransport(
+    context.signal,
+    () => {
+      firstRequested.resolve();
+      return delayedToken.promise;
+    },
+    bridgeEvents(),
+    context.workerStore,
+    deferHeartbeatLoop,
+  );
+  const second = connectProtocolTransport(
+    context.signal,
+    () => {
+      return Promise.resolve("second-tab-token");
+    },
+    bridgeEvents(),
+    context.workerStore,
+    deferHeartbeatLoop,
+  );
+  await first.bridge.registerTab(context.signal);
+  await second.bridge.registerTab(context.signal);
+  const requestTokens = new Set<string | null>();
+  const indicators = { agents: {}, threads: {}, unreadAt: {} };
+  context.mocks.api(chatThreadsContract.indicators, ({ request, respond }) => {
+    requestTokens.add(request.headers.get("authorization"));
+    return respond(200, indicators);
+  });
+
+  const pending = second.bridge.getComputed("chat-thread-indicators");
+  await firstRequested.promise;
+  await expect(pending).resolves.toStrictEqual(indicators);
+  expect(requestTokens).toStrictEqual(new Set(["Bearer second-tab-token"]));
+  tokenRequestId(first.workerPort);
+  tokenRequestId(second.workerPort);
+  delayedToken.resolve("late-first-tab-token");
+});
+
+test.each(["rejects", "disconnects"] as const)(
+  "Authenticate a shared read when another token provider %s first",
+  async (failure) => {
     initializeWorker();
-    const delayedToken = context.mocks.deferred<string | null>();
-    const firstRequested = context.mocks.deferred<void>();
+    const resetFirstOwner$ = resetSignal();
+    const firstOwnerSignal = context.store.set(
+      resetFirstOwner$,
+      context.signal,
+    );
+    const firstToken = context.mocks.deferred<string | null>();
+    const healthyToken = context.mocks.deferred<string | null>();
+    const healthyRequested = context.mocks.deferred<void>();
     const first = connectProtocolTransport(
-      context.signal,
+      firstOwnerSignal,
       () => {
-        firstRequested.resolve();
-        return delayedToken.promise;
+        return firstToken.promise;
       },
       bridgeEvents(),
       context.workerStore,
       deferHeartbeatLoop,
     );
-    const second = connectProtocolTransport(
+    const healthy = connectProtocolTransport(
       context.signal,
       () => {
-        return Promise.resolve(response);
+        healthyRequested.resolve();
+        return healthyToken.promise;
       },
       bridgeEvents(),
       context.workerStore,
       deferHeartbeatLoop,
     );
-    await first.bridge.registerTab(context.signal);
-    await second.bridge.registerTab(context.signal);
-    const requestTokens = new Set<string | null>();
+    await first.bridge.registerTab(firstOwnerSignal);
+    await healthy.bridge.registerTab(context.signal);
     const indicators = { agents: {}, threads: {}, unreadAt: {} };
+    const requestTokens = new Set<string | null>();
     context.mocks.api(
       chatThreadsContract.indicators,
       ({ request, respond }) => {
@@ -818,17 +862,123 @@ test.each([
       },
     );
 
-    const pending = second.bridge.getComputed("chat-thread-indicators");
-    await firstRequested.promise;
-    await expect(pending).resolves.toStrictEqual(indicators);
-    expect(requestTokens).toStrictEqual(
-      new Set([response ? `Bearer ${response}` : null]),
-    );
-    tokenRequestId(first.workerPort);
-    tokenRequestId(second.workerPort);
-    delayedToken.resolve("late-first-tab-token");
+    const result = Promise.allSettled([
+      healthy.bridge.getComputed("chat-thread-indicators"),
+    ]);
+    await healthyRequested.promise;
+    const requestId = tokenRequestId(first.workerPort);
+    if (failure === "rejects") {
+      firstToken.reject(new Error("Clerk token is unavailable"));
+    } else {
+      context.store.set(resetFirstOwner$);
+    }
+    const failureMessage =
+      failure === "rejects"
+        ? {
+            type: "token-error",
+            requestId,
+            error: { name: "Error", message: "Clerk token is unavailable" },
+          }
+        : { type: "disconnect" };
+    await vi.waitFor(() => {
+      expect(first.platformPort.postedMessages).toContainEqual(failureMessage);
+    });
+    healthyToken.resolve("healthy-tab-token");
+
+    await expect(result).resolves.toStrictEqual([
+      { status: "fulfilled", value: indicators },
+    ]);
+    expect(requestTokens).toStrictEqual(new Set(["Bearer healthy-tab-token"]));
+    if (failure === "disconnects") {
+      firstToken.resolve("late-disconnected-tab-token");
+    }
   },
 );
+
+test("Reject a shared read with AggregateError when every tab's token provider fails", async () => {
+  initializeWorker();
+  const lastToken = context.mocks.deferred<string | null>();
+  const lastRequested = context.mocks.deferred<void>();
+  const first = connectProtocolTransport(
+    context.signal,
+    () => {
+      return Promise.reject(new Error("First tab token unavailable"));
+    },
+    bridgeEvents(),
+    context.workerStore,
+    deferHeartbeatLoop,
+  );
+  const last = connectProtocolTransport(
+    context.signal,
+    () => {
+      lastRequested.resolve();
+      return lastToken.promise;
+    },
+    bridgeEvents(),
+    context.workerStore,
+    deferHeartbeatLoop,
+  );
+  await first.bridge.registerTab(context.signal);
+  await last.bridge.registerTab(context.signal);
+
+  const result = Promise.allSettled([
+    last.bridge.getComputed("chat-thread-indicators"),
+  ]);
+  await lastRequested.promise;
+  await vi.waitFor(() => {
+    expect(first.platformPort.postedMessages).toContainEqual({
+      type: "token-error",
+      requestId: tokenRequestId(first.workerPort),
+      error: { name: "Error", message: "First tab token unavailable" },
+    });
+  });
+  lastToken.reject(new Error("Last tab token unavailable"));
+
+  await expect(result).resolves.toMatchObject([
+    { status: "rejected", reason: { name: "AggregateError" } },
+  ]);
+});
+
+test("Cancel a shared read waiting for a token without cancelling worker progress", async () => {
+  initializeWorker();
+  const tokenRequested = context.mocks.deferred<void>();
+  const tokenResponse = context.mocks.deferred<string | null>();
+  const { bridge } = connectProtocolTransport(
+    context.signal,
+    () => {
+      tokenRequested.resolve();
+      return tokenResponse.promise;
+    },
+    bridgeEvents(),
+    context.workerStore,
+    deferHeartbeatLoop,
+  );
+  await bridge.registerTab(context.signal);
+  const indicators = { agents: {}, threads: {}, unreadAt: {} };
+  const requestTokens = new Set<string | null>();
+  context.mocks.api(chatThreadsContract.indicators, ({ request, respond }) => {
+    requestTokens.add(request.headers.get("authorization"));
+    return respond(200, indicators);
+  });
+  const resetCaller$ = resetSignal();
+  const callerSignal = context.store.set(resetCaller$, context.signal);
+  const cancelled = Promise.allSettled([
+    bridge.getComputed("chat-thread-indicators", undefined, callerSignal),
+  ]);
+  await tokenRequested.promise;
+  context.store.set(resetCaller$);
+
+  await expect(cancelled).resolves.toMatchObject([
+    { status: "rejected", reason: { name: "AbortError" } },
+  ]);
+  tokenResponse.resolve("token-after-cancellation");
+  await expect(
+    bridge.getComputed("chat-thread-indicators"),
+  ).resolves.toStrictEqual(indicators);
+  expect(requestTokens).toStrictEqual(
+    new Set(["Bearer token-after-cancellation"]),
+  );
+});
 
 test("Keep overlapping token broadcasts independent when the later request completes first", async () => {
   initializeWorker();
