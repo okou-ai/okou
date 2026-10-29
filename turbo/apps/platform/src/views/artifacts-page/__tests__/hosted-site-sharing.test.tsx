@@ -3,7 +3,7 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import type { infer as zInfer } from "zod";
 import {
   click,
@@ -29,11 +29,7 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite({
-  urlEditing = true,
-  visibility = false,
-  sidebar = false,
-} = {}) {
+async function openSite({ sidebar = false } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -60,8 +56,6 @@ async function openSite({
     path: "/artifacts",
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.HostedSiteUrlEditing]: urlEditing,
-      [FeatureSwitchKey.HostedSiteVisibility]: visibility,
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
@@ -71,12 +65,15 @@ async function openSite({
   );
 }
 
-// The published address is the share menu's title link.
-function siteAddress(address: string): HTMLElement | undefined {
-  return queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === address;
+beforeEach(() => {
+  mockSiteAlias();
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "public", revision: null });
   });
-}
+  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+    return respond(200, { siteId, showBanner: true, revision: null });
+  });
+});
 
 async function openShare(label = "Share") {
   await waitFor(() => {
@@ -107,22 +104,20 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
   try {
     const menu = await screen.findByRole("dialog", { name: "Share" });
     expect(menu.querySelector('[aria-busy="true"]')).toBeInTheDocument();
-    expect(queryAllByRoleFast("button", menu)).toHaveLength(0);
   } finally {
     response.resolve();
   }
 
   await waitFor(() => {
-    expect(siteAddress("current-report.okou.app")).toBeInTheDocument();
+    expect(getButtonByName("Copy link")).toBeEnabled();
   });
-  expect(getButtonByName("Copy link")).toBeEnabled();
   click(getButtonByName("Copy link"));
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([currentSite.url]);
   });
 });
 
-test("published sites customize their address in Share and copy the saved URL without permission choices", async () => {
+test("published sites customize their address in Share and copy the saved URL alongside permission choices", async () => {
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site);
   });
@@ -139,10 +134,10 @@ test("published sites customize their address in Share and copy the saved URL wi
   });
   await openSite();
   await openShare();
-  expect(queryAllByRoleFast("radio")).toHaveLength(0);
-  expect(
-    screen.queryByRole("switch", { name: "Show Okou banner" }),
-  ).not.toBeInTheDocument();
+  await expectPermission("Anyone with the link");
+  await expect(
+    screen.findByRole("switch", { name: "Show Okou banner" }),
+  ).resolves.toBeChecked();
   await waitFor(() => {
     expect(queryButtonByName("Customize URL")).toBeDefined();
   });
@@ -166,16 +161,6 @@ test("published sites customize their address in Share and copy the saved URL wi
   expect(input).toHaveValue("launch-report");
   click(getButtonByName("Save"));
   await screen.findByText("Website URL updated");
-  await waitFor(() => {
-    expect(siteAddress("launch-report.okou.app")).toHaveAttribute(
-      "href",
-      "https://launch-report.okou.app",
-    );
-  });
-  expect(siteAddress("launch-report.okou.app")).toHaveAttribute(
-    "target",
-    "_blank",
-  );
   expect(getButtonByName("Customize URL")).toHaveFocus();
   await waitFor(() => {
     expect(
@@ -212,9 +197,13 @@ test("invalid and occupied addresses cannot be saved and cancel discards the dra
   expect(input).toHaveAttribute("aria-invalid", "true");
   expect(getButtonByName("Save")).toBeDisabled();
   click(getButtonByName("Cancel"));
-  expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
   expect(screen.queryByLabelText("Website URL")).not.toBeInTheDocument();
   expect(getButtonByName("Customize URL")).toHaveFocus();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
 });
 
 test("a save conflict keeps the draft and current shared address", async () => {
@@ -241,7 +230,11 @@ test("a save conflict keeps the draft and current shared address", async () => {
   await screen.findByText(/Could not save/);
   expect(screen.getByLabelText("Website URL")).toHaveValue("taken-report");
   click(getButtonByName("Cancel"));
-  expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
 });
 
 test("an unavailable address check disables saving until a new address is validated", async () => {
@@ -326,36 +319,7 @@ test("A settings failure disables copying an unknown address", async () => {
   expect(queryButtonByName("Customize URL")).toBeUndefined();
 });
 
-test.each([false, true])(
-  "Share directly copies other people's site links when only URL editing is enabled (sidebar: %s)",
-  async (sidebar) => {
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    context.mocks.api(hostContract.siteUrl, ({ respond }) => {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Website not found" },
-      });
-    });
-    await openSite({ sidebar });
-    const label = sidebar ? "Share artifact" : "Share";
-    click(getButtonByName(label));
-    await screen.findByText("Link copied");
-    expect(clipboard.writes).toStrictEqual([site.url]);
-    expect(
-      screen.queryByRole("dialog", { name: label }),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test("the disabled switch retains the existing share link", async () => {
-  await openSite({ urlEditing: false });
-  const share = queryAllByRoleFast("link").find((element) => {
-    return element.getAttribute("aria-label") === "Share";
-  });
-  expect(share).toHaveAttribute("href", site.url);
-  expect(queryButtonByName("Customize URL")).toBeUndefined();
-});
-
-test("restricted Site previews work with visibility settings disabled and share the stable address", async () => {
+test("restricted Site previews share the stable address", async () => {
   const temporary = `https://pv-${"a".repeat(48)}.okou.app/`;
   context.mocks.api(hostContract.sitePreview, ({ params, query, respond }) => {
     expect(params.publicSlug).toBe(site.publicSlug);
@@ -365,6 +329,9 @@ test("restricted Site previews work with visibility settings disabled and share 
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site);
   });
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "private", revision: null });
+  });
   const clipboard = context.mocks.browser.clipboardWriteText();
   await openSite();
   await waitFor(() => {
@@ -373,10 +340,7 @@ test("restricted Site previews work with visibility settings disabled and share 
     ).toHaveAttribute("src", temporary);
   });
   await openShare();
-  expect(queryAllByRoleFast("radio")).toHaveLength(0);
-  expect(screen.queryByText("Anyone with the link")).not.toBeInTheDocument();
-  expect(screen.queryByText("Show Okou banner")).not.toBeInTheDocument();
-  expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  await expectPermission("Only me");
   click(getButtonByName("Copy link"));
   await waitFor(() => {
     return expect(clipboard.writes).toStrictEqual([site.url]);
@@ -386,7 +350,7 @@ test("restricted Site previews work with visibility settings disabled and share 
   ).toHaveAttribute("src", temporary);
 });
 
-test("Public Site previews continue rendering the anonymous URL with visibility settings disabled", async () => {
+test("Public Site previews render the anonymous URL", async () => {
   context.mocks.api(hostContract.sitePreview, ({ respond }) => {
     return respond(200, { url: `${site.url}/`, expiresAt: null });
   });
@@ -416,7 +380,7 @@ test("Unavailable banner settings do not claim that the banner is hidden", async
       },
     });
   });
-  await openSite({ visibility: true, urlEditing: false });
+  await openSite();
   await openShare();
   await screen.findByText("Unable to load banner settings");
   expect(
@@ -449,7 +413,7 @@ test.each([false, true])(
       };
       return respond(200, banner);
     });
-    await openSite({ visibility: true, urlEditing: false, sidebar });
+    await openSite({ sidebar });
     await openShare(sidebar ? "Share artifact" : "Share");
     const toggle = await screen.findByRole("switch", {
       name: "Show Okou banner",
@@ -485,7 +449,7 @@ test("a stale banner edit preserves the last confirmed preference", async () => 
       },
     });
   });
-  await openSite({ visibility: true, urlEditing: false });
+  await openSite();
   await openShare();
   const toggle = await screen.findByRole("switch", {
     name: "Show Okou banner",
@@ -499,6 +463,9 @@ test("a stale banner edit preserves the last confirmed preference", async () => 
 });
 
 function mockSiteAlias() {
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
   context.mocks.api(hostContract.resolveAlias, ({ respond }) => {
     return respond(200, {
       pointer: {
@@ -533,19 +500,10 @@ async function expectPermission(name: string) {
   });
 }
 
-test.each([
-  { sidebar: false, urlEditing: false },
-  { sidebar: true, urlEditing: false },
-  { sidebar: false, urlEditing: true },
-])(
-  "owners change website visibility in the preview ($sidebar sidebar, $urlEditing URL editing)",
-  async ({ sidebar, urlEditing }) => {
+test.each([false, true])(
+  "owners change website visibility in the preview (sidebar: %s)",
+  async (sidebar) => {
     mockSiteAlias();
-    if (urlEditing) {
-      context.mocks.api(hostContract.siteUrl, ({ respond }) => {
-        return respond(200, site);
-      });
-    }
     let status: SiteVisibilityStatus = {
       siteId,
       visibility: "private",
@@ -580,15 +538,14 @@ test.each([
         return respond(200, status);
       },
     );
-    await openSite({ urlEditing, visibility: true, sidebar });
+    await openSite({ sidebar });
     await openShare(sidebar ? "Share artifact" : "Share");
     await expectPermission("Only me");
     const menu = await screen.findByRole("dialog", {
       name: sidebar ? "Share artifact" : "Share",
     });
-    expect(!!queryButtonByName("Customize URL", menu)).toBe(urlEditing);
+    expect(getButtonByName("Customize URL", menu)).toBeInTheDocument();
     expect(within(menu).getByText("Who can access")).toBeInTheDocument();
-    expect(siteAddress("weekly-report.okou.app")).toBeUndefined();
     expect(clipboard.writes).toStrictEqual([]);
     click(getButtonByName("Copy link", menu));
     await waitFor(() => {
@@ -633,7 +590,7 @@ test("permissions preload without claiming public access while their read is pen
     await response.promise;
     return respond(200, { siteId, visibility: "private", revision: null });
   });
-  await openSite({ urlEditing: false, visibility: true });
+  await openSite();
   await requested.promise;
   await openShare();
   try {
@@ -652,11 +609,11 @@ test("Unavailable visibility settings keep permission choices disabled", async (
     return respond(403, {
       error: {
         code: "FORBIDDEN",
-        message: "Website visibility management is not available",
+        message: "Website permissions unavailable",
       },
     });
   });
-  await openSite({ urlEditing: false, visibility: true });
+  await openSite();
   await openShare();
   await screen.findByText("Unable to load permissions");
   for (const row of queryAllByRoleFast("radio")) {
@@ -689,7 +646,7 @@ test("a conflicting permission change preserves the last confirmed audience", as
     };
     return respond(200, status);
   });
-  await openSite({ urlEditing: false, visibility: true });
+  await openSite();
   await openShare();
   await expectPermission("Anyone with the link");
   status = {
@@ -722,7 +679,7 @@ test("a failed visibility save preserves the last confirmed audience", async () 
       },
     });
   });
-  await openSite({ urlEditing: false, visibility: true });
+  await openSite();
   await openShare();
   await expectPermission("Only me");
   click(permission("Anyone with the link"));
@@ -736,13 +693,18 @@ test.each([false, true])(
   "Share directly copies non-owners' website links without a settings popover (sidebar: %s)",
   async (sidebar) => {
     mockSiteAlias();
+    context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Published website not found" },
+      });
+    });
     const clipboard = context.mocks.browser.clipboardWriteText();
     context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
       return respond(404, {
         error: { code: "NOT_FOUND", message: "Published website not found" },
       });
     });
-    await openSite({ urlEditing: false, visibility: true, sidebar });
+    await openSite({ sidebar });
     const label = sidebar ? "Share artifact" : "Share";
     click(getButtonByName(label));
     await screen.findByText("Link copied");
@@ -755,6 +717,11 @@ test.each([false, true])(
 
 test("a pending Share copies the link once permissions resolve without owner settings", async () => {
   mockSiteAlias();
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Published website not found" },
+    });
+  });
   const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
   const clipboard = context.mocks.browser.clipboardWriteText();
@@ -765,7 +732,7 @@ test("a pending Share copies the link once permissions resolve without owner set
       error: { code: "NOT_FOUND", message: "Published website not found" },
     });
   });
-  await openSite({ urlEditing: false, visibility: true });
+  await openSite();
   await requested.promise;
   await openShare();
   await screen.findByRole("status", { name: "Loading permissions" });
@@ -809,7 +776,7 @@ test("rapid permission choices settle on the latest audience using the refreshed
       return respond(200, status);
     },
   );
-  await openSite({ urlEditing: false, visibility: true });
+  await openSite();
   await openShare();
   await expectPermission("Only me");
   click(permission("Anyone at Default Org"));

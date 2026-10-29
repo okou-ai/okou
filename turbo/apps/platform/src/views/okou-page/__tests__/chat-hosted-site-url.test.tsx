@@ -148,13 +148,32 @@ async function setupHostedSite(
       isActive: true,
     });
   });
+  context.mocks.api(hostContract.resolveAlias, ({ respond }) => {
+    return respond(200, {
+      pointer: {
+        version: 1,
+        publicBrand: "okou",
+        publicSlug: currentSlug,
+        siteId,
+        deploymentId,
+        prefix: `sites/brands/okou/publications/${deploymentId}`,
+        manifestKey: `sites/brands/okou/publications/${deploymentId}/manifest.json`,
+        spaFallback: false,
+        updatedAt: "2026-10-27T00:00:00Z",
+      },
+    });
+  });
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "public", revision: null });
+  });
+  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+    return respond(200, { siteId, showBanner: true, revision: null });
+  });
   await setupPage({
     context,
     host: "app.okou.ai",
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.HostedSiteUrlEditing]: true,
-      [FeatureSwitchKey.HostedSiteVisibility]: false,
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
@@ -167,13 +186,6 @@ async function setupHostedSite(
   return await screen.findByTestId(
     sidebar ? "artifact-sidebar" : "attachment-lightbox",
   );
-}
-
-// The published address is the share menu's title link.
-function siteAddress(container: HTMLElement, address: string) {
-  return queryAllByRoleFast("link", container).find((link) => {
-    return link.textContent?.trim() === address;
-  });
 }
 
 async function copyFromResources() {
@@ -200,7 +212,7 @@ async function openHostedSiteShare(preview: HTMLElement, sidebar: boolean) {
     expect(dialog).toHaveAccessibleName(shareLabel);
     return dialog;
   });
-  await within(shareMenu).findByText("Published");
+  await within(shareMenu).findByText("Who can access");
   return shareMenu;
 }
 
@@ -217,7 +229,7 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
   expect(buttonNamed("Save", shareMenu)).toBeEnabled();
   click(buttonNamed("Save", shareMenu));
   await waitFor(() => {
-    expect(siteAddress(shareMenu, `${slug}.okou.app`)).toBeInTheDocument();
+    expect(buttonNamed("Customize URL", shareMenu)).toHaveFocus();
   });
   expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
 }

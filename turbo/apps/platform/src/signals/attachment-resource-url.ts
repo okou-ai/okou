@@ -158,6 +158,8 @@ function createAttachmentPresignedToken$(
             fetchOptions: { cache: "no-store" },
           }),
           [200],
+          undefined,
+          { showErrorToast: false },
         );
         const resource = new URL(response.body.url);
         resource.pathname = currentSource.pathname;

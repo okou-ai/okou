@@ -4,8 +4,6 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, FullscreenPanel, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -470,10 +468,8 @@ function ThreadMailDraftPanel({
   };
   const backLinkRef = useSet(thread.mail.backLinkRef$);
   const listOpen = useGet(thread.mail.open$);
-  const managerEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ThreadEmailManager];
   const { t } = useTranslation();
-  if (!fromMailList || !managerEnabled) {
+  if (!fromMailList) {
     return <MailDraftPanel signals={signals} onClose={close} />;
   }
   return (

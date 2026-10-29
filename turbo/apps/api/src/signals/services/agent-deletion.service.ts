@@ -6,7 +6,10 @@ import {
   deletedRunHistorySchema,
 } from "@okouai/db/operations/run-history-deletion";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { workflows } from "@okouai/db/schema/workflow";
+import {
+  officialWorkflowAutomationIdentities,
+  workflows,
+} from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 
@@ -17,6 +20,7 @@ import {
   agentDeletionIdentityCondition,
   agentDeletionAutomationCondition,
   agentDeletionWorkflowCondition,
+  agentDeletionWorkflowIdentityCondition,
   agentDeletionThreadSequencesSql,
   type DeleteAgentArgs,
 } from "./agent-deletion-queries";
@@ -66,6 +70,25 @@ const agentWatchColumns = Object.freeze({
   eventConfig: workflowAutomations.eventConfig,
   eventConnectorId: workflowAutomations.eventConnectorId,
 });
+
+function* workflowAttachmentRetirementInputs(
+  removedWorkflows: readonly Pick<
+    typeof workflows.$inferSelect,
+    "id" | "ownerUserId" | "attachments"
+  >[],
+  orgId: string,
+) {
+  for (const workflow of removedWorkflows) {
+    if (workflow.attachments?.kind === "bundle") {
+      yield {
+        orgId,
+        userId: workflow.ownerUserId,
+        workflowId: workflow.id,
+        objectKey: workflow.attachments.objectKey,
+      };
+    }
+  }
+}
 
 const deleteAgentRows$ = command(
   async ({ set }, args: DeleteAgentArgs, signal: AbortSignal) => {
@@ -122,6 +145,12 @@ const deleteAgentRows$ = command(
         await tx.execute(statement);
         signal.throwIfAborted();
       }
+      // The Workflow cascade owns these identities. Retire them before the
+      // Automation FK can SET NULL an active identity and violate its state check.
+      await tx
+        .delete(officialWorkflowAutomationIdentities)
+        .where(agentDeletionWorkflowIdentityCondition(args));
+      signal.throwIfAborted();
       // Keep the earlier watch snapshot and include every explicitly removed
       // target before deleting its Workflow parent.
       const removedAutomations = await tx
@@ -139,17 +168,13 @@ const deleteAgentRows$ = command(
           ownerUserId: workflows.ownerUserId,
           attachments: workflows.attachments,
         });
-      for (const workflow of removedWorkflows) {
-        if (workflow.attachments?.kind === "bundle") {
-          await tx.insert(backgroundJobs).values(
-            workflowAttachmentCleanupValues({
-              orgId: args.orgId,
-              userId: workflow.ownerUserId,
-              workflowId: workflow.id,
-              objectKey: workflow.attachments.objectKey,
-            }),
-          );
-        }
+      for (const input of workflowAttachmentRetirementInputs(
+        removedWorkflows,
+        args.orgId,
+      )) {
+        await tx
+          .insert(backgroundJobs)
+          .values(workflowAttachmentCleanupValues(input));
       }
       await tx.delete(agents).where(agentDeletionIdentityCondition(args));
       signal.throwIfAborted();

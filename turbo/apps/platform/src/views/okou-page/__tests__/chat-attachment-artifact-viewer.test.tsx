@@ -8,7 +8,6 @@ import {
   hostContract,
   type HostedSiteFilesResponse,
 } from "@okouai/api-contracts/contracts/host";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadArtifactsContract,
   type UserMessageDocument,
@@ -709,9 +708,10 @@ test("A private site card uses its resolved screenshot even when the thread arti
   });
 });
 
-test.each([false, true])(
-  "a hosted website uses its existing cover with visibility settings %s",
-  async (enabled) => {
+test.each(["public", "private"] as const)(
+  "a hosted website uses its existing cover with %s visibility",
+  async (visibility) => {
+    const restricted = visibility === "private";
     const site = "https://report.okou.app/";
     const previewUrl = `https://pv-${"c".repeat(48)}.okou.app/`;
     const cover = `${R2_ORIGIN}/private/cover.png?X-Amz-Signature=site-cover`;
@@ -720,8 +720,8 @@ test.each([false, true])(
     });
     context.mocks.api(hostContract.sitePreview, ({ respond }) => {
       return respond(200, {
-        url: enabled ? previewUrl : site,
-        expiresAt: enabled ? "2099-01-01T00:00:00.000Z" : null,
+        url: restricted ? previewUrl : site,
+        expiresAt: restricted ? "2099-01-01T00:00:00.000Z" : null,
         previewImageUrl: cover,
       });
     });
@@ -729,7 +729,6 @@ test.each([false, true])(
       context,
       host: "app.okou.ai",
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.HostedSiteVisibility]: enabled },
     });
     const card = await screen.findByTestId("attachment-preview-html");
     const image = await within(card).findByTestId(
@@ -744,22 +743,23 @@ test.each([false, true])(
     fireEvent.error(image);
     await within(card).findByTestId("attachment-preview-html-viewport");
     const frame = card.querySelector("iframe");
-    expect(frame).toHaveAttribute("src", enabled ? previewUrl : site);
+    expect(frame).toHaveAttribute("src", restricted ? previewUrl : site);
     expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
     expect(frame).toHaveAttribute("tabindex", "-1");
     click(card);
     await waitFor(() => {
       expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
         "src",
-        enabled ? previewUrl : site,
+        restricted ? previewUrl : site,
       );
     });
   },
 );
 
-test.each([false, true])(
-  "a hosted website without a cover uses its resolved iframe with visibility settings %s",
-  async (enabled) => {
+test.each(["public", "private"] as const)(
+  "a hosted website without a cover uses its resolved iframe with %s visibility",
+  async (visibility) => {
+    const restricted = visibility === "private";
     const path = "/report?period=quarterly#summary";
     const site = `https://report.okou.app${path}`;
     const previewUrl = `https://pv-${"d".repeat(48)}.okou.app/`;
@@ -768,22 +768,21 @@ test.each([false, true])(
     });
     context.mocks.api(hostContract.sitePreview, ({ respond }) => {
       return respond(200, {
-        url: enabled ? previewUrl : site,
-        expiresAt: enabled ? "2099-01-01T00:00:00.000Z" : null,
+        url: restricted ? previewUrl : site,
+        expiresAt: restricted ? "2099-01-01T00:00:00.000Z" : null,
       });
     });
     await setupPage({
       context,
       host: "app.okou.ai",
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.HostedSiteVisibility]: enabled },
     });
 
     const card = await screen.findByTestId("attachment-preview-html");
     await within(card).findByTestId("attachment-preview-html-viewport");
     expect(card.querySelector("iframe")).toHaveAttribute(
       "src",
-      enabled ? new URL(path, previewUrl).href : site,
+      restricted ? new URL(path, previewUrl).href : site,
     );
   },
 );
@@ -860,7 +859,7 @@ test.each([
   { status: 500, sidebar: false },
   { status: 404, sidebar: true },
 ] as const)(
-  "a website preview failure ($status, sidebar=$sidebar) shows the access or availability error",
+  "a website preview failure ($status, sidebar=$sidebar) shows its error inline without a toast",
   async ({ status, sidebar }) => {
     const site = "https://unavailable-report.okou.app/";
     mockAttachmentChat(context, {
@@ -894,6 +893,7 @@ test.each([
             : "This website is temporarily unavailable",
       }),
     ).resolves.toBeInTheDocument();
+    expect(screen.queryByText("Website preview is unavailable")).toBeNull();
     expect(
       screen.getByTestId("attachment-preview-html").querySelector("iframe"),
     ).toBeNull();

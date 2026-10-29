@@ -19,11 +19,7 @@ import {
   createArtifactVisibilityOption,
   type ArtifactVisibility,
 } from "../shared/artifact-visibility";
-import {
-  assertHostedSiteVisibilityEnabled,
-  hostedSiteVisibilityEnabled,
-  hostedSiteVisibilityInstructions,
-} from "../../lib/host/visibility";
+import { hostedSiteVisibilityInstructions } from "../../lib/host/visibility";
 
 interface HostOptions {
   readonly site?: string;
@@ -47,7 +43,6 @@ function formatBytes(bytes: number): string {
 }
 
 export function createHostCommand(): Command {
-  const settingsEnabled = hostedSiteVisibilityEnabled();
   const command = new Command()
     .name("host")
     .description(
@@ -74,28 +69,24 @@ export function createHostCommand(): Command {
       "PNG/JPEG artifact cover outside the hosted directory (up to 5 MiB)",
     )
     .option("--json", "Output the result and Markdown return forms as JSON")
-    .addOption(createArtifactVisibilityOption().hideHelp(!settingsEnabled))
+    .addOption(createArtifactVisibilityOption())
     .addCommand(cloneHostedSiteCommand)
     .addCommand(versionsHostedSiteCommand)
     .addCommand(deleteHostedSiteCommand)
     .addCommand(screenshotHostedSiteCommand)
     .addCommand(completeHostedSiteCommand)
-    .addCommand(titleHostedSiteCommand);
-  if (settingsEnabled) {
-    command.addCommand(createHostedSiteBannerCommand());
-  }
+    .addCommand(titleHostedSiteCommand)
+    .addCommand(createHostedSiteBannerCommand());
   return command
     .addHelpText("after", () => {
-      const bannerExample = settingsEnabled
-        ? "\n  Hide the banner:      okou host banner my-product-demo off"
-        : "";
       return `
 Examples:
   Capture a cover:      okou host screenshot ./dist --out ./preview.png --spa
   Publish with cover:   okou host ./dist --site my-product-demo --title "Product demo" --spa --preview ./preview.png
   Publish a Vite build:  okou host ./dist --site my-product-demo --title "Product demo" --spa
   Redeploy the same URL: okou host ./dist --site my-product-demo --title "Product demo" --spa
-  Change display title: okou host title my-product-demo "New product demo"${bannerExample}
+  Change display title: okou host title my-product-demo "New product demo"
+  Hide the banner:      okou host banner my-product-demo off
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Take a site offline:   okou host delete my-product-demo
@@ -111,7 +102,7 @@ Notes:
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
-  - ${hostedSiteVisibilityInstructions()}
+  - ${hostedSiteVisibilityInstructions}
   - Reusing --site redeploys that site when you created it: the hosted URL stays the same and serves the new version
   - okou host delete takes a site and all of its versions offline; redeploying the same --site restores it as a new version
   - A name owned by another chat or another user is rejected; choose a different --site value
@@ -123,9 +114,6 @@ Notes:
     })
     .action(
       withErrorHandler(async (dir: string, options: HostOptions) => {
-        if (options.visibility !== undefined) {
-          assertHostedSiteVisibilityEnabled();
-        }
         if (!options.site) {
           throw new Error("--site is required when publishing a hosted site");
         }
@@ -169,9 +157,7 @@ Notes:
         console.log(chalk.green("✓ Hosted site deployed"));
         console.log(chalk.dim(`  Title: ${result.title}`));
         console.log(chalk.dim(`  Site: ${result.publicSlug}`));
-        if (result.visibility) {
-          console.log(chalk.dim(`  Visibility: ${result.visibility}`));
-        }
+        console.log(chalk.dim(`  Visibility: ${result.visibility}`));
         if (result.deploymentVersion !== undefined) {
           console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));
         }

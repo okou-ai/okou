@@ -1,12 +1,9 @@
 import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   checkHostedSiteUrl$,
   getHostedSiteUrl$,
@@ -14,23 +11,8 @@ import {
   updateHostedSiteUrl$,
   type HostedSiteUrlResult,
 } from "../services/hosted-site-url.service";
-import { conflict, notFound, resourceUnavailable } from "../../lib/error";
+import { conflict, notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
-
-const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "private, no-store");
-  const auth = get(organizationAuthContext$);
-  const features = await set(
-    loadUserFeatureSwitchContext$,
-    auth.orgId,
-    auth.userId,
-    signal,
-  );
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.HostedSiteUrlEditing, features)
-    ? null
-    : resourceUnavailable("Website URL editing is not available");
-});
 
 function response(result: HostedSiteUrlResult) {
   if (result.status === "not_found") {
@@ -43,10 +25,7 @@ function response(result: HostedSiteUrlResult) {
 }
 
 const siteUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(admission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   return response(
     await set(
       getHostedSiteUrl$,
@@ -60,10 +39,7 @@ const siteUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 });
 const availability$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(admission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const body = await set(
     checkHostedSiteUrl$,
     {
@@ -78,10 +54,7 @@ const availability$ = command(async ({ get, set }, signal: AbortSignal) => {
     : notFound("Published website not found");
 });
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(admission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const body = await get(bodyResultOf(hostContract.updateSiteUrl));
   signal.throwIfAborted();
   if (!body.ok) {

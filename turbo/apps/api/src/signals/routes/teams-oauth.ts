@@ -17,7 +17,9 @@ import {
   prepareTeamsInstallation$,
   prepareTeamsBotInstallation$,
   publishTeamsChanged$,
+  notifyPendingTeamsConnectWelcomes$,
 } from "../services/teams-connect.service";
+import { waitUntil } from "../context/wait-until";
 import { safeJsonParse, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
@@ -422,6 +424,17 @@ const completeTeamsWorkspaceIdentity$ = command(
       publishTeamsChanged$,
       { orgId: auth.orgId, userIds: [auth.userId] },
       signal,
+    );
+    waitUntil(
+      set(
+        notifyPendingTeamsConnectWelcomes$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          tenantId: exchange.tenantId,
+        },
+        signal,
+      ),
     );
     return settingsSuccessRedirect({});
   },

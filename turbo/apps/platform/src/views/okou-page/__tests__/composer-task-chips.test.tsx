@@ -1,5 +1,15 @@
+import {
+  mockTaskChipLayout,
+  taskMenuItem,
+} from "./composer-task-chip-layout.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -729,4 +739,110 @@ test("Reply tracking prepares a custom workflow request without an unrelated tem
     expect(capture.sentMessages).toHaveLength(1);
   });
   expect(capture.selectedTemplates).toHaveLength(0);
+});
+
+test("More exposes only overflowing tasks and hands the selected task to the composer", async () => {
+  mockTaskChipLayout(390);
+  mockTemplateChat();
+  const user = userEvent.setup();
+  const editor = await setupChips();
+  await fill(editor, "Keep my draft");
+  const choices = screen.getByRole("group", { name: "Choose a task" });
+  expect(
+    queryAllByRoleFast("button", choices).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual(["Workflow", "Presentation"]);
+  expect(button("More")).toHaveTextContent("+1");
+  await user.hover(button("More"));
+  await expect(
+    screen.findByText("Document, Image, Website, Visualization", {
+      selector: '[data-slot="tooltip-content"]',
+    }),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(button("More"));
+  await user.click(button("More"));
+  const menu = await screen.findByRole("menu");
+  expect(
+    queryAllByRoleFast("menuitem", menu).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual(["Document", "Image", "Website", "Visualization"]);
+  await user.keyboard("{Escape}");
+  expect(button("More")).toHaveFocus();
+  expect(editor).toHaveTextContent("Keep my draft");
+  await user.click(button("More"));
+  await user.click(taskMenuItem("Image"));
+  await waitFor(() => {
+    expect(selectedTask(editor, "Image")).toBeInTheDocument();
+    expect(editor).toHaveFocus();
+  });
+  expect(editor).toHaveTextContent("Keep my draft");
+  click(selectedTask(editor, "Image"));
+  expect(
+    queryAllByRoleFast(
+      "button",
+      screen.getByRole("group", { name: "Choose a task" }),
+    ).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual(["Workflow", "Presentation"]);
+  expect(button("More")).toBeInTheDocument();
+});
+
+test("More fits its changing stack width and adapts to window and font changes", async () => {
+  const layout = mockTaskChipLayout(390);
+  mockTemplateChat();
+  const user = userEvent.setup();
+  await setupChips();
+  expect(button("More")).toBeInTheDocument();
+  const choices = screen.getByRole("group", { name: "Choose a task" });
+  // Five chips plus a one-icon trigger fit exactly. Reserving the previous
+  // four-item stack's width would incorrectly leave Website inside More.
+  layout.setWidth(672);
+  fireEvent(window, new Event("resize"));
+  await waitFor(() => {
+    expect(queryAllByRoleFast("button", choices)).toHaveLength(5);
+  });
+  await user.hover(button("More"));
+  await expect(
+    screen.findByText("Visualization", {
+      selector: '[data-slot="tooltip-content"]',
+    }),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(button("More"));
+  layout.setWidth(671);
+  fireEvent(window, new Event("resize"));
+  await waitFor(() => {
+    expect(queryAllByRoleFast("button", choices)).toHaveLength(4);
+  });
+  await user.click(button("More"));
+  const resizedMenu = await screen.findByRole("menu");
+  expect(
+    queryAllByRoleFast("menuitem", resizedMenu).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual(["Website", "Visualization"]);
+  await user.keyboard("{Escape}");
+  layout.setWidth(900);
+  fireEvent(window, new Event("resize"));
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("button").some((item) => {
+        return item.getAttribute("aria-label") === "More";
+      }),
+    ).toBeFalsy();
+  });
+  expect(queryAllByRoleFast("button", choices)).toHaveLength(6);
+  layout.setLabelWidth(150);
+  act(() => {
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  await user.click(button("More"));
+  const menu = await screen.findByRole("menu");
+  expect(
+    queryAllByRoleFast("menuitem", menu).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual(["Visualization"]);
 });

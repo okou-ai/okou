@@ -47,7 +47,6 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
-  ["host-visibility:write", FeatureSwitchKey.HostedSiteVisibility],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],

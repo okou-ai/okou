@@ -28,6 +28,7 @@ import {
   buildTeamsConnectUrlForActivity,
   publishTeamsChanged$,
   recordTeamsInstallationActivity$,
+  notifyPendingTeamsConnectWelcomes$,
 } from "../services/teams-connect.service";
 import {
   dispatchTeamsMessageToAgent$,
@@ -334,6 +335,12 @@ const handleTeamsBot$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const installation =
     activityResult.kind === "upserted" ? activityResult.installation : null;
+  if (installation?.orgId && teamsInstallWelcomeActivity(normalized.activity)) {
+    const { orgId, teamsTenantId: tenantId } = installation;
+    waitUntil(
+      set(notifyPendingTeamsConnectWelcomes$, { orgId, tenantId }, signal),
+    );
+  }
   const timing = new ApiDispatchTimingCollector();
   timing.recordElapsed(
     "api_dispatch_pre_create_agent_teams_entrypoint_gap",

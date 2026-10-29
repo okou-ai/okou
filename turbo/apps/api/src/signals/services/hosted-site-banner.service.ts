@@ -3,11 +3,8 @@ import { command } from "ccstate";
 import { and, eq, exists, isNull, sql } from "drizzle-orm";
 import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
 import { artifacts } from "@okouai/db/schema/artifact";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { db$, writeDb$ } from "../external/db";
 import { hostedLinkOrigin } from "../../lib/link-layout";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 type Owner = {
   readonly siteId: string;
@@ -97,11 +94,9 @@ export const updateHostedSiteBanner$ = command(
 
 /** Call only after delivery authority and the current viewer have been checked. */
 export const hostedSitePresentation$ = command(
-  async ({ get, set }, siteId: string, signal: AbortSignal) => {
+  async ({ get }, siteId: string, signal: AbortSignal) => {
     const [site] = await get(db$)
       .select({
-        userId: hostedSites.userId,
-        orgId: hostedSites.orgId,
         publicSlug: hostedSites.publicSlug,
         slug: hostedSites.slug,
         showBanner: hostedSites.showBanner,
@@ -126,15 +121,6 @@ export const hostedSitePresentation$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!site) {
-      return undefined;
-    }
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      site.orgId,
-      site.userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features)) {
       return undefined;
     }
     return {

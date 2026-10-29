@@ -1212,6 +1212,7 @@ const handleMessagesTabOpened$ = command(
       .select({
         id: slackOrgConnections.id,
         userId: slackOrgConnections.userId,
+        dmWelcomeSent: slackOrgConnections.dmWelcomeSent,
       })
       .from(slackOrgConnections)
       .where(
@@ -1221,19 +1222,7 @@ const handleMessagesTabOpened$ = command(
         ),
       )
       .limit(1);
-    if (!connection) {
-      return;
-    }
-    const updated = await set(writeDb$)
-      .update(slackOrgConnections)
-      .set({ dmWelcomeSent: true })
-      .where(
-        and(
-          eq(slackOrgConnections.id, connection.id),
-          eq(slackOrgConnections.dmWelcomeSent, false),
-        ),
-      );
-    if (updated.rowCount === 0) {
+    if (!connection || connection.dmWelcomeSent) {
       return;
     }
     let agentName: string | undefined;
@@ -1266,20 +1255,40 @@ const handleMessagesTabOpened$ = command(
       }
       agentName = agent?.displayName ?? agent?.name;
     }
-    await createSlackClient(
+    const client = createSlackClient(
       await get(
         decryptSlackBotToken({
           installation,
           userId: connection.userId,
         }),
       ),
-    ).postMessage(
+    );
+    const claimed = await set(writeDb$)
+      .update(slackOrgConnections)
+      .set({ dmWelcomeSent: true })
+      .where(
+        and(
+          eq(slackOrgConnections.id, connection.id),
+          eq(slackOrgConnections.dmWelcomeSent, false),
+        ),
+      );
+    if (claimed.rowCount === 0) {
+      return;
+    }
+    const sent = await client.postMessage(
       args.channelId,
       `Hi! I'm ${officialSlackBotMention(installation.botUserId)}. I can connect you to AI agents to help with your tasks.`,
       {
         blocks: buildWelcomeMessage(installation.botUserId, agentName),
       },
     );
+    // A provider rejection is safe to retry; an unknown outcome retains the claim.
+    if (sent.kind === "slack_error") {
+      await set(writeDb$)
+        .update(slackOrgConnections)
+        .set({ dmWelcomeSent: false })
+        .where(eq(slackOrgConnections.id, connection.id));
+    }
   },
 );
 

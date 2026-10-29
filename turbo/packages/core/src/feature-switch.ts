@@ -103,21 +103,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  // Gate visibility settings; access and preview delivery always enforce Site policy.
-  [FeatureSwitchKey.HostedSiteVisibility]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Website visibility",
-    description: "Control who can visit a published website.",
-    enabled: true,
-  },
-  // Enable only after canonical Host Worker delivery authority and compatible
-  // serving/rollback API writers support public address changes.
-  [FeatureSwitchKey.HostedSiteUrlEditing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Website URL editing",
-    description: "Customize a published website address from its Share menu.",
-    enabled: true,
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
@@ -138,12 +123,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Outlook chat mail",
     description: "Review Outlook drafts and confirm sending from chat.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ThreadEmailManager]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Thread email manager",
-    description: "Browse thread emails and send or delete selected drafts.",
-    enabled: true,
   },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
@@ -328,13 +307,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Garmin Connect wellness connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.ICloudConnector]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "iCloud Calendar and Contacts",
-    description:
-      "Connect iCloud calendars and contacts with an app-specific password.",
-    enabled: true,
   },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",

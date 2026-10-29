@@ -189,7 +189,6 @@ export function ArtifactShareButton({
   url: string;
 }) {
   const { t } = useTranslation();
-  const switches = useGet(featureSwitch$);
   const label =
     ariaLabel ??
     t(($) => {
@@ -212,11 +211,7 @@ export function ArtifactShareButton({
     // resolving, and until explicit publication provides a share URL.
     return null;
   }
-  if (
-    (switches[FeatureSwitchKey.HostedSiteUrlEditing] ||
-      switches[FeatureSwitchKey.HostedSiteVisibility]) &&
-    isHostedSiteUrl(shareUrl)
-  ) {
+  if (isHostedSiteUrl(shareUrl)) {
     return (
       <HostedSiteShareMenu
         url={url}

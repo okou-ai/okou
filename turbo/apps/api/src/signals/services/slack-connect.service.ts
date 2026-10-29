@@ -7,7 +7,7 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 
 import {
   buildAppHomeView,
@@ -27,8 +27,12 @@ import { db$, writeDb$ } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { slackAccountConnection } from "./slack-workspace-identity.service";
+import { getMemberRoleAndUpdateCache$ } from "./auth.service";
+import { settle } from "../utils";
+import { logger } from "../../lib/log";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
+const L = logger("SlackConnect");
 
 async function getPrimaryUserEmail(
   clerkClient: ReturnType<typeof clerk$.read>,
@@ -302,19 +306,21 @@ export const publishSlackAdminSignal$ = command(
   },
 );
 
+export interface SlackConnectNotificationArgs {
+  readonly installation: SlackInstallation;
+  readonly slackUserId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly channelId?: string;
+  readonly threadTs?: string;
+  readonly pendingPrompt?: string;
+  readonly replacedSlackUserIds?: readonly string[];
+}
+
 export const notifySlackConnect$ = command(
   async (
     { get, set },
-    args: {
-      readonly installation: SlackInstallation;
-      readonly slackUserId: string;
-      readonly orgId: string;
-      readonly userId: string;
-      readonly channelId?: string;
-      readonly threadTs?: string;
-      readonly pendingPrompt?: string;
-      readonly replacedSlackUserIds?: readonly string[];
-    },
+    args: SlackConnectNotificationArgs,
     signal: AbortSignal,
   ): Promise<void> => {
     const writeDb = set(writeDb$);
@@ -324,22 +330,36 @@ export const notifySlackConnect$ = command(
         await get(userFeatureSwitchContext(args.orgId, args.userId)),
       ),
     );
-    const [metadata] = await writeDb
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
+    const [connection] = await writeDb
+      .select({
+        id: slackOrgConnections.id,
+        dmWelcomeSent: slackOrgConnections.dmWelcomeSent,
+        agentName: agents.name,
+        agentDisplayName: agents.displayName,
+      })
+      .from(slackOrgConnections)
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId))
+      .leftJoin(
+        agents,
+        and(
+          eq(agents.id, orgMetadata.defaultAgentId),
+          eq(agents.orgId, args.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(slackOrgConnections.userId, args.userId),
+          eq(slackOrgConnections.slackUserId, args.slackUserId),
+          eq(
+            slackOrgConnections.slackWorkspaceId,
+            args.installation.slackWorkspaceId,
+          ),
+        ),
+      )
       .limit(1);
     signal.throwIfAborted();
-    const defaultAgentId = metadata?.defaultAgentId ?? null;
-    const [agent] = defaultAgentId
-      ? await writeDb
-          .select({ name: agents.name, displayName: agents.displayName })
-          .from(agents)
-          .where(eq(agents.id, defaultAgentId))
-          .limit(1)
-      : [];
-    signal.throwIfAborted();
-    const agentName = agent?.displayName ?? agent?.name;
+    const agentName =
+      connection?.agentDisplayName ?? connection?.agentName ?? undefined;
     const { assistantName } = BRAND_PRESENTATION;
 
     const blocks = buildSuccessMessage(
@@ -359,47 +379,43 @@ export const notifySlackConnect$ = command(
       sentEphemeral = result.kind === "ok";
     }
 
-    if (!sentEphemeral) {
-      const connectMessage = await client.postMessage(
-        args.slackUserId,
-        "You're connected!",
-        { blocks },
-      );
-      signal.throwIfAborted();
-      if (connectMessage.kind === "ok") {
-        await client.postMessage(
+    if (connection && !connection.dmWelcomeSent) {
+      let threadTs: string | undefined;
+      if (!sentEphemeral) {
+        const connectMessage = await client.postMessage(
           args.slackUserId,
-          `Hi! I'm ${officialSlackBotMention(args.installation.botUserId)}.`,
-          {
-            threadTs: connectMessage.ts,
-            blocks: buildWelcomeMessage(args.installation.botUserId, agentName),
-          },
+          "You're connected!",
+          { blocks },
         );
         signal.throwIfAborted();
-
+        if (connectMessage.kind === "ok") {
+          threadTs = connectMessage.ts;
+        }
+      }
+      const welcome = await client.postMessage(
+        args.slackUserId,
+        `Hi! I'm ${officialSlackBotMention(args.installation.botUserId)}.`,
+        {
+          threadTs,
+          blocks: buildWelcomeMessage(args.installation.botUserId, agentName),
+        },
+      );
+      signal.throwIfAborted();
+      if (welcome.kind === "ok") {
+        await writeDb
+          .update(slackOrgConnections)
+          .set({ dmWelcomeSent: true })
+          .where(eq(slackOrgConnections.id, connection.id));
+        signal.throwIfAborted();
         if (args.pendingPrompt) {
           const safePrompt = `\`\`\`${args.pendingPrompt.replaceAll("`", "'")}\`\`\``;
           await client.postMessage(
             args.slackUserId,
             `By the way, would you like me to run this for you?\n\n${safePrompt}\n\nJust paste it in a message and I'll get started!`,
-            { threadTs: connectMessage.ts },
+            { threadTs: threadTs ?? welcome.ts },
           );
           signal.throwIfAborted();
         }
-
-        await writeDb
-          .update(slackOrgConnections)
-          .set({ dmWelcomeSent: true })
-          .where(
-            and(
-              eq(slackOrgConnections.slackUserId, args.slackUserId),
-              eq(
-                slackOrgConnections.slackWorkspaceId,
-                args.installation.slackWorkspaceId,
-              ),
-            ),
-          );
-        signal.throwIfAborted();
       }
     }
 
@@ -420,5 +436,79 @@ export const notifySlackConnect$ = command(
       slackUserId: args.slackUserId,
     });
     signal.throwIfAborted();
+  },
+);
+
+/** Pending welcomes cannot borrow the bot from a different Okou workspace. */
+export const notifyPendingSlackConnectWelcomes$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly workspaceId: string;
+      readonly userId?: string;
+      readonly excludeUserId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const rows = await set(writeDb$)
+      .select({
+        connection: slackOrgConnections,
+        installation: slackOrgInstallations,
+      })
+      .from(slackOrgConnections)
+      .innerJoin(
+        slackOrgInstallations,
+        eq(
+          slackOrgInstallations.slackWorkspaceId,
+          slackOrgConnections.slackWorkspaceId,
+        ),
+      )
+      .where(
+        and(
+          eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+          eq(slackOrgInstallations.orgId, args.orgId),
+          or(
+            eq(slackOrgConnections.orgId, args.orgId),
+            isNull(slackOrgConnections.orgId),
+          ),
+          args.userId ? eq(slackOrgConnections.userId, args.userId) : undefined,
+          args.excludeUserId
+            ? ne(slackOrgConnections.userId, args.excludeUserId)
+            : undefined,
+          eq(slackOrgConnections.dmWelcomeSent, false),
+        ),
+      );
+    signal.throwIfAborted();
+    for (const { connection, installation } of rows) {
+      const membership = await set(
+        getMemberRoleAndUpdateCache$,
+        args.orgId,
+        connection.userId,
+        signal,
+      );
+      if (membership.kind !== "member") {
+        continue;
+      }
+      const result = await settle(
+        set(
+          notifySlackConnect$,
+          {
+            installation,
+            slackUserId: connection.slackUserId,
+            orgId: args.orgId,
+            userId: connection.userId,
+          },
+          signal,
+        ),
+        signal,
+      );
+      if (!result.ok) {
+        L.warn("Failed to deliver pending Slack connect welcome", {
+          connectionId: connection.id,
+          error: result.error,
+        });
+      }
+    }
   },
 );

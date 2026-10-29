@@ -6,7 +6,6 @@ import {
   type hostedSiteUrlSchema,
 } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilitySchema } from "@okouai/api-contracts/contracts/hosted-site-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
@@ -14,7 +13,6 @@ import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
 import { debounceCommand, throttleCommand } from "./command-scheduling.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { pageSignal$ } from "./page-signal.ts";
 import {
   currentHostedSiteUrl,
@@ -33,9 +31,6 @@ type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 function createSiteVisibilitySignals(sourceUrl: string) {
   const reload$ = state(0);
   const details$ = computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.HostedSiteVisibility]) {
-      return null;
-    }
     const url = new URL(
       currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$)),
     );
@@ -43,8 +38,7 @@ function createSiteVisibilitySignals(sourceUrl: string) {
       return null;
     }
     get(reload$);
-    // URL editing has its own rollout gate. Resolve the publication without
-    // depending on that gate, then let the visibility endpoint authorize ownership.
+    // Resolve the publication, then let the visibility endpoint authorize ownership.
     const alias = await accept(
       get(apiClient$)(hostContract).resolveAlias({
         params: { publicSlug: url.hostname.split(".")[0]! },
@@ -243,9 +237,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
   const signal$ = state<AbortSignal | null>(null);
   const saved$ = state<SiteUrl | null>(null);
   const details$ = computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.HostedSiteUrlEditing]) {
-      return null;
-    }
     const changes = get(hostedSiteUrlChanges$);
     const saved = get(saved$);
     if (saved) {

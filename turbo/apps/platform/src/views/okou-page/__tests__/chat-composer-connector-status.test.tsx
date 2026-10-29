@@ -140,7 +140,6 @@ test("Healthy saved accounts stay connected while zero-account connectors remain
   await expect(
     findFastControl("button", "Connect Acme Search", dialog),
   ).resolves.toHaveTextContent("Connected");
-  expect(within(dialog).queryByText("Needs attention")).toBeNull();
 });
 
 test("A saved custom connector remains available for account management", async () => {
@@ -332,7 +331,6 @@ test("Saved builtin targets remain manageable when definitions omit account proj
     within(directory).getByPlaceholderText("Find connectors..."),
     "github",
   );
-  expect(within(directory).queryByText("Needs attention")).toBeNull();
   click(await findFastControl("button", "Open GitHub details", directory));
   await expect(
     findFastControl("link", "Manage GitHub accounts", directory),
@@ -356,6 +354,5 @@ test("A custom definition without account projections does not claim a reconnect
   const directory = await openDirectory();
   await openCustom(directory);
   await findFastControl("button", "Connect Acme Search", directory);
-  expect(within(directory).queryByText("Needs attention")).toBeNull();
   expect(within(directory).queryByText("Reconnect required")).toBeNull();
 });

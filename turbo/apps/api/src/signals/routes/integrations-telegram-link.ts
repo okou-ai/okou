@@ -133,10 +133,11 @@ async function deliverConnectSuccessMessage(args: {
   }
 }
 
-function sendConnectSuccessMessage(args: {
+function completeTelegramConnection(args: {
   readonly botToken: string;
+  readonly botUsername: string;
   readonly telegramUserId: string;
-}): void {
+}) {
   const text = `✅ Account linked.\nSend me a message to start chatting with ${BRAND_PRESENTATION.assistantName}.`;
 
   waitUntil(
@@ -154,6 +155,8 @@ function sendConnectSuccessMessage(args: {
       },
     ),
   );
+
+  return linkSuccessResponse(args.botUsername, args.telegramUserId);
 }
 
 function noLinkedTelegramAccountResponse() {
@@ -233,9 +236,8 @@ const linkOfficialInner$ = command(
       }
 
       const db = set(writeDb$);
-      const connectAuth = args.auth;
       const composeId = await (async (): Promise<string | null> => {
-        const auth = connectAuth;
+        const auth = args.auth;
         const [metadata] = await db
           .select({ defaultAgentId: orgMetadata.defaultAgentId })
           .from(orgMetadata)
@@ -276,7 +278,11 @@ const linkOfficialInner$ = command(
         return officialLinkConflictResponse(result.reason, config.botUsername);
       }
 
-      return linkSuccessResponse(config.botUsername, telegramUserId);
+      return completeTelegramConnection({
+        botToken: config.botToken,
+        botUsername: config.botUsername,
+        telegramUserId,
+      });
     }
 
     const connectSignature = args.body.connectSignature;
@@ -295,9 +301,8 @@ const linkOfficialInner$ = command(
         return invalidConnectSignatureResponse();
       }
       const db = set(writeDb$);
-      const connectAuth = args.auth;
       const composeId = await (async (): Promise<string | null> => {
-        const auth = connectAuth;
+        const auth = args.auth;
         const [metadata] = await db
           .select({ defaultAgentId: orgMetadata.defaultAgentId })
           .from(orgMetadata)
@@ -337,15 +342,11 @@ const linkOfficialInner$ = command(
         return officialLinkConflictResponse(result.reason, config.botUsername);
       }
 
-      sendConnectSuccessMessage({
+      return completeTelegramConnection({
         botToken: config.botToken,
+        botUsername: config.botUsername,
         telegramUserId: connectSignature.telegramUserId,
       });
-
-      return linkSuccessResponse(
-        config.botUsername,
-        connectSignature.telegramUserId,
-      );
     }
 
     return missingAuthMethodResponse();
