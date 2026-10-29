@@ -62,11 +62,21 @@ function getButton(name: string): HTMLButtonElement {
   return button;
 }
 
+function menuRadio(menu: HTMLElement, name: string): HTMLElement {
+  const item = queryAllByRoleFast("menuitemradio", menu).find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!item) {
+    throw new Error("Missing browser option: " + name);
+  }
+  return item;
+}
+
 async function openViewerSizingMenu(): Promise<HTMLElement> {
-  click(screen.getByLabelText("Browser menu"));
-  const menu = await screen.findByRole("menu", { name: "Browser menu" });
-  click(within(menu).getByText("Fit to this viewer"));
-  return screen.findByRole("menu", { name: "Fit to this viewer" });
+  click(screen.getByLabelText("Browser settings"));
+  const menu = await screen.findByRole("menu");
+  click(within(menu).getByText("Window size"));
+  return screen.findByRole("menu", { name: "Window size" });
 }
 
 async function setupInteractiveViewer(): Promise<void> {
@@ -89,16 +99,16 @@ async function setupInteractiveViewer(): Promise<void> {
   await expect(
     screen.findByRole("region", { name: "Remote browser viewer" }),
   ).resolves.toBeInTheDocument();
-  await expect(
-    screen.findByDisplayValue("https://example.com"),
-  ).resolves.toBeEnabled();
+  await waitFor(() => {
+    expect(screen.getByDisplayValue("https://example.com")).toBeEnabled();
+  });
   expect(screen.getByLabelText("New tab")).toBeInTheDocument();
 }
 
 async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
   await setupInteractiveViewer();
   const sizingMenu = await openViewerSizingMenu();
-  expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
+  expect(menuRadio(sizingMenu, "Follow panel")).toHaveAttribute(
     "aria-checked",
     "true",
   );
@@ -109,17 +119,14 @@ async function selectViewerSizingOption(
   sizingMenu: HTMLElement,
   label: string,
 ): Promise<HTMLElement> {
-  const option = within(sizingMenu).getByText(label);
+  const option = menuRadio(sizingMenu, label);
   expect(option).not.toHaveAttribute("aria-disabled", "true");
   click(option);
   await waitFor(() => {
     expect(sizingMenu).not.toBeInTheDocument();
   });
   const updatedMenu = await openViewerSizingMenu();
-  expect(within(updatedMenu).getByText(label)).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  expect(menuRadio(updatedMenu, label)).toHaveAttribute("aria-checked", "true");
   return updatedMenu;
 }
 
@@ -135,10 +142,8 @@ test("An accessible conversation without a browser can start one", async () => {
 
 test("The interactive Okou viewer lets the owner change automatic sizing", async () => {
   const sizingMenu = await setupInteractiveViewerSizingMenu();
-  expect(
-    within(sizingMenu).getByText("Do not sync automatically"),
-  ).toHaveAttribute("aria-checked", "false");
-  await selectViewerSizingOption(sizingMenu, "Do not sync automatically");
+  expect(menuRadio(sizingMenu, "Off")).toHaveAttribute("aria-checked", "false");
+  await selectViewerSizingOption(sizingMenu, "Off");
 });
 
 test("The Okou viewer shows its host blank page only while the blank tab is selected", async () => {
@@ -196,48 +201,45 @@ test("The Okou viewer shows its host blank page only while the blank tab is sele
 
 test("The Okou viewer starts with WebP and lets the owner change capture settings", async () => {
   await setupInteractiveViewer();
-  click(screen.getByLabelText("Browser menu"));
-  const menu = await screen.findByRole("menu", { name: "Browser menu" });
-  click(within(menu).getByText("Capture quality"));
-  const capture = await screen.findByRole("dialog", {
-    name: "Capture quality",
-  });
-  expect(within(capture).getByRole("radio", { name: "WebP" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  expect(within(capture).getByRole("slider")).toBeEnabled();
-
-  click(within(capture).getByRole("radio", { name: "JPEG" }));
+  click(screen.getByLabelText("Browser settings"));
+  const menu = await screen.findByRole("menu");
+  expect(
+    within(menu).getByRole("spinbutton", { name: "Image quality" }),
+  ).toBeEnabled();
+  click(within(menu).getByText("Image format"));
+  const formats = await screen.findByRole("menu", { name: "Image format" });
+  expect(menuRadio(formats, "WebP")).toHaveAttribute("aria-checked", "true");
+  click(menuRadio(formats, "JPEG"));
   await waitFor(() => {
-    expect(
-      within(capture).getByRole("radio", { name: "JPEG" }),
-    ).toHaveAttribute("aria-checked", "true");
+    expect(formats).not.toBeInTheDocument();
   });
+  click(screen.getByLabelText("Browser settings"));
+  click(within(await screen.findByRole("menu")).getByText("Image format"));
+  const updated = await screen.findByRole("menu", { name: "Image format" });
+  expect(menuRadio(updated, "JPEG")).toHaveAttribute("aria-checked", "true");
 });
 
 test("The browser viewer keeps one-time sizing after automatic sizing is disabled", async () => {
   const sizingMenu = await setupInteractiveViewerSizingMenu();
-  const disabledSizingMenu = await selectViewerSizingOption(
-    sizingMenu,
-    "Do not sync automatically",
+  const disabledSizingMenu = await selectViewerSizingOption(sizingMenu, "Off");
+  expect(menuRadio(disabledSizingMenu, "On connection")).toHaveAttribute(
+    "aria-checked",
+    "false",
   );
-  expect(
-    within(disabledSizingMenu).getByText("Sync once on opening"),
-  ).toHaveAttribute("aria-checked", "false");
-  await selectViewerSizingOption(disabledSizingMenu, "Sync once on opening");
+  await selectViewerSizingOption(disabledSizingMenu, "On connection");
 });
 
 test("The browser viewer resumes continuous sizing after one-time sizing", async () => {
   const sizingMenu = await setupInteractiveViewerSizingMenu();
   const oneTimeSizingMenu = await selectViewerSizingOption(
     sizingMenu,
-    "Sync once on opening",
+    "On connection",
   );
-  expect(
-    within(oneTimeSizingMenu).getByText("Sync continuously"),
-  ).toHaveAttribute("aria-checked", "false");
-  await selectViewerSizingOption(oneTimeSizingMenu, "Sync continuously");
+  expect(menuRadio(oneTimeSizingMenu, "Follow panel")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await selectViewerSizingOption(oneTimeSizingMenu, "Follow panel");
 });
 
 test("A reclaimed connection shows an unavailable state", async () => {
@@ -512,14 +514,12 @@ test("A mounted heartbeat keeps address editing usable after renewal", async () 
   await setupPage({ context, path: `/browsers/${THREAD_ID}` });
   await expectStreamingViewer();
   await entered.promise;
-  await userEvent.click(screen.getByLabelText("Remote page address"));
+  await userEvent.click(screen.getByLabelText("Address"));
   release.resolve();
   await finished.promise;
   await userEvent.keyboard("{End}x");
-  expect(screen.getByLabelText("Remote page address")).toHaveFocus();
-  expect(screen.getByLabelText("Remote page address")).toHaveValue(
-    "https://example.comx",
-  );
+  expect(screen.getByLabelText("Address")).toHaveFocus();
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.comx");
 });
 
 test.each([200, 404, 409] as const)(
@@ -650,10 +650,10 @@ test.each(["legacy", "instance", "window"] as const)(
     await expectStreamingViewer();
     release.resolve();
     await next.promise;
-    await userEvent.click(screen.getByLabelText("Remote page address"));
+    await userEvent.click(screen.getByLabelText("Address"));
     await userEvent.keyboard("{End}x");
-    expect(screen.getByLabelText("Remote page address")).toHaveFocus();
-    expect(screen.getByLabelText("Remote page address")).toHaveValue(
+    expect(screen.getByLabelText("Address")).toHaveFocus();
+    expect(screen.getByLabelText("Address")).toHaveValue(
       previous === "window"
         ? "https://other.example.comx"
         : "https://example.comx",

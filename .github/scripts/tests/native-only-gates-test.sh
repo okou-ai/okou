@@ -100,7 +100,7 @@ for job in ['bench-app']:
     assert condition(benchmark[job], context(ios=False, ts=True, event='push')), job
 for job in ['codeql', 'pnpm-audit']:
     assert not condition(security[job], native), job
-for job in ['action-pins', 'cdp-viewer-pin', 'semgrep', 'gitleaks', 'actionlint', 'workflow-script-tests', 'pr-title']:
+for job in ['action-pins', 'semgrep', 'gitleaks', 'actionlint', 'workflow-script-tests', 'pr-title']:
     assert condition(security[job], native), job
 for job in ts_jobs:
     assert condition(turbo[job], context(ios=False, ts=True)), job
@@ -170,7 +170,7 @@ native = context()
 for job in ['codeql', 'pnpm-audit']:
     native[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', native, True)
-for job in ['detect-release', 'action-pins', 'cdp-viewer-pin', 'detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit',
+for job in ['detect-release', 'action-pins', 'detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit',
             'actionlint', 'workflow-script-tests', 'gitleaks']:
     for failure in ['failure', 'cancelled']:
         gate(security, 'ci-gate-security', native | {f'needs.{job}.result': failure}, False)
@@ -188,7 +188,7 @@ assert not condition(security['codeql'], queued)
 queued['needs.codeql.result'] = 'skipped'
 gate(security, 'ci-gate-security', queued, True)
 released = context(ios=False, ts=True, event='merge_group', release=True)
-for job in ['cdp-viewer-pin', 'detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit', 'actionlint',
+for job in ['detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit', 'actionlint',
             'workflow-script-tests', 'gitleaks']:
     released[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', released, True)
@@ -201,14 +201,6 @@ for event in ['pull_request', 'merge_group', 'push']:
             values['needs.action-pins.result'] = result
             assert condition(security['action-pins'], values)
             gate(security, 'ci-gate-security', values, False)
-
-assert 'cdp-viewer-pin' in security['ci-gate-security']['needs']
-for event in ['pull_request', 'merge_group', 'push']:
-    selected = context(event=event)
-    assert condition(security['cdp-viewer-pin'], selected)
-    assert not condition(security['cdp-viewer-pin'], context(event=event, release=True))
-    for result in ['failure', 'cancelled', 'skipped']:
-        gate(security, 'ci-gate-security', selected | {'needs.cdp-viewer-pin.result': result}, False)
 
 print('native-only workflow selection and gates: ok')
 PY

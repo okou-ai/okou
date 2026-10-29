@@ -1,7 +1,7 @@
 import { number, object, string } from "zod";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 
-/** A test-owned external CDP browser; the installed viewer runs normally. */
+/** A test-owned external CDP browser; the Platform viewer runs normally. */
 export function mockBrowserCdp(
   context: TestContext,
   cdpUrl: string,
@@ -17,7 +17,7 @@ export function mockBrowserCdp(
 ) {
   context.mocks.browser.canvasRendering();
   context.mocks.browser.uint8ArrayFromBase64();
-  if (options.streaming) {
+  if (options.streaming !== false) {
     context.mocks.browser.imageBitmap(1440, 900);
   }
   const targets = options.targets ?? [
@@ -79,7 +79,7 @@ export function mockBrowserCdp(
         break;
       }
       case "Page.startScreencast": {
-        if (options.streaming) {
+        if (options.streaming !== false) {
           queueMicrotask(() => {
             socket.receive(
               cdpUrl,
