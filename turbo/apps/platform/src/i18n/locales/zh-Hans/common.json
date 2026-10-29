@@ -528,6 +528,7 @@
       "hostedDescription": "此网站及其所有已发布版本将下线。保存到其他服务的副本会保留。",
       "menu": "{{title}}的更多操作",
       "sharedDescription": "从你的作品中移除此收藏对话。原始对话及其分享链接仍可访问。",
+      "success": "作品已删除",
       "title": "删除{{title}}？"
     },
     "fileBadges": {

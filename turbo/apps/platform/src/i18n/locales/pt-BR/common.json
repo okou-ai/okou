@@ -544,6 +544,7 @@
       "hostedDescription": "Isso tira o site e todas as versões publicadas do ar. Cópias salvas em outros serviços serão mantidas.",
       "menu": "Mais ações para {{title}}",
       "sharedDescription": "Remova esta conversa salva dos seus artefatos. A conversa original e seu link compartilhado continuarão disponíveis.",
+      "success": "Artefato excluído",
       "title": "Excluir {{title}}?"
     },
     "fileBadges": {

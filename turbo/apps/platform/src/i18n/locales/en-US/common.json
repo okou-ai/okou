@@ -529,6 +529,7 @@
       "hostedDescription": "This takes the website and all its published versions offline. Copies saved to other services will remain.",
       "menu": "More actions for {{title}}",
       "sharedDescription": "Remove this saved conversation from your artifacts. The original conversation and its shared link will stay available.",
+      "success": "Artifact deleted",
       "title": "Delete {{title}}?"
     },
     "fileBadges": {
