@@ -4,6 +4,8 @@ The first-party MV3 extension owns source-window consolidation and native window
 
 From this directory:
 
+Packaging requires `zip` and `unzip`. Release-boundary tests also use `yq`; CI runs these commands on the standard Ubuntu runner.
+
 - `pnpm build` builds the worker and deterministic ZIP/checksum/source provenance under `artifacts/`.
 - `pnpm test` runs the owned full-Chromium scenarios against loopback fixtures, one worker at a time. Set `CHROMIUM_EXECUTABLE` to select an installed full Chromium. Headless Shell cannot load extensions.
 - `pnpm verify-package` checks ZIP contents and repeatability across timezones.
