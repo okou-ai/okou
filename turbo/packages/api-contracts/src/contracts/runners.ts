@@ -20,7 +20,6 @@ import {
 
 import {
   workflowDownloadSchema,
-  workflowSkillDocumentSchema,
   workflowSkillReferenceSchema,
 } from "./workflow-attachments";
 
@@ -612,11 +611,7 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
 
 /** Canonical Runner wire representation. */
 export const storageManifestSchema = object({
-  // Reader 2 receives references. Reader 1 keeps its outgoing inline contract.
-  workflowSkills: union([
-    array(workflowSkillReferenceSchema),
-    array(workflowSkillDocumentSchema),
-  ]).optional(),
+  workflowSkills: array(workflowSkillReferenceSchema).optional(),
   storageMounts: array(storageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
   ),
@@ -1183,7 +1178,7 @@ export const runnersJobClaimContract = c.router({
     pathParams: object({
       id: uuid(),
     }),
-    query: object({ workflowSkills: zEnum(["1", "2"]).optional() }),
+    query: object({ workflowSkills: literal("2") }),
     body: object({
       runnerIdentity: runnerProcessIdentitySchema.optional(),
       runnerHostname: runnerHostnameSchema.optional(),

@@ -38,6 +38,9 @@ readonly STRIPE_INVOICE_PAID_RETIREMENT_COMMIT=190cdfba6440b50469117758156616447
 readonly RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT=26bacab4693d32e4a4453dce5c84e565d7129b9c
 # DAV catalog rules require #43517's API/Runner method support and rollout.
 readonly DAV_FIREWALL_READER_COMMIT=c8de6212dc54a5aae0d4658acf1afa6a35f939ab
+# #43667 prepared reference-only Workflow claims and current-content downloads.
+# API and Runner can roll back independently; both artifacts must contain it.
+readonly WORKFLOW_DOWNLOAD_READER_COMMIT=6fd29050029b5a521f75d0500e9876a11649afe6
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -214,6 +217,10 @@ fi
 
 if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates DAV connector preparation: ${DAV_FIREWALL_READER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$WORKFLOW_DOWNLOAD_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Workflow download preparation: ${WORKFLOW_DOWNLOAD_READER_COMMIT}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
@@ -945,6 +952,10 @@ fi
 
 if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates inline Agent instructions: ${AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$WORKFLOW_DOWNLOAD_READER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates Workflow download preparation: ${WORKFLOW_DOWNLOAD_READER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$decoded_storage_capacity_reader_commit" "$runner_tag_commit"; then
