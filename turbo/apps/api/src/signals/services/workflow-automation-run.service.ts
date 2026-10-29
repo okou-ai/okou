@@ -28,7 +28,7 @@ import {
 } from "./workflow-automation-enqueue.service";
 import {
   censusWorkflowAdmission,
-  measureWorkflowAdmissionStep,
+  recordWorkflowAdmissionDuration,
   type WorkflowAdmissionOutcome,
   type WorkflowAdmissionSchedulePath,
 } from "./workflow-queue-admission-timing.service";
@@ -614,6 +614,31 @@ function workflowAutomationAdmissionTiming(args: RunWorkflowAutomationNowArgs) {
   return timing;
 }
 
+function workflowQueueArgs(
+  args: RunWorkflowAutomationNowArgs,
+  model: EnqueuedChatInputModel,
+  displayName: string | null,
+  automation: RunWorkflowAutomationNowArgs["due"]["automation"],
+  chatThreadId: string,
+) {
+  return {
+    displayName,
+    modelSelection: model.modelSelection,
+    automation,
+    queueEventId: args.queueEventId,
+    workflowName: args.automationContext.workflowName,
+    displayPrompt: workflowAutomationDisplayMessage(args.automationContext),
+    agentRunSource: args.agentRunSource,
+    workflowAutomationEventType: args.automationContext.eventType,
+    workflowAutomationEventPayload: persistedWorkflowAutomationEventPayload(
+      args.automationContext.event,
+    ),
+    connectorSourceId: args.connectorSourceId,
+    chatThreadId,
+    triggerBrief: args.triggerBrief,
+  };
+}
+
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
@@ -634,22 +659,9 @@ export const runWorkflowAutomationNow$ = command(
       signal,
     );
     const source = await set(prepareWorkflowQueueSource$, args, signal);
-    const plan = workflowAutomationQueueEventPlan({
-      displayName,
-      modelSelection: model.modelSelection,
-      automation,
-      queueEventId: args.queueEventId,
-      workflowName: args.automationContext.workflowName,
-      displayPrompt: workflowAutomationDisplayMessage(args.automationContext),
-      agentRunSource: args.agentRunSource,
-      workflowAutomationEventType: args.automationContext.eventType,
-      workflowAutomationEventPayload: persistedWorkflowAutomationEventPayload(
-        args.automationContext.event,
-      ),
-      connectorSourceId: args.connectorSourceId,
-      chatThreadId,
-      triggerBrief: args.triggerBrief,
-    });
+    const plan = workflowAutomationQueueEventPlan(
+      workflowQueueArgs(args, model, displayName, automation, chatThreadId),
+    );
     signal.throwIfAborted();
 
     const schedulePath = workflowAdmissionSchedulePath(
@@ -661,48 +673,60 @@ export const runWorkflowAutomationNow$ = command(
     const enqueued = await flushWorkflowAdmission(
       censusWorkflowAdmission(
         schedulePath,
-        measureWorkflowAdmissionStep(
-          timing,
-          "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
-          async () => {
-            const attempt = await settle(
-              set(
-                commitWorkflowInput$,
-                { args, plan, source, replacePendingTicks, model, timing },
-                signal,
-              ),
-            );
-            if (!attempt.ok) {
-              if (
-                args.sourcePlan?.kind === "google-forms" &&
-                isForeignKeyViolation(attempt.error)
-              ) {
-                throw new GoogleFormsSourceTransitionChangedError();
+        (async () => {
+          const startedAt = performance.now();
+          const measured = await settleIncludingAbort(
+            (async () => {
+              const attempt = await settle(
+                set(
+                  commitWorkflowInput$,
+                  { args, plan, source, replacePendingTicks, model, timing },
+                  signal,
+                ),
+              );
+              if (!attempt.ok) {
+                if (
+                  args.sourcePlan?.kind === "google-forms" &&
+                  isForeignKeyViolation(attempt.error)
+                ) {
+                  throw new GoogleFormsSourceTransitionChangedError();
+                }
+                if (
+                  attempt.error instanceof ScheduleOccurrenceUnavailableError
+                ) {
+                  admissionOutcome = "superseded";
+                  return false;
+                }
+                throw attempt.error;
               }
-              if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {
+              if (
+                attempt.value === null &&
+                automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY
+              ) {
                 admissionOutcome = "superseded";
                 return false;
               }
-              throw attempt.error;
-            }
-            if (
-              attempt.value === null &&
-              automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY
-            ) {
-              admissionOutcome = "superseded";
-              return false;
-            }
-            enqueueCommit = attempt.value ?? undefined;
-            admissionOutcome = "inserted";
-            return true;
-          },
-          () => {
-            return {
-              schedule_path: schedulePath,
-              admission_outcome: admissionOutcome,
-            };
-          },
-        ),
+              enqueueCommit = attempt.value ?? undefined;
+              admissionOutcome = "inserted";
+              return true;
+            })(),
+          );
+          await recordWorkflowAdmissionDuration(
+            timing,
+            "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
+            performance.now() - startedAt,
+            () => {
+              return {
+                schedule_path: schedulePath,
+                admission_outcome: admissionOutcome,
+              };
+            },
+          );
+          if (!measured.ok) {
+            throw measured.error;
+          }
+          return measured.value;
+        })(),
         () => {
           return admissionOutcome;
         },
