@@ -81,7 +81,9 @@ function mockBrowserApi(
       : respond(200, { browser: currentSession });
   });
   const cdpUrl = "wss://cdp.browser-use.com/sidebar";
-  mockBrowserCdp(context, cdpUrl);
+  mockBrowserCdp(context, cdpUrl, {
+    streaming: initialSession?.window !== undefined,
+  });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, { cdpUrl });
   });
@@ -256,9 +258,6 @@ test("The shared conversation sidebar leases only its selected-page interaction"
     },
   };
   mockBrowserApi(session);
-  mockBrowserCdp(context, "wss://cdp.browser-use.com/sidebar", {
-    streaming: true,
-  });
   const bodies: unknown[] = [];
   const evidence = context.mocks.deferred<BrowserViewerActivity | undefined>();
   context.mocks.api(browserContract.leaseByThread, ({ body, respond }) => {
