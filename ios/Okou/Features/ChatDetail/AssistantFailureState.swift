@@ -75,9 +75,9 @@ struct AssistantFailureState: Equatable {
     let resetAllowed = recovery.framework == .codex && !recovery.modelScoped && resets > 0
     return Self(
       failure: failure, recovery: recovery, isCurrent: current,
-      isBusy: busy || selection?.isBusy == true || subscriptions?.isMutating == true
+      isBusy: busy || selection?.isMutating == true || subscriptions?.isMutating == true
         || (readsAccount && !accountsReady && subscriptions?.error == nil),
-      canSend: selection?.canSend != false,
+      canSend: selection?.canSendConfirmedSelection != false,
       accountLabel: account?.accountEmail ?? account?.workspaceName,
       disconnected: readsAccount && accountsReady && account == nil,
       resetDetails: details.isEmpty ? recovery.resetLabel.map { ["Resets \($0)"] } ?? [] : details,

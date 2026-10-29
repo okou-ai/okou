@@ -35,7 +35,13 @@ final class ConversationStore {
 
   let modelSelection: ChatModelSelectionStore?
   let workflowSource: ComposerWorkflowSource?
-  var thread: ChatThread
+  var thread: ChatThread {
+    didSet {
+      if ChatModelSelection(thread: oldValue) != ChatModelSelection(thread: thread) {
+        modelSelection?.apply(thread: thread, replacing: oldValue)
+      }
+    }
+  }
   var draft: String {
     get { composer.text }
     set { composer.text = newValue }
@@ -111,7 +117,7 @@ final class ConversationStore {
   private var refreshTask: Task<Void, Never>?
   private var refreshGeneration = UUID()
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
-  private var sendTask: Task<Void, Never>?
+  private var sendTask: Task<Bool, Never>?
   private var stopTask: Task<Void, Never>?
   private var expansionTask: Task<Void, Never>?
   private var renderWindow = ConversationRenderWindow()
@@ -401,8 +407,8 @@ final class ConversationStore {
   func recoverFailure(_ id: String, resetUsage: Bool = false) async {
     guard !closed, !needsUpgrade, !isRecoveringFailure, !isSending, pending.isEmpty,
       history?.latestFailureID == id, let failure = messages.first(where: { $0.id == id })?.failure,
-      failureState(failure).recovery.canRetry, modelSelection?.canSend != false,
-      modelSelection?.isBusy != true
+      failureState(failure).recovery.canRetry,
+      modelSelection?.canSendConfirmedSelection != false, modelSelection?.isMutating != true
     else { return }
     isRecoveringFailure = true
     modelSelection?.isSending = true
@@ -417,16 +423,19 @@ final class ConversationStore {
       }
       await refresh()
       if let refreshTask { await refreshTask.value }
-      await modelSelection?.refresh()
       guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
         history?.latestFailureID == id, pending.isEmpty, error == nil,
-        failureState(failure).recovery.canRetry, modelSelection?.canSend != false
+        failureState(failure).recovery.canRetry,
+        modelSelection?.canSendConfirmedSelection != false
       else { return }
       if resetUsage {
+        // Spending a reset credit must resolve the current subscription route first.
+        await modelSelection?.refresh()
+        guard modelSelection?.canSend != false else { return }
         await refreshFailureAccounts()
         let state = failureState(failure)
         guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
-          history?.latestFailureID == id, modelSelection?.canSend != false,
+          history?.latestFailureID == id, modelSelection?.canSendConfirmedSelection != false,
           let accountID = state.resetAccountID,
           let subscriptions = modelSelection?.models.subscriptions,
           let account = subscriptions.accounts.first(where: { $0.id == accountID }),
@@ -434,7 +443,8 @@ final class ConversationStore {
         else { return }
       }
       guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
-        history?.latestFailureID == id, pending.isEmpty, modelSelection?.canSend != false
+        history?.latestFailureID == id, pending.isEmpty,
+        modelSelection?.canSendConfirmedSelection != false
       else { return }
       let message = PendingMessage(
         id: UUID().uuidString.lowercased(), text: "continue", createdAt: Date(), attachments: [],
@@ -452,7 +462,7 @@ final class ConversationStore {
     isSending = true
     modelSelection?.isSending = true
     let task = Task { [weak self] in
-      guard let self else { return }
+      guard let self else { return false }
       defer {
         isSending = false
         modelSelection?.isSending = false
@@ -469,24 +479,28 @@ final class ConversationStore {
           clientEventID: message.id, modelSelection: message.modelSelection,
           reasoningEffort: message.reasoningEffort, computerAccess: message.computerAccess)
         try Task.checkCancellation()
-        guard !closed else { return }
+        guard !closed else { return false }
         workflowSource?.recordUse(workflowIDs)
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = false
         }
         error = nil
-        await refresh()
-        didSend()
+        return true
       } catch {
-        guard !closed else { return }
+        guard !closed else { return false }
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = true
         }
         show(error)
+        return false
       }
     }
     sendTask = task
-    await task.value
+    // API acceptance ends sending. History can publish a failure card before its
+    // read/mark-read work settles, and that card must already accept recovery.
+    guard await task.value, !closed, !needsUpgrade, !Task.isCancelled else { return }
+    await refresh()
+    didSend()
   }
 
   func stop() async {

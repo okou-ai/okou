@@ -312,7 +312,9 @@ final class WorkspaceStore {
       await selectedConversation?.refresh()
     }
     guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-    if modelStore.configuration != nil && (full || batch.contains(.threadList)) {
+    if modelStore.configuration != nil,
+      full || selectedConversation?.modelSelection?.needsThreadReadback == true
+    {
       await selectedConversation?.modelSelection?.refresh()
     }
     await trimConversations(limit: conversationLimit)

@@ -110,6 +110,7 @@ final class ChatModelSelectionStore {
   private(set) var error: String?
   private(set) var savedDefault = false
   private(set) var uncertain = false
+  private(set) var needsThreadReadback = false
   var isSending = false
   private var refreshAfterSave = false
   private var revision = 0
@@ -134,16 +135,41 @@ final class ChatModelSelectionStore {
       URLQueryItem(name: "billingView", value: "plans"),
     ])
   }
-  var isBusy: Bool { isSaving || isLoading || isSending }
-  var canSend: Bool {
+  var isMutating: Bool { isSaving || isSending }
+  var isBusy: Bool { isMutating || isLoading }
+  var canSend: Bool { !isLoading && canSendConfirmedSelection }
+  /// Background reads do not invalidate the selection already confirmed for recovery.
+  var canSendConfirmedSelection: Bool {
     guard connectors.canSend else { return false }
     guard models.active else { return true }
     guard models.configuration != nil else { return false }
-    return !isSaving && !isLoading && hasLoaded && !uncertain
+    return !isSaving && hasLoaded && !uncertain
       && models.configuration?.row(for: selection)?.memberEffective.availability == "available"
   }
   var effectiveEffort: String? { models.configuration?.effectiveEffort(for: selection) }
   var requestedEffort: String? { models.configuration?.requestedEffort(for: selection) }
+
+  func apply(thread: ChatThread, replacing previous: ChatThread) {
+    guard !closed, thread.id == threadID else { return }
+    if isSaving {
+      refreshAfterSave = true
+      return
+    }
+    // An ambiguous local write still needs its explicit metadata readback.
+    guard !uncertain else { return }
+    revision += 1
+    isLoading = false
+    let next = ChatModelSelection(thread: thread)
+    // A thread read started before a local write can finish after its readback.
+    // Retain the acknowledged choice until this conflicting projection is resolved.
+    if hasLoaded, let stored, stored != ChatModelSelection(thread: previous), stored != next {
+      needsThreadReadback = true
+      return
+    }
+    needsThreadReadback = false
+    stored = next
+    hasLoaded = true
+  }
 
   func open() async {
     if models.configuration == nil { await models.refresh() }
@@ -166,6 +192,7 @@ final class ChatModelSelectionStore {
       stored = value
       hasLoaded = true
       uncertain = false
+      needsThreadReadback = false
       error = nil
     } catch is CancellationError {
     } catch {
@@ -228,6 +255,7 @@ final class ChatModelSelectionStore {
       guard !closed, !Task.isCancelled else { return }
       stored = confirmed
       hasLoaded = true
+      needsThreadReadback = false
       error = nil
     } catch {
       guard !closed else { return }

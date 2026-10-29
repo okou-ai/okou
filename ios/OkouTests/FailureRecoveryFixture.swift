@@ -13,6 +13,17 @@ final class FailureRecoveryFixture: Sendable {
     var lastID = FailureRecoveryFixture.failureID
     var model = "codex-model"
     var metadataStatus = 200
+    var metadataGate: ModelResponseGate?
+    var metadataRequested: (@Sendable () -> Void)?
+    var modelSaveStatus = 204
+    var modelSaveGate: ModelResponseGate?
+    var modelSaveRequested: (@Sendable () -> Void)?
+    var threadEvents: [String] = []
+    var threadEventsGate: ModelResponseGate?
+    var threadEventsRequested: (@Sendable () -> Void)?
+    var failNextSend = false
+    var markReadGate: ModelResponseGate?
+    var markReadRequested: (@Sendable () -> Void)?
     var accounts = ModelHTTPFixtures.subscriptions.replacingOccurrences(
       of: "\"remainingPercent\":80", with: "\"remainingPercent\":0"
     )
@@ -60,6 +71,31 @@ final class FailureRecoveryFixture: Sendable {
       let path = request.url!.path
       let threadPath = "/api/chat-threads/\(ModelHTTPFixtures.threadID)"
       switch path {
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"chatThreads":[{"id":"\(ModelHTTPFixtures.threadID)","agentId":"\(ModelHTTPFixtures.agentID)","title":"Failure recovery","selectedModel":"codex-model","modelSettings":{"codex-model":{"effort":"max"}},"createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":0}
+            """)
+      case "/api/chat-threads/events":
+        let since =
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+          .first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
+        let (response, gate, requested) = state.value.withLock { value in
+          let response = ChatHTTPResponse(
+            body:
+              "{\"events\":[\(value.threadEvents.dropFirst(since).joined(separator: ","))],\"hasMore\":false}"
+          )
+          let gate = value.threadEventsGate
+          let requested = value.threadEventsRequested
+          value.threadEventsGate = nil
+          value.threadEventsRequested = nil
+          return (response, gate, requested)
+        }
+        requested?()
+        if let gate { await gate.wait() }
+        return response
+      case "/api/indicators":
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
       case threadPath + "/event-snapshot":
         return ChatHTTPResponse(
           status: 404,
@@ -92,24 +128,49 @@ final class FailureRecoveryFixture: Sendable {
       case "/api/uploads/prepare":
         return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Upload unavailable"}}"#)
       case threadPath + "/mark-read":
+        let (gate, requested) = state.value.withLock { value in
+          let gate = value.markReadGate
+          let requested = value.markReadRequested
+          value.markReadGate = nil
+          value.markReadRequested = nil
+          return (gate, requested)
+        }
+        requested?()
+        if let gate { await gate.wait() }
         return ChatHTTPResponse(body: #"{"lastReadAt":"2030-01-01T00:00:00Z"}"#)
       case threadPath + "/connector-selections":
         return ChatHTTPResponse(body: #"{"selections":[]}"#)
       case threadPath + "/metadata":
-        return state.value.withLock { value in
-          value.metadataStatus == 200
+        let (response, gate, requested) = state.value.withLock { value in
+          let response =
+            value.metadataStatus == 200
             ? ChatHTTPResponse(
               body: ModelHTTPFixtures.metadata.replacingOccurrences(
                 of: "codex-model", with: value.model))
             : ChatHTTPResponse(
               status: value.metadataStatus,
               body: #"{"error":{"message":"Model selection unavailable"}}"#)
+          let gate = value.metadataGate
+          let requested = value.metadataRequested
+          value.metadataGate = nil
+          value.metadataRequested = nil
+          return (response, gate, requested)
         }
+        requested?()
+        if let gate { await gate.wait() }
+        return response
       case threadPath + "/model-selection":
         let body = try XCTUnwrap(
           JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-        state.value.withLock { $0.model = body["model"] as? String ?? "auto" }
-        return ChatHTTPResponse(status: 204, body: "")
+        let (status, gate, requested) = state.value.withLock { value in
+          value.model = body["model"] as? String ?? "auto"
+          return (value.modelSaveStatus, value.modelSaveGate, value.modelSaveRequested)
+        }
+        requested?()
+        if let gate { await gate.wait() }
+        return ChatHTTPResponse(
+          status: status,
+          body: status == 204 ? "" : #"{"error":{"message":"Save response unavailable"}}"#)
       case "/api/chat/events":
         let data = chatRequestBody(request)
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -125,6 +186,15 @@ final class FailureRecoveryFixture: Sendable {
                 value.rows.count + 1, type: "input.prompt",
                 payload: String(decoding: document, as: UTF8.self), id: id))
             value.lastID = id
+            if value.failNextSend {
+              value.failNextSend = false
+              let seq = value.rows.count + 1
+              value.rows.append(
+                Self.row(
+                  seq, type: "run.failed",
+                  payload: #"{"error":"Unavailable","failureReason":"provider_server_error"}"#))
+              value.lastID = Self.id(seq)
+            }
           }
           return value.sendStatus == 200
             ? ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
@@ -171,9 +241,10 @@ final class FailureRecoveryFixture: Sendable {
     }
   }
 
-  @MainActor func conversation(cache: ChatCache? = nil, draftStorage: ChatDraftStorage? = nil) async
-    -> (ConversationStore, ChatModelStore)
-  {
+  @MainActor func conversation(
+    cache: ChatCache? = nil, draftStorage: ChatDraftStorage? = nil,
+    isVisible: @escaping @MainActor () -> Bool = { false }
+  ) async -> (ConversationStore, ChatModelStore) {
     let resource = ChatModelStore(client: http.client, webURL: http.baseURL, didFail: { _ in })
     let thread = ChatThread(
       id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
@@ -185,7 +256,7 @@ final class FailureRecoveryFixture: Sendable {
     let conversation = ConversationStore(
       thread: thread, sync: sync, commands: ChatCommands(client: http.client, sync: sync),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
-      isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
+      isVisible: isVisible, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       modelSelection: selection,
       draftRepository: ChatDraftRepository(client: http.client), draftStorage: draftStorage)
     await conversation.refresh()
@@ -195,6 +266,10 @@ final class FailureRecoveryFixture: Sendable {
   }
 
   static func id(_ seq: Int) -> String { String(format: "99000000-0000-4000-8000-%012d", seq) }
+  static func threadEvent(_ seq: Int, kind: String, fields: String) -> String {
+    "{\"id\":\"\(id(1000 + seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"createdAt\":\"2026-10-20T00:00:01Z\",\(fields)}"
+  }
+
   static func row(_ seq: Int, type: String, payload: String, id: String? = nil) -> String {
     "{\"id\":\"\(id ?? Self.id(seq))\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"runId\":\"\(runID)\",\"seqId\":\(seq),\"createdAt\":\"2026-10-20T00:00:00Z\",\"eventType\":\"\(type)\",\"payload\":\(payload)}"
   }
