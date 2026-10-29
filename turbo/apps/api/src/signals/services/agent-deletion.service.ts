@@ -16,6 +16,7 @@ import {
   agentDeletionAdmissionPlan,
   agentDeletionIdentityCondition,
   agentDeletionAutomationCondition,
+  agentDeletionWorkflowCondition,
   agentDeletionThreadSequencesSql,
   type DeleteAgentArgs,
 } from "./agent-deletion-queries";
@@ -96,7 +97,6 @@ const deleteAgentRows$ = command(
       const automations = await tx
         .select(agentWatchColumns)
         .from(workflowAutomations)
-        .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
         .where(agentDeletionAutomationCondition(args));
       signal.throwIfAborted();
       const historyDeletionQuery = deleteRunHistoriesSql(lifecycle.runIds);
@@ -122,16 +122,18 @@ const deleteAgentRows$ = command(
         await tx.execute(statement);
         signal.throwIfAborted();
       }
+      // Keep the earlier watch snapshot and include every explicitly removed
+      // target before deleting its Workflow parent.
+      const removedAutomations = await tx
+        .delete(workflowAutomations)
+        .where(agentDeletionAutomationCondition(args))
+        .returning(agentWatchColumns);
+      signal.throwIfAborted();
       // DELETE RETURNING consumes the actual winning descriptor after any
       // concurrent Workflow update. A preceding SELECT would miss a late edit.
       const removedWorkflows = await tx
         .delete(workflows)
-        .where(
-          and(
-            eq(workflows.agentId, args.agentId),
-            eq(workflows.orgId, args.orgId),
-          ),
-        )
+        .where(agentDeletionWorkflowCondition(args))
         .returning({
           id: workflows.id,
           ownerUserId: workflows.ownerUserId,
@@ -197,7 +199,7 @@ const deleteAgentRows$ = command(
       }
       return {
         kind: "deleted" as const,
-        automations,
+        automations: [...automations, ...removedAutomations],
         conversationDeletion: release.receipt,
       };
     });
