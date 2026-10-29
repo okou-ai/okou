@@ -295,6 +295,10 @@ export function createChatResourceSignals(
   // Cache the complete answer independently of whether the panel is requested.
   // Keep readiness primitive so catalogue paging does not redraw ready rows.
   const settledContent$ = computed(async (get) => {
+    // Initial events change the relation revision, invalidating earlier reads.
+    if (!get(initialEventsReady$)) {
+      return null;
+    }
     const origin = get(relations.origin$);
     const [page, chats] = await Promise.allSettled([
       get(content$),
