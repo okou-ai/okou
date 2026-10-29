@@ -2543,6 +2543,7 @@
       },
       "ideasLabel": "Ideen zum Einstieg",
       "label": "Aufgaben zum Einstieg",
+      "more": "Mehr",
       "moreTemplates": "Weitere Vorlagen",
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",

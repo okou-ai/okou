@@ -1,3 +1,7 @@
+import {
+  mockTaskChipLayout,
+  taskMenuItem,
+} from "./composer-task-chip-layout.ts";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import { screen, waitFor } from "@testing-library/react";
@@ -1067,4 +1071,28 @@ test("Removing custom context preserves the member's original draft and files", 
   expect(screen.getByText("my-original.txt")).toBeInTheDocument();
   expect(composer()).toHaveTextContent("My saved draft");
   expect(composer()).toHaveTextContent("Keep my own requirements");
+});
+
+test("Suggestions stays outside More when Tasks and the creation categories overflow", async () => {
+  mockTaskChipLayout(220);
+  mockPool();
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: { ...features, [FeatureSwitchKey.ProactiveAgent]: true },
+  });
+  await screen.findByText(makeSuggestion().title);
+  expect(
+    queryAllByRoleFast("tab").map((tab) => {
+      return tab.textContent?.trim();
+    }),
+  ).toStrictEqual(["Suggestions"]);
+  await user.click(button("More"));
+  expect(taskMenuItem("Tasks")).toBeInTheDocument();
+  await user.click(taskMenuItem("Image"));
+  await waitFor(() => {
+    expect(button("Remove Image")).toBeInTheDocument();
+    expect(composer()).toHaveFocus();
+  });
 });

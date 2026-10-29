@@ -2589,6 +2589,7 @@
       },
       "ideasLabel": "Ideas para empezar",
       "label": "Tareas para empezar",
+      "more": "Más",
       "moreTemplates": "Más plantillas",
       "presentationTemplates": "Plantillas de presentación",
       "removeTask": "Quitar {{task}}",

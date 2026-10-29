@@ -2543,6 +2543,7 @@
       },
       "ideasLabel": "Ideas to get started",
       "label": "Tasks to get started",
+      "more": "More",
       "moreTemplates": "More templates",
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",

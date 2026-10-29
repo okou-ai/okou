@@ -2532,6 +2532,7 @@
       },
       "ideasLabel": "始めるためのアイデア",
       "label": "タスクを始める",
+      "more": "その他",
       "moreTemplates": "他のテンプレート",
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",

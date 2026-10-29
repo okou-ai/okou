@@ -2543,6 +2543,7 @@
       },
       "ideasLabel": "शुरुआती सुझाव",
       "label": "शुरू करने के लिए काम",
+      "more": "और",
       "moreTemplates": "और टेम्पलेट",
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",

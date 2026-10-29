@@ -40,6 +40,13 @@ globalThis.IDBRequest = IDBRequest;
 globalThis.IDBTransaction = IDBTransaction;
 globalThis.IDBVersionChangeEvent = IDBVersionChangeEvent;
 
+// Happy-dom has no FontFaceSet. Supply its event boundary so components can
+// listen for completed font loads and tests can dispatch that browser event.
+Object.defineProperty(document, "fonts", {
+  configurable: true,
+  value: new EventTarget(),
+});
+
 // Base UI Scroll Area requires Web Animations, which happy-dom does not
 // implement. Scope the shim to Scroll Area viewports so dialogs and menus retain
 // their synchronous no-animation behavior unless a test supplies animations.

@@ -2532,6 +2532,7 @@
       },
       "ideasLabel": "上手靈感",
       "label": "上手任務",
+      "more": "更多",
       "moreTemplates": "更多模板",
       "presentationTemplates": "簡報模板",
       "removeTask": "移除{{task}}",

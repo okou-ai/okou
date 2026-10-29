@@ -2589,6 +2589,7 @@
       },
       "ideasLabel": "Idées pour démarrer",
       "label": "Tâches pour démarrer",
+      "more": "Plus",
       "moreTemplates": "Autres modèles",
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
