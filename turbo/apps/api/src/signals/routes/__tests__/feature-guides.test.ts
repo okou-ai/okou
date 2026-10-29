@@ -112,7 +112,30 @@ test("only delivers a published edition when its server-side feature switch is e
     isolatePg: true,
   });
   mockNow(NOW);
-  const prepared = await prepare();
+  const prepared = await prepare(
+    draft({
+      content: {
+        schemaVersion: 1,
+        title: "Product update",
+        description: "Explore the latest capabilities",
+        items: (
+          ["connect-discord", "open-artifacts", "open-chats"] as const
+        ).map((type) => {
+          return {
+            featureId: type,
+            title: "Explore an update",
+            description: "A new way to work",
+            media: {
+              type: "image",
+              url: "https://example.com/guide.png",
+              alt: "A feature illustration",
+            },
+            action: { type, label: "Open feature" },
+          };
+        }),
+      },
+    }),
+  );
   const viewer = await identity();
   await enable();
   await expect(current()).resolves.toBeNull();
