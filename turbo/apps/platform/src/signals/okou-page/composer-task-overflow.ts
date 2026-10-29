@@ -100,7 +100,6 @@ export function createComposerTaskOverflowSignals() {
       const measure = () => {
         return set(measure$);
       };
-      measure();
       window.addEventListener("resize", measure, { signal });
       window.addEventListener(
         "transitionend",

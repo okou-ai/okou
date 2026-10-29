@@ -201,7 +201,7 @@ function TaskOverflowMenu({
               aria-hidden
             />
           </DropdownMenuTrigger>
-          <TooltipContent side="top" className="max-w-64 text-xs">
+          <TooltipContent className="max-w-64">
             {tasks
               .map((task) => {
                 return labels[task];
@@ -269,7 +269,6 @@ export function ComposerTaskChipRow({
     tasks.map((task) => {
       return [task, labels[task]];
     }),
-    more,
     sidebarHidden,
     chatListWidth,
     unified,
