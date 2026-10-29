@@ -12,6 +12,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1077.1](https://github.com/okou-ai/okou/compare/app-v0.1077.0...app-v0.1077.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** require clerk tokens for shared database requests ([#43920](https://github.com/okou-ai/okou/issues/43920)) ([53851a2](https://github.com/okou-ai/okou/commit/53851a21f153cd25fc8863d9e0641649a1f2a772))
+* configure whatsapp regions and standardize unsupported replies ([#43971](https://github.com/okou-ai/okou/issues/43971)) ([37fffbf](https://github.com/okou-ai/okou/commit/37fffbf81e095bbebee1b5cec13d30a468f3cd80))
+* update okou social sharing image ([#43980](https://github.com/okou-ai/okou/issues/43980)) ([eaa1bc7](https://github.com/okou-ai/okou/commit/eaa1bc7732ce2fe040605c3ef8f0bdd1cd7bc4da))
+
+
+### Refactoring
+
+* remove hosted site visibility feature switch ([#43947](https://github.com/okou-ai/okou/issues/43947)) ([4aade90](https://github.com/okou-ai/okou/commit/4aade9015eaf2e73d9b63fab530758ca155fed07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.19.0
+    * @okouai/core bumped to 8.800.2
+
 ## [0.1077.0](https://github.com/okou-ai/okou/compare/app-v0.1076.0...app-v0.1077.0) (2026-10-29)
 
 

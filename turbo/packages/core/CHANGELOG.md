@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.800.2](https://github.com/okou-ai/okou/compare/core-v8.800.1...core-v8.800.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* update okou social sharing image ([#43980](https://github.com/okou-ai/okou/issues/43980)) ([eaa1bc7](https://github.com/okou-ai/okou/commit/eaa1bc7732ce2fe040605c3ef8f0bdd1cd7bc4da))
+
+
+### Refactoring
+
+* remove hosted site visibility feature switch ([#43947](https://github.com/okou-ai/okou/issues/43947)) ([4aade90](https://github.com/okou-ai/okou/commit/4aade9015eaf2e73d9b63fab530758ca155fed07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.19.0
+
 ## [8.800.1](https://github.com/okou-ai/okou/compare/core-v8.800.0...core-v8.800.1) (2026-10-29)
 
 
