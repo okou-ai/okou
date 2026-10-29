@@ -43,8 +43,7 @@ function createSiteVisibilitySignals(sourceUrl: string) {
       return null;
     }
     get(reload$);
-    // URL editing has its own rollout gate. Resolve the publication without
-    // depending on that gate, then let the visibility endpoint authorize ownership.
+    // Resolve the publication, then let the visibility endpoint authorize ownership.
     const alias = await accept(
       get(apiClient$)(hostContract).resolveAlias({
         params: { publicSlug: url.hostname.split(".")[0]! },
@@ -243,9 +242,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
   const signal$ = state<AbortSignal | null>(null);
   const saved$ = state<SiteUrl | null>(null);
   const details$ = computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.HostedSiteUrlEditing]) {
-      return null;
-    }
     const changes = get(hostedSiteUrlChanges$);
     const saved = get(saved$);
     if (saved) {

@@ -153,7 +153,6 @@ async function setupHostedSite(
     host: "app.okou.ai",
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.HostedSiteUrlEditing]: true,
       [FeatureSwitchKey.HostedSiteVisibility]: false,
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
