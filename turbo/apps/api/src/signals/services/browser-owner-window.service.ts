@@ -149,7 +149,7 @@ export const createBrowserOwnerWindow$ = command(
       cdpUrl: input.cdpUrl,
       publicationUncertain: false,
     };
-    const result = await settleIncludingAbort(async () => {
+    const creationWork = (async () => {
       const candidate = input.initial
         ? await initialBrowserUseWindow(input.cdpUrl, signal)
         : await createBrowserUseWindow(input.cdpUrl, signal);
@@ -175,7 +175,8 @@ export const createBrowserOwnerWindow$ = command(
       );
       cleanup.publicationUncertain = false;
       return published;
-    });
+    })();
+    const result = await settleIncludingAbort(creationWork);
     if (signal.aborted) {
       await settleIncludingAbort(
         set(

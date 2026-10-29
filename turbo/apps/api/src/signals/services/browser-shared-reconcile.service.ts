@@ -422,7 +422,7 @@ const recoverSharedCreations$ = command(
       .limit(BATCH_SIZE);
     signal.throwIfAborted();
     for (const candidate of creating) {
-      const recovered = await settleIncludingAbort(async () => {
+      const recoveryWork = (async () => {
         const providerSessionId = await findBrowserUseSessionByInstance(
           candidate.instanceId,
           signal,
@@ -460,7 +460,8 @@ const recoverSharedCreations$ = command(
             ? 1
             : 0;
         }
-      });
+      })();
+      const recovered = await settleIncludingAbort(recoveryWork);
       signal.throwIfAborted();
       if (!recovered.ok) {
         errors += 1;
