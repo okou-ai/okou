@@ -115,6 +115,12 @@ const agentPhoneGroupHistoryResponseSchema = object({
   nextCursor: string().nullable(),
 });
 
+const agentPhoneGroupMessageBodySchema = object({
+  groupId: string().min(5).max(255).startsWith("grp_"),
+  agentphoneAgentId: string().min(1).optional(),
+  text: string().min(1),
+});
+
 export const integrationsAgentPhoneContract = c.router({
   getConnectStatus: {
     method: "GET",
@@ -167,6 +173,26 @@ export const integrationsAgentPhoneContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Read archived iMessage group messages visible to the user",
+  },
+  groupMessage: {
+    method: "POST",
+    path: "/api/integrations/agentphone/group-message",
+    headers: authHeadersSchema,
+    body: agentPhoneGroupMessageBodySchema,
+    responses: {
+      200: object({
+        ok: literal(true),
+        messageId: string(),
+        channel: string().nullable(),
+        toNumber: string(),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary: "Send text to an existing iMessage group containing the caller",
   },
   getLinkStatus: {
     method: "GET",
@@ -245,4 +271,7 @@ export type AgentPhoneGroupHistoryQuery = zInfer<
 >;
 export type AgentPhoneGroupHistoryResponse = zInfer<
   typeof agentPhoneGroupHistoryResponseSchema
+>;
+export type SendAgentPhoneGroupMessageBody = zInfer<
+  typeof agentPhoneGroupMessageBodySchema
 >;
