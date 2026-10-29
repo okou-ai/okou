@@ -65,8 +65,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Onboarding source outcomes",
     description:
       "Show industry-specific examples of work prepared from connected tools.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
     maintainer: "yuma@okou.ai",
