@@ -131,7 +131,8 @@ final class FailureRecoveryTests: XCTestCase {
           FailureRecoveryFixture.threadEvent(
             1, kind: "model_selection_updated",
             fields:
-              "\"selectedModel\":\"\(model)\",\"modelSettingsPatch\":{\"model\":\"\(model)\",\"effort\":\"high\"}"),
+              "\"selectedModel\":\"\(model)\",\"modelSettingsPatch\":{\"model\":\"\(model)\",\"effort\":\"high\"}"
+          ),
           FailureRecoveryFixture.threadEvent(
             2, kind: "service_tier_updated", fields: "\"serviceTier\":\(tier)"),
         ]

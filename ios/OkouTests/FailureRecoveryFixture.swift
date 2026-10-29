@@ -78,7 +78,8 @@ final class FailureRecoveryFixture: Sendable {
         return state.value.withLock {
           ChatHTTPResponse(
             body:
-              "{\"events\":[\($0.threadEvents.dropFirst(since).joined(separator: ","))],\"hasMore\":false}")
+              "{\"events\":[\($0.threadEvents.dropFirst(since).joined(separator: ","))],\"hasMore\":false}"
+          )
         }
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
