@@ -1,7 +1,3 @@
-import type {
-  RunnerBrowserAction,
-  RunnerBrowserResponse,
-} from "@okouai/api-contracts/contracts/runner-browser";
 import {
   browserOwnerProfiles,
   browserOwnerWindows,
@@ -12,58 +8,33 @@ import {
   BROWSER_SCREEN_WIDTH,
 } from "@okouai/api-contracts/contracts/browser";
 import { array, string } from "zod";
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { captureSharedSnapshot$ } from "./browser-shared-snapshot.service";
 import {
   controlBrowserOwner$,
-  createRunnerBrowserRead,
-  type BrowserOwnerAuthority,
+  type BrowserPublicAuthority,
+  type BrowserOwnerResult,
 } from "./browser-owner.service";
 import {
   BrowserUseProviderError,
-  browserUseWindowExists,
   closeBrowserUseWindow,
   initialBrowserUseWindow,
   resizeBrowserUseSession,
   restoreBrowserUseWindowTabUrls,
   createBrowserUseWindow,
-  findBrowserUseSession,
   type BrowserUseWindowCandidate,
 } from "./browser-use.service";
 
 const CLEANUP_TIMEOUT_MS = 15_000;
 const unavailable = { outcome: "unavailable" } as const;
-type AdmissionAction = Extract<RunnerBrowserAction, { kind: "admit" }>;
 interface WindowCandidateCleanup {
   readonly instanceId: string;
   readonly cdpUrl: string;
   candidate?: BrowserUseWindowCandidate;
   publicationUncertain: boolean;
-}
-
-function windowAdmissionFailure(
-  error: unknown,
-  publicationUncertain: boolean,
-): BrowserUseProviderError {
-  if (publicationUncertain) {
-    return new BrowserUseProviderError(
-      502,
-      "BROWSER_USE_WINDOW_PUBLICATION_UNCERTAIN",
-      "Managed Browser window publication could not be confirmed",
-    );
-  }
-  return error instanceof BrowserUseProviderError
-    ? error
-    : new BrowserUseProviderError(
-        502,
-        "BROWSER_USE_WINDOW_UNAVAILABLE",
-        "Managed Browser window is unavailable",
-      );
 }
 
 const cleanupWindowCandidate$ = command(
@@ -104,7 +75,7 @@ const cleanupWindowCandidate$ = command(
 );
 
 interface BrowserOwnerWindowInput {
-  readonly owner: BrowserOwnerAuthority;
+  readonly owner: BrowserPublicAuthority;
   readonly instanceId: string;
   readonly cdpUrl: string;
   readonly initial: boolean;
@@ -136,13 +107,13 @@ async function prepareBrowserOwnerWindow(
   signal.throwIfAborted();
 }
 
-/** Both admission entry points publish only a fully prepared native window. */
+/** Publish only a fully prepared native window. */
 export const createBrowserOwnerWindow$ = command(
   async (
     { get, set },
     input: BrowserOwnerWindowInput,
     signal: AbortSignal,
-  ): Promise<RunnerBrowserResponse> => {
+  ): Promise<BrowserOwnerResult> => {
     const [snapshot] = await get(db$)
       .select({ encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls })
       .from(browserOwnerProfiles)
@@ -207,7 +178,7 @@ export const createBrowserOwnerWindow$ = command(
     const accepted =
       result.ok &&
       result.value.outcome === "accepted" &&
-      result.value.instance.window?.primaryWindowId ===
+      result.value.window?.primaryWindowId ===
         cleanup.candidate?.primaryWindowId;
     if (!accepted) {
       const cleaned = await settleIncludingAbort(
@@ -229,196 +200,14 @@ export const createBrowserOwnerWindow$ = command(
     signal.throwIfAborted();
     if (!result.ok) {
       if (cleanup.publicationUncertain) {
-        throw windowAdmissionFailure(result.error, true);
+        throw new BrowserUseProviderError(
+          502,
+          "BROWSER_USE_WINDOW_PUBLICATION_UNCERTAIN",
+          "Managed Browser window publication could not be confirmed",
+        );
       }
       throw result.error;
     }
     return accepted ? result.value : unavailable;
   },
 );
-
-function createAdmissionContext(
-  owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
-  action$: Computed<Promise<AdmissionAction | null>>,
-) {
-  const readAction$ = computed(async (get) => {
-    const action = await get(action$);
-    return action
-      ? { kind: "inspect" as const, instanceId: action.instanceId }
-      : null;
-  });
-  const current$ = createRunnerBrowserRead(owner$, readAction$);
-  // This read is first evaluated after native inspection, so it cannot reuse
-  // the pre-inspection row if stop/retirement won while CDP was in flight.
-  const verifiedCurrent$ = createRunnerBrowserRead(owner$, readAction$);
-  const context$ = computed(async (get) => {
-    const owner = await get(owner$);
-    const action = await get(action$);
-    const current = await get(current$);
-    if (
-      !owner ||
-      !action ||
-      current.outcome !== "accepted" ||
-      current.instance.status !== "active" ||
-      Date.parse(current.instance.timeoutAt) <= nowDate().getTime() ||
-      !current.instance.providerSessionId
-    ) {
-      return null;
-    }
-    return {
-      owner,
-      action,
-      current,
-      providerSessionId: current.instance.providerSessionId,
-    };
-  });
-  return { context$, verifiedCurrent$ };
-}
-
-/** Runner authentication stays at its entry point; admission has one owner. */
-export function createRunnerBrowserAdmission(
-  owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
-  action$: Computed<Promise<AdmissionAction | null>>,
-) {
-  const { context$, verifiedCurrent$ } = createAdmissionContext(
-    owner$,
-    action$,
-  );
-  return command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<RunnerBrowserResponse> => {
-      const context = await get(context$);
-      signal.throwIfAborted();
-      if (!context) {
-        return unavailable;
-      }
-      const window = context.current.instance.window;
-      if (
-        window &&
-        (window.state !== "active" || window.expiresAt <= nowDate().getTime())
-      ) {
-        return unavailable;
-      }
-      const result = await settleIncludingAbort(async () => {
-        const provider = await findBrowserUseSession(
-          context.providerSessionId,
-          signal,
-        );
-        signal.throwIfAborted();
-        if (!provider || provider.status !== "active" || !provider.cdpUrl) {
-          return unavailable;
-        }
-        if (window) {
-          if (
-            !(await browserUseWindowExists(
-              provider.cdpUrl,
-              window.primaryWindowId,
-              signal,
-            ))
-          ) {
-            return unavailable;
-          }
-          const verified = await get(verifiedCurrent$);
-          signal.throwIfAborted();
-          return verified.outcome === "accepted" &&
-            verified.instance.status === "active" &&
-            Date.parse(verified.instance.timeoutAt) > nowDate().getTime() &&
-            verified.instance.window?.state === "active" &&
-            verified.instance.window.expiresAt > nowDate().getTime() &&
-            verified.instance.window.primaryWindowId === window.primaryWindowId
-            ? verified
-            : unavailable;
-        }
-        return await set(
-          createBrowserOwnerWindow$,
-          {
-            owner: context.owner,
-            instanceId: context.action.instanceId,
-            cdpUrl: provider.cdpUrl,
-            initial: false,
-          },
-          signal,
-        );
-      });
-      signal.throwIfAborted();
-      if (!result.ok) {
-        throw windowAdmissionFailure(result.error, false);
-      }
-      return result.value;
-    },
-  );
-}
-
-/** Publish captured recovery data atomically with a Runner retirement claim. */
-export function createRunnerBrowserRetirement(
-  owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
-  action$: Computed<
-    Promise<Extract<RunnerBrowserAction, { kind: "retire" }> | null>
-  >,
-) {
-  const readAction$ = computed(async (get) => {
-    const action = await get(action$);
-    return action
-      ? { kind: "inspect" as const, instanceId: action.instanceId }
-      : null;
-  });
-  const current$ = createRunnerBrowserRead(owner$, readAction$);
-  return command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<RunnerBrowserResponse> => {
-      const owner = await get(owner$);
-      signal.throwIfAborted();
-      const action = await get(action$);
-      signal.throwIfAborted();
-      const current = await get(current$);
-      signal.throwIfAborted();
-      if (
-        !owner ||
-        !action ||
-        current.outcome !== "accepted" ||
-        current.instance.status !== "active" ||
-        !current.instance.providerSessionId ||
-        current.instance.window?.state !== "active" ||
-        current.instance.window.primaryWindowId !== action.primaryWindowId ||
-        (action.reason === "expired" &&
-          current.instance.window.expiresAt > nowDate().getTime())
-      ) {
-        return unavailable;
-      }
-      const provider = await findBrowserUseSession(
-        current.instance.providerSessionId,
-        signal,
-      );
-      if (provider?.status === "active" && !provider.cdpUrl) {
-        throw new BrowserUseProviderError(
-          502,
-          "BROWSER_USE_INVALID_RESPONSE",
-          "The active Browser has no native connection",
-        );
-      }
-      const snapshot =
-        provider?.status === "active" && provider.cdpUrl
-          ? await set(
-              captureSharedSnapshot$,
-              {
-                owner,
-                window: current.instance.window,
-                cdpUrl: provider.cdpUrl,
-              },
-              signal,
-            )
-          : null;
-      signal.throwIfAborted();
-      return await set(
-        controlBrowserOwner$,
-        owner,
-        { ...action, snapshot },
-        signal,
-      );
-    },
-  );
-}

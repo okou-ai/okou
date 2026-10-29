@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type {
-  RunnerBrowserAction,
-  RunnerBrowserRequest,
-  RunnerBrowserResponse,
-} from "@okouai/api-contracts/contracts/runner-browser";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { runnerState } from "@okouai/db/runtime/runner-state";
 import { agents } from "@okouai/db/schema/agent";
 import {
   browserOwnerProfiles,
@@ -15,17 +9,15 @@ import {
 import {
   browserProfiles,
   browserSessionInstances,
-  browserSessionTabSnapshots,
   browserThreadProfiles,
 } from "@okouai/db/schema/browser-session";
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import {
   and,
   eq,
   exists,
   getTableColumns,
   gt,
-  lte,
   notExists,
   or,
   sql,
@@ -33,12 +25,8 @@ import {
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import {
-  sharedSnapshotPublication,
-  type SharedSnapshotCapture,
-} from "./browser-shared-snapshot.service";
 
 const SETUP_MS = 60_000;
 const IDLE_MS = 10 * 60_000;
@@ -54,23 +42,11 @@ interface BrowserView {
   readonly profile: ProfileRow;
   readonly window?: WindowView | null;
 }
-type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
-  RunnerBrowserAction,
-  { kind: K }
->;
+export type BrowserOwnerResult =
+  | { readonly outcome: "unavailable" }
+  | ({ readonly outcome: "accepted" } & BrowserView);
+
 type BrowserOwnerMutation =
-  | Exclude<
-      RunnerBrowserAction,
-      { kind: "inspect" | "allocate" | "admit" | "retire" }
-    >
-  | (BrowserAction<"retire"> & {
-      readonly snapshot: SharedSnapshotCapture | null;
-    })
-  | {
-      readonly kind: "admit";
-      readonly instanceId: string;
-      readonly primaryWindowId: number;
-    }
   | {
       readonly kind: "allocate";
       readonly providerProfileId: string;
@@ -78,12 +54,23 @@ type BrowserOwnerMutation =
         readonly providerProfileId: string;
         readonly instanceId: string;
       } | null;
+    }
+  | {
+      readonly kind: "publish";
+      readonly instanceId: string;
+      readonly providerSessionId: string;
+      readonly timeoutAt: string;
+    }
+  | {
+      readonly kind: "admit";
+      readonly instanceId: string;
+      readonly primaryWindowId: number;
+    }
+  | {
+      readonly kind: "renew";
+      readonly instanceId: string;
+      readonly primaryWindowId: number;
     };
-
-interface RunnerBrowserIdentity {
-  readonly runId: string;
-  readonly runnerIdentity: RunnerBrowserRequest["runnerIdentity"];
-}
 
 export interface BrowserPublicAuthority {
   readonly orgId: string;
@@ -93,58 +80,7 @@ export interface BrowserPublicAuthority {
   readonly requireLiveRun: boolean;
 }
 
-export type BrowserOwnerAuthority =
-  | (RunnerBrowserIdentity & Omit<BrowserPublicAuthority, "requireLiveRun">)
-  | BrowserPublicAuthority;
-
-/** The trusted host derives Guest -> Run locally; completion sandboxId is not authority. */
-function currentRun(input: RunnerBrowserIdentity) {
-  return and(
-    eq(agentRuns.id, input.runId),
-    eq(agentRuns.status, "running"),
-    eq(agentRuns.runnerId, input.runnerIdentity.runnerId),
-    eq(
-      agentRuns.runnerHeartbeatGeneration,
-      input.runnerIdentity.heartbeatGeneration,
-    ),
-    exists(
-      new QueryBuilder()
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .innerJoin(
-          agents,
-          and(
-            eq(agents.id, chatThreads.agentId),
-            eq(agents.orgId, agentRuns.orgId),
-          ),
-        )
-        .innerJoin(
-          runnerState,
-          and(
-            eq(runnerState.runnerId, agentRuns.runnerId),
-            eq(
-              runnerState.heartbeatGeneration,
-              agentRuns.runnerHeartbeatGeneration,
-            ),
-          ),
-        )
-        .where(
-          and(
-            eq(chatThreads.id, agentRuns.chatThreadId),
-            eq(chatThreads.agentId, agentRuns.agentId),
-            eq(chatThreads.userId, agentRuns.userId),
-            eq(chatThreads.cloudBrowserEnabled, true),
-            or(
-              eq(agents.visibility, "public"),
-              eq(agents.owner, agentRuns.userId),
-            ),
-          ),
-        ),
-    ),
-  );
-}
-
-export function authorityStillCurrent(owner: BrowserOwnerAuthority) {
+export function authorityStillCurrent(owner: BrowserPublicAuthority) {
   return exists(
     new QueryBuilder()
       .select({ id: agentRuns.id })
@@ -160,10 +96,7 @@ export function authorityStillCurrent(owner: BrowserOwnerAuthority) {
   );
 }
 
-function browserAuthorityRun(owner: BrowserOwnerAuthority) {
-  if ("runnerIdentity" in owner) {
-    return currentRun(owner);
-  }
+function browserAuthorityRun(owner: BrowserPublicAuthority) {
   return and(
     eq(agentRuns.id, owner.runId),
     eq(agentRuns.orgId, owner.orgId),
@@ -196,7 +129,7 @@ function browserAuthorityRun(owner: BrowserOwnerAuthority) {
   );
 }
 
-function ownedInstance(owner: BrowserOwnerAuthority, instanceId: string) {
+function ownedInstance(owner: BrowserPublicAuthority, instanceId: string) {
   return and(
     eq(profiles.instanceId, instanceId),
     eq(profiles.orgId, owner.orgId),
@@ -206,7 +139,7 @@ function ownedInstance(owner: BrowserOwnerAuthority, instanceId: string) {
 }
 
 function activeInstance(
-  owner: BrowserOwnerAuthority,
+  owner: BrowserPublicAuthority,
   instanceId: string,
   now: Date,
 ) {
@@ -218,9 +151,9 @@ function activeInstance(
 }
 
 function ownedWindow(
-  owner: BrowserOwnerAuthority,
+  owner: BrowserPublicAuthority,
   action: { readonly instanceId: string; readonly primaryWindowId: number },
-  now?: Date,
+  now: Date,
 ) {
   return and(
     eq(windows.primaryWindowId, action.primaryWindowId),
@@ -233,9 +166,7 @@ function ownedWindow(
         .where(
           and(
             eq(profiles.instanceId, windows.instanceId),
-            now === undefined
-              ? ownedInstance(owner, action.instanceId)
-              : activeInstance(owner, action.instanceId, now),
+            activeInstance(owner, action.instanceId, now),
           ),
         ),
     ),
@@ -246,96 +177,11 @@ function windowHardDeadline() {
   return sql`(${new QueryBuilder().select({ timeoutAt: profiles.timeoutAt }).from(profiles).where(eq(profiles.instanceId, windows.instanceId))})`;
 }
 
-function response(row: BrowserView | undefined): RunnerBrowserResponse {
+function mutationResult(row: BrowserView | undefined): BrowserOwnerResult {
   if (!row) {
     return { outcome: "unavailable" };
   }
-  const { profile, window } = row;
-  return {
-    outcome: "accepted",
-    instance: {
-      id: profile.instanceId,
-      ownerProfileId: profile.id,
-      providerProfileId: profile.providerProfileId,
-      providerSessionId: profile.providerSessionId,
-      status: profile.status,
-      creationExpiresAt: profile.creationExpiresAt.toISOString(),
-      timeoutAt: profile.timeoutAt.toISOString(),
-      window: window
-        ? {
-            chatThreadId: window.chatThreadId,
-            state: window.state,
-            expiresAt: window.expiresAt.getTime(),
-            primaryWindowId: window.primaryWindowId,
-          }
-        : null,
-    },
-  };
-}
-
-export function createRunnerBrowserAuthority(
-  input$: Computed<Promise<RunnerBrowserIdentity | null>>,
-) {
-  return computed(async (get): Promise<BrowserOwnerAuthority | null> => {
-    const input = await get(input$);
-    if (!input) {
-      return null;
-    }
-    const [run] = await get(db$)
-      .select({
-        orgId: agentRuns.orgId,
-        userId: agentRuns.userId,
-        chatThreadId: agentRuns.chatThreadId,
-      })
-      .from(agentRuns)
-      .where(currentRun(input));
-    return run?.chatThreadId
-      ? { ...input, ...run, chatThreadId: run.chatThreadId }
-      : null;
-  });
-}
-
-/** Inspect retains the current owner's lifecycle and cleanup identities. */
-export function createRunnerBrowserRead(
-  owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
-  action$: Computed<Promise<BrowserAction<"inspect"> | null>>,
-) {
-  return computed(async (get): Promise<RunnerBrowserResponse> => {
-    const owner = await get(owner$),
-      action = await get(action$);
-    if (!owner || !action) {
-      return { outcome: "unavailable" };
-    }
-    const [row] = await get(db$)
-      .select({
-        profile: getTableColumns(profiles),
-        window: {
-          chatThreadId: windows.chatThreadId,
-          state: windows.state,
-          expiresAt: windows.expiresAt,
-          primaryWindowId: windows.primaryWindowId,
-        },
-      })
-      .from(profiles)
-      .leftJoin(
-        windows,
-        and(
-          eq(windows.instanceId, profiles.instanceId),
-          eq(windows.chatThreadId, owner.chatThreadId),
-        ),
-      )
-      .where(
-        and(
-          eq(profiles.orgId, owner.orgId),
-          eq(profiles.userId, owner.userId),
-          authorityStillCurrent(owner),
-          action.instanceId === undefined
-            ? undefined
-            : eq(profiles.instanceId, action.instanceId),
-        ),
-      );
-    return response(row);
-  });
+  return { outcome: "accepted", ...row };
 }
 
 /** Only the named business-key competitions are normal unavailable outcomes. */
@@ -355,7 +201,7 @@ function lifecycleCompetition(error: unknown): boolean {
 const allocateOwnerBrowser$ = command(
   async (
     { set },
-    owner: BrowserOwnerAuthority,
+    owner: BrowserPublicAuthority,
     action: Extract<BrowserOwnerMutation, { kind: "allocate" }>,
     now: Date,
     signal: AbortSignal,
@@ -480,8 +326,8 @@ const allocateOwnerBrowser$ = command(
 const publishOwnerBrowser$ = command(
   async (
     { set },
-    owner: BrowserOwnerAuthority,
-    action: BrowserAction<"publish">,
+    owner: BrowserPublicAuthority,
+    action: Extract<BrowserOwnerMutation, { kind: "publish" }>,
     now: Date,
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {
@@ -536,7 +382,7 @@ const publishOwnerBrowser$ = command(
 const admitOwnerBrowserWindow$ = command(
   async (
     { set },
-    owner: BrowserOwnerAuthority,
+    owner: BrowserPublicAuthority,
     action: Extract<BrowserOwnerMutation, { kind: "admit" }>,
     now: Date,
     signal: AbortSignal,
@@ -597,8 +443,8 @@ const admitOwnerBrowserWindow$ = command(
 const renewOwnerBrowserWindow$ = command(
   async (
     { set },
-    owner: BrowserOwnerAuthority,
-    action: BrowserAction<"renew">,
+    owner: BrowserPublicAuthority,
+    action: Extract<BrowserOwnerMutation, { kind: "renew" }>,
     now: Date,
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {
@@ -639,221 +485,11 @@ const renewOwnerBrowserWindow$ = command(
   },
 );
 
-const retireOwnerBrowserWindow$ = command(
-  async (
-    { set },
-    owner: BrowserOwnerAuthority,
-    action: Extract<BrowserOwnerMutation, { kind: "retire" }>,
-    now: Date,
-    signal: AbortSignal,
-  ): Promise<BrowserView[]> => {
-    const db = set(writeDb$);
-
-    const changed = db.$with("retired_browser_window").as(
-      db
-        .update(windows)
-        .set({ state: "closing", updatedAt: now })
-        .where(
-          and(
-            ownedWindow(owner, action),
-            eq(windows.state, "active"),
-            action.reason === "expired"
-              ? lte(windows.expiresAt, now)
-              : undefined,
-          ),
-        )
-        .returning(),
-    );
-    const publication = action.snapshot
-      ? sharedSnapshotPublication(action.snapshot, changed)
-      : null;
-    const snapshot = publication
-      ? db
-          .$with("retired_browser_snapshot")
-          .as(
-            db
-              .insert(browserSessionTabSnapshots)
-              .select(publication.source)
-              .onConflictDoUpdate(publication.conflict)
-              .returning({ id: browserSessionTabSnapshots.chatThreadId }),
-          )
-      : null;
-    const rows = await (
-      snapshot ? db.with(changed, snapshot) : db.with(changed)
-    )
-      .select({
-        profile: getTableColumns(profiles),
-        window: {
-          chatThreadId: changed.chatThreadId,
-          state: changed.state,
-          expiresAt: changed.expiresAt,
-          primaryWindowId: changed.primaryWindowId,
-        },
-      })
-      .from(changed)
-      .innerJoin(profiles, eq(profiles.instanceId, changed.instanceId));
-    signal.throwIfAborted();
-    return rows;
-  },
-);
-
-const completeOwnerBrowserWindowClose$ = command(
-  async (
-    { set },
-    owner: BrowserOwnerAuthority,
-    action: BrowserAction<"completeWindowClose">,
-    signal: AbortSignal,
-  ): Promise<BrowserView[]> => {
-    const db = set(writeDb$);
-
-    const changed = db.$with("closed_browser_window").as(
-      db
-        .delete(windows)
-        .where(and(ownedWindow(owner, action), eq(windows.state, "closing")))
-        .returning({ instanceId: windows.instanceId }),
-    );
-    const rows = await db
-      .with(changed)
-      .select({ profile: getTableColumns(profiles) })
-      .from(changed)
-      .innerJoin(profiles, eq(profiles.instanceId, changed.instanceId));
-    signal.throwIfAborted();
-    return rows;
-  },
-);
-
-const beginOwnerBrowserStop$ = command(
-  async (
-    { set },
-    owner: BrowserOwnerAuthority,
-    action: BrowserAction<"beginStop">,
-    now: Date,
-    signal: AbortSignal,
-  ): Promise<BrowserView[]> => {
-    const db = set(writeDb$);
-
-    // The live-window/active-instance FK also arbitrates a concurrent
-    // INSERT invisible to this statement's initial NOT EXISTS snapshot.
-    const stopping = db.$with("stopping_browser").as(
-      db
-        .update(profiles)
-        .set({ status: "stopping", updatedAt: now })
-        .where(
-          and(
-            ownedInstance(owner, action.instanceId),
-            or(
-              eq(profiles.status, "active"),
-              and(
-                eq(profiles.status, "creating"),
-                lte(profiles.creationExpiresAt, now),
-              ),
-            ),
-            notExists(
-              new QueryBuilder()
-                .select({ chatThreadId: windows.chatThreadId })
-                .from(windows)
-                .where(
-                  and(
-                    eq(windows.instanceId, profiles.instanceId),
-                    eq(windows.state, "active"),
-                  ),
-                ),
-            ),
-          ),
-        )
-        .returning(),
-    );
-    const rows = await db
-      .with(stopping)
-      .select({
-        profile: {
-          id: stopping.id,
-          orgId: stopping.orgId,
-          userId: stopping.userId,
-          providerProfileId: stopping.providerProfileId,
-          instanceId: stopping.instanceId,
-          providerSessionId: stopping.providerSessionId,
-          status: stopping.status,
-          creationExpiresAt: stopping.creationExpiresAt,
-          timeoutAt: stopping.timeoutAt,
-          createdAt: stopping.createdAt,
-          updatedAt: stopping.updatedAt,
-        },
-        window: {
-          chatThreadId: windows.chatThreadId,
-          state: windows.state,
-          expiresAt: windows.expiresAt,
-          primaryWindowId: windows.primaryWindowId,
-        },
-      })
-      .from(stopping)
-      .leftJoin(
-        windows,
-        and(
-          eq(windows.instanceId, stopping.instanceId),
-          eq(windows.chatThreadId, owner.chatThreadId),
-        ),
-      );
-    signal.throwIfAborted();
-    return rows;
-  },
-);
-
-const completeOwnerBrowserStop$ = command(
-  async (
-    { set },
-    owner: BrowserOwnerAuthority,
-    action: BrowserAction<"completeStop">,
-    now: Date,
-    signal: AbortSignal,
-  ): Promise<BrowserView[]> => {
-    const db = set(writeDb$);
-
-    const stopped = db.$with("stopped_browser").as(
-      db
-        .update(profiles)
-        .set({ status: "stopped", updatedAt: now })
-        .where(
-          and(
-            ownedInstance(owner, action.instanceId),
-            eq(profiles.status, "stopping"),
-          ),
-        )
-        .returning(),
-    );
-    // Exact provider-stop acknowledgement completes all remaining native
-    // cleanup for this instance, including an uncertain per-page close.
-    const closed = db.$with("closed_stopped_browser_windows").as(
-      db
-        .delete(windows)
-        .where(
-          and(
-            eq(windows.instanceId, action.instanceId),
-            eq(windows.state, "closing"),
-            exists(
-              new QueryBuilder()
-                .select({ id: stopped.id })
-                .from(stopped)
-                .where(eq(stopped.instanceId, windows.instanceId)),
-            ),
-          ),
-        )
-        .returning({ chatThreadId: windows.chatThreadId }),
-    );
-    const rows = (await db.with(stopped, closed).select().from(stopped)).map(
-      (profile) => {
-        return { profile };
-      },
-    );
-    signal.throwIfAborted();
-    return rows;
-  },
-);
 /** Each action owns one atomic statement; provider effects stay outside it. */
 const mutateBrowserOwner$ = command(
   async (
     { set },
-    owner: BrowserOwnerAuthority,
+    owner: BrowserPublicAuthority,
     action: BrowserOwnerMutation,
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {
@@ -871,23 +507,6 @@ const mutateBrowserOwner$ = command(
       case "renew": {
         return await set(renewOwnerBrowserWindow$, owner, action, now, signal);
       }
-      case "retire": {
-        return await set(retireOwnerBrowserWindow$, owner, action, now, signal);
-      }
-      case "completeWindowClose": {
-        return await set(
-          completeOwnerBrowserWindowClose$,
-          owner,
-          action,
-          signal,
-        );
-      }
-      case "beginStop": {
-        return await set(beginOwnerBrowserStop$, owner, action, now, signal);
-      }
-      case "completeStop": {
-        return await set(completeOwnerBrowserStop$, owner, action, now, signal);
-      }
     }
   },
 );
@@ -895,10 +514,10 @@ const mutateBrowserOwner$ = command(
 export const controlBrowserOwner$ = command(
   async (
     { set },
-    owner: BrowserOwnerAuthority,
+    owner: BrowserPublicAuthority,
     action: BrowserOwnerMutation,
     signal: AbortSignal,
-  ): Promise<RunnerBrowserResponse> => {
+  ): Promise<BrowserOwnerResult> => {
     const result = await settle(
       set(mutateBrowserOwner$, owner, action, signal),
     );
@@ -909,6 +528,6 @@ export const controlBrowserOwner$ = command(
       }
       throw result.error;
     }
-    return response(result.value[0]);
+    return mutationResult(result.value[0]);
   },
 );

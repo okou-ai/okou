@@ -2,6 +2,7 @@ import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cr
 import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
+import { joinAll } from "../utils";
 import { reconcileBrowsers$ } from "../services/browser.service";
 import { reconcileSharedBrowsers$ } from "../services/browser-shared-reconcile.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
@@ -11,9 +12,10 @@ const reconcileBrowsersRoute$ = command(
     if (!get(hasValidCronSecret$)) {
       return cronUnauthorized();
     }
-    const legacy = await set(reconcileBrowsers$, signal);
-    signal.throwIfAborted();
-    const shared = await set(reconcileSharedBrowsers$, null, signal);
+    const [legacy, shared] = await joinAll([
+      set(reconcileBrowsers$, signal),
+      set(reconcileSharedBrowsers$, null, signal),
+    ]);
     signal.throwIfAborted();
     const body = {
       ...legacy,

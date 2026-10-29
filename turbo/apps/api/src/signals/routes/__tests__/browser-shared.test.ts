@@ -24,15 +24,14 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { uniqueSlackUserId } from "./helpers/slack-public-install";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
 import {
-  createRunnerBrowserFixtures,
+  createSharedBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/runner-browser-fixture";
+} from "./helpers/browser-shared-fixture";
 
 const context = testContext();
-const { fixture, allocate, admit, accepted } =
-  createRunnerBrowserFixtures(context);
+const { fixture, view } = createSharedBrowserFixtures(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
@@ -206,10 +205,6 @@ describe("shared Browser public consumers", () => {
             throw new Error("Expected the replacement shared window");
           }
           f.provider.native.targets.clear();
-          accepted(
-            await a.request({ kind: "retire", ...window, reason: "closed" }),
-          );
-          accepted(await a.request({ kind: "completeWindowClose", ...window }));
         } else {
           const [providerSessionId] = f.provider.sessionIds;
           if (!providerSessionId) {
@@ -238,25 +233,42 @@ describe("shared Browser public consumers", () => {
         expect(urls).toContain("https://a.example.test/newer");
         expect(urls).not.toContain("https://a.example.test/older");
         if (replacement === "shared") {
-          expect(reopened.browser.window?.primaryWindowId).not.toBe(
-            replaced.value?.primaryWindowId,
+          // A replacement Chrome may reuse window zero; instance identity fences it.
+          expect(reopened.browser.window?.instanceId).not.toBe(
+            replaced.value?.instanceId,
           );
         }
       });
     },
   );
 
-  it("treats a missing provider instance as unavailable while preserving actual provider failures", async () => {
+  it("recovers a missing provider instance and preserves provider failures as failures", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
-      await use(a);
+      const first = await use(a);
+      const b = await f.start();
+      const sibling = await use(b);
       const [providerSessionId] = f.provider.sessionIds;
       if (!providerSessionId) {
         throw new Error("Expected the shared provider instance");
       }
-      let missing = true;
+      for (const target of f.provider.native.targets.values()) {
+        target.url =
+          target.windowId === first.browser.window?.primaryWindowId
+            ? "https://a.example.test/recovered"
+            : "https://b.example.test/recovered";
+      }
+      await accept(
+        client().close({ headers, params: { threadId: a.threadId }, body: {} }),
+        [200],
+      );
+      await accept(
+        client().close({ headers, params: { threadId: b.threadId }, body: {} }),
+        [200],
+      );
+      let missing = false;
       server.use(
         http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
           return HttpResponse.json(
@@ -265,36 +277,40 @@ describe("shared Browser public consumers", () => {
           );
         }),
       );
-      const params = { threadId: a.threadId };
-      const viewed = await accept(client().get({ headers, params }), [200]);
-      expect(viewed.body.browser).toMatchObject({
-        status: "suspended",
-        liveUrl: null,
-      });
       expect(
         (await client().use({ headers: runHeaders(a), body: {} })).status,
-      ).toBe(409);
-      expect(
-        (
-          await client().resizeByThread({
-            headers,
-            params,
-            body: { aspectRatio: 2 },
-          })
-        ).status,
-      ).toBe(409);
-      expect(
-        (await client().viewerConnection({ headers, params })).status,
-      ).toBe(409);
-      await accept(client().close({ headers, params, body: {} }), [200]);
-      missing = false;
-      const failed = await client().get({ headers, params });
-      expect(failed.status).toBe(502);
-      expect(failed.body).toMatchObject({
-        error: { code: "BROWSER_USE_ERROR" },
-      });
-      expect(f.provider.createdIds).toHaveLength(1);
+      ).toBe(502);
       expect(f.provider.sessionRequests).toHaveLength(1);
+      missing = true;
+      f.provider.native.targets.clear();
+      const reopened = await use(a);
+      expect(reopened.browser.window?.instanceId).not.toBe(
+        first.browser.window?.instanceId,
+      );
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(2);
+      expect((await view(b)).status).toBe("suspended");
+      expect(
+        [...f.provider.native.targets.values()].map((page) => {
+          return page.url;
+        }),
+      ).toStrictEqual(["https://a.example.test/recovered"]);
+      const restoredB = await use(b);
+      expect(restoredB.browser.window?.instanceId).toBe(
+        reopened.browser.window?.instanceId,
+      );
+      expect(restoredB.browser.window).not.toStrictEqual(
+        sibling.browser.window,
+      );
+      expect(
+        [...f.provider.native.targets.values()]
+          .filter((page) => {
+            return page.windowId === restoredB.browser.window?.primaryWindowId;
+          })
+          .map((page) => {
+            return page.url;
+          }),
+      ).toStrictEqual(["https://b.example.test/recovered"]);
     });
   });
 
@@ -419,8 +435,10 @@ describe("shared Browser public consumers", () => {
       expect(Date.parse(String(leased.body.browser.idleExpiresAt))).toBe(
         START + 11 * MINUTE,
       );
-      const sibling = accepted(await b.request({ kind: "inspect" }));
-      expect(sibling.window?.expiresAt).toBe(START + 10 * MINUTE);
+      const sibling = await view(b);
+      expect(Date.parse(String(sibling.idleExpiresAt))).toBe(
+        START + 10 * MINUTE,
+      );
     });
   });
 
@@ -452,10 +470,6 @@ describe("shared Browser public consumers", () => {
           f.provider.native.targets.delete(id);
         }
       }
-      accepted(
-        await a.request({ kind: "retire", ...window, reason: "closed" }),
-      );
-      accepted(await a.request({ kind: "completeWindowClose", ...window }));
       const resumed = await use(a);
       expect(resumed.browser.window?.instanceId).toBe(window.instanceId);
       expect(resumed.browser.window?.primaryWindowId).not.toBe(
@@ -475,39 +489,7 @@ describe("shared Browser public consumers", () => {
         second.browser.window,
       );
       expect(f.provider.sessionRequests).toHaveLength(1);
-      for (const [chat, current] of [
-        [a, resumed.browser.window],
-        [b, second.browser.window],
-      ] as const) {
-        if (!current) {
-          throw new Error("Expected a current chat window");
-        }
-        accepted(
-          await chat.request({ kind: "retire", ...current, reason: "closed" }),
-        );
-        for (const [id, target] of f.provider.native.targets) {
-          if (target.windowId === current.primaryWindowId) {
-            f.provider.native.targets.delete(id);
-          }
-        }
-        accepted(
-          await chat.request({ kind: "completeWindowClose", ...current }),
-        );
-      }
-      const stopping = accepted(
-        await a.request({ kind: "beginStop", instanceId: window.instanceId }),
-      );
-      if (!stopping.providerSessionId) {
-        throw new Error("Expected a physical provider session");
-      }
-      // The external provider confirms its stop before the trusted acknowledgement.
-      f.provider.sessionIds.delete(stopping.providerSessionId);
-      accepted(
-        await a.request({
-          kind: "completeStop",
-          instanceId: window.instanceId,
-        }),
-      );
+      mockNow(START + 11 * MINUTE);
       const restarted = await use(a);
       expect(restarted.browser.window?.instanceId).not.toBe(window.instanceId);
       expect(f.provider.createdIds).toHaveLength(1);
@@ -530,13 +512,12 @@ describe("shared Browser public consumers", () => {
     });
   });
 
-  it("preserves a named Browser and its preview while an earlier first open is still resolving", async () => {
+  it("preserves a named Browser and its preview while an earlier open is still resolving", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
-      const instance = await allocate(a);
-      await admit(a, instance.id, 0);
+      await use(a);
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
       let first = true;
@@ -668,11 +649,7 @@ describe("shared Browser public consumers", () => {
             throw new Error("The screenshot never reached its upload");
           }),
         ]);
-        accepted(
-          await a.request({ kind: "retire", ...window, reason: "closed" }),
-        );
         f.provider.native.targets.delete(page.targetId);
-        accepted(await a.request({ kind: "completeWindowClose", ...window }));
         const replacement = await use(a);
         expect(replacement.browser.window?.primaryWindowId).not.toBe(
           window.primaryWindowId,
@@ -769,10 +746,6 @@ describe("shared Browser capture publication and admission", () => {
         }
         await accept(client().close({ headers, params, body: {} }), [200]);
         f.provider.native.targets.delete(page.targetId);
-        accepted(
-          await a.request({ kind: "retire", ...window, reason: "closed" }),
-        );
-        accepted(await a.request({ kind: "completeWindowClose", ...window }));
         const reopened = await use(a);
         expect(reopened.browser.window?.primaryWindowId).not.toBe(
           window.primaryWindowId,
@@ -806,7 +779,7 @@ describe("shared Browser capture publication and admission", () => {
     },
   );
 
-  it("keeps the restored winner when public and Runner admission create multi-page candidates", async () => {
+  it("keeps the restored winner when overlapping public opens create multi-page candidates", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       installBrowserWindowContentCommands(f.provider.native);
@@ -838,10 +811,6 @@ describe("shared Browser capture publication and admission", () => {
           f.provider.native.targets.delete(id);
         }
       }
-      accepted(
-        await a.request({ kind: "retire", ...window, reason: "closed" }),
-      );
-      accepted(await a.request({ kind: "completeWindowClose", ...window }));
       const both = createDeferredPromise<void>(context.signal);
       let arrivals = 0;
       f.provider.native.beforeCreateReply = async () => {
@@ -854,7 +823,7 @@ describe("shared Browser capture publication and admission", () => {
         client().use({ headers: runHeaders(a), body: {} }),
       );
       const admitted = settleIncludingAbort(
-        a.control({ kind: "admit", instanceId: window.instanceId }),
+        client().use({ headers: runHeaders(a), body: {} }),
       );
       const coordinated = await settleIncludingAbort(
         Promise.race([
@@ -869,7 +838,9 @@ describe("shared Browser capture publication and admission", () => {
             if (!result.ok) {
               throw result.error;
             }
-            throw new Error("Runner admission did not reach native creation");
+            throw new Error(
+              "Concurrent admission did not reach native creation",
+            );
           }),
         ]),
       );
@@ -890,15 +861,12 @@ describe("shared Browser capture publication and admission", () => {
         throw runnerResult.error;
       }
       expect([200, 409]).toContain(publicResult.value.status);
-      expect(runnerResult.value.status).toBe(200);
+      expect([200, 409]).toContain(runnerResult.value.status);
       expect(
         Number(publicResult.value.status === 200) +
-          Number(
-            runnerResult.value.status === 200 &&
-              runnerResult.value.body.outcome === "accepted",
-          ),
+          Number(runnerResult.value.status === 200),
       ).toBe(1);
-      const winner = accepted(await a.request({ kind: "inspect" }));
+      const winner = await view(a);
       const current = await accept(
         client().get({ headers, params: { threadId: a.threadId } }),
         [200],
@@ -1180,10 +1148,6 @@ describe("shared Browser capture publication and admission", () => {
             f.provider.native.targets.delete(id);
           }
         }
-        accepted(
-          await a.request({ kind: "retire", ...window, reason: "closed" }),
-        );
-        accepted(await a.request({ kind: "completeWindowClose", ...window }));
         const reopened = await use(a);
         expect(reopened.browser.window?.instanceId).toBe(window.instanceId);
         expect(reopened.browser.window?.primaryWindowId).not.toBe(
@@ -1214,120 +1178,95 @@ describe("shared Browser capture publication and admission", () => {
     },
   );
 
-  it.each(["public", "runner"] as const)(
-    "initializes native contents before publishing a window admitted via %s",
-    async (entry) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        const { sizes } = installBrowserWindowContentCommands(
-          f.provider.native,
-        );
-        // External native state follows the separately measured local Chromium
-        // viewport after creating a sibling of a 1440x720 window.
-        f.provider.native.beforeCreateReply = (candidate) => {
-          sizes.set(candidate.windowId, { width: 1440, height: 776 });
-        };
-        const b = await f.start();
-        const first = await use(b);
-        const firstWindow = first.browser.window;
-        if (!firstWindow) {
-          throw new Error("Expected the sibling Browser window");
-        }
-        await accept(
-          client().resizeByThread({
-            headers,
-            params: { threadId: b.threadId },
-            body: { aspectRatio: 2 },
-          }),
-          [200],
-        );
-        expect(sizes.get(firstWindow.primaryWindowId)).toStrictEqual({
-          width: 1440,
-          height: 720,
-        });
-        const a = await f.start();
-        if (entry === "runner") {
-          accepted(
-            await a.request({
-              kind: "admit",
-              instanceId: firstWindow.instanceId,
-            }),
-          );
-        }
-        const joined = await use(a);
-        const joinedWindow = joined.browser.window;
-        if (!joinedWindow) {
-          throw new Error("Expected the admitted Browser window");
-        }
-        expect(
-          sizes.get(joinedWindow.primaryWindowId),
-          "All admission entry points must establish the published native contents",
-        ).toStrictEqual({ width: 1440, height: 900 });
+  it("initializes native contents before publishing a window", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const { sizes } = installBrowserWindowContentCommands(f.provider.native);
+      // External native state follows the separately measured local Chromium
+      // viewport after creating a sibling of a 1440x720 window.
+      f.provider.native.beforeCreateReply = (candidate) => {
+        sizes.set(candidate.windowId, { width: 1440, height: 776 });
+      };
+      const b = await f.start();
+      const first = await use(b);
+      const firstWindow = first.browser.window;
+      if (!firstWindow) {
+        throw new Error("Expected the sibling Browser window");
+      }
+      await accept(
+        client().resizeByThread({
+          headers,
+          params: { threadId: b.threadId },
+          body: { aspectRatio: 2 },
+        }),
+        [200],
+      );
+      expect(sizes.get(firstWindow.primaryWindowId)).toStrictEqual({
+        width: 1440,
+        height: 720,
       });
-    },
-  );
+      const a = await f.start();
+      const joined = await use(a);
+      const joinedWindow = joined.browser.window;
+      if (!joinedWindow) {
+        throw new Error("Expected the admitted Browser window");
+      }
+      expect(
+        sizes.get(joinedWindow.primaryWindowId),
+        "Admission must establish the published native contents",
+      ).toStrictEqual({ width: 1440, height: 900 });
+    });
+  });
 
-  it.each(["public", "runner"] as const)(
-    "restores the saved chat URLs when the replacement is admitted via %s",
-    async (entry) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await use(a);
-        const sibling = await use(b);
-        const window = first.browser.window;
-        if (!window) {
-          throw new Error("Expected A's original window");
+  it("restores the saved chat URLs before publishing the replacement", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await use(a);
+      const sibling = await use(b);
+      const window = first.browser.window;
+      if (!window) {
+        throw new Error("Expected A's original window");
+      }
+      for (const target of f.provider.native.targets.values()) {
+        if (target.windowId === window.primaryWindowId) {
+          target.url = "https://a.example.test/saved";
         }
-        for (const target of f.provider.native.targets.values()) {
-          if (target.windowId === window.primaryWindowId) {
-            target.url = "https://a.example.test/saved";
-          }
+      }
+      await accept(
+        client().close({
+          headers,
+          params: { threadId: a.threadId },
+          body: {},
+        }),
+        [200],
+      );
+      for (const [id, target] of f.provider.native.targets) {
+        if (target.windowId === window.primaryWindowId) {
+          f.provider.native.targets.delete(id);
         }
-        await accept(
-          client().close({
-            headers,
-            params: { threadId: a.threadId },
-            body: {},
-          }),
-          [200],
-        );
-        for (const [id, target] of f.provider.native.targets) {
-          if (target.windowId === window.primaryWindowId) {
-            f.provider.native.targets.delete(id);
-          }
-        }
-        accepted(
-          await a.request({ kind: "retire", ...window, reason: "closed" }),
-        );
-        accepted(await a.request({ kind: "completeWindowClose", ...window }));
-        if (entry === "runner") {
-          accepted(
-            await a.request({ kind: "admit", instanceId: window.instanceId }),
-          );
-        }
-        const reopened = await use(a);
-        expect(reopened.browser.window?.instanceId).toBe(window.instanceId);
-        expect(reopened.browser.window?.primaryWindowId).not.toBe(
-          window.primaryWindowId,
-        );
-        expect((await use(b)).browser.window).toStrictEqual(
-          sibling.browser.window,
-        );
-        const urls = [...f.provider.native.targets.values()]
-          .filter((t) => {
-            return t.windowId === reopened.browser.window?.primaryWindowId;
-          })
-          .map((t) => {
-            return t.url ?? "about:blank";
-          });
-        expect(
-          urls,
-          "All admission entry points must restore the chat snapshot before publication",
-        ).toStrictEqual(["https://a.example.test/saved"]);
-      });
-    },
-  );
+      }
+      const reopened = await use(a);
+      expect(reopened.browser.window?.instanceId).toBe(window.instanceId);
+      expect(reopened.browser.window?.primaryWindowId).not.toBe(
+        window.primaryWindowId,
+      );
+      expect((await use(b)).browser.window).toStrictEqual(
+        sibling.browser.window,
+      );
+      const urls = [...f.provider.native.targets.values()]
+        .filter((t) => {
+          return t.windowId === reopened.browser.window?.primaryWindowId;
+        })
+        .map((t) => {
+          return t.url ?? "about:blank";
+        });
+      expect(
+        urls,
+        "Admission must restore the chat snapshot before publication",
+      ).toStrictEqual(["https://a.example.test/saved"]);
+    });
+  });
 });

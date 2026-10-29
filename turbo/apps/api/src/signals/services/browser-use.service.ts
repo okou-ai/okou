@@ -25,6 +25,7 @@ import {
   literal,
   number,
   object,
+  record,
   string,
   uuid,
   enum as zEnum,
@@ -3879,6 +3880,7 @@ export async function createBrowserUseSession(
     readonly proxyCountryCode: string | null;
     readonly timeoutMinutes: number;
     readonly extensionIds?: readonly string[];
+    readonly instanceId?: string;
   },
   signal: AbortSignal,
 ): Promise<BrowserUseSession> {
@@ -3895,11 +3897,56 @@ export async function createBrowserUseSession(
         allowResizing: true,
         enableRecording: false,
         extensionIds: args.extensionIds?.length ? args.extensionIds : undefined,
+        metadata: args.instanceId
+          ? { okouInstanceId: args.instanceId }
+          : undefined,
       }),
     },
     signal,
   );
   return parseBrowserUseSession(body);
+}
+
+/** A positive correlation recovers a lost create response; an empty list is uncertain. */
+export async function findBrowserUseSessionByInstance(
+  instanceId: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    const query = new URLSearchParams({
+      metadata: `okouInstanceId=${instanceId}`,
+      pageSize: "2",
+      pageNumber: "1",
+    });
+    const body = await browserUseRequest(
+      `/browsers?${query.toString()}`,
+      { method: "GET", signal: deadline },
+      deadline,
+    );
+    const result = object({
+      items: array(
+        object({ id: uuid(), metadata: record(string(), string()) }),
+      ),
+      totalItems: number().int().nonnegative(),
+    }).parse(body);
+    deadline.throwIfAborted();
+    if (result.totalItems === 0 && result.items.length === 0) {
+      return null;
+    }
+    const [session] = result.items;
+    if (
+      result.totalItems !== 1 ||
+      result.items.length !== 1 ||
+      session?.metadata.okouInstanceId !== instanceId
+    ) {
+      throw new BrowserUseProviderError(
+        502,
+        "BROWSER_USE_INVALID_RESPONSE",
+        "Managed browser creation identity is ambiguous",
+      );
+    }
+    return session.id;
+  });
 }
 
 export async function findBrowserUseSession(

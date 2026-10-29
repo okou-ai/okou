@@ -309,6 +309,7 @@ const publishSharedInstance$ = command(
           proxyCountryCode: null,
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
           extensionIds: env("OKOU_BROWSER_USE_EXTENSION_IDS"),
+          instanceId: profile.instanceId,
         },
         signal,
       ),
@@ -396,7 +397,7 @@ const provisionSharedInstance$ = command(
       .from(profiles)
       .where(
         and(
-          eq(profiles.instanceId, allocation.instance.id),
+          eq(profiles.instanceId, allocation.profile.instanceId),
           eq(profiles.status, "creating"),
         ),
       )
@@ -441,15 +442,13 @@ const admitSharedWindow$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.outcome !== "accepted" || !result.instance.window) {
+    if (result.outcome !== "accepted" || !result.window) {
       return unavailable();
     }
     const [window] = await get(db$)
       .select()
       .from(windows)
-      .where(
-        liveSharedWindow(args.owner, args.profile, result.instance.window),
-      );
+      .where(liveSharedWindow(args.owner, args.profile, result.window));
     signal.throwIfAborted();
     return window ? { kind: "ok", value: window } : unavailable();
   },
@@ -807,14 +806,14 @@ const resolveSharedWindow$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (renewed.outcome !== "accepted" || !renewed.instance.window) {
+    if (renewed.outcome !== "accepted" || !renewed.window) {
       return unavailable();
     }
     return {
       kind: "ok",
       value: {
         ...window,
-        expiresAt: new Date(renewed.instance.window.expiresAt),
+        expiresAt: renewed.window.expiresAt,
       },
     };
   },
@@ -942,6 +941,36 @@ function sharedBrowserLease(
       if (!view?.window || !view.browser) {
         return missing();
       }
+      const window = view.window;
+      const health = await settleIncludingAbort(async () => {
+        if (!view.profile.providerSessionId) {
+          return null;
+        }
+        const session = await provider(
+          findBrowserUseSession(view.profile.providerSessionId, signal),
+          signal,
+        );
+        return session?.status === "active" &&
+          session.cdpUrl &&
+          (await provider(
+            browserUseWindowExists(
+              session.cdpUrl,
+              window.primaryWindowId,
+              signal,
+            ),
+            signal,
+          ))
+          ? session
+          : null;
+      });
+      signal.throwIfAborted();
+      if (!health.ok) {
+        return errorResult(health.error);
+      }
+      if (!health.value) {
+        await set(reconcileSharedBrowsers$, ctx.owner, signal);
+        return unavailable();
+      }
       const result = await set(
         controlBrowserOwner$,
         ctx.owner,
@@ -952,7 +981,7 @@ function sharedBrowserLease(
         },
         signal,
       );
-      if (result.outcome !== "accepted" || !result.instance.window) {
+      if (result.outcome !== "accepted" || !result.window) {
         return unavailable();
       }
       const browser = presentation(
@@ -960,9 +989,9 @@ function sharedBrowserLease(
         view.profile,
         {
           ...view.window,
-          expiresAt: new Date(result.instance.window.expiresAt),
+          expiresAt: result.window.expiresAt,
         },
-        { status: "active", liveUrl: null },
+        health.value,
         await set(loadBrowserScreenshotUrl$, ctx.owner.chatThreadId, signal),
       );
       return { kind: "ok", value: browser };

@@ -3,7 +3,10 @@ import {
   browserOwnerWindows as windows,
 } from "@okouai/db/schema/browser-owner";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { browserSessionTabSnapshots } from "@okouai/db/schema/browser-session";
+import {
+  browserSessionInstances,
+  browserSessionTabSnapshots,
+} from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
 import {
   and,
@@ -23,12 +26,13 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
-import { settleIncludingAbort } from "../utils";
+import { joinAll, settleIncludingAbort } from "../utils";
 import {
   BrowserUseProviderError,
   browserUseWindowExists,
   closeBrowserUseWindow,
   findBrowserUseSession,
+  findBrowserUseSessionByInstance,
   stopBrowserUseSessionForCleanup,
 } from "./browser-use.service";
 import {
@@ -103,14 +107,100 @@ function orphanedWindow() {
   );
 }
 
-function noWindows() {
+function noWindows(state?: Window["state"]) {
   return notExists(
     new QueryBuilder()
       .select({ id: windows.chatThreadId })
       .from(windows)
-      .where(eq(windows.instanceId, profiles.instanceId)),
+      .where(
+        and(
+          eq(windows.instanceId, profiles.instanceId),
+          state ? eq(windows.state, state) : undefined,
+        ),
+      ),
   );
 }
+
+const claimSharedWindowRetirement$ = command(
+  async (
+    { set },
+    target: Candidate & {
+      readonly cdpUrl: string;
+      readonly nativeMissing: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<Window | null> => {
+    const { profile, window: current, cdpUrl, nativeMissing } = target;
+    const owner = {
+      orgId: profile.orgId,
+      userId: profile.userId,
+      chatThreadId: current.chatThreadId,
+    };
+    const identity = sharedBrowserLifetime(owner, profile, current);
+    const db = set(writeDb$);
+    const capture =
+      !nativeMissing && target.threadId !== null
+        ? await set(
+            captureSharedSnapshot$,
+            { owner, window: current, cdpUrl },
+            signal,
+          )
+        : null;
+    signal.throwIfAborted();
+    const at = nowDate();
+    const claimed = db.$with("retired_shared_window").as(
+      db
+        .update(windows)
+        .set({ state: "closing", updatedAt: at })
+        .where(
+          and(
+            identity,
+            eq(windows.state, "active"),
+            or(
+              lte(windows.expiresAt, at),
+              exists(
+                new QueryBuilder()
+                  .select({ id: profiles.id })
+                  .from(profiles)
+                  .where(
+                    and(exactProfile(profile), lte(profiles.timeoutAt, at)),
+                  ),
+              ),
+              orphanedWindow(),
+              nativeMissing ? eq(windows.state, "active") : undefined,
+            ),
+          ),
+        )
+        .returning(),
+    );
+    // Enter closing and publish its complete snapshot in one statement.
+    // A concurrent loser cannot publish pages observed after partial close.
+    const publication = capture
+      ? sharedSnapshotPublication(capture, claimed)
+      : null;
+    const snapshot = publication
+      ? db
+          .$with("retired_shared_snapshot")
+          .as(
+            db
+              .insert(browserSessionTabSnapshots)
+              .select(publication.source)
+              .onConflictDoUpdate(publication.conflict)
+              .returning({ id: browserSessionTabSnapshots.chatThreadId }),
+          )
+      : null;
+    const [closing] = await (
+      snapshot ? db.with(claimed, snapshot) : db.with(claimed)
+    )
+      .select()
+      .from(claimed);
+    signal.throwIfAborted();
+    if (!closing) {
+      return null;
+    }
+    return closing;
+  },
+);
 
 const retireSharedWindow$ = command(
   async (
@@ -150,69 +240,59 @@ const retireSharedWindow$ = command(
       );
     }
     const db = set(writeDb$);
-    if (current.state === "active") {
-      const capture =
-        cdpUrl && target.threadId !== null
-          ? await set(
-              captureSharedSnapshot$,
-              { owner, window: current, cdpUrl },
-              signal,
-            )
-          : null;
-      signal.throwIfAborted();
-      const at = nowDate();
-      const claimed = db.$with("retired_shared_window").as(
-        db
-          .update(windows)
-          .set({ state: "closing", updatedAt: at })
-          .where(
-            and(
-              identity,
-              eq(windows.state, "active"),
-              or(
-                lte(windows.expiresAt, at),
-                exists(
-                  new QueryBuilder()
-                    .select({ id: profiles.id })
-                    .from(profiles)
-                    .where(
-                      and(exactProfile(profile), lte(profiles.timeoutAt, at)),
-                    ),
-                ),
-                orphanedWindow(),
-              ),
+    if (!cdpUrl) {
+      // The provider confirms that the whole instance is gone. Preserve every
+      // chat's accepted snapshot; there is no live native state left to capture.
+      await db
+        .update(windows)
+        .set({ state: "closing", updatedAt: nowDate() })
+        .where(
+          and(
+            eq(windows.instanceId, profile.instanceId),
+            eq(windows.state, "active"),
+            exists(
+              new QueryBuilder()
+                .select({ id: profiles.id })
+                .from(profiles)
+                .where(exactProfile(profile)),
             ),
-          )
-          .returning(),
+          ),
+        );
+      signal.throwIfAborted();
+      return null;
+    }
+    const nativeMissing = !(await browserUseWindowExists(
+      cdpUrl,
+      current.primaryWindowId,
+      signal,
+    ));
+    signal.throwIfAborted();
+    const at = nowDate();
+    if (
+      current.state === "active" &&
+      !nativeMissing &&
+      target.threadId !== null &&
+      current.expiresAt > at &&
+      profile.timeoutAt > at
+    ) {
+      // Rotate healthy observations as well as failures in the bounded sweep.
+      await db.update(windows).set({ updatedAt: at }).where(identity);
+      signal.throwIfAborted();
+      return null;
+    }
+    if (current.state === "active") {
+      const closing = await set(
+        claimSharedWindowRetirement$,
+        { ...target, window: current, cdpUrl, nativeMissing },
+        signal,
       );
-      // Enter closing and publish its complete snapshot in one statement.
-      // A concurrent loser cannot publish pages observed after partial close.
-      const publication = capture
-        ? sharedSnapshotPublication(capture, claimed)
-        : null;
-      const snapshot = publication
-        ? db
-            .$with("retired_shared_snapshot")
-            .as(
-              db
-                .insert(browserSessionTabSnapshots)
-                .select(publication.source)
-                .onConflictDoUpdate(publication.conflict)
-                .returning({ id: browserSessionTabSnapshots.chatThreadId }),
-            )
-        : null;
-      const [closing] = await (
-        snapshot ? db.with(claimed, snapshot) : db.with(claimed)
-      )
-        .select()
-        .from(claimed);
       signal.throwIfAborted();
       if (!closing) {
         return null;
       }
       current = closing;
     }
-    if (cdpUrl) {
+    if (!nativeMissing) {
       await closeBrowserUseWindow(cdpUrl, current.primaryWindowId, signal);
       if (
         await browserUseWindowExists(cdpUrl, current.primaryWindowId, signal)
@@ -247,7 +327,7 @@ const stopEmptySharedBrowser$ = command(
     const db = set(writeDb$);
     if (candidate.status === "active") {
       // The existing active-instance FK also protects a concurrent admission
-      // invisible to this statement's initial no-window snapshot.
+      // invisible to this statement's initial no-active-window snapshot.
       const claim = await settleIncludingAbort(
         db
           .update(profiles)
@@ -256,7 +336,7 @@ const stopEmptySharedBrowser$ = command(
             and(
               exactProfile(candidate),
               eq(profiles.status, "active"),
-              noWindows(),
+              noWindows("active"),
             ),
           )
           .returning({ id: profiles.id }),
@@ -293,24 +373,113 @@ const stopEmptySharedBrowser$ = command(
         throw new Error("Shared Browser provider stop is not confirmed");
       }
     }
-    const [stopped] = await db
-      .update(profiles)
-      .set({ status: "stopped", updatedAt: nowDate() })
-      .where(
-        and(
-          exactProfile(candidate),
-          eq(profiles.status, "stopping"),
-          noWindows(),
-        ),
-      )
-      .returning({ id: profiles.id });
+    const stopped = db.$with("stopped_shared_browser").as(
+      db
+        .update(profiles)
+        .set({ status: "stopped", updatedAt: nowDate() })
+        .where(
+          and(
+            exactProfile(candidate),
+            eq(profiles.status, "stopping"),
+            noWindows("active"),
+          ),
+        )
+        .returning({ id: profiles.id, instanceId: profiles.instanceId }),
+    );
+    const closed = db.$with("closed_shared_browser_windows").as(
+      db
+        .delete(windows)
+        .where(
+          and(
+            eq(windows.instanceId, candidate.instanceId),
+            eq(windows.state, "closing"),
+            exists(new QueryBuilder().select({ id: stopped.id }).from(stopped)),
+          ),
+        )
+        .returning({ chatThreadId: windows.chatThreadId }),
+    );
+    const [confirmed] = await db.with(stopped, closed).select().from(stopped);
     signal.throwIfAborted();
-    return stopped !== undefined;
+    return confirmed !== undefined;
   },
 );
 
-/** The public lifecycle and existing minute cron share exact retirement work. */
-export const reconcileSharedBrowsers$ = command(
+const recoverSharedCreations$ = command(
+  async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
+    let errors = 0;
+    let stopped = 0;
+    const creating = await get(db$)
+      .select()
+      .from(profiles)
+      .where(
+        and(
+          ownerScope(owner),
+          eq(profiles.status, "creating"),
+          lte(profiles.creationExpiresAt, nowDate()),
+        ),
+      )
+      .orderBy(profiles.updatedAt)
+      .limit(BATCH_SIZE);
+    signal.throwIfAborted();
+    for (const candidate of creating) {
+      const recovered = await settleIncludingAbort(async () => {
+        const providerSessionId = await findBrowserUseSessionByInstance(
+          candidate.instanceId,
+          signal,
+        );
+        if (!providerSessionId) {
+          // A lost/unfinished POST and a POST never issued remain indistinguishable.
+          // A local timeout or empty provider list cannot authorize replacement.
+          return;
+        }
+        const [bound] = await set(writeDb$)
+          .update(profiles)
+          .set({ providerSessionId, status: "stopping", updatedAt: nowDate() })
+          .where(
+            and(
+              exactProfile(candidate),
+              eq(profiles.status, "creating"),
+              noWindows(),
+              notExists(
+                new QueryBuilder()
+                  .select({ id: browserSessionInstances.providerSessionId })
+                  .from(browserSessionInstances)
+                  .where(
+                    eq(
+                      browserSessionInstances.providerSessionId,
+                      providerSessionId,
+                    ),
+                  ),
+              ),
+            ),
+          )
+          .returning();
+        signal.throwIfAborted();
+        if (bound) {
+          stopped += (await set(stopEmptySharedBrowser$, bound, signal))
+            ? 1
+            : 0;
+        }
+      });
+      signal.throwIfAborted();
+      if (!recovered.ok) {
+        errors += 1;
+        L.warn("Shared Browser creation could not be reconciled", {
+          instanceId: candidate.instanceId,
+        });
+      }
+      await set(writeDb$)
+        .update(profiles)
+        .set({ updatedAt: nowDate() })
+        .where(and(exactProfile(candidate), eq(profiles.status, "creating")));
+      signal.throwIfAborted();
+    }
+
+    return { checked: creating.length, stopped, errors };
+  },
+);
+
+const reconcileSharedWindows$ = command(
   async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
     const rows = await get(db$)
       .select({ profile: profiles, window: windows, threadId: chatThreads.id })
@@ -320,14 +489,13 @@ export const reconcileSharedBrowsers$ = command(
       .where(
         and(
           ownerScope(owner),
-          openNeedsReclamation(owner),
+          owner?.chatThreadId
+            ? or(
+                openNeedsReclamation(owner),
+                eq(windows.chatThreadId, owner.chatThreadId),
+              )
+            : undefined,
           inArray(profiles.status, ["active", "stopping"]),
-          or(
-            eq(windows.state, "closing"),
-            lte(windows.expiresAt, nowDate()),
-            lte(profiles.timeoutAt, nowDate()),
-            isNull(chatThreads.id),
-          ),
         ),
       )
       .orderBy(windows.updatedAt)
@@ -377,7 +545,7 @@ export const reconcileSharedBrowsers$ = command(
         and(
           ownerScope(owner),
           isNotNull(profiles.providerSessionId),
-          noWindows(),
+          noWindows("active"),
           or(
             eq(profiles.status, "stopping"),
             and(
@@ -387,6 +555,17 @@ export const reconcileSharedBrowsers$ = command(
                 // Normal final retirement stops immediately in this call.
                 lte(profiles.creationExpiresAt, nowDate()),
                 inArray(profiles.instanceId, [...closedInstances]),
+                exists(
+                  new QueryBuilder()
+                    .select({ id: windows.chatThreadId })
+                    .from(windows)
+                    .where(
+                      and(
+                        eq(windows.instanceId, profiles.instanceId),
+                        eq(windows.state, "closing"),
+                      ),
+                    ),
+                ),
               ),
             ),
           ),
@@ -415,6 +594,26 @@ export const reconcileSharedBrowsers$ = command(
         });
       }
     }
-    return { checked: rows.length + empty.length, stopped, errors };
+    return {
+      checked: rows.length + empty.length,
+      stopped,
+      errors,
+    };
+  },
+);
+
+/** Independent creation recovery cannot hold up existing windows or their final stop. */
+export const reconcileSharedBrowsers$ = command(
+  async ({ set }, owner: Owner | null, signal: AbortSignal) => {
+    const [creation, windows] = await joinAll([
+      set(recoverSharedCreations$, owner, signal),
+      set(reconcileSharedWindows$, owner, signal),
+    ]);
+    signal.throwIfAborted();
+    return {
+      checked: creation.checked + windows.checked,
+      stopped: creation.stopped + windows.stopped,
+      errors: creation.errors + windows.errors,
+    };
   },
 );
