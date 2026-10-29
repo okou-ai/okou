@@ -47,6 +47,35 @@ async function use(chat: Chat) {
 }
 
 describe("shared Browser public consumers", () => {
+  it("bounds a silent initial-window lookup and recovers through confirmed instance cleanup", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      f.provider.native.windowReply = "withhold";
+      await expect(
+        client().use({ headers: runHeaders(a), body: {} }),
+      ).resolves.toMatchObject({
+        status: 503,
+        body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+      });
+      expect(f.provider.sessionRequests).toHaveLength(1);
+      expect(f.provider.stoppedSessionIds.size).toBe(0);
+
+      f.provider.native.windowReply = "reply";
+      mockNow(START + 2 * MINUTE);
+      const recovered = await use(a);
+      expect(recovered.browser.status).toBe("active");
+      expect((await view(a)).window).toStrictEqual(recovered.browser.window);
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(2);
+      expect(f.provider.stoppedSessionIds.size).toBe(1);
+      expect([...f.provider.native.targets.values()]).toMatchObject([
+        { windowId: recovered.browser.window?.primaryWindowId },
+      ]);
+    });
+  }, 20_000);
+
   it.each([true, false])(
     "creates a Browser with the mode's egress when shared admission enabled=%s",
     async (shared) => {

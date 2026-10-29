@@ -656,13 +656,11 @@ export async function initialBrowserUseWindow(
   cdpUrl: string,
   signal: AbortSignal,
 ): Promise<BrowserUseWindowCandidate> {
-  const candidate = await withBrowserUseCdpSocket(
-    cdpUrl,
-    browserUseCdpSignal(signal),
-    async (socket) => {
+  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    return await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
       const sequence = { next: 1 };
       const pages = (
-        await browserWindowTargets(socket, sequence, signal)
+        await browserWindowTargets(socket, sequence, deadline)
       ).filter((target) => {
         return target.type === "page";
       });
@@ -678,15 +676,14 @@ export async function initialBrowserUseWindow(
         socket,
         page.targetId,
         sequence,
-        signal,
+        deadline,
       );
       if (primaryWindowId === null) {
         throw new Error("The initial Browser window disappeared");
       }
       return { targetId: page.targetId, primaryWindowId };
-    },
-  );
-  return candidate;
+    });
+  });
 }
 
 /** Creation is never retried: an unknown response may already have a window. */
@@ -3545,15 +3542,13 @@ export async function closeBrowserUseWindow(
   primaryWindowId: number,
   signal: AbortSignal,
 ): Promise<void> {
-  await withBrowserUseCdpSocket(
-    cdpUrl,
-    browserUseCdpSignal(signal),
-    async (socket) => {
+  await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
       const sequence = { next: 1 };
       for (const target of await browserWindowTargets(
         socket,
         sequence,
-        signal,
+        deadline,
       )) {
         if (
           target.type === "page" &&
@@ -3561,7 +3556,7 @@ export async function closeBrowserUseWindow(
             socket,
             target.targetId,
             sequence,
-            signal,
+            deadline,
           )) === primaryWindowId
         ) {
           object({ success: literal(true) }).parse(
@@ -3572,13 +3567,13 @@ export async function closeBrowserUseWindow(
                 method: "Target.closeTarget",
                 params: { targetId: target.targetId },
               },
-              signal,
+              deadline,
             ),
           );
         }
       }
-    },
-  );
+    });
+  });
 }
 
 export async function restoreBrowserUseTabUrls(

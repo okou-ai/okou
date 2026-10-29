@@ -29,6 +29,8 @@ export function createNativeWindowProvider(context: TestContext) {
     onSocketClose?: () => void;
     windowError?: string;
     closeSucceeds: boolean;
+    closeReply: "reply" | "withhold";
+    windowReply: "reply" | "withhold";
     createReply: "reply" | "disconnect" | "withhold";
     command?: (command: {
       readonly id: number;
@@ -45,6 +47,8 @@ export function createNativeWindowProvider(context: TestContext) {
     windowIds: [],
     windowErrors: new Map(),
     closeSucceeds: true,
+    closeReply: "reply",
+    windowReply: "reply",
     createReply: "reply",
   };
   let nextWindowId = 1;
@@ -83,6 +87,9 @@ export function createNativeWindowProvider(context: TestContext) {
         result = { targetId: target.targetId };
       } else if (command.method === "Browser.getWindowForTarget") {
         const targetId = String(command.params.targetId);
+        if (state.windowReply === "withhold") {
+          return;
+        }
         await state.beforeWindowReply?.(targetId);
         context.signal.throwIfAborted();
         const target = state.targets.get(targetId);
@@ -115,6 +122,9 @@ export function createNativeWindowProvider(context: TestContext) {
         };
       } else if (command.method === "Target.closeTarget") {
         const targetId = String(command.params.targetId);
+        if (state.closeReply === "withhold") {
+          return;
+        }
         if (state.closeSucceeds) {
           state.targets.delete(targetId);
           state.closed.push(targetId);

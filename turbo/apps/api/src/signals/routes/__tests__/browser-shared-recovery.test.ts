@@ -20,7 +20,7 @@ import {
 } from "./helpers/browser-shared-fixture";
 
 const context = testContext();
-const { fixture, profileProvider, open, view } =
+const { fixture, profileProvider, open, view, renew } =
   createSharedBrowserFixtures(context);
 type Chat = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>;
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -35,6 +35,53 @@ function use(chat: Chat) {
 }
 
 describe("server-owned shared Browser recovery", () => {
+  it("cancels a silent native close and preserves recovery without stopping its active sibling", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await open(a);
+      const sibling = await open(b);
+      const page = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === first.window?.primaryWindowId;
+      });
+      if (!page) {
+        throw new Error("Expected A's native page");
+      }
+      page.url = "https://a.example.test/native-close-recovery";
+      mockNow(START + 9 * MINUTE);
+      const leased = await renew(b);
+      mockNow(START + 11 * MINUTE);
+      f.provider.native.closeReply = "withhold";
+      expect((await use(a)).status).toBe(409);
+      expect(f.provider.native.targets.get(page.targetId)).toStrictEqual(page);
+      expect((await view(b)).window).toStrictEqual(sibling.window);
+      expect((await view(b)).idleExpiresAt).toBe(leased.idleExpiresAt);
+      expect(f.provider.stoppedSessionIds.size).toBe(0);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+
+      f.provider.native.closeReply = "reply";
+      const reopened = await open(a);
+      expect(reopened.window?.instanceId).toBe(first.window?.instanceId);
+      expect(reopened.window?.primaryWindowId).not.toBe(
+        first.window?.primaryWindowId,
+      );
+      expect(
+        [...f.provider.native.targets.values()]
+          .filter((target) => {
+            return target.windowId === reopened.window?.primaryWindowId;
+          })
+          .map((target) => {
+            return target.url;
+          }),
+      ).toStrictEqual(["https://a.example.test/native-close-recovery"]);
+      expect((await view(b)).window).toStrictEqual(sibling.window);
+      expect((await view(b)).idleExpiresAt).toBe(leased.idleExpiresAt);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  }, 20_000);
+
   it("preserves an accepted profile on lookup failure and replaces it only after confirmed deletion", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
