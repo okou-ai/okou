@@ -919,12 +919,18 @@ const dispatchGmailAutomationEvent$ = command(
     "dispatched" | "duplicate" | "skipped" | { readonly kind: "run_error" }
   > => {
     const db = set(writeDb$);
-    const processed = await args.timing.measure(
-      "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-      async () => {
+    const processed = await (async () => {
+      const startedAt = performance.now();
+      return await (async () => {
         return await set(insertGmailProcessedEvent$, args, signal);
-      },
-    );
+      })().finally(() => {
+        args.timing.recordDuration(
+          "api_dispatch_pre_create_agent_automation_event_record_processed_event",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
+    })();
     signal.throwIfAborted();
     if (processed.kind === "stale_source") {
       return "skipped";
@@ -1216,9 +1222,9 @@ const dispatchGmailLabelAppliedHistoryEvent$ = command(
     }[] = [];
     for (const automation of labelAutomations) {
       const runTiming = args.sourceTiming.createRunTiming();
-      const matched = await runTiming.measure(
-        "api_dispatch_pre_create_agent_automation_event_match_automations",
-        async () => {
+      const matched = await (async () => {
+        const startedAt = performance.now();
+        return await (async () => {
           return await set(
             matchGmailLabelAutomation$,
             {
@@ -1231,8 +1237,14 @@ const dispatchGmailLabelAppliedHistoryEvent$ = command(
             },
             signal,
           );
-        },
-      );
+        })().finally(() => {
+          runTiming.recordDuration(
+            "api_dispatch_pre_create_agent_automation_event_match_automations",
+            performance.now() - startedAt,
+            now(),
+          );
+        });
+      })();
       signal.throwIfAborted();
       if (matched) {
         matchingAutomations.push({ automation: matched, timing: runTiming });

@@ -785,12 +785,18 @@ const dispatchGoogleCalendarAutomationEvent$ = command(
       }
   > => {
     const db = set(writeDb$);
-    const processedId = await args.timing.measure(
-      "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-      async () => {
+    const processedId = await (async () => {
+      const startedAt = performance.now();
+      return await (async () => {
         return await set(insertGoogleCalendarProcessedEvent$, args, signal);
-      },
-    );
+      })().finally(() => {
+        args.timing.recordDuration(
+          "api_dispatch_pre_create_agent_automation_event_record_processed_event",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
+    })();
     signal.throwIfAborted();
     if (!processedId) {
       return "duplicate";
