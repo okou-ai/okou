@@ -121,10 +121,15 @@ async function openSourceTab(
     return releaseRuntimeObjects(client, source.sessionId, value);
   };
   const result = await client.request(
-    "Runtime.evaluate",
+    "Runtime.callFunctionOn",
     {
-      expression: `(() => { const tab = window.open(${JSON.stringify(marker)}, "_blank"); if (tab) tab.opener = null; return !!tab; })()`,
-      contextId: world.executionContextId,
+      functionDeclaration: `function (url) {
+        const tab = window.open(url, "_blank");
+        if (tab) tab.opener = null;
+        return !!tab;
+      }`,
+      arguments: [{ value: marker }],
+      executionContextId: world.executionContextId,
       userGesture: true,
       returnByValue: true,
     },

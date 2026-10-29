@@ -184,7 +184,7 @@ export class CdpClient {
     this.signal.removeEventListener("abort", this.abort);
     this.socket.removeEventListener("open", this.onOpen);
     this.socket.removeEventListener("message", this.onMessage);
-    this.socket.removeEventListener("fault", this.onError);
+    this.socket.removeEventListener("error", this.onError);
     this.socket.removeEventListener("close", this.onClose);
     detach(
       Promise.allSettled([

@@ -1,5 +1,5 @@
 import { callAsync, onRef } from "../utils.ts";
-import { command, computed, state, type Computed } from "ccstate";
+import { command, type Computed } from "ccstate";
 import { BrowserRuntime } from "./runtime.ts";
 import { createViewerSignals, type ViewerModel } from "./viewer/model.ts";
 import { diagnostic } from "./cdp/errors.ts";
@@ -12,7 +12,6 @@ export function createBrowserViewerSignals(
   >,
 ) {
   const model = createViewerSignals();
-  const internalRuntime$ = state<BrowserRuntime | null>(null);
   const mount$ = onRef(
     command(async ({ get, set }, root: HTMLElement, signal: AbortSignal) => {
       const connection = await get(connection$);
@@ -105,24 +104,16 @@ export function createBrowserViewerSignals(
         "abort",
         () => {
           runtime.close();
-          if (get(internalRuntime$) === runtime) {
-            set(internalRuntime$, null);
-          }
           set(model.unbind$, runtime.actions);
         },
         { once: true },
       );
-      set(internalRuntime$, runtime);
-      signal.throwIfAborted();
       set(model.bind$, runtime.actions);
       signal.throwIfAborted();
       runtime.start();
     }),
   );
-  const mounted$ = computed((get) => {
-    return get(internalRuntime$) !== null;
-  });
-  return { ...model, mount$, mounted$ };
+  return { ...model, mount$ };
 }
 export type BrowserViewerSignals = ReturnType<
   typeof createBrowserViewerSignals

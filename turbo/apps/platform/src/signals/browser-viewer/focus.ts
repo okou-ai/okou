@@ -46,12 +46,27 @@ export class ToolbarFocus {
       this.closingTarget === targetId &&
       (document.activeElement === document.body ||
         (document.activeElement instanceof HTMLElement &&
-          document.activeElement.dataset.closeTarget === targetId));
+          (document.activeElement.dataset.closeTarget === targetId ||
+            // The shared tab list may already have moved focus after removal.
+            (this.tabs.contains(document.activeElement) &&
+              document.activeElement.getAttribute("role") === "tab"))));
     this.closingTarget = null;
   }
 
   restoreAfterClose(): void {
     if (!this.restoreClosed) {
+      return;
+    }
+    if (
+      document.activeElement !== document.body &&
+      !this.toolbar.contains(document.activeElement)
+    ) {
+      this.restoreClosed = false;
+      return;
+    }
+    // Native removal can publish before the controller chooses its successor.
+    // Keep the handoff pending until that selected tab has reached the DOM.
+    if (!this.selected() && this.tabs.querySelector('[role="tab"]')) {
       return;
     }
     this.restoreClosed = false;
