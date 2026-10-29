@@ -9,6 +9,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.25.4](https://github.com/okou-ai/okou/compare/api-v2.25.3...api-v2.25.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **api:** reduce phone typing latency ([#44058](https://github.com/okou-ai/okou/issues/44058)) ([b776878](https://github.com/okou-ai/okou/commit/b776878902ebb4c80dd20d0bf6f35e8d6b14b5fe))
+* **api:** require desktop 0.54.0 and retire pre-shell claims ([#44039](https://github.com/okou-ai/okou/issues/44039)) ([3e057a5](https://github.com/okou-ai/okou/commit/3e057a519e07bb639e7befea10f68b739ce454c7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.21.0
+    * @okouai/core bumped to 8.800.7
+    * @okouai/db bumped to 2.11.6
+    * @okouai/pi-agent-runtime bumped to 1.51.26
+
 ## [2.25.3](https://github.com/okou-ai/okou/compare/api-v2.25.2...api-v2.25.3) (2026-10-29)
 
 
