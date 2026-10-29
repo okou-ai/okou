@@ -2814,6 +2814,10 @@ function createChatRenderWindow({
       threadId,
     );
     const requestedStartIndex = renderWindowStartIndex(groups, cursorGroupId);
+    // A complete window cannot be extended by a reading-position anchor.
+    if (requestedStartIndex === 0) {
+      return groups;
+    }
     const targetStartIndex = scrollTargetStartIndex(
       groups,
       get(threadScrollPosition$),
