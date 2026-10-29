@@ -23,7 +23,11 @@ const newId = "22222222-2222-4222-8222-222222222222";
 const variable = "OKOU_BROWSER_USE_EXTENSION_ID";
 
 async function run(t, script, env, args = []) {
-  const child = spawn(process.execPath, [script, ...args], {
+  return runCommand(t, process.execPath, [script, ...args], env);
+}
+
+async function runCommand(t, command, args, env) {
+  const child = spawn(command, args, {
     cwd: root,
     env: { ...process.env, ...env },
     signal: t.signal,
@@ -70,6 +74,32 @@ async function body(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   return Buffer.concat(chunks);
+}
+
+async function readOutputs(file) {
+  return Object.fromEntries(
+    (await readFile(file, "utf8"))
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const index = line.indexOf("=");
+        return [line.slice(0, index), line.slice(index + 1)];
+      }),
+  );
+}
+
+function readWorkflow() {
+  return JSON.parse(
+    execFileSync(
+      "yq",
+      ["-o=json", ".", ".github/workflows/release-please.yml"],
+      {
+        cwd: root,
+        encoding: "utf8",
+      },
+    ),
+  );
 }
 
 async function fixture(t) {
@@ -214,7 +244,6 @@ async function fixture(t) {
     BROWSER_EXTENSION_TAG: `browser-extension-v${version}`,
     EXTENSION_ARTIFACT_DIR: artifacts,
     GITHUB_OUTPUT: output,
-    REPO_VARS_JSON: JSON.stringify({ [variable]: oldId, OTHER: "retained" }),
   };
   return {
     state,
@@ -225,16 +254,24 @@ async function fixture(t) {
       return run(t, publication, { ...env, ...overrides });
     },
     async outputs() {
-      return Object.fromEntries(
-        (await readFile(output, "utf8"))
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => {
-            const index = line.indexOf("=");
-            return [line.slice(0, index), line.slice(index + 1)];
-          }),
+      return readOutputs(output);
+    },
+    async apiEnvironment() {
+      const step = readWorkflow().jobs["promote-api-production"].steps.find(
+        (step) => step.id === "browser-extension-env",
       );
+      const file = resolve(directory, "api-output");
+      await writeFile(file, "");
+      const resolved = await runCommand(t, "bash", ["-c", step.run], {
+        REPO_VARS_JSON: JSON.stringify({
+          [variable]: oldId,
+          OTHER: "retained",
+        }),
+        BROWSER_EXTENSION_ID: (await readOutputs(output)).extension_id,
+        GITHUB_OUTPUT: file,
+      });
+      assert.equal(resolved.code, 0, resolved.stderr);
+      return JSON.parse((await readOutputs(file)).json);
     },
   };
 }
@@ -244,7 +281,7 @@ test("publication preserves artifact identity, replaces stale vars and reuses a 
   assert.equal((await f.run()).code, 0);
   const outputs = await f.outputs();
   assert.equal(outputs.extension_id, newId);
-  assert.deepEqual(JSON.parse(outputs.repo_vars_json), {
+  assert.deepEqual(await f.apiEnvironment(), {
     [variable]: newId,
     OTHER: "retained",
   });
@@ -330,28 +367,24 @@ test("artifact tampering is rejected before publication", async (t) => {
   assert.equal(f.state.writes, 0);
 });
 
-test("an API-only release reads the current configured ID rather than its queued vars snapshot", async (t) => {
+test("an API-only release reads the current optional ID rather than its queued vars snapshot", async (t) => {
   const f = await fixture(t);
-  f.state.current = newId;
-  assert.equal(
-    (await f.run({ BROWSER_EXTENSION_RELEASE_CREATED: "false" })).code,
-    0,
-  );
+  for (const current of [newId, ""]) {
+    f.state.current = current;
+    assert.equal(
+      (await f.run({ BROWSER_EXTENSION_RELEASE_CREATED: "false" })).code,
+      0,
+    );
+    assert.deepEqual(await f.apiEnvironment(), {
+      [variable]: current,
+      OTHER: "retained",
+    });
+  }
   assert.equal(f.state.uploads, 0);
-  assert.deepEqual(JSON.parse((await f.outputs()).repo_vars_json), {
-    [variable]: newId,
-    OTHER: "retained",
-  });
 });
 
 test("the API production gate rejects failed, cancelled and skipped extension publication", () => {
-  const workflow = JSON.parse(
-    execFileSync(
-      "yq",
-      ["-o=json", ".", ".github/workflows/release-please.yml"],
-      { cwd: root, encoding: "utf8" },
-    ),
-  );
+  const workflow = readWorkflow();
   const job = workflow.jobs["promote-api-production"];
   assert.ok(job.needs.includes("publish-browser-extension"));
   const selection = workflow.jobs["release-please"].outputs.api_deploy_required;
@@ -393,7 +426,14 @@ test("the API production gate rejects failed, cancelled and skipped extension pu
   });
   assert.equal(
     renderer.env.REPO_VARS_JSON,
-    "${{ needs.publish-browser-extension.outputs.repo_vars_json }}",
+    "${{ steps.browser-extension-env.outputs.json }}",
+  );
+  const variables = job.steps.find(
+    (step) => step.id === "browser-extension-env",
+  );
+  assert.equal(
+    variables.env.BROWSER_EXTENSION_ID,
+    "${{ needs.publish-browser-extension.outputs.extension_id }}",
   );
 });
 

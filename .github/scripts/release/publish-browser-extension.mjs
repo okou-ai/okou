@@ -312,16 +312,11 @@ async function publish() {
 }
 
 try {
-  const variables = JSON.parse(required("REPO_VARS_JSON"));
   const extensionId =
     process.env.BROWSER_EXTENSION_RELEASE_CREATED === "true"
       ? await publish()
       : await readVariable();
-  variables[variable] = extensionId;
-  await appendFile(
-    required("GITHUB_OUTPUT"),
-    `extension_id=${extensionId}\nrepo_vars_json=${JSON.stringify(variables)}\n`,
-  );
+  await appendFile(required("GITHUB_OUTPUT"), `extension_id=${extensionId}\n`);
 } catch (error) {
   console.error(
     error instanceof Error
