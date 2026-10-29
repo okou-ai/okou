@@ -33,6 +33,7 @@ import {
   sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
 import { db$, writeDb$ } from "../external/db";
+import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -298,7 +299,11 @@ export function buildAgentPhoneConnectUrl(params: {
     }),
     channel: params.channel,
   });
-  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.agentphone}?${query.toString()}`;
+  const pathname =
+    params.channel === "whatsapp"
+      ? INTEGRATION_SETTINGS_PATHS.whatsapp
+      : INTEGRATION_SETTINGS_PATHS.agentphone;
+  return `${env("APP_URL")}${pathname}?${query.toString()}`;
 }
 
 function inboundAgentPhoneMessageValues(
@@ -680,6 +685,7 @@ const fetchAgentPhoneContext$ = command(
         currentMessageId: params.currentMessageId,
         fallbackSender: phoneHandle,
         isGroup: params.isGroup,
+        channel: params.channel,
       }),
     };
   },
@@ -697,6 +703,7 @@ function formatAgentPhoneStoredContext(params: {
   readonly currentMessageId?: string;
   readonly fallbackSender: string;
   readonly isGroup: boolean;
+  readonly channel: AgentPhoneChannel;
 }): string {
   const chronological = [...params.messages].reverse().filter((message) => {
     return (
@@ -736,7 +743,7 @@ function formatAgentPhoneStoredContext(params: {
     return parts.join("\n");
   });
 
-  return buildAgentPhoneContextBlock(formatted, params.isGroup);
+  return buildAgentPhoneContextBlock(formatted, params.isGroup, params.channel);
 }
 
 function formatAgentPhoneRecentHistoryContext(
@@ -781,13 +788,16 @@ function formatAgentPhoneRecentHistoryContext(
 function buildAgentPhoneContextBlock(
   formattedMessages: readonly string[],
   isGroup: boolean,
+  channel?: AgentPhoneChannel,
 ): string {
   return [
-    "# Phone Message Context",
+    channel === "whatsapp"
+      ? "# WhatsApp Message Context"
+      : "# Phone Message Context",
     "",
     isGroup
       ? "The messages below are from an iMessage group conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent."
-      : "The messages below are from the user's text message conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent.",
+      : `The messages below are from the user's ${channel === "whatsapp" ? "WhatsApp" : "text message"} conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent.`,
     "",
     formattedMessages.join("\n\n"),
     "",
@@ -846,7 +856,7 @@ function appendAgentPhoneSlashCommandRiskWarning(
 
 export const sendAgentPhoneText$ = command(
   async (
-    { set },
+    { get, set },
     event: AgentPhoneMessageEvent,
     body: string,
     signal: AbortSignal,
@@ -864,6 +874,21 @@ export const sendAgentPhoneText$ = command(
         )
       : [];
     signal.throwIfAborted();
+    const links = agentPhoneUserLinksForChannel(event.channel);
+    const [userLink] =
+      isGroup || event.channel !== "whatsapp"
+        ? []
+        : await get(db$)
+            .select()
+            .from(links)
+            .where(
+              eq(
+                links.phoneHandle,
+                normalizeAgentPhoneHandle(event.fromNumber, event.channel),
+              ),
+            )
+            .limit(1);
+    signal.throwIfAborted();
     for (const chunk of agentPhoneReplyChunks(body, event.channel)) {
       const sent = await sendAgentPhoneMessage(
         {
@@ -876,7 +901,7 @@ export const sendAgentPhoneText$ = command(
             groupId: event.groupId,
             phoneHandle: event.fromNumber,
           }),
-          ...(event.channel === "imessage"
+          ...(event.channel === "imessage" || event.channel === "whatsapp"
             ? { replyToMessageId: event.messageId }
             : {}),
           body: chunk,
@@ -885,12 +910,13 @@ export const sendAgentPhoneText$ = command(
       );
       signal.throwIfAborted();
 
-      if (isGroup) {
+      if (isGroup || userLink) {
         await set(storeOutboundAgentPhoneMessage$, {
           agentphoneMessageId: sent.id,
           conversationId: event.conversationId,
-          groupId: event.groupId,
+          groupId: isGroup ? event.groupId : null,
           agentphoneAgentId: event.agentphoneAgentId,
+          userLinkId: userLink?.id,
           phoneHandle: event.fromNumber,
           fromNumber: event.toNumber,
           toNumber: sent.toNumber,
@@ -943,9 +969,6 @@ function formatConnectPrompt(
   action: "link" | "reply" = "link",
 ): string {
   const { brandName } = BRAND_PRESENTATION;
-  if (event.channel === "whatsapp") {
-    return `Open ${env("APP_URL")}/works and connect WhatsApp, then send the connection code here.`;
-  }
   const nextStep =
     action === "reply"
       ? `Reply here and I'll send you the link to connect your ${brandName} account.`
@@ -969,13 +992,14 @@ function formatConnectPrompt(
   ].join("\n");
 }
 
-function formatHelpMessage(): string {
+function formatHelpMessage(channel: AgentPhoneChannel): string {
   const { brandName } = BRAND_PRESENTATION;
+  const account = channel === "whatsapp" ? "WhatsApp account" : "phone number";
   return [
-    `${brandName} text message commands`,
+    `${brandName} ${channel === "whatsapp" ? "WhatsApp" : "text message"} commands`,
     "",
-    `/connect - Connect this phone number to ${brandName}`,
-    `/disconnect - Disconnect this phone number from ${brandName}`,
+    `/connect - Connect this ${account} to ${brandName}`,
+    `/disconnect - Disconnect this ${account} from ${brandName}`,
     `/switch - Switch to a different ${brandName} account or workspace`,
     "/help - Show these commands",
     "",
@@ -1087,7 +1111,7 @@ const blockUnauthorizedGroupAccountCommand$ = command(
 
 const handleConnectCommand$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly event: AgentPhoneMessageEvent;
       readonly userLink: AgentPhoneUserLink | null;
@@ -1096,12 +1120,25 @@ const handleConnectCommand$ = command(
   ): Promise<void> => {
     if (args.userLink) {
       const { brandName } = BRAND_PRESENTATION;
-      await set(
-        sendAgentPhoneSlashCommandText$,
-        args.event,
-        `You are already connected. Send a message here to start using ${brandName}.`,
-        signal,
-      );
+      let body = `You are already connected. Send a message here to start using ${brandName}.`;
+      if (!isAgentPhoneGroupEvent(args.event)) {
+        const workspace = await settle(
+          get(clerk$).organizations.getOrganization(
+            { organizationId: args.userLink.orgId },
+            undefined,
+            signal,
+          ),
+          signal,
+        );
+        signal.throwIfAborted();
+        if (!workspace.ok && !isClerkResourceNotFound(workspace.error)) {
+          throw workspace.error;
+        }
+        body = workspace.ok
+          ? `You are already connected to workspace "${workspace.value.name}". Send a message here to start using ${brandName}. Send /switch to change accounts or workspaces, or /disconnect to disconnect.`
+          : "The workspace connected to this account is no longer available. Send /switch to connect a different account or workspace.";
+      }
+      await set(sendAgentPhoneSlashCommandText$, args.event, body, signal);
       return;
     }
     await set(sendConnectPrompt$, args.event, { slashCommand: true }, signal);
@@ -1138,7 +1175,7 @@ const handleDisconnectCommand$ = command(
       await set(
         sendAgentPhoneSlashCommandText$,
         args.event,
-        "Error: This phone number is not connected.",
+        `${args.event.channel === "whatsapp" ? "This WhatsApp account" : "Error: This phone number"} is not connected. Send /connect to connect it.`,
         signal,
       );
       return;
@@ -1153,7 +1190,7 @@ const handleDisconnectCommand$ = command(
     await set(
       sendAgentPhoneSlashCommandText$,
       args.event,
-      `This phone number has been disconnected from ${BRAND_PRESENTATION.brandName}.`,
+      `This ${args.event.channel === "whatsapp" ? "WhatsApp account" : "phone number"} has been disconnected from ${BRAND_PRESENTATION.brandName}. Send /connect to connect again.`,
       signal,
     );
   },
@@ -1185,24 +1222,26 @@ const handleSwitchCommand$ = command(
         signal,
       );
     }
-    const connectInstructions =
-      args.event.channel === "whatsapp"
-        ? formatConnectPrompt(args.event)
-        : [
-            `Open this link to connect to the ${BRAND_PRESENTATION.brandName} account and workspace you want to use:`,
-            "",
-            buildAgentPhoneConnectUrl({
-              phoneHandle: args.event.fromNumber,
-              agentphoneAgentId: args.event.agentphoneAgentId,
-              secret: env("SECRETS_ENCRYPTION_KEY"),
-              channel: args.event.channel,
-            }),
-          ].join("\n");
+    const connectInstructions = [
+      `Open this link to connect to the ${BRAND_PRESENTATION.brandName} account and workspace you want to use:`,
+      "",
+      buildAgentPhoneConnectUrl({
+        phoneHandle: args.event.fromNumber,
+        agentphoneAgentId: args.event.agentphoneAgentId,
+        secret: env("SECRETS_ENCRYPTION_KEY"),
+        channel: args.event.channel,
+      }),
+    ].join("\n");
     await set(
       sendAgentPhoneSlashCommandText$,
       args.event,
       [
-        ...(args.userLink ? ["Your phone has been disconnected.", ""] : []),
+        ...(args.userLink
+          ? [
+              `Your ${args.event.channel === "whatsapp" ? "WhatsApp account" : "phone"} has been disconnected.`,
+              "",
+            ]
+          : []),
         connectInstructions,
       ].join("\n"),
       signal,
@@ -1255,7 +1294,7 @@ const dispatchAgentPhoneCommand$ = command(
         await set(
           sendAgentPhoneSlashCommandText$,
           args.event,
-          formatHelpMessage(),
+          formatHelpMessage(args.event.channel),
           signal,
         );
         return true;

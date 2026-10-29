@@ -131,3 +131,57 @@ export const linkWhatsappIdentity$ = command(
     };
   },
 );
+
+/** Publish or recognize a WhatsApp link after the route verifies its inbound ownership proof. */
+export const connectWhatsappIdentity$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly phoneHandle: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const links = whatsappUserLinks;
+    const db = set(writeDb$);
+    const [inserted] = await db
+      .insert(links)
+      .values(args)
+      .onConflictDoNothing()
+      .returning();
+    signal.throwIfAborted();
+    if (inserted) {
+      return { kind: "linked" as const, userLink: inserted };
+    }
+    const existing = await db
+      .select()
+      .from(links)
+      .where(
+        or(
+          eq(links.phoneHandle, args.phoneHandle),
+          and(eq(links.userId, args.userId), eq(links.orgId, args.orgId)),
+        ),
+      )
+      .limit(2);
+    signal.throwIfAborted();
+    const same = existing.find((link) => {
+      return (
+        link.phoneHandle === args.phoneHandle &&
+        link.userId === args.userId &&
+        link.orgId === args.orgId
+      );
+    });
+    if (same) {
+      return { kind: "linked" as const, userLink: same };
+    }
+    return {
+      kind: "conflict" as const,
+      reason: existing.some((link) => {
+        return link.phoneHandle === args.phoneHandle;
+      })
+        ? ("phone-handle-linked" as const)
+        : ("org-linked" as const),
+    };
+  },
+);

@@ -3,7 +3,7 @@ import {
   linkAgentPhoneIdentity$,
   switchAgentPhoneIdentity$,
 } from "../services/agentphone-link.service";
-import { prepareAgentPhoneContactCard$ } from "../services/agentphone-contact-card.service";
+import { sendAgentPhoneConnectedMessages$ } from "../services/agentphone-connected-messages.service";
 import {
   integrationsAgentPhoneContract,
   type AgentPhoneConnectRequest,
@@ -48,10 +48,7 @@ import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import {
-  isAgentPhoneApiError,
-  sendAgentPhoneMessage,
-} from "../external/agentphone-client";
+import { isAgentPhoneApiError } from "../external/agentphone-client";
 import type { RouteEntry } from "../route-entry";
 import {
   consumeAgentPhoneConnectionCode$,
@@ -671,69 +668,6 @@ function agentPhoneLinkConflictMessage(reason: LinkConflictReason): string {
 function connectConflict(reason: LinkConflictReason) {
   return conflict(agentPhoneLinkConflictMessage(reason));
 }
-
-interface AgentPhoneConnectedMessage {
-  readonly body: string;
-}
-
-function agentPhoneConnectedMessages(): readonly AgentPhoneConnectedMessage[] {
-  const { brandName } = BRAND_PRESENTATION;
-  return [
-    {
-      body: `Your phone number is now connected to ${brandName}.
-
-You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.`,
-    },
-    {
-      body: "It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.",
-    },
-    {
-      body: `A few things to try right now:
-- "Summarize my unread Gmail from today"
-- "What's on my Google Calendar tomorrow?"
-- "List the open issues in my GitHub repo"
-- "Find my meeting notes in Notion"
-- "Catch me up on my unread Slack messages"
-- "Triage my latest Sentry error and open a GitHub PR to fix it"
-- "What's trending on X about [topic]?"
-
-No tool connected yet? Just ask me anything and I'll still help, then point you to whatever I need access to.
-
-What would you like to start with?`,
-    },
-  ];
-}
-
-const sendAgentPhoneConnectedMessages$ = command(
-  async (
-    { set },
-    target: {
-      readonly userLinkId: string;
-      readonly agentphoneAgentId: string;
-      readonly toNumber: string;
-      readonly replyToMessageId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    // Send sequentially so the provider receives the messages in reading order;
-    // only the first message threads onto the inbound connection code.
-    for (const [index, message] of agentPhoneConnectedMessages().entries()) {
-      await sendAgentPhoneMessage(
-        {
-          agentphoneAgentId: target.agentphoneAgentId,
-          toNumber: target.toNumber,
-          ...(index === 0 && target.replyToMessageId
-            ? { replyToMessageId: target.replyToMessageId }
-            : {}),
-          body: message.body,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-    }
-    await set(prepareAgentPhoneContactCard$, target.userLinkId, signal);
-  },
-);
 
 const connectAgentPhone$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -1449,25 +1383,19 @@ const handleAgentPhoneConnectionCode$ = command(
 
     await tapError(
       result.kind === "linked"
-        ? event.channel === "whatsapp"
-          ? set(
-              sendAgentPhoneText$,
-              event,
-              "WhatsApp connected. Send a message here to start using Okou.",
-              signal,
-            )
-          : set(
-              sendAgentPhoneConnectedMessages$,
-              {
-                userLinkId: result.userLinkId,
-                agentphoneAgentId: event.agentphoneAgentId,
-                toNumber: event.fromNumber,
-                ...(event.channel === "imessage"
-                  ? { replyToMessageId: event.messageId }
-                  : {}),
-              },
-              signal,
-            )
+        ? set(
+            sendAgentPhoneConnectedMessages$,
+            {
+              userLinkId: result.userLinkId,
+              agentphoneAgentId: event.agentphoneAgentId,
+              toNumber: event.fromNumber,
+              channel: event.channel,
+              ...(event.channel === "imessage" || event.channel === "whatsapp"
+                ? { replyToMessageId: event.messageId }
+                : {}),
+            },
+            signal,
+          )
         : set(
             sendAgentPhoneText$,
             event,
@@ -1573,7 +1501,9 @@ const acceptsWhatsappSender$ = command(
         signal,
       );
     }
-    return isAgentPhoneConnectionCodeMessage(event.body);
+    // The authenticated connect page owns the feature check for a new sender.
+    // Ordinary messages and slash commands must reach the connection guide.
+    return true;
   },
 );
 

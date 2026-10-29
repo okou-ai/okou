@@ -50,7 +50,7 @@ function headers(actor: ApiTestUser) {
 function client() {
   return setupApp({ context, routes: integrationsWhatsappRoutes })(contract);
 }
-async function configure(enabled = true) {
+async function configure(enabled = true, echoRouting = true) {
   const integrations = createBddIntegrationApi(context);
   integrations.configureAgentPhoneProvider();
   integrations.configureAgentPhoneWebhook();
@@ -70,8 +70,12 @@ async function configure(enabled = true) {
       sends.push(body);
       return HttpResponse.json({
         id: `message_${randomUUID()}`,
-        channel: body.channel ?? "sms",
-        from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+        ...(echoRouting
+          ? {
+              channel: body.channel ?? "sms",
+              from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+            }
+          : {}),
         to_number: body.to_number,
       });
     }),
@@ -113,7 +117,230 @@ async function connect(
   return phone;
 }
 
+async function requestWhatsappProof(
+  setup: Awaited<ReturnType<typeof configure>>,
+  phone = sender(),
+  body = "/connect",
+) {
+  setup.sends.length = 0;
+  await setup.ap.postAgentPhoneInboundMessage({
+    channel: "whatsapp",
+    from: phone,
+    body,
+  });
+  const reply = setup.sends.at(-1)?.body;
+  if (typeof reply !== "string") {
+    throw new Error("Expected a WhatsApp connection reply");
+  }
+  const match = reply.match(/https?:\/\/\S*\/settings\/whatsapp\?\S+/u);
+  if (!match) {
+    throw new Error("Expected a signed WhatsApp connection URL");
+  }
+  const url = new URL(match[0]);
+  return contract.connectWhatsapp.body.parse({
+    phoneHandle: url.searchParams.get("handle"),
+    agentphoneAgentId: url.searchParams.get("agent"),
+    timestamp: Number(url.searchParams.get("ts")),
+    signature: url.searchParams.get("sig"),
+    channel: url.searchParams.get("channel"),
+  });
+}
+
 describe("WhatsApp through the shared AgentPhone number", () => {
+  it.each(["Hello Okou", "/connect", "/switch"])(
+    "guides an unconnected DM into a signed WhatsApp connection for %s",
+    async (body) => {
+      const setup = await configure();
+      const phone = sender();
+      const proof = await requestWhatsappProof(setup, phone, body);
+      expect(proof).toMatchObject({ phoneHandle: phone, channel: "whatsapp" });
+      expect(
+        (
+          await accept(
+            client().getConnectStatus({
+              headers: headers(setup.actor),
+              query: proof,
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ kind: "connect" });
+      expect(
+        (
+          await accept(
+            client().getLinkStatus({ headers: headers(setup.actor) }),
+            [200],
+          )
+        ).body.linked,
+      ).toBeFalsy();
+      await accept(
+        client().connectWhatsapp({
+          headers: headers(setup.actor),
+          body: proof,
+        }),
+        [200],
+      );
+      expect(
+        (
+          await accept(
+            client().getConnectStatus({
+              headers: headers(setup.actor),
+              query: proof,
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ kind: "connected", phoneHandle: phone });
+      expect(
+        (await setup.integrations.getAgentPhoneLinkStatus(setup.actor)).linked,
+      ).toBeFalsy();
+      expect(
+        setup.sends.slice(-3).every((message) => {
+          return message.channel === "whatsapp" && message.to_number === phone;
+        }),
+      ).toBeTruthy();
+      expect(setup.sends.at(-1)?.body).toContain(
+        "What would you like to start with?",
+      );
+    },
+  );
+
+  it("identifies the connected workspace and offers recovery without an agent run", async () => {
+    const setup = await configure();
+    const phone = await connect(setup);
+    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+      id: setup.actor.orgId,
+      name: "WhatsApp workspace",
+    });
+    await setup.ap.postAgentPhoneInboundMessage({
+      channel: "whatsapp",
+      from: phone,
+      body: "/connect",
+    });
+    expect(setup.sends.at(-1)?.body).toContain(
+      'workspace "WhatsApp workspace"',
+    );
+    expect(setup.sends.at(-1)?.body).toContain("/switch");
+    expect(setup.sends.at(-1)?.body).toContain("/disconnect");
+  });
+
+  it("answers help and disconnect before connection without starting an agent", async () => {
+    const setup = await configure();
+    const phone = sender();
+    await setup.ap.postAgentPhoneInboundMessage({
+      channel: "whatsapp",
+      from: phone,
+      body: "/help",
+    });
+    expect(setup.sends.at(-1)?.body).toContain("WhatsApp commands");
+    await setup.ap.postAgentPhoneInboundMessage({
+      channel: "whatsapp",
+      from: phone,
+      body: "/disconnect",
+    });
+    expect(setup.sends.at(-1)?.body).toContain("not connected. Send /connect");
+  });
+
+  it("rejects cross-channel and expired signed proofs without connecting", async () => {
+    const setup = await configure();
+    const proof = await requestWhatsappProof(setup);
+    await accept(
+      client().connectWhatsapp({
+        headers: headers(setup.actor),
+        body: { ...proof, channel: "imessage" },
+      }),
+      [400],
+    );
+    mockNow(now() + 11 * 60 * 1000);
+    await accept(
+      client().getConnectStatus({
+        headers: headers(setup.actor),
+        query: proof,
+      }),
+      [400],
+    );
+    await accept(
+      client().connectWhatsapp({ headers: headers(setup.actor), body: proof }),
+      [400],
+    );
+    expect(
+      (
+        await accept(
+          client().getLinkStatus({ headers: headers(setup.actor) }),
+          [200],
+        )
+      ).body.linked,
+    ).toBeFalsy();
+  });
+
+  it("requires explicit number replacement and preserves the old link on a competing claim", async () => {
+    const setup = await configure();
+    const previous = await connect(setup);
+    const proof = await requestWhatsappProof(setup);
+    expect(
+      (
+        await accept(
+          client().getConnectStatus({
+            headers: headers(setup.actor),
+            query: proof,
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ kind: "phone_mismatch", currentPhoneHandle: previous });
+    await accept(
+      client().connectWhatsapp({ headers: headers(setup.actor), body: proof }),
+      [409],
+    );
+    const other = await configure();
+    await accept(
+      client().connectWhatsapp({ headers: headers(other.actor), body: proof }),
+      [200],
+    );
+    await accept(
+      client().connectWhatsapp({
+        headers: headers(setup.actor),
+        body: { ...proof, replacePhoneHandle: previous },
+      }),
+      [409],
+    );
+    expect(
+      (
+        await accept(
+          client().getLinkStatus({ headers: headers(setup.actor) }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({ linked: true, phoneHandle: previous });
+    await accept(client().unlink({ headers: headers(other.actor) }), [204]);
+    await accept(
+      client().connectWhatsapp({
+        headers: headers(setup.actor),
+        body: { ...proof, replacePhoneHandle: previous },
+      }),
+      [200],
+    );
+    expect(
+      (
+        await accept(
+          client().getLinkStatus({ headers: headers(setup.actor) }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({ linked: true, phoneHandle: proof.phoneHandle });
+    await setup.ap.postAgentPhoneInboundMessage({
+      channel: "whatsapp",
+      from: proof.phoneHandle,
+      body: "/disconnect",
+    });
+    await setup.ap.postAgentPhoneInboundMessage({
+      channel: "whatsapp",
+      from: proof.phoneHandle,
+      body: "/connect",
+    });
+    expect(setup.sends.at(-1)?.body).toContain("/settings/whatsapp?");
+  });
+
   it("verifies WhatsApp independently and disconnects it without changing the phone link", async () => {
     const setup = await configure();
     const phone = sender();
@@ -259,8 +486,8 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         to_number: phone,
       });
       if (command === "switch") {
-        expect(setup.sends.at(-1)?.body).toContain("/works");
-        expect(setup.sends.at(-1)?.body).toContain("connect WhatsApp");
+        expect(setup.sends.at(-1)?.body).toContain("/settings/whatsapp?");
+        expect(setup.sends.at(-1)?.body).toContain("channel=whatsapp");
         await connect(setup, phone);
       }
     },
@@ -269,7 +496,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
   it.each(["connected", "unlink", "switch"] as const)(
     "routes WhatsApp run replies and respects connection changes (state before completion: %s)",
     async (connectionState) => {
-      const setup = await configure();
+      const setup = await configure(true, connectionState !== "connected");
       const runs = createRunsApi(context);
       setup.ap.acceptAgentPhoneObjectStorage();
       runs.acceptStorageDownloads();
@@ -286,7 +513,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         body: "/help",
       });
       setup.sends.length = 0;
-      await setup.ap.postAgentPhoneInboundMessage({
+      const inputMessageId = await setup.ap.postAgentPhoneInboundMessage({
         channel: "whatsapp",
         from: phone,
         body: "Help me plan a meeting",
@@ -313,6 +540,11 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         throw new Error("Expected a queued WhatsApp run");
       }
       const run = await runs.claimRunnerJob(runId);
+      expect(run.appendSystemPrompt).toContain("WhatsApp commands");
+      expect(run.appendSystemPrompt).toContain("# WhatsApp Message Context");
+      expect(run.appendSystemPrompt).toContain(
+        "Your WhatsApp account is now connected",
+      );
       expect(run.appendSystemPrompt).toContain(
         "currently running inside: WhatsApp",
       );
@@ -372,6 +604,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
           from_number: AGENTPHONE_BDD_PHONE_NUMBER,
           to_number: phone,
           body: "Your meeting plan is ready.",
+          reply_to_message_id: inputMessageId,
         });
         await accept(
           client().sendMessage({

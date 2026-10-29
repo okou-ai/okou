@@ -7263,6 +7263,7 @@
     "whatsapp": {
       "codeError": "No se pudo crear el código de conexión. Inténtalo de nuevo.",
       "connect": "Conectar WhatsApp",
+      "connectDescription": "Conecta tu cuenta de WhatsApp a {{brandName}} para hablar con tu agente.",
       "connected": "WhatsApp conectado",
       "description": "Chatea con Okou directamente desde WhatsApp",
       "disconnected": "WhatsApp desconectado",
@@ -7275,6 +7276,7 @@
       "options": "Opciones de WhatsApp",
       "qrTitle": "Escanea para conectar WhatsApp",
       "regenerate": "Generar un nuevo código",
+      "successDescription": "{{phone}} está conectado. Envía un mensaje de WhatsApp para empezar a chatear.",
       "unavailable": "WhatsApp aún no está configurado"
     }
   }

@@ -349,7 +349,8 @@ const sendAgentPhoneReply$ = command(
             : {}),
           agentphoneAgentId: args.target.agentphoneAgentId,
           toNumber,
-          ...(args.target.channel === "imessage"
+          ...(args.target.channel === "imessage" ||
+          args.target.channel === "whatsapp"
             ? { replyToMessageId: args.target.messageId }
             : {}),
           body,

@@ -423,6 +423,10 @@ const ROUTE_CONFIG = [
     setup: setupAuthSidebarPageWrapper(setupAgentPhoneConnectPage$),
   },
   {
+    path: ROUTES.settingsWhatsapp,
+    setup: setupAuthSidebarPageWrapper(setupAgentPhoneConnectPage$),
+  },
+  {
     path: ROUTES.activityInspect,
     setup: setupAuthSidebarPageWrapper(setupActivityInspectPage$),
   },

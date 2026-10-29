@@ -48,6 +48,7 @@ export const ROUTES = {
   directedAuthorize: "/connectors/:connectorSlug/authorize",
   settings: "/settings",
   settingsAgentPhone: INTEGRATION_SETTINGS_PATHS.agentphone,
+  settingsWhatsapp: INTEGRATION_SETTINGS_PATHS.whatsapp,
   settingsSlack: INTEGRATION_SETTINGS_PATHS.slack,
   settingsWechat: INTEGRATION_SETTINGS_PATHS.wechat,
   settingsDiscord: INTEGRATION_SETTINGS_PATHS.discord,

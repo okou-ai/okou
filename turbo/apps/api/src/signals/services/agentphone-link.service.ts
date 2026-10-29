@@ -23,6 +23,7 @@ import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   normalizeAgentPhoneHandle,
+  agentPhoneUserLinksForChannel,
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
@@ -49,23 +50,25 @@ export const switchAgentPhoneIdentity$ = command(
       readonly userId: string;
       readonly phoneHandle: string;
       readonly replacePhoneHandle: string;
+      readonly channel?: AgentPhoneChannel;
     },
     signal: AbortSignal,
   ): Promise<LinkResult | { readonly kind: "stale" }> => {
     const db = set(writeDb$);
+    const links = agentPhoneUserLinksForChannel(args.channel ?? "imessage");
     const previous = db.$with("previous_phone_link").as(
       db
-        .delete(agentphoneUserLinks)
+        .delete(links)
         .where(
           and(
-            eq(agentphoneUserLinks.orgId, args.orgId),
-            eq(agentphoneUserLinks.userId, args.userId),
-            eq(agentphoneUserLinks.phoneHandle, args.replacePhoneHandle),
+            eq(links.orgId, args.orgId),
+            eq(links.userId, args.userId),
+            eq(links.phoneHandle, args.replacePhoneHandle),
           ),
         )
         .returning({
-          userId: agentphoneUserLinks.userId,
-          orgId: agentphoneUserLinks.orgId,
+          userId: links.userId,
+          orgId: links.orgId,
         }),
     );
     // A fresh link also retires the old sender's routes and contact-card state.
@@ -73,10 +76,10 @@ export const switchAgentPhoneIdentity$ = command(
     // a competing claim of the requested handle preserves the original link.
     const replacement = db.$with(
       "replacement_phone_link",
-      getTableColumns(agentphoneUserLinks),
+      getTableColumns(links),
     ).as(sql`
-      INSERT INTO ${agentphoneUserLinks} (phone_handle, user_id, org_id)
-      SELECT ${sql.param(args.phoneHandle, agentphoneUserLinks.phoneHandle)},
+      INSERT INTO ${links} (phone_handle, user_id, org_id)
+      SELECT ${sql.param(args.phoneHandle, links.phoneHandle)},
         ${previous.userId}, ${previous.orgId} FROM ${previous}
       RETURNING *
     `);
@@ -88,7 +91,9 @@ export const switchAgentPhoneIdentity$ = command(
       if (
         isUniqueViolation(
           result.error,
-          "idx_agentphone_user_links_phone_handle",
+          args.channel === "whatsapp"
+            ? "idx_whatsapp_user_links_phone_handle"
+            : "idx_agentphone_user_links_phone_handle",
         )
       ) {
         return { kind: "conflict", reason: "phone-handle-linked" };
@@ -103,12 +108,12 @@ export const switchAgentPhoneIdentity$ = command(
     // A repeated request after an uncertain response may already have succeeded.
     const [existing] = await db
       .select()
-      .from(agentphoneUserLinks)
+      .from(links)
       .where(
         and(
-          eq(agentphoneUserLinks.orgId, args.orgId),
-          eq(agentphoneUserLinks.userId, args.userId),
-          eq(agentphoneUserLinks.phoneHandle, args.phoneHandle),
+          eq(links.orgId, args.orgId),
+          eq(links.userId, args.userId),
+          eq(links.phoneHandle, args.phoneHandle),
         ),
       )
       .limit(1);

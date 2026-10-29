@@ -3444,6 +3444,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const ap = createAgentPhoneBddApi(context);
 
     const actor = bdd.user();
+    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+      id: actor.orgId,
+      name: "Operations workspace",
+    });
     bdd.acceptAgentStorageWrites();
     context.mocks.ably.publish.mockResolvedValue(undefined);
     integrations.configureAgentPhoneProvider();
@@ -3485,6 +3489,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     const alreadyConnected = await commandReply("/connect");
     expect(alreadyConnected).toContain("You are already connected");
+    expect(alreadyConnected).toContain('workspace "Operations workspace"');
+    expect(alreadyConnected).toContain("/switch");
     expect(alreadyConnected).toContain("start using Okou");
     expect(alreadyConnected).toContain(SMS_RISK_WARNING);
 

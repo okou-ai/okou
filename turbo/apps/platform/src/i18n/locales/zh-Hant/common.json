@@ -7160,6 +7160,7 @@
     "whatsapp": {
       "codeError": "無法產生連接碼，請重試。",
       "connect": "連接 WhatsApp",
+      "connectDescription": "將你的 WhatsApp 帳號連接到 {{brandName}}，即可與你的智慧代理聊天。",
       "connected": "WhatsApp 已連接",
       "description": "在 WhatsApp 中直接與 Okou 對話",
       "disconnected": "WhatsApp 已斷開",
@@ -7172,6 +7173,7 @@
       "options": "WhatsApp 選項",
       "qrTitle": "掃碼連接 WhatsApp",
       "regenerate": "產生新連接碼",
+      "successDescription": "{{phone}} 已連接。傳送 WhatsApp 訊息即可開始聊天。",
       "unavailable": "WhatsApp 尚未設定"
     }
   }

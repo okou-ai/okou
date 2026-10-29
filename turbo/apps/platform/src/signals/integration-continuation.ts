@@ -26,6 +26,7 @@ export function isIntegrationAuthContinuation(url: URL): boolean {
     integrationOAuthCallbackProvider(url.pathname, url.searchParams) !== null ||
     [
       ROUTES.settingsAgentPhone,
+      ROUTES.settingsWhatsapp,
       ROUTES.settingsSlack,
       ROUTES.settingsDiscord,
       ROUTES.settingsDiscordInstall,

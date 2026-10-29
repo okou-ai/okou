@@ -48,6 +48,7 @@ export function isUnreliableAgentPhoneConnectChannel(
 function encodeReturnPath(
   params: AgentPhoneConnectParams,
   channel: string | null,
+  pathname: string,
 ): string {
   const search = new URLSearchParams({
     handle: params.phoneHandle,
@@ -59,16 +60,17 @@ function encodeReturnPath(
   if (effectiveChannel) {
     search.set("channel", effectiveChannel);
   }
-  return `${INTEGRATION_SETTINGS_PATHS.agentphone}?${search.toString()}`;
+  return `${pathname}?${search.toString()}`;
 }
 
 function invalidParams(
   code: "invalid_signature" | "invalid_timestamp",
   message: string,
+  pathname: string,
 ): ParsedAgentPhoneConnectParams {
   return {
     ok: false,
-    returnPath: INTEGRATION_SETTINGS_PATHS.agentphone,
+    returnPath: pathname,
     error: {
       code,
       title: i18n.t(($) => {
@@ -95,6 +97,7 @@ function parseTimestamp(value: string): number | undefined {
 
 export function parseAgentPhoneConnectParams(
   searchParams: SearchParams,
+  pathname: string = INTEGRATION_SETTINGS_PATHS.agentphone,
 ): ParsedAgentPhoneConnectParams {
   const phoneHandle = firstParam(searchParams, "handle")?.trim();
   const agentphoneAgentId = firstParam(searchParams, "agent")?.trim();
@@ -105,7 +108,7 @@ export function parseAgentPhoneConnectParams(
   if (!phoneHandle || !agentphoneAgentId || !tsRaw || !signature) {
     return {
       ok: false,
-      returnPath: INTEGRATION_SETTINGS_PATHS.agentphone,
+      returnPath: pathname,
       error: {
         code: "incomplete",
         title: i18n.t(($) => {
@@ -125,6 +128,7 @@ export function parseAgentPhoneConnectParams(
       i18n.t(($) => {
         return $.connectors.providerConnect.agentphone.invalidTimestamp;
       }),
+      pathname,
     );
   }
 
@@ -134,6 +138,7 @@ export function parseAgentPhoneConnectParams(
       i18n.t(($) => {
         return $.connectors.providerConnect.agentphone.invalidSignature;
       }),
+      pathname,
     );
   }
 
@@ -149,6 +154,6 @@ export function parseAgentPhoneConnectParams(
     ok: true,
     params,
     channel: channel || null,
-    returnPath: encodeReturnPath(params, channel || null),
+    returnPath: encodeReturnPath(params, channel || null, pathname),
   };
 }

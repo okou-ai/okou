@@ -7,8 +7,8 @@ import { and, eq } from "drizzle-orm";
 import { command } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
+import { bodyResultOf, queryOf } from "../context/request";
+import { db$, writeDb$ } from "../external/db";
 import {
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
@@ -16,19 +16,34 @@ import {
 import { createAgentPhoneConnectionCode$ } from "../services/agentphone-connection-code.service";
 import {
   agentPhoneReplyChunks,
+  normalizeAgentPhoneHandle,
   storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone-shared.service";
-import { publishAgentPhoneUserChanged } from "../services/agentphone.service";
+import {
+  publishAgentPhoneUserChanged,
+  publishAgentPhoneUserLinked,
+  verifyAgentPhoneConnectSignature,
+} from "../services/agentphone.service";
+import { sendAgentPhoneConnectedMessages$ } from "../services/agentphone-connected-messages.service";
+import { switchAgentPhoneIdentity$ } from "../services/agentphone-link.service";
+import { connectWhatsappIdentity$ } from "../services/whatsapp-link.service";
+import type {
+  AgentPhoneConnectRequest,
+  AgentPhoneConnectStatus,
+} from "@okouai/api-contracts/contracts/integrations-agentphone";
 import {
   isWhatsappSupportedHandle,
   whatsappConfigured,
   whatsappEnabled$,
   whatsappPhoneNumber,
 } from "../services/whatsapp-config";
+import { logger } from "../../lib/log";
 import { env, optionalEnv } from "../../lib/env";
-import { conflict, notFound } from "../../lib/error";
-import { settle } from "../utils";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { settle, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
+
+const log = logger("api:whatsapp:link");
 
 const authOptions = {
   requireOrganization: true,
@@ -62,6 +77,122 @@ const loadLink$ = command(async ({ get, set }, signal: AbortSignal) => {
     .limit(1);
   signal.throwIfAborted();
   return { enabled: true as const, link: link ?? null };
+});
+
+function verifiedWhatsappHandle(
+  proof: AgentPhoneConnectRequest,
+): string | null {
+  const phoneHandle = normalizeAgentPhoneHandle(proof.phoneHandle, "whatsapp");
+  return proof.channel === "whatsapp" &&
+    isWhatsappSupportedHandle(phoneHandle) &&
+    verifyAgentPhoneConnectSignature({
+      phoneHandle,
+      agentphoneAgentId: proof.agentphoneAgentId,
+      timestamp: proof.timestamp,
+      channel: "whatsapp",
+      signature: proof.signature,
+      secret: env("SECRETS_ENCRYPTION_KEY"),
+    })
+    ? phoneHandle
+    : null;
+}
+
+const getConnectStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const { enabled, link: current } = await set(loadLink$, signal);
+  if (!enabled) {
+    return notFound("WhatsApp integration is not enabled");
+  }
+  const phoneHandle = verifiedWhatsappHandle(
+    get(queryOf(contract.getConnectStatus)),
+  );
+  if (!phoneHandle) {
+    return badRequestMessage(
+      "Invalid or expired WhatsApp connection link. Send /connect again.",
+    );
+  }
+  const [requested] = await get(db$)
+    .select()
+    .from(whatsappUserLinks)
+    .where(eq(whatsappUserLinks.phoneHandle, phoneHandle))
+    .limit(1);
+  signal.throwIfAborted();
+  const body: AgentPhoneConnectStatus = requested
+    ? requested.userId === auth.userId && requested.orgId === auth.orgId
+      ? { kind: "connected", phoneHandle }
+      : { kind: "phone_in_use" }
+    : current
+      ? { kind: "phone_mismatch", currentPhoneHandle: current.phoneHandle }
+      : { kind: "connect" };
+  return { status: 200 as const, body };
+});
+
+const connectWhatsapp$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const { enabled } = await set(loadLink$, signal);
+  if (!enabled) {
+    return notFound("WhatsApp integration is not enabled");
+  }
+  const result = await get(bodyResultOf(contract.connectWhatsapp));
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return result.response;
+  }
+  const proof = result.data;
+  const phoneHandle = verifiedWhatsappHandle(proof);
+  if (!phoneHandle) {
+    return badRequestMessage(
+      "Invalid or expired WhatsApp connection link. Send /connect again.",
+    );
+  }
+  if (!(await whatsappConfigured(signal))) {
+    return notConfigured();
+  }
+  const linked = proof.replacePhoneHandle
+    ? await set(
+        switchAgentPhoneIdentity$,
+        {
+          userId: auth.userId,
+          orgId: auth.orgId,
+          phoneHandle,
+          replacePhoneHandle: proof.replacePhoneHandle,
+          channel: "whatsapp",
+        },
+        signal,
+      )
+    : await set(
+        connectWhatsappIdentity$,
+        { userId: auth.userId, orgId: auth.orgId, phoneHandle },
+        signal,
+      );
+  signal.throwIfAborted();
+  if (linked.kind !== "linked") {
+    return conflict(
+      linked.kind === "stale"
+        ? "Your WhatsApp connection changed. Reload this page and try again."
+        : "This WhatsApp account or workspace is already connected. Disconnect it first, or confirm the number you want to replace.",
+    );
+  }
+  await publishAgentPhoneUserLinked(auth.userId);
+  signal.throwIfAborted();
+  await tapError(
+    set(
+      sendAgentPhoneConnectedMessages$,
+      {
+        userLinkId: linked.userLink.id,
+        agentphoneAgentId: proof.agentphoneAgentId,
+        toNumber: phoneHandle,
+        channel: "whatsapp",
+      },
+      signal,
+    ),
+    (error) => {
+      // Binding is already committed; a failed welcome must not undo ownership.
+      log.warn("Connected WhatsApp user but confirmation failed", { error });
+    },
+  );
+  signal.throwIfAborted();
+  return { status: 200 as const, body: { phoneHandle } };
 });
 
 const getLinkStatus$ = command(async ({ set }, signal: AbortSignal) => {
@@ -231,6 +362,14 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const integrationsWhatsappRoutes: readonly RouteEntry[] = [
+  {
+    route: contract.getConnectStatus,
+    handler: authRoute(authOptions, getConnectStatus$),
+  },
+  {
+    route: contract.connectWhatsapp,
+    handler: authRoute(authOptions, connectWhatsapp$),
+  },
   {
     route: contract.getLinkStatus,
     handler: authRoute(authOptions, getLinkStatus$),

@@ -7160,6 +7160,7 @@
     "whatsapp": {
       "codeError": "接続コードを作成できませんでした。もう一度お試しください。",
       "connect": "WhatsAppを接続",
+      "connectDescription": "WhatsApp アカウントを {{brandName}} に接続して、エージェントとチャットできます。",
       "connected": "WhatsAppに接続しました",
       "description": "WhatsAppから直接Okouとチャット",
       "disconnected": "WhatsAppの接続を解除しました",
@@ -7172,6 +7173,7 @@
       "options": "WhatsAppのオプション",
       "qrTitle": "スキャンしてWhatsAppを接続",
       "regenerate": "新しいコードを生成",
+      "successDescription": "{{phone}} が接続されました。WhatsApp メッセージを送信してチャットを始めましょう。",
       "unavailable": "WhatsAppはまだ設定されていません"
     }
   }

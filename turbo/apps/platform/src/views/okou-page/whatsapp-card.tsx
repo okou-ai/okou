@@ -25,7 +25,7 @@ import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
 import { WhatsappMark } from "./components/whatsapp-mark.tsx";
 import { PhoneNumberCopyButton } from "./agentphone-connect-dialog.tsx";
 
-function WhatsappConnectContent({
+export function WhatsappConnectContent({
   phone,
   code,
   loading,
