@@ -768,9 +768,12 @@ export const prepareHostedSiteDeployment$ = command(
       return visibility;
     }
 
-    const uploads = await Promise.all(
-      Object.values(siteAndDeployment.deployment.manifest.files).map(
-        async (file) => {
+    const uploadRequests = [];
+    for (const file of Object.values(
+      siteAndDeployment.deployment.manifest.files,
+    )) {
+      uploadRequests.push(
+        (async () => {
           const uploadUrl = await get(
             generateHostedSitesPresignedPutUrl(
               hostedR2.config.bucket,
@@ -780,9 +783,10 @@ export const prepareHostedSiteDeployment$ = command(
             ),
           );
           return { path: file.path, uploadUrl };
-        },
-      ),
-    );
+        })(),
+      );
+    }
+    const uploads = await Promise.all(uploadRequests);
     signal.throwIfAborted();
 
     const preview = previewRequest
