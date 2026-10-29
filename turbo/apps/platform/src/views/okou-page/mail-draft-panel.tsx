@@ -12,6 +12,7 @@ import {
 import type {
   MailAttachment,
   MailDraft,
+  MailProvider,
   MailInlineImage,
 } from "@okouai/api-contracts/contracts/mail";
 import { Button, buttonVariants, cn } from "@okouai/ui";
@@ -41,7 +42,7 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
-import { useGmailReconnect } from "./use-gmail-reconnect.ts";
+import { useMailReconnect } from "./use-mail-reconnect.ts";
 
 const STANDALONE_ACTION_CLASS_NAME =
   "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed";
@@ -169,18 +170,21 @@ function UnavailableMailDraftSidebar({
   );
 }
 
-function GmailReconnectButton({
+function MailReconnectButton({
   signals,
   connectionId,
+  provider,
   standalone,
 }: {
   readonly signals: MailDraftSignals;
   readonly connectionId: string | undefined;
+  readonly provider: MailProvider;
   readonly standalone: boolean;
 }) {
   const { t } = useTranslation();
   const reloadDraft = useSet(signals.reloadDraft$);
-  const { reconnect, reconnectDisabled, reconnecting } = useGmailReconnect(
+  const { reconnect, reconnectDisabled, reconnecting } = useMailReconnect(
+    provider,
     connectionId,
     reloadDraft,
   );
@@ -197,9 +201,12 @@ function GmailReconnectButton({
         ? t(($) => {
             return $.chat.mail.reconnecting;
           })
-        : t(($) => {
-            return $.chat.mail.reconnectGmail;
-          })}
+        : t(
+            ($) => {
+              return $.chat.mail.reconnectProvider;
+            },
+            { provider: provider === "gmail" ? "Gmail" : "Outlook" },
+          )}
     </Button>
   );
 }
@@ -227,19 +234,29 @@ function MailMessageHeader({
           </h1>
           <span
             className={
-              active
+              draft.status !== "sent"
                 ? "relative top-0.5 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
                 : "relative top-0.5 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400"
             }
           >
-            {active ? <Pencil size={11} /> : <CircleCheck size={11} />}
-            {active
+            {draft.status === "sending" ? (
+              <Loader2 size={11} />
+            ) : active ? (
+              <Pencil size={11} />
+            ) : (
+              <CircleCheck size={11} />
+            )}
+            {draft.status === "sending"
               ? t(($) => {
-                  return $.chat.mail.status.draft;
+                  return $.chat.mail.status.sending;
                 })
-              : t(($) => {
-                  return $.chat.mail.status.sent;
-                })}
+              : active
+                ? t(($) => {
+                    return $.chat.mail.status.draft;
+                  })
+                : t(($) => {
+                    return $.chat.mail.status.sent;
+                  })}
           </span>
         </div>
         <SidebarCloseButton close={close} />
@@ -953,8 +970,14 @@ function MailDraftRichMessage({
       data-feedback-source
       data-feedback-source-type="mail"
       data-feedback-source-id={signals.mailDraftId}
-      data-feedback-source-status={draft.status === "draft" ? "draft" : "sent"}
-      data-feedback-source-sent-id={draft.sentGmailMessageId}
+      data-feedback-source-status={draft.status === "sent" ? "sent" : "draft"}
+      data-feedback-source-sent-id={
+        draft.provider === "gmail"
+          ? draft.sentGmailMessageId
+          : draft.status === "sent"
+            ? draft.outlookMessageId
+            : undefined
+      }
       className="break-words text-sm leading-6 text-foreground [&_a]:text-brand-text [&_a]:underline [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:font-semibold [&_hr]:my-3 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-2 [&_table]:my-2 [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_ul]:list-disc"
     >
       {Array.from(document.body.childNodes).map((node, index) => {
@@ -996,8 +1019,14 @@ function MailDraftMessage({
       data-feedback-source
       data-feedback-source-type="mail"
       data-feedback-source-id={signals.mailDraftId}
-      data-feedback-source-status={draft.status === "draft" ? "draft" : "sent"}
-      data-feedback-source-sent-id={draft.sentGmailMessageId}
+      data-feedback-source-status={draft.status === "sent" ? "sent" : "draft"}
+      data-feedback-source-sent-id={
+        draft.provider === "gmail"
+          ? draft.sentGmailMessageId
+          : draft.status === "sent"
+            ? draft.outlookMessageId
+            : undefined
+      }
       className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground"
     >
       {draft.body ||
@@ -1076,6 +1105,134 @@ function MailDraftDetails({
   );
 }
 
+function MailDraftActions({
+  draft,
+  signals,
+  close,
+}: {
+  readonly draft: MailDraft;
+  readonly signals: MailDraftSignals;
+  readonly close: (() => void) | undefined;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [deleteLoadable, deleteDraft] = useLoadableSet(signals.delete$);
+  const [sendLoadable, send] = useLoadableSet(signals.send$);
+  const active = draft.status === "draft";
+  const pending =
+    deleteLoadable.state === "loading" || sendLoadable.state === "loading";
+  const reloadDraft = useSet(signals.reloadDraft$);
+  const providerName = draft.provider === "gmail" ? "Gmail" : "Outlook";
+  const openInProvider =
+    draft.provider === "outlook"
+      ? draft.outlookWebLink
+      : draft.status === "draft"
+        ? `https://mail.google.com/mail/?authuser=${encodeURIComponent(draft.from)}#drafts?compose=${encodeURIComponent(draft.gmailMessageId)}`
+        : `https://mail.google.com/mail/?authuser=${encodeURIComponent(draft.from)}#all/${encodeURIComponent(draft.gmailThreadId)}`;
+
+  const onDelete = () => {
+    const deleteAndClose = async () => {
+      await deleteDraft(pageSignal);
+      close?.();
+    };
+    detach(deleteAndClose(), Reason.DomCallback);
+  };
+  const onSend = () => {
+    const sendAndNotify = async () => {
+      const status = await send(pageSignal);
+      if (status === "sent") {
+        toast.success(
+          t(($) => {
+            return $.chat.mail.sentToast;
+          }),
+        );
+      } else if (status === "sending") {
+        toast.info(
+          t(($) => {
+            return $.chat.mail.sendingDescription;
+          }),
+        );
+      }
+    };
+    detach(sendAndNotify(), Reason.DomCallback);
+  };
+  return (
+    <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
+      {active ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={pending}
+          className="text-destructive hover:text-destructive"
+          onClick={onDelete}
+        >
+          {deleteLoadable.state === "loading" ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <Trash size={15} />
+          )}
+          {t(($) => {
+            return $.chat.actions.delete;
+          })}
+        </Button>
+      ) : (
+        <span />
+      )}
+      <div className="ml-auto flex items-center gap-2">
+        {draft.status === "sending" ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              return reloadDraft();
+            }}
+          >
+            {t(($) => {
+              return $.chat.mail.refreshStatus;
+            })}
+          </Button>
+        ) : null}
+        {openInProvider ? (
+          <a
+            href={openInProvider}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <ExternalLink size={15} />
+            {t(
+              ($) => {
+                return $.chat.mail.openInProvider;
+              },
+              { provider: providerName },
+            )}
+          </a>
+        ) : null}
+        {active ? (
+          <Button
+            type="button"
+            size="sm"
+            className={close ? undefined : STANDALONE_ACTION_CLASS_NAME}
+            disabled={pending}
+            onClick={onSend}
+          >
+            {sendLoadable.state === "loading" ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <Send size={15} />
+            )}
+            {t(($) => {
+              return $.chat.actions.send;
+            })}
+          </Button>
+        ) : null}
+      </div>
+    </footer>
+  );
+}
+
 function MailDraftDetail({
   draft,
   signals,
@@ -1088,36 +1245,6 @@ function MailDraftDetail({
   readonly showCloseButton: boolean;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [deleteLoadable, deleteDraft] = useLoadableSet(signals.delete$);
-  const [sendLoadable, send] = useLoadableSet(signals.send$);
-  const active = draft.status === "draft";
-  const pending =
-    deleteLoadable.state === "loading" || sendLoadable.state === "loading";
-  const gmailAccount = encodeURIComponent(draft.from);
-  const openInGmail =
-    draft.status === "draft"
-      ? `https://mail.google.com/mail/?authuser=${gmailAccount}#drafts?compose=${encodeURIComponent(draft.gmailMessageId)}`
-      : `https://mail.google.com/mail/?authuser=${gmailAccount}#all/${encodeURIComponent(draft.gmailThreadId)}`;
-
-  const onDelete = () => {
-    const deleteAndClose = async () => {
-      await deleteDraft(pageSignal);
-      close?.();
-    };
-    detach(deleteAndClose(), Reason.DomCallback);
-  };
-  const onSend = () => {
-    const sendAndNotify = async () => {
-      await send(pageSignal);
-      toast.success(
-        t(($) => {
-          return $.chat.mail.sentToast;
-        }),
-      );
-    };
-    detach(sendAndNotify(), Reason.DomCallback);
-  };
   const Container = close ? "aside" : "section";
   return (
     <Container
@@ -1136,60 +1263,14 @@ function MailDraftDetail({
         draft={draft}
         signals={signals}
       />
-      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
-        {active ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={pending}
-            className="text-destructive hover:text-destructive"
-            onClick={onDelete}
-          >
-            {deleteLoadable.state === "loading" ? (
-              <Loader2 size={15} className="animate-spin" />
-            ) : (
-              <Trash size={15} />
-            )}
-            {t(($) => {
-              return $.chat.actions.delete;
-            })}
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <a
-            href={openInGmail}
-            target="_blank"
-            rel="noreferrer"
-            className={buttonVariants({ variant: "outline", size: "sm" })}
-          >
-            <ExternalLink size={15} />
-            {t(($) => {
-              return $.chat.mail.openInGmail;
-            })}
-          </a>
-          {active ? (
-            <Button
-              type="button"
-              size="sm"
-              className={close ? undefined : STANDALONE_ACTION_CLASS_NAME}
-              disabled={pending}
-              onClick={onSend}
-            >
-              {sendLoadable.state === "loading" ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : (
-                <Send size={15} />
-              )}
-              {t(($) => {
-                return $.chat.actions.send;
-              })}
-            </Button>
-          ) : null}
-        </div>
-      </footer>
+      {draft.status === "sending" ? (
+        <p role="status" className="px-4 py-3 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.chat.mail.sendingDescription;
+          })}
+        </p>
+      ) : null}
+      <MailDraftActions draft={draft} signals={signals} close={close} />
     </Container>
   );
 }
@@ -1225,12 +1306,19 @@ export function MailDraftPanel({
       <UnavailableMailDraftSidebar
         close={onClose}
         showCloseButton={showCloseButton}
-        message={t(($) => {
-          return $.chat.mail.reconnectDescription;
-        })}
+        message={t(
+          ($) => {
+            return $.chat.mail.reconnectDescription;
+          },
+          {
+            provider:
+              draftLoadable.data.provider === "gmail" ? "Gmail" : "Outlook",
+          },
+        )}
         action={
-          <GmailReconnectButton
+          <MailReconnectButton
             signals={signals}
+            provider={draftLoadable.data.provider}
             connectionId={draftLoadable.data.reconnectConnectionId}
             standalone={!onClose}
           />

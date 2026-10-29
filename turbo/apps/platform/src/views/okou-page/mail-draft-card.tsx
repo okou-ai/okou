@@ -16,7 +16,7 @@ import {
   openThreadMailDraft$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import { useGmailReconnect } from "./use-gmail-reconnect.ts";
+import { useMailReconnect } from "./use-mail-reconnect.ts";
 
 interface MailDraftCardProps {
   readonly signals: MailDraftSignals;
@@ -42,6 +42,11 @@ function statusLabel(status: MailDraftStatus): string {
         return $.chat.mail.status.draft;
       });
     }
+    case "sending": {
+      return i18n.t(($) => {
+        return $.chat.mail.status.sending;
+      });
+    }
     case "sent": {
       return i18n.t(($) => {
         return $.chat.mail.status.sent;
@@ -56,7 +61,7 @@ function statusLabel(status: MailDraftStatus): string {
 }
 
 // The card's own layout drawn with the shared Skeleton, the way the other chat
-// cards wait, rather than a spinner standing in for the Gmail mark.
+// cards wait, rather than a spinner standing in for the provider mark.
 function MailDraftCardSkeleton() {
   return (
     <div
@@ -86,11 +91,11 @@ function mailDraftRecipients(draft: MailDraft): string {
 
 function MailDraftCardContent({
   draft,
-  gmailIcon,
+  providerIcon,
   reconnecting,
 }: {
   readonly draft: MailDraft;
-  readonly gmailIcon: PublicConnectorCatalogIcon | undefined;
+  readonly providerIcon: PublicConnectorCatalogIcon | undefined;
   readonly reconnecting: boolean;
 }) {
   const { t } = useTranslation();
@@ -99,7 +104,7 @@ function MailDraftCardContent({
   return (
     <>
       <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background">
-        <ConnectorIcon icon={gmailIcon} size={23} />
+        <ConnectorIcon icon={providerIcon} size={23} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium leading-5 text-foreground">
@@ -125,7 +130,7 @@ function MailDraftCardContent({
             "truncate rounded-full px-2 py-1 text-[11px] font-medium",
             draft.status === "sent" &&
               "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-            draft.status === "draft" &&
+            (draft.status === "draft" || draft.status === "sending") &&
               !reconnect &&
               "bg-amber-500/10 text-amber-700 dark:text-amber-300",
             reconnect && "bg-destructive/10 text-destructive dark:text-red-300",
@@ -150,11 +155,11 @@ function MailDraftCardContent({
 
 function DeletedMailDraftCard({
   draft,
-  gmailIcon,
+  providerIcon,
   subject,
 }: {
   readonly draft: MailDraft;
-  readonly gmailIcon: PublicConnectorCatalogIcon | undefined;
+  readonly providerIcon: PublicConnectorCatalogIcon | undefined;
   readonly subject: string;
 }) {
   const { t } = useTranslation();
@@ -175,7 +180,7 @@ function DeletedMailDraftCard({
     >
       <MailDraftCardContent
         draft={draft}
-        gmailIcon={gmailIcon}
+        providerIcon={providerIcon}
         reconnecting={false}
       />
     </div>
@@ -193,7 +198,13 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
       ? draftLoadable.data?.reconnectConnectionId
       : undefined;
   const { connectorIcon, reconnect, reconnectDisabled, reconnecting } =
-    useGmailReconnect(reconnectConnectionId, reloadDraft);
+    useMailReconnect(
+      draftLoadable.state === "hasData"
+        ? (draftLoadable.data?.provider ?? "gmail")
+        : "gmail",
+      reconnectConnectionId,
+      reloadDraft,
+    );
 
   if (draftLoadable.state === "loading") {
     return <MailDraftCardSkeleton />;
@@ -229,7 +240,7 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
   const content = (
     <MailDraftCardContent
       draft={draft}
-      gmailIcon={connectorIcon}
+      providerIcon={connectorIcon}
       reconnecting={needsReconnect && reconnecting}
     />
   );
@@ -238,7 +249,7 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
     return (
       <DeletedMailDraftCard
         draft={draft}
-        gmailIcon={connectorIcon}
+        providerIcon={connectorIcon}
         subject={subject}
       />
     );
@@ -256,6 +267,7 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
           },
           {
             subject,
+            provider: draft.provider === "gmail" ? "Gmail" : "Outlook",
           },
         )}
         data-mail-draft-card

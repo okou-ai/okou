@@ -89,6 +89,7 @@ interface CreateSharedThreadClientRequest extends SharedThreadRequestOptions {
 
 interface ReadSharedThreadRequest extends SharedThreadRequestOptions {
   readonly params: SharedThreadIdPathParams;
+  readonly headers?: SharedThreadAuthHeaders;
 }
 
 type ApiErrorRouteResponse<TStatus extends number> = {
@@ -107,6 +108,9 @@ type CreateSharedThreadRouteResponse =
 
 type ReadSharedThreadRouteResponse =
   | { readonly status: 200; readonly body: SharedThreadResponse }
+  | ApiErrorRouteResponse<401>
+  | ApiErrorRouteResponse<403>
+  | ApiErrorRouteResponse<503>
   | ApiErrorRouteResponse<404>;
 
 type ReadSharedThreadMetaRouteResponse =
@@ -245,9 +249,12 @@ const sharedThreadsRuntimeSpec = {
     pathParams: sharedThreadIdPathParamsSchema,
     responses: {
       200: sharedThreadResponseSchema,
+      401: sharedThreadApiErrorSchema,
+      403: sharedThreadApiErrorSchema,
+      503: sharedThreadApiErrorSchema,
       404: sharedThreadApiErrorSchema,
     },
-    summary: "Read an immutable public chat snapshot",
+    summary: "Read an authorized conversation snapshot",
   },
   meta: {
     method: "GET",

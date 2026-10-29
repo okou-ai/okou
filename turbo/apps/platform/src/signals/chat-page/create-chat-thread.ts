@@ -1,3 +1,4 @@
+import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   isAutoSelectedModel,
@@ -119,6 +120,7 @@ import {
 import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
 import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
 import { reloadMountedComposerWorkflows$ } from "../okou-page/tiptap-workflow-composer.ts";
+import { createBrowserPresenceSignals } from "./browser-presence.ts";
 import {
   messageDocumentToPrompt,
   textToMessageDocument,
@@ -1408,9 +1410,51 @@ function latestAssistantTextCreatedAtFromRaw(
   return undefined;
 }
 
+/**
+ * The newest Run that any thread event names, live or finished. Input carries
+ * its Run once one consumes it, so a new message moves this on before its
+ * Run produces output.
+ */
+function latestRunIdFromRaw(
+  raw: readonly ChatEventProjectionEntry[],
+): string | null {
+  for (let index = raw.length - 1; index >= 0; index--) {
+    const event = raw[index]!.event;
+    if ("runId" in event && typeof event.runId === "string") {
+      return event.runId;
+    }
+  }
+  return null;
+}
+
+/** The newest Run while nothing has ended or interrupted it yet. */
+function liveRunIdFromRaw(
+  raw: readonly ChatEventProjectionEntry[],
+): string | null {
+  const runId = latestRunIdFromRaw(raw);
+  if (runId === null) {
+    return null;
+  }
+  const ended = raw.some(({ event }) => {
+    return (
+      (isInterruptControlEvent(event) && event.interruptsRunId === runId) ||
+      ("runId" in event &&
+        event.runId === runId &&
+        isChatRunTerminalEventType(event.eventType))
+    );
+  });
+  return ended ? null : runId;
+}
+
 function createLatestEventSignals(
   rawEvents$: Computed<ChatEventProjectionEntry[]>,
 ) {
+  const latestRunId$ = computed((get): string | null => {
+    return latestRunIdFromRaw(get(rawEvents$));
+  });
+  const liveRunId$ = computed((get): string | null => {
+    return liveRunIdFromRaw(get(rawEvents$));
+  });
   const latestRunFinishCreatedAt$ = computed(
     (get): Promise<string | undefined> => {
       return Promise.resolve(latestRunFinishCreatedAtFromRaw(get(rawEvents$)));
@@ -1424,6 +1468,8 @@ function createLatestEventSignals(
     },
   );
   return {
+    latestRunId$,
+    liveRunId$,
     latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$,
   };
@@ -1435,6 +1481,7 @@ function createArtifacts(threadId: string) {
     chatThreadId: threadId,
   });
   const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+    get(artifactCatalogRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
     const result = await accept(client.list({ params: { threadId } }), [200]);
     return result.body.runs;
@@ -3869,6 +3916,11 @@ export function createChatPanelSignals(
       relations,
     ),
     relations,
+    browserPresence: createBrowserPresenceSignals({
+      latestRunId$: messages.latestRunId$,
+      liveRunId$: messages.liveRunId$,
+      composer,
+    }),
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

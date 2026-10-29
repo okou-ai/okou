@@ -33,7 +33,10 @@ const THREAD_ID = "b0000000-0000-4000-a000-000000000801";
 const RIGHT_THREAD_ID = "b0000000-0000-4000-a000-000000000802";
 const RUN_ID = "d0000000-0000-4000-a000-000000000811";
 
-function draft(index: number, status: "draft" | "sent" = "draft"): MailDraft {
+function draft(
+  index: number,
+  status: "draft" | "sent" = "draft",
+): Extract<MailDraft, { provider: "gmail" }> {
   return {
     version: 3,
     provider: "gmail",
@@ -69,7 +72,7 @@ function response(mailDraftId: string, mailDraft: MailDraft) {
 }
 
 function installMails(count = 12) {
-  const mails = new Map(
+  const mails = new Map<string, MailDraft>(
     Array.from({ length: count }, (_, index) => {
       return [id(index + 1), draft(index + 1, index < 2 ? "draft" : "sent")];
     }),
@@ -98,7 +101,11 @@ function installMails(count = 12) {
           return {
             mailDraftId,
             status:
-              mail.status === "sent" ? ("sent" as const) : ("draft" as const),
+              mail.status === "sent"
+                ? ("sent" as const)
+                : mail.status === "sending"
+                  ? ("sending" as const)
+                  : ("draft" as const),
             subject: mail.subject,
             from: mail.from,
             createdAt: mail.createdAt,
@@ -711,6 +718,48 @@ describe("thread email manager", () => {
       expect(within(list).queryByRole("checkbox")).not.toBeInTheDocument();
     });
     expect(fixture.sent).toStrictEqual([id(1), id(2)]);
+  });
+
+  it("reports accepted Outlook sends as awaiting confirmation rather than completed", async () => {
+    const fixture = installMails(1);
+    const {
+      gmailDraftId: _draftId,
+      gmailThreadId: _threadId,
+      gmailMessageId: _messageId,
+      ...common
+    } = draft(1);
+    const outlook: MailDraft = {
+      ...common,
+      provider: "outlook",
+      outlookMessageId: "immutable-outlook",
+      outlookConversationId: "outlook-conversation",
+    };
+    fixture.mails.set(id(1), outlook);
+    context.mocks.api(mailContract.sendDraft, ({ respond }) => {
+      const pending: MailDraft = { ...outlook, status: "sending" };
+      fixture.mails.set(id(1), pending);
+      return respond(200, response(id(1), pending));
+    });
+    await openChat();
+    const list = await openList();
+    click(within(list).getByRole("checkbox", { name: "Select all" }));
+    click(await button("Send", list));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Send selected drafts?",
+    });
+    click(await button("Send", confirmation));
+    await waitFor(() => {
+      expect(
+        screen.getByText("0 completed · 1 awaiting confirmation · 0 failed"),
+      ).toBeInTheDocument();
+      const refreshedList = screen.getByRole("dialog", { name: "Emails" });
+      expect(
+        within(refreshedList).getByText("Awaiting send confirmation"),
+      ).toBeInTheDocument();
+      expect(
+        within(refreshedList).queryByRole("checkbox"),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("confirms bulk deletion of drafts and keeps sent emails available", async () => {

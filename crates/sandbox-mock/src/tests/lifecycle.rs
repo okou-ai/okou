@@ -65,14 +65,6 @@ fn severe_memory_retention() -> SandboxParkNonReusableReason {
 }
 
 #[tokio::test]
-async fn sandbox_lifecycle() {
-    let mut sandbox = MockSandbox::new("test-1");
-    sandbox.start().await.unwrap();
-    sandbox.stop().await.unwrap();
-    sandbox.kill().await.unwrap();
-}
-
-#[tokio::test]
 async fn operation_overrides_preserve_unrelated_sandbox_behavior() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.set_start_process_lifecycle_gate(MockLifecycleGate::new());

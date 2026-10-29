@@ -5,10 +5,12 @@
  */
 export enum FeatureSwitchKey {
   ChatThinkingBrandMotion = "chatThinkingBrandMotion",
+  HalloweenQuiz = "halloweenQuiz",
   FeatureGuides = "featureGuides",
   OnboardingSourceOutcomes = "onboardingSourceOutcomes",
-  SlackWorkspaceIdentity = "slackWorkspaceIdentity",
+  TeamsWorkspaceIdentity = "teamsWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
+  SharedThreadVisibility = "sharedThreadVisibility",
   HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
@@ -47,6 +49,8 @@ export enum FeatureSwitchKey {
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
+  ArtifactDeletion = "artifactDeletion",
+  OutlookChatMail = "outlookChatMail",
   ThreadEmailManager = "threadEmailManager",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
@@ -55,6 +59,7 @@ export enum FeatureSwitchKey {
   WechatIntegration = "wechatIntegration",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",
+  AutoContinueBusyChats = "_autoContinueBusyChats",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
@@ -70,4 +75,5 @@ export enum FeatureSwitchKey {
   ChatReplyNameLine = "chatReplyNameLine",
   ChatThreadTimeline = "chatThreadTimeline",
   UnifiedChatWorkspace = "unifiedChatWorkspace",
+  CloudBrowserPanel = "cloudBrowserPanel",
 }

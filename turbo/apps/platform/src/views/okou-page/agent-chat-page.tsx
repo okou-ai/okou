@@ -1,3 +1,4 @@
+import { HalloweenHomeActivity } from "../halloween/halloween-modal.tsx";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { TFunction } from "i18next";
@@ -34,7 +35,11 @@ import {
   finishChatGreetingEntrance$,
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
-import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
+import {
+  AgentAvatarImg,
+  useAgentAvatarTexture,
+  useGreetingAvatarCostume,
+} from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
@@ -342,6 +347,16 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   // avatar have no sweater or hair colour to clear. The frame follows that
   // answer, so those keep the hairline that is still their only edge.
   const textureUrl = useAgentAvatarTexture(agentId ?? null);
+  // The default agent's costume takes the place of its texture on this frame.
+  // The scene is opaque edge to edge just as a tile is, so the frame treats the
+  // two alike: no hairline, and the hover layer above the artwork.
+  const costume = useGreetingAvatarCostume(agentId ?? null);
+  const hoverLayer = (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 bg-state-hover opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+    />
+  );
 
   return (
     <div className="relative shrink-0">
@@ -361,7 +376,7 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                   className={cn(
                     AGENT_AVATAR_FRAME,
                     "cursor-pointer",
-                    textureUrl
+                    textureUrl || costume
                       ? // The frame's background is behind the texture and a
                         // textured frame has no border to recolour, so hover
                         // needs a layer of its own above the artwork. Same token
@@ -374,18 +389,29 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                         ),
                   )}
                 >
-                  <AgentAvatarImg
-                    name={agentId}
-                    alt=""
-                    className={AGENT_AVATAR_IMAGE}
-                    textureUrl={textureUrl ?? undefined}
-                  />
-                  {textureUrl ? (
+                  {costume ? (
                     <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 bg-state-hover opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                    />
-                  ) : null}
+                      className="relative flex h-full w-full bg-cover bg-center"
+                      style={{ backgroundImage: `url(${costume.sceneUrl})` }}
+                    >
+                      <AgentAvatarImg
+                        name={agentId}
+                        alt=""
+                        className={AGENT_AVATAR_IMAGE}
+                      />
+                      {hoverLayer}
+                    </span>
+                  ) : (
+                    <>
+                      <AgentAvatarImg
+                        name={agentId}
+                        alt=""
+                        className={AGENT_AVATAR_IMAGE}
+                        textureUrl={textureUrl ?? undefined}
+                      />
+                      {textureUrl ? hoverLayer : null}
+                    </>
+                  )}
                 </Link>
               }
             />
@@ -403,8 +429,27 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
           <AgentAvatarImg name="" alt="" className={AGENT_AVATAR_IMAGE} />
         </div>
       )}
+      {costume ? <GreetingAvatarHat url={costume.hatUrl} /> : null}
       <PinPill />
     </div>
+  );
+}
+
+/**
+ * The costume's hat, worn over the frame's top-right corner. It overhangs the
+ * frame, so it is drawn outside the clipped link. The cut in the scene's alpha
+ * was baked from exactly this placement, so moving or resizing the hat means
+ * baking a new scene. Decorative and click-through: the profile link
+ * underneath stays the whole target, and the pin pill, drawn later, stays on
+ * top of it.
+ */
+function GreetingAvatarHat({ url }: { url: string }) {
+  return (
+    <img
+      src={url}
+      alt=""
+      className="pointer-events-none absolute -top-[11px] left-[35px] w-6 rotate-[14deg]"
+    />
   );
 }
 
@@ -564,6 +609,7 @@ function AgentComposerPage() {
           </div>
         </div>
       </main>
+      <HalloweenHomeActivity />
       <ChatHomeCompliance />
     </div>
   );

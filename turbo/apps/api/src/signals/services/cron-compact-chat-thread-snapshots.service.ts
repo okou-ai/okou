@@ -2,11 +2,7 @@ import { command } from "ccstate";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { gzip } from "node:zlib";
-import {
-  chatThreadSnapshotArchiveSchema,
-  chatThreadSnapshotProjectionSchema,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { chatThreadSnapshotArchiveSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   and,
   asc,
@@ -21,7 +17,6 @@ import {
   lte,
   or,
   sql,
-  type SQLWrapper,
 } from "drizzle-orm";
 import {
   chatThreadEventSequences,
@@ -31,19 +26,12 @@ import {
   chatThreadSnapshotGcState,
   chatThreadSnapshots,
 } from "@okouai/db/schema/chat-thread-snapshot";
-import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
-import type { infer as zInfer } from "zod";
-import {
-  nullableDriverValueDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { mapConcurrent } from "../../lib/map-concurrent";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   deleteS3Objects,
   listS3ObjectsPage,
@@ -51,7 +39,9 @@ import {
   type S3Object,
 } from "../external/s3";
 import { isAbortError, settleIncludingAbort } from "../utils";
+import { chatThreadSnapshotHeadSelection } from "./chat-thread-event.service";
 import { chatThreadSnapshotObjectKey } from "./chat-thread-snapshot-object";
+import { loadChatThreadSnapshotProjection$ } from "./chat-thread-snapshot-projection.service";
 
 interface SnapshotCompactionStats {
   readonly scopes: number;
@@ -70,17 +60,11 @@ interface SnapshotGcStats {
 }
 
 const log = logger("api:cron:compact-chat-thread-snapshots");
-type SnapshotRootDb = Pick<
-  Db,
-  "select" | "selectDistinct" | "update" | "insert" | "delete"
->;
 const CHAT_THREAD_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_CHAT_THREAD_SNAPSHOT_BATCH_SIZE = 500;
 const CHAT_THREAD_SNAPSHOT_PUBLISH_CONCURRENCY = 10;
 const DEFAULT_CHAT_THREAD_EVENT_PRUNE_BATCH_SIZE = 500;
 const CANDIDATE_SCAN_PAGE_SIZE = 500;
-/** Larger pages reduce round trips when rebuilding a scope's full sidebar. */
-const PROJECTION_SCAN_PAGE_SIZE = 1000;
 const gzipAsync = promisify(gzip);
 
 function chatThreadSnapshotBatchSize(): number {
@@ -147,98 +131,100 @@ function scopeKey(scope: ScopeKey): string {
 }
 
 /** Snapshot heads for a bounded set of scopes, read by the users they name. */
-async function loadSnapshotHeads(
-  db: SnapshotRootDb,
-  scopes: readonly ScopeKey[],
-): Promise<ReadonlyMap<string, SnapshotHead>> {
-  if (scopes.length === 0) {
-    return new Map();
-  }
-  const rows = await db
-    .select({
-      userId: chatThreadSnapshots.userId,
-      orgId: chatThreadSnapshots.orgId,
-      latestEventId: chatThreadSnapshots.latestEventId,
-      latestEventSeqId: chatThreadSnapshots.latestEventSeqId,
-      objectKey: chatThreadSnapshots.objectKey,
-      contentDigest: chatThreadSnapshots.contentDigest,
-      updatedAt: chatThreadSnapshots.updatedAt,
-    })
-    .from(chatThreadSnapshots)
-    .where(
-      inArray(chatThreadSnapshots.userId, [
-        ...new Set(
-          scopes.map((scope) => {
-            return scope.userId;
-          }),
-        ),
-      ]),
+const loadSnapshotHeads$ = command(
+  async (
+    { get },
+    scopes: readonly ScopeKey[],
+  ): Promise<ReadonlyMap<string, SnapshotHead>> => {
+    if (scopes.length === 0) {
+      return new Map();
+    }
+    const db = get(db$);
+    const rows = await db
+      .select(chatThreadSnapshotHeadSelection())
+      .from(chatThreadSnapshots)
+      .where(
+        inArray(chatThreadSnapshots.userId, [
+          ...new Set(
+            scopes.map((scope) => {
+              return scope.userId;
+            }),
+          ),
+        ]),
+      );
+    return new Map(
+      rows.map((row) => {
+        return [scopeKey(row), row] as const;
+      }),
     );
-  return new Map(
-    rows.map((row) => {
-      return [scopeKey(row), row] as const;
-    }),
-  );
-}
+  },
+);
 
 /**
  * The newest visible event at or below a committed sequence position. A
  * sequence position is allocated in the same statement as its event, so every
  * event up to it is committed; an id conflict can still leave a gap at the tip.
  */
-async function latestEventAtOrBelow(
-  db: SnapshotRootDb,
-  scope: ScopeKey,
-  seqId: number,
-): Promise<{ readonly id: string; readonly seqId: number } | undefined> {
-  const [event] = await db
-    .select({ id: chatThreadEvents.id, seqId: chatThreadEvents.seqId })
-    .from(chatThreadEvents)
-    .where(
-      and(
-        eq(chatThreadEvents.userId, scope.userId),
-        eq(chatThreadEvents.orgId, scope.orgId),
-        lte(chatThreadEvents.seqId, seqId),
-      ),
-    )
-    .orderBy(desc(chatThreadEvents.seqId))
-    .limit(1);
-  return event;
-}
+const latestEventAtOrBelow$ = command(
+  async (
+    { get },
+    scope: ScopeKey,
+    seqId: number,
+  ): Promise<{ readonly id: string; readonly seqId: number } | undefined> => {
+    const db = get(db$);
+    const [event] = await db
+      .select({ id: chatThreadEvents.id, seqId: chatThreadEvents.seqId })
+      .from(chatThreadEvents)
+      .where(
+        and(
+          eq(chatThreadEvents.userId, scope.userId),
+          eq(chatThreadEvents.orgId, scope.orgId),
+          lte(chatThreadEvents.seqId, seqId),
+        ),
+      )
+      .orderBy(desc(chatThreadEvents.seqId))
+      .limit(1);
+    return event;
+  },
+);
 
 /**
  * A scope needs a new snapshot when it has a visible event past its position
  * or still has the retired inline payload. A sequence that only advanced over
  * an id-conflict gap needs nothing.
  */
-async function toCandidate(
-  db: SnapshotRootDb,
-  scope: ScopeKey,
-  lastSeqId: number,
-  previous: SnapshotHead | undefined,
-): Promise<SnapshotCandidate | null> {
-  const covered = previous?.latestEventSeqId ?? 0;
-  const hasObject = previous !== undefined && previous.objectKey !== null;
-  if (hasObject && lastSeqId <= covered) {
-    return null;
-  }
-  const latest = await latestEventAtOrBelow(db, scope, lastSeqId);
-  if (hasObject && (latest === undefined || latest.seqId <= covered)) {
-    return null;
-  }
-  // An empty scope with no snapshot and only allocator gaps has nothing to
-  // publish. Subsequent cron runs must not keep sending an empty projection.
-  if (previous === undefined && latest === undefined) {
-    return null;
-  }
-  const advanced = latest !== undefined && latest.seqId > covered;
-  return {
-    ...scope,
-    previous: previous ?? null,
-    latestEventId: advanced ? latest.id : (previous?.latestEventId ?? null),
-    latestSeqId: advanced ? latest.seqId : (previous?.latestEventSeqId ?? null),
-  };
-}
+const toCandidate$ = command(
+  async (
+    { set },
+    scope: ScopeKey,
+    lastSeqId: number,
+    previous: SnapshotHead | undefined,
+  ): Promise<SnapshotCandidate | null> => {
+    const covered = previous?.latestEventSeqId ?? 0;
+    const hasObject = previous !== undefined && previous.objectKey !== null;
+    if (hasObject && lastSeqId <= covered) {
+      return null;
+    }
+    const latest = await set(latestEventAtOrBelow$, scope, lastSeqId);
+    if (hasObject && (latest === undefined || latest.seqId <= covered)) {
+      return null;
+    }
+    // An empty scope with no snapshot and only allocator gaps has nothing to
+    // publish. Subsequent cron runs must not keep sending an empty projection.
+    if (previous === undefined && latest === undefined) {
+      return null;
+    }
+    const advanced = latest !== undefined && latest.seqId > covered;
+    return {
+      ...scope,
+      previous: previous ?? null,
+      latestEventId: advanced ? latest.id : (previous?.latestEventId ?? null),
+      latestSeqId: advanced
+        ? latest.seqId
+        : (previous?.latestEventSeqId ?? null),
+    };
+  },
+);
 
 /**
  * Finds up to `limit` scopes to compact. The global cron pages through
@@ -246,264 +232,161 @@ async function toCandidate(
  * the same statement as every thread event, so it is the complete and small
  * list of scopes that can have changed.
  */
-async function findSnapshotCandidates(
-  db: SnapshotRootDb,
-  limit: number,
-): Promise<readonly SnapshotCandidate[]> {
-  const candidates: SnapshotCandidate[] = [];
-  let after: ScopeKey | null = null;
-  while (candidates.length < limit) {
-    const page: readonly (ScopeKey & { readonly lastSeqId: number })[] =
-      await db
-        .select({
-          userId: chatThreadEventSequences.userId,
-          orgId: chatThreadEventSequences.orgId,
-          lastSeqId: chatThreadEventSequences.lastSeqId,
-        })
-        .from(chatThreadEventSequences)
-        .where(
-          and(
-            after === null
-              ? undefined
-              : or(
-                  gt(chatThreadEventSequences.userId, after.userId),
-                  and(
-                    eq(chatThreadEventSequences.userId, after.userId),
-                    gt(chatThreadEventSequences.orgId, after.orgId),
+const findSnapshotCandidates$ = command(
+  async (
+    { get, set },
+    limit: number,
+  ): Promise<readonly SnapshotCandidate[]> => {
+    const candidates: SnapshotCandidate[] = [];
+    let after: ScopeKey | null = null;
+    const db = get(db$);
+    while (candidates.length < limit) {
+      const page: readonly (ScopeKey & { readonly lastSeqId: number })[] =
+        await db
+          .select({
+            userId: chatThreadEventSequences.userId,
+            orgId: chatThreadEventSequences.orgId,
+            lastSeqId: chatThreadEventSequences.lastSeqId,
+          })
+          .from(chatThreadEventSequences)
+          .where(
+            and(
+              after === null
+                ? undefined
+                : or(
+                    gt(chatThreadEventSequences.userId, after.userId),
+                    and(
+                      eq(chatThreadEventSequences.userId, after.userId),
+                      gt(chatThreadEventSequences.orgId, after.orgId),
+                    ),
                   ),
-                ),
-          ),
-        )
-        .orderBy(
-          asc(chatThreadEventSequences.userId),
-          asc(chatThreadEventSequences.orgId),
-        )
-        .limit(CANDIDATE_SCAN_PAGE_SIZE);
-    const heads = await loadSnapshotHeads(db, page);
-    for (const row of page) {
-      if (candidates.length >= limit) {
+            ),
+          )
+          .orderBy(
+            asc(chatThreadEventSequences.userId),
+            asc(chatThreadEventSequences.orgId),
+          )
+          .limit(CANDIDATE_SCAN_PAGE_SIZE);
+      const heads = await set(loadSnapshotHeads$, page);
+      for (const row of page) {
+        if (candidates.length >= limit) {
+          break;
+        }
+        const candidate = await set(
+          toCandidate$,
+          row,
+          row.lastSeqId,
+          heads.get(scopeKey(row)),
+        );
+        if (candidate) {
+          candidates.push(candidate);
+        }
+      }
+      const last = page.at(-1);
+      if (!last || page.length < CANDIDATE_SCAN_PAGE_SIZE) {
         break;
       }
-      const candidate = await toCandidate(
-        db,
-        row,
-        row.lastSeqId,
-        heads.get(scopeKey(row)),
-      );
-      if (candidate) {
-        candidates.push(candidate);
-      }
+      after = last;
     }
-    const last = page.at(-1);
-    if (!last || page.length < CANDIDATE_SCAN_PAGE_SIZE) {
-      break;
-    }
-    after = last;
-  }
-  return candidates;
-}
-
-/** A timestamp rendered exactly as `jsonb_build_object` renders it. */
-function jsonTimestamp(column: SQLWrapper) {
-  return sql`to_jsonb(${column}) #>> '{}'`.mapWith(pgTextDecoder);
-}
-
-function nullableJsonTimestamp(column: SQLWrapper) {
-  return sql`to_jsonb(${column}) #>> '{}'`.mapWith(
-    nullableDriverValueDecoder(pgTextDecoder),
-  );
-}
-
-/**
- * The scope's sidebar projection: the user's threads under the organization's
- * Agents, pinned first, then newest message first. Reads the org's Agent ids
- * and pages the user's threads by the (user_id, last_message_at, id) index,
- * filtering by Agent in the application instead of joining.
- */
-async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
-  const orgAgents = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(eq(agents.orgId, scope.orgId));
-  const agentIds = new Set(
-    orgAgents.map((agent) => {
-      return agent.id;
-    }),
-  );
-  const threads: zInfer<typeof chatThreadSnapshotProjectionSchema>[] = [];
-  let after: { readonly lastMessageAt: Date; readonly id: string } | null =
-    null;
-  for (;;) {
-    // Match the index's NULLS LAST order; both cursor columns are non-null.
-    const page = await db
-      .select({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-        title: chatThreads.title,
-        lastMessageAt: chatThreads.lastMessageAt,
-        sortAt: jsonTimestamp(chatThreads.lastMessageAt),
-        createdAt: jsonTimestamp(chatThreads.createdAt),
-        updatedAt: jsonTimestamp(chatThreads.updatedAt),
-        pinnedAt: nullableJsonTimestamp(chatThreads.pinnedAt),
-        pinOrder: chatThreads.pinOrder,
-        archived: chatThreads.archived,
-        hidden: chatThreads.hidden,
-        muted: chatThreads.muted,
-        renamedAt: nullableJsonTimestamp(chatThreads.renamedAt),
-        selectedModel: chatThreads.selectedModel,
-        modelSettings: chatThreads.modelSettings,
-        codexServiceTier: chatThreads.codexServiceTier,
-        computerUseHostId: chatThreads.computerUseHostId,
-        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-      })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.userId, scope.userId),
-          after === null
-            ? undefined
-            : lt(
-                sql`(${chatThreads.lastMessageAt}, ${chatThreads.id})`,
-                sql`(${sql.param(after.lastMessageAt, chatThreads.lastMessageAt)}, ${sql.param(after.id, chatThreads.id)})`,
-              ),
-        ),
-      )
-      .orderBy(
-        sql`${desc(chatThreads.lastMessageAt)} nulls last`,
-        sql`${desc(chatThreads.id)} nulls last`,
-      )
-      .limit(PROJECTION_SCAN_PAGE_SIZE);
-    for (const thread of page) {
-      if (thread.agentId === null || !agentIds.has(thread.agentId)) {
-        continue;
-      }
-      threads.push(
-        chatThreadSnapshotProjectionSchema.parse({
-          id: thread.id,
-          agentId: thread.agentId,
-          title: thread.title,
-          sortAt: thread.sortAt,
-          createdAt: thread.createdAt,
-          updatedAt: thread.updatedAt,
-          pinnedAt: thread.pinnedAt,
-          pinOrder: thread.pinOrder,
-          archived: thread.archived,
-          hidden: thread.hidden,
-          muted: thread.muted,
-          renamedAt: thread.renamedAt,
-          selectedModel: thread.selectedModel,
-          modelSettings: modelSettingsSchema.parse(thread.modelSettings ?? {}),
-          serviceTier: thread.codexServiceTier === "fast" ? "priority" : null,
-          computerUseHostId: thread.computerUseHostId,
-          cloudBrowserEnabled: thread.cloudBrowserEnabled,
-        }),
-      );
-    }
-    const last = page.at(-1);
-    if (!last || page.length < PROJECTION_SCAN_PAGE_SIZE) {
-      break;
-    }
-    after = { lastMessageAt: last.lastMessageAt, id: last.id };
-  }
-  // Pinned threads first; both groups keep the newest-message-first order.
-  return [
-    ...threads.filter((thread) => {
-      return thread.pinnedAt !== null;
-    }),
-    ...threads.filter((thread) => {
-      return thread.pinnedAt === null;
-    }),
-  ];
-}
+    return candidates;
+  },
+);
 
 /**
  * Publishes one scope's snapshot head with a single-row compare-and-set on the
  * head the candidate was read from. A lost race is left for the next run.
  */
-async function publishChatThreadSnapshot(
-  db: SnapshotRootDb,
-  candidate: SnapshotCandidate,
-  objectKey: string,
-  contentDigest: string,
-): Promise<boolean> {
-  const updatedAt = nowDate();
-  if (candidate.previous === null) {
-    const inserted = await db
-      .insert(chatThreadSnapshots)
-      .values({
-        userId: candidate.userId,
-        orgId: candidate.orgId,
+const publishChatThreadSnapshot$ = command(
+  async (
+    { set },
+    candidate: SnapshotCandidate,
+    objectKey: string,
+    contentDigest: string,
+  ): Promise<boolean> => {
+    const updatedAt = nowDate();
+    const db = set(writeDb$);
+    if (candidate.previous === null) {
+      const inserted = await db
+        .insert(chatThreadSnapshots)
+        .values({
+          userId: candidate.userId,
+          orgId: candidate.orgId,
+          latestEventId: candidate.latestEventId,
+          latestEventSeqId: candidate.latestSeqId,
+          objectKey,
+          contentDigest,
+          createdAt: updatedAt,
+          updatedAt,
+        })
+        .onConflictDoNothing()
+        .returning({ userId: chatThreadSnapshots.userId });
+      return inserted.length > 0;
+    }
+    const previous = candidate.previous;
+    const updated = await db
+      .update(chatThreadSnapshots)
+      .set({
         latestEventId: candidate.latestEventId,
         latestEventSeqId: candidate.latestSeqId,
         objectKey,
         contentDigest,
-        createdAt: updatedAt,
         updatedAt,
       })
-      .onConflictDoNothing()
+      .where(
+        and(
+          eq(chatThreadSnapshots.userId, candidate.userId),
+          eq(chatThreadSnapshots.orgId, candidate.orgId),
+          eq(chatThreadSnapshots.updatedAt, previous.updatedAt),
+          sql`${chatThreadSnapshots.objectKey} IS NOT DISTINCT FROM ${previous.objectKey}`,
+          sql`${chatThreadSnapshots.latestEventSeqId} IS NOT DISTINCT FROM ${previous.latestEventSeqId}`,
+        ),
+      )
       .returning({ userId: chatThreadSnapshots.userId });
-    return inserted.length > 0;
-  }
-  const previous = candidate.previous;
-  const updated = await db
-    .update(chatThreadSnapshots)
-    .set({
-      latestEventId: candidate.latestEventId,
-      latestEventSeqId: candidate.latestSeqId,
+    return updated.length > 0;
+  },
+);
+
+const compactCandidate$ = command(
+  async (
+    { set },
+    candidate: SnapshotCandidate,
+    storage: SnapshotStorage,
+    signal?: AbortSignal,
+  ): Promise<boolean> => {
+    signal?.throwIfAborted();
+    const chatThreads = chatThreadSnapshotArchiveSchema.parse({
+      chatThreads: await set(loadChatThreadSnapshotProjection$, candidate),
+    }).chatThreads;
+    signal?.throwIfAborted();
+    const compressed = await gzipAsync(
+      Buffer.from(JSON.stringify({ chatThreads })),
+    );
+    signal?.throwIfAborted();
+    const contentDigest = createHash("sha256").update(compressed).digest("hex");
+    const previousKey = candidate.previous?.objectKey ?? null;
+    // Only the sequence moved and the projection is byte-identical: keep the
+    // existing immutable object and advance the head without another upload.
+    const unchanged =
+      previousKey !== null &&
+      candidate.previous?.contentDigest === contentDigest;
+    const objectKey = unchanged
+      ? previousKey
+      : chatThreadSnapshotObjectKey({
+          userId: candidate.userId,
+          orgId: candidate.orgId,
+        });
+    if (!unchanged) {
+      await storage.upload(objectKey, compressed);
+      signal?.throwIfAborted();
+    }
+    return await set(
+      publishChatThreadSnapshot$,
+      candidate,
       objectKey,
       contentDigest,
-      updatedAt,
-    })
-    .where(
-      and(
-        eq(chatThreadSnapshots.userId, candidate.userId),
-        eq(chatThreadSnapshots.orgId, candidate.orgId),
-        eq(chatThreadSnapshots.updatedAt, previous.updatedAt),
-        sql`${chatThreadSnapshots.objectKey} IS NOT DISTINCT FROM ${previous.objectKey}`,
-        sql`${chatThreadSnapshots.latestEventSeqId} IS NOT DISTINCT FROM ${previous.latestEventSeqId}`,
-      ),
-    )
-    .returning({ userId: chatThreadSnapshots.userId });
-  return updated.length > 0;
-}
-
-async function compactCandidate(
-  db: SnapshotRootDb,
-  candidate: SnapshotCandidate,
-  storage: SnapshotStorage,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  signal?.throwIfAborted();
-  const chatThreads = chatThreadSnapshotArchiveSchema.parse({
-    chatThreads: await loadScopeProjection(db, candidate),
-  }).chatThreads;
-  signal?.throwIfAborted();
-  const compressed = await gzipAsync(
-    Buffer.from(JSON.stringify({ chatThreads })),
-  );
-  const contentDigest = createHash("sha256").update(compressed).digest("hex");
-  const previousKey = candidate.previous?.objectKey ?? null;
-  // Only the sequence moved and the projection is byte-identical: keep the
-  // existing immutable object and advance the head without another upload.
-  const unchanged =
-    previousKey !== null && candidate.previous?.contentDigest === contentDigest;
-  const objectKey = unchanged
-    ? previousKey
-    : chatThreadSnapshotObjectKey({
-        userId: candidate.userId,
-        orgId: candidate.orgId,
-      });
-  if (!unchanged) {
-    await storage.upload(objectKey, compressed);
-    signal?.throwIfAborted();
-  }
-  return await publishChatThreadSnapshot(
-    db,
-    candidate,
-    objectKey,
-    contentDigest,
-  );
-}
+    );
+  },
+);
 
 function chatThreadSnapshotGcPrefixes(now: Date): readonly string[] {
   const slot = Math.floor(now.getTime() / SNAPSHOT_GC_SLOT_MS);
@@ -700,65 +583,68 @@ const collectChatThreadSnapshotGarbage$ = command(
  * expired events, one bounded read gets their scopes' snapshot positions, and
  * one DELETE removes only the events a published snapshot already covers.
  */
-async function pruneCompactedEvents(
-  db: SnapshotRootDb,
-  limit: number,
-): Promise<number> {
-  const cutoff = new Date(nowDate().getTime() - CHAT_THREAD_EVENT_RETENTION_MS);
-  const expired = await db
-    .select({
-      id: chatThreadEvents.id,
-      userId: chatThreadEvents.userId,
-      orgId: chatThreadEvents.orgId,
-      seqId: chatThreadEvents.seqId,
-    })
-    .from(chatThreadEvents)
-    .where(
-      and(
-        lt(chatThreadEvents.createdAt, cutoff),
-        // Eligibility must precede LIMIT: an uncovered expired prefix would
-        // otherwise be selected on every run and starve later covered events.
-        // The head lookup uses its (user_id, org_id) primary key; the bounded
-        // read below still rechecks heads before deleting a selected batch.
-        exists(
-          db
-            .select({ userId: chatThreadSnapshots.userId })
-            .from(chatThreadSnapshots)
-            .where(
-              and(
-                eq(chatThreadSnapshots.userId, chatThreadEvents.userId),
-                eq(chatThreadSnapshots.orgId, chatThreadEvents.orgId),
-                gte(
-                  chatThreadSnapshots.latestEventSeqId,
-                  chatThreadEvents.seqId,
+const pruneCompactedEvents$ = command(
+  async ({ get, set }, limit: number): Promise<number> => {
+    const cutoff = new Date(
+      nowDate().getTime() - CHAT_THREAD_EVENT_RETENTION_MS,
+    );
+    const db = get(db$);
+    const expired = await db
+      .select({
+        id: chatThreadEvents.id,
+        userId: chatThreadEvents.userId,
+        orgId: chatThreadEvents.orgId,
+        seqId: chatThreadEvents.seqId,
+      })
+      .from(chatThreadEvents)
+      .where(
+        and(
+          lt(chatThreadEvents.createdAt, cutoff),
+          // Eligibility must precede LIMIT: an uncovered expired prefix would
+          // otherwise be selected on every run and starve later covered events.
+          // The head lookup uses its (user_id, org_id) primary key; the bounded
+          // read below still rechecks heads before deleting a selected batch.
+          exists(
+            db
+              .select({ userId: chatThreadSnapshots.userId })
+              .from(chatThreadSnapshots)
+              .where(
+                and(
+                  eq(chatThreadSnapshots.userId, chatThreadEvents.userId),
+                  eq(chatThreadSnapshots.orgId, chatThreadEvents.orgId),
+                  gte(
+                    chatThreadSnapshots.latestEventSeqId,
+                    chatThreadEvents.seqId,
+                  ),
                 ),
               ),
-            ),
+          ),
         ),
-      ),
-    )
-    .orderBy(asc(chatThreadEvents.createdAt), asc(chatThreadEvents.id))
-    .limit(limit);
-  const heads = await loadSnapshotHeads(db, expired);
-  const covered = expired
-    .filter((event) => {
-      const covering = heads.get(scopeKey(event))?.latestEventSeqId;
-      return (
-        covering !== null && covering !== undefined && event.seqId <= covering
-      );
-    })
-    .map((event) => {
-      return event.id;
-    });
-  if (covered.length === 0) {
-    return 0;
-  }
-  const deleted = await db
-    .delete(chatThreadEvents)
-    .where(inArray(chatThreadEvents.id, covered))
-    .returning({ id: chatThreadEvents.id });
-  return deleted.length;
-}
+      )
+      .orderBy(asc(chatThreadEvents.createdAt), asc(chatThreadEvents.id))
+      .limit(limit);
+    const heads = await set(loadSnapshotHeads$, expired);
+    const covered = expired
+      .filter((event) => {
+        const covering = heads.get(scopeKey(event))?.latestEventSeqId;
+        return (
+          covering !== null && covering !== undefined && event.seqId <= covering
+        );
+      })
+      .map((event) => {
+        return event.id;
+      });
+    if (covered.length === 0) {
+      return 0;
+    }
+    const writeDb = set(writeDb$);
+    const deleted = await writeDb
+      .delete(chatThreadEvents)
+      .where(inArray(chatThreadEvents.id, covered))
+      .returning({ id: chatThreadEvents.id });
+    return deleted.length;
+  },
+);
 
 export const compactChatThreadSnapshots$ = command(
   async (
@@ -766,7 +652,7 @@ export const compactChatThreadSnapshots$ = command(
     signal: AbortSignal,
   ): Promise<SnapshotCompactionStats> => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const db = set(writeDb$);
+    set(writeDb$);
     const storage: SnapshotStorage = {
       upload: async (objectKey, body) => {
         await get(
@@ -780,15 +666,15 @@ export const compactChatThreadSnapshots$ = command(
     return await (async (
       signal: AbortSignal,
     ): Promise<SnapshotCompactionStats> => {
-      const candidates = await findSnapshotCandidates(
-        db,
+      const candidates = await set(
+        findSnapshotCandidates$,
         chatThreadSnapshotBatchSize(),
       );
       const published = await mapConcurrent(
         candidates,
         CHAT_THREAD_SNAPSHOT_PUBLISH_CONCURRENCY,
         async (candidate) => {
-          return (await compactCandidate(db, candidate, storage, signal))
+          return (await set(compactCandidate$, candidate, storage, signal))
             ? candidate
             : null;
         },
@@ -809,8 +695,8 @@ export const compactChatThreadSnapshots$ = command(
       }
 
       signal?.throwIfAborted();
-      const eventsPruned = await pruneCompactedEvents(
-        db,
+      const eventsPruned = await set(
+        pruneCompactedEvents$,
         chatThreadEventPruneBatchSize(),
       );
 

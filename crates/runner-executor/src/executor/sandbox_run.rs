@@ -38,7 +38,7 @@ use super::{
 use crate::dns::{DnsReadinessLogObservation, inspect_readiness_log_segment};
 use crate::duration::duration_ms;
 use crate::home_image_cache::{
-    HomeCacheCheckoutResult, HomeImageLease, HomeImageLeaseIdentity, HomeImagePrepareLockPolicy,
+    HomeCacheCheckoutResult, HomeImageLease, HomeImageLeaseIdentity, HomeImagePreparePolicy,
     HomeImagePrepareRequest,
 };
 use crate::home_mount::ensure_home_drive_mounted;
@@ -1021,16 +1021,16 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
-    let lease = if let Some(source) = params.home_source_run_id {
+    let lease = if let Some(source) = params.required_home_source_run_id {
         cache
-            .prepare_from_source(request, source, params.home_image_prepare_lock_policy)
+            .prepare_from_source(request, source, params.home_image_prepare_policy)
             .await
     } else {
-        match params.home_image_prepare_lock_policy {
-            HomeImagePrepareLockPolicy::WaitForTransientContention => cache.prepare(request).await,
-            HomeImagePrepareLockPolicy::ImmediateFallback => {
+        match params.home_image_prepare_policy {
+            HomeImagePreparePolicy::TryCacheWithLockWait => cache.prepare(request).await,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait | HomeImagePreparePolicy::SkipCache => {
                 cache
-                    .prepare_with_lock_policy(request, params.home_image_prepare_lock_policy)
+                    .prepare_with_policy(request, params.home_image_prepare_policy)
                     .await
             }
         }
@@ -1854,6 +1854,11 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
         outcome: ExecuteOutcome {
             failure: agent_result.failure,
             sandbox_reuse_disposition: agent_result.sandbox_reuse_disposition,
+            storage_fingerprints: context
+                .storage_manifest
+                .as_ref()
+                .map(StorageFingerprints::from_manifest)
+                .unwrap_or_default(),
             sandbox: Some(sandbox),
             source_ip,
             network_log_session: Some(network_log_session),
@@ -1933,6 +1938,12 @@ pub(super) async fn register_proxy(
         secret_connector_metadata_map: context.secret_connector_metadata_map.as_ref(),
         vars: context.vars.as_ref(),
         capture_network_bodies: context.capture_network_bodies.unwrap_or(false),
+        outlook_mail_review_enabled: context
+            .feature_flags
+            .as_ref()
+            .and_then(|flags| flags.get("outlookChatMail"))
+            .copied()
+            .unwrap_or(false),
         billable_firewalls: &context.billable_firewalls,
         model_usage_provider: context.model_usage_provider.as_deref(),
         model_usage_long_context_min_total_input_tokens: context

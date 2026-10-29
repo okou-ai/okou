@@ -14,6 +14,51 @@ import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 const context = testContext();
 
 describe("AgentPhone verification send cooldown", () => {
+  it("reserves a cold user/org race once without consuming the rejected phone", async () => {
+    const integrations = createBddIntegrationApi(context);
+    integrations.configureAgentPhoneProvider();
+    const actor = integrations.user();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
+    mockNow(Date.parse("2026-10-22T00:00:00Z"));
+    await integrations.getAgentPhoneLinkStatus(actor);
+    server.use(
+      http.post("https://api.agentphone.test/v1/messages", () => {
+        return HttpResponse.json({});
+      }),
+    );
+
+    const results = await Promise.all([
+      integrations.requestStartAgentPhoneLink(
+        actor,
+        { phoneHandle: firstPhone },
+        [200, 429],
+      ),
+      integrations.requestStartAgentPhoneLink(
+        actor,
+        { phoneHandle: secondPhone },
+        [200, 429],
+      ),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 429]);
+    const rejectedPhone = results[0].status === 429 ? firstPhone : secondPhone;
+    const independent = await integrations.requestStartAgentPhoneLink(
+      integrations.user(),
+      { phoneHandle: rejectedPhone },
+      [200],
+    );
+    expect(independent.body).toStrictEqual({
+      phoneHandle: rejectedPhone,
+      verificationSent: true,
+    });
+  });
+
   it.each(["provider rejection", "network failure"])(
     "keeps both cooldowns after a %s until the original 60 seconds expire",
     async (failure) => {

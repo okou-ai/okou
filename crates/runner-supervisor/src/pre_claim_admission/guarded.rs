@@ -166,7 +166,7 @@ impl GuardedSpeculativeAdmission {
         };
         let matches = candidate
             .runner_preference()
-            .and_then(|p| p.target().source_run_id())
+            .and_then(|p| p.target().predecessor_run_id())
             .is_some_and(|source| {
                 owner.matches_source_claim(candidate.reuse_key(), source, candidate.profile_name())
             });

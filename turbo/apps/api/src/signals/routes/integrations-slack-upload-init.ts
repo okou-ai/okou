@@ -48,12 +48,11 @@ function canonicalDestination(
   target: {
     readonly channelId: string;
     readonly workspaceId: string;
-    readonly workspaceIdentity: boolean;
   },
 ) {
   return {
     channelId: target.channelId,
-    ...(target.workspaceIdentity ? { workspaceId: target.workspaceId } : {}),
+    workspaceId: target.workspaceId,
     ...(upload.threadTs ? { threadTs: upload.threadTs } : {}),
     ...(upload.title ? { title: upload.title } : {}),
     ...(upload.initialComment ? { initialComment: upload.initialComment } : {}),

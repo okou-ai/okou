@@ -184,7 +184,7 @@ impl Fixture {
                     7,
                 )
                 .unwrap(),
-                runner_provider::RunnerPreferenceTarget::SourceSandbox(source),
+                runner_provider::RunnerPreferenceTarget::ExactSandbox(source),
                 std::time::Instant::now() + Duration::from_secs(30),
             ))
     }
@@ -287,7 +287,7 @@ async fn rejected_claim_reparks_and_returns_the_original_exact_owner() {
         .with_parsed_runner_preference_context(runner_provider::parse_runner_preference(Some(serde_json::json!({
             "kind": "preference", "tier": "exactSandbox",
             "runnerIdentity": { "runnerId": "11111111-1111-4111-8111-111111111111", "heartbeatGeneration": 7 },
-            "expiresAt": "2099-01-01T00:00:00Z", "finalizingSourceRunId": fixture.producer
+            "expiresAt": "2099-01-01T00:00:00Z", "predecessorRunId": fixture.producer
         }))).unwrap());
     admission
         .prepare_and_claim(provider, candidate, &fixture.tracker)

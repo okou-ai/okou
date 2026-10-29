@@ -1,6 +1,8 @@
 import { command } from "ccstate";
 import { and, eq, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import {
+  discriminatedUnion as zDiscriminatedUnion,
+  literal as zLiteral,
   object as zObject,
   uuid as zUuid,
   string as zString,
@@ -21,17 +23,24 @@ import { env } from "../../lib/env";
 import { generatePresignedGetUrl } from "../external/s3";
 import { assertWorkflowAttachmentOwner } from "./workflow-attachment-cleanup.service";
 
-export const claimedWorkflowSchema = zObject({
+const claimedWorkflowIdentitySchema = zObject({
   id: zUuid(),
-  orgId: zString(),
   name: zString(),
-  description: zString().nullable(),
-  instruction: zString().nullable(),
-  attachments: workflowAttachmentsSchema,
 });
+export const claimedWorkflowSchema = zDiscriminatedUnion("delivery", [
+  claimedWorkflowIdentitySchema.extend({ delivery: zLiteral("download") }),
+  claimedWorkflowIdentitySchema.extend({
+    delivery: zLiteral("inline"),
+    orgId: zString(),
+    description: zString().nullable(),
+    instruction: zString().nullable(),
+    attachments: workflowAttachmentsSchema,
+  }),
+]);
 export type ClaimedWorkflow = zInfer<typeof claimedWorkflowSchema>;
 
 export interface WorkflowClaimInput {
+  readonly delivery: "inline" | "download";
   readonly selection: StoredExecutionContext["customWorkflowSelection"];
   readonly skillRoot: string;
   readonly invokedWorkflowId: string | null;
@@ -42,6 +51,7 @@ export interface WorkflowClaimInput {
 export function workflowClaimInput(
   context: StoredExecutionContext,
   prompt: string,
+  delivery: WorkflowClaimInput["delivery"],
 ): WorkflowClaimInput {
   const skillRoot =
     context.cliAgentType === "pi"
@@ -65,6 +75,7 @@ export function workflowClaimInput(
     /^\/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])(?:\s|$)/u.exec(prompt.trim())?.[1] ??
     null;
   return {
+    delivery,
     selection: context.customWorkflowSelection,
     skillRoot,
     invokedWorkflowId:
@@ -118,15 +129,20 @@ export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
     notInArray(workflows.name, [...SEED_SKILLS]),
     sql`NOT (${JSON.stringify(protectedPaths)}::jsonb ? (${input.skillRoot} || '/' || ${workflows.name}))`,
   );
+  const inlineFields =
+    input.delivery === "inline"
+      ? sql`, ${workflows.orgId} AS "orgId", ${workflows.description} AS description,
+        ${workflows.instruction} AS instruction, ${workflows.attachments} AS attachments`
+      : sql``;
   return sql`selected_workflows AS MATERIALIZED (
-      SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.orgId} AS "orgId", ${workflows.name} AS name,
-        ${workflows.description} AS description, ${workflows.instruction} AS instruction, ${workflows.attachments} AS attachments
+      SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.name} AS name,
+        ${input.delivery}::text AS delivery, (${workflows.attachments} IS NOT NULL) AS available${inlineFields}
       FROM ${workflows} INNER JOIN ${agents} ON ${eq(agents.id, workflows.agentId)} CROSS JOIN locked_run
       WHERE ${eligible}
       ORDER BY ${workflows.name}, (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = locked_run."userId") DESC, ${workflows.createdAt}, ${workflows.id}
     ), workflow_selection AS MATERIALIZED (
       SELECT COALESCE(jsonb_agg(to_jsonb(selected_workflows)), '[]'::jsonb) AS documents,
-        COALESCE(bool_and(attachments IS NOT NULL AND NOT (${JSON.stringify(input.ambiguousMountPaths)}::jsonb ? (${input.skillRoot} || '/' || name))), true) AS available
+        COALESCE(bool_and(available AND NOT (${JSON.stringify(input.ambiguousMountPaths)}::jsonb ? (${input.skillRoot} || '/' || name))), true) AS available
       FROM selected_workflows
     ), workflow_admission AS MATERIALIZED (
       SELECT * FROM workflow_selection, locked_run
@@ -156,7 +172,7 @@ export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
     )`;
 }
 
-/** Signing follows the committed selection; claim never reads an R2 archive. */
+/** Temporary outgoing-reader producer; remove in the second release (#43642). */
 export const materializeClaimedWorkflowDocuments$ = command(
   async (
     { get },
@@ -168,6 +184,9 @@ export const materializeClaimedWorkflowDocuments$ = command(
   ): Promise<WorkflowSkillDocument[]> => {
     return await Promise.all(
       input.workflows.map(async (workflow) => {
+        if (workflow.delivery !== "inline") {
+          throw new Error("Inline Workflow claim is missing its document");
+        }
         const descriptor = workflow.attachments;
         let attachments: WorkflowSkillDocument["attachments"] = null;
         if (descriptor.kind === "bundle") {

@@ -796,6 +796,16 @@ concentric: the inner arc turns too late, and the corner reads as a mistake
 rather than as a nested surface. A layer that meets the edge with no inset
 keeps the dialog's own radius.
 
+The shared `Drawer` is a modal, swipe-down bottom surface built on Base UI's
+Drawer. `DrawerContent` owns its portal, backdrop, dynamic viewport cap,
+horizontal/bottom safe areas, swipe motion, and translated close control.
+Keep a fixed `DrawerHeader` above a `min-h-0 flex-1` scrolling body, such as
+`DialogBody`. Responsive forms can use `Dialog` on wide screens and `Drawer`
+on narrow screens while sharing their content and ccstate owner. When a menu
+hands off to either modal, keep the modal outside the closing menu subtree,
+transfer resource ownership in one command, and restore focus to a surviving
+control rather than the menu item that unmounted.
+
 ### Chat transcript cards
 
 `ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
@@ -1338,6 +1348,21 @@ refines and source order decides between them. Do not add the paired `.dark`
 class: a class in the selector is a first-party class-selector declaration, and
 the document-level selectors that spell it are allowlisted rather than
 exemplary.
+
+The unified chat workspace's shell paints the ground the rail stands on
+through `bg-workspace-ground`, over `--okou-workspace-ground` keyed in the same
+blocks, because the ground is defined against the canvas: the stop below its
+fill. That is gray-100 in Light; in Dark it is gray-0 under the default canvas
+and gray-50 under a palette's card. A single gray token cannot follow the fill
+across the four variants, and Dark gray-100 sits above the canvas rather than
+below it.
+
+A surface inside the sheet that should read one level below the content, such
+as the unified chat list, takes `bg-workspace-canvas-recessed`: the OKLab
+midpoint of the canvas fill and the ground, declared once at `:root` so it
+follows both through every variant. The ground spends the one clearly visible
+step between the rail and the sheet; the recessed canvas is deliberately half
+of it, so the list separates from the content without joining the rail.
 
 Consumers spell `before:bg-[length:100%_100%]` beside the two background
 utilities. `background-size: 100% 100%` and the initial `auto auto` size a

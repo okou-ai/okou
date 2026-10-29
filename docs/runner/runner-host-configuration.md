@@ -147,9 +147,9 @@ rootfs home over hit-owned files. Fresh, snapshot, blank, exact-reuse and handof
 paths retain mount/device/no-symlink and user UID/GID validation.
 
 `HomeImageCache` uses `home-image-cache`, `home-drive-v1` and canonical metadata.
-Eligibility binds the group, profile, **full configured rootfs hash**, reuse key,
-layout and exact home image bytes. A normalized/display hash or shared prefix
-cannot establish eligibility. The fixed home scope is independent of cwd.
+Eligibility binds the group, profile, reuse key, layout and exact home image
+bytes. Producer rootfs identity is provenance; it does not invalidate a compatible
+Home by itself. The fixed home scope is independent of cwd.
 New build/snapshot identities require a supported Guest/Runner pair.
 
 Home captures ordinary tools/framework files, `/home/user/.npm` and user files

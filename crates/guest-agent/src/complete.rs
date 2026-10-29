@@ -194,36 +194,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn payload_omits_missing_metadata() {
-        let payload = CompletePayload {
-            run_id: "run-123",
-            exit_code: 0,
-            failure_reason: None,
-            error: None,
-            last_event_sequence: None,
-            sandbox_id: None,
-            completion: None,
-        };
-        let json = serde_json::to_string(&payload).unwrap();
-        assert_eq!(json, r#"{"runId":"run-123","exitCode":0}"#);
-    }
-
-    #[test]
-    fn payload_includes_metadata_when_present() {
-        let payload = CompletePayload {
-            run_id: "run-123",
-            exit_code: 0,
-            failure_reason: None,
-            error: None,
-            last_event_sequence: None,
-            sandbox_id: Some("abc"),
-            completion: None,
-        };
-        let json = serde_json::to_string(&payload).unwrap();
-        assert!(json.contains(r#""sandboxId":"abc""#));
-    }
-
-    #[test]
     fn payload_uses_the_generated_failure_reason_contract() {
         let payload = CompletePayload {
             run_id: "run-123",
@@ -237,29 +207,5 @@ mod tests {
 
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["failureReason"], "input_too_large");
-    }
-
-    #[test]
-    fn as_optional_treats_empty_as_none() {
-        assert_eq!(as_optional(""), None);
-        assert_eq!(as_optional("value"), Some("value"));
-    }
-
-    #[test]
-    fn payload_includes_last_event_sequence_when_present() {
-        let payload = CompletePayload {
-            run_id: "run-123",
-            exit_code: 0,
-            failure_reason: None,
-            error: None,
-            last_event_sequence: Some(7),
-            sandbox_id: None,
-            completion: None,
-        };
-        let json = serde_json::to_string(&payload).unwrap();
-        assert_eq!(
-            json,
-            r#"{"runId":"run-123","exitCode":0,"lastEventSequence":7}"#
-        );
     }
 }

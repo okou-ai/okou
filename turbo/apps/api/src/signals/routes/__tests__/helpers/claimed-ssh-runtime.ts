@@ -89,7 +89,7 @@ export function createClaimedSshRuntimeApi(
       setupApp({ context, routes: runnersRoutes })(
         runnersJobClaimContract,
       ).claim({
-        query: { workflowSkills: "1" },
+        query: { workflowSkills: "2" },
         headers: options.runnerHeaders,
         extraHeaders: { "X-Client-Version": "0.234.18" },
         params: { id: runId },

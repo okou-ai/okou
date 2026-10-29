@@ -536,22 +536,28 @@ function HostedSiteShareSessionMenu({
 }: ShareButtonProps & { readonly session: HostedSiteShareSession }) {
   // The preview mounts this menu before its popover, so preload the current URL here.
   const link = useLoadable(session.copyUrl$);
+  const settings = useLoadable(session.hasSettings$);
   // Preload permissions alongside the current address before Share opens.
   useLoadable(session.visibility$);
   useLoadable(session.banner$);
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
   const setOpen = useSet(session.setOpen$);
+  const show = useSet(session.show$);
   const [saving, save] = useLoadableSet(session.save$);
   if (!signal) {
     return null;
   }
   return (
     <Popover
-      open={open}
+      open={open && !(settings.state === "hasData" && !settings.data)}
       onOpenChange={(nextOpen) => {
         if (saving.state !== "loading") {
-          setOpen(nextOpen);
+          if (nextOpen) {
+            detach(show(signal), Reason.DomCallback);
+          } else {
+            setOpen(false);
+          }
         }
       }}
     >

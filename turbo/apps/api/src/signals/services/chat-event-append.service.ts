@@ -55,10 +55,13 @@ function conflictClause(conflict: ChatEventAppendConflict): SQL {
  * Sorted reservations establish a common lock order. Intentional conflicts consume
  * positions; a SQL error rolls allocation back together with the insert.
  * An optional input predicate runs before counts or reservations are produced.
+ * A single-thread conditional writer may supply its observed sequence watermark;
+ * it must gate insertion on the returned reservation to yield to newer inputs.
  */
 export function canonicalChatEventInputCtes(
   values: readonly PreparedChatEventRow[],
   inputEligibility?: SQL,
+  expectedLastSeqId?: number,
 ): SQL {
   const input = JSON.stringify(
     values.map((value, ordinal) => {
@@ -81,7 +84,9 @@ export function canonicalChatEventInputCtes(
     ), counts AS MATERIALIZED (
       SELECT "chatThreadId" AS chat_thread_id, count(*) AS event_count
       FROM input GROUP BY "chatThreadId"
-    ), reserved AS (
+    ), reserved AS (${
+      expectedLastSeqId === undefined
+        ? sql`
       INSERT INTO chat_event_sequences (chat_thread_id, last_seq_id)
       SELECT counts.chat_thread_id, counts.event_count
       FROM counts
@@ -89,6 +94,16 @@ export function canonicalChatEventInputCtes(
       ON CONFLICT (chat_thread_id) DO UPDATE
         SET last_seq_id = chat_event_sequences.last_seq_id + EXCLUDED.last_seq_id
       RETURNING chat_thread_id, last_seq_id
+    `
+        : sql`
+      UPDATE chat_event_sequences AS sequence
+      SET last_seq_id = sequence.last_seq_id + counts.event_count
+      FROM counts
+      WHERE sequence.chat_thread_id = counts.chat_thread_id
+        AND sequence.last_seq_id = ${expectedLastSeqId}
+      RETURNING sequence.chat_thread_id, sequence.last_seq_id
+    `
+    }
     )
   `;
 }

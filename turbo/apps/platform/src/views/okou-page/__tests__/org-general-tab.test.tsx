@@ -80,6 +80,24 @@ test("Finish loading when the workspace has no logo", async () => {
   expect(within(settings).getByLabelText("Upload logo")).toBeEnabled();
 });
 
+test("Show the brand default instead of the provider placeholder when the workspace has no logo", async () => {
+  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
+  context.mocks.api(orgLogoContract.get, ({ respond }) => {
+    // The provider returns a generated placeholder URL even without an upload.
+    return respond(200, {
+      logoUrl: "https://img.clerk.test/default-organization.png",
+      hasImage: false,
+    });
+  });
+  await openGeneralTab();
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+
+  const logo = await within(settings).findByRole("img", { name: "Acme" });
+
+  expect(logo).not.toHaveAttribute("src");
+  expect(within(settings).getByLabelText("Upload logo")).toBeEnabled();
+});
+
 test("Reopening settings shows the current logo after an older read completes", async () => {
   const started = context.mocks.deferred<void>();
   const staleResponse = context.mocks.deferred<void>();

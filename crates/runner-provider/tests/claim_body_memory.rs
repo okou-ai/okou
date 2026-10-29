@@ -240,7 +240,7 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
             captured[0].lines().next(),
             Some(
                 format!(
-                    "POST /api/runners/jobs/{}/claim?workflowSkills=1 HTTP/1.1",
+                    "POST /api/runners/jobs/{}/claim?workflowSkills=2 HTTP/1.1",
                     expected.run_id
                 )
                 .as_str()

@@ -73,7 +73,11 @@ test("Cancel a pending custom connection and connect another account", async () 
   const first = await screen.findByRole("dialog", {
     name: "Connect Acme Search",
   });
-  await fill(within(first).getByLabelText("Secret"), "first-secret");
+  const secretInput = within(first).getByLabelText("Secret");
+  expect(secretInput).toHaveAttribute("type", "password");
+  expect(secretInput).toHaveAttribute("autocomplete", "off");
+  expect(secretInput.closest("form")).toHaveAttribute("autocomplete", "off");
+  await fill(secretInput, "first-secret");
   click(getConnectorAction("button", "Save", first));
   const requestSignal = await started.promise;
   click(getConnectorAction("button", "Close", first));

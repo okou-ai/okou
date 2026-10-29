@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
@@ -176,7 +177,9 @@ function isAgentPhoneGroupAccountCommand(
 ): boolean {
   return (
     isAgentPhoneGroupEvent(event) &&
-    (commandName === "connect" || commandName === "disconnect")
+    (commandName === "connect" ||
+      commandName === "disconnect" ||
+      commandName === "switch")
   );
 }
 
@@ -294,7 +297,7 @@ export function buildAgentPhoneConnectUrl(params: {
     }),
     channel: params.channel,
   });
-  return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
+  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.agentphone}?${query.toString()}`;
 }
 
 function inboundAgentPhoneMessageValues(
@@ -944,6 +947,7 @@ function formatHelpMessage(): string {
     "",
     `/connect - Connect this phone number to ${brandName}`,
     `/disconnect - Disconnect this phone number from ${brandName}`,
+    `/switch - Switch to a different ${brandName} account or workspace`,
     "/help - Show these commands",
     "",
     "Send a message here after connecting.",
@@ -1044,6 +1048,15 @@ const handleConnectCommand$ = command(
   },
 );
 
+const disconnectAgentPhoneUserLink$ = command(
+  async ({ set }, userLinkId: string, signal: AbortSignal): Promise<void> => {
+    await set(writeDb$)
+      .delete(agentphoneUserLinks)
+      .where(eq(agentphoneUserLinks.id, userLinkId));
+    signal.throwIfAborted();
+  },
+);
+
 const handleDisconnectCommand$ = command(
   async (
     { set },
@@ -1063,15 +1076,49 @@ const handleDisconnectCommand$ = command(
       return;
     }
 
-    await set(writeDb$)
-      .delete(agentphoneUserLinks)
-      .where(eq(agentphoneUserLinks.id, args.userLink.id));
-    signal.throwIfAborted();
+    await set(disconnectAgentPhoneUserLink$, args.userLink.id, signal);
 
     await set(
       sendAgentPhoneSlashCommandText$,
       args.event,
       `This phone number has been disconnected from ${BRAND_PRESENTATION.brandName}.`,
+      signal,
+    );
+  },
+);
+
+const handleSwitchCommand$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: AgentPhoneMessageEvent;
+      readonly userLink: AgentPhoneUserLink | null;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (isAgentPhoneGroupEvent(args.event)) {
+      await set(sendGroupConnectInDmPrompt$, args.event, signal);
+      return;
+    }
+
+    if (args.userLink) {
+      await set(disconnectAgentPhoneUserLink$, args.userLink.id, signal);
+    }
+    const connectUrl = buildAgentPhoneConnectUrl({
+      phoneHandle: args.event.fromNumber,
+      agentphoneAgentId: args.event.agentphoneAgentId,
+      secret: env("SECRETS_ENCRYPTION_KEY"),
+      channel: args.event.channel,
+    });
+    await set(
+      sendAgentPhoneSlashCommandText$,
+      args.event,
+      [
+        ...(args.userLink ? ["Your phone has been disconnected.", ""] : []),
+        `Open this link to connect to the ${BRAND_PRESENTATION.brandName} account and workspace you want to use:`,
+        "",
+        connectUrl,
+      ].join("\n"),
       signal,
     );
   },
@@ -1106,6 +1153,14 @@ const dispatchAgentPhoneCommand$ = command(
             event: args.event,
             userLink: args.userLink,
           },
+          signal,
+        );
+        return true;
+      }
+      case "switch": {
+        await set(
+          handleSwitchCommand$,
+          { event: args.event, userLink: args.userLink },
           signal,
         );
         return true;

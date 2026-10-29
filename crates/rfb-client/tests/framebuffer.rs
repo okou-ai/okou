@@ -806,7 +806,8 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
             }
         }
     }
-    let mut compressed = compress(&tiles);
+    // Encoding effort is fixture setup; retain all high-entropy bytes for decoding.
+    let mut compressed = compress_with(&mut Compress::new(Compression::fast(), true), &tiles);
     drop(tiles);
     compressed.shrink_to_fit();
     assert!(compressed.len() > 16 * 1024 * 1024);

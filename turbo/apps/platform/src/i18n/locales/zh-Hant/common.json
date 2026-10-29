@@ -520,6 +520,16 @@
       "kindIcon": "{{kind}}成果",
       "loading": "正在載入成果"
     },
+    "deletion": {
+      "cancel": "取消",
+      "delete": "刪除",
+      "deleting": "正在刪除…",
+      "description": "刪除此作品並停用其 Okou 連結。已下載或儲存至其他服務的副本會保留。",
+      "hostedDescription": "此網站及其所有已發佈版本將下線。儲存至其他服務的副本會保留。",
+      "menu": "{{title}}的更多操作",
+      "sharedDescription": "從你的作品中移除此收藏對話。原始對話及其分享連結仍可存取。",
+      "title": "刪除{{title}}？"
+    },
     "fileBadges": {
       "artwork": "美術",
       "audio": "音訊",
@@ -619,7 +629,8 @@
       "organizationOptionUnnamed": "組織內的所有成員",
       "permissionsUpdated": "訪問權限已更新",
       "publicAccess": "公開訪問",
-      "publicOption": "知道連結的所有人"
+      "publicOption": "知道連結的所有人",
+      "updateFailed": "無法更新存取權限"
     },
     "sidebar": {
       "openSharedConversation": "開啟分享的對話",
@@ -1349,9 +1360,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "輸入網址",
+    "blankPage": {
+      "description": "{{assistantName}} 工作時會在這裡開啟網頁。你也可以在上方輸入網址自行瀏覽。",
+      "title": "尚未開啟網頁"
+    },
+    "blankTabTitle": "新分頁",
     "cardTitle": "雲端瀏覽器",
-    "close": "關閉實時瀏覽器",
-    "documentTitle": "實時瀏覽器",
+    "close": "關閉雲端瀏覽器",
+    "documentTitle": "雲端瀏覽器",
     "notFound": "未找到瀏覽器",
     "open": "開啟 {{name}} 瀏覽器",
     "openAction": "開啟",
@@ -1362,6 +1379,13 @@
       "startDescription": "啟動時會盡量恢復已儲存的登入資訊和儲存資料，並重新開啟此前儲存的標籤頁。",
       "starting": "正在啟動…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} 正在工作",
+      "handBack": "交還",
+      "handBackMessage": "我在瀏覽器裡操作完了，請繼續。",
+      "memberInControl": "你正在操作",
+      "takeOver": "接管"
+    },
     "reclaimHint_one": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
     "reclaimHint_other": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
     "status": {
@@ -1369,7 +1393,7 @@
       "starting": "啟動中",
       "stopped": "已停止"
     },
-    "title": "實時瀏覽器",
+    "title": "雲端瀏覽器",
     "unavailable": {
       "description": "這個瀏覽器不屬於當前對話，或者已被刪除。",
       "title": "瀏覽器不可用"
@@ -2037,6 +2061,7 @@
         "open": "管理郵件",
         "openEmail": "開啟郵件：{{subject}}",
         "result": "{{succeeded}} 封已完成 · {{failed}} 封失敗",
+        "resultAwaiting": "{{succeeded}} 封已完成 · {{failed}} 封失敗 · {{awaitingConfirmation}} 等待傳送確認",
         "search": "搜尋主旨或寄件者",
         "selectAll": "全選",
         "selected": "已選 {{quantity}} 封",
@@ -2052,16 +2077,19 @@
       "noSubject": "（無主題）",
       "noSubjectPlain": "無主題",
       "openEmail": "開啟{{status}}郵件：{{subject}}",
-      "openInGmail": "在 Gmail 中開啟",
+      "openInProvider": "在 {{provider}} 中開啟",
       "recipientsLine": "發給{{recipients}}",
-      "reconnectDescription": "你已沒有訪問這封郵件的權限。重新連線 Gmail 後可繼續。",
-      "reconnectGmail": "重新連線 Gmail",
+      "reconnectDescription": "你已沒有訪問這封郵件的權限。重新連線 {{provider}} 後可繼續。",
       "reconnecting": "正在重新連線…",
-      "reconnectToAccess": "重新連線 Gmail 以訪問郵件：{{subject}}",
+      "reconnectProvider": "重新連線 {{provider}}",
+      "reconnectToAccess": "重新連線 {{provider}} 以訪問郵件：{{subject}}",
+      "refreshStatus": "重新整理狀態",
+      "sendingDescription": "Outlook 尚未確認傳送完成。請重新整理狀態或前往 Outlook 核實後再進行其他操作。",
       "sentToast": "郵件已傳送",
       "status": {
         "deleted": "已刪除",
         "draft": "草稿",
+        "sending": "等待傳送確認",
         "sent": "已傳送"
       },
       "toRecipients": "收件人：{{recipients}}",
@@ -2168,12 +2196,12 @@
     "resources": {
       "collapse": "收合",
       "copyLink": "複製連結",
-      "emptyDescription": "這個對話的檔案和關聯對話會顯示在這裡。",
-      "emptyTitle": "還沒有資源",
-      "loadFailed": "無法載入聊天資源",
-      "loading": "正在載入資源",
+      "emptyDescription": "這個對話裡生成的檔案、網站等成果會顯示在這裡。",
+      "emptyTitle": "還沒有成果",
+      "loadFailed": "無法載入成果",
+      "loading": "正在載入成果",
       "showMore": "顯示更多",
-      "title": "聊天資源"
+      "title": "成果和聊天"
     },
     "run": {
       "collapseWorkHistory": "收起工作記錄",
@@ -2238,7 +2266,8 @@
       "shareLink": "分享對話連結",
       "shareLinkCopied": "分享連結已複製",
       "start": "分享訊息",
-      "tooLarge": "選擇的訊息過多，請減少後再分享"
+      "tooLarge": "選擇的訊息過多，請減少後再分享",
+      "visibilityDescription": "選擇誰可以查看此對話，只有你能修改權限。"
     },
     "shortcuts": {
       "number": "數字"
@@ -3453,7 +3482,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "返回 {{brandName}}",
         "connectDescription": "把這個電話號碼關聯到你的 {{brandName}} 帳號，就可以透過簡訊與 {{assistantName}} 交流。",
         "connectTitle": "連線電話號碼",
         "documentTitle": "連線 Messages",
@@ -3463,9 +3491,16 @@
         "invalidSignature": "此連結的簽名無效。",
         "invalidTimestamp": "此連結的時間戳無效。",
         "invalidTitle": "連線連結無效",
+        "keepPhone": "保留 {{phone}}",
+        "phoneInUseDescription": "此號碼已連線至其他 Okou 帳號或組織。請先在該處中斷連線，再重試。",
+        "phoneInUseTitle": "號碼已連線",
+        "phoneMismatchDescription": "你的 Okou 帳號在此組織中目前使用 {{currentPhone}}。要切換至開啟此連結的號碼 {{requestedPhone}} 嗎？",
+        "phoneMismatchTitle": "切換號碼？",
         "risk": "簡訊和彩信回覆可能無法穩定送達。為獲得最可靠的體驗，請用 iMessage 與這個號碼通訊。",
         "successDescription": "{{phone}}已連線。傳送一條簡訊，即可開始與 {{assistantName}} 對話。",
-        "successTitle": "電話號碼已連線"
+        "successTitle": "電話號碼已連線",
+        "switchPhone": "切換至 {{phone}}",
+        "unavailable": "目前無法連線電話號碼。"
       },
       "common": {
         "backToSettings": "返回設定",
@@ -5894,6 +5929,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "你無法查看此對話",
     "handoffDescription": "{{assistantName}} 會把上下文帶進新的對話",
     "handoffPrompt": "和我一起繼續這段分享的對話：{{url}}",
     "makeConversationYours": "把這段對話變成你自己的",

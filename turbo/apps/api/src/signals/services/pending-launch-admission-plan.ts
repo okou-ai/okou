@@ -3,7 +3,6 @@ import {
   literal,
   object,
   string,
-  union,
   enum as zEnum,
   type output,
 } from "zod";
@@ -36,8 +35,8 @@ import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
-import { chatEventReplacementInsertSql } from "./chat-event.service";
-import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { prepareChatEventReplacement } from "./chat-event.service";
+import type { PreparedChatEventRow } from "./chat-event-append.service";
 import { withRunModelAnnotation } from "./chat-user-message.service";
 import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
 import type { ChatThreadContinuation } from "./chat-session-continuity.service";
@@ -57,7 +56,7 @@ interface AdmissionFacts {
   readonly validatedAccountIdentity: string | null;
 }
 
-const readRecordSchema = discriminatedUnion("phase", [
+export const pendingAdmissionRecordSchema = discriminatedUnion("phase", [
   object({
     phase: literal("thread"),
     threadAgentId: string().nullable(),
@@ -84,31 +83,31 @@ const readRecordSchema = discriminatedUnion("phase", [
     modelSelection: chatInputModelSelectionSchema.nullable(),
   }),
 ]);
-export const pendingAdmissionRecordSchema = union([
-  readRecordSchema,
-  chatEventCommandResultSchema,
-]);
 type AdmissionRecord = output<typeof pendingAdmissionRecordSchema>;
 
 type AdmissionStatement = AdmissionFacts & {
   readonly kind: "statement";
-  readonly phase: "thread" | "subscription" | "head" | "claim";
+  readonly phase: "thread" | "subscription" | "head";
   readonly sql: SQL;
 };
-type Admitted = AdmissionFacts & {
-  readonly kind: "admitted";
-  readonly queueFirstClaim:
-    { readonly kind: "claimed"; readonly createdAt: Date } | undefined;
+type PreparedInputClaim = AdmissionFacts & {
+  readonly kind: "claim";
+  readonly claimInput: PreparedChatEventRow & {
+    readonly revokesEventId: string;
+  };
+  readonly headSql: SQL;
 };
+type Admitted = AdmissionFacts & { readonly kind: "admitted" };
 export type PendingAdmissionProgress =
   | AdmissionStatement
+  | PreparedInputClaim
   | Admitted
   | { readonly kind: "queue-first-claim-lost" }
   | (ReturnType<typeof conflict> & {
       readonly admissionFailure?: "subscription_account_disconnected";
     });
 
-/** Pure finite SQL plan: thread -> session -> subscription -> head -> claim.
+/** Finite read plan and prepared input; publication owns the only write.
  * Each phase occurs at most once. No retries, resources, callbacks or handles. */
 export function pendingLaunchAdmissionStart(
   args: PreparedCommitPreparedLaunchArgs,
@@ -189,7 +188,7 @@ function queueHeadStep(
 ): PendingAdmissionProgress {
   const association = args.createArgs.queueFirstAssociation;
   if (!association) {
-    return { ...facts, kind: "admitted", queueFirstClaim: undefined };
+    return { ...facts, kind: "admitted" };
   }
   if (association.threadId !== args.createArgs.chatThreadId) {
     throw new Error("Queue-first association must match the run chat thread");
@@ -247,20 +246,7 @@ export function advancePendingLaunchAdmission(
       });
     }
     case "head": {
-      return advanceQueueHead(args, facts, row);
-    }
-    case "claim": {
-      if (!row) {
-        return { kind: "queue-first-claim-lost" };
-      }
-      if ("phase" in row) {
-        throw new Error("Unexpected queue claim write result");
-      }
-      return {
-        ...facts,
-        kind: "admitted",
-        queueFirstClaim: { kind: "claimed", createdAt: row.createdAt },
-      };
+      return advanceQueueHead(args, facts, row, step.sql);
     }
   }
 }
@@ -308,6 +294,7 @@ function advanceQueueHead(
   args: PreparedCommitPreparedLaunchArgs,
   facts: AdmissionFacts,
   row: AdmissionRecord | undefined,
+  headSql: SQL,
 ): PendingAdmissionProgress {
   const association = args.createArgs.queueFirstAssociation;
   if (!association) {
@@ -334,26 +321,27 @@ function advanceQueueHead(
   const serviceTier = args.createArgs.codexServiceTier
     ? ("priority" as const)
     : undefined;
+  const prepared = prepareChatEventReplacement(row, {
+    id: args.identity.runId,
+    chatThreadId: association.threadId,
+    eventType: "input.prompt",
+    runId: args.identity.runId,
+    ...(row.modelSelection === null
+      ? {}
+      : { modelSelection: row.modelSelection }),
+    userMessage:
+      pin.selectedModel === null
+        ? row.userMessage
+        : withRunModelAnnotation(
+            row.userMessage,
+            pin.selectedModel,
+            serviceTier,
+          ),
+  });
   return {
     ...facts,
-    kind: "statement",
-    phase: "claim",
-    sql: chatEventReplacementInsertSql(row, {
-      id: args.identity.runId,
-      chatThreadId: association.threadId,
-      eventType: "input.prompt",
-      runId: args.identity.runId,
-      ...(row.modelSelection === null
-        ? {}
-        : { modelSelection: row.modelSelection }),
-      userMessage:
-        pin.selectedModel === null
-          ? row.userMessage
-          : withRunModelAnnotation(
-              row.userMessage,
-              pin.selectedModel,
-              serviceTier,
-            ),
-    }),
+    kind: "claim",
+    claimInput: { ...prepared.row, revokesEventId: row.id },
+    headSql,
   };
 }

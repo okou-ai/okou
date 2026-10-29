@@ -4,8 +4,11 @@ import { ASSISTANT_NAME, BRAND_NAME } from "../signals/branding.ts";
 import {
   DEFAULT_LOCALE,
   DEFAULT_NAMESPACE,
+  HALLOWEEN_NAMESPACE,
+  loadHalloweenResources,
   loadLocaleResources,
   SUPPORTED_LOCALES,
+  type LocaleResourceNamespace,
   type LocaleResources,
   type SupportedLocale,
 } from "./resources.ts";
@@ -77,6 +80,36 @@ function addLocaleResources(
   i18n.addResourceBundle(locale, "common", resources.common, true, true);
 }
 
+function addHalloweenResources(
+  locale: SupportedLocale,
+  resources: LocaleResourceNamespace,
+): void {
+  i18n.addResourceBundle(locale, HALLOWEEN_NAMESPACE, resources, true, true);
+}
+
+export async function ensureHalloweenI18nResources(
+  locale: SupportedLocale,
+  signal?: AbortSignal,
+): Promise<void> {
+  const locales: readonly SupportedLocale[] =
+    locale === DEFAULT_LOCALE ? [locale] : [DEFAULT_LOCALE, locale];
+  const missing = locales.filter((candidate) => {
+    return !i18n.hasResourceBundle(candidate, HALLOWEEN_NAMESPACE);
+  });
+  const resources = await Promise.all(
+    missing.map(async (candidate) => {
+      return {
+        locale: candidate,
+        resources: await loadHalloweenResources(candidate, signal),
+      };
+    }),
+  );
+  signal?.throwIfAborted();
+  for (const loaded of resources) {
+    addHalloweenResources(loaded.locale, loaded.resources);
+  }
+}
+
 export function loadI18nLanguageResources(
   locale: SupportedLocale,
   signal?: AbortSignal,
@@ -95,6 +128,9 @@ export async function changeI18nLanguageWithResources(
   signal?.throwIfAborted();
   if (resources) {
     addLocaleResources(locale, resources);
+  }
+  if (i18n.hasResourceBundle(DEFAULT_LOCALE, HALLOWEEN_NAMESPACE)) {
+    await ensureHalloweenI18nResources(locale, signal);
   }
   await i18n.changeLanguage(locale);
   signal?.throwIfAborted();

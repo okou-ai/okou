@@ -9,6 +9,7 @@ struct OkouApp: App {
   private let configuration = Result { try AppConfiguration() }
 
   init() {
+    CrashReporting.start()
     // The XCTest host runs real services with isolated HTTP fixtures, never production auth.
     let isTestHost = NSClassFromString("XCTestCase") != nil
     let authentication = isTestHost ? nil : AuthenticationService()

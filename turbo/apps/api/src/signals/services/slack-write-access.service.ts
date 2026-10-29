@@ -1,8 +1,6 @@
 import { command } from "ccstate";
 import { and, eq, isNull, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
@@ -158,16 +156,8 @@ export const resolveSlackWriteTarget$ = command(
       args.userId,
       signal,
     );
-    const workspaceIdentity = isFeatureEnabled(
-      FeatureSwitchKey.SlackWorkspaceIdentity,
-      features,
-    );
     const source =
-      workspaceIdentity &&
-      args.allowSource !== false &&
-      args.runId &&
-      args.channel &&
-      !args.user
+      args.allowSource !== false && args.runId && args.channel && !args.user
         ? await set(
             sourceChannel$,
             { ...args, runId: args.runId, channel: args.channel },
@@ -242,7 +232,6 @@ export const resolveSlackWriteTarget$ = command(
       ...target,
       client,
       workspaceId: installation.slackWorkspaceId,
-      workspaceIdentity,
     };
   },
 );

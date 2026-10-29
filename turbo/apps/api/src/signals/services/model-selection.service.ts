@@ -13,7 +13,7 @@ import {
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";

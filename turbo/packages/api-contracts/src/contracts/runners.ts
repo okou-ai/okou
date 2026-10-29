@@ -18,7 +18,11 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { workflowSkillDocumentSchema } from "./workflow-attachments";
+import {
+  workflowDownloadSchema,
+  workflowSkillDocumentSchema,
+  workflowSkillReferenceSchema,
+} from "./workflow-attachments";
 
 import {
   executionFirewallInlineEntrySchema,
@@ -203,14 +207,24 @@ export const runnerPreferenceSchema = union([
   object({
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
-    tier: zEnum([
-      "exactSandbox",
-      "finalizingPredecessor",
-      "peerFinalizingPredecessor",
-      "sourceHomeCache",
-    ]),
+    tier: zEnum(["exactSandbox", "finalizingPredecessor"]),
     expiresAt: string().datetime({ offset: true }),
-    finalizingSourceRunId: uuid(),
+    predecessorRunId: uuid(),
+  }).strict(),
+  object({
+    kind: literal("preference"),
+    runnerIdentity: runnerProcessIdentitySchema,
+    tier: literal("predecessorHome"),
+    predecessorRunId: uuid(),
+    expiresAt: string().datetime({ offset: true }),
+    home: discriminatedUnion("evidence", [
+      object({ evidence: literal("advertised") }).strict(),
+      object({
+        evidence: literal("expected"),
+        homeWaitUntil: string().datetime({ offset: true }),
+      }).strict(),
+      object({ evidence: literal("location") }).strict(),
+    ]),
   }).strict(),
   object({
     kind: literal("preference"),
@@ -598,8 +612,11 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
 
 /** Canonical Runner wire representation. */
 export const storageManifestSchema = object({
-  // Custom Workflow documents selected at the committed claim boundary.
-  workflowSkills: array(workflowSkillDocumentSchema).optional(),
+  // Reader 2 receives references. Reader 1 keeps its outgoing inline contract.
+  workflowSkills: union([
+    array(workflowSkillReferenceSchema),
+    array(workflowSkillDocumentSchema),
+  ]).optional(),
   storageMounts: array(storageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
   ),
@@ -1166,7 +1183,7 @@ export const runnersJobClaimContract = c.router({
     pathParams: object({
       id: uuid(),
     }),
-    query: object({ workflowSkills: literal("1").optional() }),
+    query: object({ workflowSkills: zEnum(["1", "2"]).optional() }),
     body: object({
       runnerIdentity: runnerProcessIdentitySchema.optional(),
       runnerHostname: runnerHostnameSchema.optional(),
@@ -1183,6 +1200,22 @@ export const runnersJobClaimContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Claim a pending job for execution",
+  },
+});
+
+export const runnersWorkflowDownloadContract = c.router({
+  get: {
+    method: "GET",
+    path: "/api/runners/runs/:runId/workflows/:workflowId",
+    headers: authHeadersSchema,
+    pathParams: object({ runId: uuid(), workflowId: uuid() }),
+    responses: {
+      200: workflowDownloadSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Download current Workflow content for an authenticated Run",
   },
 });
 

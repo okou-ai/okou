@@ -48,6 +48,9 @@
       ],
       "project": ["**/*.{ts,tsx}"],
       "ignoreDependencies": [
+        "@fontpkg/noto-sans-cjk-sc",
+        "@fontpkg/sarasa-gothic-sc",
+        "@fontsource/noto-emoji",
         "@sentry/cli",
         "@solana/web3.js",
         "bs58",

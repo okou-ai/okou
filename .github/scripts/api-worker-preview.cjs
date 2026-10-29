@@ -528,6 +528,8 @@ async function main(mode) {
         "exec",
         "wrangler",
         "deploy",
+        // Rollbacks select immutable history by the full release source SHA.
+        ...(production ? ["--tag", runtime.GIT_COMMIT_SHA] : []),
         "--config",
         generatedPath,
         "--secrets-file",

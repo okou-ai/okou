@@ -1,3 +1,13 @@
+import {
+  sharedThreadVisibilityContract,
+  type SharedThreadAudience,
+} from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import {
+  createSharedThreadVisibilitySignals,
+  type SharedThreadVisibilitySignals,
+} from "../shared-thread-visibility.ts";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
@@ -30,6 +40,9 @@ export type ToggleSharedThreadSelectionResult =
 
 export interface ChatThreadSharingSignals {
   readonly phase$: Computed<SharedThreadSelectionPhase>;
+  readonly audience$: Computed<SharedThreadAudience>;
+  readonly changeAudience$: Command<void, [SharedThreadAudience]>;
+  readonly visibility$: Computed<SharedThreadVisibilitySignals | null>;
   readonly selectedEventIds$: Computed<ReadonlySet<string>>;
   readonly selectedCount$: Computed<number>;
   readonly createdSharedThreadId$: Computed<string | null>;
@@ -161,10 +174,12 @@ function sharedThreadUrl(id: string): string {
 function createShareMessageCommand(
   threadId: string,
   allChatGroups$: Computed<ChatEventGroup[]>,
+  audience$: Computed<SharedThreadAudience>,
+  internalCreatedSharedThreadId$: State<string | null>,
 ): ChatThreadSharingSignals["shareMessage$"] {
   return command(
     async (
-      { get },
+      { get, set },
       assistantEventIds: readonly string[],
       signal: AbortSignal,
     ): Promise<boolean> => {
@@ -180,18 +195,28 @@ function createShareMessageCommand(
       // for the API first would lose the gesture in Safari.
       const copied = writeToClipboard(sharedThreadUrl(id));
       const client = get(apiClient$)(sharedThreadsContract);
-      const [copySucceeded, result] = await Promise.all([
-        copied,
-        accept(
-          client.create({
-            params: { threadId },
-            body: { eventIds: [...eventIds], id },
-            fetchOptions: { signal },
-          }),
-          [201, 400, 403, 404, 409, 413],
-          signal,
-        ),
-      ]);
+      const visibilityEnabled =
+        get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility];
+      const creation = visibilityEnabled
+        ? accept(
+            get(apiClient$)(sharedThreadVisibilityContract).create({
+              params: { threadId },
+              body: { eventIds: [...eventIds], id, audience: get(audience$) },
+              fetchOptions: { signal },
+            }),
+            [201, 400, 403, 404, 409, 413],
+            signal,
+          )
+        : accept(
+            client.create({
+              params: { threadId },
+              body: { eventIds: [...eventIds], id },
+              fetchOptions: { signal },
+            }),
+            [201, 400, 403, 404, 409, 413],
+            signal,
+          );
+      const [copySucceeded, result] = await Promise.all([copied, creation]);
       signal.throwIfAborted();
       if (!copySucceeded) {
         toast.error(
@@ -208,6 +233,9 @@ function createShareMessageCommand(
         );
         return false;
       }
+      if (visibilityEnabled) {
+        set(internalCreatedSharedThreadId$, result.body.id);
+      }
       return copySucceeded;
     },
   );
@@ -216,6 +244,7 @@ function createShareMessageCommand(
 function createShareCommand(
   threadId: string,
   selectedGroups$: Computed<ReadonlyMap<string, SelectedGroup>>,
+  audience$: Computed<SharedThreadAudience>,
   internalCreatedSharedThreadId$: State<string | null>,
   internalPhase$: State<SharedThreadSelectionPhase>,
 ): ChatThreadSharingSignals["create$"] {
@@ -229,15 +258,25 @@ function createShareCommand(
       return;
     }
     const client = get(apiClient$)(sharedThreadsContract);
-    const result = await accept(
-      client.create({
-        params: { threadId },
-        body: { eventIds },
-        fetchOptions: { signal },
-      }),
-      [201, 400, 413],
-      signal,
-    );
+    const result = get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
+      ? await accept(
+          get(apiClient$)(sharedThreadVisibilityContract).create({
+            params: { threadId },
+            body: { eventIds, audience: get(audience$) },
+            fetchOptions: { signal },
+          }),
+          [201, 400, 413],
+          signal,
+        )
+      : await accept(
+          client.create({
+            params: { threadId },
+            body: { eventIds },
+            fetchOptions: { signal },
+          }),
+          [201, 400, 413],
+          signal,
+        );
     if (result.status !== 201) {
       throw new Error(result.body.error.message);
     }
@@ -263,6 +302,30 @@ function createShareCommand(
   });
 }
 
+function createShareVisibility$(id$: State<string | null>) {
+  return computed((get) => {
+    const id = get(id$);
+    return id !== null &&
+      get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
+      ? createSharedThreadVisibilitySignals(id)
+      : null;
+  });
+}
+
+function createSharedThreadAudienceSignals() {
+  const draft$ = state<SharedThreadAudience>("private");
+  return {
+    audience$: computed((get) => {
+      return get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
+        ? get(draft$)
+        : "public";
+    }),
+    changeAudience$: command(({ set }, audience: SharedThreadAudience) => {
+      set(draft$, audience);
+    }),
+  };
+}
+
 export function createChatThreadSharingSignals(
   threadId: string,
   scroll: Pick<
@@ -273,6 +336,7 @@ export function createChatThreadSharingSignals(
   closeFeedbackSelection$: Command<void, []>,
 ): ChatThreadSharingSignals {
   const internalPhase$ = state<SharedThreadSelectionPhase>("idle");
+  const { audience$, changeAudience$ } = createSharedThreadAudienceSignals();
   const internalSelectedGroups$ = state<ReadonlyMap<string, SelectedGroup>>(
     new Map(),
   );
@@ -300,6 +364,7 @@ export function createChatThreadSharingSignals(
     set(closeFeedbackSelection$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
+    set(changeAudience$, "private");
     set(internalPhase$, "selecting");
     return set(scroll.autoScroll$, position, signal);
   });
@@ -308,6 +373,7 @@ export function createChatThreadSharingSignals(
     const position = set(scroll.readRenderedThreadScrollPosition$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
+    set(changeAudience$, "private");
     set(internalPhase$, "idle");
     return set(scroll.autoScroll$, position, signal);
   });
@@ -355,13 +421,22 @@ export function createChatThreadSharingSignals(
   const create$ = createShareCommand(
     threadId,
     selectedGroups$,
+    audience$,
     internalCreatedSharedThreadId$,
     internalPhase$,
   );
 
-  const shareMessage$ = createShareMessageCommand(threadId, allChatGroups$);
+  const shareMessage$ = createShareMessageCommand(
+    threadId,
+    allChatGroups$,
+    audience$,
+    internalCreatedSharedThreadId$,
+  );
 
   return {
+    audience$,
+    changeAudience$,
+    visibility$: createShareVisibility$(internalCreatedSharedThreadId$),
     phase$: computed((get) => {
       return get(internalPhase$);
     }),

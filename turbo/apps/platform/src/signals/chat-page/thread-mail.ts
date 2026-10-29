@@ -28,6 +28,7 @@ type MailSource = Computed<Promise<ThreadMailSummary[]>>;
 interface MailResult {
   readonly succeeded: number;
   readonly failed: number;
+  readonly awaitingConfirmation: number;
 }
 interface MailConfirmation {
   readonly action: ThreadMailAction;
@@ -116,6 +117,7 @@ function createMailBulkSignals(
     // Remove successful drafts from the selection and retain unsuccessful drafts.
     let succeeded = 0;
     let failed = 0;
+    let awaitingConfirmation = 0;
     for (const mail of pending.mails) {
       signal.throwIfAborted();
       const href = `/mail/drafts/${mail.mailDraftId}`;
@@ -124,16 +126,24 @@ function createMailBulkSignals(
         href,
         originalUrl: new URL(href, window.location.origin).href,
       });
-      const outcome = await settle(
-        set(
-          pending.action === "send" ? signals.send$ : signals.delete$,
-          signal,
-        ),
+      const outcome = await settle<unknown>(
+        pending.action === "send"
+          ? set(signals.send$, signal)
+          : set(signals.delete$, signal),
         signal,
       );
       signal.throwIfAborted();
-      if (outcome.ok) {
-        succeeded += 1;
+      if (
+        outcome.ok &&
+        (pending.action === "delete" ||
+          outcome.value === "sent" ||
+          outcome.value === "sending")
+      ) {
+        if (outcome.value === "sending") {
+          awaitingConfirmation += 1;
+        } else {
+          succeeded += 1;
+        }
         const next = new Set(get(selection.selected$));
         next.delete(mail.mailDraftId);
         set(selection.selected$, next);
@@ -141,7 +151,7 @@ function createMailBulkSignals(
         failed += 1;
       }
     }
-    set(result$, { succeeded, failed });
+    set(result$, { succeeded, failed, awaitingConfirmation });
     set(pending$, null);
     set(refresh$);
   });

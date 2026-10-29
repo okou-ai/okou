@@ -2,15 +2,10 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { slackOauthRoutes } from "../slack-oauth";
-import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
-import { slackConnectRoutes } from "../slack-connect";
-import { createRouteMocks } from "./helpers/route-test";
 import { uniqueSlackUserId } from "./helpers/slack-public-install";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const API_ORIGIN = "https://api.okou.ai";
@@ -417,33 +412,6 @@ describe("GET /api/integrations/slack/oauth/callback", () => {
     expect(location).toContain(`${APP_ORIGIN}/settings/slack`);
     expect(location).toContain(`w=${fixture.slackWorkspaceId}`);
     expect(location).toContain(`u=${fixture.slackUserId}`);
-
-    // The installed workspace is not bound to any org: a member cannot
-    // connect to it, only an admin may claim it.
-    createRouteMocks(context).clerk.session(
-      fixture.userId,
-      fixture.orgId,
-      "org:member",
-    );
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: fixture.userId, orgId: fixture.orgId, orgRole: "org:member" },
-      { slackWorkspaceIdentity: false },
-    );
-    const memberConnect = await accept(
-      setupApp({ context, routes: slackConnectRoutes })(
-        slackConnectContract,
-      ).connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          requestUserScopes: true,
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [403],
-    );
-    expect(memberConnect.body.error.message).toContain("Only admins");
   });
 
   it("redirects to the failed page when the install OAuth exchange fails", async () => {

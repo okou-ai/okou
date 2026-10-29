@@ -1,3 +1,4 @@
+import { completeCanonicalTeamsUpload$ } from "../services/canonical-teams-asset-delivery.service";
 import { command, computed } from "ccstate";
 import { env } from "../../lib/env";
 import {
@@ -8,7 +9,6 @@ import {
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import { sendTeamsMessage } from "../external/teams-bot-client";
 import {
   materializeUploadedArtifact$,
@@ -16,15 +16,14 @@ import {
 } from "../services/uploaded-artifact.service";
 import { recordTeamsUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
-  teamsInstallation,
-  resolveTeamsMessageTarget$,
   routeError,
   teamsErrorResponse,
+  teamsInstallation,
+  resolveTeamsMessageTarget$,
 } from "../services/teams-message-target.service";
 import type { RouteEntry } from "../route-entry";
 
 interface UploadedFileInfo {
-  readonly key: string;
   readonly size: number;
   readonly filename: string;
   readonly fileUrl: string;
@@ -62,27 +61,13 @@ function buildMetadata(args: {
   };
 }
 
-const installationOrgId$ = computed((get) => {
-  return get(organizationAuthContext$).orgId;
-});
-const installation$ = teamsInstallation(installationOrgId$);
-
-const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const runId =
-    "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
-  const bodyResult = await get(
-    bodyResultOf(integrationsTeamsUploadCompleteContract.complete),
-  );
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-  const body = bodyResult.data;
-
-  set(writeDb$);
+const installation$ = teamsInstallation(
+  computed((get) => {
+    return get(organizationAuthContext$).orgId;
+  }),
+);
+const legacyTeamsInstallation$ = computed(async (get) => {
   const installation = await get(installation$);
-  signal.throwIfAborted();
   if (!installation) {
     return routeError(
       404,
@@ -97,7 +82,47 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
       "NOT_FOUND",
     );
   }
+  return { ...installation, serviceUrl: installation.serviceUrl };
+});
 
+const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const runId =
+    "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
+  const bodyResult = await get(
+    bodyResultOf(integrationsTeamsUploadCompleteContract.complete),
+  );
+  signal.throwIfAborted();
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+  const body = bodyResult.data;
+  if (body.operationId) {
+    if (!runId) {
+      return routeError(
+        400,
+        "Canonical Teams uploads require a Run token",
+        "BAD_REQUEST",
+      );
+    }
+    return await set(
+      completeCanonicalTeamsUpload$,
+      {
+        assetId: body.uploadId,
+        operationId: body.operationId,
+        runId,
+        userId: auth.userId,
+        orgId: auth.orgId,
+      },
+      signal,
+    );
+  }
+
+  const installation = await get(legacyTeamsInstallation$);
+  signal.throwIfAborted();
+  if ("status" in installation) {
+    return installation;
+  }
   const object = await set(
     materializeUploadedArtifact$,
     { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
@@ -112,6 +137,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     {
       installation,
       userId: auth.userId,
+      orgId: auth.orgId,
       body,
     },
     signal,
@@ -122,7 +148,6 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const file: UploadedFileInfo = {
-    key: object.key,
     size: object.size,
     filename: object.filename,
     fileUrl: object.url,
@@ -173,7 +198,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
       metadata: buildMetadata({
         body,
         conversationId: target.conversationId,
-        s3Key: file.key,
+        s3Key: object.key,
         sourceUrl: file.fileUrl,
         teamsActivityId: result.activityId,
       }),

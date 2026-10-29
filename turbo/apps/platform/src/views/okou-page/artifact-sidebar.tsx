@@ -1,3 +1,6 @@
+import { closeDeletedThreadArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
 import {
@@ -19,6 +22,7 @@ import {
   useLastLoadable,
   useLastResolved,
   useLoadable,
+  useSet,
 } from "ccstate-react";
 import {
   currentHostedSiteUrl,
@@ -107,6 +111,7 @@ type ArtifactSidebarItem = {
 };
 
 type ArtifactSidebarContentProps = {
+  artifactId?: string;
   agentId?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   artifactRef: ArtifactRef;
@@ -118,6 +123,7 @@ type ArtifactSidebarContentProps = {
   onBack?: () => void;
   onClose: () => void;
   onSyncSuccess?: () => void;
+  onDeleted?: () => void;
   syncTarget?: ArtifactDownloadSyncTarget;
   text$?: TextPreviewComputed;
   threadId?: string;
@@ -133,6 +139,8 @@ export function ArtifactSidebar({
   text$: providedText$,
   thread,
 }: ArtifactSidebarProps) {
+  const closeDeleted = useSet(closeDeletedThreadArtifact$);
+  const pageSignal = useGet(pageSignal$);
   const loadable = useLastLoadable(thread.artifacts$);
   const agentId = thread.agentId;
   const eventGroups = useLastResolved(thread.eventImageGroups$, {
@@ -178,6 +186,9 @@ export function ArtifactSidebar({
         markdownTree$={markdownTree$}
         onBack={onBack}
         onClose={onClose}
+        onDeleted={() => {
+          closeDeleted(thread, pageSignal);
+        }}
         text$={text$}
         threadId={thread.threadId}
       />
@@ -206,6 +217,7 @@ function artifactSidebarSyncTargetForItem({
 }
 
 export function ArtifactSidebarContent({
+  artifactId,
   agentId,
   artifactKind,
   artifactRef,
@@ -217,6 +229,7 @@ export function ArtifactSidebarContent({
   onBack,
   onClose,
   onSyncSuccess,
+  onDeleted,
   syncTarget: providedSyncTarget,
   text$,
   threadId,
@@ -252,6 +265,13 @@ export function ArtifactSidebarContent({
 
   return (
     <ArtifactSidebarResolvedContent
+      deleteAction={
+        <ArtifactDeleteButton
+          artifactId={artifactId ?? syncTarget?.artifactId}
+          surface="sidebar"
+          onDeleted={onDeleted ?? onClose}
+        />
+      }
       recovery={recovery}
       resourceUrl={resourceUrl}
       shareUrl={shareUrl}
@@ -270,6 +290,7 @@ export function ArtifactSidebarContent({
 }
 
 type ArtifactSidebarResolvedContentProps = {
+  readonly deleteAction: ReactNode;
   readonly recovery: ReactNode;
   readonly resourceUrl: string | null;
   readonly shareUrl: string | null | undefined;
@@ -286,6 +307,7 @@ type ArtifactSidebarResolvedContentProps = {
 };
 
 function ArtifactSidebarResolvedContent({
+  deleteAction,
   recovery,
   resourceUrl,
   shareUrl,
@@ -317,6 +339,7 @@ function ArtifactSidebarResolvedContent({
       }
     >
       <ArtifactSidebarHeader
+        deleteAction={deleteAction}
         shareUrl={shareUrl}
         title={display.title}
         filename={display.filename}
@@ -466,6 +489,7 @@ function resolveArtifactDisplay(
 }
 
 function ArtifactSidebarHeader({
+  deleteAction,
   shareUrl,
   title,
   filename,
@@ -481,6 +505,7 @@ function ArtifactSidebarHeader({
   onToggleFullscreen,
   onClose,
 }: {
+  deleteAction: ReactNode;
   shareUrl?: string | null;
   title: string;
   filename: string;
@@ -532,6 +557,7 @@ function ArtifactSidebarHeader({
         )}
       </div>
       <ArtifactSidebarActions
+        deleteAction={deleteAction}
         shareUrl={shareUrl}
         compactActions={compactActions}
         artifactKind={artifactKind}
@@ -549,6 +575,7 @@ function ArtifactSidebarHeader({
 }
 
 function ArtifactSidebarActions({
+  deleteAction,
   shareUrl,
   artifactKind,
   compactActions,
@@ -561,6 +588,7 @@ function ArtifactSidebarActions({
   filename,
   url,
 }: {
+  deleteAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   compactActions: boolean;
@@ -577,6 +605,7 @@ function ArtifactSidebarActions({
     <div className="flex shrink-0 items-center gap-1">
       {url && (
         <ArtifactSidebarPreviewActions
+          deleteAction={deleteAction}
           shareUrl={shareUrl}
           artifactKind={artifactKind}
           kind={kind}
@@ -600,6 +629,7 @@ function ArtifactSidebarActions({
 }
 
 function ArtifactSidebarPreviewActions({
+  deleteAction,
   shareUrl,
   artifactKind,
   kind,
@@ -608,6 +638,7 @@ function ArtifactSidebarPreviewActions({
   filename,
   url,
 }: {
+  deleteAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   kind?: ArtifactKindForBody;
@@ -640,6 +671,7 @@ function ArtifactSidebarPreviewActions({
         syncTarget={syncTarget}
         url={url}
       />
+      {deleteAction}
       <ArtifactActionSeparator />
     </>
   );

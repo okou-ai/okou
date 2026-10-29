@@ -17,13 +17,27 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const agentPhoneConnectBodySchema = object({
+const agentPhoneConnectProofSchema = object({
   phoneHandle: string().min(1),
   agentphoneAgentId: string().min(1),
   timestamp: number(),
   signature: string().min(1),
   channel: string().min(1).optional(),
 });
+
+const agentPhoneConnectBodySchema = agentPhoneConnectProofSchema.extend({
+  replacePhoneHandle: string().min(1).optional(),
+});
+
+const agentPhoneConnectStatusSchema = discriminatedUnion("kind", [
+  object({ kind: literal("connect") }),
+  object({ kind: literal("connected"), phoneHandle: string() }),
+  object({ kind: literal("phone_in_use") }),
+  object({
+    kind: literal("phone_mismatch"),
+    currentPhoneHandle: string(),
+  }),
+]);
 
 const agentPhoneConnectResponseSchema = object({
   phoneHandle: string(),
@@ -102,6 +116,18 @@ const agentPhoneGroupHistoryResponseSchema = object({
 });
 
 export const integrationsAgentPhoneContract = c.router({
+  getConnectStatus: {
+    method: "GET",
+    path: "/api/integrations/agentphone/connect-status",
+    headers: authHeadersSchema,
+    query: agentPhoneConnectProofSchema.extend({ timestamp: coerce.number() }),
+    responses: {
+      200: agentPhoneConnectStatusSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+    },
+    summary: "Check a signed phone connection link before connecting",
+  },
   connectAgentPhone: {
     method: "POST",
     path: "/api/agentphone/connect",
@@ -198,6 +224,9 @@ export type IntegrationsAgentPhoneContract =
   typeof integrationsAgentPhoneContract;
 export type AgentPhoneConnectRequest = zInfer<
   typeof agentPhoneConnectBodySchema
+>;
+export type AgentPhoneConnectStatus = zInfer<
+  typeof agentPhoneConnectStatusSchema
 >;
 export type AgentPhoneConnectResponse = zInfer<
   typeof agentPhoneConnectResponseSchema

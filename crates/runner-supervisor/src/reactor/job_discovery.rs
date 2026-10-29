@@ -166,7 +166,7 @@ pub(super) struct PreparedDiscoveredJob {
 
 /// Ordinary claimed custody, excluding the specialized finalizing successor.
 pub(super) struct SandboxAdmittedJob {
-    pub(super) home_source_run_id: Option<RunId>,
+    pub(super) required_home_source_run_id: Option<RunId>,
     pub(super) claimed: ClaimedJob,
     pub(super) resource: SandboxAdmittedResource,
     pub(super) cancellation: RunCancellationRegistration,
@@ -194,7 +194,7 @@ impl AdmissionContext {
             active_runs: &self.spawn_ctx.active_runs,
             home_cache_snapshot: &self.spawn_ctx.home_cache_snapshot,
             sandbox_op_reporter: self.spawn_ctx.sandbox_op_reporter.as_ref(),
-            has_home_cache: self.spawn_ctx.exec_config.home_cache.is_some(),
+            home_cache: self.spawn_ctx.exec_config.home_cache.as_ref(),
             idle_destroy_tracker: &self.spawn_ctx.idle_destroy_tracker,
             reuse_state_notify: &self.spawn_ctx.reuse_state_notify,
             blank_pool_diagnostics: &self.spawn_ctx.blank_pool_diagnostics,
@@ -241,7 +241,7 @@ impl DiscoveredJobResult {
         jobs: &mut JoinSet<JobResult>,
     ) -> ReactorResult<Self> {
         if let Some(mut activation) = self.prepared.take() {
-            let request = finish_spawn_job_request(&mut activation)
+            let request = finish_spawn_job_request(&mut activation, ctx)
                 .map_err(|error| ReactorError::Internal(error.to_string()))?;
             spawn_job(request, ctx, jobs);
         }
@@ -289,7 +289,7 @@ fn pre_claim_resources<'a>(ctx: &'a DiscoveredJobContext<'_>) -> PreClaimResourc
         active_runs: &ctx.spawn_ctx.active_runs,
         home_cache_snapshot: &ctx.spawn_ctx.home_cache_snapshot,
         sandbox_op_reporter: ctx.spawn_ctx.sandbox_op_reporter.as_ref(),
-        has_home_cache: ctx.spawn_ctx.exec_config.home_cache.is_some(),
+        home_cache: ctx.spawn_ctx.exec_config.home_cache.as_ref(),
         idle_destroy_tracker: &ctx.spawn_ctx.idle_destroy_tracker,
         reuse_state_notify: ctx.spawn_ctx.reuse_state_notify.as_ref(),
         blank_pool_diagnostics: &ctx.spawn_ctx.blank_pool_diagnostics,
@@ -346,7 +346,7 @@ pub(super) async fn prepare_admitted_job(
     let factory = &factory;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
     let SandboxAdmittedJob {
-        home_source_run_id,
+        required_home_source_run_id,
         claimed,
         resource,
         cancellation,
@@ -429,7 +429,7 @@ pub(super) async fn prepare_admitted_job(
             } = match try_reuse_from_pool(
                 run_id,
                 ReuseAdmissionRequest {
-                    home_source_run_id,
+                    required_home_source_run_id,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb: job_home_disk_mb,
@@ -618,7 +618,7 @@ pub(super) async fn prepare_admitted_job(
 
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
-            home_source_run_id,
+            required_home_source_run_id,
             claimed,
             rootfs_hash: job_rootfs_hash,
             cancellation,
@@ -697,7 +697,7 @@ pub(super) async fn build_spawn_job_request(
     ctx: &SpawnContext,
 ) -> Result<SpawnJobRequest, ClaimedActivationError> {
     prepare_spawn_job_request(activation, ctx).await?;
-    finish_spawn_job_request(activation)
+    finish_spawn_job_request(activation, ctx)
 }
 
 async fn prepare_spawn_job_request(
@@ -721,10 +721,11 @@ async fn prepare_spawn_job_request(
 
 fn finish_spawn_job_request(
     activation: &mut ClaimedActivationGuard,
+    ctx: &SpawnContext,
 ) -> Result<SpawnJobRequest, ClaimedActivationError> {
     let sandbox_id = activation.sandbox_id();
     let ClaimedJobSetup {
-        home_source_run_id,
+        required_home_source_run_id,
         claimed,
         rootfs_hash,
         cancellation,
@@ -747,11 +748,22 @@ fn finish_spawn_job_request(
     } = resource;
     drop(idle_snapshot);
 
+    let home_image_prepare_policy = if required_home_source_run_id.is_some()
+        || ctx.exec_config.home_cache.is_some()
+            && claimed.context().reuse_key().is_some_and(|key| {
+                ctx.home_cache_snapshot
+                    .has_compatible_home_hint(key, &profile_name)
+            }) {
+        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithLockWait
+    } else {
+        crate::home_image_cache::HomeImagePreparePolicy::SkipCache
+    };
+
     Ok(SpawnJobRequest {
         claimed,
         sandbox_id,
         job_profile: JobProfile {
-            home_source_run_id,
+            required_home_source_run_id,
             profile_name,
             rootfs_hash,
             vcpu,
@@ -760,7 +772,7 @@ fn finish_spawn_job_request(
             budget_lease: active_lease,
             restore_guest_state,
             device_rate_limits,
-            home_image_prepare_lock_policy: Default::default(),
+            home_image_prepare_policy,
             factory,
             cancellation,
         },

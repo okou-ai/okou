@@ -1,3 +1,6 @@
+import { createSharedThreadVisibilitySignals } from "../shared-thread-visibility.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sharedThreadsContract,
   type SharedThreadResponse,
@@ -67,7 +70,15 @@ const sharedThread$ = computed((get) => {
     richMessages.length === 0
       ? undefined
       : createSharedThreadRichContentSignals(richMessages, artifactPreview);
-  return { ...response, messages, richContent, artifactPreview };
+  return {
+    ...response,
+    messages,
+    richContent,
+    artifactPreview,
+    visibility: get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
+      ? createSharedThreadVisibilitySignals(response.id)
+      : undefined,
+  };
 });
 
 export const setupSharedThreadPage$ = command(
@@ -77,8 +88,11 @@ export const setupSharedThreadPage$ = command(
     const id = String(params?.id ?? "");
     const client = get(apiClient$)(sharedThreadsContract);
     const result = await accept(
-      client.get({ params: { id }, fetchOptions: { signal } }),
-      [200, 404],
+      client.get({
+        params: { id },
+        fetchOptions: { signal, cache: "no-store" },
+      }),
+      [200, 401, 403, 404],
       signal,
     );
     set(sharedThreadResponse$, result.status === 200 ? result.body : null);

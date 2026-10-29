@@ -87,6 +87,7 @@ export const createCustomConnectorCommand = new Command()
     `
 Types and authentication:
   HTTP uses prefixTemplates and supports authMode: none, manual, oauth.
+  HTTP API prefixes accept http:// or https://.
   MCP requires kind: "mcp", endpoint, transport: "streamable-http" and supports
   authMode: none, manual, oauth, automatic. Omit prefixTemplates for MCP.
   Always supply authMode explicitly.
@@ -106,9 +107,9 @@ Definition file:
   from connecting a member account, including for none and automatic modes.
 
 Agent workflow:
-  1. For manual connectors, ask only for missing metadata: name, HTTPS API
-     prefix for HTTP or endpoint for MCP, and the Header or Query injection
-     template. Do not ask the user for the actual API token.
+  1. For manual connectors, ask only for missing metadata: name, HTTP or HTTPS
+     API prefix for HTTP or HTTPS endpoint for MCP, and the Header or Query
+     injection template. Do not ask the user for the actual API token.
   2. Declare every credential input as a secret or variable field, then use
      references such as {{secrets.api_token}} or {{variables.account_id}} in
      Header and Query injection templates.

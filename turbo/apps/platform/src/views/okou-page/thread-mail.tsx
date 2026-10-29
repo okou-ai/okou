@@ -457,27 +457,47 @@ function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
   const prepare = useSet(thread.mail.prepare$);
   const signal = useGet(pageSignal$);
   const draftCount = drafts.state === "hasData" ? drafts.data.length : 0;
+  const resultText = result
+    ? result.awaitingConfirmation > 0
+      ? t(
+          ($) => {
+            return $.chat.mail.manager.resultAwaiting;
+          },
+          {
+            succeeded: result.succeeded,
+            failed: result.failed,
+            awaitingConfirmation: result.awaitingConfirmation,
+          },
+        )
+      : t(
+          ($) => {
+            return $.chat.mail.manager.result;
+          },
+          { succeeded: result.succeeded, failed: result.failed },
+        )
+    : t(($) => {
+        return $.chat.mail.manager.draftOnly;
+      });
+
   if (
     draftCount === 0 ||
     filteredDrafts.state !== "hasData" ||
     filteredDrafts.data.length === 0
   ) {
-    return null;
+    return result && result.awaitingConfirmation > 0 ? (
+      <p
+        role="status"
+        className="border-t border-border/60 p-4 text-xs text-muted-foreground"
+      >
+        {resultText}
+      </p>
+    ) : null;
   }
   const disabled = pending !== null;
   return (
     <div className="shrink-0 space-y-3 border-t border-border/60 p-4">
       <p className="text-xs text-muted-foreground" role="status">
-        {result
-          ? t(
-              ($) => {
-                return $.chat.mail.manager.result;
-              },
-              { succeeded: result.succeeded, failed: result.failed },
-            )
-          : t(($) => {
-              return $.chat.mail.manager.draftOnly;
-            })}
+        {resultText}
       </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Button
@@ -584,13 +604,17 @@ function ThreadMailRow({
           </p>
         </div>
         <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs font-normal text-muted-foreground">
-          {mail.status === "sent"
+          {mail.status === "sending"
             ? t(($) => {
-                return $.chat.mail.manager.sent;
+                return $.chat.mail.status.sending;
               })
-            : t(($) => {
-                return $.chat.mail.manager.draft;
-              })}
+            : mail.status === "sent"
+              ? t(($) => {
+                  return $.chat.mail.manager.sent;
+                })
+              : t(($) => {
+                  return $.chat.mail.manager.draft;
+                })}
         </span>
         <ChevronRight size={14} className="text-muted-foreground" />
       </ThreadMailLink>

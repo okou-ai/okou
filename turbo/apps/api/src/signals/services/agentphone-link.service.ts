@@ -18,7 +18,9 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import {
   normalizeAgentPhoneHandle,
   type AgentPhoneChannel,
@@ -37,6 +39,85 @@ type LinkResult =
 type LinkSource =
   | { readonly kind: "direct"; readonly orgId: string; readonly userId: string }
   | { readonly kind: "code"; readonly codeHash: string };
+
+/** Replace only the binding the user confirmed; a failed switch keeps it intact. */
+export const switchAgentPhoneIdentity$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly phoneHandle: string;
+      readonly replacePhoneHandle: string;
+    },
+    signal: AbortSignal,
+  ): Promise<LinkResult | { readonly kind: "stale" }> => {
+    const db = set(writeDb$);
+    const previous = db.$with("previous_phone_link").as(
+      db
+        .delete(agentphoneUserLinks)
+        .where(
+          and(
+            eq(agentphoneUserLinks.orgId, args.orgId),
+            eq(agentphoneUserLinks.userId, args.userId),
+            eq(agentphoneUserLinks.phoneHandle, args.replacePhoneHandle),
+          ),
+        )
+        .returning({
+          userId: agentphoneUserLinks.userId,
+          orgId: agentphoneUserLinks.orgId,
+        }),
+    );
+    // A fresh link also retires the old sender's routes and contact-card state.
+    // Do not ignore an insert conflict: the entire statement must roll back so
+    // a competing claim of the requested handle preserves the original link.
+    const replacement = db.$with(
+      "replacement_phone_link",
+      getTableColumns(agentphoneUserLinks),
+    ).as(sql`
+      INSERT INTO ${agentphoneUserLinks} (phone_handle, user_id, org_id)
+      SELECT ${sql.param(args.phoneHandle, agentphoneUserLinks.phoneHandle)},
+        ${previous.userId}, ${previous.orgId} FROM ${previous}
+      RETURNING *
+    `);
+    const result = await settle(
+      db.with(previous, replacement).select().from(replacement),
+    );
+    signal.throwIfAborted();
+    if (!result.ok) {
+      if (
+        isUniqueViolation(
+          result.error,
+          "idx_agentphone_user_links_phone_handle",
+        )
+      ) {
+        return { kind: "conflict", reason: "phone-handle-linked" };
+      }
+      throw result.error;
+    }
+    const [userLink] = result.value;
+    if (userLink) {
+      return { kind: "linked", userLink };
+    }
+
+    // A repeated request after an uncertain response may already have succeeded.
+    const [existing] = await db
+      .select()
+      .from(agentphoneUserLinks)
+      .where(
+        and(
+          eq(agentphoneUserLinks.orgId, args.orgId),
+          eq(agentphoneUserLinks.userId, args.userId),
+          eq(agentphoneUserLinks.phoneHandle, args.phoneHandle),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return existing
+      ? { kind: "linked", userLink: existing }
+      : { kind: "stale" };
+  },
+);
 
 function existingLinkResult(
   rows: readonly AgentPhoneUserLink[],

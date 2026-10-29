@@ -8,7 +8,7 @@ import {
   userLocaleSchema,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import {
   workflowUserAutomationThreads,
   workflows,

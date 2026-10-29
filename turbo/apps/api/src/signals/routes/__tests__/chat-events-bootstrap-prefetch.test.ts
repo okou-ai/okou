@@ -206,10 +206,17 @@ describe("chat agent bootstrap prefetch", () => {
     });
     expect(firstMount).toMatchObject({
       workflowId: workflow.body.id,
-      skillMd: expect.stringContaining("Keep this published skill mounted."),
     });
     expect(firstMount?.mountPath).toStrictEqual(expect.any(String));
-    expect(firstMount?.attachments).toBeNull();
+    const firstDownload = await api.downloadWorkflow(
+      first.runId,
+      workflow.body.id,
+      firstClaim.claim.sandboxToken,
+    );
+    expect(firstDownload.skillMd).toContain(
+      "Keep this published skill mounted.",
+    );
+    expect(firstDownload.attachments).toBeNull();
     const queuedId = randomUUID();
     await chat.requestSendEvent(
       actor,
@@ -249,8 +256,16 @@ describe("chat agent bootstrap prefetch", () => {
     expect(nextMount).toMatchObject({
       workflowId: workflow.body.id,
       mountPath: firstMount?.mountPath,
-      skillMd: firstMount?.skillMd,
     });
+    expect(
+      (
+        await api.downloadWorkflow(
+          promoted.runId,
+          workflow.body.id,
+          nextClaim.claim.sandboxToken,
+        )
+      ).skillMd,
+    ).toBe(firstDownload.skillMd);
     await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
   });
 

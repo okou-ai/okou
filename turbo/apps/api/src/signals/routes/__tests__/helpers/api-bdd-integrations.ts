@@ -1381,23 +1381,6 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    async enableSlackWorkspaceIdentity(
-      actor: ApiTestUser,
-      enabled = true,
-    ): Promise<void> {
-      await accept(
-        setupApp({ context, routes: featureSwitchesRoutes })(
-          featureSwitchesContract,
-        ).update({
-          headers: authenticate(context, routeMocks, actor),
-          body: {
-            switches: { [FeatureSwitchKey.SlackWorkspaceIdentity]: enabled },
-          },
-        }),
-        [200],
-      );
-    },
-
     async requestSlackEvent(
       body: string,
       headers: SlackSignatureHeaders,
@@ -1694,6 +1677,24 @@ export function createBddIntegrationApi(context: TestContext) {
       return response.body;
     },
 
+    async requestAgentPhoneConnectStatus<Status extends 200 | 400 | 401>(
+      actor: ApiTestUser | null,
+      query: AgentPhoneConnectRequest,
+      statuses: readonly Status[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsAgentPhoneRoutes,
+      })(integrationsAgentPhoneContract);
+      return await accept(
+        client.getConnectStatus({
+          headers: authenticate(context, routeMocks, actor),
+          query,
+        }),
+        statuses,
+      );
+    },
+
     async requestAgentPhoneGroupHistory(
       actor: ApiTestUser | null,
       query: AgentPhoneGroupHistoryQuery,
@@ -1764,13 +1765,7 @@ export function createBddIntegrationApi(context: TestContext) {
 
     async requestConnectAgentPhone(
       actor: ApiTestUser | null,
-      body: {
-        readonly phoneHandle: string;
-        readonly agentphoneAgentId: string;
-        readonly timestamp: number;
-        readonly signature: string;
-        readonly channel?: string;
-      },
+      body: AgentPhoneConnectRequest,
       statuses: readonly (200 | 400 | 401 | 409)[],
     ) {
       const client = setupApp({
@@ -1780,7 +1775,7 @@ export function createBddIntegrationApi(context: TestContext) {
       return await accept(
         client.connectAgentPhone({
           headers: authenticate(context, routeMocks, actor),
-          body: body as AgentPhoneConnectRequest,
+          body,
         }),
         statuses,
       );

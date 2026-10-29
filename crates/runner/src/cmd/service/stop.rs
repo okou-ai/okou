@@ -5,10 +5,9 @@ use tracing::{info, warn};
 use crate::error::{RunnerError, RunnerResult};
 use runner_host::paths::HomePaths;
 
-use super::drain_override_cleanup::{
-    DrainOverrideReloadPolicy, reconcile_drain_restart_override_removal,
-};
+use super::drain_override_cleanup::reconcile_drain_restart_override_removal;
 use super::gate::{ActiveJobsGateOps, check_active_jobs_gate};
+use super::reload::SystemdReloadPolicy;
 use super::{RunnerServiceUnit, ServiceFuture, acquire_service_lock, read_unit_config_path};
 use runner_host::service::{
     BoundedSystemctlOutcome, CleanupUnitActiveState, cleanup_unit_active_state_bounded,
@@ -262,8 +261,7 @@ impl ServiceStopOps for RealServiceStopOps {
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, ()> {
         Box::pin(async move {
-            reconcile_drain_restart_override_removal(unit, DrainOverrideReloadPolicy::Unbounded)
-                .await
+            reconcile_drain_restart_override_removal(unit, SystemdReloadPolicy::Unbounded).await
         })
     }
 
@@ -274,7 +272,7 @@ impl ServiceStopOps for RealServiceStopOps {
         Box::pin(async move {
             reconcile_drain_restart_override_removal(
                 unit,
-                DrainOverrideReloadPolicy::Bounded {
+                SystemdReloadPolicy::Bounded {
                     lock_timeout: CLEANUP_LOCK_TIMEOUT,
                     command_timeout: CLEANUP_ACTION_TIMEOUT,
                 },
