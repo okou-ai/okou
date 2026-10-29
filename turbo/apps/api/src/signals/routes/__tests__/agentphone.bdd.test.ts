@@ -2975,7 +2975,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await entitledLinkedActor();
 
     const conversationId = uniqueConversationId();
-    await ap.postAgentPhoneInboundMessage({
+    const activeMessageId = await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
       body: "@Okou finish before the queued group launch",
@@ -2988,6 +2988,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       channel: "imessage",
       from: phone,
       body: "@Okou fail this queued group launch",
+      replyToMessageId: activeMessageId,
       conversationId,
       isGroup: true,
       participants: [{ identifier: phone }],
