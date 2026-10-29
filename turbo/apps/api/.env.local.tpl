@@ -139,7 +139,7 @@ GOOGLE_ADS_LOGIN_CUSTOMER_ID=op://Development/google/GOOGLE_ADS_LOGIN_CUSTOMER_I
 
 # Optional: Managed browser provider (Browser Use)
 OKOU_BROWSER_USE_API_KEY=op://Development/browser-use/OKOU_BROWSER_USE_API_KEY
-# Optional: up to 3 comma-separated uploaded extension UUIDs. Installed when
+# Optional: one uploaded extension UUID. Installed when
 # BrowserSharedOwner is enabled, during new Browser instance creation only.
 OKOU_BROWSER_USE_EXTENSION_ID=
 
