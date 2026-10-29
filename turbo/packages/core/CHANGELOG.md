@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.800.5](https://github.com/okou-ai/okou/compare/core-v8.800.4...core-v8.800.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **agents:** restore editable default agent configuration ([#44033](https://github.com/okou-ai/okou/issues/44033)) ([bfada2a](https://github.com/okou-ai/okou/commit/bfada2a09f491143186a92d26e0c4878af02d941))
+
 ## [8.800.4](https://github.com/okou-ai/okou/compare/core-v8.800.3...core-v8.800.4) (2026-10-29)
 
 

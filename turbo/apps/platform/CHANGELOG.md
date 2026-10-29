@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1077.4](https://github.com/okou-ai/okou/compare/app-v0.1077.3...app-v0.1077.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **agents:** restore editable default agent configuration ([#44033](https://github.com/okou-ai/okou/issues/44033)) ([bfada2a](https://github.com/okou-ai/okou/commit/bfada2a09f491143186a92d26e0c4878af02d941))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.800.5
+
 ## [0.1077.3](https://github.com/okou-ai/okou/compare/app-v0.1077.2...app-v0.1077.3) (2026-10-29)
 
 
