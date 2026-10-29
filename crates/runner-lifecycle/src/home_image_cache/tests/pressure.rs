@@ -99,7 +99,8 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
         let paths = f.cache.entry_paths(&key);
         let generation = uuid::Uuid::new_v4().to_string();
         let image = paths.image(&generation).unwrap();
-        write_image(&image, b"home", SIZE);
+        // GC consumes real allocated files without a crash/restart boundary.
+        drop(create_image(&image, b"home", SIZE));
         let identity =
             metadata::HomeImageFileIdentity::from_metadata(&std::fs::metadata(image).unwrap());
         let physical = serde_json::json!({
