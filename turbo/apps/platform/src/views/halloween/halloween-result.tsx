@@ -133,23 +133,28 @@ export function HalloweenResultScreen() {
               {won ? copy.resultRewardRest : copy.lostRewardRest}
             </p>
             <div className="mt-7 flex flex-wrap items-stretch gap-3">
-              <a
-                href="mailto:contact@okou.ai?subject=Halloween%20reward%20redemption"
-                className={cn(
-                  buttonVariants({ size: "lg" }),
-                  goldButton,
-                  "h-10 min-h-10 whitespace-normal px-5 py-2",
-                )}
-              >
-                {copy.redeem}
-              </a>
+              {won && (
+                <a
+                  href="mailto:contact@okou.ai?subject=Halloween%20reward%20redemption"
+                  className={cn(
+                    buttonVariants({ size: "lg" }),
+                    goldButton,
+                    "h-10 min-h-10 whitespace-normal px-5 py-2",
+                  )}
+                >
+                  {copy.redeem}
+                </a>
+              )}
               {phase === "open" && (
                 <Button
-                  variant="quiet"
+                  variant={won ? "quiet" : "default"}
                   size="lg"
                   className={cn(
-                    "h-auto min-h-10 whitespace-normal rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-5 py-2 text-[#b9c5d6] transition-colors duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]",
+                    won
+                      ? "rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] text-[#b9c5d6] transition-colors duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]"
+                      : goldButton,
                     typography.labelClassName,
+                    "h-auto min-h-10 whitespace-normal px-5 py-2",
                   )}
                   pending={operation.state === "loading"}
                   onClick={() => {

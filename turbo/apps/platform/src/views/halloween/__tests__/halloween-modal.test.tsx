@@ -180,7 +180,7 @@ test.each(["(hover: hover)", "(hover: none)"])(
 );
 
 test.each(["success", "wrong"] as const)(
-  "restores a completed %s result with email redemption until replay",
+  "restores a completed %s result with outcome-specific actions until replay",
   async (outcome) => {
     context.store.set(currentRound$, {
       ...round(roundIds[0]!),
@@ -212,9 +212,10 @@ test.each(["success", "wrong"] as const)(
     const redeem = queryAllByRoleFast("link", dialog).find((element) => {
       return element.textContent?.trim() === "Redeem";
     });
-    expect(redeem).toHaveAttribute(
-      "href",
-      "mailto:contact@okou.ai?subject=Halloween%20reward%20redemption",
+    expect(redeem?.getAttribute("href")).toBe(
+      outcome === "success"
+        ? "mailto:contact@okou.ai?subject=Halloween%20reward%20redemption"
+        : undefined,
     );
     click(button("Play again", dialog));
     await within(dialog).findByRole("heading", { name: question.text });
