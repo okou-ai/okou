@@ -153,9 +153,9 @@ test.each(["(hover: hover)", "(hover: none)"])(
     const dialog = await screen.findByRole("dialog", {
       name: "Spooky Halloween",
     });
-    expect(within(dialog).getByText("Let’s play")).toBeInTheDocument();
+    expect(within(dialog).getByText("Let’s go")).toBeInTheDocument();
     expect(pathname()).toBe(homePath);
-    click(button("Let’s play", dialog));
+    click(button("Let’s go", dialog));
     await within(dialog).findByRole("heading", { name: question.text });
     click(button(/Oh cool/, dialog));
     await within(dialog).findByText(correctExplanation);
@@ -189,7 +189,7 @@ test("restores a completed result until the user plays again", async () => {
     feedback: {
       correct: true,
       selectedId: "A",
-      explanation: "Oh cool. She likes you too!",
+      explanation: "Oh cool. Okou likes you too!",
     },
     completedAt: "2026-10-30T12:05:00Z",
   });
@@ -217,7 +217,7 @@ test("keeps the current question when leaving the round fails", async () => {
   const dialog = await screen.findByRole("dialog", {
     name: "Spooky Halloween",
   });
-  click(button("Let’s play", dialog));
+  click(button("Let’s go", dialog));
   await within(dialog).findByRole("heading", { name: question.text });
   context.mocks.api(halloweenContract.leave, ({ respond }) => {
     return respond(500, {
@@ -240,13 +240,13 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
   const dialog = await screen.findByRole("dialog", {
     name: "Spooky Halloween",
   });
-  click(button("Let’s play", dialog));
+  click(button("Let’s go", dialog));
   await within(dialog).findByRole("heading", { name: question.text });
   click(button(/Oh cool/, dialog));
   await within(dialog).findByText(correctExplanation);
   click(button("Activity rules", dialog));
   const rules = await screen.findByRole("dialog", {
-    name: "Spooky Halloween — activity rules",
+    name: "Spooky Halloween — Activity Rules",
   });
   expect(within(rules).getByText("Your Halloween reward")).toBeInTheDocument();
   expect(
@@ -259,7 +259,7 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", {
-        name: "Spooky Halloween — activity rules",
+        name: "Spooky Halloween — Activity Rules",
       }),
     ).not.toBeInTheDocument();
   });
@@ -306,13 +306,13 @@ test("opens by keyboard and restores focus through nested Escape dismissal", asy
   rulesButton.focus();
   await userEvent.keyboard(" ");
   await screen.findByRole("dialog", {
-    name: "Spooky Halloween — activity rules",
+    name: "Spooky Halloween — Activity Rules",
   });
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", {
-        name: "Spooky Halloween — activity rules",
+        name: "Spooky Halloween — Activity Rules",
       }),
     ).not.toBeInTheDocument();
     expect(rulesButton).toHaveFocus();

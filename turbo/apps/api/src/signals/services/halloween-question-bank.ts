@@ -1,6 +1,6 @@
 import type { HalloweenStoredQuestions } from "@okouai/db/jsonb-contracts/halloween";
 
-// Approved sheet 52026, captured October 26, 2026. Each round stores its own immutable copy.
+// Approved sheet 52026, aligned with V1 on October 29, 2026. Each round stores its own immutable copy.
 export const HALLOWEEN_QUESTION_BANK = Object.freeze([
   {
     id: "QUIZ-01",
@@ -92,11 +92,11 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
     ],
     explanation:
-      "Come on—research, decks, websites… she’s got more than one trick up her sleeve.",
+      "Come on—research, decks, websites… it’s got more than one trick up its sleeve.",
   },
   {
     id: "QUIZ-05",
-    text: "Give Okou a job. What does she do?",
+    text: "Give Okou a job. What does it do?",
     options: [
       {
         id: "A",
@@ -115,7 +115,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
     ],
     explanation:
-      "Tell Okou what you want, get what you need. She puts your connected tools to work.",
+      "Tell Okou what you want, get what you need. It puts your connected tools to work.",
   },
   {
     id: "QUIZ-06",
@@ -168,12 +168,12 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
     options: [
       {
         id: "A",
-        text: "Yes—she turns into a pumpkin",
+        text: "Yes—it turns into a pumpkin",
         correct: false,
       },
       {
         id: "B",
-        text: "Nooo—she can keep working in the cloud",
+        text: "Nooo—it can keep working in the cloud",
         correct: true,
       },
       {
@@ -200,7 +200,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
       {
         id: "C",
-        text: "No—she doesn’t have that many “hands”",
+        text: "No—it doesn’t have that many “hands”",
         correct: false,
       },
     ],
@@ -296,7 +296,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
     ],
     explanation:
-      "Tell Okou when it should run. She sets up the trigger—no scheduling code needed.",
+      "Tell Okou when it should run. It sets up the trigger—no scheduling code needed.",
   },
   {
     id: "QUIZ-14",
@@ -342,7 +342,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
     ],
     explanation:
-      "Set it once. Okou runs the workflow automatically—no need to “summon” her every time.",
+      "Set it once. Okou runs the workflow automatically—no need to “summon” it every time.",
   },
   {
     id: "QUIZ-16",
@@ -438,7 +438,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
   },
   {
     id: "QUIZ-20",
-    text: "Ask Okou for a Halloween pitch deck. What can she build?",
+    text: "Ask Okou for a Halloween pitch deck. What can it build?",
     options: [
       {
         id: "A",
@@ -532,7 +532,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
     options: [
       {
         id: "A",
-        text: "She can’t—only her default style",
+        text: "It can’t—only its default style",
         correct: false,
       },
       {
@@ -547,7 +547,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
     ],
     explanation:
-      "Send Okou your brand file or Figma link. She’ll take care of the styling.",
+      "Send Okou your brand file or Figma link. It’ll take care of the styling.",
   },
   {
     id: "QUIZ-25",
@@ -679,12 +679,12 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
       {
         id: "C",
-        text: "Yes—ask her to update it with the new data",
+        text: "Yes—ask it to update it with the new data",
         correct: true,
       },
     ],
     explanation:
-      "Give Okou the new data or use a connected source. She can update the report without you rebuilding it by hand.",
+      "Give Okou the new data or use a connected source. It can update the report without you rebuilding it by hand.",
   },
   {
     id: "QUIZ-31",
@@ -756,7 +756,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
   },
   {
     id: "QUIZ-34",
-    text: "Can Okou turn the report she made into a presentation?",
+    text: "Can Okou turn the report it made into a presentation?",
     options: [
       {
         id: "A",
@@ -770,7 +770,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
       {
         id: "C",
-        text: "Yes—just ask her to make it a deck",
+        text: "Yes—just ask it to make it a deck",
         correct: true,
       },
     ],
@@ -782,17 +782,17 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
     options: [
       {
         id: "A",
-        text: "@ her",
+        text: "@Okou",
         correct: true,
       },
       {
         id: "B",
-        text: "Yell at her",
+        text: "Yell at it",
         correct: false,
       },
       {
         id: "C",
-        text: "Stare at her",
+        text: "Stare at it",
         correct: false,
       },
     ],
@@ -815,12 +815,12 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
       {
         id: "C",
-        text: "Nowhere. She’s web-only.",
+        text: "Nowhere. It’s web-only.",
         correct: false,
       },
     ],
     explanation:
-      "@Okou in a channel for teamwork, or DM her to work on a draft privately!",
+      "@Okou in a channel for teamwork, or DM it to work on a draft privately!",
   },
   {
     id: "QUIZ-37",
@@ -856,7 +856,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
       {
         id: "B",
-        text: "She already has access to every app",
+        text: "It already has access to every app",
         correct: false,
       },
       {
@@ -883,7 +883,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
       {
         id: "C",
-        text: "Okou herself",
+        text: "Okou itself",
         correct: false,
       },
     ],
@@ -1011,7 +1011,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
     options: [
       {
         id: "A",
-        text: "Okou—it goes out as soon as she’s done",
+        text: "Okou—it goes out as soon as it’s done",
         correct: false,
       },
       {
@@ -1057,12 +1057,12 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
     options: [
       {
         id: "A",
-        text: "Just tell her—she’ll get the idea",
+        text: "Just tell it—it’ll get the idea",
         correct: true,
       },
       {
         id: "B",
-        text: "She should know everything, even if you say nothing",
+        text: "It should know everything, even if you say nothing",
         correct: false,
       },
       {
@@ -1071,7 +1071,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
         correct: false,
       },
     ],
-    explanation: "Just tell Okou. She’s here to be your best AI teammate.",
+    explanation: "Just tell Okou. It’s here to be your best AI teammate.",
   },
   {
     id: "QUIZ-48",
@@ -1098,7 +1098,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
   },
   {
     id: "QUIZ-49",
-    text: "“Okou, how much did we sell?” What should she do without the sales data?",
+    text: "“Okou, how much did we sell?” What should it do without the sales data?",
     options: [
       {
         id: "A",
@@ -1140,7 +1140,7 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
       },
     ],
     explanation:
-      "Skip the blank-page panic. Give Okou the brief and let her do the research and writing—you review the plan.",
+      "Skip the blank-page panic. Give Okou the brief and let it do the research and writing—you review the plan.",
   },
   {
     id: "QUIZ-51",
@@ -1207,6 +1207,6 @@ export const HALLOWEEN_QUESTION_BANK = Object.freeze([
         correct: true,
       },
     ],
-    explanation: "Oh cool. She likes you too!",
+    explanation: "Oh cool. Okou likes you too!",
   },
 ] satisfies HalloweenStoredQuestions);
