@@ -1,7 +1,7 @@
 use tracing::{info, warn};
 
-use crate::cmd::nbd::NbdOrphanDisconnect;
 use crate::error::{RunnerError, RunnerResult};
+use nbd_cow::orphan::{self, NbdOrphanCandidate, NbdOrphanDisconnect};
 
 use super::report::GcReport;
 
@@ -11,7 +11,7 @@ pub(super) async fn gc_nbd_orphans(dry_run: bool) -> RunnerResult<GcReport> {
     gc_nbd_orphans_with(
         dry_run,
         crate::cmd::nbd::find_nbd_orphans,
-        crate::cmd::nbd::disconnect_orphan_if_still_dead,
+        orphan::disconnect,
     )
     .await
 }
@@ -22,10 +22,10 @@ async fn gc_nbd_orphans_with<Scan, Disconnect>(
     disconnect: Disconnect,
 ) -> RunnerResult<GcReport>
 where
-    Scan: FnOnce() -> (u32, Vec<(u32, u32)>) + Send + 'static,
-    Disconnect: Fn(u32, u32) -> NbdOrphanDisconnect + Clone + Send + 'static,
+    Scan: FnOnce() -> Vec<NbdOrphanCandidate> + Send + 'static,
+    Disconnect: Fn(NbdOrphanCandidate) -> NbdOrphanDisconnect + Clone + Send + 'static,
 {
-    let (_, orphans) = tokio::task::spawn_blocking(scan)
+    let orphans = tokio::task::spawn_blocking(scan)
         .await
         .map_err(|e| RunnerError::Internal(format!("nbd orphan scan task failed: {e}")))?;
 
@@ -34,8 +34,10 @@ where
     }
 
     let mut cleaned: u32 = 0;
-    for (device_index, pid) in orphans {
+    for candidate in orphans {
+        let device_index = candidate.device_index();
         if dry_run {
+            let pid = candidate.owner_tid();
             info!(
                 "[dry-run] would disconnect orphan NBD device /dev/nbd{device_index} (owner PID {pid} dead)"
             );
@@ -45,14 +47,13 @@ where
             // the allocator uses. Between the scan and now, the device could
             // have been freed and re-acquired by another runner.
             let disconnect = disconnect.clone();
-            let result =
-                match tokio::task::spawn_blocking(move || disconnect(device_index, pid)).await {
-                    Ok(result) => result,
-                    Err(e) => {
-                        warn!("nbd disconnect task failed for /dev/nbd{device_index}: {e}");
-                        continue;
-                    }
-                };
+            let result = match tokio::task::spawn_blocking(move || disconnect(candidate)).await {
+                Ok(result) => result,
+                Err(e) => {
+                    warn!("nbd disconnect task failed for /dev/nbd{device_index}: {e}");
+                    continue;
+                }
+            };
 
             match result {
                 NbdOrphanDisconnect::Disconnected(_) => {
@@ -80,22 +81,15 @@ mod tests {
 
     use super::*;
 
-    fn disconnected(device_index: u32, owner_tid: u32) -> NbdOrphanDisconnect {
-        NbdOrphanDisconnect::Disconnected(
-            nbd_cow::orphan::NbdOrphanCandidate::from_dead_owner_observation(
-                device_index,
-                owner_tid,
-            ),
-        )
+    fn candidate(device_index: u32, owner_tid: u32) -> NbdOrphanCandidate {
+        NbdOrphanCandidate::from_dead_owner_observation(device_index, owner_tid)
     }
 
     #[tokio::test]
     async fn gc_nbd_orphans_returns_empty_report_without_candidates() {
-        let report = gc_nbd_orphans_with(
-            false,
-            || (8, Vec::new()),
-            |_, _| panic!("disconnect should not run without candidates"),
-        )
+        let report = gc_nbd_orphans_with(false, Vec::new, |_| {
+            panic!("disconnect should not run without candidates")
+        })
         .await
         .unwrap();
 
@@ -106,8 +100,8 @@ mod tests {
     async fn gc_nbd_orphans_dry_run_counts_candidates_without_disconnect() {
         let report = gc_nbd_orphans_with(
             true,
-            || (8, vec![(2, 101), (5, 202)]),
-            |_, _| panic!("disconnect should not run during dry-run"),
+            || vec![candidate(2, 101), candidate(5, 202)],
+            |_| panic!("disconnect should not run during dry-run"),
         )
         .await
         .unwrap();
@@ -120,17 +114,21 @@ mod tests {
         let report = gc_nbd_orphans_with(
             false,
             || {
-                (
-                    8,
-                    vec![(0, 100), (1, 101), (2, 102), (3, 103), (4, 104), (5, 105)],
-                )
+                vec![
+                    candidate(0, 100),
+                    candidate(1, 101),
+                    candidate(2, 102),
+                    candidate(3, 103),
+                    candidate(4, 104),
+                    candidate(5, 105),
+                ]
             },
-            |device_index, owner_tid| match device_index {
-                0 | 4 => disconnected(device_index, owner_tid),
+            |candidate| match candidate.device_index() {
+                0 | 4 => NbdOrphanDisconnect::Disconnected(candidate),
                 1 => NbdOrphanDisconnect::Locked,
                 2 => NbdOrphanDisconnect::Changed,
                 3 => NbdOrphanDisconnect::Failed(nbd_cow::orphan::NbdOrphanError::Disconnect {
-                    device_index,
+                    device_index: candidate.device_index(),
                     source: nbd_cow::error::NbdCowError::Io(std::io::Error::other(
                         "netlink failed",
                     )),
@@ -150,7 +148,7 @@ mod tests {
         let error = gc_nbd_orphans_with(
             false,
             || panic!("scan failed"),
-            |_, _| panic!("disconnect should not run after scan failure"),
+            |_| panic!("disconnect should not run after scan failure"),
         )
         .await
         .unwrap_err();
@@ -169,13 +167,13 @@ mod tests {
         let attempts_for_disconnect = attempts.clone();
         let report = gc_nbd_orphans_with(
             false,
-            || (8, vec![(0, 100), (1, 101)]),
-            move |device_index, owner_tid| {
+            || vec![candidate(0, 100), candidate(1, 101)],
+            move |candidate| {
                 attempts_for_disconnect.fetch_add(1, Ordering::Relaxed);
-                if device_index == 0 {
+                if candidate.device_index() == 0 {
                     panic!("disconnect task failed");
                 }
-                disconnected(device_index, owner_tid)
+                NbdOrphanDisconnect::Disconnected(candidate)
             },
         )
         .await

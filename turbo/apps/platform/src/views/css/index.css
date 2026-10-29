@@ -277,12 +277,16 @@
   --height-viewport: var(--okou-viewport-height);
 
   /* The workspace canvas, so the pane reaches its fill and gradient through
-     `bg-workspace-canvas` / `bg-workspace-canvas-image` instead of four
-     selectors. The runtime values are keyed at `:root` further down; inline
-     keeps the reference, so the theme and palette attributes still decide at
-     use time. */
+     `bg-workspace-canvas` / `bg-workspace-canvas-image`, the shell the ground
+     under it through `bg-workspace-ground`, and a surface set half a step
+     back inside the sheet through `bg-workspace-canvas-recessed`, instead of
+     four selectors. The runtime values are keyed at `:root` further down;
+     inline keeps the reference, so the theme and palette attributes still
+     decide at use time. */
   --color-workspace-canvas: var(--okou-workspace-canvas-fill);
   --background-image-workspace-canvas-image: var(--okou-workspace-canvas-image);
+  --color-workspace-ground: var(--okou-workspace-ground);
+  --color-workspace-canvas-recessed: var(--okou-workspace-canvas-recessed);
 
   /* The thinking label's shimmer. Six stops, so the sweep reads as a band with
      a flat core rather than a point: the two inner stops hold the bright
@@ -1359,13 +1363,30 @@ details > summary {
    the rule it refines and source order decides between them. The retired dark
    rule also matched the paired `.dark` class; `applyTheme` always sets both,
    and a class in the selector would register a first-party class-selector
-   declaration against the shrink-only baseline. */
+   declaration against the shrink-only baseline.
+   The ground is the unified workspace shell's page surface, the one the rail
+   stands on beside the sheet. It is keyed with the canvas because it is
+   defined against it: the stop below the canvas fill, 2.2-2.7 points of OKLab
+   lightness in Light and about 3.4 in Dark. In Light that is gray-100 under
+   every palette; in Dark the fill itself moves between the default and the
+   gradient palettes, so the stop below it moves too.
+   The recessed canvas is a surface inside the sheet set half a step back,
+   such as the unified chat list beside the content: the OKLab midpoint of the
+   fill and the ground, so it follows both through all four variants without
+   a value of its own. The fill comes first, so a browser without `color-mix()`
+   gets the plain canvas rather than the ground. */
 :root {
   --okou-workspace-canvas-fill: hsl(var(--background));
   --okou-workspace-canvas-image: radial-gradient(
     ellipse 120% 80% at 50% -20%,
     hsl(var(--background-50) / 0.5),
     transparent 50%
+  );
+  --okou-workspace-ground: hsl(var(--gray-100));
+  --okou-workspace-canvas-recessed: color-mix(
+    in oklab,
+    var(--okou-workspace-canvas-fill),
+    var(--okou-workspace-ground)
   );
 }
 
@@ -1375,6 +1396,8 @@ details > summary {
     hsl(var(--background-50) / 0.4),
     transparent 48%
   );
+  /* gray-100 sits above the dark canvas; gray-0 is the stop below gray-50. */
+  --okou-workspace-ground: hsl(var(--gray-0));
 }
 
 :root[data-gradient-color-themes] {
@@ -1417,8 +1440,10 @@ details > summary {
 }
 
 /* Dark keeps the same light and only swaps in the strengths solved against
-   the dark card. */
+   the dark card. That card sits between gray-50 and gray-100, so the stop
+   below it is gray-50; the default's gray-0 would sit twice as far down. */
 :root:where([data-theme="dark"])[data-gradient-color-themes] {
+  --okou-workspace-ground: hsl(var(--gray-50));
   --okou-ambient-anchor: color-mix(
     in srgb,
     var(--okou-color-theme-anchor) var(--okou-color-theme-ambient-anchor-dark),

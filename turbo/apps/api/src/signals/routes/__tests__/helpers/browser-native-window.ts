@@ -7,6 +7,7 @@ import { detach, Mechanism } from "../../../utils";
 interface NativeTarget {
   readonly targetId: string;
   windowId: number;
+  url?: string;
 }
 
 /** Stateful external CDP provider; no application state or DB access. */
@@ -15,6 +16,10 @@ export function createNativeWindowProvider(context: TestContext) {
   const state: {
     readonly url: string;
     readonly targets: Map<string, NativeTarget>;
+    readonly contentsSizes: Map<
+      number,
+      { readonly width: number; readonly height: number }
+    >;
     readonly created: NativeTarget[];
     readonly closed: string[];
     readonly windowIds: number[];
@@ -24,15 +29,26 @@ export function createNativeWindowProvider(context: TestContext) {
     onSocketClose?: () => void;
     windowError?: string;
     closeSucceeds: boolean;
+    closeReply: "reply" | "withhold";
+    windowReply: "reply" | "withhold";
     createReply: "reply" | "disconnect" | "withhold";
+    command?: (command: {
+      readonly id: number;
+      readonly method: string;
+      readonly params: Readonly<Record<string, unknown>>;
+      readonly sessionId?: string;
+    }) => unknown;
   } = {
     url,
     targets: new Map(),
+    contentsSizes: new Map(),
     created: [],
     closed: [],
     windowIds: [],
     windowErrors: new Map(),
     closeSucceeds: true,
+    closeReply: "reply",
+    windowReply: "reply",
     createReply: "reply",
   };
   let nextWindowId = 1;
@@ -40,6 +56,7 @@ export function createNativeWindowProvider(context: TestContext) {
     id: number(),
     method: string(),
     params: record(string(), zUnknown()),
+    sessionId: string().optional(),
   });
   const handler = ws.link(url).addEventListener("connection", ({ client }) => {
     client.addEventListener("close", () => {
@@ -52,9 +69,11 @@ export function createNativeWindowProvider(context: TestContext) {
         const target = {
           targetId: randomUUID().replaceAll("-", ""),
           windowId: state.windowIds.shift() ?? nextWindowId++,
+          url: string().parse(command.params.url),
         };
         nextWindowId = Math.max(nextWindowId, target.windowId + 1);
         state.targets.set(target.targetId, target);
+        state.contentsSizes.set(target.windowId, { width: 800, height: 600 });
         state.created.push(target);
         await state.beforeCreateReply?.(target);
         context.signal.throwIfAborted();
@@ -68,6 +87,9 @@ export function createNativeWindowProvider(context: TestContext) {
         result = { targetId: target.targetId };
       } else if (command.method === "Browser.getWindowForTarget") {
         const targetId = String(command.params.targetId);
+        if (state.windowReply === "withhold") {
+          return;
+        }
         await state.beforeWindowReply?.(targetId);
         context.signal.throwIfAborted();
         const target = state.targets.get(targetId);
@@ -82,25 +104,46 @@ export function createNativeWindowProvider(context: TestContext) {
           return;
         }
         result = { windowId: target.windowId };
+      } else if (command.method === "Browser.setContentsSize") {
+        state.contentsSizes.set(Number(command.params.windowId), {
+          width: Number(command.params.width),
+          height: Number(command.params.height),
+        });
+        result = {};
       } else if (command.method === "Target.getTargets") {
         result = {
           targetInfos: [...state.targets.values()].map((target) => {
             return {
               targetId: target.targetId,
               type: "page",
-              url: "about:blank",
+              url: target.url ?? "about:blank",
             };
           }),
         };
       } else if (command.method === "Target.closeTarget") {
         const targetId = String(command.params.targetId);
+        if (state.closeReply === "withhold") {
+          return;
+        }
         if (state.closeSucceeds) {
           state.targets.delete(targetId);
           state.closed.push(targetId);
         }
         result = { success: state.closeSucceeds };
       } else {
-        throw new Error(`Unhandled external CDP method: ${command.method}`);
+        if (!state.command) {
+          throw new Error(`Unhandled external CDP method: ${command.method}`);
+        }
+        result = await state.command(command);
+        if (result instanceof Error) {
+          client.send(
+            JSON.stringify({
+              id: command.id,
+              error: { message: result.message },
+            }),
+          );
+          return;
+        }
       }
       client.send(JSON.stringify({ id: command.id, result }));
     };
@@ -113,4 +156,65 @@ export function createNativeWindowProvider(context: TestContext) {
     });
   });
   return Object.assign(state, { handler });
+}
+
+export function installBrowserWindowContentCommands(
+  native: ReturnType<typeof createNativeWindowProvider>,
+) {
+  const sizes = native.contentsSizes;
+  native.command = (command) => {
+    const targetId = command.sessionId?.replace(/^page-/u, "");
+    if (command.method === "Target.attachToTarget") {
+      return { sessionId: `page-${String(command.params.targetId)}` };
+    }
+    if (command.method === "Page.getFrameTree") {
+      return {
+        frameTree: {
+          frame: { id: "frame", loaderId: "loader", url: "about:blank" },
+        },
+      };
+    }
+    if (command.method === "Page.createIsolatedWorld") {
+      return { executionContextId: 1 };
+    }
+    if (command.method === "Runtime.evaluate") {
+      const expression = String(command.params.expression);
+      if (expression.includes("window.open(")) {
+        const source = native.targets.get(String(targetId));
+        if (!source) {
+          throw new Error("Restore source missing");
+        }
+        const match =
+          /^Boolean\(window\.open\(("(?:[^"\\]|\\.)*"), "_blank"\)\)$/u.exec(
+            expression,
+          );
+        if (!match?.[1]) {
+          throw new Error("Unexpected restore expression");
+        }
+        const target = {
+          targetId: randomUUID(),
+          windowId: source.windowId,
+          url: String(JSON.parse(match[1])),
+        };
+        native.targets.set(target.targetId, target);
+        return { result: { value: true } };
+      }
+      return { result: { value: true } };
+    }
+    if (command.method === "Page.getLayoutMetrics") {
+      return {
+        cssVisualViewport: {
+          pageX: 0,
+          pageY: 0,
+          clientWidth: 1440,
+          clientHeight: 900,
+        },
+      };
+    }
+    if (command.method === "Page.captureScreenshot") {
+      return { data: Buffer.from(`preview:${targetId}`).toString("base64") };
+    }
+    throw new Error(`Unexpected external CDP operation: ${command.method}`);
+  };
+  return { sizes };
 }

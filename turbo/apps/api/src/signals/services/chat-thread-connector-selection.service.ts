@@ -12,7 +12,17 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import { and, asc, count, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  inArray,
+  ne,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type { WithSubquery } from "drizzle-orm/subquery";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
@@ -797,11 +807,17 @@ export const clearChatThreadConnectorSelection$ = command(
 );
 
 /** Required choices reject initialization; legacy clients omit missing accounts. */
-export function initialChatThreadConnectorSelectionStatements(args: {
-  readonly chatThreadId: string;
-  readonly selections: readonly PreparedChatThreadConnectorSelection[];
-  readonly required: boolean;
-}) {
+export function initialChatThreadConnectorSelectionStatements(
+  args: {
+    readonly chatThreadId: string;
+    readonly selections: readonly PreparedChatThreadConnectorSelection[];
+    readonly required: boolean;
+  },
+  initializationGates: readonly SQL[],
+) {
+  if (initializationGates.length !== args.selections.length) {
+    throw new Error("Each initial connector choice requires its creation gate");
+  }
   return [...args.selections]
     .sort((a, b) => {
       return a.connectionId < b.connectionId
@@ -810,17 +826,25 @@ export function initialChatThreadConnectorSelectionStatements(args: {
           ? 1
           : 0;
     })
-    .map((selection) => {
+    .map((selection, index) => {
+      const createdThread = initializationGates[index];
+      if (!createdThread) {
+        throw new Error("Initial connector creation gate is missing");
+      }
       const target = targetColumns(selection.target);
       if (!args.required) {
         return sql`INSERT INTO ${chatThreadConnectorSelections}
         (chat_thread_id, connector_id, connector_slug, custom_connector_id)
         SELECT ${args.chatThreadId}::uuid, ${connectors.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid
-        FROM ${connectors} WHERE ${connectors.id} = ${selection.connectionId}::uuid`;
+        FROM ${connectors} WHERE ${connectors.id} = ${selection.connectionId}::uuid
+        AND ${createdThread}
+        RETURNING ${chatThreadConnectorSelections.chatThreadId}`;
       }
       return sql`INSERT INTO ${chatThreadConnectorSelections}
-      (chat_thread_id, connector_id, connector_slug, custom_connector_id)
-      VALUES (${args.chatThreadId}::uuid, ${selection.connectionId}::uuid,
-        ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid)`;
+        (chat_thread_id, connector_id, connector_slug, custom_connector_id)
+        SELECT ${args.chatThreadId}::uuid, ${selection.connectionId}::uuid,
+          ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid
+        WHERE ${createdThread}
+        RETURNING ${chatThreadConnectorSelections.chatThreadId}`;
     });
 }

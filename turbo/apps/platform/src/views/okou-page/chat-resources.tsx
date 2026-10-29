@@ -80,13 +80,11 @@ function ChatResourcesButtonInner({
   const finishOpening = useSet(resources.finishOpening$);
   const [preference, press] = useLoadableSet(resources.press$);
   const requested = useLastResolved(resources.requested$) ?? false;
-  const wanted = useLastResolved(resources.wanted$) ?? false;
   const settled = useLastResolved(resources.settled$) ?? null;
-  // Nothing draws before the resources have answered. Until then the button
-  // breathes and takes no presses, however long the answer takes and even if
-  // the layout no longer has room for the panel.
+  // Only a current request waits for resources. A narrower layout releases the
+  // button while the underlying sources keep loading into their caches.
   const loading =
-    (wanted && settled === null) || preference.state === "loading";
+    (requested && settled === null) || preference.state === "loading";
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
   const shown = settled !== null && requested && (settled || chosen !== null);

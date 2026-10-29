@@ -6,6 +6,24 @@ export function platformStaticAssetUrl(path: string) {
   return `${PLATFORM_RUNTIME_CONFIG.publicStaticAssetsBaseUrl}/platform/${path.replace(/^\/+/u, "")}`;
 }
 
+export const platformMessagePdfFontUrls = Object.freeze({
+  regular: platformStaticAssetUrl(
+    "message-pdf/fonts/NotoSansCJKsc-Regular-2c76254f6fc3.otf",
+  ),
+  bold: platformStaticAssetUrl(
+    "message-pdf/fonts/NotoSansCJKsc-Bold-b5f0d1a190a7.otf",
+  ),
+  italic: platformStaticAssetUrl(
+    "message-pdf/fonts/sarasa-gothic-sc-italic-11c04388a84c.ttf",
+  ),
+  boldItalic: platformStaticAssetUrl(
+    "message-pdf/fonts/sarasa-gothic-sc-bolditalic-434c2425d173.ttf",
+  ),
+  emoji: platformStaticAssetUrl(
+    "message-pdf/fonts/noto-emoji-emoji-400-normal-61c7949ebb9d.woff",
+  ),
+});
+
 export const platformEmptyPrivateAgentsImg = platformStaticAssetUrl(
   "views/agents-page/assets/empty-private-agents-9a8d7e3750b6.png",
 );

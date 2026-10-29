@@ -55,7 +55,8 @@ export interface CanonicalAssetDiscordDeliveryDestination {
 export type CanonicalAssetDeliveryDestination =
   | CanonicalAssetSlackDeliveryDestination
   | CanonicalAssetDiscordDeliveryDestination
-  | CanonicalAssetWechatDeliveryDestination;
+  | CanonicalAssetWechatDeliveryDestination
+  | CanonicalAssetTeamsDeliveryDestination;
 
 export interface CanonicalAssetDiscordDeliveryState {
   readonly provider: "discord";
@@ -85,4 +86,20 @@ export interface CanonicalAssetWechatDeliveryState {
 }
 
 export type CanonicalAssetDeliveryProviderState =
-  CanonicalAssetDiscordDeliveryState | CanonicalAssetWechatDeliveryState;
+  | CanonicalAssetDiscordDeliveryState
+  | CanonicalAssetWechatDeliveryState
+  | CanonicalAssetTeamsDeliveryState;
+
+export interface CanonicalAssetTeamsDeliveryDestination {
+  readonly provider: "teams";
+  readonly tenantId: string;
+  readonly conversationId: string;
+  readonly source: boolean;
+  readonly activityId?: string;
+  readonly text?: string;
+}
+
+export interface CanonicalAssetTeamsDeliveryState {
+  readonly provider: "teams";
+  readonly attempt: { readonly id: string; readonly startedAt: string } | null;
+}

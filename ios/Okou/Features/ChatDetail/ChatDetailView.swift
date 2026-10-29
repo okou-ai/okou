@@ -343,7 +343,7 @@ struct ChatDetailView: View {
           permissionActions: conversation.permissionActions,
           artifacts: message.role == .assistant ? conversation.artifacts : nil,
           artifactImageSources: conversation.artifactImageSources(for: message.id),
-          loadsActions: loadsAttachments
+          loadsActions: loadsAttachments, loadsDiagrams: loadsAttachments
         )
         .equatable()
         .foregroundStyle(

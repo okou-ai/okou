@@ -459,6 +459,20 @@ jobs:
           path: ${{ env.IOS_ARCHIVE_DIR }}/release-mapping.json
           if-no-files-found: error
           retention-days: 90
+      - name: Install verified Sentry CLI
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            --connect-timeout 10 --max-time 60 \
+            --output "$RUNNER_TEMP/sentry-cli" \
+            https://github.com/getsentry/sentry-cli/releases/download/2.58.5/sentry-cli-Darwin-universal
+          echo "545d98b9dcc7ce6f52013f72665fa67e36bfc0672abdb19ab78a2f85729b1230  $RUNNER_TEMP/sentry-cli" | shasum --algorithm 256 --check
+          chmod +x "$RUNNER_TEMP/sentry-cli"
+      - name: Upload canonical iOS dSYMs to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT_IOS }}
+        run: python3 ios/scripts/upload-sentry-symbols.py "$IOS_ARCHIVE_DIR/Original.xcarchive" --cli "$RUNNER_TEMP/sentry-cli"
       - name: Resolve internal group and next build number
         id: prepare
         env:

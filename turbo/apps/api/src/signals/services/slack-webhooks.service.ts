@@ -1,10 +1,7 @@
 import { rootSignal$ } from "../context/root";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -37,11 +34,7 @@ import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  loadUserFeatureSwitchContext$,
-  userFeatureSwitchOverrides,
-} from "./feature-switches.service";
+import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { removeSlackWorkspaceInstallation$ } from "./slack-workspace-identity.service";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
@@ -697,17 +690,6 @@ const resolveSlackAccountRoute$ = command(
       if (!candidateOrgId) {
         continue;
       }
-      const features = await set(
-        loadUserFeatureSwitchContext$,
-        candidateOrgId,
-        candidate.connection.userId,
-        signal,
-      );
-      if (
-        !isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, features)
-      ) {
-        continue;
-      }
       const token = await decryptPersistentSecretValue(
         args.installation.encryptedBotToken,
         args.installation.orgId ? { orgId: args.installation.orgId } : {},
@@ -721,7 +703,7 @@ const resolveSlackAccountRoute$ = command(
         return { kind: "ignored" } as const;
       }
       if (identity.teamId !== candidate.connection.slackWorkspaceId) {
-        // A shared user ID in another workspace does not opt this sender in.
+        // Slack user IDs must match the sender's verified workspace.
         continue;
       }
       const membership = await set(

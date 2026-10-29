@@ -1,3 +1,4 @@
+import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
@@ -145,7 +146,10 @@ const loadTeamsLaunchContext$ = command(
         teamsOrgInstallations,
         and(
           eq(teamsOrgInstallations.teamsTenantId, chatTeamsContext.tenantId),
-          eq(teamsOrgInstallations.orgId, args.orgId),
+          teamsAccountOwnerCondition({
+            orgId: args.orgId,
+            userId: args.userId,
+          }),
         ),
       )
       .where(

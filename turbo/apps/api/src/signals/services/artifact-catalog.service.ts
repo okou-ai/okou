@@ -113,6 +113,7 @@ interface CatalogFileRow {
   readonly previewImageUrl: string | null;
   readonly metadata: Record<string, unknown>;
   readonly classification: CanonicalAssetClassification | null;
+  readonly deletedAt: Date | null;
   readonly createdAt: Date;
 }
 
@@ -309,6 +310,7 @@ const readCatalogFileRow$ = command(
         previewImageUrl: runUploadedFiles.previewImageUrl,
         metadata: runUploadedFiles.metadata,
         classification: runUploadedFiles.classification,
+        deletedAt: runUploadedFiles.deletedAt,
         createdAt: runUploadedFiles.createdAt,
       })
       .from(runUploadedFiles)
@@ -578,6 +580,9 @@ function fileArtifactInsertSelection(
     thumbnail: sql`${sql.param(values.thumbnail, artifacts.thumbnail)}::jsonb`
       .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
       .as("thumbnail"),
+    deletedAt: sql`NULL::timestamp`
+      .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
+      .as("deleted_at"),
     createdAt:
       sql`${sql.param(values.createdAt, artifacts.createdAt)}::timestamp`
         .mapWith(artifacts.createdAt)
@@ -746,6 +751,9 @@ function hostedArtifactProjection(
     title,
     thumbnail,
     updatedAt,
+    // Only a new publication may restore a deleted site. Replaying an old
+    // file or preview update must preserve the catalog tombstone.
+    deletedAt: sql`CASE WHEN ${sql.param(args.row.createdAt, artifacts.projectionCreatedAt)}::timestamp > ${artifacts.deletedAt} THEN NULL ELSE ${artifacts.deletedAt} END`,
   };
   const insertSelection = {
     id: sql`gen_random_uuid()`.mapWith(artifacts.id).as("id"),
@@ -788,6 +796,9 @@ function hostedArtifactProjection(
     thumbnail: sql`${sql.param(thumbnail, artifacts.thumbnail)}::jsonb`
       .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
       .as("thumbnail"),
+    deletedAt: sql`NULL::timestamp`
+      .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
+      .as("deleted_at"),
     createdAt: eligible.createdAt,
     updatedAt: sql`now()`.mapWith(artifacts.updatedAt).as("updated_at"),
   };
@@ -1092,6 +1103,11 @@ export const syncArtifactCatalogForFile$ = command(
     const row = await set(readCatalogFileRow$, fileId, signal);
     signal.throwIfAborted();
 
+    if (row?.deletedAt) {
+      await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
+      return;
+    }
+
     if (!row?.url || !row.orgId) {
       await db.delete(artifacts).where(eq(artifacts.projectionFileId, fileId));
       signal.throwIfAborted();
@@ -1333,6 +1349,7 @@ export const listArtifactCatalog$ = command(
         and(
           eq(artifacts.orgId, args.orgId),
           artifactCatalogOwnerFilter(args.userId),
+          isNull(artifacts.deletedAt),
           args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
           args.chatThreadId
             ? eq(artifacts.chatThreadId, args.chatThreadId)
@@ -1398,6 +1415,9 @@ const fileDetail$ = command(
         previewImageUrl: runUploadedFiles.previewImageUrl,
       })
       .from(runUploadedFiles)
+      // An unfinished withdrawal must remain manageable after a failed delete.
+      // The owning catalog read hides completed deletions. Fresh owner access
+      // and new share requests independently honor the file tombstone.
       .where(eq(runUploadedFiles.id, fileId))
       .limit(1);
     signal.throwIfAborted();
@@ -1605,6 +1625,7 @@ export const getArtifactCatalogEntry$ = command(
           eq(artifacts.id, args.artifactId),
           eq(artifacts.orgId, args.orgId),
           artifactCatalogOwnerFilter(args.userId),
+          isNull(artifacts.deletedAt),
         ),
       )
       .limit(1);

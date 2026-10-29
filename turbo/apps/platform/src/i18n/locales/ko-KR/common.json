@@ -520,6 +520,16 @@
       "kindIcon": "{{kind}} 아티팩트",
       "loading": "아티팩트 로딩 중"
     },
+    "deletion": {
+      "cancel": "취소",
+      "delete": "삭제",
+      "deleting": "삭제 중…",
+      "description": "이 작업물을 삭제하고 Okou 링크를 비활성화합니다. 이미 다운로드했거나 다른 서비스에 저장한 사본은 유지됩니다.",
+      "hostedDescription": "이 웹사이트와 게시된 모든 버전을 오프라인으로 전환합니다. 다른 서비스에 저장한 사본은 유지됩니다.",
+      "menu": "{{title}} 추가 작업",
+      "sharedDescription": "저장한 대화를 작업물에서 제거합니다. 원본 대화와 공유 링크는 계속 사용할 수 있습니다.",
+      "title": "{{title}}을(를) 삭제할까요?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",
@@ -619,7 +629,8 @@
       "organizationOptionUnnamed": "조직 내 모든 사용자",
       "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
       "publicAccess": "공개 액세스",
-      "publicOption": "링크가 있는 모든 사람"
+      "publicOption": "링크가 있는 모든 사람",
+      "updateFailed": "액세스 권한을 업데이트할 수 없습니다"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -2050,6 +2061,7 @@
         "open": "이메일 관리",
         "openEmail": "이메일 열기: {{subject}}",
         "result": "{{succeeded}}개 완료 · {{failed}}개 실패",
+        "resultAwaiting": "{{succeeded}}개 완료 · {{failed}}개 실패 · {{awaitingConfirmation}} 전송 확인 대기 중",
         "search": "제목 또는 보낸 사람 검색",
         "selectAll": "모두 선택",
         "selected": "{{quantity}}개 선택됨",
@@ -2065,16 +2077,19 @@
       "noSubject": "(제목 없음)",
       "noSubjectPlain": "제목 없음",
       "openEmail": "{{status}} 이메일 열기: {{subject}}",
-      "openInGmail": "Gmail에서 열기",
+      "openInProvider": "{{provider}}에서 열기",
       "recipientsLine": "받는 사람: {{recipients}}",
-      "reconnectDescription": "이 이메일에 대한 접근 권한이 없습니다. 계속하려면 Gmail을 다시 연결하세요.",
-      "reconnectGmail": "Gmail 다시 연결",
+      "reconnectDescription": "이 이메일에 대한 접근 권한이 없습니다. 계속하려면 {{provider}}을 다시 연결하세요.",
       "reconnecting": "다시 연결 중...",
-      "reconnectToAccess": "이메일 접근을 위해 Gmail 다시 연결: {{subject}}",
+      "reconnectProvider": "{{provider}} 다시 연결",
+      "reconnectToAccess": "이메일 접근을 위해 {{provider}} 다시 연결: {{subject}}",
+      "refreshStatus": "상태 새로 고침",
+      "sendingDescription": "Outlook에서 전송 완료가 확인되지 않았습니다. 상태를 새로 고치거나 Outlook에서 확인하세요.",
       "sentToast": "이메일이 전송되었습니다",
       "status": {
         "deleted": "삭제됨",
         "draft": "초안",
+        "sending": "전송 확인 대기 중",
         "sent": "전송됨"
       },
       "toRecipients": "받는 사람: {{recipients}}",
@@ -2181,12 +2196,12 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
-      "emptyDescription": "이 채팅의 파일과 관련 채팅이 여기에 표시됩니다.",
-      "emptyTitle": "아직 리소스가 없습니다",
-      "loadFailed": "리소스를 불러오지 못했습니다",
-      "loading": "리소스 불러오는 중",
+      "emptyDescription": "이 채팅에서 만든 파일, 웹사이트 등의 아티팩트가 여기에 표시됩니다.",
+      "emptyTitle": "아직 아티팩트가 없습니다",
+      "loadFailed": "아티팩트를 불러오지 못했습니다",
+      "loading": "아티팩트 불러오는 중",
       "showMore": "더 보기",
-      "title": "채팅 리소스"
+      "title": "아티팩트 및 채팅"
     },
     "run": {
       "collapseWorkHistory": "작업 기록 접기",
@@ -2251,7 +2266,8 @@
       "shareLink": "공유된 대화 링크",
       "shareLinkCopied": "공유 링크 복사됨",
       "start": "메시지 공유",
-      "tooLarge": "공유할 메시지를 더 적게 선택하세요"
+      "tooLarge": "공유할 메시지를 더 적게 선택하세요",
+      "visibilityDescription": "이 대화를 볼 수 있는 사람을 선택하세요. 액세스 권한은 본인만 변경할 수 있습니다."
     },
     "shortcuts": {
       "number": "번호"
@@ -3466,7 +3482,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "{{brandName}}로 돌아가기",
         "connectDescription": "이 전화번호를 {{brandName}} 계정에 연결하여 문자 메시지로 {{assistantName}}와 상호작용하세요.",
         "connectTitle": "전화번호 연결",
         "documentTitle": "메시지 연결",
@@ -3476,9 +3491,16 @@
         "invalidSignature": "이 링크의 서명이 유효하지 않습니다.",
         "invalidTimestamp": "이 링크의 타임스탬프가 유효하지 않습니다.",
         "invalidTitle": "연결 링크가 유효하지 않습니다",
+        "keepPhone": "{{phone}} 유지",
+        "phoneInUseDescription": "이 전화번호는 다른 Okou 계정 또는 조직에 연결되어 있습니다. 해당 연결을 해제한 후 다시 시도하세요.",
+        "phoneInUseTitle": "이미 연결된 전화번호",
+        "phoneMismatchDescription": "이 조직에서 Okou 계정은 현재 {{currentPhone}}을 사용합니다. 이 링크를 연 번호인 {{requestedPhone}}으로 전환할까요?",
+        "phoneMismatchTitle": "전화번호를 전환할까요?",
         "risk": "SMS 및 MMS 회신이 안정적으로 전달되지 않을 수 있습니다. 가장 안정적인 경험을 위해 이 번호로 iMessage를 사용하세요.",
         "successDescription": "{{phone}}가 연결되었습니다. 문자 메시지를 보내 {{assistantName}}와 대화를 시작하세요.",
-        "successTitle": "전화번호가 연결되었습니다"
+        "successTitle": "전화번호가 연결되었습니다",
+        "switchPhone": "{{phone}}으로 전환",
+        "unavailable": "현재 전화번호를 연결할 수 없습니다."
       },
       "common": {
         "backToSettings": "설정으로 돌아가기",
@@ -5907,6 +5929,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "이 대화를 볼 수 없습니다",
     "handoffDescription": "{{assistantName}}가 컨텍스트를 새 채팅으로 가져갑니다",
     "handoffPrompt": "이 공유 대화를 저와 계속하세요: {{url}}",
     "makeConversationYours": "이 대화를 내 것으로",
@@ -7116,6 +7139,23 @@
       "verify": "인증",
       "waiting": "스캔을 기다리는 중…",
       "workspaceLabel": "워크스페이스"
+    },
+    "whatsapp": {
+      "codeError": "연결 코드를 생성하지 못했습니다. 다시 시도하세요.",
+      "connect": "WhatsApp 연결",
+      "connected": "WhatsApp 연결됨",
+      "description": "WhatsApp에서 Okou와 바로 대화하세요",
+      "disconnected": "WhatsApp 연결 해제됨",
+      "expires": "이 코드는 10분 후 만료됩니다. 연결 결과를 확인하려면 이 페이지를 열어 두세요.",
+      "instructions": "WhatsApp을 열거나 QR 코드를 스캔한 후 연결 코드를 보내 계정을 연결하세요.",
+      "loading": "연결 코드를 생성하는 중…",
+      "markets": "유럽 경제 지역, 브라질, 튀르키예의 WhatsApp 번호에서 사용할 수 있습니다.",
+      "name": "WhatsApp",
+      "open": "WhatsApp 열기",
+      "options": "WhatsApp 옵션",
+      "qrTitle": "스캔하여 WhatsApp 연결",
+      "regenerate": "새 코드 생성",
+      "unavailable": "WhatsApp이 아직 설정되지 않았습니다"
     }
   }
 }

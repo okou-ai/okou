@@ -435,6 +435,7 @@ async fn run_sandbox(
         secret_connector_metadata_map: None,
         vars: None,
         capture_network_bodies: false,
+        outlook_mail_review_enabled: false,
         billable_firewalls: &[],
         model_usage_provider: None,
         model_usage_long_context_min_total_input_tokens: None,

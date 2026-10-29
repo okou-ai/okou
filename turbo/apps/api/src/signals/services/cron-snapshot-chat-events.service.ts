@@ -4,6 +4,9 @@ import {
   LEGACY_ARCHIVE_OBJECT_KEY_PATTERN,
   isCurrentChatEventSnapshotObjectKey,
   isLegacyChatEventSnapshotObjectKey,
+  snapshotArchivePageReadPlan,
+  snapshotCandidateHead as currentSnapshot,
+  snapshotCandidateSelection,
 } from "./chat-event-row-read.service";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
@@ -25,7 +28,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { int, string, uuid, object as zObject } from "zod";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
@@ -46,7 +49,7 @@ import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 import {
   deleteS3Objects,
   downloadS3Buffer,
@@ -154,11 +157,6 @@ const R2_GC_PAGE_SIZE = 1000;
 const R2_GC_SLOT_MS = 10 * 60 * 1000;
 const R2_GC_WORK_BUDGET_MS = 30 * 1000;
 const SNAPSHOT_GC_DELETE_QUOTA = 1000;
-const currentSnapshot = alias(
-  chatEventSnapshots,
-  "current_chat_event_snapshot",
-);
-
 type ArchiveEventRow = Pick<
   typeof chatEvents.$inferSelect,
   | "id"
@@ -229,67 +227,56 @@ interface CanonicalEventArchive {
   readonly lastSeqId: number;
 }
 
-async function readCanonicalEvents(
-  db: Db,
-  candidate: SnapshotCandidate,
-  fromSeqId: number,
-): Promise<CanonicalEventArchive> {
-  const lines: Buffer[] = [];
-  let cursor = fromSeqId;
-  let count = 0;
-  let lastPhysicalEventId: string | null = null;
-  let lastRetainedEventId: string | null = null;
-  let lastRetainedSeqId: number | null = null;
-  for (;;) {
-    const rows = await db
-      .select({
-        id: chatEvents.id,
-        chatThreadId: chatEvents.chatThreadId,
-        runId: chatEvents.runId,
-        revokesEventId: chatEvents.revokesEventId,
-        eventType: chatEvents.eventType,
-        payload: chatEvents.payload,
-        failureReason: chatEvents.failureReason,
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
-        runEventSequenceNumber: chatEvents.runEventSequenceNumber,
-        runEventId: chatEvents.runEventId,
-        seqId: chatEvents.seqId,
-        createdAt: chatEvents.createdAt,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, candidate.chatThreadId),
-          gt(chatEvents.seqId, cursor),
-          lte(chatEvents.seqId, candidate.indexedSeqId),
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId))
-      .limit(EVENT_PAGE_SIZE);
-    for (const row of rows) {
-      lastPhysicalEventId = row.id;
-      lines.push(archiveLine(row));
-      lastRetainedEventId = row.id;
-      lastRetainedSeqId = row.seqId;
+const readCanonicalEvents$ = command(
+  async (
+    { get },
+    candidate: SnapshotCandidate,
+    fromSeqId: number,
+  ): Promise<CanonicalEventArchive> => {
+    const db = get(db$);
+    const lines: Buffer[] = [];
+    let cursor = fromSeqId;
+    let count = 0;
+    let lastPhysicalEventId: string | null = null;
+    let lastRetainedEventId: string | null = null;
+    let lastRetainedSeqId: number | null = null;
+    for (;;) {
+      const plan = snapshotArchivePageReadPlan({
+        threadId: candidate.chatThreadId,
+        afterSeqId: cursor,
+        throughSeqId: candidate.indexedSeqId,
+        limit: EVENT_PAGE_SIZE,
+      });
+      const rows = await db
+        .select(plan.columns)
+        .from(chatEvents)
+        .where(plan.condition)
+        .orderBy(plan.order)
+        .limit(plan.limit);
+      for (const row of rows) {
+        lastPhysicalEventId = row.id;
+        lines.push(archiveLine(row));
+        lastRetainedEventId = row.id;
+        lastRetainedSeqId = row.seqId;
+      }
+      count += rows.length;
+      const lastRow = rows[rows.length - 1];
+      if (lastRow !== undefined) {
+        cursor = lastRow.seqId;
+      }
+      if (rows.length < EVENT_PAGE_SIZE) {
+        return {
+          lines,
+          count,
+          lastPhysicalEventId,
+          lastRetainedEventId,
+          lastRetainedSeqId,
+          lastSeqId: candidate.indexedSeqId,
+        };
+      }
     }
-    count += rows.length;
-    const lastRow = rows[rows.length - 1];
-    if (lastRow !== undefined) {
-      cursor = lastRow.seqId;
-    }
-    if (rows.length < EVENT_PAGE_SIZE) {
-      return {
-        lines,
-        count,
-        lastPhysicalEventId,
-        lastRetainedEventId,
-        lastRetainedSeqId,
-        lastSeqId: candidate.indexedSeqId,
-      };
-    }
-  }
-}
+  },
+);
 
 interface SnapshotSource {
   readonly id: string;
@@ -1006,14 +993,14 @@ interface SnapshotArchiveStageRecorder {
 const archiveThread$ = command(async function archiveThread(
   { get, set },
   args: {
-    readonly db: Db;
     readonly bucket: string;
     readonly candidate: SnapshotCandidate;
     readonly recorder: SnapshotArchiveStageRecorder;
   },
   signal: AbortSignal,
 ): Promise<ArchivedThread> {
-  const { db, bucket, candidate, recorder } = args;
+  const { bucket, candidate, recorder } = args;
+  const db = get(db$);
   recorder.stage = "resolve_prefix";
   const resolved = await get(
     resolveArchivePrefix({ bucket, candidate }, signal),
@@ -1025,8 +1012,8 @@ const archiveThread$ = command(async function archiveThread(
   const { source, prefix, terminalSeqId, terminalEventId } = resolved;
   const targetSeqId = Math.max(candidate.indexedSeqId, source?.lastSeqId ?? 0);
   recorder.stage = "read_events";
-  const archive = await readCanonicalEvents(
-    db,
+  const archive = await set(
+    readCanonicalEvents$,
     { ...candidate, indexedSeqId: targetSeqId },
     source?.lastSeqId ?? 0,
   );
@@ -1115,9 +1102,10 @@ export const refreshChatEventSnapshotThread$ = command(
     chatThreadId: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const [candidate] = await loadSnapshotCandidates(
-      db,
+    // Preserve primary receiver initialization before the selection preflight.
+    set(writeDb$);
+    const [candidate] = await set(
+      loadSnapshotCandidates$,
       [chatThreadId],
       null,
       null,
@@ -1130,7 +1118,6 @@ export const refreshChatEventSnapshotThread$ = command(
     const archived = await set(
       archiveThread$,
       {
-        db,
         bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
         candidate,
         recorder: { stage: "resolve_prefix" },
@@ -1401,22 +1388,6 @@ function exactSnapshotScanCursor(cursorChatThreadId: string | null) {
     : eq(chatEventSnapshotScanState.cursorChatThreadId, cursorChatThreadId);
 }
 
-async function loadSnapshotScanState(db: Db): Promise<SnapshotScanState> {
-  const [state] = await db
-    .select({
-      cursorChatThreadId: chatEventSnapshotScanState.cursorChatThreadId,
-      cycleUpperBoundLastMessageAt:
-        chatEventSnapshotScanState.cycleUpperBoundLastMessageAt,
-    })
-    .from(chatEventSnapshotScanState)
-    .where(eq(chatEventSnapshotScanState.scope, GLOBAL_SNAPSHOT_SCAN_SCOPE))
-    .limit(1);
-  if (state === undefined) {
-    throw new Error("Global Chat Event Snapshot scan state is missing");
-  }
-  return state;
-}
-
 function sameSnapshotScanState(
   left: SnapshotScanState,
   right: SnapshotScanState,
@@ -1426,34 +1397,6 @@ function sameSnapshotScanState(
     left.cycleUpperBoundLastMessageAt.getTime() ===
       right.cycleUpperBoundLastMessageAt.getTime()
   );
-}
-
-async function advanceSnapshotScanState(
-  db: Db,
-  expected: SnapshotScanState,
-  next: SnapshotScanState,
-): Promise<boolean> {
-  if (sameSnapshotScanState(expected, next)) {
-    return false;
-  }
-  const [updated] = await db
-    .update(chatEventSnapshotScanState)
-    .set({
-      cursorChatThreadId: next.cursorChatThreadId,
-      cycleUpperBoundLastMessageAt: next.cycleUpperBoundLastMessageAt,
-    })
-    .where(
-      and(
-        eq(chatEventSnapshotScanState.scope, GLOBAL_SNAPSHOT_SCAN_SCOPE),
-        exactSnapshotScanCursor(expected.cursorChatThreadId),
-        eq(
-          chatEventSnapshotScanState.cycleUpperBoundLastMessageAt,
-          expected.cycleUpperBoundLastMessageAt,
-        ),
-      ),
-    )
-    .returning({ scope: chatEventSnapshotScanState.scope });
-  return updated !== undefined;
 }
 
 function snapshotRepairCandidateIdsSql(): SQL {
@@ -1482,18 +1425,7 @@ function snapshotRepairCandidateIdsSql(): SQL {
 
 function snapshotCandidateRowsSql(): SQL {
   return new QueryBuilder()
-    .select({
-      chatThreadId: chatThreads.id,
-      indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId,
-      lastMessageAt: chatThreads.lastMessageAt,
-      headId: currentSnapshot.id,
-      headLastSeqId: currentSnapshot.lastSeqId,
-      headLastEventId: currentSnapshot.lastEventId,
-      headTerminalSeqId: currentSnapshot.terminalSeqId,
-      headTerminalEventId: currentSnapshot.terminalEventId,
-      headObjectKey: currentSnapshot.objectKey,
-      headArchiveSchemaVersion: currentSnapshot.archiveSchemaVersion,
-    })
+    .select(snapshotCandidateSelection())
     .from(chatThreads)
     .innerJoin(
       chatEventSearchMessageWatermarks,
@@ -1631,143 +1563,151 @@ function globalSnapshotCandidatesSql(
     `;
 }
 
-async function loadSnapshotCandidates(
-  db: Db,
-  chatThreadIds: readonly string[] | null,
-  cursorChatThreadId: string | null,
-  cycleUpperBoundLastMessageAt: Date | null,
-  limit: number,
-): Promise<readonly SnapshotCandidate[]> {
-  if (chatThreadIds === null) {
-    const query = globalSnapshotCandidatesSql(
-      cursorChatThreadId,
-      cycleUpperBoundLastMessageAt,
+const loadSnapshotCandidates$ = command(
+  async (
+    { get },
+    chatThreadIds: readonly string[] | null,
+    cursorChatThreadId: string | null,
+    cycleUpperBoundLastMessageAt: Date | null,
+    limit: number,
+  ): Promise<readonly SnapshotCandidate[]> => {
+    if (chatThreadIds === null) {
+      const db = get(rawSqlReadDb$);
+      const query = globalSnapshotCandidatesSql(
+        cursorChatThreadId,
+        cycleUpperBoundLastMessageAt,
+        limit,
+      );
+      // Materialized CTEs and a remaining-row LIMIT require a SQL envelope;
+      // decode its complete projection rather than asserting execute<Row>.
+      const rowSchema = zObject({
+        chatThreadId: uuid(),
+        indexedSeqId: pgInt8ToSafeIntegerSchema,
+        lastMessageAt: pgTimestampWithoutTimezoneToDateSchema,
+        headId: uuid().nullable(),
+        headLastSeqId: pgInt8ToSafeIntegerSchema.nullable(),
+        headLastEventId: uuid().nullable(),
+        headTerminalSeqId: pgInt8ToSafeIntegerSchema.nullable(),
+        headTerminalEventId: uuid().nullable(),
+        headObjectKey: string().nullable(),
+        headArchiveSchemaVersion: int().nullable(),
+      });
+      return parseRawRows(rowSchema, await db.execute(query));
+    }
+
+    const db = get(db$);
+    const rows = await db
+      .select(snapshotCandidateSelection())
+      .from(chatThreads)
+      .innerJoin(
+        chatEventSearchMessageWatermarks,
+        eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
+      )
+      .leftJoin(
+        currentSnapshot,
+        and(
+          eq(currentSnapshot.chatThreadId, chatThreads.id),
+          eq(
+            currentSnapshot.archiveSchemaVersion,
+            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+          ),
+        ),
+      )
+      .where(
+        and(
+          inArray(chatThreads.id, chatThreadIds),
+          snapshotCandidateAfterCursor(cursorChatThreadId),
+          cycleUpperBoundLastMessageAt === null
+            ? undefined
+            : lte(chatThreads.lastMessageAt, cycleUpperBoundLastMessageAt),
+          gt(chatEventSearchMessageWatermarks.indexedSeqId, 0),
+          or(
+            isNull(currentSnapshot.id),
+            lt(
+              currentSnapshot.lastSeqId,
+              chatEventSearchMessageWatermarks.indexedSeqId,
+            ),
+            lte(currentSnapshot.lastSeqId, 0),
+            isNull(currentSnapshot.terminalSeqId),
+            sql`btrim(${currentSnapshot.objectKey}) = ''`,
+            sql`NOT (${currentSnapshot.objectKey}
+            ~ '-[0-9a-f]{64}[.]ndjson[.]gz$')`,
+            sql`${currentSnapshot.objectKey}
+            ~ ${LEGACY_ARCHIVE_OBJECT_KEY_PATTERN}`,
+          ),
+        ),
+      )
+      .orderBy(asc(chatThreads.lastMessageAt), asc(chatThreads.id))
+      .limit(limit);
+
+    return rows.map((row): SnapshotCandidate => {
+      return {
+        chatThreadId: row.chatThreadId,
+        indexedSeqId: row.indexedSeqId,
+        lastMessageAt: row.lastMessageAt,
+        headId: row.headId,
+        headLastSeqId: row.headLastSeqId,
+        headLastEventId: row.headLastEventId,
+        headTerminalSeqId: row.headTerminalSeqId,
+        headTerminalEventId: row.headTerminalEventId,
+        headObjectKey: row.headObjectKey,
+        headArchiveSchemaVersion: row.headArchiveSchemaVersion,
+      };
+    });
+  },
+);
+
+const loadGlobalSnapshotCandidatePage$ = command(
+  async ({ get, set }): Promise<SnapshotCandidatePage> => {
+    const db = get(db$);
+    const state = await (async (): Promise<SnapshotScanState> => {
+      const [state] = await db
+        .select({
+          cursorChatThreadId: chatEventSnapshotScanState.cursorChatThreadId,
+          cycleUpperBoundLastMessageAt:
+            chatEventSnapshotScanState.cycleUpperBoundLastMessageAt,
+        })
+        .from(chatEventSnapshotScanState)
+        .where(eq(chatEventSnapshotScanState.scope, GLOBAL_SNAPSHOT_SCAN_SCOPE))
+        .limit(1);
+      if (state === undefined) {
+        throw new Error("Global Chat Event Snapshot scan state is missing");
+      }
+      return state;
+    })();
+    const limit = chatEventSnapshotThreadBatchSize();
+    const candidates = await set(
+      loadSnapshotCandidates$,
+      null,
+      state.cursorChatThreadId,
+      state.cycleUpperBoundLastMessageAt,
       limit,
     );
-    // Materialized CTEs and a remaining-row LIMIT require a SQL envelope;
-    // decode its complete projection rather than asserting execute<Row>.
-    const rowSchema = zObject({
-      chatThreadId: uuid(),
-      indexedSeqId: pgInt8ToSafeIntegerSchema,
-      lastMessageAt: pgTimestampWithoutTimezoneToDateSchema,
-      headId: uuid().nullable(),
-      headLastSeqId: pgInt8ToSafeIntegerSchema.nullable(),
-      headLastEventId: uuid().nullable(),
-      headTerminalSeqId: pgInt8ToSafeIntegerSchema.nullable(),
-      headTerminalEventId: uuid().nullable(),
-      headObjectKey: string().nullable(),
-      headArchiveSchemaVersion: int().nullable(),
-    });
-    return parseRawRows(rowSchema, await db.execute(query));
-  }
-
-  const rows = await db
-    .select({
-      chatThreadId: chatThreads.id,
-      indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId,
-      lastMessageAt: chatThreads.lastMessageAt,
-      headId: currentSnapshot.id,
-      headLastSeqId: currentSnapshot.lastSeqId,
-      headLastEventId: currentSnapshot.lastEventId,
-      headTerminalSeqId: currentSnapshot.terminalSeqId,
-      headTerminalEventId: currentSnapshot.terminalEventId,
-      headObjectKey: currentSnapshot.objectKey,
-      headArchiveSchemaVersion: currentSnapshot.archiveSchemaVersion,
-    })
-    .from(chatThreads)
-    .innerJoin(
-      chatEventSearchMessageWatermarks,
-      eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
-    )
-    .leftJoin(
-      currentSnapshot,
-      and(
-        eq(currentSnapshot.chatThreadId, chatThreads.id),
-        eq(
-          currentSnapshot.archiveSchemaVersion,
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-        ),
-      ),
-    )
-    .where(
-      and(
-        inArray(chatThreads.id, chatThreadIds),
-        snapshotCandidateAfterCursor(cursorChatThreadId),
-        cycleUpperBoundLastMessageAt === null
-          ? undefined
-          : lte(chatThreads.lastMessageAt, cycleUpperBoundLastMessageAt),
-        gt(chatEventSearchMessageWatermarks.indexedSeqId, 0),
-        or(
-          isNull(currentSnapshot.id),
-          lt(
-            currentSnapshot.lastSeqId,
-            chatEventSearchMessageWatermarks.indexedSeqId,
-          ),
-          lte(currentSnapshot.lastSeqId, 0),
-          isNull(currentSnapshot.terminalSeqId),
-          sql`btrim(${currentSnapshot.objectKey}) = ''`,
-          sql`NOT (${currentSnapshot.objectKey}
-            ~ '-[0-9a-f]{64}[.]ndjson[.]gz$')`,
-          sql`${currentSnapshot.objectKey}
-            ~ ${LEGACY_ARCHIVE_OBJECT_KEY_PATTERN}`,
-        ),
-      ),
-    )
-    .orderBy(asc(chatThreads.lastMessageAt), asc(chatThreads.id))
-    .limit(limit);
-
-  return rows.map((row): SnapshotCandidate => {
+    if (candidates.length > 0) {
+      return {
+        candidates,
+        expectedState: state,
+        scanStartCursorChatThreadId: state.cursorChatThreadId,
+        cycleUpperBoundLastMessageAt: state.cycleUpperBoundLastMessageAt,
+        wrapped: false,
+      };
+    }
+    const cycleUpperBoundLastMessageAt = nowDate();
     return {
-      chatThreadId: row.chatThreadId,
-      indexedSeqId: row.indexedSeqId,
-      lastMessageAt: row.lastMessageAt,
-      headId: row.headId,
-      headLastSeqId: row.headLastSeqId,
-      headLastEventId: row.headLastEventId,
-      headTerminalSeqId: row.headTerminalSeqId,
-      headTerminalEventId: row.headTerminalEventId,
-      headObjectKey: row.headObjectKey,
-      headArchiveSchemaVersion: row.headArchiveSchemaVersion,
-    };
-  });
-}
-
-async function loadGlobalSnapshotCandidatePage(
-  db: Db,
-): Promise<SnapshotCandidatePage> {
-  const state = await loadSnapshotScanState(db);
-  const limit = chatEventSnapshotThreadBatchSize();
-  const candidates = await loadSnapshotCandidates(
-    db,
-    null,
-    state.cursorChatThreadId,
-    state.cycleUpperBoundLastMessageAt,
-    limit,
-  );
-  if (candidates.length > 0) {
-    return {
-      candidates,
+      candidates: await set(
+        loadSnapshotCandidates$,
+        null,
+        null,
+        cycleUpperBoundLastMessageAt,
+        limit,
+      ),
       expectedState: state,
-      scanStartCursorChatThreadId: state.cursorChatThreadId,
-      cycleUpperBoundLastMessageAt: state.cycleUpperBoundLastMessageAt,
-      wrapped: false,
-    };
-  }
-  const cycleUpperBoundLastMessageAt = nowDate();
-  return {
-    candidates: await loadSnapshotCandidates(
-      db,
-      null,
-      null,
+      scanStartCursorChatThreadId: null,
       cycleUpperBoundLastMessageAt,
-      limit,
-    ),
-    expectedState: state,
-    scanStartCursorChatThreadId: null,
-    cycleUpperBoundLastMessageAt,
-    wrapped: true,
-  };
-}
+      wrapped: true,
+    };
+  },
+);
 
 type SnapshotCandidateOutcome =
   | { readonly kind: "completed"; readonly archived: ArchivedThread }
@@ -1972,30 +1912,53 @@ function oldestCandidateAgeMs(
   return Math.max(0, Math.round(nowDate().getTime() - oldest));
 }
 
-async function finalizeGlobalSnapshotScanState(
-  db: Db,
-  candidatePage: SnapshotCandidatePage,
-  attemptedCandidates: number,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const lastAttempted = candidatePage.candidates[attemptedCandidates - 1];
-  const nextCursorChatThreadId =
-    lastAttempted === undefined
-      ? candidatePage.candidates.length === 0
-        ? null
-        : candidatePage.scanStartCursorChatThreadId
-      : lastAttempted.chatThreadId;
-  const advanced = await advanceSnapshotScanState(
-    db,
-    candidatePage.expectedState,
-    {
+const finalizeGlobalSnapshotScanState$ = command(
+  async (
+    { set },
+    candidatePage: SnapshotCandidatePage,
+    attemptedCandidates: number,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const lastAttempted = candidatePage.candidates[attemptedCandidates - 1];
+    const nextCursorChatThreadId =
+      lastAttempted === undefined
+        ? candidatePage.candidates.length === 0
+          ? null
+          : candidatePage.scanStartCursorChatThreadId
+        : lastAttempted.chatThreadId;
+    const expected = candidatePage.expectedState;
+    const next = {
       cursorChatThreadId: nextCursorChatThreadId,
       cycleUpperBoundLastMessageAt: candidatePage.cycleUpperBoundLastMessageAt,
-    },
-  );
-  signal.throwIfAborted();
-  return advanced;
-}
+    };
+    const advanced = await (async (): Promise<boolean> => {
+      if (sameSnapshotScanState(expected, next)) {
+        return false;
+      }
+      const db = set(writeDb$);
+      const [updated] = await db
+        .update(chatEventSnapshotScanState)
+        .set({
+          cursorChatThreadId: next.cursorChatThreadId,
+          cycleUpperBoundLastMessageAt: next.cycleUpperBoundLastMessageAt,
+        })
+        .where(
+          and(
+            eq(chatEventSnapshotScanState.scope, GLOBAL_SNAPSHOT_SCAN_SCOPE),
+            exactSnapshotScanCursor(expected.cursorChatThreadId),
+            eq(
+              chatEventSnapshotScanState.cycleUpperBoundLastMessageAt,
+              expected.cycleUpperBoundLastMessageAt,
+            ),
+          ),
+        )
+        .returning({ scope: chatEventSnapshotScanState.scope });
+      return updated !== undefined;
+    })();
+    signal.throwIfAborted();
+    return advanced;
+  },
+);
 
 /**
  * Archives Chat Events into immutable, content-addressed R2 Snapshots. The
@@ -2008,9 +1971,10 @@ async function finalizeGlobalSnapshotScanState(
  */
 export const snapshotChatEvents$ = command(
   async ({ set }, signal: AbortSignal): Promise<ChatEventSnapshotStats> => {
-    const db = set(writeDb$);
+    // Preserve primary receiver initialization before environment preflight.
+    set(writeDb$);
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const globalCandidatePage = await loadGlobalSnapshotCandidatePage(db);
+    const globalCandidatePage = await set(loadGlobalSnapshotCandidatePage$);
     signal.throwIfAborted();
     const candidates = globalCandidatePage.candidates;
 
@@ -2020,7 +1984,7 @@ export const snapshotChatEvents$ = command(
       async (candidate, recorder, candidateSignal) => {
         return await set(
           archiveThread$,
-          { db, bucket, candidate, recorder },
+          { bucket, candidate, recorder },
           candidateSignal,
         );
       },
@@ -2030,8 +1994,8 @@ export const snapshotChatEvents$ = command(
 
     const outcomeStats = summarizeSnapshotCandidateOutcomes(processed.outcomes);
     // Completed archive progress must not depend on independent GC maintenance.
-    const scanCursorAdvanced = await finalizeGlobalSnapshotScanState(
-      db,
+    const scanCursorAdvanced = await set(
+      finalizeGlobalSnapshotScanState$,
       globalCandidatePage,
       processed.attemptedCandidates,
       signal,

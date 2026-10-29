@@ -10,6 +10,7 @@ import {
   mailContract,
   type MailAttachment,
   type MailDraft,
+  type MailDraftStatus,
   type MailInlineImage,
 } from "@okouai/api-contracts/contracts/mail";
 
@@ -67,7 +68,7 @@ export interface MailDraftSignals extends MailDraftDescriptor {
   >;
   readonly reloadDraft$: Command<void, []>;
   readonly delete$: Command<Promise<void>, [AbortSignal]>;
-  readonly send$: Command<Promise<void>, [AbortSignal]>;
+  readonly send$: Command<Promise<MailDraftStatus>, [AbortSignal]>;
 }
 
 export type MailDraftCardSignalsRegistry = CardSignalsRegistry<
@@ -274,6 +275,7 @@ function createMailDraftMutationSignals(
     );
     signal.throwIfAborted();
     set(resources.draftOverride$, response.body.mailDraft);
+    return response.body.mailDraft.status;
   });
   return { delete$, send$ };
 }

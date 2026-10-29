@@ -21,6 +21,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { renderMessagePdf } from "../../../lib/message-pdf/render.ts";
+import { platformMessagePdfFontUrls } from "../../../lib/static-assets.ts";
 import type {
   PdfWorkerRequest,
   PdfWorkerResponse,
@@ -80,12 +81,11 @@ async function setupPdfChat(
       },
     ],
   });
-  context.mocks.http.get(
-    /(NotoSansCJKsc-|sarasa-gothic-sc-|noto-emoji-emoji-).*\.(otf|ttf|woff)/u,
-    ({ request }) => {
+  for (const url of Object.values(platformMessagePdfFontUrls)) {
+    context.mocks.http.get(url, ({ request }) => {
       return loadFont(request);
-    },
-  );
+    });
+  }
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
@@ -242,13 +242,13 @@ async function exportRenderedPdf(markdown: string) {
   GlobalWorkerOptions.workerSrc = pathToFileURL(
     require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"),
   ).href;
-  const fontFiles = [
-    "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf",
-    "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Bold.otf",
-    "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-italic.ttf",
-    "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-bolditalic.ttf",
-    "@fontsource/noto-emoji/files/noto-emoji-emoji-400-normal.woff",
-  ];
+  const fontFiles = new Map([
+    [platformMessagePdfFontUrls.regular, "NotoSansCJKsc-Regular.otf"],
+    [platformMessagePdfFontUrls.bold, "NotoSansCJKsc-Bold.otf"],
+    [platformMessagePdfFontUrls.italic, "sarasa-gothic-sc-italic.ttf"],
+    [platformMessagePdfFontUrls.boldItalic, "sarasa-gothic-sc-bolditalic.ttf"],
+    [platformMessagePdfFontUrls.emoji, "noto-emoji-emoji-400-normal.woff"],
+  ]);
   const rendered = context.mocks.deferred<void>();
   // Replace only the browser transport. The page command, Markdown parser,
   // document builder, font loading and PDF renderer all execute unchanged.
@@ -259,13 +259,10 @@ async function exportRenderedPdf(markdown: string) {
   });
   const browser = context.mocks.browser.blobDownload();
   await setupPdfChat(`${ANSWER}\n\n${markdown}`, async (request) => {
-    const file = fontFiles.find((name) => {
-      return request.url.includes(name.split("/").at(-1) ?? "");
-    });
-    if (!file) {
+    const filename = fontFiles.get(request.url);
+    if (!filename) {
       throw new Error("Unexpected PDF font request");
     }
-    const filename = file.split("/").at(-1);
     const data = await readFile(
       require.resolve(
         `../../../../test-fixtures/message-pdf-fonts/${filename}`,

@@ -56,6 +56,7 @@ import codex_model_catalog_cache
 import connector_diagnostics
 import connector_intent
 import content_length
+import custom_http
 import data_router
 import flow_metadata
 import flow_metadata_keys as metadata_keys
@@ -122,7 +123,13 @@ from logging_utils import (
     project_url_for_proxy_log,
     shutdown_log_writer,
 )
-from request_authority import AuthorityValidationError, TrustedAuthority, get_trusted_authority
+from request_authority import (
+    AuthorityValidationError,
+    TrustedAuthority,
+    custom_http_auth_is_allowed,
+    custom_http_binding,
+    get_trusted_authority,
+)
 
 # HTTP status boundaries used in response-phase classification.
 _HTTP_STATUS_UNAUTHORIZED = 401
@@ -371,6 +378,9 @@ def _admit_connector_auth_request(
     *,
     platform_connector_auth: bool,
 ) -> bool:
+    if flow.request.scheme == "http" and custom_http_binding(flow) is not None:
+        get_trusted_authority(flow)
+        return True
     if not upstream_admission.ensure_bound_destination(
         flow,
         kind="connector_auth",
@@ -545,6 +555,10 @@ def _connector_auth_destination_is_current(
     flow: http.HTTPFlow,
     current: request_classification.FirewallAllow,
 ) -> bool:
+    if flow.request.scheme == "http":
+        return custom_http_auth_is_allowed(
+            flow, current.firewall_allow.api_entry, current.sandbox_info
+        )
     if flow.error is not None or flow.request.scheme != "https" or ctx.options.ssl_insecure:
         return False
     if flow.server_conn.connected:
@@ -874,6 +888,44 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         _classify_request_for_flow(flow)
         return None
 
+    try:
+        preparation = custom_http.prepare(flow, registry_path=get_registry_path())
+    except AuthorityValidationError as error:
+        _reject_custom_http_requestheaders(flow, error)
+        return None
+    if preparation is not None:
+        return _prepare_custom_http_requestheaders(
+            flow, preparation=preparation, request_end_stream=request_end_stream
+        )
+    return _requestheaders_after_authority(flow, request_end_stream=request_end_stream)
+
+
+def _reject_custom_http_requestheaders(
+    flow: http.HTTPFlow, error: AuthorityValidationError
+) -> None:
+    # Preserve early error framing rather than forwarding an unadmitted body.
+    _classify_request_for_flow(flow)
+    _block_authority_validation_error(flow, error)
+    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+    header_auth_response.mark(flow)
+
+
+async def _prepare_custom_http_requestheaders(
+    flow: http.HTTPFlow, *, preparation: Awaitable[None], request_end_stream: bool | None
+) -> None:
+    try:
+        await preparation
+    except AuthorityValidationError as error:
+        _reject_custom_http_requestheaders(flow, error)
+        return
+    continuation = _requestheaders_after_authority(flow, request_end_stream=request_end_stream)
+    if continuation is not None:
+        await continuation
+
+
+def _requestheaders_after_authority(
+    flow: http.HTTPFlow, *, request_end_stream: bool | None
+) -> Awaitable[None] | None:
     auth_base_body_check = _auth_base_body_header_check(
         flow,
         request_end_stream=request_end_stream,
@@ -981,7 +1033,12 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         classification,
         request_classification.FirewallAllow | request_classification.FirewallPolicyAllow,
     ) and (
-        request_classification.firewall_allow_uses_public_destination(classification.firewall_allow)
+        (
+            request_classification.firewall_allow_uses_public_destination(
+                classification.firewall_allow
+            )
+            or custom_http_binding(flow) is not None
+        )
         and (
             classification.kind == "firewall_policy_allow"
             or (
@@ -1685,6 +1742,9 @@ def _block_request_classification(
     if classification.kind == "platform_path_denied":
         _block_platform_path_denied(flow)
         return
+    if classification.kind == "outlook_send_blocked":
+        http_local_responses.block_outlook_send(flow)
+        return
     if classification.kind == "gmail_send_blocked":
         http_local_responses.block_gmail_send(flow)
         return
@@ -1799,6 +1859,14 @@ async def request(flow: http.HTTPFlow) -> None:
         if request_streaming.streamed_request_size(flow) is not None:
             flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] = True
 
+        try:
+            preparation = custom_http.prepare(flow, registry_path=get_registry_path())
+            if preparation is not None:
+                await preparation
+        except AuthorityValidationError as error:
+            _classify_request_for_flow(flow)
+            _block_authority_validation_error(flow, error)
+            return
         classification = _request_classification_for_flow(flow)
         if classification.kind != "firewall_allow" or not _firewall_allow_auth_base(
             classification.firewall_allow
@@ -2111,6 +2179,7 @@ def _release_terminal_flow_state(
     release_aws_sigv4_request_inspection(flow)
     flow.metadata.pop(metadata_keys.WEBSOCKET_UPGRADE_REQUEST, None)
     flow.metadata.pop(metadata_keys.RESPONSE_ENCODING_NEGOTIATION, None)
+    flow.metadata.pop(metadata_keys.CUSTOM_HTTP_BINDING, None)
     request_streaming.release_request_stream_state(flow)
     connector_diagnostics.release_flow_state(flow)
     codex_model_catalog_cache.release_flow_state(flow)

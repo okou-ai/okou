@@ -18,7 +18,7 @@ import {
   officialWorkflowCatalogReleases,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";

@@ -38,13 +38,60 @@ pub trait AblySideMessageHandler: Send + Sync {
     fn handle(&self, message: &ably_subscriber::Message) -> bool;
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+/// Predecessor Home discovery evidence carried independently of routing expiry.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(
+    tag = "evidence",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum PredecessorHomeEvidence {
+    Advertised,
+    Expected {
+        home_wait_until: DateTime<FixedOffset>,
+    },
+    #[serde(rename = "location")]
+    HostLocation,
+}
+
+/// Recipient-local deadlines; publication waiting can outlive routing advice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActivePredecessorHomeEvidence {
+    Advertised,
+    Expected { wait_deadline: Instant },
+    HostLocation,
+}
+
+impl PredecessorHomeEvidence {
+    fn to_active(&self) -> Result<ActivePredecessorHomeEvidence, serde_json::Error> {
+        Ok(match self {
+            Self::Advertised => ActivePredecessorHomeEvidence::Advertised,
+            Self::Expected { home_wait_until } => ActivePredecessorHomeEvidence::Expected {
+                wait_deadline: deadline_from_timestamp(*home_wait_until)?,
+            },
+            Self::HostLocation => ActivePredecessorHomeEvidence::HostLocation,
+        })
+    }
+}
+
+impl ActivePredecessorHomeEvidence {
+    fn into_wire(self) -> PredecessorHomeEvidence {
+        match self {
+            Self::Advertised => PredecessorHomeEvidence::Advertised,
+            Self::Expected { wait_deadline } => PredecessorHomeEvidence::Expected {
+                home_wait_until: timestamp_from_deadline(wait_deadline),
+            },
+            Self::HostLocation => PredecessorHomeEvidence::HostLocation,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunnerPreferenceTier {
     ExactSandbox,
     FinalizingPredecessor,
-    PeerFinalizingPredecessor,
-    SourceHomeCache,
+    PredecessorHome(ActivePredecessorHomeEvidence),
     ReusableSandbox,
     HomeCache,
 }
@@ -52,11 +99,13 @@ pub enum RunnerPreferenceTier {
 impl RunnerPreferenceTier {
     pub fn rank(self) -> u8 {
         match self {
+            Self::PredecessorHome(ActivePredecessorHomeEvidence::HostLocation) => 0,
             Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
-            Self::SourceHomeCache => 3,
-            Self::FinalizingPredecessor | Self::PeerFinalizingPredecessor => 4,
-            Self::ExactSandbox => 5,
+            Self::PredecessorHome(ActivePredecessorHomeEvidence::Expected { .. }) => 3,
+            Self::PredecessorHome(ActivePredecessorHomeEvidence::Advertised) => 4,
+            Self::FinalizingPredecessor => 5,
+            Self::ExactSandbox => 6,
         }
     }
 }
@@ -101,20 +150,21 @@ pub enum RunnerPreference {
     deny_unknown_fields
 )]
 pub enum RunnerPreferenceDecision {
+    PredecessorHome {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+        predecessor_run_id: RunId,
+        home: PredecessorHomeEvidence,
+    },
     ExactSandbox {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
-        finalizing_source_run_id: RunId,
+        predecessor_run_id: RunId,
     },
     FinalizingPredecessor {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
-        finalizing_source_run_id: RunId,
-    },
-    PeerFinalizingPredecessor {
-        runner_identity: RunnerProcessIdentity,
-        expires_at: DateTime<FixedOffset>,
-        finalizing_source_run_id: RunId,
+        predecessor_run_id: RunId,
     },
     ReusableSandbox {
         runner_identity: RunnerProcessIdentity,
@@ -124,41 +174,33 @@ pub enum RunnerPreferenceDecision {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
     },
-    SourceHomeCache {
-        runner_identity: RunnerProcessIdentity,
-        expires_at: DateTime<FixedOffset>,
-        finalizing_source_run_id: RunId,
-    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunnerPreferenceTarget {
-    SourceSandbox(RunId),
+    ExactSandbox(RunId),
     FinalizingPredecessor(RunId),
-    PeerFinalizingPredecessor(RunId),
+    PredecessorHome(RunId, ActivePredecessorHomeEvidence),
     ReusableSandbox,
     HomeCache,
-    SourceHomeCache(RunId),
 }
 
 impl RunnerPreferenceTarget {
     fn tier(self) -> RunnerPreferenceTier {
         match self {
-            Self::SourceSandbox(_) => RunnerPreferenceTier::ExactSandbox,
+            Self::ExactSandbox(_) => RunnerPreferenceTier::ExactSandbox,
             Self::FinalizingPredecessor(_) => RunnerPreferenceTier::FinalizingPredecessor,
-            Self::PeerFinalizingPredecessor(_) => RunnerPreferenceTier::PeerFinalizingPredecessor,
+            Self::PredecessorHome(_, home) => RunnerPreferenceTier::PredecessorHome(home),
             Self::ReusableSandbox => RunnerPreferenceTier::ReusableSandbox,
             Self::HomeCache => RunnerPreferenceTier::HomeCache,
-            Self::SourceHomeCache(_) => RunnerPreferenceTier::SourceHomeCache,
         }
     }
 
-    pub fn source_run_id(self) -> Option<RunId> {
+    pub fn predecessor_run_id(self) -> Option<RunId> {
         match self {
-            Self::SourceSandbox(source)
+            Self::ExactSandbox(source)
             | Self::FinalizingPredecessor(source)
-            | Self::PeerFinalizingPredecessor(source)
-            | Self::SourceHomeCache(source) => Some(source),
+            | Self::PredecessorHome(source, _) => Some(source),
             Self::ReusableSandbox | Self::HomeCache => None,
         }
     }
@@ -169,23 +211,24 @@ impl RunnerPreferenceTarget {
         expires_at: DateTime<FixedOffset>,
     ) -> RunnerPreferenceDecision {
         match self {
-            Self::SourceSandbox(source) => RunnerPreferenceDecision::ExactSandbox {
+            Self::ExactSandbox(source) => RunnerPreferenceDecision::ExactSandbox {
                 runner_identity,
                 expires_at,
-                finalizing_source_run_id: source,
+                predecessor_run_id: source,
             },
-            Self::FinalizingPredecessor(finalizing_source_run_id) => {
+            Self::FinalizingPredecessor(predecessor_run_id) => {
                 RunnerPreferenceDecision::FinalizingPredecessor {
                     runner_identity,
                     expires_at,
-                    finalizing_source_run_id,
+                    predecessor_run_id,
                 }
             }
-            Self::PeerFinalizingPredecessor(finalizing_source_run_id) => {
-                RunnerPreferenceDecision::PeerFinalizingPredecessor {
+            Self::PredecessorHome(predecessor_run_id, home) => {
+                RunnerPreferenceDecision::PredecessorHome {
                     runner_identity,
                     expires_at,
-                    finalizing_source_run_id,
+                    predecessor_run_id,
+                    home: home.into_wire(),
                 }
             }
             Self::ReusableSandbox => RunnerPreferenceDecision::ReusableSandbox {
@@ -195,11 +238,6 @@ impl RunnerPreferenceTarget {
             Self::HomeCache => RunnerPreferenceDecision::HomeCache {
                 runner_identity,
                 expires_at,
-            },
-            Self::SourceHomeCache(source) => RunnerPreferenceDecision::SourceHomeCache {
-                runner_identity,
-                expires_at,
-                finalizing_source_run_id: source,
             },
         }
     }
@@ -211,28 +249,29 @@ impl RunnerPreferenceDecision {
             Self::ExactSandbox {
                 runner_identity,
                 expires_at,
-                finalizing_source_run_id,
+                predecessor_run_id,
             } => (
                 runner_identity,
-                RunnerPreferenceTarget::SourceSandbox(*finalizing_source_run_id),
+                RunnerPreferenceTarget::ExactSandbox(*predecessor_run_id),
                 expires_at,
             ),
             Self::FinalizingPredecessor {
                 runner_identity,
                 expires_at,
-                finalizing_source_run_id,
+                predecessor_run_id,
             } => (
                 runner_identity,
-                RunnerPreferenceTarget::FinalizingPredecessor(*finalizing_source_run_id),
+                RunnerPreferenceTarget::FinalizingPredecessor(*predecessor_run_id),
                 expires_at,
             ),
-            Self::PeerFinalizingPredecessor {
+            Self::PredecessorHome {
                 runner_identity,
                 expires_at,
-                finalizing_source_run_id,
+                predecessor_run_id,
+                home,
             } => (
                 runner_identity,
-                RunnerPreferenceTarget::PeerFinalizingPredecessor(*finalizing_source_run_id),
+                RunnerPreferenceTarget::PredecessorHome(*predecessor_run_id, home.to_active()?),
                 expires_at,
             ),
             Self::ReusableSandbox {
@@ -251,20 +290,11 @@ impl RunnerPreferenceDecision {
                 RunnerPreferenceTarget::HomeCache,
                 expires_at,
             ),
-            Self::SourceHomeCache {
-                runner_identity,
-                expires_at,
-                finalizing_source_run_id,
-            } => (
-                runner_identity,
-                RunnerPreferenceTarget::SourceHomeCache(*finalizing_source_run_id),
-                expires_at,
-            ),
         };
         Ok(ActiveRunnerPreference::new(
             *runner_identity,
             target,
-            preference_deadline(*expires_at)?,
+            deadline_from_timestamp(*expires_at)?,
         ))
     }
 }
@@ -332,7 +362,16 @@ pub fn parse_runner_preference(
     }))
 }
 
-fn preference_deadline(expires_at: DateTime<FixedOffset>) -> Result<Instant, serde_json::Error> {
+fn timestamp_from_deadline(deadline: Instant) -> DateTime<FixedOffset> {
+    (Utc::now()
+        + chrono::Duration::from_std(deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or(chrono::Duration::MAX))
+    .fixed_offset()
+}
+
+fn deadline_from_timestamp(
+    expires_at: DateTime<FixedOffset>,
+) -> Result<Instant, serde_json::Error> {
     let now = Instant::now();
     let remaining = (expires_at.with_timezone(&Utc) - Utc::now())
         .to_std()
@@ -373,9 +412,7 @@ impl RunnerPreferenceContext {
 
     fn from_active_preference(preference: ActiveRunnerPreference) -> Self {
         let runner_identity = preference.runner_identity;
-        let expires_at = (Utc::now()
-            + chrono::Duration::from_std(preference.remaining()).unwrap_or(chrono::Duration::MAX))
-        .fixed_offset();
+        let expires_at = timestamp_from_deadline(preference.deadline());
         Self {
             runner_preference: RunnerPreference::Preference(
                 preference.target.into_wire(runner_identity, expires_at),

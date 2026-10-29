@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.11.31](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.30...runner-provider-v0.11.31) (2026-10-29)
+
+
+### Bug Fixes
+
+* **runner:** unify predecessor home discovery and bounded routing ([#43655](https://github.com/okou-ai/okou/issues/43655)) ([2c512a7](https://github.com/okou-ai/okou/commit/2c512a7542a0adbf22d72e278dc8acdd52a10a6c))
+
+
+### Refactoring
+
+* **runner-host:** share lock-retaining state publication ([#43715](https://github.com/okou-ai/okou/issues/43715)) ([0529b89](https://github.com/okou-ai/okou/commit/0529b89aef1a46d8b9b0e31445bbc8e9bff549b7))
+
+
+### Performance Improvements
+
+* prepare metadata-only workflow claims and downloads ([#43667](https://github.com/okou-ai/okou/issues/43667)) ([6fd2905](https://github.com/okou-ai/okou/commit/6fd29050029b5a521f75d0500e9876a11649afe6)) [#43642](https://github.com/okou-ai/okou/issues/43642)
+
 ## [0.11.30](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.29...runner-provider-v0.11.30) (2026-10-28)
 
 

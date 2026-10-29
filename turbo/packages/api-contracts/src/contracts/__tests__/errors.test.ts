@@ -17,6 +17,9 @@ import {
   isGenericRunErrorForDisplay,
 } from "../errors";
 
+const SHORT_CLAUDE_OAUTH_REVOCATION =
+  "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.";
+
 describe("formatRunErrorForExternalSurface", () => {
   it.each(["built-in", "openrouter-codex"] as const)(
     "presents model restrictions as unavailable for %s without exposing provider configuration",
@@ -559,12 +562,16 @@ describe("formatRunErrorForExternalSurface", () => {
     }
   });
 
-  it("shows Claude Code subscription reconnect guidance for upstream 401s", () => {
+  it.each([
+    "Failed to authenticate. API Error: 401 Invalid authentication credentials",
+    "Failed to authenticate. API Error: 401 OAuth access token is invalid.",
+    "Failed to authenticate. API Error: 401 OAuth access token has been revoked.",
+    SHORT_CLAUDE_OAUTH_REVOCATION,
+  ])("shows Claude Code subscription reconnect guidance for %s", (message) => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
-        message:
-          "Failed to authenticate. API Error: 401 Invalid authentication credentials",
+        message,
         claudeCodeCredentialRecovery: {
           modelProviderType: "claude-code-oauth-token",
           modelProvidersUrl: "https://app.example.test/?settings=model",
@@ -573,6 +580,62 @@ describe("formatRunErrorForExternalSurface", () => {
     ).toBe(
       "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.example.test/?settings=model",
     );
+  });
+
+  it.each([undefined, "codex-oauth-token", "built-in"] as const)(
+    "keeps short Claude OAuth revocation generic for provider %s",
+    (modelProviderType) => {
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: SHORT_CLAUDE_OAUTH_REVOCATION,
+          claudeCodeCredentialRecovery:
+            modelProviderType === undefined
+              ? undefined
+              : { modelProviderType, modelProvidersUrl: undefined },
+        }),
+      ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
+    },
+  );
+
+  it.each([
+    [
+      "reconnect_required",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.",
+    ],
+    ["future_reason", CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
+  ] as const)(
+    "preserves structured %s precedence over short OAuth revocation text",
+    (failureReason, expected) => {
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: SHORT_CLAUDE_OAUTH_REVOCATION,
+          failureReason,
+          claudeCodeCredentialRecovery: {
+            modelProviderType: "claude-code-oauth-token",
+            modelProvidersUrl: undefined,
+          },
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it.each([
+    `The tool printed: ${SHORT_CLAUDE_OAUTH_REVOCATION}`,
+    `${SHORT_CLAUDE_OAUTH_REVOCATION} This is quoted tool output.`,
+    "Failed to authenticate: OAuth token revoked.",
+  ])("keeps unverified short OAuth revocation text generic: %s", (message) => {
+    expect(
+      formatRunErrorForExternalSurface({
+        code: "UNKNOWN",
+        message,
+        claudeCodeCredentialRecovery: {
+          modelProviderType: "claude-code-oauth-token",
+          modelProvidersUrl: undefined,
+        },
+      }),
+    ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
   });
 
   it("keeps upstream 401s generic without Claude Code provider context", () => {

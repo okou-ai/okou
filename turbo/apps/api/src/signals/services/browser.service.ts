@@ -8,22 +8,26 @@ import {
   BROWSER_SCREEN_WIDTH,
   type BrowserSession,
   type BrowserSuspensionReason,
+  type BrowserWindowContext,
 } from "@okouai/api-contracts/contracts/browser";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   browserSessionInstances,
   browserSessionResizeStates,
   browserSessionScreenshots,
+  browserSessionScreenshotDeletions,
   browserSessionTabSnapshots,
   browserSessions,
   browserThreadProfiles,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
+import {
+  browserOwnerProfiles,
+  browserOwnerWindows,
+} from "@okouai/db/schema/browser-owner";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import {
   and,
@@ -43,6 +47,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { array, boolean, object, string, ZodError } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
@@ -92,7 +97,7 @@ import {
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import { reconcileBrowserUserActions$ } from "./browser-user-actions.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { browserCapturePublication } from "./browser-capture-publication";
 
 const RECONCILE_BATCH_SIZE = 20;
 const BROWSER_RESIZE_TIMEOUT_MS = 30_000;
@@ -376,7 +381,7 @@ const loadBrowserScreen$ = command(
   },
 );
 
-const loadBrowserScreenshotUrl$ = command(
+export const loadBrowserScreenshotUrl$ = command(
   async (
     { set },
     chatThreadId: string,
@@ -553,6 +558,22 @@ interface ActiveBrowserInstance {
   readonly userId: string;
 }
 
+// Shared ownership persists across instance stops; legacy writers and
+// retention must not reclaim that owner's chat snapshots after cutover.
+function uncutBrowserOwner() {
+  return notExists(
+    new QueryBuilder()
+      .select({ id: browserOwnerProfiles.id })
+      .from(browserOwnerProfiles)
+      .where(
+        and(
+          eq(browserOwnerProfiles.orgId, browserSessions.orgId),
+          eq(browserOwnerProfiles.userId, browserSessions.userId),
+        ),
+      ),
+  );
+}
+
 const saveBrowserTabSnapshot$ = command(
   async (
     { set },
@@ -570,7 +591,7 @@ const saveBrowserTabSnapshot$ = command(
         if (provider.status !== "active" || !provider.cdpUrl) {
           return;
         }
-        const urls = await listBrowserUseTabUrls(
+        const { urls } = await listBrowserUseTabUrls(
           provider.cdpUrl,
           AbortSignal.any([
             signal,
@@ -583,18 +604,60 @@ const saveBrowserTabSnapshot$ = command(
           { userId: target.userId },
         );
         signal.throwIfAborted();
-        await db
-          .insert(browserSessionTabSnapshots)
-          .values({
-            chatThreadId: target.chatThreadId,
-            encryptedTabUrls,
+        const t = browserSessionTabSnapshots;
+        const savedAt = nowDate();
+        // Provider/KMS work may outlive legacy retirement and shared cutover.
+        // Recheck the exact instance in both insertion and conflict publication.
+        const currentInstance = new QueryBuilder()
+          .select({ chatThreadId: browserSessions.chatThreadId })
+          .from(browserSessionInstances)
+          .innerJoin(
+            browserSessions,
+            eq(
+              browserSessions.chatThreadId,
+              browserSessionInstances.chatThreadId,
+            ),
+          )
+          .where(
+            and(
+              eq(
+                browserSessionInstances.providerSessionId,
+                target.providerSessionId,
+              ),
+              eq(browserSessionInstances.status, "active"),
+              eq(browserSessions.chatThreadId, target.chatThreadId),
+              eq(browserSessions.orgId, target.orgId),
+              eq(browserSessions.userId, target.userId),
+              eq(browserSessions.status, "active"),
+              uncutBrowserOwner(),
+            ),
+          );
+        const source = new QueryBuilder()
+          .select({
+            chatThreadId: sql`${target.chatThreadId}::uuid`
+              .mapWith(t.chatThreadId)
+              .as("chat_thread_id"),
+            encryptedTabUrls: sql`${encryptedTabUrls}::text`
+              .mapWith(t.encryptedTabUrls)
+              .as("encrypted_tab_urls"),
+            createdAt: sql`${sql.param(savedAt, t.createdAt)}::timestamp`
+              .mapWith(t.createdAt)
+              .as("created_at"),
+            updatedAt: sql`${sql.param(savedAt, t.updatedAt)}::timestamp`
+              .mapWith(t.updatedAt)
+              .as("updated_at"),
           })
+          .from(currentInstance.as("current_instance"));
+        await db
+          .insert(t)
+          .select(source)
           .onConflictDoUpdate({
-            target: browserSessionTabSnapshots.chatThreadId,
+            target: t.chatThreadId,
             set: {
               encryptedTabUrls,
-              updatedAt: nowDate(),
+              updatedAt: savedAt,
             },
+            setWhere: exists(currentInstance),
           });
         signal.throwIfAborted();
       })(),
@@ -823,7 +886,7 @@ const browserConcurrencyLimit$ = command(
   },
 );
 
-const ensureBrowserCapacity$ = command(
+export const ensureBrowserCapacity$ = command(
   async (
     { get, set },
     orgId: string,
@@ -840,6 +903,25 @@ const ensureBrowserCapacity$ = command(
     }
     if (!Number.isFinite(limit)) {
       return null;
+    }
+    const shared = await db.$count(
+      browserOwnerProfiles,
+      and(
+        eq(browserOwnerProfiles.orgId, orgId),
+        inArray(browserOwnerProfiles.status, [
+          "creating",
+          "active",
+          "stopping",
+        ]),
+      ),
+    );
+    signal.throwIfAborted();
+    const available = limit - shared;
+    if (available <= 0) {
+      return conflict(
+        "This organization has no managed browser concurrency available",
+        "BROWSER_CONCURRENCY_LIMIT",
+      );
     }
     const active = await db
       .select({
@@ -864,7 +946,7 @@ const ensureBrowserCapacity$ = command(
         asc(browserSessionInstances.startedAt),
       );
     signal.throwIfAborted();
-    const reclaimCount = active.length - limit + 1;
+    const reclaimCount = active.length - available + 1;
     for (const target of active.slice(0, Math.max(reclaimCount, 0))) {
       await set(
         stopActiveBrowserInstance$,
@@ -937,8 +1019,130 @@ async function recordBrowserScreenshotResult(result: {
   }
 }
 
-const captureAndStoreBrowserScreenshot$ = command(
-  async ({ get, set }, browser: BrowserSessionRow): Promise<void> => {
+const publishBrowserScreenshot$ = command(
+  async (
+    { set },
+    args: {
+      readonly browser: BrowserSessionRow;
+      readonly shared?: {
+        readonly providerSessionId: string;
+        readonly window: BrowserWindowContext;
+        readonly previousValue: string | null;
+        readonly capturedAt: Date;
+      };
+      readonly objectKey: string;
+      readonly url: string;
+    },
+  ): Promise<boolean> => {
+    const { browser, shared } = args;
+    const artifact = { key: args.objectKey, url: args.url };
+    const db = set(writeDb$);
+    if (shared) {
+      const t = browserSessionScreenshots;
+      const publication = browserCapturePublication({
+        value: t.objectKey,
+        updatedAt: t.updatedAt,
+        previousValue: shared.previousValue,
+        capturedAt: shared.capturedAt,
+      });
+      const guard = and(
+        eq(browserOwnerWindows.chatThreadId, browser.chatThreadId),
+        eq(browserOwnerWindows.instanceId, shared.window.instanceId),
+        eq(browserOwnerWindows.primaryWindowId, shared.window.primaryWindowId),
+        exists(
+          new QueryBuilder()
+            .select({ id: browserOwnerProfiles.id })
+            .from(browserOwnerProfiles)
+            .where(
+              and(
+                eq(browserOwnerProfiles.instanceId, shared.window.instanceId),
+                eq(
+                  browserOwnerProfiles.providerSessionId,
+                  shared.providerSessionId,
+                ),
+                eq(browserOwnerProfiles.orgId, browser.orgId),
+                eq(browserOwnerProfiles.userId, browser.userId),
+              ),
+            ),
+        ),
+      );
+      const source = new QueryBuilder()
+        .select({
+          chatThreadId: browserOwnerWindows.chatThreadId,
+          objectKey: sql`${artifact.key}`.mapWith(t.objectKey).as("object_key"),
+          url: sql`${artifact.url}`.mapWith(t.url).as("url"),
+          createdAt:
+            sql`${sql.param(shared.capturedAt, t.createdAt)}::timestamp`
+              .mapWith(t.createdAt)
+              .as("created_at"),
+          updatedAt:
+            sql`${sql.param(shared.capturedAt, t.updatedAt)}::timestamp`
+              .mapWith(t.updatedAt)
+              .as("updated_at"),
+        })
+        .from(browserOwnerWindows)
+        .where(guard);
+      const saved = await db
+        .insert(t)
+        .select(source)
+        .onConflictDoUpdate({
+          target: t.chatThreadId,
+          set: {
+            objectKey: artifact.key,
+            url: artifact.url,
+            updatedAt: publication.updatedAt,
+          },
+          setWhere: and(
+            exists(
+              new QueryBuilder()
+                .select({ id: browserOwnerWindows.chatThreadId })
+                .from(browserOwnerWindows)
+                .where(guard),
+            ),
+            publication.canReplace,
+          ),
+        })
+        .returning({ id: t.chatThreadId });
+      if (saved.length === 0) {
+        await db
+          .insert(browserSessionScreenshotDeletions)
+          .values({
+            objectKey: artifact.key,
+            chatThreadId: browser.chatThreadId,
+          })
+          .onConflictDoNothing();
+        return false;
+      }
+    } else {
+      await db
+        .insert(browserSessionScreenshots)
+        .values({
+          chatThreadId: browser.chatThreadId,
+          objectKey: artifact.key,
+          url: artifact.url,
+        })
+        .onConflictDoUpdate({
+          target: browserSessionScreenshots.chatThreadId,
+          set: {
+            objectKey: artifact.key,
+            url: artifact.url,
+            updatedAt: nowDate(),
+          },
+        });
+    }
+    return true;
+  },
+);
+
+export const captureAndStoreBrowserScreenshot$ = command(
+  async (
+    { get, set },
+    browser: BrowserSessionRow,
+    shared?: {
+      readonly providerSessionId: string;
+      readonly window: BrowserWindowContext;
+    },
+  ): Promise<void> => {
     const startedAt = now();
     const signal = get(rootSignal$);
     let stage: BrowserScreenshotStage = "prepare";
@@ -946,11 +1150,22 @@ const captureAndStoreBrowserScreenshot$ = command(
     // screenshot operation has a recorded result.
     const [result] = await Promise.allSettled([
       (async () => {
-        const db = set(writeDb$);
-        const instance = await set(loadActiveInstance$, browser.chatThreadId);
+        const instance =
+          shared ?? (await set(loadActiveInstance$, browser.chatThreadId));
         signal.throwIfAborted();
         if (!instance) {
           return;
+        }
+        let previousValue: string | null = null;
+        if (shared) {
+          const [previous] = await get(db$)
+            .select({ objectKey: browserSessionScreenshots.objectKey })
+            .from(browserSessionScreenshots)
+            .where(
+              eq(browserSessionScreenshots.chatThreadId, browser.chatThreadId),
+            );
+          signal.throwIfAborted();
+          previousValue = previous?.objectKey ?? null;
         }
         const provider = await getBrowserUseSession(
           instance.providerSessionId,
@@ -967,8 +1182,10 @@ const captureAndStoreBrowserScreenshot$ = command(
             signal,
             AbortSignal.timeout(BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS),
           ]),
+          shared?.window.primaryWindowId,
         );
         signal.throwIfAborted();
+        const capturedAt = nowDate();
         stage = "upload";
         const artifact = await set(
           allocateUploadedArtifact$,
@@ -1006,21 +1223,15 @@ const captureAndStoreBrowserScreenshot$ = command(
             signal,
           );
         }
-        await db
-          .insert(browserSessionScreenshots)
-          .values({
-            chatThreadId: browser.chatThreadId,
-            objectKey: artifact.key,
-            url: artifact.url,
-          })
-          .onConflictDoUpdate({
-            target: browserSessionScreenshots.chatThreadId,
-            set: {
-              objectKey: artifact.key,
-              url: artifact.url,
-              updatedAt: nowDate(),
-            },
-          });
+        const saved = await set(publishBrowserScreenshot$, {
+          browser,
+          shared: shared ? { ...shared, previousValue, capturedAt } : undefined,
+          objectKey: artifact.key,
+          url: artifact.url,
+        });
+        if (!saved) {
+          return;
+        }
 
         // Persistence is the success boundary; a deadline after commit must
         // not turn an available preview into a failed capture metric.
@@ -1831,26 +2042,11 @@ const createAndClaimProviderInstance$ = command(
       readonly screenHeight: number;
     },
   ) => {
-    let extensionIds = env("OKOU_BROWSER_USE_EXTENSION_IDS");
-    if (extensionIds?.length) {
-      const featureContext = await set(
-        loadUserFeatureSwitchContext$,
-        args.context.orgId,
-        args.context.userId,
-        get(rootSignal$),
-      );
-      if (
-        !isFeatureEnabled(FeatureSwitchKey.BrowserSharedOwner, featureContext)
-      ) {
-        extensionIds = undefined;
-      }
-    }
     const provider = await providerCall(
       createBrowserUseSession(
         {
           profileId: args.profile.providerProfileId,
           proxyCountryCode: args.browser.proxyCountryCode,
-          extensionIds,
           // Okou owns reclamation through the idle lease, so the provider only
           // needs to enforce the absolute upper bound.
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
@@ -3250,6 +3446,7 @@ const claimExpiredInactiveBrowser$ = command(
             eq(browserSessions.status, target.status),
             eq(browserSessions.updatedAt, target.updatedAt),
             lte(browserSessions.updatedAt, cutoff),
+            uncutBrowserOwner(),
             target.providerProfileId === null
               ? notExists(
                   tx
@@ -3572,6 +3769,7 @@ const reconcileExpiredInactiveBrowsers$ = command(
         and(
           inArray(browserSessions.status, [...INACTIVE_BROWSER_STATUSES]),
           lte(browserSessions.updatedAt, cutoff),
+          uncutBrowserOwner(),
           notExists(
             db
               .select({

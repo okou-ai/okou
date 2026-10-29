@@ -606,6 +606,50 @@ fn cli_failure_reason_classifies_claude_invalid_credentials() {
 }
 
 #[test]
+fn short_claude_oauth_revocation_requires_the_claude_result_boundary() {
+    let message = "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.";
+    for (framework, source, expected) in [
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            Some(FailureReason::ReconnectRequired),
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            None,
+        ),
+        (AgentFramework::Codex, FailureDetailSource::CodexJsonl, None),
+        (AgentFramework::Pi, FailureDetailSource::PiResult, None),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            expected,
+            "framework={framework:?}, source={source:?}"
+        );
+    }
+}
+
+#[test]
+fn short_claude_oauth_revocation_does_not_classify_quoted_or_incomplete_messages() {
+    for message in [
+        "The tool printed: Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.",
+        "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator. This is quoted tool output.",
+        "Failed to authenticate: OAuth token revoked.",
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+                message,
+            ),
+            None,
+            "message: {message}"
+        );
+    }
+}
+
+#[test]
 fn cli_failure_reason_classifies_expired_authentication_tokens_at_model_boundaries() {
     for message in [
         "Your authentication token has expired. Please try refreshing it.",
@@ -819,17 +863,6 @@ fn cli_failure_reason_classifies_claude_result_repeated_529_provider_overloaded_
 }
 
 #[test]
-fn cli_failure_reason_classifies_claude_result_simple_provider_overloaded() {
-    let reason = super::classify_cli_failure_reason(
-        AgentFramework::ClaudeCode,
-        FailureDetailSource::ClaudeResult,
-        "API Error: Overloaded",
-    );
-
-    assert_eq!(reason, Some(FailureReason::ProviderOverloaded));
-}
-
-#[test]
 fn cli_failure_reason_classifies_claude_result_simple_provider_overloaded_diagnostic() {
     let message = "API Error: Overloaded";
     let msg = cli_failure_message(
@@ -866,37 +899,6 @@ fn cli_failure_reason_ignores_simple_claude_overloaded_from_stderr() {
     );
 
     assert_eq!(reason, None);
-}
-
-#[test]
-fn cli_failure_reason_classifies_claude_result_stream_idle_timeouts() {
-    for message in [
-        "API Error: Stream idle timeout - partial response received",
-        "API Error: Stream idle timeout - no chunks received",
-    ] {
-        let reason = super::classify_cli_failure_reason(
-            AgentFramework::ClaudeCode,
-            FailureDetailSource::ClaudeResult,
-            message,
-        );
-
-        assert_eq!(
-            reason,
-            Some(FailureReason::ProviderStreamTimeout),
-            "message: {message}"
-        );
-    }
-}
-
-#[test]
-fn cli_failure_reason_classifies_claude_result_stalled_mid_stream() {
-    let reason = super::classify_cli_failure_reason(
-        AgentFramework::ClaudeCode,
-        FailureDetailSource::ClaudeResult,
-        "API Error: Response stalled mid-stream. The response above may be incomplete.",
-    );
-
-    assert_eq!(reason, Some(FailureReason::ProviderStreamTimeout));
 }
 
 #[test]
@@ -1006,17 +1008,6 @@ fn cli_failure_reason_ignores_explanatory_stream_timeout_text() {
 }
 
 #[test]
-fn cli_failure_reason_classifies_claude_result_provider_server_error() {
-    let reason = super::classify_cli_failure_reason(
-        AgentFramework::ClaudeCode,
-        FailureDetailSource::ClaudeResult,
-        CLAUDE_PROVIDER_SERVER_ERROR_MESSAGE,
-    );
-
-    assert_eq!(reason, Some(FailureReason::ProviderServerError));
-}
-
-#[test]
 fn cli_failure_reason_ignores_claude_provider_server_error_from_stderr() {
     let reason = super::classify_cli_failure_reason(
         AgentFramework::ClaudeCode,
@@ -1066,28 +1057,6 @@ fn cli_failure_reason_classifies_claude_result_provider_server_error_diagnostic(
         diagnostic.failure_detail_source,
         Some(FailureDetailSource::ClaudeResult)
     );
-}
-
-#[test]
-fn cli_failure_reason_classifies_claude_result_mid_response_failures() {
-    for (message, expected_reason) in [
-        (
-            CLAUDE_MID_RESPONSE_SERVER_ERROR_MESSAGE,
-            FailureReason::ProviderServerError,
-        ),
-        (
-            CLAUDE_MID_RESPONSE_CONNECTION_LOST_MESSAGE,
-            FailureReason::ResponseConnectionLost,
-        ),
-    ] {
-        let reason = super::classify_cli_failure_reason(
-            AgentFramework::ClaudeCode,
-            FailureDetailSource::ClaudeResult,
-            message,
-        );
-
-        assert_eq!(reason, Some(expected_reason), "message: {message}");
-    }
 }
 
 #[test]

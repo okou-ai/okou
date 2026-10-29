@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/okou-ai/okou/compare/runner-types-v0.10.1...runner-types-v0.10.2) (2026-10-29)
+
+
+### Performance Improvements
+
+* prepare metadata-only workflow claims and downloads ([#43667](https://github.com/okou-ai/okou/issues/43667)) ([6fd2905](https://github.com/okou-ai/okou/commit/6fd29050029b5a521f75d0500e9876a11649afe6)) [#43642](https://github.com/okou-ai/okou/issues/43642)
+
 ## [0.10.1](https://github.com/okou-ai/okou/compare/runner-types-v0.10.0...runner-types-v0.10.1) (2026-10-28)
 
 ## [0.10.0](https://github.com/okou-ai/okou/compare/runner-types-v0.9.20...runner-types-v0.10.0) (2026-10-28)

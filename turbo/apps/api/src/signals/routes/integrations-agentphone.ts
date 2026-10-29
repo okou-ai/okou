@@ -1,16 +1,35 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { linkAgentPhoneIdentity$ } from "../services/agentphone-link.service";
+import {
+  linkAgentPhoneIdentity$,
+  switchAgentPhoneIdentity$,
+} from "../services/agentphone-link.service";
 import { prepareAgentPhoneContactCard$ } from "../services/agentphone-contact-card.service";
-import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import {
+  integrationsAgentPhoneContract,
+  type AgentPhoneConnectRequest,
+  type AgentPhoneConnectStatus,
+} from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command, computed } from "ccstate";
-import { and, asc, eq, gt, gte, ilike, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  DrizzleQueryError,
+  eq,
+  gt,
+  gte,
+  ilike,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   iso,
+  literal,
   object,
   record,
   string,
@@ -22,6 +41,7 @@ import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { now } from "../../lib/time";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
@@ -54,9 +74,14 @@ import {
   type AgentPhoneMessageEvent,
 } from "../services/agentphone.service";
 import {
+  agentPhoneUserLinksForChannel,
   isAgentPhoneMentionText,
   type AgentPhoneUserLink,
 } from "../services/agentphone-shared.service";
+import {
+  isWhatsappSupportedHandle,
+  whatsappEnabled$,
+} from "../services/whatsapp-config";
 import { safeJsonParse, settle, tapError } from "../utils";
 
 interface AgentPhoneConfig {
@@ -90,6 +115,9 @@ const groupHistoryQuery$ = queryOf(integrationsAgentPhoneContract.groupHistory);
 const connectBody$ = bodyResultOf(
   integrationsAgentPhoneContract.connectAgentPhone,
 );
+const connectStatusQuery$ = queryOf(
+  integrationsAgentPhoneContract.getConnectStatus,
+);
 
 const webhookBodySchema = record(string(), zUnknown());
 const groupHistoryCursorSchema = object({
@@ -103,6 +131,54 @@ type VerificationSendCooldownScope = "phone" | "user_org";
 interface VerificationSendCooldownKey {
   readonly scope: VerificationSendCooldownScope;
   readonly scopeKey: string;
+}
+
+const COOLDOWN_RESERVATION_DENIED = "__TX0019_COOLDOWN_DENIED__";
+const cooldownReservationRowSchema = object({ guard: literal(0) });
+
+function verificationCooldownReservationSql(
+  keys: readonly VerificationSendCooldownKey[],
+  attemptedAt: Date,
+) {
+  const table = agentphoneVerificationSendCooldowns;
+  const input = keys.map((key, ordinal) => {
+    return { ...key, ordinal };
+  });
+  const cutoff = new Date(
+    attemptedAt.getTime() - VERIFICATION_SEND_COOLDOWN_MS,
+  );
+  return sql`WITH keys AS MATERIALIZED (
+    SELECT DISTINCT ON (scope, "scopeKey") scope, "scopeKey", ordinal
+    FROM jsonb_to_recordset(${JSON.stringify(input)}::jsonb)
+      AS input(scope text, "scopeKey" text, ordinal integer)
+    ORDER BY scope, "scopeKey", ordinal
+  ), reserved AS (
+    INSERT INTO ${table} (scope, scope_key, last_sent_at, updated_at)
+    SELECT scope, "scopeKey", ${sql.param(attemptedAt, table.lastSentAt)},
+      ${sql.param(attemptedAt, table.updatedAt)}
+    FROM keys ORDER BY ordinal
+    ON CONFLICT (scope, scope_key) DO UPDATE
+      SET last_sent_at = EXCLUDED.last_sent_at,
+          updated_at = EXCLUDED.updated_at
+      WHERE ${table.lastSentAt} IS NULL
+        OR date_trunc('milliseconds', ${table.lastSentAt})
+          <= ${sql.param(cutoff, table.lastSentAt)}
+    RETURNING scope
+  ) SELECT (CASE
+    WHEN (SELECT count(*) FROM reserved) = (SELECT count(*) FROM keys)
+      THEN '0' ELSE ${COOLDOWN_RESERVATION_DENIED}
+    END)::integer AS guard`;
+}
+
+function isCooldownReservationDenied(error: unknown): boolean {
+  return (
+    error instanceof DrizzleQueryError &&
+    error.cause instanceof Error &&
+    "code" in error.cause &&
+    error.cause.code === "22P02" &&
+    error.cause.message ===
+      `invalid input syntax for type integer: "${COOLDOWN_RESERVATION_DENIED}"`
+  );
 }
 
 function notConfigured() {
@@ -251,6 +327,66 @@ async function sendAgentPhoneVerificationMessage(
 // signing.
 const APPS_API_CONNECT_CHANNEL: AgentPhoneChannel = "sms";
 
+function verifiedConnectParams(body: AgentPhoneConnectRequest): {
+  readonly phoneHandle: string;
+  readonly channel: Exclude<AgentPhoneChannel, "whatsapp">;
+} | null {
+  const channel = body.channel ?? "sms";
+  if (!isAgentPhoneChannel(channel) || channel === "whatsapp") {
+    return null;
+  }
+  const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
+  return phoneHandle &&
+    verifyAgentPhoneConnectSignature({
+      phoneHandle,
+      agentphoneAgentId: body.agentphoneAgentId,
+      timestamp: body.timestamp,
+      channel,
+      signature: body.signature,
+      secret: env("SECRETS_ENCRYPTION_KEY"),
+    })
+    ? { phoneHandle, channel }
+    : null;
+}
+
+const getConnectStatus$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const verified = verifiedConnectParams(get(connectStatusQuery$));
+  if (!verified) {
+    return badRequestMessage(
+      "Invalid or expired connection link. Send /connect again.",
+    );
+  }
+  const { phoneHandle } = verified;
+  const rows = await get(db$)
+    .select()
+    .from(agentphoneUserLinks)
+    .where(
+      or(
+        eq(agentphoneUserLinks.phoneHandle, phoneHandle),
+        and(
+          eq(agentphoneUserLinks.userId, auth.userId),
+          eq(agentphoneUserLinks.orgId, auth.orgId),
+        ),
+      ),
+    )
+    .limit(2);
+  const requested = rows.find((row) => {
+    return row.phoneHandle === phoneHandle;
+  });
+  const current = rows.find((row) => {
+    return row.userId === auth.userId && row.orgId === auth.orgId;
+  });
+  const body: AgentPhoneConnectStatus = requested
+    ? requested === current
+      ? { kind: "connected", phoneHandle }
+      : { kind: "phone_in_use" }
+    : current
+      ? { kind: "phone_mismatch", currentPhoneHandle: current.phoneHandle }
+      : { kind: "connect" };
+  return { status: 200 as const, body };
+});
+
 const getLinkStatus$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
 
@@ -342,74 +478,37 @@ const sendAgentPhoneVerificationText$ = command(
     },
     signal: AbortSignal,
   ) => {
-    // The post-insert reads need fresh snapshots and both cooldown scopes must
-    // reserve together; the provider send remains outside this rollback boundary.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0019; new non-billing transactions are prohibited.
-    const cooldownResult = await set(writeDb$).transaction(async (tx) => {
-      const attemptedAt = new Date(now());
-      const cooldownCutoff =
-        attemptedAt.getTime() - VERIFICATION_SEND_COOLDOWN_MS;
-
-      for (const key of params.cooldownKeys) {
-        await tx
-          .insert(agentphoneVerificationSendCooldowns)
-          .values({
-            scope: key.scope,
-            scopeKey: key.scopeKey,
-          })
-          .onConflictDoNothing();
-
-        const [cooldown] = await tx
-          .select({
-            lastSentAt: agentphoneVerificationSendCooldowns.lastSentAt,
-          })
-          .from(agentphoneVerificationSendCooldowns)
-          .where(
-            and(
-              eq(agentphoneVerificationSendCooldowns.scope, key.scope),
-              eq(agentphoneVerificationSendCooldowns.scopeKey, key.scopeKey),
-            ),
-          )
-          .for("update")
-          .limit(1);
-        signal.throwIfAborted();
-
-        if (
-          cooldown?.lastSentAt &&
-          cooldown.lastSentAt.getTime() > cooldownCutoff
-        ) {
-          return { ok: false as const, response: tooManyVerificationTexts() };
-        }
-      }
-
-      // Both scopes are already locked in the existing sorted order. Reserve
-      // the same timestamp together, after every scope passed its cooldown.
-      if (params.cooldownKeys.length > 0) {
-        await tx
-          .update(agentphoneVerificationSendCooldowns)
-          .set({ lastSentAt: attemptedAt, updatedAt: attemptedAt })
-          .where(
-            or(
-              ...params.cooldownKeys.map((key) => {
-                return and(
-                  eq(agentphoneVerificationSendCooldowns.scope, key.scope),
-                  eq(
-                    agentphoneVerificationSendCooldowns.scopeKey,
-                    key.scopeKey,
-                  ),
-                );
-              }),
-            ),
-          );
-      }
-      signal.throwIfAborted();
-
-      return { ok: true as const };
-    });
+    const db = set(writeDb$);
+    const attemptedAt = new Date(now());
+    // ON CONFLICT checks the current row after waits. The guard rolls back
+    // every reservation if either scope is cooling down; key order is retained.
     signal.throwIfAborted();
-
-    if (!cooldownResult.ok) {
-      return cooldownResult;
+    const reservation = await settle(
+      (async () => {
+        const rows = parseRawRows(
+          cooldownReservationRowSchema,
+          await db.execute(
+            verificationCooldownReservationSql(
+              params.cooldownKeys,
+              attemptedAt,
+            ),
+          ),
+        );
+        signal.throwIfAborted();
+        if (rows.length !== 1) {
+          throw new Error(
+            "Verification cooldown reservation returned no guard",
+          );
+        }
+      })(),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!reservation.ok) {
+      if (isCooldownReservationDenied(reservation.error)) {
+        return { ok: false as const, response: tooManyVerificationTexts() };
+      }
+      throw reservation.error;
     }
 
     // Keep the committed cooldown even if delivery fails or is uncertain.
@@ -643,40 +742,41 @@ const connectAgentPhone$ = command(
     }
 
     const body = bodyResult.data;
-    const channel = body.channel ?? "sms";
-    if (!isAgentPhoneChannel(channel)) {
+    const verified = verifiedConnectParams(body);
+    if (!verified) {
       return badRequestMessage(
         "Invalid or expired connection link. Send /connect again.",
       );
     }
-    const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
-    if (
-      !phoneHandle ||
-      !verifyAgentPhoneConnectSignature({
-        phoneHandle,
-        agentphoneAgentId: body.agentphoneAgentId,
-        timestamp: body.timestamp,
-        channel,
-        signature: body.signature,
-        secret: env("SECRETS_ENCRYPTION_KEY"),
-      })
-    ) {
-      return badRequestMessage(
-        "Invalid or expired connection link. Send /connect again.",
-      );
-    }
+    const { phoneHandle, channel } = verified;
 
-    const result = await set(
-      linkAgentPhoneIdentity$,
-      {
-        phoneHandle,
-        channel,
-        source: { kind: "direct", userId: auth.userId, orgId: auth.orgId },
-      },
-      signal,
-    );
+    const result = body.replacePhoneHandle
+      ? await set(
+          switchAgentPhoneIdentity$,
+          {
+            orgId: auth.orgId,
+            userId: auth.userId,
+            phoneHandle,
+            replacePhoneHandle: body.replacePhoneHandle,
+          },
+          signal,
+        )
+      : await set(
+          linkAgentPhoneIdentity$,
+          {
+            phoneHandle,
+            channel,
+            source: { kind: "direct", userId: auth.userId, orgId: auth.orgId },
+          },
+          signal,
+        );
     signal.throwIfAborted();
 
+    if (result.kind === "stale") {
+      return conflict(
+        "Your phone connection changed. Reload this page and try again.",
+      );
+    }
     if (result.kind !== "linked") {
       return connectConflict(
         result.kind === "conflict" ? result.reason : "conflict",
@@ -1344,18 +1444,25 @@ const handleAgentPhoneConnectionCode$ = command(
 
     await tapError(
       result.kind === "linked"
-        ? set(
-            sendAgentPhoneConnectedMessages$,
-            {
-              userLinkId: result.userLinkId,
-              agentphoneAgentId: event.agentphoneAgentId,
-              toNumber: event.fromNumber,
-              ...(event.channel === "imessage"
-                ? { replyToMessageId: event.messageId }
-                : {}),
-            },
-            signal,
-          )
+        ? event.channel === "whatsapp"
+          ? set(
+              sendAgentPhoneText$,
+              event,
+              "WhatsApp connected. Send a message here to start using Okou.",
+              signal,
+            )
+          : set(
+              sendAgentPhoneConnectedMessages$,
+              {
+                userLinkId: result.userLinkId,
+                agentphoneAgentId: event.agentphoneAgentId,
+                toNumber: event.fromNumber,
+                ...(event.channel === "imessage"
+                  ? { replyToMessageId: event.messageId }
+                  : {}),
+              },
+              signal,
+            )
         : set(
             sendAgentPhoneText$,
             event,
@@ -1372,6 +1479,56 @@ const handleAgentPhoneConnectionCode$ = command(
     );
     signal.throwIfAborted();
     return true;
+  },
+);
+
+function isAllowedWhatsappEvent(event: AgentPhoneMessageEvent): boolean {
+  return (
+    event.channel !== "whatsapp" ||
+    (!event.isGroup &&
+      isWhatsappSupportedHandle(
+        normalizeAgentPhoneHandle(event.fromNumber, "whatsapp"),
+      ))
+  );
+}
+
+const loadAgentPhoneSenderLink$ = command(
+  async ({ get }, event: AgentPhoneMessageEvent, signal: AbortSignal) => {
+    const links = agentPhoneUserLinksForChannel(event.channel);
+    const [link] = await get(db$)
+      .select()
+      .from(links)
+      .where(
+        eq(
+          links.phoneHandle,
+          normalizeAgentPhoneHandle(event.fromNumber, event.channel),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return link ?? null;
+  },
+);
+
+const acceptsWhatsappSender$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    userLink: AgentPhoneUserLink | null,
+    signal: AbortSignal,
+  ) => {
+    if (event.channel !== "whatsapp") {
+      return true;
+    }
+    if (userLink) {
+      return await set(
+        whatsappEnabled$,
+        userLink.orgId,
+        userLink.userId,
+        signal,
+      );
+    }
+    return isAgentPhoneConnectionCodeMessage(event.body);
   },
 );
 
@@ -1443,22 +1600,14 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return admissionResponse;
   }
 
-  const db = get(db$);
+  if (!isAllowedWhatsappEvent(event)) {
+    return okText();
+  }
   // A group sender never borrows a participant's or route owner's link.
-  const phoneHandle = normalizeAgentPhoneHandle(
-    event.fromNumber,
-    event.channel,
-  );
-  const linkRows = phoneHandle
-    ? db
-        .select()
-        .from(agentphoneUserLinks)
-        .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
-        .limit(1)
-    : Promise.resolve([]);
-  const [link] = await linkRows;
-  signal.throwIfAborted();
-  const userLink = link ?? null;
+  const userLink = await set(loadAgentPhoneSenderLink$, event, signal);
+  if (!(await set(acceptsWhatsappSender$, event, userLink, signal))) {
+    return okText();
+  }
 
   const stored = await set(
     storeInboundAgentPhoneMessage$,
@@ -1601,6 +1750,10 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
 });
 
 export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
+  {
+    route: integrationsAgentPhoneContract.getConnectStatus,
+    handler: authRoute(agentPhoneAuthOptions, getConnectStatus$),
+  },
   {
     route: integrationsAgentPhoneContract.connectAgentPhone,
     handler: authRoute(agentPhoneAuthOptions, connectAgentPhone$),

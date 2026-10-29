@@ -597,18 +597,13 @@ async fn publish_catalog_cache(
     content: Vec<u8>,
     guard: Flock<File>,
 ) -> ProviderResult<()> {
-    // Accepted filesystem work can outlive its async observer. Keep write
-    // authority with the physical operation, including its staging cleanup.
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        runner_host::state_file::write_private_atomic_blocking(&cache_path, &content)
-    })
-    .await
-    .map_err(|error| {
-        ProviderError::Internal(format!(
-            "builtin firewall catalog cache publication task failed: {error}"
-        ))
-    })??;
+    runner_host::state_file::spawn_locked_private_atomic_write(cache_path, content, guard)
+        .await
+        .map_err(|error| {
+            ProviderError::Internal(format!(
+                "builtin firewall catalog cache publication task failed: {error}"
+            ))
+        })??;
     Ok(())
 }
 

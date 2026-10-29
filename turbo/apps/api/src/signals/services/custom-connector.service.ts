@@ -1162,10 +1162,11 @@ function customConnectorPrefixTemplateIdentity(raw: string): string {
 }
 
 function prefixContainsPathVariable(raw: string): boolean {
-  if (!raw.startsWith("https://")) {
+  const schemePrefix = /^https?:\/\//i.exec(raw);
+  if (!schemePrefix) {
     return false;
   }
-  const afterScheme = raw.slice("https://".length);
+  const afterScheme = raw.slice(schemePrefix[0].length);
   const firstPathSlash = afterScheme.indexOf("/");
   if (firstPathSlash === -1) {
     return false;
@@ -1211,13 +1212,6 @@ function validateAndNormalizePrefixTemplate(args: {
         : "not a valid URL";
     return badRequestMessage(`Invalid prefix URL: ${args.raw}: ${message}`);
   }
-  const canonicalPrefix = validation.ok;
-  const schemeEnd = canonicalPrefix.indexOf("://");
-  const scheme = canonicalPrefix.slice(0, schemeEnd).toLowerCase();
-  if (scheme !== "https") {
-    return badRequestMessage(`Prefix must use https://: ${args.raw}`);
-  }
-
   return normalised;
 }
 

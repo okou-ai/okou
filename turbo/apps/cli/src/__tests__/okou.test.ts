@@ -71,6 +71,7 @@ describe("Okou CLI program", () => {
       "workflow",
       "slack",
       "wechat",
+      "whatsapp",
       "feishu",
       "lark",
       "teams",
@@ -201,6 +202,18 @@ describe("Okou CLI lazy command loading", () => {
       registerCommands(cli);
       expect(cli.helpInformation().includes("ssh")).toBe(
         capabilities.length > 0,
+      );
+    },
+  );
+
+  it.each([[], ["phone:write"], ["whatsapp:write"]])(
+    "shows WhatsApp only with its own capability: %j",
+    (...capabilities: string[]) => {
+      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
+      const cli = new Command("okou");
+      registerCommands(cli);
+      expect(cli.helpInformation().includes("whatsapp")).toBe(
+        capabilities.includes("whatsapp:write"),
       );
     },
   );

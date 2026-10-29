@@ -49,6 +49,7 @@
     "src/signals/autonomy-budget-limit.ts",
     "src/signals/services/autonomy-budget.service.ts",
     "src/signals/services/auxiliary-generation.service.ts",
+    "src/signals/services/browser-capture-publication.ts",
     "src/signals/services/browser.service.ts",
     "src/signals/services/canonical-slack-thread-status.service.ts",
     "src/signals/services/chat-incomplete-context.service.ts",
@@ -205,7 +206,9 @@
     "src/signals/services/wechat-thread-typing.service.ts",
     "src/signals/services/wechat-access.service.ts",
     "src/signals/services/wechat-message-send.service.ts",
-    "src/signals/services/wechat-message-identity.ts"
+    "src/signals/services/wechat-message-identity.ts",
+    "src/signals/services/teams-workspace-identity.service.ts",
+    "src/signals/services/teams-delivery-access.service.ts"
   ],
   "references": [
     {

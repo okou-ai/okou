@@ -9,6 +9,7 @@ import {
   BROWSER_USER_ACTION_MAX_TITLE_LENGTH,
   type BrowserUserActionFieldKind,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
+import type { BrowserWindowContext } from "@okouai/api-contracts/contracts/browser";
 
 export interface BrowserUserActionCallbackIdentity {
   readonly clientEventId: string;
@@ -35,6 +36,7 @@ export interface BrowserUserActionInputField {
 }
 
 export interface BrowserUserActionInputTarget {
+  readonly window?: BrowserWindowContext;
   readonly pageTargetId: string;
   readonly documentLoaderId: string;
   readonly siteOrigin: string;
@@ -281,6 +283,17 @@ function httpOrigin(value: unknown): value is string {
   }
 }
 
+function validInputWindow(value: unknown): boolean {
+  const window = objectValue(value);
+  return (
+    !!window &&
+    hasOnlyKeys(window, ["instanceId", "primaryWindowId"]) &&
+    uuid(window.instanceId) &&
+    Number.isSafeInteger(window.primaryWindowId) &&
+    Number(window.primaryWindowId) >= 0
+  );
+}
+
 function decodeInputTarget(
   value: unknown,
 ): BrowserUserActionInputTarget | null {
@@ -288,6 +301,7 @@ function decodeInputTarget(
   if (
     !target ||
     !hasOnlyKeys(target, [
+      "window",
       "pageTargetId",
       "documentLoaderId",
       "siteOrigin",
@@ -311,6 +325,10 @@ function decodeInputTarget(
     target.fields.length < 1 ||
     target.fields.length > BROWSER_USER_ACTION_MAX_FIELDS
   ) {
+    return null;
+  }
+  const window = objectValue(target.window);
+  if (target.window !== undefined && !validInputWindow(target.window)) {
     return null;
   }
   const fields = target.fields.map(decodeField);
@@ -342,6 +360,14 @@ function decodeInputTarget(
   }
   return {
     pageTargetId: target.pageTargetId,
+    ...(window
+      ? {
+          window: {
+            instanceId: String(window.instanceId),
+            primaryWindowId: Number(window.primaryWindowId),
+          },
+        }
+      : {}),
     documentLoaderId: target.documentLoaderId,
     siteOrigin: target.siteOrigin,
     pageUrlHash: target.pageUrlHash,

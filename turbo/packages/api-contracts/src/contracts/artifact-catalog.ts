@@ -20,6 +20,7 @@ import type {
   AnyRouteTypeSlots,
   AppRoute,
   AppRouteSpec,
+  NoBodyMarker,
   ZodLikeSchema,
   ZodSchema,
 } from "./trpc-contract";
@@ -196,6 +197,16 @@ export interface ArtifactCatalogGetClientRequest extends ArtifactCatalogRequestO
   readonly query?: ArtifactCatalogGetClientQuery;
 }
 
+export interface ArtifactCatalogDeleteServerRequest extends ArtifactCatalogRequestOptions {
+  readonly headers: ArtifactCatalogAuthHeaders;
+  readonly params: ArtifactIdPathParams;
+}
+
+export interface ArtifactCatalogDeleteClientRequest extends ArtifactCatalogRequestOptions {
+  readonly headers?: ArtifactCatalogAuthHeaders;
+  readonly params: ArtifactIdPathParams;
+}
+
 export type ArtifactCatalogApiErrorRouteResponse<TStatus extends number> = {
   readonly status: TStatus;
   readonly body: ApiErrorResponse;
@@ -212,6 +223,15 @@ export type ArtifactCatalogGetRouteResponse =
   | ArtifactCatalogApiErrorRouteResponse<403>
   | ArtifactCatalogApiErrorRouteResponse<404>;
 
+export type ArtifactCatalogDeleteRouteResponse =
+  | { readonly status: 200; readonly body: { readonly deleted: true } }
+  | ArtifactCatalogApiErrorRouteResponse<400>
+  | ArtifactCatalogApiErrorRouteResponse<401>
+  | ArtifactCatalogApiErrorRouteResponse<403>
+  | ArtifactCatalogApiErrorRouteResponse<404>
+  | ArtifactCatalogApiErrorRouteResponse<500>
+  | ArtifactCatalogApiErrorRouteResponse<503>;
+
 export interface ArtifactCatalogListRouteTypes extends AnyRouteTypeSlots {
   readonly serverRequest: ArtifactCatalogListServerRequest;
   readonly clientRequest: ArtifactCatalogListClientRequest | undefined;
@@ -222,6 +242,12 @@ export interface ArtifactCatalogGetRouteTypes extends AnyRouteTypeSlots {
   readonly serverRequest: ArtifactCatalogGetServerRequest;
   readonly clientRequest: ArtifactCatalogGetClientRequest;
   readonly response: ArtifactCatalogGetRouteResponse;
+}
+
+export interface ArtifactCatalogDeleteRouteTypes extends AnyRouteTypeSlots {
+  readonly serverRequest: ArtifactCatalogDeleteServerRequest;
+  readonly clientRequest: ArtifactCatalogDeleteClientRequest;
+  readonly response: ArtifactCatalogDeleteRouteResponse;
 }
 
 const artifactKindSchema = zEnum(ARTIFACT_CATALOG_KINDS);
@@ -395,7 +421,24 @@ const artifactCatalogRuntimeSpec = {
     },
     summary: "Get one artifact with its kind-specific detail",
   },
-} as const satisfies Record<"list" | "get", AppRouteSpec>;
+  delete: {
+    method: "DELETE",
+    path: "/api/artifacts/catalog/:artifactId",
+    headers: artifactCatalogAuthHeadersSchema,
+    pathParams: artifactCatalogPathParamsSchema,
+    body: c.noBody(),
+    responses: {
+      200: object({ deleted: literal(true) }),
+      400: artifactCatalogApiErrorSchema,
+      401: artifactCatalogApiErrorSchema,
+      403: artifactCatalogApiErrorSchema,
+      404: artifactCatalogApiErrorSchema,
+      500: artifactCatalogApiErrorSchema,
+      503: artifactCatalogApiErrorSchema,
+    },
+    summary: "Delete an owned artifact and withdraw its Okou links",
+  },
+} as const satisfies Record<"list" | "get" | "delete", AppRouteSpec>;
 
 const artifactCatalogRuntimeContract = c.router(artifactCatalogRuntimeSpec);
 
@@ -430,6 +473,16 @@ export type ArtifactCatalogGetRoute = AppRoute<ArtifactCatalogGetRouteTypes> & {
 export type ArtifactCatalogContract = {
   readonly list: ArtifactCatalogListRoute;
   readonly get: ArtifactCatalogGetRoute;
+  readonly delete: AppRoute<ArtifactCatalogDeleteRouteTypes> & {
+    readonly method: "DELETE";
+    readonly path: "/api/artifacts/catalog/:artifactId";
+    readonly headers: ZodSchema<
+      ArtifactCatalogAuthHeaders,
+      ArtifactCatalogAuthHeaders
+    >;
+    readonly pathParams: ZodSchema<ArtifactIdPathParams, ArtifactIdPathParams>;
+    readonly body: NoBodyMarker;
+  };
 };
 
 // Keep runtime validation from the Zod-backed router while exposing compact,

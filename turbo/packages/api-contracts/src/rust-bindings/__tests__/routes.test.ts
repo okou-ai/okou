@@ -60,6 +60,18 @@ const expectedBindings = [
   },
   {
     method: "GET",
+    path: "/api/runners/runs/:runId/workflows/:workflowId",
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "workflows",
+      "by_workflow_id",
+    ],
+    rustConstName: "GET",
+  },
+  {
+    method: "GET",
     path: "/api/runners/runs/:runId/steerable-inputs/next",
     rustModulePath: [
       "runners",

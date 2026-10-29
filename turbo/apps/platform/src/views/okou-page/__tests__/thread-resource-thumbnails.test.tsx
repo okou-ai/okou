@@ -103,7 +103,7 @@ test("Workspace search uses a small authorized thumbnail for a private image", a
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
   });
-  await screen.findByLabelText("Resources");
+  await screen.findByLabelText("Artifacts and chats");
   fireEvent.keyDown(document.body, {
     key: "f",
     code: "KeyF",

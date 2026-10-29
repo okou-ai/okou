@@ -321,7 +321,9 @@ test.each([false, true])(
       host: "app.okou.ai",
     });
     await expect(
-      screen.findByRole("heading", { name: SOURCES_QUESTION }),
+      screen.findByRole("heading", {
+        name: "Put your everyday tools to work",
+      }),
     ).resolves.toBeInTheDocument();
 
     click(getButtonByName("Connect Notion"));

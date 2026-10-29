@@ -20,6 +20,7 @@ export const setupHomePage$ = command(
     const queue = params.get("queue");
     const settings = params.get("settings");
     const billingView = params.get("billingView");
+    const featureGuidePreview = params.get("featureGuidePreview");
     const templatePicker = parseTemplatePickerEntryCategory(
       params.get("templatePicker"),
     );
@@ -35,6 +36,9 @@ export const setupHomePage$ = command(
     }
     if (billingView) {
       forwardParams.set("billingView", billingView);
+    }
+    if (featureGuidePreview === "1") {
+      forwardParams.set("featureGuidePreview", featureGuidePreview);
     }
     if (templatePicker) {
       forwardParams.set("templatePicker", templatePicker);

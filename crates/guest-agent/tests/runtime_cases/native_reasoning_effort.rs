@@ -163,8 +163,13 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
         ),
         ("claude-code", &claude_mock, "claude-sonnet-5", None, None),
     ] {
+        let fast_modes: &[bool] = if framework == "codex" {
+            &[false, true]
+        } else {
+            &[false]
+        };
         for resume in [false, true] {
-            for fast in [false, true] {
+            for &fast in fast_modes {
                 let case_root = root.path().join(format!(
                     "{framework}-{}-{resume}-{fast}-{}",
                     model.replace('/', "_"),

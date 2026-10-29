@@ -16,25 +16,26 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::test]
 async fn okou_agent_id_disables_builtin_web_search_for_claude_and_codex() -> TestResult {
-    assert_native_tool_policy(None, None, true, false).await
+    assert_native_tool_policy(&["claude-code", "codex"], None, None, true, false).await
 }
 
 #[tokio::test]
 async fn positive_opt_in_enables_builtin_web_search_for_claude_and_codex() -> TestResult {
-    assert_native_tool_policy(Some("true"), None, false, false).await
+    assert_native_tool_policy(&["claude-code", "codex"], Some("true"), None, false, false).await
 }
 
 #[tokio::test]
 async fn image_generation_opt_in_keeps_builtin_web_search_disabled() -> TestResult {
-    assert_native_tool_policy(None, Some("true"), true, true).await
+    assert_native_tool_policy(&["codex"], None, Some("true"), true, true).await
 }
 
 #[tokio::test]
 async fn native_image_generation_and_web_search_can_both_be_enabled() -> TestResult {
-    assert_native_tool_policy(Some("true"), Some("true"), false, true).await
+    assert_native_tool_policy(&["codex"], Some("true"), Some("true"), false, true).await
 }
 
 async fn assert_native_tool_policy(
+    frameworks: &[&str],
     framework_web_search: Option<&str>,
     framework_image_generation: Option<&str>,
     expect_search_disabled: bool,
@@ -42,13 +43,13 @@ async fn assert_native_tool_policy(
 ) -> TestResult {
     common::ensure_canonical_workspace_for_test()?;
     let root = tempfile::tempdir()?;
-    let claude_mock = common::build_and_locate_mock()?;
-    let codex_mock = common::build_and_locate_mock_codex()?;
 
-    for (framework, real_mock) in [
-        ("claude-code", claude_mock.as_path()),
-        ("codex", codex_mock.as_path()),
-    ] {
+    for &framework in frameworks {
+        let real_mock = if framework == "claude-code" {
+            common::build_and_locate_mock()?
+        } else {
+            common::build_and_locate_mock_codex()?
+        };
         let case_root = root.path().join(format!(
             "{framework}-{}",
             if expect_search_disabled {
@@ -64,7 +65,7 @@ async fn assert_native_tool_policy(
             &case_root,
             framework,
             &wrapper_path,
-            real_mock,
+            &real_mock,
             &args_path,
             framework_web_search,
             framework_image_generation,

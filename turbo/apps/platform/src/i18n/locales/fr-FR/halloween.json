@@ -1,0 +1,581 @@
+{
+  "copy": {
+    "again": "Rejouer",
+    "back": "Retour à Okou",
+    "backToGame": "Retour au jeu",
+    "boo": "Bouh !",
+    "brand": "Okou",
+    "campaign": "Halloween effrayant",
+    "climb": "La montée",
+    "correct": "Correct",
+    "error": "Nous n'avons pas pu charger le quiz. Veuillez réessayer.",
+    "footerAfter": "pour plus de détails sur l’éligibilité et les récompenses.",
+    "footerBefore": "Voir l'activité",
+    "footerLink": "règles",
+    "hint": "Quatre bonnes réponses. Une douce finale.",
+    "language": "Français",
+    "leave": "Quitter le quiz",
+    "lost": "Vous avez été trompé !",
+    "lostSub": "Okou vous a eu cette fois.",
+    "magic": "Faites de la magie avec Okou",
+    "next": "Question suivante",
+    "nudgeLabel": "Jouez au quiz d'Halloween",
+    "optional": "Continuez à explorer avec Okou. Ces activités sont facultatives.",
+    "questionProgress": "Question {{current}} sur {{total}}",
+    "result": "Voir mon résultat",
+    "resultRewardEmphasis": "7 jours de Okou Pro",
+    "resultRewardRest": ", sous réserve de révision. Aucun crédit inclus.",
+    "review": "Sous réserve d'examen d'éligibilité.",
+    "rewardEmphasis": "7 jours de Okou Pro.",
+    "rewardPrefix": "Jouer pour",
+    "roundProgress": "Manche {{current}} · {{title}}",
+    "rules": "Règles d'activité",
+    "rulesBrand": "Okou · Halloween",
+    "rulesHeading": "Halloween effrayant – règles d’activité",
+    "rulesSub": "Un peu de malice. Quelques règles simples.",
+    "soundOff": "Son coupé",
+    "soundOn": "Son activé",
+    "start": "Jouons",
+    "subtitle": "Mais d'abord, un petit quiz.",
+    "tagline": "Halloween effrayant · Un peu de malice. Beaucoup de possibilité.",
+    "taskSub": "Donnez-lui une tâche.",
+    "taskTitle": "C'est maintenant au tour de Okou de le faire.",
+    "title": "Un régal de la part de Okou.",
+    "unavailable": "Un peu de magie est en route.",
+    "unavailableSub": "Le quiz d’Halloween n’est pas encore disponible. Revenez bientôt.",
+    "won": "Vous avez réussi le quiz !",
+    "wonSub": "Elle savait que tu l'avais en toi."
+  },
+  "levels": {
+    "five": "Okou vous aime bien",
+    "four": "Légende d'Halloween",
+    "one": "Recrue",
+    "three": "Maître des astuces",
+    "two": "Étoile montante"
+  },
+  "nudges": {
+    "one": "Faire une petite\npause effrayante ?",
+    "three": "Un petit quiz.\nUne gourmandise ?",
+    "two": "Encore un\ntour ?"
+  },
+  "questions": {
+    "QUIZ-01": {
+      "explanation": "C'est \"oh cool\". Comme votre réaction lorsque votre coéquipier AI fait son travail correctement et rapidement.",
+      "options": {
+        "A": "Oh-vache",
+        "B": "Gokû",
+        "C": "Oh cool"
+      },
+      "text": "Comment prononce-t-on Okou ?"
+    },
+    "QUIZ-02": {
+      "explanation": "Huit pétales autour d'un milieu ouvert. C’est une fleur, pas un équipement de costume.",
+      "options": {
+        "A": "Six",
+        "B": "Huit",
+        "C": "Des pétales ? N'est-ce pas juste un cercle ?"
+      },
+      "text": "Combien de pétales le symbole de fleur de Okou possède-t-il ?"
+    },
+    "QUIZ-03": {
+      "explanation": "Zero prend une pause bien méritée. Okou est là pour faire avancer le travail.",
+      "options": {
+        "A": "Zéro",
+        "B": "Siri",
+        "C": "Alexandre"
+      },
+      "text": "Avant que Okou prenne le relais, qui faisait partie de l'équipe ?"
+    },
+    "QUIZ-04": {
+      "explanation": "Allez, recherches, decks, sites Web… elle a plus d’un tour dans son sac.",
+      "options": {
+        "A": "Faire des bêtises",
+        "B": "Faire pleuvoir des bonbons",
+        "C": "Être votre coéquipier polyvalent AI"
+      },
+      "text": "Halloween ou pas, quel est le vrai travail de Okou ?"
+    },
+    "QUIZ-05": {
+      "explanation": "Dites à Okou ce que vous voulez, obtenez ce dont vous avez besoin. Elle met à profit vos outils connectés.",
+      "options": {
+        "A": "Je te donne juste des conseils",
+        "B": "Planifie les étapes et se met au travail",
+        "C": "Vous fantôme jusqu'au prochain Halloween"
+      },
+      "text": "Donnez un travail à Okou. Que fait-elle ?"
+    },
+    "QUIZ-06": {
+      "explanation": "Plus fait. Même équipe. Moins de travail.",
+      "options": {
+        "A": "Plus fait. Même équipe.",
+        "B": "Plus de réunions. Plus de choses à faire.",
+        "C": "Même travail. Même chaos."
+      },
+      "text": "Quelle est la devise de Okou pour une équipe enfouie dans le travail ?"
+    },
+    "QUIZ-07": {
+      "explanation": "Briefez Okou en langage clair. Aussi simple que cela : aucune expertise en AI n'est nécessaire.",
+      "options": {
+        "A": "Oui, allez écrire du code !",
+        "B": "[Okou est absent du bureau. De retour après Halloween.]",
+        "C": "Non, décrivez simplement votre idée"
+      },
+      "text": "Avez-vous besoin de coder pour briefer Okou ?"
+    },
+    "QUIZ-08": {
+      "explanation": "Votre ordinateur portable peut se reposer. Le travail de Okou s'exécute dans le cloud.",
+      "options": {
+        "A": "Oui, elle se transforme en citrouille",
+        "B": "Non, elle peut continuer à travailler dans le cloud",
+        "C": "Mieux vaut garder cet ordinateur portable ouvert"
+      },
+      "text": "Est-ce que Okou « s'endort » lorsque vous fermez votre ordinateur portable ?"
+    },
+    "QUIZ-09": {
+      "explanation": "Une autre tâche ? Apportez-le. Okou peut aller bien au-delà de cela.",
+      "options": {
+        "A": "Bien sûr, les tâches peuvent s'exécuter en parallèle",
+        "B": "Non, demandez à nouveau à Halloween prochain",
+        "C": "Non, elle n'a pas beaucoup de \"mains\""
+      },
+      "text": "Un long travail de recherche est en cours. Okou peut-il assumer une autre tâche ?"
+    },
+    "QUIZ-10": {
+      "explanation": "Les messages, résultats et corrections antérieurs restent dans leur contexte. Moins de récit de la même histoire.",
+      "options": {
+        "A": "Les nouveaux chats attirent des fantômes espiègles",
+        "B": "C'est juste une habitude",
+        "C": "Il conserve le contexte antérieur"
+      },
+      "text": "Pourquoi affiner un brief effrayant dans le même chat Okou ?"
+    },
+    "QUIZ-11": {
+      "explanation": "Même chapeau, même travail. Les instructions partagées permettent à tout le monde de rester sur la même longueur d'onde.",
+      "options": {
+        "A": "Encore une autre réunion d'équipe",
+        "B": "Un rôle et des instructions communs",
+        "C": "Un autre « code » à mémoriser"
+      },
+      "text": "Qu'est-ce qu'un agent Okou partagé apporte à votre équipe ?"
+    },
+    "QUIZ-12": {
+      "explanation": "Enregistrez la méthode examinée en tant que workflow : un SOP réutilisable que votre équipe peut réexécuter.",
+      "options": {
+        "A": "Enregistrez-le en tant que workflow Okou",
+        "B": "Repartir de zéro à chaque fois",
+        "C": "Faites confiance à votre mémoire post-Halloween"
+      },
+      "text": "Un processus a fonctionné comme par magie. Comment le rendre réutilisable ?"
+    },
+    "QUIZ-13": {
+      "explanation": "Dites à Okou quand il doit s'exécuter. Elle configure le déclencheur : aucun code de planification n'est nécessaire.",
+      "options": {
+        "A": "Écrivez votre propre code de planification",
+        "B": "Réglez une alarme et exécutez-la vous-même",
+        "C": "Demandez simplement à Okou de le configurer"
+      },
+      "text": "Quelle est la manière la plus simple d'automatiser un flux de travail Okou ?"
+    },
+    "QUIZ-14": {
+      "explanation": "Décrivez-le, passez en revue les étapes proposées, puis enregistrez la version sur laquelle vous êtes d'accord.",
+      "options": {
+        "A": "Construisez le tout dans un organigramme",
+        "B": "Dites à Okou les étapes en langage clair",
+        "C": "Réservez d'abord une réunion avec le service informatique"
+      },
+      "text": "Quelle est la manière la plus simple de créer un flux de travail avec Okou ?"
+    },
+    "QUIZ-15": {
+      "explanation": "Réglez-le une fois. Okou exécute le flux de travail automatiquement : pas besoin de \"l'invoquer\" à chaque fois.",
+      "options": {
+        "A": "Une Automatisation programmée",
+        "B": "Une annulation définitive le lundi",
+        "C": "Encore une autre réunion du lundi"
+      },
+      "text": "Vous rédigez un rapport tous les lundis matin. Comment Okou peut-il vous aider ?"
+    },
+    "QUIZ-16": {
+      "explanation": "Les e-mails, les événements du calendrier ou une exécution terminée peuvent démarrer un flux de travail configuré.",
+      "options": {
+        "A": "Ajout d'URGENT au nom du workflow",
+        "B": "Laisser votre ordinateur portable ouvert la nuit",
+        "C": "Un email correspondant dans une boîte de réception connectée"
+      },
+      "text": "Outre un planning, qu'est-ce qui peut réveiller une Okou Automatisation ?"
+    },
+    "QUIZ-17": {
+      "explanation": "Enregistrez le correctif une fois. Toute personne ayant accès au flux de travail peut utiliser la version mise à jour.",
+      "options": {
+        "A": "Seulement toi, tu es le patron",
+        "B": "Toute personne ayant accès au flux de travail",
+        "C": "Juste toi et l'administrateur"
+      },
+      "text": "Vous enregistrez un correctif dans un workflow Okou partagé. Qui peut l'utiliser ?"
+    },
+    "QUIZ-18": {
+      "explanation": "L'exécution s'arrête et conserve son journal afin que vous puissiez voir quelle étape s'est mal passée.",
+      "options": {
+        "A": "Le journal d'exécution",
+        "B": "Aucun : les exécutions ayant échoué disparaissent",
+        "C": "Aucune idée… peut-être qu'une nouvelle tentative fonctionnera ?"
+      },
+      "text": "Une automatisation Okou échoue. Quel dossier pouvez-vous vérifier ?"
+    },
+    "QUIZ-19": {
+      "explanation": "Decks, sites Web, images et fichiers, le tout au même endroit : artefacts.",
+      "options": {
+        "A": "Artefacts",
+        "B": "Flux de travail",
+        "C": "Modèles"
+      },
+      "text": "Quelle section Okou rassemble vos créations terminées ?"
+    },
+    "QUIZ-20": {
+      "explanation": "Le jeu vierge appartient à l’histoire. Okou est votre coéquipier polyvalent AI.",
+      "options": {
+        "A": "Seulement un modèle de diapositive vierge",
+        "B": "Un deck écrit et conçu",
+        "C": "Seulement des conseils pour le réaliser soi-même"
+      },
+      "text": "Demandez à Okou un pitch deck pour Halloween. Que peut-elle construire ?"
+    },
+    "QUIZ-21": {
+      "explanation": "Un deck PowerPoint modifiable ? Okou ne vous décevra pas.",
+      "options": {
+        "A": "Uniquement des captures d'écran des diapositives",
+        "B": "Seulement un aperçu du texte",
+        "C": "Un fichier PowerPoint modifiable (.pptx)"
+      },
+      "text": "Sous quoi Okou peut-il exporter votre deck Halloween ?"
+    },
+    "QUIZ-22": {
+      "explanation": "Privé par défaut. Utilisez Partager pour choisir qui a accès.",
+      "options": {
+        "A": "Seulement toi",
+        "B": "Toute votre équipe",
+        "C": "Quelqu'un ayant le lien"
+      },
+      "text": "Qui peut voir vos nouveaux fichiers Okou privés par défaut ?"
+    },
+    "QUIZ-23": {
+      "explanation": "Téléchargez l'image. Okou le reconstruira sous forme de diapositive modifiable. Révisez-le ensuite dans le chat.",
+      "options": {
+        "A": "Retapez le tout vous-même",
+        "B": "Demandez à Okou. Facile.",
+        "C": "Laisse-le, ce n'est qu'une image"
+      },
+      "text": "Une image de diapositive contient trop de texte. La solution la plus simple ?"
+    },
+    "QUIZ-24": {
+      "explanation": "Envoyez Okou votre fichier de marque ou le lien Figma Elle s’occupera du style.",
+      "options": {
+        "A": "Elle ne peut pas, seulement son style par défaut",
+        "B": "Non... Seulement si vous modifiez le style de chaque diapositive",
+        "C": "Partagez simplement votre fichier de marque ou le lien Figma"
+      },
+      "text": "Vous voulez les couleurs de votre marque dans votre deck Halloween ? Comment Okou peut-il vous aider ?"
+    },
+    "QUIZ-25": {
+      "explanation": "Décrivez le sujet et le style. Okou crée une illustration de votre idée.",
+      "options": {
+        "A": "Une illustration personnalisée",
+        "B": "Uniquement des liens vers des sites de stockage d'images",
+        "C": "Seulement une description écrite de l'image"
+      },
+      "text": "Besoin d'une illustration d'Halloween ? Que peut créer Okou pour vous ?"
+    },
+    "QUIZ-26": {
+      "explanation": "Une série assortie ? C'est du gâteau pour Okou.",
+      "options": {
+        "A": "Une seule illustration",
+        "B": "Un ensemble entier dans le même style",
+        "C": "Seulement un mood board à suivre"
+      },
+      "text": "Besoin d’un ensemble assorti d’illustrations d’Halloween ? Que peut créer Okou pour vous ?"
+    },
+    "QUIZ-27": {
+      "explanation": "Envoyez l'image de référence et décrivez le résultat souhaité. Okou peut fonctionner à partir de cela.",
+      "options": {
+        "A": "Seulement une description de l'image",
+        "B": "Seulement une copie de l'original",
+        "C": "Une nouvelle illustration l'utilisant comme référence"
+      },
+      "text": "Vous avez une image d'Halloween que vous aimez ? Que peut créer Okou pour vous ?"
+    },
+    "QUIZ-28": {
+      "explanation": "Prévisualisez l'image, puis téléchargez-la pour l'utiliser partout où vous en avez besoin.",
+      "options": {
+        "A": "Un aperçu et un fichier téléchargeable",
+        "B": "Seulement un aperçu",
+        "C": "Seulement une description textuelle"
+      },
+      "text": "Lorsque Okou crée une image, qu'obtenez-vous ?"
+    },
+    "QUIZ-29": {
+      "explanation": "Analyse, graphiques et mise en page soignée : Okou rassemble l'ensemble du rapport.",
+      "options": {
+        "A": "Seule l'analyse écrite",
+        "B": "Analyse, tableaux, graphiques et mise en page",
+        "C": "Uniquement des graphiques et des tableaux"
+      },
+      "text": "Que peut mettre Okou dans votre rapport de campagne effrayante ?"
+    },
+    "QUIZ-30": {
+      "explanation": "Donnez à Okou les nouvelles données ou utilisez une source connectée. Elle peut mettre à jour le rapport sans que vous le reconstruisiez manuellement.",
+      "options": {
+        "A": "Non, vous devez le reconstruire à chaque fois",
+        "B": "Seulement si vous modifiez vous-même chaque numéro",
+        "C": "Oui, demandez-lui de le mettre à jour avec les nouvelles données"
+      },
+      "text": "De nouvelles données viennent d'arriver. Okou peut-il mettre à jour votre rapport existant ?"
+    },
+    "QUIZ-31": {
+      "explanation": "Partagez le lien avec l'accès activé. Ils peuvent ouvrir le rapport directement dans leur navigateur.",
+      "options": {
+        "A": "Ouvrez le lien partagé",
+        "B": "Empruntez votre ordinateur portable, pas d'autre moyen",
+        "C": "Installez d'abord une application spéciale"
+      },
+      "text": "Comment les autres peuvent-ils consulter votre rapport d'Halloween Okou ?"
+    },
+    "QUIZ-32": {
+      "explanation": "De la copie à la conception en passant par un lien actif : Okou prépare votre site pour les visiteurs.",
+      "options": {
+        "A": "Seulement une maquette de conception",
+        "B": "Un site terminé avec un lien partageable",
+        "C": "Seule la copie du site Web"
+      },
+      "text": "Votre lancement d'Halloween a besoin d'un site. Que peut apporter Okou ?"
+    },
+    "QUIZ-33": {
+      "explanation": "Téléphone ou ordinateur portable, Okou adapte la mise en page à l'écran.",
+      "options": {
+        "A": "Petit texte. J'espère qu'ils ont apporté une loupe.",
+        "B": "Une page géante. Glissez, glissez, glissez.",
+        "C": "Une mise en page adaptée à leur écran"
+      },
+      "text": "Quelqu'un ouvre votre site Okou sur un téléphone. Que voient-ils ?"
+    },
+    "QUIZ-34": {
+      "explanation": "Dites « Transformez ce rapport en présentation ».",
+      "options": {
+        "A": "Non. Il est temps de copier et coller.",
+        "B": "Uniquement si vous passez à un autre outil",
+        "C": "Oui, demandez-lui simplement d'en faire un deck"
+      },
+      "text": "Okou peut-elle transformer le rapport qu'elle a rédigé en présentation ?"
+    },
+    "QUIZ-35": {
+      "explanation": "Tapez @Okou là où votre équipe parle. C'est votre sort d'invocation.",
+      "options": {
+        "A": "@elle",
+        "B": "Lui crier dessus",
+        "C": "Regarde-la"
+      },
+      "text": "Comment invoquer Okou dans un fil de discussion Slack ?"
+    },
+    "QUIZ-36": {
+      "explanation": "@Okou dans une chaîne pour le travail d'équipe, ou DM elle pour travailler sur un brouillon en privé !",
+      "options": {
+        "A": "Uniquement dans un canal – aucun DMs autorisé",
+        "B": "Dans une chaîne ou un DM",
+        "C": "Nulle part. Elle est uniquement sur le Web."
+      },
+      "text": "Où pouvez-vous trouver Okou dans Slack ?"
+    },
+    "QUIZ-37": {
+      "explanation": "Ouvrez Okou sur le Web. Le même thread conserve le journal d’exécution complet et les fichiers ensemble.",
+      "options": {
+        "A": "Nulle part : il reste dans Slack",
+        "B": "Sur le web, mais seulement si vous recommencez",
+        "C": "Le même fil est également sur le Web"
+      },
+      "text": "Une longue exécution de Okou a commencé dans Slack. Où d’autre pouvez-vous voir le processus complet ?"
+    },
+    "QUIZ-38": {
+      "explanation": "Plus de 4 000 connecteurs maintenant dans Okou !!!",
+      "options": {
+        "A": "Grâce aux connecteurs, bien sûr",
+        "B": "Elle a déjà accès à toutes les applications",
+        "C": "Juste en connaissant les noms des applications"
+      },
+      "text": "Comment Okou se connecte-t-il à vos applications professionnelles ?"
+    },
+    "QUIZ-39": {
+      "explanation": "Choisissez à quoi Okou peut accéder et pendant combien de temps. Vous avez le contrôle.",
+      "options": {
+        "A": "Vos coéquipiers",
+        "B": "Vous",
+        "C": "Okou elle-même"
+      },
+      "text": "Qui contrôle les autorisations de votre Okou ?"
+    },
+    "QUIZ-40": {
+      "explanation": "Partagez le flux de travail, pas l'accès à votre compte. Chacun utilise ses propres autorisations : gardez les vôtres privées.",
+      "options": {
+        "A": "Le vôtre",
+        "B": "Tout le monde",
+        "C": "Celui de votre coéquipier"
+      },
+      "text": "Votre coéquipier exécute un flux de travail que vous avez partagé. Quelles applications connectées utilise-t-il ?"
+    },
+    "QUIZ-41": {
+      "explanation": "Si l'outil possède un API, un connecteur personnalisé peut l'intégrer dans Okou, voire dans un outil interne.",
+      "options": {
+        "A": "Pas encore : essayez un connecteur personnalisé",
+        "B": "Ouais. Aucune inscription, aucune chance.",
+        "C": "Ouais. Il est temps de changer d’outil."
+      },
+      "text": "L'outil de votre équipe ne figure pas dans la liste des connecteurs de Okou. Est-ce que ce jeu est terminé ?"
+    },
+    "QUIZ-42": {
+      "explanation": "Avec votre approbation, Okou peut déposer le problème GitHub. Pendant que vous y êtes, donnez une étoile à Okou !",
+      "options": {
+        "A": "Expliquez simplement ce qu'est un bug",
+        "B": "Déposer un problème GitHub avec les détails",
+        "C": "\"Éteignez-le et rallumez-le\""
+      },
+      "text": "Vous avez trouvé un bug plus effrayant qu’Halloween. Comment Okou peut-il aider à le suivre ?"
+    },
+    "QUIZ-43": {
+      "explanation": "Décrivez votre client idéal. Combien vous en voulez, combien vous en obtenez.",
+      "options": {
+        "A": "Proposer des mots-clés de recherche",
+        "B": "Triez une liste que vous avez déjà",
+        "C": "Trouver des prospects correspondants avec des sources"
+      },
+      "text": "Votre pipeline de ventes est une ville fantôme. Quel résultat Okou vous donne de nouveaux prospects à évaluer ?"
+    },
+    "QUIZ-44": {
+      "explanation": "Partagez les dernières mises à jour. Okou peut tout garder ensemble en un seul Google Sheet !",
+      "options": {
+        "A": "Un tracker Google Sheets",
+        "B": "Une liste de contacts avec uniquement des noms",
+        "C": "Un rappel de suivi unique"
+      },
+      "text": "Vous devez suivre le statut de chaque contact de collaboration et l’étape suivante. Que devez-vous demander à Okou de créer ?"
+    },
+    "QUIZ-45": {
+      "explanation": "Okou n'enverra pas cet e-mail sans votre accord. Vous recevez le dernier appel.",
+      "options": {
+        "A": "Okou—ça s'éteint dès qu'elle a fini",
+        "B": "Vous, vous l'examinez et cliquez sur Envoyer",
+        "C": "Administrateur de votre équipe : chaque brouillon doit être approuvé"
+      },
+      "text": "Okou rédige votre e-mail de collaboration. Qui a le dernier mot avant son envoi ?"
+    },
+    "QUIZ-46": {
+      "explanation": "Cliquez sur Obtenir plus de crédits en haut à droite du chat pour voir vos tâches et exigences disponibles.",
+      "options": {
+        "A": "Dans le menu des modèles",
+        "B": "Dans Artifacts, à côté de vos fichiers",
+        "C": "Sous Obtenir plus de crédits"
+      },
+      "text": "Vous recherchez des Okou crédits supplémentaires ? Où sont les tâches de récompense ?"
+    },
+    "QUIZ-47": {
+      "explanation": "Dites simplement à Okou. Elle est là pour être votre meilleure coéquipière AI.",
+      "options": {
+        "A": "Dis-lui simplement, elle comprendra l'idée",
+        "B": "Elle devrait tout savoir, même si tu ne dis rien",
+        "C": "Action ou vérité ?"
+      },
+      "text": "Voulez-vous que Okou connaisse votre style de travail ? Qu’est-ce qui aide le plus ?"
+    },
+    "QUIZ-48": {
+      "explanation": "La confiance n'est pas une preuve. Okou peut vous aider à vérifier les sources et à séparer les faits des hypothèses.",
+      "options": {
+        "A": "Oui, la confiance est synonyme d'exactitude",
+        "B": "Non, vérifiez les preuves",
+        "C": "Oui, si la réponse est suffisamment longue"
+      },
+      "text": "Un AI semble confiant. Est-ce une preuve que c'est vrai ?"
+    },
+    "QUIZ-49": {
+      "explanation": "D’abord les données, puis la réponse. Okou demandera ce qui manque, pas l'inventera.",
+      "options": {
+        "A": "Choisissez un numéro qui vous convient",
+        "B": "Dites « Beaucoup ! » et appelle ça un jour",
+        "C": "Demandez d'abord les données de vente"
+      },
+      "text": "« Okou, combien avons-nous vendu ? » Que doit-elle faire sans les données de vente ?"
+    },
+    "QUIZ-50": {
+      "explanation": "Évitez la panique des pages blanches. Donnez le brief à Okou et laissez-la faire la recherche et la rédaction : vous examinez le plan.",
+      "options": {
+        "A": "Rédiger le plan",
+        "B": "Programmer une rétrospective",
+        "C": "\"Tu as ça.\""
+      },
+      "text": "Votre patron veut un plan de campagne d'Halloween « d'ici hier ». Comment Okou peut-il vous aider ?"
+    },
+    "QUIZ-51": {
+      "explanation": "Vous fixez la direction. Okou aide à accomplir le travail. Toujours votre équipe, toujours votre appel.",
+      "options": {
+        "A": "Chef du copier-coller",
+        "B": "Le décideur : c'est vous qui décidez",
+        "C": "Observateur de la barre de progression à temps plein"
+      },
+      "text": "Avec Okou qui s'occupe du travail, quel est votre rôle ?"
+    },
+    "QUIZ-52": {
+      "explanation": "OMG, tu l'as vraiment compris ! Vous êtes un vrai Okou pro.",
+      "options": {
+        "A": "/",
+        "B": "@",
+        "C": "#"
+      },
+      "text": "Que tapez-vous dans la boîte de discussion de Okou pour ouvrir le menu des modèles ? (Question la plus difficile. Pas de pression.)"
+    },
+    "QUIZ-53": {
+      "explanation": "Oh cool. Elle t'aime bien aussi !",
+      "options": {
+        "A": "Bien sûr.",
+        "B": "Vous pariez.",
+        "C": "Plus que des bonbons."
+      },
+      "text": "Aimez-vous Okou ?"
+    }
+  },
+  "roundTitles": {
+    "five": "Okou vous aime bien",
+    "four": "Un dernier truc",
+    "one": "Voyons ce que tu as",
+    "three": "Elle est impressionnée",
+    "two": "Tu es sur ses tours"
+  },
+  "rules": {
+    "availability": {
+      "text": "Le quiz d’Halloween est disponible lorsqu’il apparaît dans Okou. Si l’activité devient indisponible, votre partie enregistrée reste intacte et vous pourrez la reprendre lorsqu’elle réapparaîtra.",
+      "title": "Disponibilité des activités"
+    },
+    "play": {
+      "text": "Jouez à partir de votre compte Okou connecté, sans aucune tâche requise. Chaque tour est enregistré directement sur ce compte et comporte quatre questions sélectionnées au hasard, sans répétition dans ce tour, suivies de « Aimez-vous Okou ? » – chaque réponse à la dernière question est correcte. Une mauvaise réponse met fin au tour. La fermeture ou l'actualisation du quiz conserve votre progression ou votre résultat actuel. Choisissez « Quitter le quiz » pour abandonner un tour inachevé, ou « Rejouer » après un résultat pour en commencer un nouveau.",
+      "title": "Comment jouer"
+    },
+    "reward": {
+      "text": "Les participants sélectionnés bénéficient d'un accès Okou Pro pendant sept jours calendaires. Aucun crédit n'est inclus. Les soldes créditeurs existants et les limites d’utilisation normales s’appliquent toujours. Gagner le jeu ou accomplir des tâches facultatives ne garantit pas une récompense. Les tours réussis et infructueux peuvent être examinés. Chaque compte peut recevoir au maximum une récompense ; L’accès Pro existant est prolongé de sept jours. Un nouvel essai commence lorsqu'il est accordé ; cette date locale compte comme le premier jour et l'accès expire à minuit sept dates locales plus tard. Par exemple, une récompense accordée le 30 octobre expire le 6 novembre à minuit à Los Angeles.",
+      "title": "Votre récompense d'Halloween"
+    },
+    "support": {
+      "text": "Les tours sont enregistrés sur le compte Okou actuellement connecté. L'éligibilité est examinée par l'équipe Okou à l'aide des listes de participants collectées pendant et après l'événement. Les comptes inclus dans une liste collectée et examinés recevront un e-mail, qu'ils soient sélectionnés ou non ; un e-mail n'est pas promis à chaque participant. Aucune révision fixe ni date de livraison n’est promise. Des questions ? Contacter support@okou.ai. Okou se réserve le droit d'interprétation finale de ces règles dans la mesure permise par la loi applicable.",
+      "title": "Fair-play et soutien"
+    }
+  },
+  "tasks": {
+    "connectTools": {
+      "prompt": "Aidez-moi à connecter mes outils à Okou.",
+      "text": "Apportez vos outils de travail préférés.",
+      "title": "Connectez vos outils"
+    },
+    "createImage": {
+      "prompt": "Créez une image d'Halloween : un fantôme amical partageant des bonbons sous une lune éclatante.",
+      "text": "Donnez-lui une idée. Regardez-le prendre vie.",
+      "title": "Créer une image d'Halloween"
+    },
+    "explore": {
+      "text": "Choisissez quelque chose dans votre liste de choses à faire.",
+      "title": "Voyez ce qu'elle peut faire d'autre"
+    }
+  }
+}

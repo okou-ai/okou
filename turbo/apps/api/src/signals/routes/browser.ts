@@ -1,5 +1,5 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -19,6 +19,7 @@ import {
   useBrowser$,
   type BrowserServiceError,
 } from "../services/browser.service";
+import { createSharedBrowserGraph } from "../services/browser-shared.service";
 
 function errorResponse(error: BrowserServiceError) {
   return {
@@ -33,6 +34,36 @@ function errorResponse(error: BrowserServiceError) {
 }
 
 const createBody$ = bodyResultOf(browserContract.create);
+const sharedRunInput$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    ...("runId" in auth ? { runId: auth.runId } : {}),
+  };
+});
+const sharedRun = createSharedBrowserGraph(sharedRunInput$);
+const sharedThreadParams$ = pathParamsOf(browserContract.get);
+const sharedThreadInput$ = computed(async (get) => {
+  return {
+    ...(await get(sharedRunInput$)),
+    chatThreadId: get(sharedThreadParams$).threadId,
+  };
+});
+const sharedThread = createSharedBrowserGraph(sharedThreadInput$);
+const sharedCreateInput$ = computed(async (get) => {
+  const body = await get(createBody$);
+  return body.ok ? { ...(await get(sharedRunInput$)), ...body.data } : null;
+});
+const sharedCreate = createSharedBrowserGraph(sharedCreateInput$);
+const sharedResizeBody$ = bodyResultOf(browserContract.resizeByThread);
+const sharedResizeInput$ = computed(async (get) => {
+  const body = await get(sharedResizeBody$);
+  return body.ok
+    ? { ...(await get(sharedThreadInput$)), aspectRatio: body.data.aspectRatio }
+    : null;
+});
+const sharedResize = createSharedBrowserGraph(sharedResizeInput$);
 const createBrowserInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const body = await get(createBody$);
@@ -41,6 +72,12 @@ const createBrowserInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
+    const shared = await set(sharedCreate.open$, signal);
+    if (shared) {
+      return shared.kind === "error"
+        ? errorResponse(shared)
+        : { status: 201 as const, body: shared.value };
+    }
     const result = await set(
       createBrowser$,
       {
@@ -67,6 +104,12 @@ const useBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const auth = get(organizationAuthContext$);
+  const shared = await set(sharedRun.open$, signal);
+  if (shared) {
+    return shared.kind === "error"
+      ? errorResponse(shared)
+      : { status: 200 as const, body: shared.value };
+  }
   const result = await set(
     useBrowser$,
     {
@@ -90,6 +133,12 @@ const leaseBrowserInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
+    const shared = await set(sharedRun.lease$, signal);
+    if (shared) {
+      return shared.kind === "error"
+        ? errorResponse(shared)
+        : { status: 200 as const, body: { browser: shared.value } };
+    }
     const result = await set(
       leaseCurrentBrowser$,
       {
@@ -115,6 +164,12 @@ const leaseBrowserByThreadInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
+    const shared = await set(sharedThread.lease$, signal);
+    if (shared) {
+      return shared.kind === "error"
+        ? errorResponse(shared)
+        : { status: 200 as const, body: { browser: shared.value } };
+    }
     const result = await set(
       leaseBrowserByThread$,
       {
@@ -140,6 +195,12 @@ const openBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const auth = get(organizationAuthContext$);
+  const shared = await set(sharedThread.open$, signal);
+  if (shared) {
+    return shared.kind === "error"
+      ? errorResponse(shared)
+      : { status: 200 as const, body: { browser: shared.value.browser } };
+  }
   const result = await set(
     openBrowserForThread$,
     {
@@ -165,6 +226,12 @@ const closeBrowserInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
+    const shared = await set(sharedThread.close$, signal);
+    if (shared) {
+      return shared.kind === "error"
+        ? errorResponse(shared)
+        : { status: 200 as const, body: shared.value };
+    }
     const result = await set(
       closeBrowserForThread$,
       {
@@ -191,6 +258,12 @@ const resizeBrowserByThreadInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
+    const shared = await set(sharedResize.resize$, signal);
+    if (shared) {
+      return shared.kind === "error"
+        ? errorResponse(shared)
+        : { status: 200 as const, body: { browser: shared.value } };
+    }
     const result = await set(
       resizeBrowserByThread$,
       {
@@ -211,6 +284,12 @@ const resizeBrowserByThreadInner$ = command(
 const currentBrowserInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
+    const shared = await set(sharedRun.present$, signal);
+    if (shared) {
+      return shared.kind === "error"
+        ? errorResponse(shared)
+        : { status: 200 as const, body: { browser: shared.value } };
+    }
     const result = await set(
       getCurrentBrowser$,
       {
@@ -229,6 +308,12 @@ const currentBrowserInner$ = command(
 const getParams$ = pathParamsOf(browserContract.get);
 const getBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  const shared = await set(sharedThread.present$, signal);
+  if (shared) {
+    return shared.kind === "error"
+      ? errorResponse(shared)
+      : { status: 200 as const, body: { browser: shared.value } };
+  }
   const result = await set(
     getBrowser$,
     {
@@ -249,6 +334,12 @@ const viewerConnectionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
+    const shared = await set(sharedThread.viewer$, signal);
+    if (shared) {
+      return shared.kind === "error"
+        ? errorResponse(shared)
+        : { status: 200 as const, body: shared.value };
+    }
     const result = await set(
       getBrowserViewerConnection$,
       {

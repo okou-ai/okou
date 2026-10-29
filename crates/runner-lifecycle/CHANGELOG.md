@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.32](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.31...runner-lifecycle-v0.17.32) (2026-10-29)
+
+
+### Bug Fixes
+
+* **runner:** unify predecessor home discovery and bounded routing ([#43655](https://github.com/okou-ai/okou/issues/43655)) ([2c512a7](https://github.com/okou-ai/okou/commit/2c512a7542a0adbf22d72e278dc8acdd52a10a6c))
+
 ## [0.17.31](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.30...runner-lifecycle-v0.17.31) (2026-10-28)
 
 ## [0.17.30](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.29...runner-lifecycle-v0.17.30) (2026-10-28)

@@ -21,6 +21,48 @@ const inputTarget = {
 };
 
 describe("Browser user-action JSONB payload", () => {
+  it("seals a shared instance and native window and rejects malformed identities", () => {
+    const window = {
+      instanceId: "55555555-5555-4555-8555-555555555555",
+      primaryWindowId: 0,
+    };
+    const payload = {
+      version: 1,
+      kind: "input",
+      callbackIds,
+      target: {
+        ...inputTarget,
+        window,
+        fields: [
+          {
+            key: "code",
+            label: "Code",
+            fieldKind: "one_time_code",
+            required: true,
+            backendNodeId: 42,
+            fingerprint: { tagName: "INPUT", inputType: "text" },
+          },
+        ],
+      },
+    };
+    expect(parseBrowserUserActionPayload(payload)).toStrictEqual(payload);
+    for (const invalid of [
+      null,
+      {},
+      { ...window, instanceId: "invalid" },
+      { ...window, primaryWindowId: -1 },
+      { ...window, primaryWindowId: Number.MAX_SAFE_INTEGER + 1 },
+      { ...window, primaryWindowId: "0" },
+      { ...window, extra: true },
+    ]) {
+      expect(() => {
+        return parseBrowserUserActionPayload({
+          ...payload,
+          target: { ...payload.target, window: invalid },
+        });
+      }).toThrow("Invalid Browser user-action payload");
+    }
+  });
   it("keeps historical input requests readable without inventing an explanation", () => {
     const payload = {
       version: 1,

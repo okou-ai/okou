@@ -79,8 +79,10 @@ test.each(["notification", "reconnect"] as const)(
   async (delivery) => {
     const chat = await setupPublishingChat();
     click(resourceButton());
-    const resources = await screen.findByRole("region", { name: "Resources" });
-    await within(resources).findByText("No resources yet");
+    const resources = await screen.findByRole("region", {
+      name: "Artifacts and chats",
+    });
+    await within(resources).findByText("No artifacts yet");
     chat.publish();
     await act(() => {
       if (delivery === "notification") {
@@ -95,7 +97,7 @@ test.each(["notification", "reconnect"] as const)(
       within(resources).findByText(TITLE),
     ).resolves.toBeInTheDocument();
     expect(
-      within(resources).queryByText("No resources yet"),
+      within(resources).queryByText("No artifacts yet"),
     ).not.toBeInTheDocument();
   },
 );
@@ -107,7 +109,9 @@ test("Show the latest published video when resources are first opened", async ()
     context.mocks.ably.trigger(topic);
   });
   click(resourceButton());
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   await expect(
     within(resources).findByText(TITLE),
   ).resolves.toBeInTheDocument();
@@ -116,15 +120,17 @@ test("Show the latest published video when resources are first opened", async ()
 test("Refresh only the notified chat catalog", async () => {
   const chat = await setupPublishingChat();
   click(resourceButton());
-  const resources = await screen.findByRole("region", { name: "Resources" });
-  await within(resources).findByText("No resources yet");
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
+  await within(resources).findByText("No artifacts yet");
   chat.publish();
   await act(() => {
     context.mocks.ably.trigger(
       chatArtifactCatalogChangedEvent("b0000000-0000-4000-a000-000000000802"),
     );
   });
-  expect(within(resources).getByText("No resources yet")).toBeInTheDocument();
+  expect(within(resources).getByText("No artifacts yet")).toBeInTheDocument();
   await act(() => {
     context.mocks.ably.trigger(topic);
   });

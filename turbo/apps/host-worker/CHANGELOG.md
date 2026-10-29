@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.9.2](https://github.com/okou-ai/okou/compare/host-worker-v1.9.1...host-worker-v1.9.2) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.0
+    * @okouai/core bumped to 8.799.0
+
+## [1.9.1](https://github.com/okou-ai/okou/compare/host-worker-v1.9.0...host-worker-v1.9.1) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.798.0
+
+## [1.9.0](https://github.com/okou-ai/okou/compare/host-worker-v1.8.35...host-worker-v1.9.0) (2026-10-29)
+
+
+### Features
+
+* add shared conversation visibility controls ([#43707](https://github.com/okou-ai/okou/issues/43707)) ([eb74ccc](https://github.com/okou-ai/okou/commit/eb74ccccd7aec24c2f29f1711a9b9f56decfe945))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.16.0
+    * @okouai/core bumped to 8.797.0
+    * @okouai/ui bumped to 1.18.6
+
 ## [1.8.35](https://github.com/okou-ai/okou/compare/host-worker-v1.8.34...host-worker-v1.8.35) (2026-10-28)
 
 

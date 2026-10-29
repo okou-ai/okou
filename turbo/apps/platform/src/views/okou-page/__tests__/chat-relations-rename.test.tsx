@@ -136,7 +136,7 @@ async function setupRelationships({
   // Both panes open their resources; the child's lists the parent with From.
   const panel = await waitFor(() => {
     const found = screen
-      .getAllByRole("region", { name: "Resources" })
+      .getAllByRole("region", { name: "Artifacts and chats" })
       .find((candidate) => {
         return within(candidate).queryByText("From", { exact: true }) !== null;
       });
