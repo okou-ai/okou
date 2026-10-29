@@ -1,11 +1,4 @@
-import type {
-  Suggestion,
-  SuggestionReceipt,
-} from "@okouai/api-contracts/contracts/suggestions";
-
-export type AgentSuggestionEntries = readonly (
-  Suggestion | SuggestionReceipt
-)[];
+import type { Suggestion } from "@okouai/api-contracts/contracts/suggestions";
 
 export type AgentSuggestionContent = Pick<
   Suggestion,
