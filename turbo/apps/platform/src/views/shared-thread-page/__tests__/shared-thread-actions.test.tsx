@@ -19,6 +19,29 @@ import {
 
 const context = testContext();
 
+test.each([403, 404] as const)(
+  "An unavailable shared conversation uses the same access page (%s)",
+  async (status) => {
+    context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+      return respond(status, {
+        error: { code: "NOT_FOUND", message: "Shared conversation not found" },
+      });
+    });
+
+    await setupSharedThreadPage(context);
+
+    await expect(
+      screen.findByRole("heading", {
+        name: "You can’t view this conversation",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(/It may be private or no longer available\./),
+    ).toBeInTheDocument();
+    expect(getLinkByName("Sign in")).toBeInTheDocument();
+  },
+);
+
 function getButtonByName(name: string): HTMLElement {
   const button = queryAllByRoleFast("button").find((candidate) => {
     return (
