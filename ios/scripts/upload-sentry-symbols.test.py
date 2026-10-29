@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Exercise the release command with external tool and Sentry HTTP fixtures."""
 
-import hashlib
 import json
 import os
 import subprocess
@@ -16,7 +15,7 @@ SCRIPT = Path(__file__).with_name("upload-sentry-symbols.py")
 APP_ID = "c59a5436-71eb-42f0-a7d1-3845ae276a48"
 EXTENSION_ID = "243b8228-2502-4134-9d27-8f90da58c07e"
 TOOL = """#!/usr/bin/env python3
-import hashlib, json, os, pathlib, sys, urllib.request
+import json, os, pathlib, sys, urllib.request
 state = pathlib.Path(os.environ['SYMBOL_TEST_STATE'])
 uuids = json.loads((state / 'uuids.json').read_text())
 if pathlib.Path(sys.argv[0]).name == 'xcrun':
@@ -28,12 +27,13 @@ else:
     failure = int(os.environ.get('SYMBOL_TEST_UPLOAD_EXIT', '0'))
     if failure:
         sys.exit(failure)
+    fixtures = json.loads((state / 'symbols.json').read_text())
     symbols = []
     for dsym in pathlib.Path(sys.argv[-1]).glob('*.dSYM'):
         for dwarf in (dsym / 'Contents/Resources/DWARF').iterdir():
-            symbols.append({'debugId': uuids[dsym.name],
-                'sha1': hashlib.sha1(dwarf.read_bytes()).hexdigest(),
-                'data': {'features': ['debug', 'symtab', 'unwind']}})
+            fixture = fixtures[dwarf.name]
+            assert dwarf.read_text() == fixture['content']
+            symbols.append(fixture['symbol'])
     request = urllib.request.Request(os.environ['SENTRY_URL'] + '/fixture/upload',
         data=json.dumps(symbols).encode(),
         headers={'Authorization': 'Bearer ' + os.environ['SENTRY_AUTH_TOKEN']})
@@ -53,12 +53,20 @@ class UploadSentrySymbolsTests(unittest.TestCase):
         self.archive = self.work / "Original.xcarchive"
         app = self.archive / "Products/Applications/Okou.app"
         self.symbols = []
-        for executable, dsym, identifier in (
-            (app / "Okou", "Okou.app.dSYM", APP_ID),
+        fixtures = {}
+        # Fixed Sentry checksums are independent of the production digest calculation.
+        for executable, dsym, identifier, checksum in (
+            (
+                app / "Okou",
+                "Okou.app.dSYM",
+                APP_ID,
+                "d031e50b3398536d8eb21a14d97341e533907d4d",
+            ),
             (
                 app / "PlugIns/OkouNotificationService.appex/OkouNotificationService",
                 "OkouNotificationService.appex.dSYM",
                 EXTENSION_ID,
+                "3a528eada452b8be6f88ecb2916899a066f27eb4",
             ),
         ):
             executable.parent.mkdir(parents=True, exist_ok=True)
@@ -73,13 +81,13 @@ class UploadSentrySymbolsTests(unittest.TestCase):
             dwarf.parent.mkdir(parents=True)
             content = f"debug info for {executable.name}".encode()
             dwarf.write_bytes(content)
-            self.symbols.append(
-                {
-                    "debugId": identifier,
-                    "sha1": hashlib.sha1(content).hexdigest(),
-                    "data": {"features": ["debug", "symtab", "unwind"]},
-                }
-            )
+            symbol = {
+                "debugId": identifier,
+                "sha1": checksum,
+                "data": {"features": ["debug", "symtab", "unwind"]},
+            }
+            self.symbols.append(symbol)
+            fixtures[executable.name] = {"content": content.decode(), "symbol": symbol}
         self.identifiers = {
             "Okou": APP_ID,
             "Okou.app.dSYM": APP_ID,
@@ -87,6 +95,7 @@ class UploadSentrySymbolsTests(unittest.TestCase):
             "OkouNotificationService.appex.dSYM": EXTENSION_ID,
         }
         (self.work / "uuids.json").write_text(json.dumps(self.identifiers))
+        (self.work / "symbols.json").write_text(json.dumps(fixtures))
         self.remote_symbols = []
         self.readback = {}
         self.api_status = 200
