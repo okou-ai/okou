@@ -232,24 +232,6 @@ export class ChatCallbackPreCreateTimingCollector {
     });
   }
 
-  async measure<T>(
-    actionType: ChatCallbackPreCreateTimingActionType,
-    spanKind: ChatCallbackPreCreateTimingSpanKind,
-    operation: () => T | Promise<T>,
-  ): Promise<T> {
-    const startedAt = now();
-    const result = await onRejection(
-      (async () => {
-        return await operation();
-      })(),
-      () => {
-        this.recordElapsed({ actionType, spanKind, startedAt });
-      },
-    );
-    this.recordElapsed({ actionType, spanKind, startedAt });
-    return result;
-  }
-
   flush(
     runId: string,
     triggerSource: QueuedUserMessageTriggerSource = "web",
@@ -278,18 +260,6 @@ export class ChatCallbackPreCreateTimingCollector {
       }),
     );
   }
-}
-
-async function measureChatCallbackPreCreateTiming<T>(
-  timing: ChatCallbackPreCreateTimingCollector | undefined,
-  actionType: ChatCallbackPreCreateTimingActionType,
-  spanKind: ChatCallbackPreCreateTimingSpanKind,
-  operation: () => T | Promise<T>,
-): Promise<T> {
-  if (!timing) {
-    return await operation();
-  }
-  return await timing.measure(actionType, spanKind, operation);
 }
 
 const chatCallbackPayloadSchema = object({
@@ -1471,24 +1441,39 @@ const materializeCompletedChatResult$ = command(
     const { assistantItemsToInsert, latestAssistant, resultFallback } =
       args.output;
     if (assistantItemsToInsert.length > 0) {
-      await measureChatCallbackPreCreateTiming(
-        args.timing,
-        "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-        "nested",
-        () => {
-          return set(
-            insertAssistantEvents$,
-            assistantEventInsertInput({
-              runId: args.runId,
-              threadId: args.chatThread.chatThreadId,
-              userId: args.chatThread.userId,
-              orgId: args.chatThread.orgId,
-              items: assistantItemsToInsert,
-            }),
-            signal,
-          );
-        },
-      );
+      const timing = args.timing;
+      const startedAt = now();
+      await (async () => {
+        await onRejection(
+          (async () => {
+            return await set(
+              insertAssistantEvents$,
+              assistantEventInsertInput({
+                runId: args.runId,
+                threadId: args.chatThread.chatThreadId,
+                userId: args.chatThread.userId,
+                orgId: args.chatThread.orgId,
+                items: assistantItemsToInsert,
+              }),
+              signal,
+            );
+          })(),
+          () => {
+            timing.recordElapsed({
+              actionType:
+                "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
+              spanKind: "nested",
+              startedAt,
+            });
+          },
+        );
+        timing.recordElapsed({
+          actionType:
+            "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
+          spanKind: "nested",
+          startedAt,
+        });
+      })();
       signal.throwIfAborted();
     }
     let lastResultText = latestAssistant?.content ?? null;
@@ -1502,30 +1487,68 @@ const materializeCompletedChatResult$ = command(
             (latestAssistantSequence ?? Number.NEGATIVE_INFINITY) &&
           resultFallback.content !== lastResultText));
     if (shouldInsertResultFallback) {
-      await measureChatCallbackPreCreateTiming(
-        args.timing,
-        "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-        "nested",
-        () => {
-          return set(
-            insertAssistantEvents$,
-            assistantEventInsertInput({
-              runId: args.runId,
-              threadId: args.chatThread.chatThreadId,
-              userId: args.chatThread.userId,
-              orgId: args.chatThread.orgId,
-              items: [resultFallback],
-            }),
-            signal,
-          );
-        },
-      );
+      const timing = args.timing;
+      const startedAt = now();
+      await (async () => {
+        await onRejection(
+          (async () => {
+            return await set(
+              insertAssistantEvents$,
+              assistantEventInsertInput({
+                runId: args.runId,
+                threadId: args.chatThread.chatThreadId,
+                userId: args.chatThread.userId,
+                orgId: args.chatThread.orgId,
+                items: [resultFallback],
+              }),
+              signal,
+            );
+          })(),
+          () => {
+            timing.recordElapsed({
+              actionType:
+                "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
+              spanKind: "nested",
+              startedAt,
+            });
+          },
+        );
+        timing.recordElapsed({
+          actionType:
+            "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
+          spanKind: "nested",
+          startedAt,
+        });
+      })();
       signal.throwIfAborted();
       lastResultText = resultFallback.content;
     }
     return lastResultText;
   },
 );
+
+function completedChatResultInput(
+  args: ReturnType<typeof terminalIntegrationDeliveries> & {
+    readonly runId: string;
+    readonly chatThread: ChatThreadForRunRow;
+    readonly timing: ChatCallbackPreCreateTimingCollector;
+  },
+  output: CompletedChatOutputLoad,
+) {
+  return {
+    runId: args.runId,
+    chatThread: args.chatThread,
+    output,
+    preferResultFallback:
+      args.slackDelivery !== undefined ||
+      args.teamsDelivery !== undefined ||
+      args.discordDelivery !== undefined ||
+      args.wechatDelivery !== undefined ||
+      args.telegramDelivery !== undefined ||
+      args.agentphoneDelivery !== undefined,
+    timing: args.timing,
+  };
+}
 
 const handleCompletedChatCallback$ = command(
   async (
@@ -1559,19 +1582,7 @@ const handleCompletedChatCallback$ = command(
 
     const lastResultText = await set(
       materializeCompletedChatResult$,
-      {
-        runId: args.runId,
-        chatThread: args.chatThread,
-        output,
-        preferResultFallback:
-          args.slackDelivery !== undefined ||
-          args.teamsDelivery !== undefined ||
-          args.discordDelivery !== undefined ||
-          args.wechatDelivery !== undefined ||
-          args.telegramDelivery !== undefined ||
-          args.agentphoneDelivery !== undefined,
-        timing: args.timing,
-      },
+      completedChatResultInput(args, output),
       signal,
     );
     signal.throwIfAborted();
@@ -1627,20 +1638,36 @@ const handleCompletedChatCallback$ = command(
       return inserted;
     }
 
-    const followupContext = await measureChatCallbackPreCreateTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-      "nested",
-      () => {
-        return set(
-          loadRecommendedFollowupContextForCompletedRun$,
-          {
-            threadId: args.chatThread.chatThreadId,
-          },
-          signal,
-        );
-      },
-    );
+    const timing = args.timing;
+    const startedAt = now();
+    const followupContext = await (async () => {
+      const result = await onRejection(
+        (async () => {
+          return await set(
+            loadRecommendedFollowupContextForCompletedRun$,
+            {
+              threadId: args.chatThread.chatThreadId,
+            },
+            signal,
+          );
+        })(),
+        () => {
+          timing.recordElapsed({
+            actionType:
+              "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
+            spanKind: "nested",
+            startedAt,
+          });
+        },
+      );
+      timing.recordElapsed({
+        actionType:
+          "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
+        spanKind: "nested",
+        startedAt,
+      });
+      return result;
+    })();
     signal.throwIfAborted();
 
     return {
@@ -3052,11 +3079,9 @@ const processTerminalChatCallback$ = command(
     let persistedThreadId: string | undefined;
     const prepared = await settle(
       (async () => {
-        const loaded = await measureChatCallbackPreCreateTiming(
-          timing,
-          "api_dispatch_pre_create_agent_chat_callback_load_terminal",
-          "top_level",
-          async () => {
+        const startedAt = now();
+        const loaded = await onRejection(
+          (async () => {
             const existing = await set(loadTerminalChatCallbackLocator$, runId);
             signal.throwIfAborted();
             if (!existing?.threadId || existing.triggerSource === null) {
@@ -3073,8 +3098,22 @@ const processTerminalChatCallback$ = command(
               },
               signal,
             );
+          })(),
+          () => {
+            timing.recordElapsed({
+              actionType:
+                "api_dispatch_pre_create_agent_chat_callback_load_terminal",
+              spanKind: "top_level",
+              startedAt,
+            });
           },
         );
+        timing.recordElapsed({
+          actionType:
+            "api_dispatch_pre_create_agent_chat_callback_load_terminal",
+          spanKind: "top_level",
+          startedAt,
+        });
         if (!loaded) {
           return null;
         }

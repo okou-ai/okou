@@ -83,7 +83,7 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { safeSync, settle, tapError } from "../utils";
+import { onRejection, safeSync, settle, tapError } from "../utils";
 import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
@@ -1733,13 +1733,29 @@ export function createThreadClaimRunObjects(
       const input = await get(promptInputInput$);
       const { head, timing } = input;
       const prepared = await settle(
-        timing.measure(
-          "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-          "top_level",
-          () => {
-            return get(promptRunInputRunInput$);
-          },
-        ),
+        (async () => {
+          const startedAt = now();
+          const result = await onRejection(
+            (async () => {
+              return await get(promptRunInputRunInput$);
+            })(),
+            () => {
+              timing.recordElapsed({
+                actionType:
+                  "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
+                spanKind: "top_level",
+                startedAt,
+              });
+            },
+          );
+          timing.recordElapsed({
+            actionType:
+              "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
+            spanKind: "top_level",
+            startedAt,
+          });
+          return result;
+        })(),
       );
       if (!prepared.ok) {
         return queuedPromptPreparationRejection(prepared.error, head);
