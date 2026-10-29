@@ -4405,6 +4405,37 @@
         },
         "title": "Machen Sie mehr aus Ihren Alltagstools"
       },
+      "outputFormats": {
+        "clear": "Auswahl aufheben",
+        "options": {
+          "image": {
+            "instruction": "Stelle die Ergebnisse als übersichtliches Schaubild dar.",
+            "label": "Bild"
+          },
+          "people": {
+            "instruction": "Erstelle passend zu dieser Aufgabe eine Auswahl relevanter Personen mit Rollen, Auswahlgründen und Links zu öffentlichen beruflichen Profilen. Falls der Bezug zur Aufgabe unklar ist, stelle vor der Suche eine gezielte Frage.",
+            "label": "Personenauswahl"
+          },
+          "presentation": {
+            "instruction": "Fasse die Ergebnisse in einer kurzen Präsentation mit Kernergebnissen, Empfehlungen und nächsten Schritten zusammen.",
+            "label": "Präsentation"
+          },
+          "report": {
+            "instruction": "Fasse die Ergebnisse in einem strukturierten Bericht mit Kernergebnissen, Empfehlungen und nächsten Schritten zusammen.",
+            "label": "Bericht"
+          },
+          "research": {
+            "instruction": "Erstelle eine Rechercheübersicht mit Quellen und offenen Fragen. Unterscheide belegte Fakten von Empfehlungen.",
+            "label": "Rechercheübersicht"
+          },
+          "website": {
+            "instruction": "Stelle die Ergebnisse als teilbare Webseite mit klaren Abschnitten und Kernaussagen dar.",
+            "label": "Website"
+          }
+        },
+        "title": "Format wählen",
+        "tooLong": "Kürze deine Aufgabe, um ein anderes Format zu wählen."
+      },
       "prompt": {
         "connectorsDescription": "Verbinde deine Tools, damit Okou deinen Arbeitskontext versteht und Aufgaben passend zu deinen Bedürfnissen erledigt. Du kannst das auch später tun.",
         "connectorsTitle": "Verbinde deine Arbeitstools",

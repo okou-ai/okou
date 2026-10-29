@@ -16,9 +16,17 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import {
+  STARTING_PROMPT_MAX_LENGTH,
+  startingPromptOutputSchema,
+  editedStartingPromptOutput,
+  withStartingPromptOutput,
+  type OnboardingOutputFormat,
+  type StartingPromptOutput,
+} from "./onboarding-output-format.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
-import { jsonParseOr } from "../utils.ts";
+import { jsonParseOr, onRef } from "../utils.ts";
 
 /**
  * Source-first onboarding draft. Unsaved answers survive a browser refresh in
@@ -86,6 +94,8 @@ export interface SourcesFirstDraft {
   readonly startingPromptDraft: string;
   /** The displayed seed the edit belongs to; any non-empty key owns later text. */
   readonly startingPromptKey: string;
+  /** The editable output paragraph inside startingPromptDraft, never a hidden instruction. */
+  readonly startingPromptOutput: StartingPromptOutput | null;
   /** The durable context-generation job started when the source step continues. */
   readonly recommendationJobId: string | null;
   /** Client wall-clock time when that generation attempt began; identifies it. */
@@ -100,6 +110,7 @@ function emptyDraft(): SourcesFirstDraft {
     provider: null,
     startingPromptDraft: "",
     startingPromptKey: "",
+    startingPromptOutput: null,
     recommendationJobId: null,
     recommendationStartedAt: null,
   };
@@ -124,8 +135,10 @@ const persistedDraftSchema = persistedDraftIdentitySchema.extend({
   industry: onboardingIndustrySchema.nullable(),
   experienced: boolean().nullable(),
   provider: onboardingSubscriptionProviderSchema.nullable(),
-  startingPromptDraft: string().max(1000),
+  startingPromptDraft: string().max(STARTING_PROMPT_MAX_LENGTH),
   startingPromptKey: string(),
+  // Older clients persist the same complete prompt without selection metadata.
+  startingPromptOutput: startingPromptOutputSchema.nullable().default(null),
   recommendationJobId: uuid().nullable(),
   recommendationStartedAt: number().finite().nonnegative().nullable(),
 });
@@ -167,6 +180,12 @@ function restoredDraft(
     provider: saved.provider,
     startingPromptDraft: saved.startingPromptDraft,
     startingPromptKey: saved.startingPromptKey,
+    startingPromptOutput:
+      saved.startingPromptOutput &&
+      saved.startingPromptOutput.start < saved.startingPromptOutput.end &&
+      saved.startingPromptOutput.end <= saved.startingPromptDraft.length
+        ? saved.startingPromptOutput
+        : null,
     recommendationJobId: saved.recommendationJobId,
     recommendationStartedAt: saved.recommendationStartedAt,
   };
@@ -306,6 +325,9 @@ export const updateSourcesFirstDraft$ = command(
     }>,
   ) => {
     const next = { ...get(internalDraft$), ...patch };
+    if (patch.startingPromptKey === "") {
+      next.startingPromptOutput = null;
+    }
     set(internalDraft$, next);
     const identity = get(internalDraftIdentity$);
     if (identity === null) {
@@ -321,10 +343,66 @@ export const updateSourcesFirstDraft$ = command(
         provider: next.provider,
         startingPromptDraft: next.startingPromptDraft,
         startingPromptKey: next.startingPromptKey,
+        startingPromptOutput: next.startingPromptOutput,
         recommendationJobId: next.recommendationJobId,
         recommendationStartedAt: next.recommendationStartedAt,
       }),
     );
+  },
+);
+
+const startingPromptInput$ = state<HTMLTextAreaElement | null>(null);
+
+export const setStartingPromptInput$ = onRef(
+  command(({ set }, element: HTMLTextAreaElement, signal: AbortSignal) => {
+    set(startingPromptInput$, element);
+    signal.addEventListener("abort", () => {
+      set(startingPromptInput$, null);
+    });
+  }),
+);
+
+export const editStartingPrompt$ = command(
+  ({ get, set }, previous: string, next: string, promptKey: string): void => {
+    const draft = get(internalDraft$);
+    set(updateSourcesFirstDraft$, {
+      startingPromptKey: promptKey,
+      startingPromptDraft: next,
+      startingPromptOutput: editedStartingPromptOutput(
+        previous,
+        next,
+        draft.startingPromptOutput,
+      ),
+    });
+  },
+);
+
+export const selectStartingPromptOutput$ = command(
+  (
+    { get, set },
+    text: string,
+    promptKey: string,
+    format: OnboardingOutputFormat | null,
+    instruction: string,
+  ): void => {
+    const output = get(internalDraft$).startingPromptOutput;
+    if (output?.format === format) {
+      return;
+    }
+    const next = withStartingPromptOutput(text, output, instruction);
+    // A format must never truncate the user's task or exceed the persisted limit.
+    if (next.text.length > STARTING_PROMPT_MAX_LENGTH) {
+      return;
+    }
+    set(updateSourcesFirstDraft$, {
+      startingPromptKey: promptKey,
+      startingPromptDraft: next.text,
+      startingPromptOutput: format
+        ? { format, start: next.start, end: next.end }
+        : null,
+    });
+    // Keep editing at the visible prompt, including when Clear selection unmounts.
+    get(startingPromptInput$)?.focus();
   },
 );
 

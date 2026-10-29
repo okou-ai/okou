@@ -4390,6 +4390,37 @@
         },
         "title": "讓常用工具幫你完成工作"
       },
+      "outputFormats": {
+        "clear": "清除選擇",
+        "options": {
+          "image": {
+            "instruction": "將結果整理為一張清晰的視覺化摘要圖片。",
+            "label": "圖片"
+          },
+          "people": {
+            "instruction": "結合此任務，整理相關人員的候選名單，說明其角色、入選理由，並附上公開職業資料連結。若人員與任務的關聯不明確，先提出一個具體問題再開始尋找。",
+            "label": "人員名單"
+          },
+          "presentation": {
+            "instruction": "將結果整理為一份精簡簡報，包含關鍵結果、建議和後續步驟。",
+            "label": "簡報"
+          },
+          "report": {
+            "instruction": "將結果整理為一份結構清晰的報告，包含關鍵結果、建議和後續步驟。",
+            "label": "報告"
+          },
+          "research": {
+            "instruction": "將結果整理為一份研究摘要，附上支持結論的來源和待解決的問題。區分有來源支持的事實與建議。",
+            "label": "研究摘要"
+          },
+          "website": {
+            "instruction": "將結果整理為一個可分享的網頁，結構清晰並凸顯重點。",
+            "label": "網站"
+          }
+        },
+        "title": "選擇產出形式",
+        "tooLong": "請縮短任務內容，以選擇其他產出形式。"
+      },
       "prompt": {
         "connectorsDescription": "連接這些工具，讓 Okou 更了解你的工作情境，更有針對性地幫你完成任務。也可以稍後再連接。",
         "connectorsTitle": "連接你的工作工具",

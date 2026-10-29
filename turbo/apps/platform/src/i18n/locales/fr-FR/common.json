@@ -4459,6 +4459,37 @@
         },
         "title": "Faites travailler vos outils du quotidien"
       },
+      "outputFormats": {
+        "clear": "Effacer la sélection",
+        "options": {
+          "image": {
+            "instruction": "Présente les résultats sous la forme d’une image de synthèse claire.",
+            "label": "Image"
+          },
+          "people": {
+            "instruction": "À partir de cette tâche, établis une sélection de personnes pertinentes avec leurs rôles, les raisons de leur sélection et des liens vers leurs profils professionnels publics. Si leur lien avec la tâche n’est pas clair, pose une question précise avant de chercher.",
+            "label": "Sélection de personnes"
+          },
+          "presentation": {
+            "instruction": "Présente les résultats dans une présentation concise avec les conclusions clés, les recommandations et les prochaines étapes.",
+            "label": "Présentation"
+          },
+          "report": {
+            "instruction": "Présente les résultats dans un rapport structuré avec les conclusions clés, les recommandations et les prochaines étapes.",
+            "label": "Rapport"
+          },
+          "research": {
+            "instruction": "Présente les résultats dans une note de recherche avec les sources et les questions ouvertes. Distingue les faits étayés des recommandations.",
+            "label": "Note de recherche"
+          },
+          "website": {
+            "instruction": "Présente les résultats sur une page web partageable avec des sections et des points clés clairs.",
+            "label": "Site web"
+          }
+        },
+        "title": "Choisir un format",
+        "tooLong": "Raccourcissez la tâche pour choisir un autre format."
+      },
       "prompt": {
         "connectorsDescription": "Connectez vos outils pour qu’Okou comprenne votre travail et réalise les tâches en fonction de vos besoins. Vous pouvez aussi le faire plus tard.",
         "connectorsTitle": "Connectez vos outils de travail",

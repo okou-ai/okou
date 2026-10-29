@@ -4459,6 +4459,37 @@
         },
         "title": "Coloque suas ferramentas do dia a dia para trabalhar"
       },
+      "outputFormats": {
+        "clear": "Limpar seleção",
+        "options": {
+          "image": {
+            "instruction": "Apresente os resultados como uma imagem de resumo visual clara.",
+            "label": "Imagem"
+          },
+          "people": {
+            "instruction": "Use esta tarefa como contexto para criar uma lista de pessoas relevantes, com funções, motivos da seleção e links para perfis profissionais públicos. Se a relação com a tarefa não estiver clara, faça uma pergunta específica antes de pesquisar.",
+            "label": "Lista de pessoas"
+          },
+          "presentation": {
+            "instruction": "Apresente os resultados em uma apresentação concisa com os principais resultados, recomendações e próximos passos.",
+            "label": "Apresentação"
+          },
+          "report": {
+            "instruction": "Apresente os resultados em um relatório estruturado com os principais resultados, recomendações e próximos passos.",
+            "label": "Relatório"
+          },
+          "research": {
+            "instruction": "Apresente os resultados em um resumo de pesquisa com fontes e questões em aberto. Diferencie fatos fundamentados de recomendações.",
+            "label": "Resumo de pesquisa"
+          },
+          "website": {
+            "instruction": "Apresente os resultados em uma página compartilhável com seções e conclusões claras.",
+            "label": "Site"
+          }
+        },
+        "title": "Escolha um formato",
+        "tooLong": "Encurte a tarefa para escolher outro formato."
+      },
       "prompt": {
         "connectorsDescription": "Conecte suas ferramentas para que o Okou entenda seu trabalho e realize as tarefas de acordo com suas necessidades. Você também pode fazer isso depois.",
         "connectorsTitle": "Conecte suas ferramentas de trabalho",

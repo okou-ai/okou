@@ -8,6 +8,7 @@ export enum FeatureSwitchKey {
   ChatThinkingBrandMotion = "chatThinkingBrandMotion",
   HalloweenQuiz = "halloweenQuiz",
   FeatureGuides = "featureGuides",
+  OnboardingOutputFormats = "onboardingOutputFormats",
   OnboardingSourceOutcomes = "onboardingSourceOutcomes",
   TeamsWorkspaceIdentity = "teamsWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
