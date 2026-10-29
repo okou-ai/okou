@@ -1,5 +1,8 @@
 import { Command } from "commander";
-import { sendWhatsappMessage } from "../../lib/api/domains/integrations-whatsapp";
+import {
+  sendWhatsappMessage,
+  WhatsappMessageSendError,
+} from "../../lib/api/domains/integrations-whatsapp";
 import { readMessageText } from "../../lib/command/message-target";
 import {
   JSON_OPTION_DESCRIPTION,
@@ -47,6 +50,26 @@ Long messages are split; never blindly retry an uncertain or partial send.`,
           },
           options,
         );
+      },
+      (error, options) => {
+        if (!(error instanceof WhatsappMessageSendError) || !options.json) {
+          return false;
+        }
+        console.log(
+          JSON.stringify({
+            integration: "whatsapp",
+            messages: error.acceptedMessages.map((message) => {
+              return { id: message.id, url: null };
+            }),
+            delivery: error.delivery,
+            error: {
+              code: error.code,
+              message: error.message,
+              status: error.status,
+            },
+          }),
+        );
+        return true;
       },
     ),
   );
