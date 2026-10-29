@@ -515,7 +515,117 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     );
   });
 
-  it("does not bind unsupported markets or group messages", async () => {
+  it.each(["connection code", "ordinary message"] as const)(
+    "explains the unsupported market for a WhatsApp %s without connecting or consuming the code",
+    async (messageKind) => {
+      mockEnv("APP_URL", "https://app.okou.test");
+      const setup = await configure();
+      const code = await accept(
+        client().createLinkCode({ headers: headers(setup.actor) }),
+        [200],
+      );
+      const phone = "+12025550123";
+      const body =
+        messageKind === "connection code" ? code.body.code : "Hello Okou";
+      const messageId = await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        from: phone,
+        body,
+      });
+      expect(
+        (
+          await accept(
+            client().getLinkStatus({ headers: headers(setup.actor) }),
+            [200],
+          )
+        ).body.linked,
+      ).toBeFalsy();
+      expect(
+        (await setup.integrations.getAgentPhoneLinkStatus(setup.actor)).linked,
+      ).toBeFalsy();
+      expect(setup.sends).toHaveLength(1);
+      expect(setup.sends[0]).toMatchObject({
+        channel: "whatsapp",
+        from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+        to_number: phone,
+        body: expect.stringContaining("country/region is not supported"),
+      });
+      expect(setup.sends[0]?.body).toContain("Meta");
+      expect(setup.sends[0]?.body).toContain("European Economic Area (EEA)");
+      expect(setup.sends[0]?.body).toContain("Brazil");
+      expect(setup.sends[0]?.body).toContain("Türkiye");
+      expect(setup.sends[0]?.body).toContain("https://app.okou.test");
+      expect(setup.sends[0]?.body).not.toContain(code.body.code);
+      await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        messageId,
+        from: phone,
+        body,
+      });
+      expect(setup.sends).toHaveLength(1);
+      const supportedPhone = sender();
+      await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        from: supportedPhone,
+        body: code.body.code,
+      });
+      expect(
+        (
+          await accept(
+            client().getLinkStatus({ headers: headers(setup.actor) }),
+            [200],
+          )
+        ).body,
+      ).toMatchObject({ linked: true, phoneHandle: supportedPhone });
+    },
+  );
+
+  it.each(["rejected", "unknown"] as const)(
+    "does not connect or resend the unsupported-market reply when delivery is %s",
+    async (delivery) => {
+      const setup = await configure();
+      const code = await accept(
+        client().createLinkCode({ headers: headers(setup.actor) }),
+        [200],
+      );
+      const attempted: Record<string, unknown>[] = [];
+      server.use(
+        http.post(`${providerUrl}/v1/messages`, async ({ request }) => {
+          attempted.push((await request.json()) as Record<string, unknown>);
+          return delivery === "rejected"
+            ? HttpResponse.json({ error: "Rejected" }, { status: 422 })
+            : HttpResponse.error();
+        }),
+      );
+      const phone = "+8613800138000";
+      const messageId = await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        from: phone,
+        body: code.body.code,
+      });
+      await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        messageId,
+        from: phone,
+        body: code.body.code,
+      });
+      expect(attempted).toHaveLength(1);
+      expect(attempted[0]).toMatchObject({
+        channel: "whatsapp",
+        to_number: phone,
+      });
+      expect(
+        (
+          await accept(
+            client().getLinkStatus({ headers: headers(setup.actor) }),
+            [200],
+          )
+        ).body.linked,
+      ).toBeFalsy();
+    },
+  );
+
+  it("ignores WhatsApp group messages without binding or replying", async () => {
     const setup = await configure();
     const code = await accept(
       client().createLinkCode({ headers: headers(setup.actor) }),
@@ -525,6 +635,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       channel: "whatsapp",
       from: "+12025550123",
       body: code.body.code,
+      isGroup: true,
     });
     await setup.ap.postAgentPhoneInboundMessage({
       channel: "whatsapp",

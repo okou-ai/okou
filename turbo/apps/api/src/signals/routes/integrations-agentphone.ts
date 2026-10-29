@@ -1482,15 +1482,48 @@ const handleAgentPhoneConnectionCode$ = command(
   },
 );
 
-function isAllowedWhatsappEvent(event: AgentPhoneMessageEvent): boolean {
-  return (
-    event.channel !== "whatsapp" ||
-    (!event.isGroup &&
+const handleUnsupportedWhatsappEvent$ = command(
+  async ({ set }, event: AgentPhoneMessageEvent, signal: AbortSignal) => {
+    if (event.channel !== "whatsapp") {
+      return false;
+    }
+    if (event.isGroup) {
+      return true;
+    }
+    if (
       isWhatsappSupportedHandle(
         normalizeAgentPhoneHandle(event.fromNumber, "whatsapp"),
-      ))
-  );
-}
+      )
+    ) {
+      return false;
+    }
+    const stored = await set(
+      storeInboundAgentPhoneMessage$,
+      { event: agentPhoneEventForStorage(event, null) },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!stored.dispatch) {
+      return true;
+    }
+    const sent = await settle(
+      set(
+        sendAgentPhoneText$,
+        event,
+        `This WhatsApp number cannot be connected to Okou because its country/region is not supported. Meta currently permits general-purpose AI assistants on WhatsApp only for phone numbers in the European Economic Area (EEA), Brazil, and Türkiye. You can use Okou on the web at ${env("APP_URL")}.`,
+        signal,
+      ),
+      signal,
+    );
+    if (!sent.ok) {
+      log.warn("Unsupported WhatsApp market reply failed", {
+        phoneHandle: maskPhoneHandle(event.fromNumber),
+        error: sent.error,
+      });
+    }
+    return true;
+  },
+);
 
 const loadAgentPhoneSenderLink$ = command(
   async ({ get }, event: AgentPhoneMessageEvent, signal: AbortSignal) => {
@@ -1600,7 +1633,7 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return admissionResponse;
   }
 
-  if (!isAllowedWhatsappEvent(event)) {
+  if (await set(handleUnsupportedWhatsappEvent$, event, signal)) {
     return okText();
   }
   // A group sender never borrows a participant's or route owner's link.
