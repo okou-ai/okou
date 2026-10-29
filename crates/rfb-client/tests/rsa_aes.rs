@@ -656,19 +656,31 @@ async fn exchange_deadlines_reject_stalled_or_ready_io_and_close_the_stream() ->
     let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
     let private = key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
-    for mode in [
-        RsaAesSecurity::Ra2,
-        RsaAesSecurity::Ra2ne,
-        RsaAesSecurity::Ra2_256,
-        RsaAesSecurity::Ra2ne256,
-    ] {
-        for case in [
-            DeadlineCase::Proof,
-            DeadlineCase::ReadyProof,
-            DeadlineCase::CredentialWrite,
-            DeadlineCase::SecurityResult,
-            DeadlineCase::ReadySecurityResult,
-        ] {
+    // Proof and credential IO share the same deadline path in every mode.
+    // The full mode/credential matrix is covered by the successful exchanges.
+    // SecurityResult needs both encrypted and raw carriers; these also retain
+    // representatives of both record key widths.
+    let modes: &[(RsaAesSecurity, &[DeadlineCase])] = &[
+        (
+            RsaAesSecurity::Ra2,
+            &[
+                DeadlineCase::Proof,
+                DeadlineCase::ReadyProof,
+                DeadlineCase::CredentialWrite,
+                DeadlineCase::SecurityResult,
+                DeadlineCase::ReadySecurityResult,
+            ],
+        ),
+        (
+            RsaAesSecurity::Ra2ne256,
+            &[
+                DeadlineCase::SecurityResult,
+                DeadlineCase::ReadySecurityResult,
+            ],
+        ),
+    ];
+    for &(mode, cases) in modes {
+        for &case in cases {
             let (client, server) = tokio::io::duplex(64);
             let end = Instant::now() + Duration::from_secs(30);
             let mut authentication = Box::pin(authenticate_rsa_aes(
@@ -729,7 +741,13 @@ async fn exchange_deadlines_reject_stalled_or_ready_io_and_close_the_stream() ->
             tokio::time::pause();
             tokio::time::advance(end.saturating_duration_since(Instant::now())).await;
             assert!(Instant::now() >= end);
+            let expired_at = Instant::now();
             let result = authentication.await;
+            assert_eq!(
+                Instant::now(),
+                expired_at,
+                "expired authentication must not wait beyond its deadline"
+            );
             tokio::time::resume();
             assert!(matches!(
                 result,
