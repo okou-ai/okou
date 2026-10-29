@@ -366,25 +366,39 @@ function mockSharedViewer() {
   return { session, socket };
 }
 
-test("An idle shared viewer renews only after actual selected-page input", async () => {
-  const { session } = mockSharedViewer();
-  mockBrowserSession(session);
-  const evidence = context.mocks.deferred<BrowserViewerActivity | undefined>();
-  const bodies: unknown[] = [];
-  context.mocks.api(browserContract.leaseByThread, ({ body, respond }) => {
-    bodies.push(body);
-    evidence.resolve(body.viewerActivity);
-    return respond(200, { browser: session });
-  });
-  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
-  await expectStreamingViewer();
-  expect(bodies).toStrictEqual([]);
-  fireEvent.wheel(screen.getByLabelText("Live browser view"), { deltaY: 20 });
-  await expect(evidence.promise).resolves.toStrictEqual({
-    instanceId: INSTANCE_ID,
-    pageTargetId: "example-page",
-  });
-});
+test.each(["wheel", "paste", "copy"] as const)(
+  "An idle shared viewer renews only after selected-page %s input",
+  async (interaction) => {
+    const { session } = mockSharedViewer();
+    mockBrowserSession(session);
+    const evidence = context.mocks.deferred<
+      BrowserViewerActivity | undefined
+    >();
+    const bodies: unknown[] = [];
+    context.mocks.api(browserContract.leaseByThread, ({ body, respond }) => {
+      bodies.push(body);
+      evidence.resolve(body.viewerActivity);
+      return respond(200, { browser: session });
+    });
+    await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+    await expectStreamingViewer();
+    expect(bodies).toStrictEqual([]);
+    if (interaction === "wheel") {
+      fireEvent.wheel(screen.getByLabelText("Live browser view"), {
+        deltaY: 20,
+      });
+    } else {
+      fireEvent(
+        screen.getByLabelText("Remote browser input"),
+        new Event(interaction, { bubbles: true, cancelable: true }),
+      );
+    }
+    await expect(evidence.promise).resolves.toStrictEqual({
+      instanceId: INSTANCE_ID,
+      pageTargetId: "example-page",
+    });
+  },
+);
 
 test("The standalone route uses the selected other-chat page for renewal", async () => {
   const { session } = mockSharedViewer();

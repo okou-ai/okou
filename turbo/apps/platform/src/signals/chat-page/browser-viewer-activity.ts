@@ -162,7 +162,14 @@ export function createBrowserViewerActivitySignals(input: {
         }
         return set(get(scheduler$), selected, selectionSignal);
       });
-      for (const type of ["pointerdown", "keydown", "wheel", "input"]) {
+      for (const type of [
+        "pointerdown",
+        "keydown",
+        "wheel",
+        "input",
+        "copy",
+        "paste",
+      ]) {
         element.addEventListener(type, onActivity, {
           signal,
           capture: true,
