@@ -1398,23 +1398,26 @@ function latestAssistantTextCreatedAtFromRaw(
 }
 
 /**
- * Run order follows recorded inputs, which carry their Run once consumed.
- * Late output or usage from an older Run cannot replace a newer Run.
+ * A Run starts at its first consumed input. Later steering, output or usage
+ * from that Run cannot move it ahead of a newer Run.
  */
 function latestRunIdFromRaw(
   raw: readonly ChatEventProjectionEntry[],
 ): string | null {
-  for (let index = raw.length - 1; index >= 0; index--) {
-    const event = raw[index]!.event;
+  const seenRunIds = new Set<string>();
+  let latestRunId: string | null = null;
+  for (const { event } of raw) {
     if (
       isChatInputEventType(event.eventType) &&
       "runId" in event &&
-      typeof event.runId === "string"
+      typeof event.runId === "string" &&
+      !seenRunIds.has(event.runId)
     ) {
-      return event.runId;
+      seenRunIds.add(event.runId);
+      latestRunId = event.runId;
     }
   }
-  return null;
+  return latestRunId;
 }
 
 /** The newest Run while nothing has ended or interrupted it yet. */

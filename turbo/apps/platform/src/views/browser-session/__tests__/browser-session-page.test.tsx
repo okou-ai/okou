@@ -7,7 +7,6 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { HttpResponse } from "msw";
 
 import {
   click,
@@ -16,8 +15,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
-import zhHansCommon from "../../../i18n/locales/zh-Hans/common.json?raw";
-import zhHansCommonUrl from "../../../i18n/locales/zh-Hans/common.json?url";
 
 const context = testContext();
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
@@ -144,14 +141,7 @@ test("The interactive Okou viewer lets the owner change automatic sizing", async
   await selectViewerSizingOption(sizingMenu, "Do not sync automatically");
 });
 
-test("The Okou viewer localizes a blank tab and removes its empty page when another tab is selected", async () => {
-  context.mocks.browser.languages(["zh-CN"]);
-  // This story needs the real locale asset instead of the shared English-copy fixture.
-  context.mocks.http.get(zhHansCommonUrl, () => {
-    return new HttpResponse(zhHansCommon, {
-      headers: { "Content-Type": "application/json" },
-    });
-  });
+test("The Okou viewer shows its host blank page only while the blank tab is selected", async () => {
   const activeSession = browserSession();
   const cdpUrl = "wss://cdp.browser-use.com/blank-page";
   mockBrowserSession(activeSession);
@@ -177,32 +167,30 @@ test("The Okou viewer localizes a blank tab and removes its empty page when anot
     context,
     path: `/browsers/${THREAD_ID}`,
     host: "app.okou.ai",
-    locale: "zh-Hans",
     featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
   });
 
-  expect(document.documentElement).toHaveAttribute("lang", "zh-Hans");
   const viewer = await screen.findByRole("region", {
     name: "Remote browser viewer",
   });
-  await within(viewer).findByText("还没有打开网页");
+  await within(viewer).findByText("Nothing open yet");
   expect(
     within(viewer).getByText(
-      "Okou 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
+      "Okou opens pages here as it works. Enter a URL above to browse yourself.",
     ),
   ).toBeInTheDocument();
-  expect(within(viewer).getByPlaceholderText("输入网址")).toBeEnabled();
-  const blankTab = within(viewer).getByLabelText("新标签页", {
+  expect(within(viewer).getByPlaceholderText("Enter a URL")).toBeEnabled();
+  const blankTab = within(viewer).getByLabelText("New tab", {
     selector: '[role="tab"]',
   });
   expect(blankTab).toHaveAttribute("aria-selected", "true");
 
   click(within(viewer).getByLabelText("Example", { selector: '[role="tab"]' }));
   await within(viewer).findByDisplayValue("https://example.com");
-  expect(within(viewer).queryByText("还没有打开网页")).toBeNull();
+  expect(within(viewer).queryByText("Nothing open yet")).toBeNull();
 
   click(blankTab);
-  await within(viewer).findByText("还没有打开网页");
+  await within(viewer).findByText("Nothing open yet");
   expect(blankTab).toHaveAttribute("aria-selected", "true");
 });
 

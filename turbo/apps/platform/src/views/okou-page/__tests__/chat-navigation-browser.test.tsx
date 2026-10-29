@@ -113,15 +113,13 @@ function mockBrowserApi(
   };
 }
 
-function completedConversationEvents(
-  runId = "navigation-browser-run",
-): MockChatEventInput[] {
+function completedConversationEvents(): MockChatEventInput[] {
   return [
     {
       id: "navigation-browser-user",
       role: "user",
       content: "Research the release notes",
-      runId,
+      runId: "navigation-browser-run",
       seqId: 1,
       createdAt: "2026-09-01T12:00:00.000Z",
     },
@@ -129,7 +127,7 @@ function completedConversationEvents(
       id: "navigation-browser-reply",
       role: "assistant",
       content: "I am checking the release notes now.",
-      runId,
+      runId: "navigation-browser-run",
       seqId: 2,
       createdAt: "2026-09-01T12:00:01.000Z",
     },
@@ -137,7 +135,7 @@ function completedConversationEvents(
       id: "navigation-browser-complete",
       role: "assistant",
       content: null,
-      runId,
+      runId: "navigation-browser-run",
       runLifecycleEvent: "completed",
       seqId: 3,
       createdAt: "2026-09-01T12:00:02.000Z",
@@ -420,14 +418,46 @@ test("Take over the cloud browser from a working run and hand it back through th
   const runId = "d0000000-0000-4000-a000-000000000902";
   const previousRunId = "d0000000-0000-4000-a000-000000000901";
   const chatEvents: MockChatEventInput[] = [
-    ...completedConversationEvents(previousRunId),
+    {
+      id: "navigation-browser-previous-user",
+      role: "user",
+      content: "Research the release notes",
+      runId: previousRunId,
+      seqId: 1,
+      createdAt: "2026-09-01T12:00:00.000Z",
+    },
+    {
+      id: "navigation-browser-budget-input",
+      eventType: "input.budget",
+      role: "user",
+      content: "Finish this run before its runtime limit",
+      seqId: 2,
+      createdAt: "2026-09-01T12:00:01.000Z",
+    },
+    {
+      id: "navigation-browser-previous-reply",
+      role: "assistant",
+      content: "I am checking the release notes now.",
+      runId: previousRunId,
+      seqId: 3,
+      createdAt: "2026-09-01T12:00:02.000Z",
+    },
+    {
+      id: "navigation-browser-previous-complete",
+      role: "assistant",
+      content: null,
+      runId: previousRunId,
+      runLifecycleEvent: "completed",
+      seqId: 4,
+      createdAt: "2026-09-01T12:00:03.000Z",
+    },
     {
       id: "navigation-browser-live-user",
       role: "user",
       content: "Book a table for two",
       runId,
-      seqId: 4,
-      createdAt: "2026-09-01T12:00:03.000Z",
+      seqId: 5,
+      createdAt: "2026-09-01T12:00:04.000Z",
     },
   ];
   mockChatLifecycle(context, {
@@ -461,28 +491,40 @@ test("Take over the cloud browser from a working run and hand it back through th
     within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
 
-  // An earlier Run can settle after takeover has interrupted the current one.
+  // An earlier Run's budget declaration and usage can arrive after takeover.
   act(() => {
-    chatEvents.push({
-      id: "navigation-browser-previous-usage",
-      role: "assistant",
-      content: null,
-      runId: previousRunId,
-      seqId: 100,
-      createdAt: "2026-09-01T12:01:00.000Z",
-      usage: {
-        version: 1,
-        totalCredits: 7,
-        settledAt: "2026-09-01T12:01:00.000Z",
-        breakdown: [
-          {
-            kind: "model/gpt-6-luna/tokens.output",
-            credits: 7,
-            providers: [{ provider: "openai", credits: 7 }],
-          },
-        ],
+    chatEvents.push(
+      {
+        id: "navigation-browser-previous-budget",
+        eventType: "input.budget",
+        role: "user",
+        content: "Finish this run before its runtime limit",
+        runId: previousRunId,
+        revokesEventId: "navigation-browser-budget-input",
+        seqId: 99,
+        createdAt: "2026-09-01T12:00:59.000Z",
       },
-    });
+      {
+        id: "navigation-browser-previous-usage",
+        role: "assistant",
+        content: null,
+        runId: previousRunId,
+        seqId: 100,
+        createdAt: "2026-09-01T12:01:00.000Z",
+        usage: {
+          version: 1,
+          totalCredits: 7,
+          settledAt: "2026-09-01T12:01:00.000Z",
+          breakdown: [
+            {
+              kind: "model/gpt-6-luna/tokens.output",
+              credits: 7,
+              providers: [{ provider: "openai", credits: 7 }],
+            },
+          ],
+        },
+      },
+    );
     createChatEvent(THREAD_ID);
   });
   await screen.findByLabelText("Credit usage 7");
