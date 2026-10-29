@@ -21,6 +21,7 @@ import { db$, writeDb$ } from "../external/db";
 import { deleteS3Objects } from "../external/s3";
 import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
 import { revokeDeletedFileArtifactShare$ } from "./artifact-shares.service";
+import { deleteSharedThread$ } from "./shared-thread-artifacts.service";
 import { deleteHostedSite$ } from "./host.service";
 
 interface ArtifactOwner {
@@ -238,8 +239,14 @@ export const deleteArtifact$ = command(
         return denied;
       }
     }
-    // Removing a saved conversation must never revoke the original author's link.
-    if (!hosted && !isSharedThreadArtifactLogicalKey(artifact.logicalKey)) {
+    if (isSharedThreadArtifactLogicalKey(artifact.logicalKey)) {
+      await set(
+        deleteSharedThread$,
+        { id: artifact.entityId, userId: args.userId, orgId: args.orgId },
+        signal,
+      );
+      signal.throwIfAborted();
+    } else if (!hosted) {
       await set(withdrawFileArtifact$, withdrawal, signal);
       signal.throwIfAborted();
     }

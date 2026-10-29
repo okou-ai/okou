@@ -11,6 +11,7 @@ import {
   chatArtifactCatalogChangedEvent,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -1824,7 +1825,7 @@ describe("GET /api/artifacts/catalog", () => {
 });
 
 describe("shared thread routes", () => {
-  it("removes a saved conversation without revoking its original shared link", async () => {
+  it("deleting a shared conversation from artifacts revokes its shared link", async () => {
     const owner = await catalogActor("Saved conversation deletion");
     mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
     const run = await sendChatRun(owner.actor, {
@@ -1846,7 +1847,7 @@ describe("shared thread routes", () => {
     const shared = await createSharedThreadSnapshot(owner.actor, run.threadId, [
       prompt.id,
     ]);
-    const publicBefore = await readSharedThreadSnapshot(shared.id);
+    await readSharedThreadSnapshot(shared.id);
     const listed = await chat.listArtifactCatalog(owner.actor, {
       kind: "shared-thread",
     });
@@ -1874,9 +1875,25 @@ describe("shared thread routes", () => {
       kind: "shared-thread",
     });
     expect(after.artifacts).toStrictEqual([]);
-    await expect(readSharedThreadSnapshot(shared.id)).resolves.toMatchObject({
-      body: publicBefore.body,
-    });
+    await accept(
+      client(sharedThreadsContract).get({ params: { id: shared.id } }),
+      [404],
+    );
+    await accept(
+      client(sharedThreadsContract).meta({ params: { id: shared.id } }),
+      [404],
+    );
+    await accept(
+      client(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId: artifact.id },
+      }),
+      [200],
+    );
+    const source = await chat.listThreadEvents(owner.actor, run.threadId);
+    expect(asRecord(source).events).toContainEqual(
+      expect.objectContaining({ id: prompt.id }),
+    );
   });
 
   it("creates immutable, redacted snapshots from selected visible messages", async () => {
