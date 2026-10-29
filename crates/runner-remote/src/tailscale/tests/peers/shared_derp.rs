@@ -2,6 +2,7 @@
 mod fixture;
 use super::{bounded, inside, relay};
 use crate::tailscale::tests::derp::fixture::{Server, WriteGate};
+use crate::tailscale::tests::socket::SocketIdentity;
 use crate::tailscale::{
     Failure,
     relay_driver::{Connector, Driver},
@@ -9,7 +10,6 @@ use crate::tailscale::{
 use futures_util::StreamExt;
 use std::{
     collections::VecDeque,
-    os::fd::AsRawFd,
     sync::{Arc, Mutex},
 };
 use tokio::{
@@ -125,7 +125,7 @@ pub(in crate::tailscale::tests) struct Connections {
         Option<Arc<rustls::ClientConfig>>,
         Arc<WriteGate>,
     )>,
-    descriptors: Arc<Mutex<Vec<i32>>>,
+    descriptors: Arc<Mutex<Vec<SocketIdentity>>>,
 }
 
 pub(in crate::tailscale::tests) fn single_connector(
@@ -134,7 +134,7 @@ pub(in crate::tailscale::tests) fn single_connector(
     address: std::net::SocketAddr,
     tls: Option<Arc<rustls::ClientConfig>>,
     gate: Arc<WriteGate>,
-    descriptors: Arc<Mutex<Vec<i32>>>,
+    descriptors: Arc<Mutex<Vec<SocketIdentity>>>,
 ) -> Connections {
     Connections {
         keys,
@@ -146,22 +146,17 @@ pub(in crate::tailscale::tests) fn single_connector(
 
 impl Connector for Connections {
     async fn connect(&mut self) -> Result<crate::tailscale::relay::Relay<Upgraded>, Failure> {
-        if let Some(old) = self.descriptors.lock().unwrap().last().copied() {
-            assert_eq!(
-                unsafe { libc::fcntl(old, libc::F_GETFD) },
-                -1,
-                "old actual relay FD remains open before replacement dial"
-            );
-            assert_eq!(
-                std::io::Error::last_os_error().raw_os_error(),
-                Some(libc::EBADF)
-            );
+        if let Some(old) = self.descriptors.lock().unwrap().last() {
+            old.assert_closed();
         }
         let (address, tls, gate) = self.endpoints.pop_front().ok_or(Failure::DomainFailed)?;
         let socket = TcpStream::connect(address)
             .await
             .map_err(|_| Failure::DomainFailed)?;
-        self.descriptors.lock().unwrap().push(socket.as_raw_fd());
+        self.descriptors
+            .lock()
+            .unwrap()
+            .push(SocketIdentity::record(&socket));
         socket.set_nodelay(true).unwrap();
         Ok(relay::connect(
             socket,
@@ -460,7 +455,7 @@ async fn cancelling_the_root_before_its_first_map_closes_real_map_io_and_rejects
         let socket = TcpStream::connect(listener.local_addr().unwrap())
             .await
             .unwrap();
-        let fd = socket.as_raw_fd();
+        let socket_identity = SocketIdentity::record(&socket);
         let (mut provider, _) = listener.accept().await.unwrap();
         let descriptors = Arc::new(Mutex::new(Vec::new()));
         let connector = Connections {
@@ -489,7 +484,7 @@ async fn cancelling_the_root_before_its_first_map_closes_real_map_io_and_rejects
         for response in queued {
             assert!(matches!(bounded(response).await, Err(Failure::Cancelled)));
         }
-        assert!(unsafe { libc::fcntl(fd, libc::F_GETFD) } >= 0);
+        socket_identity.assert_open();
         assert_eq!(bounded(&mut running).await, Err(Failure::Cancelled));
         drop(running);
         assert!(matches!(
@@ -497,11 +492,7 @@ async fn cancelling_the_root_before_its_first_map_closes_real_map_io_and_rejects
             Err(Failure::Cancelled)
         ));
         assert!(descriptors.lock().unwrap().is_empty());
-        assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
-        assert_eq!(
-            std::io::Error::last_os_error().raw_os_error(),
-            Some(libc::EBADF)
-        );
+        socket_identity.assert_closed();
         assert_eq!(bounded(provider.read(&mut [0; 1])).await.unwrap(), 0);
     })
     .await;
