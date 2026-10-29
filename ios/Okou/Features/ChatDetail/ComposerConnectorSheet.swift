@@ -33,7 +33,9 @@ struct ComposerConnectorSheet: View {
   var body: some View {
     NavigationStack {
       List {
-        if let error = store.error { ConnectorLoadError(error: error) { await store.refresh() } }
+        if let error = store.error {
+          ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
+        }
         Section {
           NavigationLink {
             ComposerRemoteControls(store: store)
@@ -43,7 +45,7 @@ struct ComposerConnectorSheet: View {
         }
         Section {
           if let error = store.connectorError {
-            ConnectorLoadError(error: error) { await store.refresh() }
+            ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
           } else if store.isLoading && store.connectors.isEmpty {
             ProgressView("Loading connectors…")
           } else {
@@ -77,10 +79,6 @@ struct ComposerConnectorSheet: View {
         connectorDestination(destination)
       }
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-      .task { await store.refresh() }
-      .onChange(of: scenePhase) { _, phase in
-        if phase == .active { Task { await store.refresh() } }
-      }
       .alert(
         "Could not open connector",
         isPresented: Binding(
@@ -101,6 +99,11 @@ struct ComposerConnectorSheet: View {
       .sheet(item: $store.webDestination, onDismiss: { Task { await store.refresh() } }) { page in
         ConnectorSafariView(url: page.url) { store.webDestination = nil }
       }
+    }
+    // Loading belongs to the sheet, including its pushed destinations.
+    .task { await store.refresh() }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { Task { await store.refresh() } }
     }
     .onDisappear { store.authorization.cancel() }
   }
@@ -197,11 +200,13 @@ struct ComposerConnectorSheet: View {
 
 struct ConnectorLoadError: View {
   let error: String
+  var isLoading = false
   let retry: @MainActor () async -> Void
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(error).foregroundStyle(.red).font(.callout)
-      Button("Refresh") { Task { await retry() } }
+      Button(isLoading ? "Refreshing…" : "Refresh") { Task { await retry() } }
+        .disabled(isLoading)
     }
   }
 }
@@ -213,7 +218,7 @@ private struct ComposerRemoteControls: View {
   var body: some View {
     Form {
       if let error = store.error ?? store.remoteError {
-        ConnectorLoadError(error: error) { await store.refresh() }
+        ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
       }
       if let remotes = store.remotes, store.remoteError == nil {
         Section("Cloud Browser") {

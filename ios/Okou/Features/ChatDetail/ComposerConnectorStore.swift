@@ -78,54 +78,82 @@ final class ComposerConnectorStore {
     let request = generation
     isLoading = true
     defer { if request == generation { isLoading = false } }
-    async let connected: Void = loadConnectors(agentID: agentID, request: request)
-    async let remote: Void = loadRemotes(request: request)
-    _ = await (connected, remote)
-    guard !closed, request == generation else { return }
-    if connectorError == nil, remoteError == nil {
-      uncertain = false
-      error = nil
+    async let connected = loadConnectors(agentID: agentID, request: request)
+    async let remote = loadRemotes(request: request)
+    let (connectorsLoaded, remotesLoaded) = await (connected, remote)
+    guard !closed, !Task.isCancelled, request == generation, connectorsLoaded, remotesLoaded else {
+      return
     }
+    uncertain = false
+    error = nil
   }
 
-  private func loadConnectors(agentID: String, request: UUID) async {
+  private func loadConnectors(agentID: String, request: UUID) async -> Bool {
     do {
-      try await service.validate(agentID: agentID, threadID: threadID)
-      let values = try await service.connectors(agentID: agentID)
-      guard !closed, !Task.isCancelled, request == generation else { return }
+      let values = try await read(request: request) {
+        try await service.validate(agentID: agentID, threadID: threadID)
+        return try await service.connectors(agentID: agentID)
+      }
+      guard !closed, !Task.isCancelled, request == generation else { return false }
       connectors = values
       connectorError = nil
-    } catch is CancellationError {
+      return true
     } catch {
-      guard !closed, request == generation else { return }
-      connectorError = error.localizedDescription
+      guard !closed, !Task.isCancelled, request == generation else { return false }
+      connectorError =
+        isCancellation(error) ? "Could not load connectors. Try again." : error.localizedDescription
       didFail(error)
+      return false
     }
   }
 
-  private func loadRemotes(request: UUID) async {
+  private func loadRemotes(request: UUID) async -> Bool {
     do {
-      let overview = try await service.remotes()
-      var access: ChatThreadRemoteAccess?
-      var computer: ChatComputerAccess?
-      if let threadID {
-        access = try await service.remoteAccess(threadID: threadID)
-        computer = try await service.computerAccess(threadID: threadID)
+      let (overview, access, computer, connections) = try await read(request: request) {
+        let overview = try await service.remotes()
+        var access: ChatThreadRemoteAccess?
+        var computer: ChatComputerAccess?
+        if let threadID {
+          access = try await service.remoteAccess(threadID: threadID)
+          computer = try await service.computerAccess(threadID: threadID)
+        }
+        var connections: [ChatVncConnection] = []
+        if !overview.vncHosts.isEmpty { connections = try await service.vncConnections() }
+        return (overview, access, computer, connections)
       }
-      var connections: [ChatVncConnection] = []
-      if !overview.vncHosts.isEmpty { connections = try await service.vncConnections() }
-      guard !closed, !Task.isCancelled, request == generation else { return }
+      guard !closed, !Task.isCancelled, request == generation else { return false }
       remotes = overview
       threadAccess = access
       currentComputerAccess = computer
       vncConnections = connections
       remoteError = nil
-    } catch is CancellationError {
+      return true
     } catch {
-      guard !closed, request == generation else { return }
-      remoteError = error.localizedDescription
+      guard !closed, !Task.isCancelled, request == generation else { return false }
+      remoteError =
+        isCancellation(error)
+        ? "Could not load remote access. Try again." : error.localizedDescription
       didFail(error)
+      return false
     }
+  }
+
+  /// Only repeat reads cancelled by the transport while their owner is still active.
+  private func read<Value: Sendable>(
+    request: UUID, _ body: @MainActor () async throws -> Value
+  ) async throws -> Value {
+    do {
+      return try await body()
+    } catch {
+      guard !closed, !Task.isCancelled, request == generation, isCancellation(error) else {
+        throw error
+      }
+      return try await body()
+    }
+  }
+
+  private func isCancellation(_ error: Error) -> Bool {
+    error is CancellationError || (error as? URLError)?.code == .cancelled
   }
 
   func perform(_ operation: @MainActor () async throws -> Void) async {
