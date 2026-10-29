@@ -7163,6 +7163,23 @@
       "verify": "Bestätigen",
       "waiting": "Warte auf den Scan…",
       "workspaceLabel": "Arbeitsbereich"
+    },
+    "whatsapp": {
+      "codeError": "Der Verbindungscode konnte nicht erstellt werden. Versuche es erneut.",
+      "connect": "WhatsApp verbinden",
+      "connected": "WhatsApp verbunden",
+      "description": "Direkt in WhatsApp mit Okou chatten",
+      "disconnected": "WhatsApp getrennt",
+      "expires": "Dieser Code läuft in 10 Minuten ab. Lass diese Seite geöffnet, um die Verbindung zu bestätigen.",
+      "instructions": "Öffne WhatsApp oder scanne den QR-Code. Sende dann den Verbindungscode, um dein Konto zu verknüpfen.",
+      "loading": "Verbindungscode wird erstellt…",
+      "markets": "Verfügbar für WhatsApp-Nummern im Europäischen Wirtschaftsraum, in Brasilien und in der Türkei.",
+      "name": "WhatsApp",
+      "open": "WhatsApp öffnen",
+      "options": "WhatsApp-Optionen",
+      "qrTitle": "Scannen, um WhatsApp zu verbinden",
+      "regenerate": "Neuen Code erstellen",
+      "unavailable": "WhatsApp ist noch nicht eingerichtet"
     }
   }
 }

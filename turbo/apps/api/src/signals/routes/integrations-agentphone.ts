@@ -74,9 +74,14 @@ import {
   type AgentPhoneMessageEvent,
 } from "../services/agentphone.service";
 import {
+  agentPhoneUserLinksForChannel,
   isAgentPhoneMentionText,
   type AgentPhoneUserLink,
 } from "../services/agentphone-shared.service";
+import {
+  isWhatsappSupportedHandle,
+  whatsappEnabled$,
+} from "../services/whatsapp-config";
 import { safeJsonParse, settle, tapError } from "../utils";
 
 interface AgentPhoneConfig {
@@ -324,10 +329,10 @@ const APPS_API_CONNECT_CHANNEL: AgentPhoneChannel = "sms";
 
 function verifiedConnectParams(body: AgentPhoneConnectRequest): {
   readonly phoneHandle: string;
-  readonly channel: AgentPhoneChannel;
+  readonly channel: Exclude<AgentPhoneChannel, "whatsapp">;
 } | null {
   const channel = body.channel ?? "sms";
-  if (!isAgentPhoneChannel(channel)) {
+  if (!isAgentPhoneChannel(channel) || channel === "whatsapp") {
     return null;
   }
   const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
@@ -1439,18 +1444,25 @@ const handleAgentPhoneConnectionCode$ = command(
 
     await tapError(
       result.kind === "linked"
-        ? set(
-            sendAgentPhoneConnectedMessages$,
-            {
-              userLinkId: result.userLinkId,
-              agentphoneAgentId: event.agentphoneAgentId,
-              toNumber: event.fromNumber,
-              ...(event.channel === "imessage"
-                ? { replyToMessageId: event.messageId }
-                : {}),
-            },
-            signal,
-          )
+        ? event.channel === "whatsapp"
+          ? set(
+              sendAgentPhoneText$,
+              event,
+              "WhatsApp connected. Send a message here to start using Okou.",
+              signal,
+            )
+          : set(
+              sendAgentPhoneConnectedMessages$,
+              {
+                userLinkId: result.userLinkId,
+                agentphoneAgentId: event.agentphoneAgentId,
+                toNumber: event.fromNumber,
+                ...(event.channel === "imessage"
+                  ? { replyToMessageId: event.messageId }
+                  : {}),
+              },
+              signal,
+            )
         : set(
             sendAgentPhoneText$,
             event,
@@ -1467,6 +1479,56 @@ const handleAgentPhoneConnectionCode$ = command(
     );
     signal.throwIfAborted();
     return true;
+  },
+);
+
+function isAllowedWhatsappEvent(event: AgentPhoneMessageEvent): boolean {
+  return (
+    event.channel !== "whatsapp" ||
+    (!event.isGroup &&
+      isWhatsappSupportedHandle(
+        normalizeAgentPhoneHandle(event.fromNumber, "whatsapp"),
+      ))
+  );
+}
+
+const loadAgentPhoneSenderLink$ = command(
+  async ({ get }, event: AgentPhoneMessageEvent, signal: AbortSignal) => {
+    const links = agentPhoneUserLinksForChannel(event.channel);
+    const [link] = await get(db$)
+      .select()
+      .from(links)
+      .where(
+        eq(
+          links.phoneHandle,
+          normalizeAgentPhoneHandle(event.fromNumber, event.channel),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return link ?? null;
+  },
+);
+
+const acceptsWhatsappSender$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    userLink: AgentPhoneUserLink | null,
+    signal: AbortSignal,
+  ) => {
+    if (event.channel !== "whatsapp") {
+      return true;
+    }
+    if (userLink) {
+      return await set(
+        whatsappEnabled$,
+        userLink.orgId,
+        userLink.userId,
+        signal,
+      );
+    }
+    return isAgentPhoneConnectionCodeMessage(event.body);
   },
 );
 
@@ -1538,22 +1600,14 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return admissionResponse;
   }
 
-  const db = get(db$);
+  if (!isAllowedWhatsappEvent(event)) {
+    return okText();
+  }
   // A group sender never borrows a participant's or route owner's link.
-  const phoneHandle = normalizeAgentPhoneHandle(
-    event.fromNumber,
-    event.channel,
-  );
-  const linkRows = phoneHandle
-    ? db
-        .select()
-        .from(agentphoneUserLinks)
-        .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
-        .limit(1)
-    : Promise.resolve([]);
-  const [link] = await linkRows;
-  signal.throwIfAborted();
-  const userLink = link ?? null;
+  const userLink = await set(loadAgentPhoneSenderLink$, event, signal);
+  if (!(await set(acceptsWhatsappSender$, event, userLink, signal))) {
+    return okText();
+  }
 
   const stored = await set(
     storeInboundAgentPhoneMessage$,

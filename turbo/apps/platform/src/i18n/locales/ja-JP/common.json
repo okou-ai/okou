@@ -7139,6 +7139,23 @@
       "verify": "確認",
       "waiting": "スキャンを待っています…",
       "workspaceLabel": "ワークスペース"
+    },
+    "whatsapp": {
+      "codeError": "接続コードを作成できませんでした。もう一度お試しください。",
+      "connect": "WhatsAppを接続",
+      "connected": "WhatsAppに接続しました",
+      "description": "WhatsAppから直接Okouとチャット",
+      "disconnected": "WhatsAppの接続を解除しました",
+      "expires": "このコードは10分後に期限切れになります。接続の完了を確認するまで、このページを開いたままにしてください。",
+      "instructions": "WhatsAppを開くかQRコードをスキャンし、接続コードを送信してアカウントを連携してください。",
+      "loading": "接続コードを作成しています…",
+      "markets": "欧州経済領域、ブラジル、トルコのWhatsApp番号で利用できます。",
+      "name": "WhatsApp",
+      "open": "WhatsAppを開く",
+      "options": "WhatsAppのオプション",
+      "qrTitle": "スキャンしてWhatsAppを接続",
+      "regenerate": "新しいコードを生成",
+      "unavailable": "WhatsAppはまだ設定されていません"
     }
   }
 }

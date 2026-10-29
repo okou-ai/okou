@@ -7242,6 +7242,23 @@
       "verify": "Verificar",
       "waiting": "Aguardando a leitura…",
       "workspaceLabel": "Espaço de trabalho"
+    },
+    "whatsapp": {
+      "codeError": "Não foi possível criar um código de conexão. Tente novamente.",
+      "connect": "Conectar WhatsApp",
+      "connected": "WhatsApp conectado",
+      "description": "Converse com o Okou diretamente pelo WhatsApp",
+      "disconnected": "WhatsApp desconectado",
+      "expires": "Este código expira em 10 minutos. Mantenha esta página aberta para ver quando a conexão for concluída.",
+      "instructions": "Abra o WhatsApp ou escaneie o código QR e envie o código de conexão para vincular sua conta.",
+      "loading": "Criando seu código de conexão…",
+      "markets": "Disponível para números do WhatsApp do Espaço Econômico Europeu, Brasil e Turquia.",
+      "name": "WhatsApp",
+      "open": "Abrir WhatsApp",
+      "options": "Opções do WhatsApp",
+      "qrTitle": "Escaneie para conectar o WhatsApp",
+      "regenerate": "Gerar um novo código",
+      "unavailable": "O WhatsApp ainda não está configurado"
     }
   }
 }

@@ -3,6 +3,7 @@ import { command } from "ccstate";
 import { integrationsPhoneDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
+import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { and, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
 
@@ -90,6 +91,10 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
       agentphoneUserLinks,
       eq(agentphoneMessages.agentphoneUserLinkId, agentphoneUserLinks.id),
     )
+    .leftJoin(
+      whatsappUserLinks,
+      eq(agentphoneMessages.whatsappUserLinkId, whatsappUserLinks.id),
+    )
     .where(
       and(
         eq(agentphoneMessages.agentphoneMessageId, query.file_id),
@@ -99,6 +104,12 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
             isNull(agentphoneMessages.groupId),
             eq(agentphoneUserLinks.userId, auth.userId),
             eq(agentphoneUserLinks.orgId, auth.orgId),
+          ),
+          and(
+            isNull(agentphoneMessages.groupId),
+            eq(agentphoneMessages.channel, "whatsapp"),
+            eq(whatsappUserLinks.userId, auth.userId),
+            eq(whatsappUserLinks.orgId, auth.orgId),
           ),
           and(isNotNull(agentphoneMessages.groupId), exists(groupVisibility)),
         ),

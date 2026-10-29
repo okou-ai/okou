@@ -1,3 +1,7 @@
+import {
+  agentPhoneRouteLinkColumn,
+  type AgentPhoneChannel,
+} from "./agentphone-shared.service";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, sql } from "drizzle-orm";
@@ -17,6 +21,7 @@ import {
 
 interface AgentPhoneChatThreadRouteKey {
   readonly agentphoneUserLinkId: string;
+  readonly channel?: AgentPhoneChannel;
   readonly rootMessageId: string;
 }
 
@@ -30,10 +35,7 @@ interface AgentPhoneChatThreadCreateArgs extends IntegrationChatThreadCreation {
 
 function routeWhere(key: AgentPhoneChatThreadRouteKey) {
   return and(
-    eq(
-      agentphoneChatThreadRoutes.agentphoneUserLinkId,
-      key.agentphoneUserLinkId,
-    ),
+    eq(agentPhoneRouteLinkColumn(key.channel), key.agentphoneUserLinkId),
     eq(agentphoneChatThreadRoutes.rootMessageId, key.rootMessageId),
   );
 }
@@ -93,7 +95,10 @@ export const ensureAgentPhoneChatThreadRoute$ = command(
     const insertRoute = db
       .insert(agentphoneChatThreadRoutes)
       .values({
-        agentphoneUserLinkId: args.agentphoneUserLinkId,
+        agentphoneUserLinkId:
+          args.channel === "whatsapp" ? null : args.agentphoneUserLinkId,
+        whatsappUserLinkId:
+          args.channel === "whatsapp" ? args.agentphoneUserLinkId : null,
         rootMessageId: args.rootMessageId,
         conversationId: args.conversationId,
         chatThreadId: thread.id,
@@ -101,7 +106,7 @@ export const ensureAgentPhoneChatThreadRoute$ = command(
       })
       .onConflictDoNothing({
         target: [
-          agentphoneChatThreadRoutes.agentphoneUserLinkId,
+          agentPhoneRouteLinkColumn(args.channel),
           agentphoneChatThreadRoutes.rootMessageId,
         ],
       })

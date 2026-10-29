@@ -2,6 +2,7 @@ import * as halloweenSchema from "./schema/halloween";
 import * as iosPushRegistrationSchema from "./schema/ios-push-registration";
 import * as dataRouterRequestSchema from "./schema/data-router-request";
 import * as wechatSchema from "./schema/wechat";
+import * as whatsappSchema from "./schema/whatsapp";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
@@ -168,6 +169,7 @@ export const schema = {
   ...halloweenSchema,
   ...mailNotificationSchema,
   ...wechatSchema,
+  ...whatsappSchema,
   ...getStartedClaimSchema,
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,

@@ -1,9 +1,10 @@
 import { agents } from "@okouai/db/schema/agent";
+import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists, ne, or } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
 import { db$ } from "../external/db";
@@ -123,19 +124,49 @@ const loadAgentPhoneLaunchContext$ = command(
         ),
       )
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .innerJoin(
-        agentphoneUserLinks,
-        and(
-          eq(agentphoneUserLinks.id, chatAgentphoneContext.userLinkId),
-          eq(agentphoneUserLinks.userId, args.userId),
-          eq(agentphoneUserLinks.orgId, args.orgId),
-        ),
-      )
       .where(
         and(
           eq(chatEvents.id, args.eventId),
           eq(chatEvents.chatThreadId, args.chatThreadId),
           eq(chatEvents.contextType, "agentphone"),
+          or(
+            and(
+              ne(chatAgentphoneContext.channel, "whatsapp"),
+              exists(
+                db
+                  .select({ id: agentphoneUserLinks.id })
+                  .from(agentphoneUserLinks)
+                  .where(
+                    and(
+                      eq(
+                        agentphoneUserLinks.id,
+                        chatAgentphoneContext.userLinkId,
+                      ),
+                      eq(agentphoneUserLinks.userId, args.userId),
+                      eq(agentphoneUserLinks.orgId, args.orgId),
+                    ),
+                  ),
+              ),
+            ),
+            and(
+              eq(chatAgentphoneContext.channel, "whatsapp"),
+              exists(
+                db
+                  .select({ id: whatsappUserLinks.id })
+                  .from(whatsappUserLinks)
+                  .where(
+                    and(
+                      eq(
+                        whatsappUserLinks.id,
+                        chatAgentphoneContext.userLinkId,
+                      ),
+                      eq(whatsappUserLinks.userId, args.userId),
+                      eq(whatsappUserLinks.orgId, args.orgId),
+                    ),
+                  ),
+              ),
+            ),
+          ),
         ),
       )
       .limit(1);

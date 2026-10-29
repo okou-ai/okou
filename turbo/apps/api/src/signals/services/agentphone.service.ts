@@ -42,6 +42,9 @@ import { bestEffort, safeUrlParse, settle } from "../utils";
 import { ensureAgentPhoneChatThreadRoute$ } from "./agentphone-chat-ingress.service";
 import {
   agentPhoneChannelForLinkedHandle,
+  agentPhoneUserLinksForChannel,
+  agentPhoneMessageLinkColumn,
+  agentPhoneReplyChunks,
   agentPhoneReplyDestination,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
@@ -308,7 +311,10 @@ function inboundAgentPhoneMessageValues(
     conversationId: event.conversationId,
     groupId: isGroup ? event.groupId : null,
     agentphoneAgentId: event.agentphoneAgentId,
-    agentphoneUserLinkId: userLinkId ?? null,
+    agentphoneUserLinkId:
+      event.channel === "whatsapp" ? null : (userLinkId ?? null),
+    whatsappUserLinkId:
+      event.channel === "whatsapp" ? (userLinkId ?? null) : null,
     phoneHandle: normalizeAgentPhoneHandle(event.fromNumber, event.channel),
     fromNumber: normalizeAgentPhoneHandle(
       event.senderIdentifier ?? event.fromNumber,
@@ -417,6 +423,7 @@ export const storeInboundAgentPhoneMessage$ = command(
           ${values.webhookId}, ${values.agentphoneMessageId},
           ${values.conversationId}, ${values.groupId}, ${values.agentphoneAgentId},
           ${values.agentphoneUserLinkId}, ${values.phoneHandle},
+          ${values.whatsappUserLinkId},
           ${values.fromNumber}, ${values.toNumber}, ${values.direction},
           ${values.channel}, ${values.body}, ${values.mediaUrl}, ${values.isBot},
           ${sql.param(receivedAt, agentphoneMessages.receivedAt)}, now()
@@ -596,13 +603,20 @@ const fetchAgentPhoneContext$ = command(
       params.phoneHandle,
       params.channel,
     );
-    const providerContext = params.isGroup
-      ? ""
-      : formatAgentPhoneRecentHistoryContext(
-          params.recentHistory,
-          params.currentMessageId,
-          false,
-        );
+    // WhatsApp context comes only from messages archived under the current
+    // verified link. Provider history can predate a workspace rebind.
+    const providerContext =
+      params.isGroup || params.channel === "whatsapp"
+        ? ""
+        : formatAgentPhoneRecentHistoryContext(
+            params.recentHistory.filter((message) => {
+              return params.channel === "whatsapp"
+                ? message.channel?.trim().toLowerCase() === "whatsapp"
+                : message.channel?.trim().toLowerCase() !== "whatsapp";
+            }),
+            params.currentMessageId,
+            false,
+          );
     if (providerContext) {
       return { executionContext: providerContext };
     }
@@ -648,7 +662,10 @@ const fetchAgentPhoneContext$ = command(
             .from(agentphoneMessages)
             .where(
               and(
-                eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
+                eq(
+                  agentPhoneMessageLinkColumn(params.channel),
+                  params.userLinkId,
+                ),
                 eq(agentphoneMessages.phoneHandle, phoneHandle),
                 isNull(agentphoneMessages.groupId),
               ),
@@ -846,37 +863,42 @@ export const sendAgentPhoneText$ = command(
         )
       : [];
     signal.throwIfAborted();
-    const sent = await sendAgentPhoneMessage(
-      {
-        agentphoneAgentId: event.agentphoneAgentId,
-        toNumber: agentPhoneReplyDestination({
-          isGroup,
-          groupId: event.groupId,
-          phoneHandle: event.fromNumber,
-        }),
-        ...(event.channel === "imessage"
-          ? { replyToMessageId: event.messageId }
-          : {}),
-        body,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
+    for (const chunk of agentPhoneReplyChunks(body, event.channel)) {
+      const sent = await sendAgentPhoneMessage(
+        {
+          ...(event.channel === "whatsapp"
+            ? { channel: "whatsapp" as const }
+            : {}),
+          agentphoneAgentId: event.agentphoneAgentId,
+          toNumber: agentPhoneReplyDestination({
+            isGroup,
+            groupId: event.groupId,
+            phoneHandle: event.fromNumber,
+          }),
+          ...(event.channel === "imessage"
+            ? { replyToMessageId: event.messageId }
+            : {}),
+          body: chunk,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
 
-    if (isGroup) {
-      await set(storeOutboundAgentPhoneMessage$, {
-        agentphoneMessageId: sent.id,
-        conversationId: event.conversationId,
-        groupId: event.groupId,
-        agentphoneAgentId: event.agentphoneAgentId,
-        phoneHandle: event.fromNumber,
-        fromNumber: event.toNumber,
-        toNumber: sent.toNumber,
-        body,
-        channel: event.channel,
-        userChannel: event.channel,
-        visibilityRecipients,
-      });
+      if (isGroup) {
+        await set(storeOutboundAgentPhoneMessage$, {
+          agentphoneMessageId: sent.id,
+          conversationId: event.conversationId,
+          groupId: event.groupId,
+          agentphoneAgentId: event.agentphoneAgentId,
+          phoneHandle: event.fromNumber,
+          fromNumber: event.toNumber,
+          toNumber: sent.toNumber,
+          body: chunk,
+          channel: event.channel,
+          userChannel: event.channel,
+          visibilityRecipients,
+        });
+      }
     }
   },
 );
@@ -922,6 +944,9 @@ function formatConnectPrompt(
   action: "link" | "reply" = "link",
 ): string {
   const { brandName } = BRAND_PRESENTATION;
+  if (event.channel === "whatsapp") {
+    return `Open ${env("APP_URL")}/works and connect WhatsApp, then send the connection code here.`;
+  }
   const nextStep =
     action === "reply"
       ? `Reply here and I'll send you the link to connect your ${brandName} account.`
@@ -1085,10 +1110,18 @@ const handleConnectCommand$ = command(
 );
 
 const disconnectAgentPhoneUserLink$ = command(
-  async ({ set }, userLinkId: string, signal: AbortSignal): Promise<void> => {
-    await set(writeDb$)
-      .delete(agentphoneUserLinks)
-      .where(eq(agentphoneUserLinks.id, userLinkId));
+  async (
+    { set },
+    args: {
+      readonly userLink: AgentPhoneUserLink;
+      readonly channel: AgentPhoneChannel;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const links = agentPhoneUserLinksForChannel(args.channel);
+    await set(writeDb$).delete(links).where(eq(links.id, args.userLink.id));
+    signal.throwIfAborted();
+    await publishAgentPhoneUserChanged(args.userLink.userId);
     signal.throwIfAborted();
   },
 );
@@ -1112,7 +1145,11 @@ const handleDisconnectCommand$ = command(
       return;
     }
 
-    await set(disconnectAgentPhoneUserLink$, args.userLink.id, signal);
+    await set(
+      disconnectAgentPhoneUserLink$,
+      { userLink: args.userLink, channel: args.event.channel },
+      signal,
+    );
 
     await set(
       sendAgentPhoneSlashCommandText$,
@@ -1143,22 +1180,31 @@ const handleSwitchCommand$ = command(
     }
 
     if (args.userLink) {
-      await set(disconnectAgentPhoneUserLink$, args.userLink.id, signal);
+      await set(
+        disconnectAgentPhoneUserLink$,
+        { userLink: args.userLink, channel: args.event.channel },
+        signal,
+      );
     }
-    const connectUrl = buildAgentPhoneConnectUrl({
-      phoneHandle: args.event.fromNumber,
-      agentphoneAgentId: args.event.agentphoneAgentId,
-      secret: env("SECRETS_ENCRYPTION_KEY"),
-      channel: args.event.channel,
-    });
+    const connectInstructions =
+      args.event.channel === "whatsapp"
+        ? formatConnectPrompt(args.event)
+        : [
+            `Open this link to connect to the ${BRAND_PRESENTATION.brandName} account and workspace you want to use:`,
+            "",
+            buildAgentPhoneConnectUrl({
+              phoneHandle: args.event.fromNumber,
+              agentphoneAgentId: args.event.agentphoneAgentId,
+              secret: env("SECRETS_ENCRYPTION_KEY"),
+              channel: args.event.channel,
+            }),
+          ].join("\n");
     await set(
       sendAgentPhoneSlashCommandText$,
       args.event,
       [
         ...(args.userLink ? ["Your phone has been disconnected.", ""] : []),
-        `Open this link to connect to the ${BRAND_PRESENTATION.brandName} account and workspace you want to use:`,
-        "",
-        connectUrl,
+        connectInstructions,
       ].join("\n"),
       signal,
     );
@@ -1331,6 +1377,7 @@ const persistAgentPhoneChatMessage$ = command(
           signal,
         ),
         agentphoneUserLinkId: args.userLink.id,
+        channel: args.event.channel,
         rootMessageId: args.rootMessageId,
         conversationId: args.event.conversationId,
         userId: args.userLink.userId,
@@ -1385,6 +1432,7 @@ const persistAgentPhoneChatMessage$ = command(
         files: integrationInputMessageFiles(assets),
         nonContentPart: createChatEventSourcePart({
           kind: "agentphone",
+          channel: args.event.channel,
           toNumber: normalizeAgentPhoneHandle(args.event.toNumber, "sms"),
           isGroup: args.event.isGroup,
         }),

@@ -7163,6 +7163,23 @@
       "verify": "सत्यापित करें",
       "waiting": "स्कैन का इंतज़ार है…",
       "workspaceLabel": "कार्यस्थान"
+    },
+    "whatsapp": {
+      "codeError": "कनेक्शन कोड नहीं बनाया जा सका। फिर से कोशिश करें।",
+      "connect": "WhatsApp कनेक्ट करें",
+      "connected": "WhatsApp कनेक्ट हो गया",
+      "description": "WhatsApp से सीधे Okou के साथ चैट करें",
+      "disconnected": "WhatsApp डिस्कनेक्ट हो गया",
+      "expires": "यह कोड 10 मिनट में समाप्त हो जाएगा। कनेक्शन की पुष्टि देखने के लिए यह पेज खुला रखें।",
+      "instructions": "WhatsApp खोलें या QR कोड स्कैन करें, फिर अपना खाता लिंक करने के लिए कनेक्शन कोड भेजें।",
+      "loading": "आपका कनेक्शन कोड बनाया जा रहा है…",
+      "markets": "यूरोपीय आर्थिक क्षेत्र, ब्राज़ील और तुर्किये के WhatsApp नंबरों के लिए उपलब्ध है।",
+      "name": "WhatsApp",
+      "open": "WhatsApp खोलें",
+      "options": "WhatsApp विकल्प",
+      "qrTitle": "WhatsApp कनेक्ट करने के लिए स्कैन करें",
+      "regenerate": "नया कोड बनाएं",
+      "unavailable": "WhatsApp अभी कॉन्फ़िगर नहीं है"
     }
   }
 }

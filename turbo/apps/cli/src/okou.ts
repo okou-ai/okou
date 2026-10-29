@@ -75,6 +75,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   phone: ["phone:read", "phone:write"],
   imessage: ["phone:read", "phone:write"],
   sms: "phone:write",
+  whatsapp: "whatsapp:write",
   whoami: null,
   "computer-use": "computer-use:write",
   browser: ["browser:read", "browser:write"],
@@ -97,6 +98,13 @@ const COMMAND_CAPABILITY_MAP: Record<
 const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "task"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "whatsapp",
+    description: "Send messages to your connected WhatsApp account",
+    load: async () => {
+      return (await import("./commands/whatsapp/index")).whatsappCommand;
+    },
+  },
   {
     name: "task",
     description: "Delegate and inspect background Okou Tasks",

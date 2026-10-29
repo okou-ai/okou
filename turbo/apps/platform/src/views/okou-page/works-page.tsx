@@ -68,6 +68,7 @@ import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts"
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { WechatCard } from "./wechat-card.tsx";
+import { WhatsappCard } from "./whatsapp-card.tsx";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -1026,6 +1027,9 @@ export function WorksPage() {
           ) : null}
           <TelegramCard />
           <AgentPhoneCard />
+          {features[FeatureSwitchKey.WhatsappIntegration] ? (
+            <WhatsappCard />
+          ) : null}
           {features[FeatureSwitchKey.WechatIntegration] ? <WechatCard /> : null}
         </div>
       </main>

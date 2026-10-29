@@ -11,7 +11,7 @@ export const agentphoneDeliveryTargetSchema = object({
   conversationId: string().nullable(),
   // Direct messages do not have a provider group ID.
   groupId: string().nullable().optional(),
-  channel: zEnum(["imessage", "sms", "mms"]),
+  channel: zEnum(["imessage", "sms", "mms", "whatsapp"]),
   isGroup: boolean(),
   rootMessageId: string().min(1),
   phoneHandle: string().min(1),

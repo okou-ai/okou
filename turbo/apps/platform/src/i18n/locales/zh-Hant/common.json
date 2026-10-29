@@ -7139,6 +7139,23 @@
       "verify": "驗證",
       "waiting": "等待掃碼…",
       "workspaceLabel": "工作區"
+    },
+    "whatsapp": {
+      "codeError": "無法產生連接碼，請重試。",
+      "connect": "連接 WhatsApp",
+      "connected": "WhatsApp 已連接",
+      "description": "在 WhatsApp 中直接與 Okou 對話",
+      "disconnected": "WhatsApp 已斷開",
+      "expires": "連接碼將在 10 分鐘後過期。保持此頁面開啟以查看連接結果。",
+      "instructions": "開啟 WhatsApp 或掃描 QR 碼，將連接碼傳送給 Okou 即可綁定帳號。",
+      "loading": "正在產生連接碼…",
+      "markets": "支援歐洲經濟區、巴西和土耳其的 WhatsApp 號碼。",
+      "name": "WhatsApp",
+      "open": "開啟 WhatsApp",
+      "options": "WhatsApp 選項",
+      "qrTitle": "掃碼連接 WhatsApp",
+      "regenerate": "產生新連接碼",
+      "unavailable": "WhatsApp 尚未設定"
     }
   }
 }

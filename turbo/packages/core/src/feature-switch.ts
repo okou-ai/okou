@@ -467,6 +467,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.WhatsappIntegration]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Connect WhatsApp to Okou through the shared AgentPhone number.",
+    enabled: false,
+  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",
     description:

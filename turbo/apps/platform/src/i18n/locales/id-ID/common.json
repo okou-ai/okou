@@ -7139,6 +7139,23 @@
       "verify": "Verifikasi",
       "waiting": "Menunggu pemindaian…",
       "workspaceLabel": "Ruang kerja"
+    },
+    "whatsapp": {
+      "codeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
+      "connect": "Hubungkan WhatsApp",
+      "connected": "WhatsApp terhubung",
+      "description": "Mengobrol dengan Okou langsung dari WhatsApp",
+      "disconnected": "WhatsApp terputus",
+      "expires": "Kode ini kedaluwarsa dalam 10 menit. Biarkan halaman ini terbuka untuk melihat konfirmasi koneksi.",
+      "instructions": "Buka WhatsApp atau pindai kode QR, lalu kirim kode koneksi untuk menautkan akun Anda.",
+      "loading": "Membuat kode koneksi Anda…",
+      "markets": "Tersedia untuk nomor WhatsApp di Wilayah Ekonomi Eropa, Brasil, dan Turki.",
+      "name": "WhatsApp",
+      "open": "Buka WhatsApp",
+      "options": "Opsi WhatsApp",
+      "qrTitle": "Pindai untuk menghubungkan WhatsApp",
+      "regenerate": "Buat kode baru",
+      "unavailable": "WhatsApp belum dikonfigurasi"
     }
   }
 }
