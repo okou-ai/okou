@@ -2078,12 +2078,12 @@
       "reconnectProvider": "重新连接 {{provider}}",
       "reconnectToAccess": "重新连接 {{provider}} 以访问邮件：{{subject}}",
       "refreshStatus": "刷新状态",
-      "sendingDescription": "Outlook 尚未确认发送完成。请刷新状态或前往 Outlook 核实后再进行其他操作。",
+      "sendingDescription": "发送耗时较长，请前往 Outlook 查看状态。",
       "sentToast": "邮件已发送",
       "status": {
         "deleted": "已删除",
         "draft": "草稿",
-        "sending": "等待发送确认",
+        "sending": "发送中",
         "sent": "已发送"
       },
       "toRecipients": "收件人：{{recipients}}",

@@ -2078,12 +2078,12 @@
       "reconnectProvider": "Sambungkan ulang {{provider}}",
       "reconnectToAccess": "Sambungkan ulang {{provider}} untuk mengakses email: {{subject}}",
       "refreshStatus": "Perbarui status",
-      "sendingDescription": "Outlook belum mengonfirmasi pengiriman. Perbarui status atau periksa Outlook sebelum melanjutkan.",
+      "sendingDescription": "Pengiriman memakan waktu lebih lama dari biasanya. Periksa statusnya di Outlook.",
       "sentToast": "Email terkirim",
       "status": {
         "deleted": "Dihapus",
         "draft": "Draf",
-        "sending": "Menunggu konfirmasi pengiriman",
+        "sending": "Mengirim",
         "sent": "Terkirim"
       },
       "toRecipients": "Ke: {{recipients}}",

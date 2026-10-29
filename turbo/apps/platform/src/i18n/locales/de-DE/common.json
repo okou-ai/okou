@@ -2085,12 +2085,12 @@
       "reconnectProvider": "{{provider}} erneut verbinden",
       "reconnectToAccess": "{{provider}} erneut verbinden, um auf E-Mail zuzugreifen: {{subject}}",
       "refreshStatus": "Status aktualisieren",
-      "sendingDescription": "Outlook hat den Versand noch nicht bestätigt. Aktualisieren Sie den Status oder prüfen Sie Outlook, bevor Sie fortfahren.",
+      "sendingDescription": "Der Versand dauert länger als erwartet. Prüfen Sie den Status in Outlook.",
       "sentToast": "E-Mail gesendet",
       "status": {
         "deleted": "Gelöscht",
         "draft": "Entwurf",
-        "sending": "Sendebestätigung ausstehend",
+        "sending": "Wird gesendet",
         "sent": "Gesendet"
       },
       "toRecipients": "An: {{recipients}}",

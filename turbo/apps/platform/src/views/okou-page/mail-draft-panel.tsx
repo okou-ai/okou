@@ -1121,6 +1121,7 @@ function MailDraftActions({
   const active = draft.status === "draft";
   const pending =
     deleteLoadable.state === "loading" || sendLoadable.state === "loading";
+  const confirming = draft.status === "sending" && pending;
   const reloadDraft = useSet(signals.reloadDraft$);
   const providerName = draft.provider === "gmail" ? "Gmail" : "Outlook";
   const openInProvider =
@@ -1146,18 +1147,19 @@ function MailDraftActions({
             return $.chat.mail.sentToast;
           }),
         );
-      } else if (status === "sending") {
-        toast.info(
-          t(($) => {
-            return $.chat.mail.sendingDescription;
-          }),
-        );
       }
     };
     detach(sendAndNotify(), Reason.DomCallback);
   };
   return (
     <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
+      {draft.status === "sending" && !confirming ? (
+        <p role="status" className="basis-full text-sm text-muted-foreground">
+          {t(($) => {
+            return $.chat.mail.sendingDescription;
+          })}
+        </p>
+      ) : null}
       {active ? (
         <Button
           type="button"
@@ -1180,7 +1182,7 @@ function MailDraftActions({
         <span />
       )}
       <div className="ml-auto flex items-center gap-2">
-        {draft.status === "sending" ? (
+        {draft.status === "sending" && !confirming ? (
           <Button
             type="button"
             variant="outline"
@@ -1210,7 +1212,7 @@ function MailDraftActions({
             )}
           </a>
         ) : null}
-        {active ? (
+        {active || confirming ? (
           <Button
             type="button"
             size="sm"
@@ -1263,13 +1265,6 @@ function MailDraftDetail({
         draft={draft}
         signals={signals}
       />
-      {draft.status === "sending" ? (
-        <p role="status" className="px-4 py-3 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.chat.mail.sendingDescription;
-          })}
-        </p>
-      ) : null}
       <MailDraftActions draft={draft} signals={signals} close={close} />
     </Container>
   );

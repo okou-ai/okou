@@ -2119,12 +2119,12 @@
       "reconnectProvider": "Riconnetti {{provider}}",
       "reconnectToAccess": "Riconnetti {{provider}} per accedere all'e-mail: {{subject}}",
       "refreshStatus": "Aggiorna stato",
-      "sendingDescription": "Outlook non ha ancora confermato l’invio. Aggiorna lo stato o verifica in Outlook prima di continuare.",
+      "sendingDescription": "L’invio sta richiedendo più tempo del previsto. Controlla lo stato in Outlook.",
       "sentToast": "E-mail inviata",
       "status": {
         "deleted": "Eliminato",
         "draft": "Bozza",
-        "sending": "In attesa della conferma di invio",
+        "sending": "Invio in corso",
         "sent": "Inviato"
       },
       "toRecipients": "A: {{recipients}}",

@@ -2085,12 +2085,12 @@
       "reconnectProvider": "{{provider}} को पुनः कनेक्ट करें",
       "reconnectToAccess": "ईमेल तक पहुँचने के लिए {{provider}} को पुनः कनेक्ट करें: {{subject}}",
       "refreshStatus": "स्थिति रीफ़्रेश करें",
-      "sendingDescription": "Outlook ने अभी तक भेजने की पुष्टि नहीं की है। आगे बढ़ने से पहले स्थिति रीफ़्रेश करें या Outlook में जाँचें।",
+      "sendingDescription": "भेजने में अपेक्षा से अधिक समय लग रहा है। अपडेट के लिए Outlook देखें।",
       "sentToast": "ईमेल भेजा गया",
       "status": {
         "deleted": "हटाए गए",
         "draft": "मसौदा",
-        "sending": "भेजने की पुष्टि की प्रतीक्षा",
+        "sending": "भेजा जा रहा है",
         "sent": "भेजा"
       },
       "toRecipients": "प्रति: {{recipients}}",

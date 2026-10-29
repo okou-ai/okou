@@ -20,12 +20,15 @@ import {
   createCardSignalsRegistry,
   type CardSignalsRegistry,
 } from "./card-signal-map.ts";
-import { onRef } from "../utils.ts";
+import { onRef, waitLoopUntil } from "../utils.ts";
 import {
   createTextPreviewComputedFromBlob,
   type TextPreviewComputed,
 } from "../text-preview.ts";
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
+
+const SEND_CONFIRMATION_INTERVAL_MS = 2000;
+const MAX_SEND_CONFIRMATION_ATTEMPTS = 15;
 
 export interface MailDraftDescriptor {
   readonly mailDraftId: string;
@@ -266,16 +269,45 @@ function createMailDraftMutationSignals(
     },
   );
   const send$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const client = get(apiClient$)(mailContract);
     const response = await accept(
-      get(apiClient$)(mailContract).sendDraft({
+      client.sendDraft({
         params: { mailDraftId: descriptor.mailDraftId },
         fetchOptions: { signal },
       }),
       [200],
     );
     signal.throwIfAborted();
-    set(resources.draftOverride$, response.body.mailDraft);
-    return response.body.mailDraft.status;
+    let current: MailDraft | null = response.body.mailDraft;
+    set(resources.draftOverride$, current);
+    if (current.status === "sending") {
+      let attempts = 0;
+      // Confirm an accepted send with reads only. Never replay the send request.
+      await waitLoopUntil(
+        async (confirmationSignal) => {
+          const refreshed = await accept(
+            client.getDraft({
+              params: { mailDraftId: descriptor.mailDraftId },
+              fetchOptions: { signal: confirmationSignal },
+            }),
+            [200, 404],
+          );
+          confirmationSignal.throwIfAborted();
+          current = refreshed.status === 200 ? refreshed.body.mailDraft : null;
+          const done =
+            current?.status !== "sending" ||
+            current.accessStatus !== "ready" ||
+            ++attempts >= MAX_SEND_CONFIRMATION_ATTEMPTS;
+          if (done) {
+            set(resources.draftOverride$, current);
+          }
+          return done;
+        },
+        SEND_CONFIRMATION_INTERVAL_MS,
+        signal,
+      );
+    }
+    return current?.status ?? "deleted";
   });
   return { delete$, send$ };
 }

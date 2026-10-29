@@ -2078,12 +2078,12 @@
       "reconnectProvider": "{{provider}} 다시 연결",
       "reconnectToAccess": "이메일 접근을 위해 {{provider}} 다시 연결: {{subject}}",
       "refreshStatus": "상태 새로 고침",
-      "sendingDescription": "Outlook에서 전송 완료가 확인되지 않았습니다. 상태를 새로 고치거나 Outlook에서 확인하세요.",
+      "sendingDescription": "전송이 예상보다 오래 걸리고 있습니다. Outlook에서 상태를 확인하세요.",
       "sentToast": "이메일이 전송되었습니다",
       "status": {
         "deleted": "삭제됨",
         "draft": "초안",
-        "sending": "전송 확인 대기 중",
+        "sending": "보내는 중",
         "sent": "전송됨"
       },
       "toRecipients": "받는 사람: {{recipients}}",

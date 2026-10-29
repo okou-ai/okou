@@ -2078,12 +2078,12 @@
       "reconnectProvider": "重新連線 {{provider}}",
       "reconnectToAccess": "重新連線 {{provider}} 以訪問郵件：{{subject}}",
       "refreshStatus": "重新整理狀態",
-      "sendingDescription": "Outlook 尚未確認傳送完成。請重新整理狀態或前往 Outlook 核實後再進行其他操作。",
+      "sendingDescription": "傳送時間較長，請前往 Outlook 查看狀態。",
       "sentToast": "郵件已傳送",
       "status": {
         "deleted": "已刪除",
         "draft": "草稿",
-        "sending": "等待傳送確認",
+        "sending": "傳送中",
         "sent": "已傳送"
       },
       "toRecipients": "收件人：{{recipients}}",

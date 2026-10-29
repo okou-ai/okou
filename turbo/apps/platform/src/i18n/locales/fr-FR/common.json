@@ -2119,12 +2119,12 @@
       "reconnectProvider": "Reconnecter {{provider}}",
       "reconnectToAccess": "Reconnecter {{provider}} pour accéder à l'e-mail : {{subject}}",
       "refreshStatus": "Actualiser le statut",
-      "sendingDescription": "Outlook n’a pas encore confirmé l’envoi. Actualisez le statut ou vérifiez dans Outlook avant de continuer.",
+      "sendingDescription": "L’envoi prend plus de temps que prévu. Vérifiez son état dans Outlook.",
       "sentToast": "E-mail envoyé",
       "status": {
         "deleted": "Supprimé",
         "draft": "Brouillon",
-        "sending": "En attente de confirmation d’envoi",
+        "sending": "Envoi en cours",
         "sent": "Envoyé"
       },
       "toRecipients": "À : {{recipients}}",
