@@ -4,7 +4,7 @@ import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
@@ -19,6 +19,7 @@ import {
   type ChatEventUsagePayload,
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 
 import { createStore } from "ccstate";
 import { insertBenchmarkRunBatch$ } from "./benchmark-run-seed";
@@ -567,7 +568,25 @@ async function cleanupExistingBenchThreads(
         (SELECT count(*) FROM removed_jobs) +
         (SELECT count(*) FROM detached_usage) AS cleaned`);
   }
-  await database.delete(chatThreads).where(inArray(chatThreads.id, threadIds));
+  const detachedBindings = database
+    .$with("detached_bindings")
+    .as(
+      database
+        .update(workflowUserAutomationThreads)
+        .set({ chatThreadId: null })
+        .where(inArray(workflowUserAutomationThreads.chatThreadId, threadIds))
+        .returning({ id: workflowUserAutomationThreads.id }),
+    );
+  // Keep retained references and their parent DELETE in one atomic statement.
+  await database
+    .with(detachedBindings)
+    .delete(chatThreads)
+    .where(
+      and(
+        inArray(chatThreads.id, threadIds),
+        gte(database.select({ count: count() }).from(detachedBindings), 0),
+      ),
+    );
 
   return threadIds.length;
 }
