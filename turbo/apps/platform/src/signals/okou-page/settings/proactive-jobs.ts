@@ -2,14 +2,15 @@ import { command, computed, state } from "ccstate";
 import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { searchParams$ } from "../../route.ts";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { reloadProactiveSuggestionsPreference$ } from "./proactive-suggestions.ts";
+import { settingsActiveSection$, settingsVisit$ } from "./settings-dialog.ts";
 
 const revision$ = state(0);
 export const proactiveJobsPreference$ = computed(async (get) => {
   get(revision$);
-  get(searchParams$);
+  get(settingsVisit$);
+  get(settingsActiveSection$);
   get(featureSwitch$);
   const result = await accept(
     get(apiClient$)(proactiveJobsContract).get(),
