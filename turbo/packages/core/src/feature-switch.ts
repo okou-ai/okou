@@ -139,12 +139,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Review Outlook drafts and confirm sending from chat.",
     enabled: false,
   },
-  [FeatureSwitchKey.ThreadEmailManager]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Thread email manager",
-    description: "Browse thread emails and send or delete selected drafts.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",

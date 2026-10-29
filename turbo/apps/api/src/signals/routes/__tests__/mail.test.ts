@@ -531,10 +531,6 @@ describe("thread email list", () => {
   it("keeps sent mail when an earlier deletion finishes after sending", async () => {
     const fixture = await createPublicGmailMailCardFixture();
     await fixture.run(async () => {
-      fixture.ownsFeatureSwitches();
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: true,
-      });
       mockGmailDraftApi();
       const linked = await linkDraft(fixture);
       const deleteReached = createDeferredPromise<void>(context.signal);
@@ -585,10 +581,6 @@ describe("thread email list", () => {
   it("omits deleted drafts immediately and keeps their original links unavailable", async () => {
     const fixture = await createPublicGmailMailCardFixture();
     await fixture.run(async () => {
-      fixture.ownsFeatureSwitches();
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: true,
-      });
       mockGmailDraftApi();
       const linked = await linkDraft(fixture);
       await accept(
@@ -620,25 +612,11 @@ describe("thread email list", () => {
     });
   });
 
-  it("checks the feature switch and does not disclose another user's thread", async () => {
+  it("does not disclose another user's thread", async () => {
     const fixture = await createPublicGmailMailCardFixture();
     const other = await createPublicGmailMailCardFixture();
     await fixture.run(async () => {
-      fixture.ownsFeatureSwitches();
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: false,
-      });
-      const disabled = await accept(
-        client().listThreadMail({
-          headers: authHeaders(),
-          params: { threadId: fixture.thread.id },
-        }),
-        [403],
-      );
-      expect(disabled.body.error.code).toBe("FORBIDDEN");
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: true,
-      });
+      mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
       const missing = await accept(
         client().listThreadMail({
           headers: authHeaders(),

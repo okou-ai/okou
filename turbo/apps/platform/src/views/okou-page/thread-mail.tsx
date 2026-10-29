@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
 import {
   Button,
@@ -44,7 +43,6 @@ import {
   type ThreadMailDestination,
 } from "../../signals/chat-page/thread-mail-location.ts";
 import { hash$, pathname$, searchParams$ } from "../../signals/route.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
@@ -96,9 +94,8 @@ export function ThreadMailButton({
 }: {
   readonly thread: ChatPanelSignals;
 }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ThreadEmailManager];
   const exists = useGet(thread.threadExists$);
-  return enabled && exists ? <ThreadMailButtonInner thread={thread} /> : null;
+  return exists ? <ThreadMailButtonInner thread={thread} /> : null;
 }
 
 function ThreadMailButtonInner({
