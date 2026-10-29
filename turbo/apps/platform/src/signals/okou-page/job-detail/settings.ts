@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { agentConfigurationUpdateError } from "@okouai/core/agent-protection";
+import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { apiClient$ } from "../../api-client.ts";
 import { accept } from "../../../lib/accept.ts";
@@ -26,7 +26,10 @@ export const updateAgentSettings$ = command(
       throw new Error("No compose detail found");
     }
 
-    const identityError = agentConfigurationUpdateError(detail.isDefaultAgent);
+    const identityError = agentIdentityUpdateError(
+      detail.isDefaultAgent,
+      update,
+    );
     if (identityError) {
       throw new Error(identityError.message);
     }
