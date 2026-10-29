@@ -5,6 +5,7 @@ import {
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { notFound } from "../../lib/error";
+import { retainS3FailureContext } from "../../lib/s3-failure";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { authorization$, setResHeader$ } from "../context/hono";
@@ -164,7 +165,12 @@ const resolveReference$ = command(
 const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { kind } = get(queryOf(artifactReferencesContract.resolve));
   const { reference } = get(pathParamsOf(artifactReferencesContract.resolve));
-  return await set(resolveReference$, reference, kind, signal);
+  const resolved = await retainS3FailureContext(
+    set(resolveReference$, reference, kind, signal),
+    { apiPhase: "resolve_artifact_reference" },
+  );
+  signal.throwIfAborted();
+  return resolved;
 });
 
 const resolvePublicReference$ = command(
@@ -221,7 +227,11 @@ const resolvePublicReference$ = command(
 
 const read$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { reference } = get(pathParamsOf(artifactReferencesContract.read));
-  const result = await set(resolveReference$, reference, undefined, signal);
+  const result = await retainS3FailureContext(
+    set(resolveReference$, reference, undefined, signal),
+    { apiPhase: "resolve_artifact_reference" },
+  );
+  signal.throwIfAborted();
   if (result.status === 200) {
     return {
       status: 200 as const,
@@ -234,7 +244,11 @@ const read$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   // Public content remains readable outside its originating organization,
   // just as it is in the artifact viewer.
-  const published = await set(resolvePublicReference$, reference, signal);
+  const published = await retainS3FailureContext(
+    set(resolvePublicReference$, reference, signal),
+    { apiPhase: "resolve_artifact_reference" },
+  );
+  signal.throwIfAborted();
   return published.status === 200
     ? {
         status: 200 as const,
@@ -279,7 +293,10 @@ export const artifactReferenceRoutes: readonly RouteEntry[] = [
       const { reference } = get(
         pathParamsOf(artifactReferencesContract.publicUrl),
       );
-      return await set(resolvePublicReference$, reference, signal);
+      return await retainS3FailureContext(
+        set(resolvePublicReference$, reference, signal),
+        { apiPhase: "resolve_artifact_reference" },
+      );
     }),
   },
   {
@@ -299,11 +316,11 @@ export const artifactReferenceRoutes: readonly RouteEntry[] = [
             : null;
         signal.throwIfAborted();
         if (record?.version === 3) {
-          const shared = await set(
-            resolveSharedThreadArtifactReference$,
-            record,
-            signal,
+          const shared = await retainS3FailureContext(
+            set(resolveSharedThreadArtifactReference$, record, signal),
+            { apiPhase: "resolve_artifact_reference" },
           );
+          signal.throwIfAborted();
           return shared
             ? { status: 200 as const, body: shared }
             : notFound("Artifact unavailable");

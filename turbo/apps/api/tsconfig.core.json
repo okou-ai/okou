@@ -63,6 +63,7 @@
     "src/signals/routes/**/*",
     "src/lib/db-instrumentation.ts",
     "src/lib/request-runtime.ts",
+    "src/lib/s3-failure.ts",
     "src/lib/db-raw-rows.ts",
     "src/lib/db-structured-result.ts",
     "src/lib/db-types.ts",

@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { notFound } from "../../lib/error";
+import { retainS3FailureContext } from "../../lib/s3-failure";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
@@ -13,11 +14,15 @@ const download$ = authRoute(
   command(async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const { reference } = get(pathParamsOf(artifactDownloadsContract.download));
-    const result = await set(
-      resolveArtifactDownload$,
-      { reference, userId: auth.userId, orgId: auth.orgId },
-      signal,
+    const result = await retainS3FailureContext(
+      set(
+        resolveArtifactDownload$,
+        { reference, userId: auth.userId, orgId: auth.orgId },
+        signal,
+      ),
+      { apiPhase: "download_artifact" },
     );
+    signal.throwIfAborted();
     return result
       ? { status: 200 as const, body: result }
       : notFound("Artifact unavailable");
@@ -29,16 +34,20 @@ const files$ = authRoute(
   command(async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const { reference } = get(pathParamsOf(artifactDownloadsContract.files));
-    const result = await set(
-      resolveArtifactDownload$,
-      {
-        reference,
-        userId: auth.userId,
-        orgId: auth.orgId,
-        expectedKind: "html",
-      },
-      signal,
+    const result = await retainS3FailureContext(
+      set(
+        resolveArtifactDownload$,
+        {
+          reference,
+          userId: auth.userId,
+          orgId: auth.orgId,
+          expectedKind: "html",
+        },
+        signal,
+      ),
+      { apiPhase: "download_artifact" },
     );
+    signal.throwIfAborted();
     return result?.kind === "html"
       ? { status: 200 as const, body: result.site }
       : notFound("Artifact unavailable");

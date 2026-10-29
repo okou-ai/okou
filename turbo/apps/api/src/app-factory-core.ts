@@ -36,6 +36,7 @@ import {
   VERCEL_PROTECTION_BYPASS_HEADER,
 } from "./lib/preview-automation-bypass";
 import { currentRequestRuntime } from "./lib/request-runtime";
+import { s3FailureDiagnostics } from "./lib/s3-failure";
 import { monotonicNow, now } from "./lib/time";
 import { isSupportedWebClientVersion } from "./lib/web-client-compatibility";
 import {
@@ -111,7 +112,12 @@ function shouldCaptureError(error: unknown): boolean {
 
 function captureError(error: unknown): void {
   if (shouldCaptureError(error)) {
-    Sentry.captureException(error);
+    const s3 = s3FailureDiagnostics(error);
+    if (s3) {
+      Sentry.captureException(error, { extra: { s3 } });
+    } else {
+      Sentry.captureException(error);
+    }
   }
 }
 
@@ -592,6 +598,7 @@ function unhandledRequestErrorLogFields(
 ): UnhandledRequestErrorLogFields {
   const route = requestRouteTemplate(context);
   const errorCode = structuredErrorCode(error);
+  const s3 = s3FailureDiagnostics(error);
   return {
     type: UNHANDLED_REQUEST_ERROR_TYPE,
     errorSummary: sanitizeErrorSummary(error),
@@ -599,6 +606,7 @@ function unhandledRequestErrorLogFields(
     ...(route ? { route } : {}),
     ...(errorCode ? { errorCode } : {}),
     ...clientHeaderLogFields(context),
+    ...(s3 ? { s3 } : {}),
     error: serializeError(error),
   };
 }

@@ -29,6 +29,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { env } from "../../lib/env";
+import { retainS3FailureContext, s3Request } from "../../lib/s3-failure";
 import { detach, Mechanism, settle } from "../utils";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
 
@@ -81,15 +82,21 @@ async function registerLegacyArtifactWrite(
   );
   const body = JSON.stringify(record);
   const written = await settle(
-    client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: body,
-        ContentType: "application/json",
-        IfNoneMatch: "*",
-      }),
-      { abortSignal: signal },
+    retainS3FailureContext(
+      s3Request(
+        "PutObject",
+        client.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            Body: body,
+            ContentType: "application/json",
+            IfNoneMatch: "*",
+          }),
+          { abortSignal: signal },
+        ),
+      ),
+      { storagePhase: "artifact_registration" },
     ),
   );
   signal?.throwIfAborted();
@@ -99,9 +106,14 @@ async function registerLegacyArtifactWrite(
   if (!isS3PreconditionFailedError(written.error)) {
     throw written.error;
   }
-  const existing = await client.send(
-    new GetObjectCommand({ Bucket: bucket, Key: key }),
-    { abortSignal: signal },
+  const existing = await retainS3FailureContext(
+    s3Request(
+      "GetObject",
+      client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
+        abortSignal: signal,
+      }),
+    ),
+    { storagePhase: "artifact_registration" },
   );
   if (!existing.Body) {
     throw new Error("Public artifact registration has no body");
@@ -411,12 +423,15 @@ function listS3ObjectsWithClient(
     let continuationToken: string | undefined;
 
     do {
-      const response = await client.send(
-        new ListObjectsV2Command({
-          Bucket: bucket,
-          Prefix: prefix,
-          ContinuationToken: continuationToken,
-        }),
+      const response = await s3Request(
+        "ListObjectsV2",
+        client.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: prefix,
+            ContinuationToken: continuationToken,
+          }),
+        ),
       );
 
       for (const item of response.Contents ?? []) {
@@ -460,14 +475,17 @@ export function listS3ObjectsPage(
   return computed(async (get): Promise<S3ObjectPage> => {
     signal?.throwIfAborted();
     const client = get(s3ClientForBucket(bucket));
-    const response = await client.send(
-      new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: prefix,
-        MaxKeys: maxKeys,
-        ...(startAfter === undefined ? {} : { StartAfter: startAfter }),
-      }),
-      { abortSignal: signal },
+    const response = await s3Request(
+      "ListObjectsV2",
+      client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          MaxKeys: maxKeys,
+          ...(startAfter === undefined ? {} : { StartAfter: startAfter }),
+        }),
+        { abortSignal: signal },
+      ),
     );
     signal?.throwIfAborted();
     const contents = response.Contents ?? [];
@@ -577,18 +595,21 @@ function deleteS3ObjectsWithClient(
       offset < keys.length;
       offset += S3_DELETE_OBJECTS_LIMIT
     ) {
-      const response = await client.send(
-        new DeleteObjectsCommand({
-          Bucket: bucket,
-          Delete: {
-            Objects: keys
-              .slice(offset, offset + S3_DELETE_OBJECTS_LIMIT)
-              .map((Key) => {
-                return { Key };
-              }),
-          },
-        }),
-        signal ? { abortSignal: signal } : undefined,
+      const response = await s3Request(
+        "DeleteObjects",
+        client.send(
+          new DeleteObjectsCommand({
+            Bucket: bucket,
+            Delete: {
+              Objects: keys
+                .slice(offset, offset + S3_DELETE_OBJECTS_LIMIT)
+                .map((Key) => {
+                  return { Key };
+                }),
+            },
+          }),
+          signal ? { abortSignal: signal } : undefined,
+        ),
       );
       if (response.Errors && response.Errors.length > 0) {
         throw new Error(
@@ -647,9 +668,12 @@ const getS3Object$ = command(
     },
     signal: AbortSignal,
   ) => {
-    return await get(s3ClientForBucket(args.bucket)).send(
-      new GetObjectCommand({ Bucket: args.bucket, Key: args.key }),
-      { abortSignal: signal },
+    return await s3Request(
+      "GetObject",
+      get(s3ClientForBucket(args.bucket)).send(
+        new GetObjectCommand({ Bucket: args.bucket, Key: args.key }),
+        { abortSignal: signal },
+      ),
     );
   },
 );
@@ -758,9 +782,12 @@ function downloadS3BufferWithClient(
     const client = get(client$);
     const startedAt = performance.now();
     const downloaded = await settle(
-      client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
-        abortSignal: signal,
-      }),
+      s3Request(
+        "GetObject",
+        client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
+          abortSignal: signal,
+        }),
+      ),
     );
     if (!downloaded.ok) {
       options.onFailure?.({
@@ -936,14 +963,17 @@ export function createMultipartS3Upload(
         signal,
       ),
     );
-    const response = await client.send(
-      new CreateMultipartUploadCommand({
-        Bucket: bucket,
-        Key: key,
-        ContentType: contentType,
-        Metadata: metadata,
-      }),
-      { abortSignal: signal },
+    const response = await s3Request(
+      "CreateMultipartUpload",
+      client.send(
+        new CreateMultipartUploadCommand({
+          Bucket: bucket,
+          Key: key,
+          ContentType: contentType,
+          Metadata: metadata,
+        }),
+        { abortSignal: signal },
+      ),
     );
     if (!response.UploadId) {
       throw new Error("R2 did not return a multipart upload ID");
@@ -960,15 +990,18 @@ export function generatePresignedUploadPartUrl(
 ): Computed<Promise<string>> {
   return computed((get): Promise<string> => {
     const client = get(s3ClientForBucket(bucket, true));
-    return getSignedUrl(
-      client,
-      new UploadPartCommand({
-        Bucket: bucket,
-        Key: key,
-        UploadId: uploadId,
-        PartNumber: partNumber,
-      }),
-      { expiresIn: PRESIGNED_URL_TTL_SECONDS },
+    return retainS3FailureContext(
+      getSignedUrl(
+        client,
+        new UploadPartCommand({
+          Bucket: bucket,
+          Key: key,
+          UploadId: uploadId,
+          PartNumber: partNumber,
+        }),
+        { expiresIn: PRESIGNED_URL_TTL_SECONDS },
+      ),
+      { command: "UploadPart", execution: "presign" },
     );
   });
 }
@@ -985,15 +1018,18 @@ export function uploadMultipartS3Part(
 ): Computed<Promise<MultipartS3Part>> {
   return computed(async (get): Promise<MultipartS3Part> => {
     const client = get(s3ClientForBucket(args.bucket));
-    const result = await client.send(
-      new UploadPartCommand({
-        Bucket: args.bucket,
-        Key: args.key,
-        UploadId: args.uploadId,
-        PartNumber: args.partNumber,
-        Body: args.body,
-      }),
-      { abortSignal: signal },
+    const result = await s3Request(
+      "UploadPart",
+      client.send(
+        new UploadPartCommand({
+          Bucket: args.bucket,
+          Key: args.key,
+          UploadId: args.uploadId,
+          PartNumber: args.partNumber,
+          Body: args.body,
+        }),
+        { abortSignal: signal },
+      ),
     );
     if (!result.ETag) {
       throw new Error("R2 did not return a multipart part ETag");
@@ -1010,13 +1046,16 @@ export function tryListMultipartS3Parts(
   return computed(async (get): Promise<readonly MultipartS3Part[] | null> => {
     const client = get(s3ClientForBucket(bucket));
     const result = await settle(
-      client.send(
-        new ListPartsCommand({
-          Bucket: bucket,
-          Key: key,
-          UploadId: uploadId,
-          MaxParts: 1000,
-        }),
+      s3Request(
+        "ListParts",
+        client.send(
+          new ListPartsCommand({
+            Bucket: bucket,
+            Key: key,
+            UploadId: uploadId,
+            MaxParts: 1000,
+          }),
+        ),
       ),
     );
     if (!result.ok) {
@@ -1043,18 +1082,21 @@ export function completeMultipartS3Upload(
 ): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
     const client = get(s3ClientForBucket(bucket));
-    await client.send(
-      new CompleteMultipartUploadCommand({
-        Bucket: bucket,
-        Key: key,
-        UploadId: uploadId,
-        MultipartUpload: {
-          Parts: parts.map((part) => {
-            return { ETag: part.etag, PartNumber: part.partNumber };
-          }),
-        },
-      }),
-      { abortSignal: signal },
+    await s3Request(
+      "CompleteMultipartUpload",
+      client.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: bucket,
+          Key: key,
+          UploadId: uploadId,
+          MultipartUpload: {
+            Parts: parts.map((part) => {
+              return { ETag: part.etag, PartNumber: part.partNumber };
+            }),
+          },
+        }),
+        { abortSignal: signal },
+      ),
     );
   });
 }
@@ -1067,13 +1109,16 @@ export function abortMultipartS3Upload(
 ): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
     const client = get(s3ClientForBucket(bucket));
-    await client.send(
-      new AbortMultipartUploadCommand({
-        Bucket: bucket,
-        Key: key,
-        UploadId: uploadId,
-      }),
-      { abortSignal: signal },
+    await s3Request(
+      "AbortMultipartUpload",
+      client.send(
+        new AbortMultipartUploadCommand({
+          Bucket: bucket,
+          Key: key,
+          UploadId: uploadId,
+        }),
+        { abortSignal: signal },
+      ),
     );
   });
 }
@@ -1110,12 +1155,15 @@ function generatePresignedPutUrlWithClient(
       Metadata: options.metadata,
       ContentLength: options.contentLength,
     });
-    return getSignedUrl(client, command, {
-      expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
-      ...(metadataHeaders
-        ? { unhoistableHeaders: new Set(Object.keys(metadataHeaders)) }
-        : {}),
-    });
+    return retainS3FailureContext(
+      getSignedUrl(client, command, {
+        expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
+        ...(metadataHeaders
+          ? { unhoistableHeaders: new Set(Object.keys(metadataHeaders)) }
+          : {}),
+      }),
+      { command: "PutObject", execution: "presign" },
+    );
   });
 }
 
@@ -1251,10 +1299,13 @@ function signPresignedGetUrl(
         }
       : {}),
   });
-  return getSignedUrl(client, command, {
-    expiresIn: options?.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
-    ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
-  });
+  return retainS3FailureContext(
+    getSignedUrl(client, command, {
+      expiresIn: options?.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
+      ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
+    }),
+    { command: "GetObject", execution: "presign" },
+  );
 }
 
 /** Sign from plain request data through a preconstructed bucket client. */
@@ -1344,9 +1395,12 @@ export const putS3Object$ = command(
         signal,
       );
     }
-    await client.send(
-      createPutS3ObjectCommand(args),
-      signal ? { abortSignal: signal } : undefined,
+    await s3Request(
+      "PutObject",
+      client.send(
+        createPutS3ObjectCommand(args),
+        signal ? { abortSignal: signal } : undefined,
+      ),
     );
   },
 );
@@ -1378,9 +1432,12 @@ function sendPutS3Object(
   return computed(async (get): Promise<PutObjectCommandOutput> => {
     const client = get(client$);
     await get(publicArtifactWriteRegistration(args.bucket, args, signal));
-    return await client.send(
-      createPutS3ObjectCommand(args),
-      signal ? { abortSignal: signal } : undefined,
+    return await s3Request(
+      "PutObject",
+      client.send(
+        createPutS3ObjectCommand(args),
+        signal ? { abortSignal: signal } : undefined,
+      ),
     );
   });
 }
@@ -1486,18 +1543,21 @@ function putImmutableS3ObjectWithOptions(
       ),
     );
     const uploaded = await settle(
-      client.send(
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          Body: body,
-          ContentType: contentType,
-          ContentEncoding: args.contentEncoding,
-          Metadata: args.metadata,
-          CacheControl: args.cacheControl,
-          IfNoneMatch: "*",
-        }),
-        signal ? { abortSignal: signal } : undefined,
+      s3Request(
+        "PutObject",
+        client.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            Body: body,
+            ContentType: contentType,
+            ContentEncoding: args.contentEncoding,
+            Metadata: args.metadata,
+            CacheControl: args.cacheControl,
+            IfNoneMatch: "*",
+          }),
+          signal ? { abortSignal: signal } : undefined,
+        ),
       ),
     );
     if (!uploaded.ok && !isS3PreconditionFailedError(uploaded.error)) {
@@ -1522,14 +1582,17 @@ export function copyArtifactShareObject(
     const client = get(
       hosted ? hostedSitesS3Client$ : s3ClientForBucket(bucket),
     );
-    await client.send(
-      new CopyObjectCommand({
-        Bucket: bucket,
-        Key: targetKey,
-        CopySource: `${bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}`,
-        CopySourceIfMatch: sourceEtag,
-      }),
-      { abortSignal: signal },
+    await s3Request(
+      "CopyObject",
+      client.send(
+        new CopyObjectCommand({
+          Bucket: bucket,
+          Key: targetKey,
+          CopySource: `${bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}`,
+          CopySourceIfMatch: sourceEtag,
+        }),
+        { abortSignal: signal },
+      ),
     );
   });
 }
@@ -1542,9 +1605,12 @@ export function readHostedSiteSnapshotSource(
   etag?: string,
 ) {
   return computed(async (get) => {
-    const response = await get(hostedSitesS3Client$).send(
-      new GetObjectCommand({ Bucket: bucket, Key: key, IfMatch: etag }),
-      { abortSignal: signal },
+    const response = await s3Request(
+      "GetObject",
+      get(hostedSitesS3Client$).send(
+        new GetObjectCommand({ Bucket: bucket, Key: key, IfMatch: etag }),
+        { abortSignal: signal },
+      ),
     );
     const buffer = await readS3ObjectBody(
       response,
@@ -1575,9 +1641,12 @@ export const copyPublicArtifactObject$ = command(
     const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
     const client = get(s3ClientForBucket(bucket));
     const source = { Bucket: bucket, Key: args.sourceKey };
-    const head = await client.send(new HeadObjectCommand(source), {
-      abortSignal: signal,
-    });
+    const head = await s3Request(
+      "HeadObject",
+      client.send(new HeadObjectCommand(source), {
+        abortSignal: signal,
+      }),
+    );
     signal.throwIfAborted();
     if (head.ContentLength !== args.size || !head.ETag) {
       throw new Error("Shared attachment source changed or has no ETag");
@@ -1605,14 +1674,17 @@ export const copyPublicArtifactObject$ = command(
       CacheControl: IMMUTABLE_CACHE_CONTROL,
       Metadata: metadata,
     };
-    await client.send(
-      new CopyObjectCommand({
-        ...target,
-        CopySource: `${bucket}/${args.sourceKey.split("/").map(encodeURIComponent).join("/")}`,
-        CopySourceIfMatch: head.ETag,
-        MetadataDirective: "REPLACE",
-      }),
-      { abortSignal: signal },
+    await s3Request(
+      "CopyObject",
+      client.send(
+        new CopyObjectCommand({
+          ...target,
+          CopySource: `${bucket}/${args.sourceKey.split("/").map(encodeURIComponent).join("/")}`,
+          CopySourceIfMatch: head.ETag,
+          MetadataDirective: "REPLACE",
+        }),
+        { abortSignal: signal },
+      ),
     );
     signal.throwIfAborted();
   },
@@ -1625,9 +1697,12 @@ export function readArtifactSharePolicyObject(
   signal: AbortSignal,
 ) {
   return computed(async (get) => {
-    const response = await get(hostedSitesS3Client$).send(
-      new GetObjectCommand({ Bucket: bucket, Key: key }),
-      { abortSignal: signal },
+    const response = await s3Request(
+      "GetObject",
+      get(hostedSitesS3Client$).send(
+        new GetObjectCommand({ Bucket: bucket, Key: key }),
+        { abortSignal: signal },
+      ),
     );
     const buffer = await readS3ObjectBody(response, key, {}, signal);
     if (!response.ETag) {
@@ -1644,9 +1719,12 @@ export const readArtifactSharePolicyObject$ = command(
     args: { readonly bucket: string; readonly key: string },
     signal: AbortSignal,
   ) => {
-    const response = await get(hostedSitesS3Client$).send(
-      new GetObjectCommand({ Bucket: args.bucket, Key: args.key }),
-      { abortSignal: signal },
+    const response = await s3Request(
+      "GetObject",
+      get(hostedSitesS3Client$).send(
+        new GetObjectCommand({ Bucket: args.bucket, Key: args.key }),
+        { abortSignal: signal },
+      ),
     );
     signal.throwIfAborted();
     const buffer = await readS3ObjectBody(response, args.key, {}, signal);
@@ -1666,15 +1744,18 @@ export function writeArtifactSharePolicyObject(
   signal: AbortSignal,
 ) {
   return computed(async (get): Promise<void> => {
-    await get(hostedSitesS3Client$).send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: body,
-        ContentType: "application/json",
-        ...(etag === null ? { IfNoneMatch: "*" } : { IfMatch: etag }),
-      }),
-      { abortSignal: signal },
+    await s3Request(
+      "PutObject",
+      get(hostedSitesS3Client$).send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: "application/json",
+          ...(etag === null ? { IfNoneMatch: "*" } : { IfMatch: etag }),
+        }),
+        { abortSignal: signal },
+      ),
     );
   });
 }
@@ -1737,14 +1818,17 @@ export function readS3ObjectRange(
     ) {
       throw new Error("Invalid bounded storage range");
     }
-    const response = await get(s3ClientForBucket(args.bucket)).send(
-      new GetObjectCommand({
-        Bucket: args.bucket,
-        Key: args.key,
-        Range: `bytes=${args.offset}-${args.offset + args.length - 1}`,
-        IfMatch: args.etag,
-      }),
-      { abortSignal: signal },
+    const response = await s3Request(
+      "GetObject",
+      get(s3ClientForBucket(args.bucket)).send(
+        new GetObjectCommand({
+          Bucket: args.bucket,
+          Key: args.key,
+          Range: `bytes=${args.offset}-${args.offset + args.length - 1}`,
+          IfMatch: args.etag,
+        }),
+        { abortSignal: signal },
+      ),
     );
     signal.throwIfAborted();
     const body = await readS3ObjectBody(
@@ -1807,9 +1891,12 @@ function s3ObjectHeadWithClient(
   return computed(async (get): Promise<S3ObjectHead> => {
     const client = get(client$);
     const result = await settle(
-      client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }), {
-        abortSignal: signal,
-      }),
+      s3Request(
+        "HeadObject",
+        client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }), {
+          abortSignal: signal,
+        }),
+      ),
     );
     if (!result.ok) {
       if (isS3NotFoundError(result.error)) {
@@ -1844,7 +1931,10 @@ function s3ObjectExistsWithClient(
   return computed(async (get): Promise<boolean> => {
     const client = get(client$);
     const result = await settle(
-      client.send(new HeadObjectCommand({ Bucket: bucket, Key: key })),
+      s3Request(
+        "HeadObject",
+        client.send(new HeadObjectCommand({ Bucket: bucket, Key: key })),
+      ),
     );
     if (result.ok) {
       return true;
@@ -1880,13 +1970,16 @@ export function listMultipartS3UploadsPage(
 > {
   return computed(async (get) => {
     signal.throwIfAborted();
-    const response = await get(s3ClientForBucket(bucket)).send(
-      new ListMultipartUploadsCommand({
-        Bucket: bucket,
-        Prefix: prefix,
-        MaxUploads: 10,
-      }),
-      { abortSignal: signal },
+    const response = await s3Request(
+      "ListMultipartUploads",
+      get(s3ClientForBucket(bucket)).send(
+        new ListMultipartUploadsCommand({
+          Bucket: bucket,
+          Prefix: prefix,
+          MaxUploads: 10,
+        }),
+        { abortSignal: signal },
+      ),
     );
     signal.throwIfAborted();
     const uploads = (response.Uploads ?? []).map((upload) => {
@@ -1913,13 +2006,16 @@ export function listUserExportStagingPage(
 > {
   return computed(async (get) => {
     signal.throwIfAborted();
-    const response = await get(s3ClientForBucket(bucket)).send(
-      new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: prefix,
-        MaxKeys: 1000,
-      }),
-      { abortSignal: signal },
+    const response = await s3Request(
+      "ListObjectsV2",
+      get(s3ClientForBucket(bucket)).send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          MaxKeys: 1000,
+        }),
+        { abortSignal: signal },
+      ),
     );
     signal.throwIfAborted();
     const keys = (response.Contents ?? []).map((object) => {

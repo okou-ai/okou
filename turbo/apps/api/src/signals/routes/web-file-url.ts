@@ -3,6 +3,7 @@ import { command } from "ccstate";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 
 import { notFound } from "../../lib/error";
+import { retainS3FailureContext } from "../../lib/s3-failure";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
@@ -75,7 +76,11 @@ export const webFileUrlRoutes: readonly RouteEntry[] = [
         missingOrganizationStatus: 401,
         requiredCapability: "file:read",
       },
-      fileUrlInner$,
+      command(({ set }, signal: AbortSignal) => {
+        return retainS3FailureContext(set(fileUrlInner$, signal), {
+          apiPhase: "resolve_web_file",
+        });
+      }),
     ),
   },
 ];

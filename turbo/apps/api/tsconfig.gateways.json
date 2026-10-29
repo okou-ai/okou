@@ -18,6 +18,7 @@
     "src/lib/env.ts",
     "src/lib/log.ts",
     "src/lib/request-runtime.ts",
+    "src/lib/s3-failure.ts",
     "src/lib/secret-kms-client.ts",
     "src/lib/singleton.ts",
     "src/lib/time.ts",

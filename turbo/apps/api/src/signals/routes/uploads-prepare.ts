@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { retainS3FailureContext } from "../../lib/s3-failure";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
 import {
@@ -62,18 +63,22 @@ const allocatePreparedUpload$ = command(
       }
     }
 
-    const artifact = await set(
-      allocateUploadedArtifact$,
-      {
-        userId: auth.userId,
-        orgId: auth.orgId,
-        filename,
-        contentType,
-        size,
-        purpose: bodyResult.data.purpose,
-      },
-      signal,
+    const artifact = await retainS3FailureContext(
+      set(
+        allocateUploadedArtifact$,
+        {
+          userId: auth.userId,
+          orgId: auth.orgId,
+          filename,
+          contentType,
+          size,
+          purpose: bodyResult.data.purpose,
+        },
+        signal,
+      ),
+      { apiPhase: "allocate_upload", completedSteps: [] },
     );
+    signal.throwIfAborted();
     return {
       artifact,
       filename,
@@ -107,14 +112,20 @@ const prepareUploadInner$ = command(
       let uploadId: string | undefined;
       return await onRejection(
         (async () => {
-          uploadId = await get(
-            createMultipartS3Upload(
-              bucket,
-              s3Key,
-              contentType,
-              metadata,
-              signal,
+          uploadId = await retainS3FailureContext(
+            get(
+              createMultipartS3Upload(
+                bucket,
+                s3Key,
+                contentType,
+                metadata,
+                signal,
+              ),
             ),
+            {
+              apiPhase: "create_multipart_upload",
+              completedSteps: ["artifact_allocation"],
+            },
           );
           signal.throwIfAborted();
           const partCount = Math.ceil(size / MULTIPART_PART_SIZE_BYTES);
@@ -123,13 +134,19 @@ const prepareUploadInner$ = command(
             uploadUrl: string;
           }[] = [];
           for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
-            const uploadUrl = await get(
-              generatePresignedUploadPartUrl(
-                bucket,
-                s3Key,
-                uploadId,
-                partNumber,
+            const uploadUrl = await retainS3FailureContext(
+              get(
+                generatePresignedUploadPartUrl(
+                  bucket,
+                  s3Key,
+                  uploadId,
+                  partNumber,
+                ),
               ),
+              {
+                apiPhase: "sign_upload_parts",
+                completedSteps: ["artifact_allocation", "multipart_creation"],
+              },
             );
             signal.throwIfAborted();
             signedParts.push({ partNumber, uploadUrl });
@@ -160,14 +177,17 @@ const prepareUploadInner$ = command(
       );
     }
 
-    const uploadUrl = await get(
-      generatePresignedPutUrl(
-        bucket,
-        s3Key,
-        contentType,
-        { usePublicEndpoint: true, metadata },
-        signal,
+    const uploadUrl = await retainS3FailureContext(
+      get(
+        generatePresignedPutUrl(
+          bucket,
+          s3Key,
+          contentType,
+          { usePublicEndpoint: true, metadata },
+          signal,
+        ),
       ),
+      { apiPhase: "sign_upload", completedSteps: ["artifact_allocation"] },
     );
     signal.throwIfAborted();
 

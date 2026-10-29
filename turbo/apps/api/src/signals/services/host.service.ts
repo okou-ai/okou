@@ -43,6 +43,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { env } from "../../lib/env";
+import { retainS3FailureContext } from "../../lib/s3-failure";
 import { hostedLinkDomain, hostedLinkOrigin } from "../../lib/link-layout";
 import {
   legacyHostedDeploymentVersion,
@@ -1191,6 +1192,67 @@ function completedHostedSiteResponse(
   };
 }
 
+const deploymentCompletionPhases = {
+  verify_deployment_files: {
+    publicationThisAttempt: "not_started",
+    completedSteps: [],
+  },
+  complete_deployment_preview: {
+    publicationThisAttempt: "not_started",
+    completedSteps: [],
+  },
+  publish_deployment_manifest: {
+    publicationThisAttempt: "not_started",
+    completedSteps: [],
+  },
+  promote_deployment: {
+    publicationThisAttempt: "unknown",
+    completedSteps: ["manifest_write"],
+  },
+  record_deployment_artifact: {
+    publicationThisAttempt: "acknowledged",
+    completedSteps: ["manifest_write", "deployment_promotion"],
+  },
+} as const;
+
+const markHostedDeploymentAliasConflict$ = command(
+  async (
+    { set },
+    deployment: HostedDeploymentRow,
+    message: string,
+    signal: AbortSignal,
+  ) => {
+    const deploymentTable = deployment.manifest.access
+      ? privateHostedDeployments
+      : hostedDeployments;
+    await set(writeDb$)
+      .update(deploymentTable)
+      .set({ status: "failed", error: message, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(deploymentTable.id, deployment.id),
+          eq(deploymentTable.status, "uploading"),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
+function deploymentCompletionFailureContext(
+  deploymentStatusBeforeAttempt: "uploading" | "ready",
+) {
+  return <T>(
+    phase: keyof typeof deploymentCompletionPhases,
+    work: Promise<T>,
+  ) => {
+    return retainS3FailureContext(work, {
+      apiPhase: phase,
+      deploymentStatusBeforeAttempt,
+      ...deploymentCompletionPhases[phase],
+    });
+  };
+}
+
 export const completeHostedSiteDeployment$ = command(
   async (
     { set },
@@ -1202,7 +1264,6 @@ export const completeHostedSiteDeployment$ = command(
       return hostedR2;
     }
 
-    const writeDb = set(writeDb$);
     const deploymentResult = await set(
       resolveHostedDeploymentForCompletion$,
       args,
@@ -1220,13 +1281,17 @@ export const completeHostedSiteDeployment$ = command(
       };
     }
 
-    const missingPath = await set(
-      firstMissingHostedDeploymentPath$,
-      {
-        bucket: hostedR2.config.bucket,
-        deployment,
-      },
-      signal,
+    const retainFailure = deploymentCompletionFailureContext(deployment.status);
+    const missingPath = await retainFailure(
+      "verify_deployment_files",
+      set(
+        firstMissingHostedDeploymentPath$,
+        {
+          bucket: hostedR2.config.bucket,
+          deployment,
+        },
+        signal,
+      ),
     );
     signal.throwIfAborted();
 
@@ -1238,15 +1303,18 @@ export const completeHostedSiteDeployment$ = command(
     }
 
     const preview = deployment.manifest.preview
-      ? await set(
-          completeHostedPreview$,
-          {
-            deploymentId: deployment.id,
-            userId: deployment.userId,
-            orgId: deployment.orgId,
-            preview: deployment.manifest.preview,
-          },
-          signal,
+      ? await retainFailure(
+          "complete_deployment_preview",
+          set(
+            completeHostedPreview$,
+            {
+              deploymentId: deployment.id,
+              userId: deployment.userId,
+              orgId: deployment.orgId,
+              preview: deployment.manifest.preview,
+            },
+            signal,
+          ),
         )
       : undefined;
     signal.throwIfAborted();
@@ -1254,11 +1322,14 @@ export const completeHostedSiteDeployment$ = command(
       return preview;
     }
 
-    const manifestKey = await set(
-      publishHostedSiteManifest$,
-      deployment,
-      hostedR2.config.bucket,
-      signal,
+    const manifestKey = await retainFailure(
+      "publish_deployment_manifest",
+      set(
+        publishHostedSiteManifest$,
+        deployment,
+        hostedR2.config.bucket,
+        signal,
+      ),
     );
     signal.throwIfAborted();
 
@@ -1270,16 +1341,19 @@ export const completeHostedSiteDeployment$ = command(
     );
 
     const promoted = await settle(
-      set(
-        publishHostedSiteDeploymentPointers$,
-        {
-          bucket: hostedR2.config.bucket,
-          deployment,
-          orgId: args.orgId,
-          pointer,
-          readyAt,
-        },
-        signal,
+      retainFailure(
+        "promote_deployment",
+        set(
+          publishHostedSiteDeploymentPointers$,
+          {
+            bucket: hostedR2.config.bucket,
+            deployment,
+            orgId: args.orgId,
+            pointer,
+            readyAt,
+          },
+          signal,
+        ),
       ),
       signal,
     );
@@ -1287,35 +1361,28 @@ export const completeHostedSiteDeployment$ = command(
       if (!(promoted.error instanceof ArtifactDeliveryAliasConflict)) {
         throw promoted.error;
       }
-      const deploymentTable = deployment.manifest.access
-        ? privateHostedDeployments
-        : hostedDeployments;
-      await writeDb
-        .update(deploymentTable)
-        .set({
-          status: "failed",
-          error: promoted.error.message,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(deploymentTable.id, deployment.id),
-            eq(deploymentTable.status, "uploading"),
-          ),
-        );
+      await set(
+        markHostedDeploymentAliasConflict$,
+        deployment,
+        promoted.error.message,
+        signal,
+      );
       signal.throwIfAborted();
       return { status: "conflict", message: promoted.error.message };
     }
     const promotion = promoted.value;
     signal.throwIfAborted();
 
-    await set(
-      recordHostedSiteArtifact$,
-      {
-        ...hostedSiteArtifactArgs(deployment, promotion.publicSlug),
-        ...(preview ? { previewImageUrl: preview.url } : {}),
-      },
-      signal,
+    await retainFailure(
+      "record_deployment_artifact",
+      set(
+        recordHostedSiteArtifact$,
+        {
+          ...hostedSiteArtifactArgs(deployment, promotion.publicSlug),
+          ...(preview ? { previewImageUrl: preview.url } : {}),
+        },
+        signal,
+      ),
     );
     signal.throwIfAborted();
 
