@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1075.0](https://github.com/okou-ai/okou/compare/app-v0.1074.0...app-v0.1075.0) (2026-10-29)
+
+
+### Features
+
+* add whatsapp integration through agentphone ([#43656](https://github.com/okou-ai/okou/issues/43656)) ([a7306f0](https://github.com/okou-ai/okou/commit/a7306f0da51d3d9b00064ceae121fd002b3b64ed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.0
+    * @okouai/core bumped to 8.799.0
+
 ## [0.1074.0](https://github.com/okou-ai/okou/compare/app-v0.1073.0...app-v0.1074.0) (2026-10-29)
 
 
