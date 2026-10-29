@@ -457,6 +457,10 @@ runs:
         add_var AGENTPHONE_AGENT_ID AGENTPHONE_AGENT_ID
         add_var AGENTPHONE_PHONE_NUMBER AGENTPHONE_PHONE_NUMBER
         add_secret AGENTPHONE_WEBHOOK_SECRET AGENTPHONE_WEBHOOK_SECRET
+        if [[ "$INPUT_APP" == "api" ]]; then
+          # Empty or unset disables WhatsApp country filtering.
+          add_var WHATSAPP_ALLOWED_COUNTRY_PREFIXES WHATSAPP_ALLOWED_COUNTRY_PREFIXES
+        fi
         add_env APP_URL "$app_url"
         add_secret RESEND_API_KEY RESEND_API_KEY
         add_secret RESEND_WEBHOOK_SECRET RESEND_WEBHOOK_SECRET

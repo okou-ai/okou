@@ -196,6 +196,16 @@ function billingAndMessagingEnvSchema() {
     TELEGRAM_OFFICIAL_BOT_TOKEN: string().optional(),
     TELEGRAM_OFFICIAL_BOT_USERNAME: string().optional(),
     TELEGRAM_OFFICIAL_WEBHOOK_SECRET: string().optional(),
+    WHATSAPP_ALLOWED_COUNTRY_PREFIXES: string()
+      .default("")
+      .transform((value) => {
+        return value.trim()
+          ? value.split(",").map((prefix) => {
+              return prefix.trim();
+            })
+          : [];
+      })
+      .pipe(array(string().regex(/^\+[1-9]\d{0,2}$/u))),
     SLACK_OAUTH_CLIENT_ID: string().optional(),
     DISCORD_OAUTH_CLIENT_SECRET: string().min(1).optional(),
     DISCORD_BOT_TOKEN: string().min(1).optional(),
