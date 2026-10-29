@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.798.0](https://github.com/okou-ai/okou/compare/core-v8.797.0...core-v8.798.0) (2026-10-29)
+
+
+### Features
+
+* **core:** enable onboarding source outcomes for everyone ([#43746](https://github.com/okou-ai/okou/issues/43746)) ([f4ed80f](https://github.com/okou-ai/okou/commit/f4ed80feae170ce2ad1b59dc58372e9e63238ae9))
+
 ## [8.797.0](https://github.com/okou-ai/okou/compare/core-v8.796.2...core-v8.797.0) (2026-10-29)
 
 

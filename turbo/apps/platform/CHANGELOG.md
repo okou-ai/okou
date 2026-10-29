@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1074.0](https://github.com/okou-ai/okou/compare/app-v0.1073.0...app-v0.1074.0) (2026-10-29)
+
+
+### Features
+
+* **core:** enable onboarding source outcomes for everyone ([#43746](https://github.com/okou-ai/okou/issues/43746)) ([f4ed80f](https://github.com/okou-ai/okou/commit/f4ed80feae170ce2ad1b59dc58372e9e63238ae9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.798.0
+
 ## [0.1073.0](https://github.com/okou-ai/okou/compare/app-v0.1072.2...app-v0.1073.0) (2026-10-29)
 
 
