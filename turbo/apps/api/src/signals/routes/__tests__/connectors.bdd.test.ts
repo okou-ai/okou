@@ -7369,7 +7369,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       (await connectorsApi.listCustomConnectors(admin)).find((connector) => {
         return connector.id === editable.id;
       })?.prefixTemplates,
-    ).toStrictEqual(original.prefixTemplates);
+    ).toStrictEqual([originalPrefix.slice(0, -1)]);
 
     await connectorsApi.deleteCustomConnector(admin, original.id);
     await connectorsApi.deleteCustomConnector(admin, editable.id);
@@ -7431,7 +7431,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       created.map((definition) => {
         return definition.prefixTemplates;
       }),
-    ).toStrictEqual([[prefix], [prefix]]);
+    ).toStrictEqual([[prefix], [prefix.slice(0, -1)]]);
     for (const definition of created) {
       await connectorsApi.deleteCustomConnector(admin, definition.id);
     }
