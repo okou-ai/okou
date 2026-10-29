@@ -164,6 +164,7 @@ export function createBrowserViewerActivitySignals(input: {
       });
       for (const type of [
         "pointerdown",
+        "click",
         "keydown",
         "wheel",
         "input",

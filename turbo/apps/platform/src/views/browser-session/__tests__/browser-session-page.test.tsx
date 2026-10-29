@@ -366,7 +366,7 @@ function mockSharedViewer() {
   return { session, socket };
 }
 
-test.each(["wheel", "paste", "copy"] as const)(
+test.each(["wheel", "paste", "copy", "click"] as const)(
   "An idle shared viewer renews only after selected-page %s input",
   async (interaction) => {
     const { session } = mockSharedViewer();
@@ -387,6 +387,9 @@ test.each(["wheel", "paste", "copy"] as const)(
       fireEvent.wheel(screen.getByLabelText("Live browser view"), {
         deltaY: 20,
       });
+    } else if (interaction === "click") {
+      // Assistive activation can dispatch click without pointer or key events.
+      fireEvent.click(screen.getByLabelText("Reload remote page"));
     } else {
       fireEvent(
         screen.getByLabelText("Remote browser input"),
