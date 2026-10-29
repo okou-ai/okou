@@ -529,6 +529,7 @@
       "hostedDescription": "Die Website und alle veröffentlichten Versionen werden offline genommen. In anderen Diensten gespeicherte Kopien bleiben erhalten.",
       "menu": "Weitere Aktionen für {{title}}",
       "sharedDescription": "Diese gespeicherte Unterhaltung wird aus deinen Artefakten entfernt. Die ursprüngliche Unterhaltung und ihr Freigabelink bleiben verfügbar.",
+      "success": "Artefakt gelöscht",
       "title": "{{title}} löschen?"
     },
     "fileBadges": {

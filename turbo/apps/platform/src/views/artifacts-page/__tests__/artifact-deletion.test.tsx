@@ -183,7 +183,11 @@ test.each([false, true])(
     expect(
       document.querySelector(`button[data-artifact-id="${report.id}"]`),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Artifact deleted")).not.toBeInTheDocument();
     finish.resolve();
+    await expect(
+      screen.findByText("Artifact deleted"),
+    ).resolves.toBeInTheDocument();
     await expect(
       screen.findByText("No artifacts found"),
     ).resolves.toBeInTheDocument();
@@ -224,6 +228,7 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   await expect(
     screen.findByText("Could not delete artifact"),
   ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Artifact deleted")).not.toBeInTheDocument();
   expect(
     document.querySelector(`button[data-artifact-id="${report.id}"]`),
   ).toBeInTheDocument();
@@ -240,6 +245,9 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   });
   const reopened = await openDeletion();
   click(getButtonByName("Delete", reopened));
+  await expect(
+    screen.findByText("Artifact deleted"),
+  ).resolves.toBeInTheDocument();
   await expect(
     screen.findByText("No artifacts found"),
   ).resolves.toBeInTheDocument();
@@ -270,6 +278,9 @@ test("deleting a saved shared conversation explains that its original link remai
     ),
   ).toBeInTheDocument();
   click(getButtonByName("Delete", dialog));
+  await expect(
+    screen.findByText("Artifact deleted"),
+  ).resolves.toBeInTheDocument();
   await expect(
     screen.findByText("No artifacts found"),
   ).resolves.toBeInTheDocument();
