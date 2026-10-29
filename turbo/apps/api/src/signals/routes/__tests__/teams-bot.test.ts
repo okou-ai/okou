@@ -1968,7 +1968,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
       token: teamsToken(),
     });
-    await readTeamsBotResponseAndFlush(greetingResponse);
+    const greetingBody = object({ connectUrl: string() }).parse(
+      await readTeamsBotResponseAndFlush(greetingResponse),
+    );
     expect(outboundRequests).toHaveLength(4);
     expect(
       outboundRequests.map((request) => {
@@ -1987,11 +1989,25 @@ describe("POST /api/webhooks/teams/bot", () => {
       text: expect.stringContaining("Nova Teams Bot Help"),
     });
     expect(outboundRequests[3]?.body).toMatchObject({
-      text: TEAMS_WELCOME_TEXT,
+      summary: TEAMS_LOGIN_PROMPT_FALLBACK_TEXT,
+      attachments: [
+        {
+          contentType: "application/vnd.microsoft.card.adaptive",
+          content: {
+            actions: [
+              {
+                type: "Action.OpenUrl",
+                title: "Connect",
+                url: greetingBody.connectUrl,
+              },
+            ],
+          },
+        },
+      ],
     });
   });
 
-  it("responds to Teams greeting messages with a mention", async () => {
+  it("offers a direct connection link for unconnected Teams greetings with a mention", async () => {
     const fixture = await trackedBotFixture();
     const activityId = teamsFixtureExternalId(fixture, "activity-mentioned-hi");
     botFrameworkHandlers();
@@ -2006,6 +2022,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
 
     const body = await readTeamsBotResponseAndFlush(response);
+    const { connectUrl } = object({ connectUrl: string() }).parse(body);
     expect(body).toMatchObject({
       activity: {
         kind: "message",
@@ -2019,8 +2036,28 @@ describe("POST /api/webhooks/teams/bot", () => {
       activityId,
       body: {
         type: "message",
-        text: TEAMS_WELCOME_TEXT,
+        summary: TEAMS_LOGIN_PROMPT_FALLBACK_TEXT,
         replyToId: activityId,
+        attachments: [
+          {
+            contentType: "application/vnd.microsoft.card.adaptive",
+            content: {
+              body: [
+                {
+                  type: "TextBlock",
+                  text: TEAMS_LOGIN_PROMPT_CARD_TEXT,
+                },
+              ],
+              actions: [
+                {
+                  type: "Action.OpenUrl",
+                  title: "Connect",
+                  url: connectUrl,
+                },
+              ],
+            },
+          },
+        ],
       },
     });
   });
@@ -2052,81 +2089,89 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(outboundRequests).toHaveLength(0);
   });
 
-  it("handles Teams personal messages without requiring a bot mention", async () => {
-    const fixture = await trackedBotFixture();
-    const activityId = teamsFixtureExternalId(fixture, "activity-personal-dm");
-    const conversationId = `a:personal-${fixture.teamsUserId}`;
-    botFrameworkHandlers();
-    const outboundRequests = teamsOutboundHandlers(SERVICE_URL);
+  it.each(["hello from dm", "Hi"])(
+    "offers a direct connection link for an unconnected Teams DM: %s",
+    async (text) => {
+      const fixture = await trackedBotFixture();
+      const activityId = teamsFixtureExternalId(
+        fixture,
+        "activity-personal-dm",
+      );
+      const conversationId = `a:personal-${fixture.teamsUserId}`;
+      botFrameworkHandlers();
+      const outboundRequests = teamsOutboundHandlers(SERVICE_URL);
 
-    const response = await postTeamsActivity({
-      activity: teamsMessageActivity(fixture, {
-        id: activityId,
-        conversation: {
-          id: conversationId,
-          conversationType: "personal",
-        },
-        channelData: {
-          tenant: {
-            id: fixture.teamsTenantId,
-            name: fixture.teamsTenantName,
+      const response = await postTeamsActivity({
+        activity: teamsMessageActivity(fixture, {
+          id: activityId,
+          conversation: {
+            id: conversationId,
+            conversationType: "personal",
           },
-          teamsAppId: fixture.teamsAppId,
-        },
-        text: "hello from dm",
-        entities: [],
-        replyToId: null,
-      }),
-      token: teamsToken(),
-    });
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body).toMatchObject({
-      activity: {
-        kind: "message",
-        conversationType: "personal",
-        threadId: activityId,
-        text: "hello from dm",
-        mentionsRecipient: false,
-      },
-    });
-    await flushWaitUntilForTest();
-    expect(outboundRequests).toHaveLength(1);
-    expect(outboundRequests[0]).toMatchObject({
-      conversationId,
-      activityId,
-      body: {
-        type: "message",
-        summary: TEAMS_LOGIN_PROMPT_FALLBACK_TEXT,
-        replyToId: activityId,
-        attachments: [
-          {
-            contentType: "application/vnd.microsoft.card.adaptive",
-            content: {
-              type: "AdaptiveCard",
-              version: "1.4",
-              body: [
-                {
-                  type: "TextBlock",
-                  text: TEAMS_LOGIN_PROMPT_CARD_TEXT,
-                  wrap: true,
-                },
-              ],
-              actions: [
-                {
-                  type: "Action.OpenUrl",
-                  title: "Connect",
-                  url: expect.stringContaining(`${APP_ORIGIN}/settings/teams`),
-                },
-              ],
+          channelData: {
+            tenant: {
+              id: fixture.teamsTenantId,
+              name: fixture.teamsTenantName,
             },
+            teamsAppId: fixture.teamsAppId,
           },
-        ],
-      },
-    });
-    expect(outboundRequests[0]?.body).not.toHaveProperty("text");
-  });
+          text,
+          entities: [],
+          replyToId: null,
+        }),
+        token: teamsToken(),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        activity: {
+          kind: "message",
+          conversationType: "personal",
+          threadId: activityId,
+          text,
+          mentionsRecipient: false,
+        },
+      });
+      await flushWaitUntilForTest();
+      expect(outboundRequests).toHaveLength(1);
+      expect(outboundRequests[0]).toMatchObject({
+        conversationId,
+        activityId,
+        body: {
+          type: "message",
+          summary: TEAMS_LOGIN_PROMPT_FALLBACK_TEXT,
+          replyToId: activityId,
+          attachments: [
+            {
+              contentType: "application/vnd.microsoft.card.adaptive",
+              content: {
+                type: "AdaptiveCard",
+                version: "1.4",
+                body: [
+                  {
+                    type: "TextBlock",
+                    text: TEAMS_LOGIN_PROMPT_CARD_TEXT,
+                    wrap: true,
+                  },
+                ],
+                actions: [
+                  {
+                    type: "Action.OpenUrl",
+                    title: "Connect",
+                    url: expect.stringContaining(
+                      `${APP_ORIGIN}/settings/teams`,
+                    ),
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      });
+      expect(outboundRequests[0]?.body).not.toHaveProperty("text");
+    },
+  );
 
   it("asks for a message when a personal Teams message is blank", async () => {
     const fixture = await trackedBotFixture();
