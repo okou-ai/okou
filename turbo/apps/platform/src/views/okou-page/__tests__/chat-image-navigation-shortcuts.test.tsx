@@ -133,6 +133,34 @@ test("Arrow keys move between gallery images and stop at the boundaries", async 
   await expectImage("lightbox", "second.png");
 });
 
+test("An inaccessible gallery image still lets the user reach the next image", async () => {
+  const restricted = artifactReferencePath(
+    "f0000000-0000-4000-a000-000000000093",
+    "second.png",
+  );
+  mockGallery((filename) => {
+    return filename === "second.png" ? restricted : publicArtifactUrl(filename);
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+    });
+  });
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const dialog = await openGallery();
+
+  await user.keyboard("{ArrowRight}");
+
+  await expect(
+    within(dialog).findByRole("heading", {
+      name: "You can’t view this artifact",
+    }),
+  ).resolves.toBeInTheDocument();
+  await user.keyboard("{ArrowRight}");
+  await expectImage("lightbox", "third.png");
+});
+
 test("Sidebar arrows navigate images and yield to text editing", async () => {
   mockGallery();
   const user = userEvent.setup({ delay: null });
