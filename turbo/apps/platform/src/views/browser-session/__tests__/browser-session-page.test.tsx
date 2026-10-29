@@ -435,6 +435,72 @@ test("The standalone route uses the selected other-chat page for renewal", async
   });
 });
 
+test.each(["another", "the same"] as const)(
+  "Navigating to %s chat on the same shared instance keeps viewer activity working",
+  async (destination) => {
+    const { session } = mockSharedViewer();
+    const nextThreadId =
+      destination === "the same"
+        ? THREAD_ID
+        : "44444444-4444-4444-8444-444444444444";
+    let navigating = false;
+    let connectedThreadId: string | null = null;
+    const evidence = context.mocks.deferred<
+      BrowserViewerActivity | undefined
+    >();
+    context.mocks.api(browserContract.get, ({ params, respond }) => {
+      return respond(200, {
+        browser: {
+          ...session,
+          threadId: params.threadId,
+          viewerUrl: `https://viewer.example/browsers/${params.threadId}`,
+        },
+      });
+    });
+    context.mocks.api(
+      browserContract.viewerConnection,
+      ({ params, respond }) => {
+        if (navigating) {
+          connectedThreadId = params.threadId;
+        }
+        return respond(200, {
+          cdpUrl: "wss://cdp.browser-use.com/shared-viewer",
+        });
+      },
+    );
+    context.mocks.api(
+      browserContract.leaseByThread,
+      ({ params, body, respond }) => {
+        expect(params.threadId).toBe(nextThreadId);
+        evidence.resolve(body.viewerActivity);
+        return respond(200, {
+          browser: {
+            ...session,
+            threadId: nextThreadId,
+            viewerUrl: `https://viewer.example/browsers/${nextThreadId}`,
+          },
+        });
+      },
+    );
+    await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+    await expectStreamingViewer();
+    act(() => {
+      navigating = true;
+      window.history.pushState(null, "", `/browsers/${nextThreadId}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await waitFor(() => {
+      expect(connectedThreadId).toBe(nextThreadId);
+    });
+    await expectStreamingViewer();
+    fireEvent.wheel(screen.getByLabelText("Live browser view"), { deltaY: 20 });
+    await expect(evidence.promise).resolves.toStrictEqual({
+      instanceId: INSTANCE_ID,
+      pageTargetId: "example-page",
+    });
+  },
+);
+
 test("Switching pages cancels queued activity and immediately leases fresh input on the new target", async () => {
   const { session } = mockSharedViewer();
   mockBrowserSession(session);

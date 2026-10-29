@@ -41,6 +41,8 @@ export interface BrowserSessionDescriptor {
 
 export interface BrowserSessionSignals
   extends BrowserSessionDescriptor, BrowserViewerActivitySignals {
+  /** A fresh signal owner needs its own viewer even on the same provider. */
+  readonly viewerKey: string;
   /** Load state of the session's screenshot thumbnail. */
   readonly screenshotImageLoad: ImageLoadSignals;
   readonly session$: Computed<Promise<BrowserSession | null>>;
@@ -354,6 +356,7 @@ export function createBrowserSessionSignals(
 
   return {
     ...descriptor,
+    viewerKey: crypto.randomUUID(),
     screenshotImageLoad,
     session$,
     panelSession$: session$,

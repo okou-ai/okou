@@ -415,6 +415,7 @@ export function BrowserSessionPanel({
   return (
     <PanelFrame panelRef={keepAliveRef}>
       <BrowserCdpViewer
+        key={signals.viewerKey}
         signals={signals}
         liveUrl={liveUrl}
         instanceId={session.window?.instanceId}
