@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1075.5](https://github.com/okou-ai/okou/compare/app-v0.1075.4...app-v0.1075.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **artifacts:** revoke deleted shared conversations ([#43863](https://github.com/okou-ai/okou/issues/43863)) ([d52d7d3](https://github.com/okou-ai/okou/commit/d52d7d3b90c8b039983422d2f63afc365cc983a0))
+
 ## [0.1075.4](https://github.com/okou-ai/okou/compare/app-v0.1075.3...app-v0.1075.4) (2026-10-29)
 
 
