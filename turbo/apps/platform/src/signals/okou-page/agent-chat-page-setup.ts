@@ -34,10 +34,7 @@ import {
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 import { detach, Reason } from "../utils.ts";
-import {
-  enterAgentSuggestions$,
-  subscribeAgentSuggestions$,
-} from "./agent-suggestions.ts";
+import { enterAgentSuggestions$ } from "./agent-suggestions.ts";
 import {
   enterEntrustedJobs$,
   subscribeEntrustedJobs$,
@@ -141,7 +138,6 @@ export const setupAgentChatPage$ = command(
         }),
     );
     set(setupAgentChatKeyboardShortcuts$, signal);
-    set(subscribeAgentSuggestions$, signal);
     set(subscribeEntrustedJobs$, signal);
     detach(
       set(get(agentChatComposerSignals$).taskChips.initializeHomeJobs$, signal),

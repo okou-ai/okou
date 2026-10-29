@@ -39,7 +39,7 @@ import {
   draftAttachment,
   mockPrivateUrlSequence,
 } from "./chat-attachment-test-helpers.ts";
-import { mockNow, nowDate } from "../../../lib/time.ts";
+import { nowDate } from "../../../lib/time.ts";
 
 const context = testContext();
 const agentId = "c0000000-0000-4000-a000-000000000001";
@@ -129,6 +129,15 @@ function composer() {
     throw new Error("Missing composer");
   }
   return node;
+}
+function link(href: string) {
+  const found = queryAllByRoleFast("link").find((element) => {
+    return element.getAttribute("href") === href;
+  });
+  if (!found) {
+    throw new Error(`Missing link: ${href}`);
+  }
+  return found;
 }
 function queryTab(name: string) {
   return (
@@ -226,26 +235,6 @@ const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
   [FeatureSwitchKey.ProactiveAgent]: false,
 } as const;
-
-test("A cached suggestion expires without a realtime event and preserves the draft", async () => {
-  const start = Date.parse("2026-10-27T00:00:00.000Z");
-  mockNow(start, context.signal);
-  mockPool();
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
-  await screen.findByText(makeSuggestion().title);
-  await fill(composer(), "Keep my draft");
-
-  mockNow(start + 24 * 60 * 60 * 1000, context.signal);
-  await waitFor(() => {
-    expect(queryTab("Image")).toBeInTheDocument();
-    expect(queryTab("Suggestions")).not.toBeInTheDocument();
-  });
-  expect(composer()).toHaveTextContent("Keep my draft");
-});
 
 test("Selecting a cached card restores its draft after server cleanup", async () => {
   const suggestion = { ...makeSuggestion(), consumeToken: "a".repeat(64) };
@@ -370,7 +359,7 @@ test.each([
   },
 );
 
-test("An empty pool hides Suggestions until a realtime publication without changing the chosen category or draft", async () => {
+test("Returning to the Agent home loads new suggestions and preserves the draft", async () => {
   const pool = mockPool([]);
   await setupPage({
     context,
@@ -384,23 +373,13 @@ test("An empty pool hides Suggestions until a realtime publication without chang
     expect(queryTab("Suggestions")).not.toBeInTheDocument();
   });
   await fill(composer(), "Keep my draft");
-  click(button("Image", "tab"));
-  await screen.findByText("Put my product in a new scene");
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
-    ).toBeTruthy();
-  });
+  click(link("/agents"));
+  await screen.findByRole("heading", { name: "Agents" });
+
   pool.publish(makeSuggestion());
-  context.mocks.ably.trigger("agentSuggestionsChanged");
-  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-  expect(button("Remove Image")).toBeInTheDocument();
-  expect(composer()).toHaveTextContent("Keep my draft");
-  click(button("Remove Image"));
-  await waitFor(() => {
-    expect(queryTab("Suggestions")).toBeInTheDocument();
-  });
+  click(link(`/agents/${agentId}/chat`));
   await screen.findByText(makeSuggestion().title);
+  expect(queryTab("Suggestions")).toBeInTheDocument();
   expect(composer()).toHaveTextContent("Keep my draft");
 });
 test("An expanded suggestion adds the selected option to the ordinary composer without replacing its draft", async () => {
@@ -572,31 +551,6 @@ test("A conflicting consumption does not send or change the home draft", async (
   });
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
   expect(composer()).toHaveTextContent("Keep this draft");
-});
-test("Realtime removal hides Suggestions without changing another selected category", async () => {
-  const pool = mockPool();
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
-  await screen.findByText(makeSuggestion().title);
-  click(button("Image", "tab"));
-  await screen.findByText("Put my product in a new scene");
-  await waitFor(() => {
-    return expect(
-      context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
-    ).toBeTruthy();
-  });
-  pool.withdrawAll();
-  context.mocks.ably.trigger("agentSuggestionsChanged");
-  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-  expect(button("Remove Image")).toBeInTheDocument();
-  click(button("Remove Image"));
-  await waitFor(() => {
-    expect(queryTab("Image")).toBeInTheDocument();
-    expect(queryTab("Suggestions")).not.toBeInTheDocument();
-  });
 });
 test("A suggestion uses the ordinary composer to join a running target chat", async () => {
   const runId = "d0000000-0000-4000-a000-000000000821";
