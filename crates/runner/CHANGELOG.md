@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.240.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.14...runner-rs-v0.240.15) (2026-10-29)
+
+
+### Refactoring
+
+* remove outlook chat mail feature switch ([#44040](https://github.com/okou-ai/okou/issues/44040)) ([685f0d1](https://github.com/okou-ai/okou/commit/685f0d10e07c044f9987fa5e0a4552f3241a196b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.240.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.13...runner-rs-v0.240.14) (2026-10-29)
 
 ### Release Dependencies

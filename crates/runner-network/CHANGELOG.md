@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/okou-ai/okou/compare/runner-network-v0.3.1...runner-network-v0.3.2) (2026-10-29)
+
+
+### Refactoring
+
+* remove outlook chat mail feature switch ([#44040](https://github.com/okou-ai/okou/issues/44040)) ([685f0d1](https://github.com/okou-ai/okou/commit/685f0d10e07c044f9987fa5e0a4552f3241a196b))
+
 ## [0.3.1](https://github.com/okou-ai/okou/compare/runner-network-v0.3.0...runner-network-v0.3.1) (2026-10-29)
 
 ## [0.3.0](https://github.com/okou-ai/okou/compare/runner-network-v0.2.93...runner-network-v0.3.0) (2026-10-29)
