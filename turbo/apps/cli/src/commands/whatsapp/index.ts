@@ -3,6 +3,8 @@ import {
   sendWhatsappMessage,
   WhatsappMessageSendError,
 } from "../../lib/api/domains/integrations-whatsapp";
+import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
+import { uploadWhatsappFileCommand } from "./upload-file";
 import { readMessageText } from "../../lib/command/message-target";
 import {
   JSON_OPTION_DESCRIPTION,
@@ -14,7 +16,7 @@ import { assertPhoneTarget, phoneToOption } from "../phone/target";
 
 const sendCommand = new Command("send")
   .description("Send a WhatsApp message to your verified connected account")
-  .addOption(phoneToOption())
+  .addOption(phoneToOption("WhatsApp"))
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
@@ -31,7 +33,7 @@ Long messages are split; never blindly retry an uncertain or partial send.`,
   .action(
     withErrorHandler(
       async (options: { to: string; text?: string; json?: boolean }) => {
-        assertPhoneTarget(options.to);
+        assertPhoneTarget(options.to, "WhatsApp");
         const text = readMessageText(options.text);
         if (!text) {
           throw new Error("Either --text or piped stdin must be provided");
@@ -74,8 +76,15 @@ Long messages are split; never blindly retry an uncertain or partial send.`,
     ),
   );
 
+const tokenPayload = decodeSandboxTokenPayload();
+
 export const whatsappCommand = new Command("whatsapp")
-  .description("Send messages to your connected WhatsApp account")
+  .description("Send messages and files to your connected WhatsApp account")
+  .addCommand(uploadWhatsappFileCommand, {
+    hidden:
+      tokenPayload !== undefined &&
+      !tokenPayload.capabilities.includes("whatsapp:file:write"),
+  })
   .addCommand(
     new Command("message")
       .description("Send a WhatsApp message")

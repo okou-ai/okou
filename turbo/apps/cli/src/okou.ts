@@ -100,7 +100,7 @@ const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "task"]);
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "whatsapp",
-    description: "Send messages to your connected WhatsApp account",
+    description: "Send messages and files to your connected WhatsApp account",
     load: async () => {
       return (await import("./commands/whatsapp/index")).whatsappCommand;
     },

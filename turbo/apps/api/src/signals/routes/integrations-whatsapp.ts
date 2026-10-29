@@ -1,4 +1,7 @@
-import { integrationsWhatsappContract as contract } from "@okouai/api-contracts/contracts/integrations-whatsapp";
+import {
+  integrationsWhatsappContract as contract,
+  type WhatsappFile,
+} from "@okouai/api-contracts/contracts/integrations-whatsapp";
 import {
   whatsappConnectionCodes,
   whatsappUserLinks,
@@ -13,6 +16,10 @@ import {
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
 } from "../external/agentphone-client";
+import {
+  materializeUploadedArtifact$,
+  uploadedArtifactFetchUrl$,
+} from "../services/uploaded-artifact.service";
 import { createAgentPhoneConnectionCode$ } from "../services/agentphone-connection-code.service";
 import {
   agentPhoneReplyChunks,
@@ -35,6 +42,7 @@ import {
   isWhatsappSupportedHandle,
   whatsappConfigured,
   whatsappEnabled$,
+  whatsappFileUploadEnabled$,
   whatsappPhoneNumber,
 } from "../services/whatsapp-config";
 import { logger } from "../../lib/log";
@@ -361,6 +369,135 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 
+function whatsappFileSendFailure(error: unknown, file: WhatsappFile) {
+  const providerError = isAgentPhoneApiError(error) ? error : null;
+  if (
+    !providerError &&
+    !(error instanceof TypeError) &&
+    !(error instanceof SyntaxError)
+  ) {
+    throw error;
+  }
+  const rejected = providerError !== null && providerError.status < 500;
+  return {
+    status: rejected ? (400 as const) : (502 as const),
+    body: {
+      file,
+      delivery: rejected ? ("failed" as const) : ("unknown" as const),
+      error: {
+        code: "WHATSAPP_SEND_FAILED",
+        message: rejected
+          ? `WhatsApp rejected the file (HTTP ${providerError.status}). Check the file type and the 24-hour service window before another send. The uploaded artifact remains available.`
+          : "The WhatsApp file send has an unknown delivery outcome. Do not retry it automatically. The uploaded artifact remains available.",
+      },
+    },
+  };
+}
+
+const sendUploadedFile$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const result = await get(bodyResultOf(contract.sendUploadedFile));
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return result.response;
+  }
+  const auth = get(organizationAuthContext$);
+  if (
+    !(await set(whatsappFileUploadEnabled$, auth.orgId, auth.userId, signal))
+  ) {
+    return notFound("WhatsApp file delivery is not enabled");
+  }
+  const { enabled, link } = await set(loadLink$, signal);
+  if (!enabled || !link || !isWhatsappSupportedHandle(link.phoneHandle)) {
+    return notFound("No supported WhatsApp account is connected");
+  }
+  const agentphoneAgentId = optionalEnv("AGENTPHONE_AGENT_ID");
+  const fromNumber = whatsappPhoneNumber();
+  if (
+    !agentphoneAgentId ||
+    !fromNumber ||
+    !(await whatsappConfigured(signal))
+  ) {
+    return notConfigured();
+  }
+  const object = await set(
+    materializeUploadedArtifact$,
+    {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      id: result.data.fileId,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!object) {
+    return notFound("Uploaded file not found");
+  }
+  const file = {
+    id: result.data.fileId,
+    filename: object.filename,
+    contentType: object.contentType,
+    size: object.size,
+    url: object.url,
+  };
+  if (object.contentType.startsWith("audio/") && result.data.caption) {
+    return {
+      status: 400 as const,
+      body: {
+        file,
+        delivery: "failed" as const,
+        error: {
+          code: "WHATSAPP_AUDIO_CAPTION_UNSUPPORTED",
+          message:
+            "WhatsApp audio cannot carry a caption. Send the audio without --text and send any text separately.",
+        },
+      },
+    };
+  }
+  const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
+  signal.throwIfAborted();
+  const sent = await settle(
+    sendAgentPhoneMessage(
+      {
+        agentphoneAgentId,
+        toNumber: link.phoneHandle,
+        channel: "whatsapp",
+        body: result.data.caption ?? "",
+        mediaUrls: [fetchUrl],
+      },
+      signal,
+    ),
+    signal,
+  );
+  if (!sent.ok) {
+    return whatsappFileSendFailure(sent.error, file);
+  }
+  // Archive the accepted effect before cancellation can hide its receipt.
+  await set(storeOutboundAgentPhoneMessage$, {
+    agentphoneMessageId: sent.value.id,
+    conversationId: null,
+    agentphoneAgentId,
+    userLinkId: link.id,
+    phoneHandle: link.phoneHandle,
+    fromNumber: sent.value.fromNumber ?? fromNumber,
+    toNumber: sent.value.toNumber,
+    body: result.data.caption,
+    mediaUrl: object.url,
+    channel: "whatsapp",
+    userChannel: "whatsapp",
+    visibilityRecipients: [],
+  });
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      channel: "whatsapp" as const,
+      toNumber: link.phoneHandle,
+      messages: [{ id: sent.value.id }],
+      file,
+    },
+  };
+});
+
 export const integrationsWhatsappRoutes: readonly RouteEntry[] = [
   {
     route: contract.getConnectStatus,
@@ -369,6 +506,13 @@ export const integrationsWhatsappRoutes: readonly RouteEntry[] = [
   {
     route: contract.connectWhatsapp,
     handler: authRoute(authOptions, connectWhatsapp$),
+  },
+  {
+    route: contract.sendUploadedFile,
+    handler: authRoute(
+      { ...authOptions, requiredCapability: "whatsapp:file:write" },
+      sendUploadedFile$,
+    ),
   },
   {
     route: contract.getLinkStatus,

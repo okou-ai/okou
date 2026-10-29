@@ -14,6 +14,15 @@ export const whatsappEnabled$ = command(
   },
 );
 
+export const whatsappFileUploadEnabled$ = command(
+  async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
+    return isFeatureEnabled(
+      FeatureSwitchKey.WhatsappFileUpload,
+      await set(loadUserFeatureSwitchContext$, orgId, userId, signal),
+    );
+  },
+);
+
 export function whatsappPhoneNumber(): string | null {
   return optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? null;
 }

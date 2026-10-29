@@ -4,22 +4,31 @@ import {
   unsupportedTargetError,
 } from "../../lib/command/message-target";
 
-export function phoneToOption(): Option {
+export function phoneToOption(
+  integration: "Phone" | "WhatsApp" = "Phone",
+): Option {
   return new Option(
     "--to <target>",
-    "Destination: me, the phone connected to your Okou account",
+    integration === "WhatsApp"
+      ? "Destination: me, your independently verified WhatsApp account"
+      : "Destination: me, the phone connected to your Okou account",
   ).default("me");
 }
 
-export function assertPhoneTarget(to: string): void {
+export function assertPhoneTarget(
+  to: string,
+  integration: "Phone" | "WhatsApp" = "Phone",
+): void {
   const target = parseMessageTarget(to, () => {
     return false;
   });
   if (target.kind !== "me") {
     throw unsupportedTargetError(
-      "Phone",
+      integration,
       target,
-      "Phone messages only go to the phone connected to your Okou account; use --to me",
+      integration === "WhatsApp"
+        ? "WhatsApp messages only go to your independently verified WhatsApp account; use --to me"
+        : "Phone messages only go to the phone connected to your Okou account; use --to me",
     );
   }
 }
