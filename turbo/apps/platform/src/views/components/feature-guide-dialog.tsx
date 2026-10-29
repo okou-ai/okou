@@ -290,7 +290,7 @@ export function FeatureGuideDialog() {
     >
       <DialogContent
         maxWidth="2xl"
-        contentClassName="auto-rows-max"
+        contentClassName="auto-rows-max grid-cols-1"
         closeLabel={t(($) => {
           return $.featureGuide.close;
         })}
