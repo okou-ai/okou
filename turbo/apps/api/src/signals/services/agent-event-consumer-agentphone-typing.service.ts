@@ -6,10 +6,10 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
 import { logger } from "../../lib/log";
 import { waitUntil } from "../context/wait-until";
-import { sendAgentPhoneTypingIndicator } from "../external/agentphone-client";
 import { db$ } from "../external/db";
 import { internalRunCallbackKindForRecord } from "../services/internal-run-callback";
 import { tapError } from "../utils";
+import { sendAgentPhoneRunTyping } from "./agentphone-run-typing.service";
 
 const L = logger("event-consumer:agentphone-typing");
 
@@ -99,8 +99,8 @@ export const refreshAgentPhoneTypingForRun$ = command(
   async ({ set }, runId: string, signal: AbortSignal): Promise<void> => {
     const targets = await set(agentPhoneTypingTargetsForRun$, runId, signal);
     for (const target of targets.values()) {
-      await sendAgentPhoneTypingIndicator(
-        { conversationId: target.conversationId },
+      await sendAgentPhoneRunTyping(
+        { conversationId: target.conversationId, phase: "refresh", runId },
         signal,
       );
       signal.throwIfAborted();
