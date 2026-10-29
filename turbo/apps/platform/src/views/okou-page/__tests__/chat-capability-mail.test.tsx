@@ -580,7 +580,7 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
   await expect(findMailCard(firstSubject)).resolves.toHaveTextContent("Sent");
 });
 
-test("Review an Outlook draft and reconcile an accepted send from chat", async () => {
+test("An accepted Outlook send appears as sent immediately in chat", async () => {
   const confirmation = createDeferredPromise<void>(context.signal);
   const {
     gmailDraftId: _gmailDraftId,
@@ -600,14 +600,16 @@ test("Review an Outlook draft and reconcile an accepted send from chat", async (
   installCapabilityChat({
     events: completedConversation(mailCard(FIRST_MAIL_ID, current.subject)),
   });
-  context.mocks.api(mailContract.getDraft, async ({ respond }) => {
-    if (current.status === "sending") {
-      await confirmation.promise;
-    }
+  context.mocks.api(mailContract.getDraft, ({ respond }) => {
     return respond(200, mailResponse(FIRST_MAIL_ID, current));
   });
-  context.mocks.api(mailContract.sendDraft, ({ respond }) => {
-    current = { ...current, status: "sending" };
+  context.mocks.api(mailContract.sendDraft, async ({ respond }) => {
+    await confirmation.promise;
+    current = {
+      ...current,
+      status: "sent",
+      sentAt: "2026-10-28T10:00:00.000Z",
+    };
     return respond(200, mailResponse(FIRST_MAIL_ID, current));
   });
   await setupPage({ context, path: RUN_PATH, host: APP_HOST });
@@ -621,12 +623,8 @@ test("Review an Outlook draft and reconcile an accepted send from chat", async (
     findControl("link", "Open in Outlook", sidebar),
   ).resolves.toHaveAttribute("href", current.outlookWebLink);
   click(await findControl("button", "Send", sidebar));
-  await expect(
-    within(sidebar).findByText("Sending"),
-  ).resolves.toBeInTheDocument();
   await expect(findControl("button", "Send", sidebar)).resolves.toBeDisabled();
   expect(within(sidebar).queryByText("Sent")).not.toBeInTheDocument();
-  current = { ...current, status: "sent", sentAt: "2026-10-28T10:00:00.000Z" };
   confirmation.resolve();
   await expect(within(sidebar).findByText("Sent")).resolves.toBeInTheDocument();
   await expect(findMailCard(current.subject)).resolves.toHaveTextContent(

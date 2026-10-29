@@ -2078,7 +2078,7 @@
       "reconnectProvider": "{{provider}} を再接続します",
       "reconnectToAccess": "{{provider}} を再接続してメールにアクセスします: {{subject}}",
       "refreshStatus": "状態を更新",
-      "sendingDescription": "送信に通常より時間がかかっています。Outlook で状況をご確認ください。",
+      "sendingDescription": "送信を確認できませんでした。再試行する前に Outlook をご確認ください。",
       "sentToast": "メールを送信しました",
       "status": {
         "deleted": "削除されました",

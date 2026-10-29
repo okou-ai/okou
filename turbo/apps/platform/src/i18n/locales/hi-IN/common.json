@@ -2085,7 +2085,7 @@
       "reconnectProvider": "{{provider}} को पुनः कनेक्ट करें",
       "reconnectToAccess": "ईमेल तक पहुँचने के लिए {{provider}} को पुनः कनेक्ट करें: {{subject}}",
       "refreshStatus": "स्थिति रीफ़्रेश करें",
-      "sendingDescription": "भेजने में अपेक्षा से अधिक समय लग रहा है। अपडेट के लिए Outlook देखें।",
+      "sendingDescription": "भेजने की पुष्टि नहीं हो सकी। दोबारा कोशिश करने से पहले Outlook देखें।",
       "sentToast": "ईमेल भेजा गया",
       "status": {
         "deleted": "हटाए गए",

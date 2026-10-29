@@ -2078,7 +2078,7 @@
       "reconnectProvider": "重新連線 {{provider}}",
       "reconnectToAccess": "重新連線 {{provider}} 以訪問郵件：{{subject}}",
       "refreshStatus": "重新整理狀態",
-      "sendingDescription": "傳送時間較長，請前往 Outlook 查看狀態。",
+      "sendingDescription": "無法確認是否已傳送，請先在 Outlook 中核實。",
       "sentToast": "郵件已傳送",
       "status": {
         "deleted": "已刪除",

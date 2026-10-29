@@ -2078,7 +2078,7 @@
       "reconnectProvider": "Sambungkan ulang {{provider}}",
       "reconnectToAccess": "Sambungkan ulang {{provider}} untuk mengakses email: {{subject}}",
       "refreshStatus": "Perbarui status",
-      "sendingDescription": "Pengiriman memakan waktu lebih lama dari biasanya. Periksa statusnya di Outlook.",
+      "sendingDescription": "Pengiriman belum dapat dikonfirmasi. Periksa Outlook sebelum mencoba lagi.",
       "sentToast": "Email terkirim",
       "status": {
         "deleted": "Dihapus",

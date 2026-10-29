@@ -2119,7 +2119,7 @@
       "reconnectProvider": "Reconectar {{provider}}",
       "reconnectToAccess": "Reconectar {{provider}} para acceder al correo electrónico: {{subject}}",
       "refreshStatus": "Actualizar estado",
-      "sendingDescription": "El envío está tardando más de lo esperado. Comprueba el estado en Outlook.",
+      "sendingDescription": "No se pudo confirmar el envío. Comprueba Outlook antes de intentarlo de nuevo.",
       "sentToast": "Correo electrónico enviado",
       "status": {
         "deleted": "Eliminado",

@@ -2085,7 +2085,7 @@
       "reconnectProvider": "{{provider}} erneut verbinden",
       "reconnectToAccess": "{{provider}} erneut verbinden, um auf E-Mail zuzugreifen: {{subject}}",
       "refreshStatus": "Status aktualisieren",
-      "sendingDescription": "Der Versand dauert länger als erwartet. Prüfen Sie den Status in Outlook.",
+      "sendingDescription": "Der Versand konnte nicht bestätigt werden. Prüfen Sie Outlook, bevor Sie es erneut versuchen.",
       "sentToast": "E-Mail gesendet",
       "status": {
         "deleted": "Gelöscht",

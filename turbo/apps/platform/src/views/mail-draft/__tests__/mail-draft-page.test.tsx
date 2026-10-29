@@ -226,29 +226,27 @@ test("Deleting from the standalone page removes the email without opening a chat
   expect(window.location.pathname).toBe(MAIL_PATH);
 });
 
-test("An accepted Outlook send updates automatically when Outlook confirms it", async () => {
+test("An accepted Outlook send appears as sent immediately on the standalone page", async () => {
   const confirmation = createDeferredPromise<void>(context.signal);
   let current = outlookDraft();
-  context.mocks.api(mailContract.getDraft, async ({ respond }) => {
-    if (current.status === "sending") {
-      await confirmation.promise;
-    }
+  context.mocks.api(mailContract.getDraft, ({ respond }) => {
     return respond(200, mailResponse(current));
   });
-  context.mocks.api(mailContract.sendDraft, ({ respond }) => {
-    current = { ...current, status: "sending" };
+  context.mocks.api(mailContract.sendDraft, async ({ respond }) => {
+    await confirmation.promise;
+    current = {
+      ...current,
+      status: "sent",
+      sentAt: "2026-10-29T04:00:00.000Z",
+    };
     return respond(200, mailResponse(current));
   });
   await setupPage({ context, path: MAIL_PATH });
 
   const details = await screen.findByRole("region", { name: "Email details" });
   click(control("button", "Send", details));
-  await expect(
-    within(details).findByText("Sending"),
-  ).resolves.toBeInTheDocument();
   expect(control("button", "Send", details)).toBeDisabled();
 
-  current = { ...current, status: "sent", sentAt: "2026-10-29T04:00:00.000Z" };
   confirmation.resolve();
 
   await expect(within(details).findByText("Sent")).resolves.toBeInTheDocument();
@@ -259,7 +257,7 @@ test("An accepted Outlook send updates automatically when Outlook confirms it", 
   expect(window.location.pathname).toBe(MAIL_PATH);
 });
 
-test("An Outlook send that stays unconfirmed offers a status check without resending", async () => {
+test("An uncertain Outlook send offers a status check without resending", async () => {
   let current = outlookDraft();
   context.mocks.api(mailContract.getDraft, ({ respond }) => {
     return respond(200, mailResponse(current));
@@ -278,7 +276,7 @@ test("An Outlook send that stays unconfirmed offers a status check without resen
   });
   expect(
     within(details).getByText(
-      "Sending is taking longer than expected. Check Outlook for updates.",
+      "Sending could not be confirmed. Check Outlook before trying again.",
     ),
   ).toBeInTheDocument();
   current = { ...current, status: "sent", sentAt: "2026-10-29T04:00:00.000Z" };

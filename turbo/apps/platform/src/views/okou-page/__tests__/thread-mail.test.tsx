@@ -720,7 +720,7 @@ describe("thread email manager", () => {
     expect(fixture.sent).toStrictEqual([id(1), id(2)]);
   });
 
-  it("reports accepted Outlook sends as awaiting confirmation rather than completed", async () => {
+  it("reports uncertain Outlook sends as awaiting confirmation rather than completed", async () => {
     const fixture = installMails(1);
     const {
       gmailDraftId: _draftId,
