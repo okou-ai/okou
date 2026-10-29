@@ -9,6 +9,7 @@ fi
 commit_sha="$1"
 desktop_version="$2"
 okou_app_dir="${3%/}"
+symbols_dir="$(dirname "$okou_app_dir")/dSYMs"
 output_dir="$4"
 
 if [[ ! "$commit_sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -23,28 +24,41 @@ if [[ ! -d "$okou_app_dir" || "$(basename "$okou_app_dir")" != "Okou.app" ]]; th
   echo "Desktop artifact requires an Okou.app directory: $okou_app_dir" >&2
   exit 1
 fi
+for bundle in Okou.app.dSYM computer-use-helper.dSYM; do
+  if [[ ! -d "$symbols_dir/$bundle" ]]; then
+    echo "Desktop artifact requires $symbols_dir/$bundle" >&2
+    exit 1
+  fi
+done
 
 mkdir -p "$output_dir"
 output_dir="$(cd "$output_dir" && pwd -P)"
 rm -f \
   "$output_dir/okou-app.tar.gz" \
+  "$output_dir/okou-dsyms.tar.gz" \
   "$output_dir/manifest.json" \
   "$output_dir/ready.json"
 
 COPYFILE_DISABLE=1 tar -czf "$output_dir/okou-app.tar.gz" \
   -C "$(dirname "$okou_app_dir")" \
   "$(basename "$okou_app_dir")"
+COPYFILE_DISABLE=1 tar -czf "$output_dir/okou-dsyms.tar.gz" \
+  -C "$(dirname "$symbols_dir")" dSYMs
 
 okou_archive_sha256="$(shasum -a 256 "$output_dir/okou-app.tar.gz" | cut -d ' ' -f 1)"
 okou_archive_size="$(wc -c < "$output_dir/okou-app.tar.gz" | tr -d '[:space:]')"
+symbols_archive_sha256="$(shasum -a 256 "$output_dir/okou-dsyms.tar.gz" | cut -d ' ' -f 1)"
+symbols_archive_size="$(wc -c < "$output_dir/okou-dsyms.tar.gz" | tr -d '[:space:]')"
 
 jq -n \
   --arg commit_sha "$commit_sha" \
   --arg desktop_version "$desktop_version" \
   --arg okou_archive_sha256 "$okou_archive_sha256" \
   --argjson okou_archive_size "$okou_archive_size" \
+  --arg symbols_archive_sha256 "$symbols_archive_sha256" \
+  --argjson symbols_archive_size "$symbols_archive_size" \
   '{
-    version: 1,
+    version: 2,
     commitSha: $commit_sha,
     desktopVersion: $desktop_version,
     platform: "darwin",
@@ -54,6 +68,11 @@ jq -n \
       path: "okou-app.tar.gz",
       sha256: $okou_archive_sha256,
       size: $okou_archive_size
+    },
+    debugSymbolsArchive: {
+      path: "okou-dsyms.tar.gz",
+      sha256: $symbols_archive_sha256,
+      size: $symbols_archive_size
     }
   }' > "$output_dir/manifest.json"
 

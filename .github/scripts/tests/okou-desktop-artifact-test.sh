@@ -12,6 +12,7 @@ desktop_version="1.2.3"
 okou_app_dir="${tmp_dir}/package/Okou.app"
 other_app_dir="${tmp_dir}/package/Other.app"
 artifact_dir="${tmp_dir}/artifact"
+symbols_dir="${tmp_dir}/package/dSYMs"
 mkdir -p \
   "$okou_app_dir/Contents/MacOS" \
   "$okou_app_dir/Contents/Frameworks/Example.framework/Versions/A" \
@@ -21,6 +22,10 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$other_app_dir/Contents/MacOS/Other"
 chmod +x "$okou_app_dir/Contents/MacOS/Okou"
 chmod +x "$other_app_dir/Contents/MacOS/Other"
 ln -s A "$okou_app_dir/Contents/Frameworks/Example.framework/Versions/Current"
+for bundle in Okou.app.dSYM computer-use-helper.dSYM; do
+  mkdir -p "$symbols_dir/$bundle/Contents/Resources/DWARF"
+  printf 'debug symbols\n' > "$symbols_dir/$bundle/Contents/Resources/DWARF/binary"
+done
 
 bash "$build_script" \
   "$commit_sha" \
@@ -34,14 +39,17 @@ jq -e \
   '.commitSha == $commit_sha
     and .desktopVersion == $desktop_version
     and .okouAppName == "Okou.app"
-    and .okouArchive.path == "okou-app.tar.gz"' \
+    and .okouArchive.path == "okou-app.tar.gz"
+    and .debugSymbolsArchive.path == "okou-dsyms.tar.gz"' \
   "$artifact_dir/manifest.json" >/dev/null
 
 extracted_dir="${tmp_dir}/extracted"
 mkdir -p "$extracted_dir"
 tar -xzf "$artifact_dir/okou-app.tar.gz" -C "$extracted_dir"
+tar -xzf "$artifact_dir/okou-dsyms.tar.gz" -C "$extracted_dir"
 test -x "$extracted_dir/Okou.app/Contents/MacOS/Okou"
 test -L "$extracted_dir/Okou.app/Contents/Frameworks/Example.framework/Versions/Current"
+diff -r "$symbols_dir" "$extracted_dir/dSYMs"
 
 if bash "$build_script" \
   "$commit_sha" \
@@ -52,21 +60,23 @@ if bash "$build_script" \
   exit 1
 fi
 
-tampered_dir="${tmp_dir}/tampered"
-cp -a "$artifact_dir" "$tampered_dir"
-printf 'tampered\n' >> "$tampered_dir/okou-app.tar.gz"
-if bash "$verify_script" "$tampered_dir" "$commit_sha" "$desktop_version" >/dev/null 2>&1; then
-  echo "Expected a tampered Okou Desktop archive to fail" >&2
-  exit 1
-fi
+for archive in okou-app.tar.gz okou-dsyms.tar.gz; do
+  tampered_dir="${tmp_dir}/tampered-$archive"
+  cp -a "$artifact_dir" "$tampered_dir"
+  printf 'tampered\n' >> "$tampered_dir/$archive"
+  if bash "$verify_script" "$tampered_dir" "$commit_sha" "$desktop_version" >/dev/null 2>&1; then
+    echo "Expected a tampered Desktop archive to fail: $archive" >&2
+    exit 1
+  fi
 
-missing_dir="${tmp_dir}/missing"
-cp -a "$artifact_dir" "$missing_dir"
-rm -f "$missing_dir/okou-app.tar.gz"
-if bash "$verify_script" "$missing_dir" "$commit_sha" "$desktop_version" >/dev/null 2>&1; then
-  echo "Expected a missing Okou Desktop archive to fail" >&2
-  exit 1
-fi
+  missing_dir="${tmp_dir}/missing-$archive"
+  cp -a "$artifact_dir" "$missing_dir"
+  rm -f "$missing_dir/$archive"
+  if bash "$verify_script" "$missing_dir" "$commit_sha" "$desktop_version" >/dev/null 2>&1; then
+    echo "Expected a missing Desktop archive to fail: $archive" >&2
+    exit 1
+  fi
+done
 
 wrong_sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 if bash "$verify_script" "$artifact_dir" "$wrong_sha" "$desktop_version" >/dev/null 2>&1; then
@@ -81,6 +91,7 @@ fi
 unsafe_dir="${tmp_dir}/unsafe"
 unsafe_source="${tmp_dir}/unsafe-source"
 mkdir -p "$unsafe_dir" "$unsafe_source/Other.app"
+cp "$artifact_dir/okou-dsyms.tar.gz" "$unsafe_dir/"
 printf 'unexpected\n' > "$unsafe_source/Other.app/file"
 tar -czf "$unsafe_dir/okou-app.tar.gz" -C "$unsafe_source" Other.app
 unsafe_archive_sha="$(shasum -a 256 "$unsafe_dir/okou-app.tar.gz" | cut -d ' ' -f 1)"
@@ -97,6 +108,14 @@ jq \
   "$artifact_dir/ready.json" > "$unsafe_dir/ready.json"
 if bash "$verify_script" "$unsafe_dir" "$commit_sha" "$desktop_version" >/dev/null 2>&1; then
   echo "Expected an archive with another top-level path to fail" >&2
+  exit 1
+fi
+
+# Framework links remain supported, but symbol links must fail before extraction.
+ln -s /tmp "$symbols_dir/Okou.app.dSYM/escape"
+if bash "$build_script" "$commit_sha" "$desktop_version" "$okou_app_dir" \
+  "$tmp_dir/linked-symbols" >/dev/null 2>&1; then
+  echo "Expected linked symbols to fail before publication" >&2
   exit 1
 fi
 

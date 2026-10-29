@@ -108,6 +108,9 @@ jobs:
       - name: Test Computer Use helper
         run: swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 
+      - name: Test native debug symbol pipeline
+        run: python3 desktop/scripts/debug_symbols_test.py
+
       - name: Build production-configured native app
         env:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
@@ -129,7 +132,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-desktop-macos-arm64-unsigned
-          path: desktop/out/*.zip
+          path: |
+            desktop/out/*.zip
+            desktop/out/Okou-darwin-arm64/dSYMs
           if-no-files-found: error
 
       - name: Resolve PR preview URL
@@ -164,7 +169,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-desktop-macos-arm64-preview-unsigned
-          path: desktop/out/Okou Dev-*.zip
+          path: |
+            desktop/out/Okou Dev-*.zip
+            desktop/out/Okou Dev-darwin-arm64/dSYMs
           if-no-files-found: error
 
   deploy-desktop:
@@ -214,6 +221,8 @@ jobs:
         id: existing
         env:
           ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
+          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
+          DESKTOP_VERSION: ${{ needs.detect-desktop-version.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -223,35 +232,33 @@ jobs:
           : "${R2_BUCKET_NAME:?R2_STATIC_BUCKET_NAME variable is required}"
 
           r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          error_log="$(mktemp)"
-          artifact_ready=true
+          artifact_dir="$(mktemp -d)"
+          trap 'rm -rf "$artifact_dir"' EXIT
+          error_log="$artifact_dir/head.err"
 
-          for filename in ready.json okou-app.tar.gz; do
-            set +e
-            aws s3api head-object \
-              --endpoint-url "$r2_endpoint" \
-              --bucket "$R2_BUCKET_NAME" \
-              --key "${ARTIFACT_PREFIX}/${filename}" \
-              >/dev/null 2>"$error_log"
-            status=$?
-            set -e
+          set +e
+          aws s3api head-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "${ARTIFACT_PREFIX}/ready.json" \
+            >/dev/null 2>"$error_log"
+          status=$?
+          set -e
 
-            if (( status == 0 )); then
-              continue
-            fi
-            if grep -Eq '404|NotFound|Not Found|NoSuchKey' "$error_log"; then
-              artifact_ready=false
-              break
-            fi
-            cat "$error_log" >&2
-            exit "$status"
-          done
-
-          if [[ "$artifact_ready" == "true" ]]; then
+          if (( status == 0 )); then
+            # A ready SHA is immutable. Missing/corrupt symbols must fail,
+            # never trigger a rebuild that replaces its published binaries.
+            bash .github/scripts/artifacts/fetch-okou-desktop-artifact.sh \
+              "$r2_endpoint" "s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}" "$artifact_dir"
+            bash .github/scripts/artifacts/verify-okou-desktop-artifact.sh \
+              "$artifact_dir" "$ARTIFACT_SHA" "$DESKTOP_VERSION"
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Artifact already ready: s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}/"
-          else
+          elif grep -Eq '404|NotFound|Not Found|NoSuchKey' "$error_log"; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$error_log" >&2
+            exit "$status"
           fi
 
       - name: Verify native runtime and helper
@@ -259,6 +266,7 @@ jobs:
         run: |
           swift test --package-path desktop -j 4
           swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
+          python3 desktop/scripts/debug_symbols_test.py
 
       - name: Build canonical unsigned Desktop app
         if: steps.existing.outputs.exists != 'true'
@@ -301,6 +309,14 @@ jobs:
             --bucket "$R2_BUCKET_NAME" \
             --key "${ARTIFACT_PREFIX}/okou-app.tar.gz" \
             --body /tmp/okou-desktop-artifact/okou-app.tar.gz \
+            --content-type application/gzip \
+            --cache-control "$cache_control"
+
+          aws s3api put-object \
+            --endpoint-url "$r2_endpoint" \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "${ARTIFACT_PREFIX}/okou-dsyms.tar.gz" \
+            --body /tmp/okou-desktop-artifact/okou-dsyms.tar.gz \
             --content-type application/gzip \
             --cache-control "$cache_control"
 
