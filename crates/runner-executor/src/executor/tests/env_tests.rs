@@ -1565,6 +1565,7 @@ fn build_env_json_vars_not_injected_directly() {
     let user_env = build_user_env_json(&ctx);
     assert!(!env.contains_key("ONLY_VARS"));
     assert!(!env.contains_key("ONLY_ENV"));
+    assert!(!user_env.contains_key("ONLY_VARS"));
     assert_eq!(user_env.get("ONLY_ENV").unwrap(), "env-value");
 }
 
