@@ -253,8 +253,7 @@ async fn codex_app_server_next_notification_reads_after_response() -> Result<(),
 }
 
 #[tokio::test]
-async fn codex_app_server_preserves_partial_notification_after_cancelled_read() -> Result<(), String>
-{
+async fn codex_app_server_reads_split_notification_after_cancelled_wait() -> Result<(), String> {
     let mut client = spawn_client(Some("split-notification-after-thread-start"))?;
     wait_result(client.initialize(), "initialize").await?;
 
@@ -265,6 +264,9 @@ async fn codex_app_server_preserves_partial_notification_after_cancelled_read() 
     .await?;
     assert!(started["thread"]["id"].as_str().is_some());
 
+    // This subprocess round trip covers routing the split notification while
+    // awaiting the completion response. Pending alone does not prove prefix
+    // consumption; the read_stdout_line unit regression controls that boundary.
     cancel_after_first_pending(
         client.next_notification("split notification"),
         "split notification",
@@ -289,6 +291,7 @@ async fn codex_app_server_preserves_partial_notification_after_cancelled_read() 
             .and_then(|params| params.get("message")),
         Some(&json!("codex-mock notification"))
     );
+    assert!(client.pop_notification().is_none());
 
     wait_result(client.shutdown(), "shutdown").await
 }
