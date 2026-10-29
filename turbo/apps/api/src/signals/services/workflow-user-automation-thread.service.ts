@@ -217,12 +217,6 @@ export const loadWorkflowUserAutomationThreadId$ = command(
   },
 );
 
-/**
- * Pause every enabled automation that shares a workflow-user chat thread.
- * The caller deletes the thread in the same transaction, so the binding still
- * identifies the affected workflows while this update runs.
- */
-/** Pure predicate for the deletion owner's conditional automation UPDATE. */
 interface WorkflowThreadOwner extends WorkflowUserAutomationThreadOwner {
   readonly agentId: string;
   readonly workflowTitle: string;

@@ -98,9 +98,9 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   signal.throwIfAborted();
 
-  // A disconnected client cannot roll back an already submitted statement.
+  // A submitted statement may commit before instance cancellation is observed.
   // Register its entire deletion/cleanup owner before awaiting that statement,
-  // so committed Run cancellation receipts survive request cancellation.
+  // so committed Run cancellation receipts retain a finite completion owner.
   const completion = set(deleteAndCleanUp$, args, new AbortController().signal);
   waitUntil(completion);
   const result = await completion;

@@ -2444,7 +2444,7 @@ describe("okou workflow automations", () => {
     });
   });
 
-  it("finishes thread deletion and notifies its Runner when the caller disconnects during Calendar teardown", async () => {
+  it("finishes admitted thread deletion and notifies its Runner when the API instance lifetime ends during Calendar teardown", async () => {
     const runnerGroup = runs.configureRunnerGroup();
     const scenario = await setupFixture();
     await connectGoogleCalendar(scenario);
@@ -2481,7 +2481,7 @@ describe("okou workflow automations", () => {
       chatThreadId: run.chatThreadId,
     });
 
-    const caller = new AbortController();
+    const instanceLifetime = new AbortController();
     let providerStops = 0;
     server.use(
       http.post(
@@ -2495,8 +2495,8 @@ describe("okou workflow automations", () => {
             id: expect.any(String),
             resourceId: expect.any(String),
           });
-          caller.abort(
-            new DOMException("Deleting caller disconnected", "AbortError"),
+          instanceLifetime.abort(
+            new DOMException("API instance lifetime ended", "AbortError"),
           );
           return new HttpResponse(null, { status: 204 });
         },
@@ -2507,7 +2507,7 @@ describe("okou workflow automations", () => {
       setupApp({
         context,
         routes: chatThreadDeleteRoutes,
-        signal: caller.signal,
+        signal: instanceLifetime.signal,
         rethrowErrors: true,
       })(chatThreadByIdContract).delete({
         headers: authHeaders(),
@@ -2515,7 +2515,7 @@ describe("okou workflow automations", () => {
       }),
     );
     expect(
-      caller.signal.aborted,
+      instanceLifetime.signal.aborted,
       deletion.ok ? JSON.stringify(deletion.value) : String(deletion.error),
     ).toBeTruthy();
     expect(deletion.ok).toBeFalsy();
