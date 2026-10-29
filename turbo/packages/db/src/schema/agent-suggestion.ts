@@ -13,38 +13,7 @@ import { sql } from "drizzle-orm";
 import type {
   AgentSuggestionContent,
   AgentSuggestionFeedbacks,
-  AgentSuggestionEntries,
 } from "../jsonb-contracts/agent-suggestion";
-
-/**
- * Outgoing collection schema only. New API code never reads or writes it.
- * Remove after the replacement API cutover and outgoing-request drain.
- * Old disposable cards are cleared by the row-storage migration.
- */
-export const agentSuggestionCollections = pgTable(
-  "agent_suggestions",
-  {
-    orgId: text("org_id").notNull(),
-    userId: text("user_id").notNull(),
-    entries: jsonb("entries")
-      .$type<AgentSuggestionEntries>()
-      .notNull()
-      .default([]),
-  },
-  (table) => {
-    return [
-      primaryKey({ columns: [table.orgId, table.userId] }),
-      check(
-        "agent_suggestions_custom_context",
-        sql`NOT jsonb_path_exists(${table.entries}, '$[*] ? (@.status == "active" && !exists(@.customOption))')`,
-      ),
-      check(
-        "agent_suggestions_entries_bound",
-        sql`jsonb_typeof(${table.entries}) = 'array' AND jsonb_array_length(jsonb_path_query_array(${table.entries}, '$[*] ? (@.status == "active")')) <= 10`,
-      ),
-    ];
-  },
-);
 
 /** One owner-scoped card per row; feedback writes never rebuild another card. */
 export const agentSuggestions = pgTable(
