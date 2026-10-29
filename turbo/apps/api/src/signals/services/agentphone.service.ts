@@ -855,7 +855,7 @@ function appendAgentPhoneSlashCommandRiskWarning(
 
 export const sendAgentPhoneText$ = command(
   async (
-    { set },
+    { get, set },
     event: AgentPhoneMessageEvent,
     body: string,
     signal: AbortSignal,
@@ -877,7 +877,7 @@ export const sendAgentPhoneText$ = command(
     const [userLink] =
       isGroup || event.channel !== "whatsapp"
         ? []
-        : await set(writeDb$)
+        : await get(db$)
             .select()
             .from(links)
             .where(

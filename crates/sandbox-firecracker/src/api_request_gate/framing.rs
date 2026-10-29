@@ -1,9 +1,11 @@
+use std::future::{Future, poll_fn};
 use std::io;
 
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
+use tokio::sync::oneshot;
 
-use super::Transition;
+use super::{PendingRequestBody, Transition};
 
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_BODY_BYTES: usize = 64 * 1024;
@@ -22,7 +24,11 @@ fn first_line(bytes: &[u8]) -> io::Result<&[u8]> {
         .ok_or_else(|| invalid("invalid HTTP start-line bound"))
 }
 
-pub(super) async fn read_frame(stream: &mut UnixStream, response: bool) -> io::Result<Vec<u8>> {
+pub(super) async fn read_frame(
+    stream: &mut UnixStream,
+    response: bool,
+    mut body_pending: Option<oneshot::Sender<PendingRequestBody>>,
+) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     let mut chunk = [0; 1024];
     let header_end = loop {
@@ -116,7 +122,22 @@ pub(super) async fn read_frame(stream: &mut UnixStream, response: bool) -> io::R
         let buffer = chunk
             .get_mut(..remaining)
             .ok_or_else(|| invalid("invalid body bound"))?;
-        let count = stream.read(buffer).await?;
+        let read = stream.read(buffer);
+        tokio::pin!(read);
+        let count = poll_fn(|cx| {
+            let result = read.as_mut().poll(cx);
+            if result.is_pending()
+                && bytes.len() > header_end
+                && let Some(observer) = body_pending.take()
+            {
+                let _ = observer.send(PendingRequestBody {
+                    raw: bytes.clone(),
+                    remaining_body_bytes: end - bytes.len(),
+                });
+            }
+            result
+        })
+        .await?;
         if count == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,

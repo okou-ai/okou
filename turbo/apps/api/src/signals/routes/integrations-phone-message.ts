@@ -1,8 +1,10 @@
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { and, desc, eq } from "drizzle-orm";
-import { command } from "ccstate";
+import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { command, computed } from "ccstate";
 import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -10,6 +12,7 @@ import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { db$ } from "../external/db";
 import {
+  getAgentPhoneConversationParticipants,
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
 } from "../external/agentphone-client";
@@ -18,8 +21,10 @@ import {
   normalizeAgentPhoneHandle,
   storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
+import { resolveAgentPhoneParticipantVisibilityRecipients$ } from "../services/agentphone-shared.service";
 import { settle } from "../utils";
 import { optionalEnv } from "../../lib/env";
+import { nowDate } from "../../lib/time";
 
 function routeError<Status extends 400 | 401 | 403 | 404 | 502>(
   status: Status,
@@ -154,9 +159,164 @@ const phoneWriteAuth = {
   requiredCapability: "phone:write",
 } as const;
 
+const groupMessageBody$ = bodyResultOf(
+  integrationsAgentPhoneContract.groupMessage,
+);
+
+const groupMessageTarget$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const body = await get(groupMessageBody$);
+  if (!body.ok) {
+    return undefined;
+  }
+  const [target] = await get(db$)
+    .select({
+      conversationId: agentphoneMessages.conversationId,
+      agentphoneAgentId: agentphoneMessages.agentphoneAgentId,
+      phoneHandle: agentphoneUserLinks.phoneHandle,
+    })
+    .from(agentphoneMessages)
+    .innerJoin(
+      agentphoneMessageVisibility,
+      eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+    )
+    .innerJoin(
+      agentphoneUserLinks,
+      and(
+        eq(agentphoneUserLinks.userId, auth.userId),
+        eq(agentphoneUserLinks.orgId, auth.orgId),
+      ),
+    )
+    .where(
+      and(
+        eq(agentphoneMessageVisibility.orgId, auth.orgId),
+        eq(agentphoneMessageVisibility.userId, auth.userId),
+        eq(agentphoneMessages.groupId, body.data.groupId),
+        eq(agentphoneMessages.channel, "imessage"),
+        isNotNull(agentphoneMessages.conversationId),
+        body.data.agentphoneAgentId
+          ? eq(
+              agentphoneMessages.agentphoneAgentId,
+              body.data.agentphoneAgentId,
+            )
+          : undefined,
+      ),
+    )
+    .orderBy(
+      desc(agentphoneMessages.receivedAt),
+      desc(agentphoneMessages.createdAt),
+    )
+    .limit(1);
+  return target?.conversationId ? target : undefined;
+});
+
+function groupNotFound() {
+  return routeError(
+    404,
+    "Group not found for this account, or your connected phone is no longer a member",
+    "NOT_FOUND",
+  );
+}
+
+const sendGroupMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const bodyResult = await get(groupMessageBody$);
+  signal.throwIfAborted();
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+  const target = await get(groupMessageTarget$);
+  signal.throwIfAborted();
+  if (!target?.conversationId) {
+    return groupNotFound();
+  }
+
+  const asOf = nowDate();
+  const roster = await settle(
+    getAgentPhoneConversationParticipants(
+      { conversationId: target.conversationId },
+      signal,
+    ),
+    signal,
+  );
+  if (!roster.ok) {
+    if (isAgentPhoneApiError(roster.error) && roster.error.status === 404) {
+      return groupNotFound();
+    }
+    const response = agentPhoneRouteError(roster.error);
+    if (response) {
+      return response;
+    }
+    throw roster.error;
+  }
+  const recipients = await set(
+    resolveAgentPhoneParticipantVisibilityRecipients$,
+    roster.value,
+    asOf,
+    signal,
+  );
+  if (
+    !recipients.some((recipient) => {
+      return recipient.userId === auth.userId && recipient.orgId === auth.orgId;
+    })
+  ) {
+    return groupNotFound();
+  }
+
+  const sentResult = await settle(
+    (async () => {
+      const sent = await sendAgentPhoneMessage(
+        {
+          agentphoneAgentId: target.agentphoneAgentId,
+          toNumber: bodyResult.data.groupId,
+          body: bodyResult.data.text,
+        },
+        signal,
+      );
+      await set(storeOutboundAgentPhoneMessage$, {
+        agentphoneMessageId: sent.id,
+        conversationId: target.conversationId,
+        groupId: bodyResult.data.groupId,
+        agentphoneAgentId: target.agentphoneAgentId,
+        phoneHandle: target.phoneHandle,
+        fromNumber: sent.fromNumber ?? "",
+        toNumber: bodyResult.data.groupId,
+        body: bodyResult.data.text,
+        channel: "imessage",
+        userChannel: "imessage",
+        visibilityRecipients: recipients,
+      });
+      signal.throwIfAborted();
+      return sent;
+    })(),
+    signal,
+  );
+  if (!sentResult.ok) {
+    const response = agentPhoneRouteError(sentResult.error);
+    if (response) {
+      return response;
+    }
+    throw sentResult.error;
+  }
+  const sent = sentResult.value;
+  return {
+    status: 200 as const,
+    body: {
+      ok: true as const,
+      messageId: sent.id,
+      channel: sent.channel,
+      toNumber: bodyResult.data.groupId,
+    },
+  };
+});
+
 export const integrationsPhoneMessageRoutes: readonly RouteEntry[] = [
   {
     route: integrationsPhoneMessageContract.sendMessage,
     handler: authRoute(phoneWriteAuth, sendMessage$),
+  },
+  {
+    route: integrationsAgentPhoneContract.groupMessage,
+    handler: authRoute(phoneWriteAuth, sendGroupMessage$),
   },
 ];

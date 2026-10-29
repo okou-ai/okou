@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type {
   ConnectorAccountSelection,
@@ -158,10 +159,13 @@ export function createConnectedAccountsSignals(
     ): Promise<RunConnectorContextSnapshot | ConnectedAccountsError> => {
       const input = await get(connectorInput$);
       const scope = await get(connectorScope$);
-      return await input.timing.measure(
-        "api_dispatch_prepare_context_load_connector_contexts",
-        "nested",
-        async () => {
+      const collector = input.timing;
+      const dimensions = storedConnectorTimingDimensions({
+        scopeSource: scope.source,
+      });
+      return await (async () => {
+        const startedAt = performance.now();
+        const operation = (async () => {
           const [preparation, storedConnectorSnapshot, customConnectorContext] =
             await Promise.all([
               get(preparation$),
@@ -184,11 +188,19 @@ export function createConnectedAccountsSignals(
             ),
             customConnectorContext,
           };
-        },
-        storedConnectorTimingDimensions({
-          scopeSource: scope.source,
-        }),
-      );
+        })();
+        return await (async () => {
+          return await operation;
+        })().finally(() => {
+          collector.recordDuration(
+            "api_dispatch_prepare_context_load_connector_contexts",
+            "nested",
+            performance.now() - startedAt,
+            now(),
+            dimensions,
+          );
+        });
+      })();
     },
   );
   return {
@@ -238,13 +250,23 @@ function createConnectorInputSignals(
   });
   const customConnectorDefinitions$ = computed(async (get) => {
     const { timing } = await get(connectorInput$);
-    return await timing.measure(
-      "api_dispatch_prepare_context_load_custom_connector_rows",
-      "nested",
-      async () => {
+    const collector = timing;
+    return await (async () => {
+      const startedAt = performance.now();
+      const operation = (async () => {
         return await get(execution.customConnectorDefinitions$);
-      },
-    );
+      })();
+      return await (async () => {
+        return await operation;
+      })().finally(() => {
+        collector.recordDuration(
+          "api_dispatch_prepare_context_load_custom_connector_rows",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
+    })();
   });
   const ownedThread$ = computed(async (get) => {
     const thread = (await get(pickedEvent$))?.thread;

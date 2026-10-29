@@ -300,6 +300,8 @@ test("connects a workspace identity before bot installation without granting ano
   const authorization = await startConnect(current);
   const result = await complete(authorization, current);
   expect(result.searchParams.get("status")).toBe("connected");
+  await flushWaitUntilForTest();
+  expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
   await expect(integrationStatus()).resolves.toMatchObject({
     isConnected: true,
     isInstalled: false,
@@ -323,6 +325,64 @@ test("connects a workspace identity before bot installation without granting ano
     isConnected: false,
     isInstalled: false,
   });
+});
+
+test("web account connection sends a DM welcome when its own workspace bot is installed", async () => {
+  const current = actor();
+  await complete(await startInstall(), current);
+  await flushWaitUntilForTest();
+  await disconnectChat();
+  context.mocks.slack.chat.postMessage.mockClear();
+
+  const result = await complete(await startConnect(current), current);
+  expect(result.searchParams.get("status")).toBe("connected");
+  await flushWaitUntilForTest();
+  expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      channel: current.slackUserId,
+      text: expect.stringContaining("Hi! I'm"),
+      blocks: expect.any(Array),
+    }),
+  );
+});
+
+test("installing the workspace bot delivers pending welcomes to previously connected members", async () => {
+  const member = actor({ orgRole: "org:member" });
+  await complete(await startConnect(member), member);
+  await flushWaitUntilForTest();
+  expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+
+  const admin = actor({ orgId: member.orgId, workspaceId: member.workspaceId });
+  await complete(await startInstall(), admin);
+  await flushWaitUntilForTest();
+  expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      channel: member.slackUserId,
+      text: expect.stringContaining("Hi! I'm"),
+    }),
+  );
+  expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      channel: admin.slackUserId,
+      text: expect.stringContaining("Hi! I'm"),
+    }),
+  );
+});
+
+test("an independently connected account cannot borrow another Okou workspace's bot for its welcome", async () => {
+  const owner = actor();
+  await complete(await startInstall(), owner);
+  await flushWaitUntilForTest();
+  const external = actor({ workspaceId: owner.workspaceId });
+  context.mocks.slack.chat.postMessage.mockClear();
+  context.mocks.slack.users.info.mockResolvedValue({
+    ok: true,
+    user: { id: external.slackUserId, team_id: external.workspaceId },
+  });
+  const result = await complete(await startConnect(external), external);
+  expect(result.searchParams.get("status")).toBe("connected");
+  await flushWaitUntilForTest();
+  expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
 });
 
 test("switches a legacy workspace connection to a new home identity without retaining the old bot capability", async () => {
@@ -962,7 +1022,12 @@ test("a Slack-origin OAuth callback confirms connection in the originating threa
       text: "Your Slack account is connected. Bot tools use your own workspace's Okou installation.",
     }),
   );
-  expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+  expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      channel: current.slackUserId,
+      text: expect.stringContaining("Hi! I'm"),
+    }),
+  );
 });
 
 test("an explicit Slack account switch replaces the previous identity after OAuth", async () => {

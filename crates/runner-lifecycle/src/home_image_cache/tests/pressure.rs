@@ -89,27 +89,50 @@ async fn pressure_discovery_rejects_an_intervening_publication() {
 
 #[tokio::test]
 async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_high_water() {
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     let f = Fixture::new().await;
     // Physical GC deliberately accepts independently produced current commits;
     // construct its real persisted input without consumer-specific eligibility.
-    for i in 0..=4096 {
-        let key = format!("{i:064x}");
-        f.cache.ensure_home_cache_entry_dir(&key).await.unwrap();
-        let paths = f.cache.entry_paths(&key);
-        let generation = uuid::Uuid::new_v4().to_string();
-        let image = paths.image(&generation).unwrap();
-        // GC consumes real allocated files without a crash/restart boundary.
-        drop(create_image(&image, b"home", SIZE));
-        let identity =
-            metadata::HomeImageFileIdentity::from_metadata(&std::fs::metadata(image).unwrap());
-        let physical = serde_json::json!({
-            "imageGeneration": generation, "currentImage": identity,
-            "logicalImageSizeBytes": SIZE, "lastUsedAt": "2026-10-09T09:00:00Z"
-        });
-        std::fs::write(paths.metadata(), serde_json::to_vec(&physical).unwrap()).unwrap();
-        std::fs::set_permissions(paths.metadata(), std::fs::Permissions::from_mode(0o600)).unwrap();
-    }
+    // All paths are fresh: seed them in one blocking batch instead of repeating
+    // the producer's directory repair and hardened path walks for every entry.
+    let cache = f.cache.clone();
+    tokio::task::spawn_blocking(move || {
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(cache.home_image_cache_dir())
+            .unwrap();
+        std::fs::set_permissions(
+            cache.home_image_cache_dir(),
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        for i in 0..=4096 {
+            let key = format!("{i:064x}");
+            let paths = cache.entry_paths(&key);
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(paths.entry_dir())
+                .unwrap();
+            std::fs::set_permissions(paths.entry_dir(), std::fs::Permissions::from_mode(0o700))
+                .unwrap();
+            let generation = uuid::Uuid::new_v4().to_string();
+            let image = paths.image(&generation).unwrap();
+            // GC consumes real allocated files without a crash/restart boundary.
+            drop(create_image(&image, b"home", SIZE));
+            let identity =
+                metadata::HomeImageFileIdentity::from_metadata(&std::fs::metadata(image).unwrap());
+            let physical = serde_json::json!({
+                "imageGeneration": generation, "currentImage": identity,
+                "logicalImageSizeBytes": SIZE, "lastUsedAt": "2026-10-09T09:00:00Z"
+            });
+            std::fs::write(paths.metadata(), serde_json::to_vec(&physical).unwrap()).unwrap();
+            std::fs::set_permissions(paths.metadata(), std::fs::Permissions::from_mode(0o600))
+                .unwrap();
+        }
+    })
+    .await
+    .unwrap();
     f.cache.set_fs_stats_for_test(FsStats {
         total_bytes: 100 * GIB,
         available_bytes: 62 * GIB + GIB / 2,

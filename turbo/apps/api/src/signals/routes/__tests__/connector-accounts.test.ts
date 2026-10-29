@@ -928,6 +928,40 @@ describe("connector account lifecycle routes", () => {
       expect(JSON.stringify(listed.body)).not.toContain("token-Primary-");
       expect(JSON.stringify(listed.body)).not.toContain("token-Separate-");
     }
+    const retiredDefault = await accept(
+      accountClient().delete({
+        headers: authHeaders(),
+        params: { connectionId: personalId },
+        body: { target: primary.target },
+      }),
+      [200],
+    );
+    expect(retiredDefault.body).toStrictEqual({
+      deletedConnectionId: personalId,
+      resolvedSelectionCount: 0,
+      promotedDefaultConnectionId: workId,
+    });
+    for (const [group, remainingId] of [
+      [primary, workId],
+      [separate, otherId],
+    ] as const) {
+      const remaining = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: group.target,
+        }),
+        [200],
+      );
+      expect(remaining.body.connections).toMatchObject([
+        { id: remainingId, target: group.target, isDefault: true },
+      ]);
+      expect(remaining.body.connections).toHaveLength(1);
+      expect(remaining.body.defaultConnection).toMatchObject({
+        id: remainingId,
+        target: group.target,
+        isDefault: true,
+      });
+    }
   });
 
   it("enriches the requested page and off-page default only when scope facts are requested", async () => {

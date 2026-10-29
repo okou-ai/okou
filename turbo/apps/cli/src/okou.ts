@@ -312,7 +312,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "phone",
     description:
-      "Send messages and files to your connected phone, and download media",
+      "Send phone messages, share files with your phone or iMessage groups, and download media",
     load: async () => {
       return (await import("./commands/phone")).phoneCommand;
     },

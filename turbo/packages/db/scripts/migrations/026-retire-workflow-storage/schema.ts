@@ -112,15 +112,25 @@ function safePath(value: string): boolean {
   );
 }
 
-/** Read captured locations; never derive, widen or repair a historical root. */
-export function cleanupPrefixes(source: Source): string[] {
-  const workflowId = source.name.slice("custom-skill@".length);
+/** A historical slug identifies Storage, never a current same-named Workflow. */
+export function sourceWorkflowId(source: Source): string | null {
+  const identity = source.name.slice("custom-skill@".length);
   if (
     source.orgId === "__system__" ||
-    source.name !== `custom-skill@${workflowId}` ||
-    !uuid().safeParse(workflowId).success ||
-    !/^\d+$/u.test(source.xmin)
+    source.name !== `custom-skill@${identity}`
   )
+    throw new RetirementError("UnsupportedWorkflowStorageIdentity");
+  if (uuid().safeParse(identity).success) return identity;
+  // The original publisher accepted 2–64 lowercase alphanumeric/hyphen slugs.
+  if (identity.length <= 64 && /^[a-z0-9][a-z0-9-]*[a-z0-9]$/u.test(identity))
+    return null;
+  throw new RetirementError("UnsupportedWorkflowStorageIdentity");
+}
+
+/** Read captured locations; never derive, widen or repair a historical root. */
+export function cleanupPrefixes(source: Source): string[] {
+  sourceWorkflowId(source);
+  if (!/^\d+$/u.test(source.xmin))
     throw new RetirementError("UnsupportedWorkflowStorageIdentity");
   const ownedRoot = (prefix: string) => {
     return (

@@ -30,7 +30,7 @@ import {
   whatsappLinkStatus$,
   whatsappConnectDialogOpen$,
   setWhatsappConnectDialogOpen$,
-  createWhatsappLinkCode$,
+  openWhatsappConnection$,
 } from "../../signals/okou-page/whatsapp.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { AgentPhoneConnectDialog } from "./agentphone-connect-dialog.tsx";
@@ -205,7 +205,7 @@ function AgentPhoneOverview() {
 function WhatsappOverview() {
   const { t } = useTranslation();
   const status = useLoadable(whatsappLinkStatus$);
-  const [codeLoadable, createCode] = useLoadableSet(createWhatsappLinkCode$);
+  const [codeLoadable, createCode] = useLoadableSet(openWhatsappConnection$);
   const signal = useGet(pageSignal$);
   const open = useGet(whatsappConnectDialogOpen$);
   const setOpen = useSet(setWhatsappConnectDialogOpen$);
@@ -246,10 +246,7 @@ function WhatsappOverview() {
       {status.data.configured ? (
         <ConnectSubmitButton
           connecting={codeLoadable.state === "loading"}
-          onConnect={() => {
-            setOpen(true);
-            generateCode();
-          }}
+          onConnect={generateCode}
         />
       ) : (
         <p className="text-sm text-muted-foreground">

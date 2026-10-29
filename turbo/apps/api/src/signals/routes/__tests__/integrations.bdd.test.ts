@@ -4936,6 +4936,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       slackUserId,
       channelId: "C_BDD_HOME",
     });
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: slackUserId,
+        text: expect.stringContaining("Hi! I'm"),
+      }),
+    );
     integrations.clearSlackCallHistory();
     const teamId = install.teamId;
 
@@ -4995,10 +5002,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       channel: "D_BDD_HOME",
     });
     await flushWaitUntilAndAssert(() => {
-      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
-      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: "D_BDD_HOME" }),
-      );
+      expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
     });
     await integrations.postSlackEvent(teamId, {
       type: "app_home_opened",
@@ -5006,7 +5010,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       tab: "messages",
       channel: "D_BDD_HOME",
     });
-    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
 
     context.mocks.slack.views.publish.mockClear();
     const homeDisconnect = {
@@ -5075,7 +5080,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       channel: "D_BDD_HOME",
     });
     await flushWaitUntilAndAssert(() => {
-      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
+      expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
     });
 
     await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
@@ -5132,6 +5137,61 @@ describe("INT-01: Slack app deep webhook flows", () => {
       isInstalled: false,
       isConnected: true,
     });
+  });
+
+  it("retries a rejected DM welcome when the connected user opens Messages and stops after successful delivery", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    integrations.configureSlackAppMocks();
+    await bdd.bootstrapLimitedFreeOnboarding(actor, {
+      displayName: "Welcome Agent",
+    });
+    const slackUserId = uniqueSlackUserId();
+    const install = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    await integrations.requestSlackDisconnect(actor, "disconnect", [200]);
+    context.mocks.slack.chat.postMessage.mockRejectedValue(
+      slackPlatformError("cannot_dm_user"),
+    );
+    await integrations.connectSlackUser(actor, {
+      workspaceId: install.teamId,
+      slackUserId,
+      channelId: "C_BDD_WELCOME",
+    });
+    await flushWaitUntilForTest();
+    await expect(
+      integrations.requestSlackConnectStatus(actor, [200]),
+    ).resolves.toMatchObject({ body: { isConnected: true } });
+    integrations.clearSlackCallHistory();
+    const opened = {
+      type: "app_home_opened",
+      user: slackUserId,
+      tab: "messages",
+      channel: "D_BDD_WELCOME",
+    };
+    await integrations.postSlackEvent(install.teamId, opened);
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
+    const delivery = createDeferredPromise<{
+      ok: true;
+      channel: string;
+      ts: string;
+    }>(context.signal);
+    const sending = createDeferredPromise<void>(context.signal);
+    context.mocks.slack.chat.postMessage.mockImplementation(() => {
+      sending.resolve();
+      return delivery.promise;
+    });
+    await integrations.postSlackEvent(install.teamId, opened);
+    await sending.promise;
+    await integrations.postSlackEvent(install.teamId, opened);
+    delivery.resolve({ ok: true, channel: "D_BDD_WELCOME", ts: "welcome.1" });
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledTimes(2);
+    await integrations.postSlackEvent(install.teamId, opened);
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledTimes(2);
   });
 
   it("replies with canonical run-creation errors for Slack messages", async () => {

@@ -1,6 +1,5 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +11,6 @@ import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fi
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
@@ -418,11 +416,6 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     if (!actor.orgId) {
       throw new Error("Expected hosted site actor to have an org");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.HostedSiteVisibility]: false },
-    );
     // First test in the file: install the S3 boundary explicitly before any
     // host call (mock defaults only arrive in afterEach resets).
     const capture = api.captureHostedSitesS3();
@@ -479,6 +472,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         site,
         artifactKind: "hosted-site" as const,
         spaFallback: true,
+        visibility: "public" as const,
         files,
       };
 
@@ -544,7 +538,6 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
             path: file.path,
             size: file.size,
             contentType: file.contentType,
-            downloadUrl: file.downloadUrl,
           };
         }),
       ).toStrictEqual([
@@ -552,13 +545,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
           path: "/assets/app-4f3a9c12.js",
           size: scriptFile.size,
           contentType: "application/javascript",
-          downloadUrl: "https://r2.example.com/hosted-sites/download?sig=bdd",
         },
         {
           path: "/index.html",
           size: indexFile.size,
           contentType: "text/html; charset=utf-8",
-          downloadUrl: "https://r2.example.com/hosted-sites/download?sig=bdd",
         },
       ]);
 
@@ -568,7 +559,21 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         first.publicSlug,
         [200],
       );
-      expect(crossOrg.body).toStrictEqual(listed);
+      expect(crossOrg.body).toMatchObject({
+        ...listed,
+        files: listed.files.map((file) => {
+          return { ...file, downloadUrl: expect.any(String) };
+        }),
+      });
+      if (crossOrg.status !== 200) {
+        throw new Error("Expected public site files");
+      }
+      for (const file of crossOrg.body.files) {
+        const url = new URL(file.downloadUrl);
+        expect(url.hostname).toBe(`dpl-${first.deploymentId}.okou.app`);
+        expect(url.pathname).toMatch(/^\/\.okou\/download\//u);
+        expect(url.searchParams.get("path")).toBe(file.path);
+      }
 
       const third = await api.prepareHostedSite(actor, {
         ...body,

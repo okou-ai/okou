@@ -1130,10 +1130,17 @@ preserve wire headers and bytes.
 
 Direct terminal JSON decoding returns an error for exhaustion, strict capture
 decoders hide the body, and best-effort capture decompression retains wire bytes
-as it does for unsupported encoding. These local decoder limits do not bound
-mitmproxy's initial HTTP-head buffer, separate request-billing inspection, or
-other header consumers. Old runners retain their previous local behavior until
-updated; no wire protocol or persisted state changes.
+as it does for unsupported encoding.
+
+Request billing's Content-Encoding acquisition shares the same raw field and
+aggregate value budgets. Exhaustion makes the request body uninspectable, so
+body-based billing refinement stays conservative. This inspection outcome does
+not itself reject the request or modify forwarded headers or body bytes.
+
+These header-acquisition limits do not bound mitmproxy's initial HTTP-head
+buffer or other header consumers, or replace separate request-body,
+decompression, and JSON-inspection limits. Old runners retain their previous
+local behavior until updated; no wire protocol or persisted state changes.
 
 `test_response_content_encoding_budget.py` exercises guarded raw inputs through
 the real response hooks and verifies usage delivery, exact limits, and 502/body
@@ -1141,6 +1148,10 @@ discard behavior. The provider failure suite covers the real 429 response hook
 with oversized unrelated names and excess fields while verifying HTTP reports
 and pass-through traffic. The regressions use structural work assertions, not
 wall-clock thresholds.
+
+The [X request-billing regression](../../crates/runner/mitm-addon/tests/x_connector_usage/test_content_encoding.py)
+also verifies conservative billing and unchanged forwarded requests at the HTTP
+usage reporting boundary.
 
 ## Path normalization work boundary
 

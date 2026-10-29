@@ -190,6 +190,46 @@ test("Return Clerk's cached token when the shared worker requests it", async () 
   expect(mockedClerk.sessionGetToken.mock.calls.at(-1)?.[0]).toBeUndefined();
 });
 
+test.each(["missing session", "SDK null"] as const)(
+  "Report a token-error for Clerk's %s and serve a later valid token",
+  async (unavailable) => {
+    const { workers } = installSharedWorkerMock();
+    await setupBridge();
+    await vi.waitFor(() => {
+      expect(workers).toHaveLength(1);
+    });
+    const clerk = context.mocks.clerk();
+    if (unavailable === "missing session") {
+      clerk.sessionSignedOut(true);
+    } else {
+      mockedClerk.sessionGetToken.mockResolvedValueOnce(null);
+    }
+    const port = workers[0]!.port;
+    port.receive({ type: "get-token", requestId: "unavailable-token" });
+
+    await vi.waitFor(() => {
+      expect(port.postedMessages).toContainEqual({
+        type: "token-error",
+        requestId: "unavailable-token",
+        error: { name: "Error", message: "Clerk token is unavailable" },
+      });
+    });
+
+    if (unavailable === "missing session") {
+      clerk.sessionSignedOut(false);
+    }
+    port.receive({ type: "get-token", requestId: "recovered-token" });
+
+    await vi.waitFor(() => {
+      expect(port.postedMessages).toContainEqual({
+        type: "token-result",
+        requestId: "recovered-token",
+        token: "shared-worker-token",
+      });
+    });
+  },
+);
+
 test("Open the force-upgrade dialog when the worker requires an upgrade", async () => {
   context.mocks.http.get("*/api/indicators", () => {
     return Response.json(

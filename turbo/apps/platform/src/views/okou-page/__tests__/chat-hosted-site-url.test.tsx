@@ -39,7 +39,6 @@ async function setupHostedSite(
 ) {
   const deploymentUrl = `https://dpl-${deploymentId}.${hostDomain}/`;
   let currentSlug = initialSlug;
-  installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({
     timezone: "Etc/UTC",
@@ -148,12 +147,32 @@ async function setupHostedSite(
       isActive: true,
     });
   });
+  context.mocks.api(hostContract.resolveAlias, ({ respond }) => {
+    return respond(200, {
+      pointer: {
+        version: 1,
+        publicBrand: "okou",
+        publicSlug: currentSlug,
+        siteId,
+        deploymentId,
+        prefix: `sites/brands/okou/publications/${deploymentId}`,
+        manifestKey: `sites/brands/okou/publications/${deploymentId}/manifest.json`,
+        spaFallback: false,
+        updatedAt: "2026-10-27T00:00:00Z",
+      },
+    });
+  });
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "public", revision: null });
+  });
+  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+    return respond(200, { siteId, showBanner: true, revision: null });
+  });
   await setupPage({
     context,
     host: "app.okou.ai",
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.HostedSiteVisibility]: false,
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
@@ -166,13 +185,6 @@ async function setupHostedSite(
   return await screen.findByTestId(
     sidebar ? "artifact-sidebar" : "attachment-lightbox",
   );
-}
-
-// The published address is the share menu's title link.
-function siteAddress(container: HTMLElement, address: string) {
-  return queryAllByRoleFast("link", container).find((link) => {
-    return link.textContent?.trim() === address;
-  });
 }
 
 async function copyFromResources() {
@@ -199,7 +211,7 @@ async function openHostedSiteShare(preview: HTMLElement, sidebar: boolean) {
     expect(dialog).toHaveAccessibleName(shareLabel);
     return dialog;
   });
-  await within(shareMenu).findByText("Published");
+  await within(shareMenu).findByText("Who can access");
   return shareMenu;
 }
 
@@ -216,7 +228,7 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
   expect(buttonNamed("Save", shareMenu)).toBeEnabled();
   click(buttonNamed("Save", shareMenu));
   await waitFor(() => {
-    expect(siteAddress(shareMenu, `${slug}.okou.app`)).toBeInTheDocument();
+    expect(buttonNamed("Customize URL", shareMenu)).toHaveFocus();
   });
   expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
 }
@@ -261,6 +273,7 @@ test.each([false, true])(
 test.each([false, true])(
   "Resources copies the final address after consecutive site renames (sidebar=%s)",
   async (sidebar) => {
+    installResourceGeometry(480);
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
     expect(title).toHaveTextContent(siteTitle);
@@ -282,6 +295,7 @@ test.each([false, true])(
 );
 
 test("a reopened chat shows the catalog title and copies the current site address", async () => {
+  installResourceGeometry(480);
   const clipboard = context.mocks.browser.clipboardWriteText();
   const preview = await setupHostedSite(true, "already-renamed");
   const title = await within(preview).findByTestId("artifact-title-link");

@@ -115,6 +115,7 @@ describe("hosted artifact previews", () => {
           ).not.toContain("/cover.png");
           return HttpResponse.json({
             ...completed,
+            visibility: "private",
             uploads: body.files.map((file) => {
               return {
                 path: file.path,
@@ -154,7 +155,11 @@ describe("hosted artifact previews", () => {
   it("fails before upload when the API does not acknowledge the supplied preview", async () => {
     server.use(
       http.post("http://localhost:3000/api/host/deployments/prepare", () => {
-        return HttpResponse.json({ ...completed, uploads: [] });
+        return HttpResponse.json({
+          ...completed,
+          visibility: "private",
+          uploads: [],
+        });
       }),
     );
     await expect(publish()).rejects.toThrow("process.exit");

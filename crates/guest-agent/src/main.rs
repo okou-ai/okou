@@ -678,6 +678,7 @@ async fn execute(
     }
 
     complete_execution(
+        masker,
         cli_exit_code,
         exit_code,
         cli_elapsed,
@@ -836,6 +837,7 @@ struct CompletionState<'a> {
 }
 
 async fn complete_execution(
+    masker: &masker::SecretMasker,
     cli_exit_code: i32,
     mut exit_code: i32,
     cli_elapsed: Duration,
@@ -846,7 +848,10 @@ async fn complete_execution(
     let config = &runtime.config;
     let runtime_paths = &runtime.paths;
     let http = &runtime.http;
-    if let Some(message) = state.failure_message {
+    let failure_message = state
+        .failure_message
+        .map(|message| masker.mask_string(message));
+    if let Some(message) = failure_message.as_deref() {
         failure_diagnostics::write_guest_error_file(
             runtime_paths.finalization_error_file(),
             message,
@@ -981,7 +986,7 @@ async fn complete_execution(
                                 .failure_diagnostic
                                 .as_ref()
                                 .and_then(|diagnostic| diagnostic.failure_reason),
-                            state.failure_message,
+                            failure_message.as_deref(),
                             state.last_event_sequence,
                             finalization,
                         )
@@ -1805,8 +1810,12 @@ mod tests {
         } else {
             HttpClient::new().unwrap()
         };
-        let telemetry =
-            Telemetry::spawn_for_paths(config.run_id.clone(), &guest_paths, masker, http.clone());
+        let telemetry = Telemetry::spawn_for_paths(
+            config.run_id.clone(),
+            &guest_paths,
+            masker.clone(),
+            http.clone(),
+        );
         let runtime = test_guest_runtime(config, http);
         let mut error_message = initial_error_message.to_string();
         apply_workload_resource_limit(&mut failure_diagnostic, hard_limit);
@@ -1817,6 +1826,7 @@ mod tests {
             evidence,
         );
         let exit_code = complete_execution(
+            &masker,
             cli_exit_code,
             cli_exit_code,
             Duration::ZERO,
@@ -1951,10 +1961,15 @@ mod tests {
         let config = test_guest_config(server, Some("/finalization-failure"));
         let masker = Arc::new(masker::SecretMasker::from_config(&config));
         let http = test_http_client(server);
-        let telemetry =
-            Telemetry::spawn_for_paths(config.run_id.clone(), &guest_paths, masker, http.clone());
+        let telemetry = Telemetry::spawn_for_paths(
+            config.run_id.clone(),
+            &guest_paths,
+            masker.clone(),
+            http.clone(),
+        );
         let runtime = test_guest_runtime(config, http.clone());
         let exit_code = complete_execution(
+            &masker,
             0,
             0,
             Duration::ZERO,
@@ -2016,12 +2031,17 @@ mod tests {
         let config = test_guest_config(server, Some("/combined-finalization-failure"));
         let masker = Arc::new(masker::SecretMasker::from_config(&config));
         let http = test_http_client(server);
-        let telemetry =
-            Telemetry::spawn_for_paths(config.run_id.clone(), &guest_paths, masker, http.clone());
+        let telemetry = Telemetry::spawn_for_paths(
+            config.run_id.clone(),
+            &guest_paths,
+            masker.clone(),
+            http.clone(),
+        );
         let runtime = test_guest_runtime(config, http);
         let session_metadata =
             session_metadata::CapturedSessionMetadata::for_test("combined-failure-session", None);
         let exit_code = complete_execution(
+            &masker,
             0,
             0,
             Duration::ZERO,
@@ -2086,12 +2106,17 @@ mod tests {
         let config = test_guest_config(server, Some("/help"));
         let masker = Arc::new(masker::SecretMasker::from_config(&config));
         let http = test_http_client(server);
-        let telemetry =
-            Telemetry::spawn_for_paths(config.run_id.clone(), &guest_paths, masker, http.clone());
+        let telemetry = Telemetry::spawn_for_paths(
+            config.run_id.clone(),
+            &guest_paths,
+            masker.clone(),
+            http.clone(),
+        );
         let runtime = test_guest_runtime(config, http.clone());
         let session_metadata =
             session_metadata::CapturedSessionMetadata::for_test("zero-turn-session", None);
         let exit_code = complete_execution(
+            &masker,
             0,
             0,
             Duration::ZERO,
@@ -2181,8 +2206,12 @@ mod tests {
         let config = test_guest_config(server, Some("plain prompt"));
         let masker = Arc::new(masker::SecretMasker::from_config(&config));
         let http = test_http_client(server);
-        let telemetry =
-            Telemetry::spawn_for_paths(config.run_id.clone(), &guest_paths, masker, http.clone());
+        let telemetry = Telemetry::spawn_for_paths(
+            config.run_id.clone(),
+            &guest_paths,
+            masker.clone(),
+            http.clone(),
+        );
         let runtime = test_guest_runtime(config, http.clone());
         let failure_diagnostic = FailureDiagnostic::new(
             FailureClass::CliNonzero,
@@ -2193,6 +2222,7 @@ mod tests {
         .with_failure_reason(failure_reason)
         .with_session_history_status(SessionHistoryStatus::Present);
         let exit_code = complete_execution(
+            &masker,
             failure_exit_code,
             failure_exit_code,
             Duration::ZERO,

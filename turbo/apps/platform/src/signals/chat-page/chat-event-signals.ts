@@ -7,6 +7,10 @@ import type {
 import type { ChatEvent } from "./chat-event-types.ts";
 import type { RunIndicatorState } from "./chat-event-state.ts";
 import {
+  createChatEventProjectionSignals,
+  type ChatEventProjectionSignals,
+} from "./chat-event-projection-signals.ts";
+import {
   createChatEventStorageSignals,
   type AppendOptimisticEventCommand,
 } from "./chat-event-storage-signals.ts";
@@ -323,9 +327,10 @@ function createChatEventSetup({
   return { setup$, catchUp$ };
 }
 
-export interface ChatEventSignals {
+export interface ChatEventSignals extends ChatEventProjectionSignals {
   readonly threadId: string;
   readonly chatEvents$: Computed<ChatEvent[]>;
+  readonly lastUsageEventIdByRunId$: Computed<ReadonlyMap<string, string>>;
   readonly hasOptimisticUserMessage$: Computed<boolean>;
   readonly serverRunState$: Computed<RunIndicatorState>;
   readonly setup$: Command<Promise<void>, [AbortSignal]>;
@@ -350,6 +355,8 @@ export function createChatEventSignals(threadId: string): ChatEventSignals {
   return {
     threadId,
     chatEvents$: events.chatEvents$,
+    lastUsageEventIdByRunId$: events.lastUsageEventIdByRunId$,
+    ...createChatEventProjectionSignals(events.chatEvents$),
     hasOptimisticUserMessage$: events.hasOptimisticUserMessage$,
     serverRunState$: events.serverRunState$,
     ...setup,

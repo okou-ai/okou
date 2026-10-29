@@ -43,10 +43,23 @@ pub struct CapturedRequest {
     pub raw: Vec<u8>,
 }
 
+/// A consumed request prefix whose next body read is pending.
+/// This is transport observation, not complete capture or backend acceptance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingRequestBody {
+    /// Original bytes consumed so far, including the validated HTTP headers.
+    pub raw: Vec<u8>,
+    /// Body bytes still required by the declared Content-Length.
+    pub remaining_body_bytes: usize,
+}
+
 /// Disposable test controls, independent of the forwarding/drain producer.
 pub struct RequestControl {
     /// Arrival notification; losing this receiver does not cancel the producer.
     pub arrived: oneshot::Receiver<CapturedRequest>,
+    /// First pending body read after consuming a nonempty partial body.
+    /// Losing this receiver neither cancels nor blocks the producer.
+    pub body_pending: oneshot::Receiver<PendingRequestBody>,
     /// Explicit dispatch permission; dropping it before release never dispatches.
     pub release: oneshot::Sender<()>,
 }
@@ -184,12 +197,23 @@ fn start_gate(
     response: Option<response::PendingResponse>,
 ) -> (RequestControl, RequestProducer) {
     let (arrival_tx, arrived) = oneshot::channel();
+    let (body_pending_tx, body_pending) = oneshot::channel();
     let (release, release_rx) = oneshot::channel();
     let task = tokio::spawn(run_gate(
-        listener, backend, transition, arrival_tx, release_rx, response,
+        listener,
+        backend,
+        transition,
+        arrival_tx,
+        body_pending_tx,
+        release_rx,
+        response,
     ));
     (
-        RequestControl { arrived, release },
+        RequestControl {
+            arrived,
+            body_pending,
+            release,
+        },
         RequestProducer { task: Some(task) },
     )
 }
@@ -199,12 +223,13 @@ async fn run_gate(
     backend: PathBuf,
     transition: Transition,
     arrival: oneshot::Sender<CapturedRequest>,
+    body_pending: oneshot::Sender<PendingRequestBody>,
     mut release: oneshot::Receiver<()>,
     response_control: Option<response::PendingResponse>,
 ) -> Result<RequestOutcome, RequestFailure> {
     let capture = async {
         let (mut client, _) = listener.accept().await.map_err(capture_failure)?;
-        let raw = framing::read_frame(&mut client, false)
+        let raw = framing::read_frame(&mut client, false, Some(body_pending))
             .await
             .map_err(capture_failure)?;
         framing::validate_request(&raw, transition).map_err(capture_failure)?;
@@ -242,7 +267,7 @@ async fn run_gate(
         .await
         .map_err(|error| failure(FailureStage::BackendWrite, error))?;
     // Client/controller loss cannot interrupt the accepted backend drain.
-    let response = framing::read_frame(&mut upstream, true)
+    let response = framing::read_frame(&mut upstream, true, None)
         .await
         .map_err(|error| failure(FailureStage::BackendResponse, error))?;
     let status = framing::response_status(&response)

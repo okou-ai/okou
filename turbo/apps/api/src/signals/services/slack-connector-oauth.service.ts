@@ -41,7 +41,9 @@ import {
 import { SLACK_BOT_SCOPES } from "./slack-data.service";
 import {
   notifySlackConnect$,
+  notifyPendingSlackConnectWelcomes$,
   publishSlackAdminSignal$,
+  type SlackConnectNotificationArgs,
 } from "./slack-connect.service";
 import {
   slackConnectorOAuthContextSchema,
@@ -534,6 +536,17 @@ const finishSlackAccountConnection$ = command(
         ),
       );
     }
+    waitUntil(
+      set(
+        notifyPendingSlackConnectWelcomes$,
+        {
+          orgId: context.orgId,
+          workspaceId: oauth.teamId,
+          userId: context.userId,
+        },
+        signal,
+      ),
+    );
     return slackConnectionSuccess(context, oauth);
   },
 );
@@ -566,6 +579,21 @@ const promoteSlackAccountConnection$ = command(
       return failed(account.message, context);
     }
     return null;
+  },
+);
+
+const notifySlackInstallationConnect$ = command(
+  async ({ set }, args: SlackConnectNotificationArgs, signal: AbortSignal) => {
+    await set(notifySlackConnect$, args, signal);
+    await set(
+      notifyPendingSlackConnectWelcomes$,
+      {
+        orgId: args.orgId,
+        workspaceId: args.installation.slackWorkspaceId,
+        excludeUserId: args.userId,
+      },
+      signal,
+    );
   },
 );
 
@@ -674,7 +702,7 @@ const finishSlackConnectorOAuth$ = command(
     waitUntil(
       tapError(
         set(
-          notifySlackConnect$,
+          notifySlackInstallationConnect$,
           {
             installation: connection.installation,
             slackUserId: oauth.userId,

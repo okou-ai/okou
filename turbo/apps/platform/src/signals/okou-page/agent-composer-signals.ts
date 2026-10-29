@@ -15,6 +15,7 @@ import {
   type ComposerSubmission,
 } from "./composer-signals.ts";
 import type { ChatEvent } from "../chat-page/chat-event-types.ts";
+import { createChatEventProjectionSignals } from "../chat-page/chat-event-projection-signals.ts";
 import { createComposerConnectorSignals } from "./connectors.ts";
 import { createPendingRemoteAccessSignals } from "../remote-access.ts";
 import {
@@ -182,7 +183,7 @@ function createAgentComposerSignalsWithDraft(
       load$: options.forward ? noOpAction$ : agentDraft.load$,
       save$: options.forward ? noOpAction$ : agentDraft.queueDraftSync$,
     },
-    chatEvents$,
+    eventSignals: createChatEventProjectionSignals(chatEvents$),
     voiceDraftTarget: `agent:${agentId}`,
     singleLineOnMobile: false,
     forwardComposer: options.forward !== undefined,

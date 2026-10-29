@@ -4,7 +4,10 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-attachment";
 import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { workflows } from "@okouai/db/schema/workflow";
+import {
+  officialWorkflowAutomationIdentities,
+  workflows,
+} from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
@@ -96,6 +99,19 @@ export function agentDeletionAutomationCondition(args: DeleteAgentArgs) {
       .where(
         and(
           eq(workflows.id, workflowAutomations.workflowId),
+          agentDeletionWorkflowCondition(args),
+        ),
+      ),
+  );
+}
+export function agentDeletionWorkflowIdentityCondition(args: DeleteAgentArgs) {
+  return exists(
+    new QueryBuilder()
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.id, officialWorkflowAutomationIdentities.workflowId),
           agentDeletionWorkflowCondition(args),
         ),
       ),

@@ -1,7 +1,5 @@
 import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { welcomeThreadPreviewImageUrl } from "@okouai/core/welcome-thread-assets";
 import { resolveHostedSitePreview$ } from "../services/hosted-site-preview.service";
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
@@ -23,7 +21,6 @@ import {
   exchangeHostedSiteSession$,
   hostedSiteSessionViewer$,
 } from "../services/hosted-site-sessions.service";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { conflict, notFound, resourceUnavailable } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
@@ -51,28 +48,8 @@ const preview$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 
-const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "private, no-store");
-  const auth = get(organizationAuthContext$);
-  const features = await set(
-    loadUserFeatureSwitchContext$,
-    auth.orgId,
-    auth.userId,
-    signal,
-  );
-  if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features)) {
-    return resourceUnavailable(
-      "Website visibility management is not available",
-    );
-  }
-  return null;
-});
-
 const read$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(admission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const body = await set(
     getHostedSiteVisibility$,
     {
@@ -87,10 +64,7 @@ const read$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(admission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const body = await get(bodyResultOf(hostContract.updateSiteVisibility));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -133,10 +107,7 @@ const access$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const readBanner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(admission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const body = await set(
     getHostedSiteBanner$,
     {
@@ -151,10 +122,7 @@ const readBanner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const updateBanner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(admission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const input = await get(bodyResultOf(hostContract.updateSiteBanner));
   signal.throwIfAborted();
   if (!input.ok) {

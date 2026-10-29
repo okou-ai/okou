@@ -6,7 +6,6 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
-import type { ChatEvent } from "./chat-event-types.ts";
 
 export const emptyChatRunUsage$ = computed(
   (): Promise<ChatEventUsagePayload | undefined> => {
@@ -22,17 +21,10 @@ export interface ChatRunUsageSignals {
 function createRunUsageSignals(
   threadId: string,
   runId: string,
-  events$: Computed<ChatEvent[]>,
+  lastUsageEventIdByRunId$: Computed<ReadonlyMap<string, string>>,
 ): ChatRunUsageSignals {
   const lastUsageEventId$ = computed((get): string | undefined => {
-    const events = get(events$);
-    for (let index = events.length - 1; index >= 0; index--) {
-      const event = events[index]!;
-      if (event.runId === runId && event.eventType === "usage.recorded") {
-        return event.id;
-      }
-    }
-    return undefined;
+    return get(lastUsageEventIdByRunId$).get(runId);
   });
   const usage$ = computed(async (get) => {
     if (get(lastUsageEventId$) === undefined) {
@@ -56,7 +48,7 @@ function createRunUsageSignals(
 /** Only visible runs own usage graphs; responses stay in their async computeds. */
 export function createChatRunUsageSignals(
   threadId: string,
-  events$: Computed<ChatEvent[]>,
+  lastUsageEventIdByRunId$: Computed<ReadonlyMap<string, string>>,
 ) {
   // Preserve signal identity across transcript updates, not fetched values.
   // Replacing the render window releases runs that are no longer represented.
@@ -82,7 +74,7 @@ export function createChatRunUsageSignals(
         return (
           previous.find((run) => {
             return run.runId === runId;
-          }) ?? createRunUsageSignals(threadId, runId, events$)
+          }) ?? createRunUsageSignals(threadId, runId, lastUsageEventIdByRunId$)
         );
       });
       if (

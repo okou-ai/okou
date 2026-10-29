@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.10.84](https://github.com/okou-ai/okou/compare/app-worker-v1.10.83...app-worker-v1.10.84) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.20.0
+    * @okouai/core bumped to 8.800.3
+
+## [1.10.83](https://github.com/okou-ai/okou/compare/app-worker-v1.10.82...app-worker-v1.10.83) (2026-10-29)
+
+
+### Bug Fixes
+
+* update okou social sharing image ([#43980](https://github.com/okou-ai/okou/issues/43980)) ([eaa1bc7](https://github.com/okou-ai/okou/commit/eaa1bc7732ce2fe040605c3ef8f0bdd1cd7bc4da))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.19.0
+    * @okouai/core bumped to 8.800.2
+
+## [1.10.82](https://github.com/okou-ai/okou/compare/app-worker-v1.10.81...app-worker-v1.10.82) (2026-10-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.18.0
+    * @okouai/core bumped to 8.800.1
+
 ## [1.10.81](https://github.com/okou-ai/okou/compare/app-worker-v1.10.80...app-worker-v1.10.81) (2026-10-29)
 
 

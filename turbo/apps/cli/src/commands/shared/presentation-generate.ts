@@ -13,10 +13,7 @@ import {
   presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
-import {
-  hostedSiteVisibilityEnabled,
-  hostedSiteVisibilityInstructions,
-} from "../../lib/host/visibility";
+import { hostedSiteVisibilityInstructions } from "../../lib/host/visibility";
 import {
   createArtifactVisibilityOption,
   type ArtifactVisibility,
@@ -132,7 +129,7 @@ ${formatPresentationTemplateListing(templates)}`;
         const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --title ${displayTitle} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png --json`;
         const deliveryInstructions = [
           options.visibility === undefined
-            ? `- Uploaded and generated files default to only-me. ${hostedSiteVisibilityEnabled() ? hostedSiteVisibilityInstructions() : "Hosted sites are public."}`
+            ? `- Uploaded and generated files default to only-me. ${hostedSiteVisibilityInstructions}`
             : `- Deliver the final deck with ${options.visibility} visibility.`,
           "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final deck; do not make supporting media public separately.",
           `- For file delivery, use \`okou web upload-file -f <file>${visibilityFlag}\`.`,

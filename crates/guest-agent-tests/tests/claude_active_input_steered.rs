@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 const EVENT_ID: &str = "09065b04-cb85-4dd3-8cde-965e61ab8bfa";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn claude_declares_steered_only_after_follow_up_reaches_stdin()
+async fn claude_delivers_duplicate_follow_up_and_declares_steered_once()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;

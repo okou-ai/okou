@@ -11,7 +11,7 @@ import { command } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
@@ -119,7 +119,7 @@ const getConnectStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Invalid or expired WhatsApp connection link. Send /connect again.",
     );
   }
-  const [requested] = await set(writeDb$)
+  const [requested] = await get(db$)
     .select()
     .from(whatsappUserLinks)
     .where(eq(whatsappUserLinks.phoneHandle, phoneHandle))

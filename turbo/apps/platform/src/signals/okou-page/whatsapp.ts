@@ -54,6 +54,13 @@ export const createWhatsappLinkCode$ = command(
   },
 );
 
+export const openWhatsappConnection$ = command(
+  async ({ set }, signal: AbortSignal): Promise<WhatsappLinkCodeResponse> => {
+    set(setWhatsappConnectDialogOpen$, true);
+    return await set(createWhatsappLinkCode$, signal);
+  },
+);
+
 export const reloadWhatsappLinkStatus$ = command(({ set }) => {
   set(internalReload$, (prev) => {
     return prev + 1;

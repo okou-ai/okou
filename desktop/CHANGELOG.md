@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.12](https://github.com/okou-ai/okou/compare/desktop-v0.54.11...desktop-v0.54.12) (2026-10-29)
+
+
+### Bug Fixes
+
+* **desktop:** retire timed-out helpers outside the swift executor ([#43974](https://github.com/okou-ai/okou/issues/43974)) ([7174f4e](https://github.com/okou-ai/okou/commit/7174f4ecc105336a74d01a14fd564e78dc63c54f))
+
 ## [0.54.11](https://github.com/okou-ai/okou/compare/desktop-v0.54.10...desktop-v0.54.11) (2026-10-29)
 
 

@@ -131,48 +131,52 @@ def _merge_static_alternatives(
     )
 
 
-def _static_iterable_first_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
-    """Return static first nodes and whether the iterable may be empty."""
+def _static_iterable_first_outcomes(
+    node: ast.AST, *, reverse: bool = False
+) -> _StaticIterableOutcomes:
+    """Return static first (or last) nodes and whether the iterable may be empty."""
     if isinstance(node, ast.NamedExpr):
-        return _static_iterable_first_outcomes(node.value)
+        return _static_iterable_first_outcomes(node.value, reverse=reverse)
     if isinstance(node, ast.IfExp):
         return _merge_static_alternatives(
             [
-                _static_iterable_first_outcomes(node.body),
-                _static_iterable_first_outcomes(node.orelse),
+                _static_iterable_first_outcomes(node.body, reverse=reverse),
+                _static_iterable_first_outcomes(node.orelse, reverse=reverse),
             ]
         )
     if isinstance(node, ast.BoolOp):
         return _merge_static_alternatives(
-            [_static_iterable_first_outcomes(value) for value in node.values]
+            [_static_iterable_first_outcomes(value, reverse=reverse) for value in node.values]
         )
     if isinstance(node, ast.Dict | ast.DictComp):
-        return _static_mapping_first_key_outcomes(node)
+        return _static_mapping_first_key_outcomes(node, reverse=reverse)
     if isinstance(node, ast.Set):
         return _static_set_outcomes(node)
     if isinstance(node, ast.SetComp):
         return _static_outcomes((node.elt,), may_be_empty=True)
     if isinstance(node, ast.Call):
         if _is_static_mapping_expression(node):
-            return _static_mapping_first_key_outcomes(node)
+            return _static_mapping_first_key_outcomes(node, reverse=reverse)
         if _is_unbound_dict_keys_call(node):
-            return _static_unbound_mapping_outcomes(node, include_all=False)
+            return _static_unbound_mapping_outcomes(node, include_all=reverse)
         if (
             isinstance(node.func, ast.Attribute)
             and node.func.attr == "keys"
             and not node.args
             and not node.keywords
         ):
-            return _static_mapping_first_key_outcomes(node.func.value)
+            return _static_mapping_first_key_outcomes(node.func.value, reverse=reverse)
         if (
             isinstance(node.func, ast.Name)
-            and node.func.id in {"iter", "list", "tuple"}
+            and node.func.id in _STATIC_ITERABLE_WRAPPER_CALLS
             and len(node.args) == 1
-            and not node.keywords
+            and (not node.keywords or node.func.id == "sorted")
         ):
             return _merge_static_alternatives(
                 [
-                    _static_iterable_first_outcomes(argument)
+                    _static_wrapper_first_outcomes(
+                        node.func.id, argument, node.keywords, reverse=reverse
+                    )
                     if argument is not None
                     else _static_outcomes((), may_be_empty=True)
                     for argument in _static_first_call_argument_outcomes(node.args).ordered
@@ -180,18 +184,111 @@ def _static_iterable_first_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
             )
     if not isinstance(node, ast.List | ast.Tuple):
         return _static_outcomes((), may_be_empty=True)
-    return _static_ordered_sequence_first_outcomes(node.elts)
+    return _static_ordered_sequence_first_outcomes(node.elts, reverse=reverse)
+
+
+def _static_wrapper_first_outcomes(
+    wrapper: str, argument: ast.AST, keywords: list[ast.keyword], *, reverse: bool
+) -> _StaticIterableOutcomes:
+    if wrapper in {"set", "frozenset"}:
+        return _static_iterable_element_outcomes(argument)
+    if wrapper == "sorted":
+        for keyword in keywords:
+            if (
+                keyword.arg == "key"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is None
+            ):
+                continue
+            if (
+                keyword.arg == "reverse"
+                and isinstance(keyword.value, ast.Constant)
+                and isinstance(keyword.value.value, bool)
+            ):
+                reverse ^= keyword.value.value
+                continue
+            # Unknown comparison keys/directions can put any visible element first.
+            return _static_iterable_element_outcomes(argument)
+        return _static_iterable_extreme_outcomes(argument, largest=reverse)
+    return _static_iterable_first_outcomes(argument, reverse=reverse ^ (wrapper == "reversed"))
+
+
+def _static_iterable_extreme_outcomes(node: ast.AST, *, largest: bool) -> _StaticIterableOutcomes:
+    """Project sorted endpoints without enumerating combinations of starred alternatives."""
+    if isinstance(node, ast.NamedExpr):
+        return _static_iterable_extreme_outcomes(node.value, largest=largest)
+    if isinstance(node, ast.IfExp | ast.BoolOp):
+        alternatives = [node.body, node.orelse] if isinstance(node, ast.IfExp) else node.values
+        return _merge_static_alternatives(
+            [_static_iterable_extreme_outcomes(value, largest=largest) for value in alternatives]
+        )
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _STATIC_ITERABLE_WRAPPER_CALLS
+        and len(node.args) == 1
+    ):
+        return _merge_static_alternatives(
+            [
+                _static_iterable_extreme_outcomes(argument, largest=largest)
+                if argument is not None
+                else _static_outcomes((), may_be_empty=True)
+                for argument in _static_first_call_argument_outcomes(node.args).ordered
+            ]
+        )
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        groups = [
+            _static_iterable_extreme_outcomes(element.value, largest=largest)
+            if isinstance(element, ast.Starred)
+            else _static_outcomes((element,), may_be_empty=False)
+            for element in node.elts
+        ]
+    elif isinstance(node, ast.Dict):
+        groups = [
+            _static_iterable_extreme_outcomes(value, largest=largest)
+            if key is None
+            else _static_outcomes((key,), may_be_empty=False)
+            for key, value in zip(node.keys, node.values, strict=True)
+        ]
+    else:
+        return _static_iterable_element_outcomes(node)
+
+    # A guaranteed nonempty group bounds every possible extremum. Optional groups
+    # cannot eliminate another candidate: their smaller/larger element may be absent.
+    bounds: list[str] = []
+    for group in groups:
+        values = [
+            item.value
+            for item in group.nodes
+            if isinstance(item, ast.Constant) and isinstance(item.value, str)
+        ]
+        if not group.may_be_empty and values and len(values) == len(group.nodes):
+            bounds.append(min(values) if largest else max(values))
+    bound = (max(bounds) if largest else min(bounds)) if bounds else None
+    return _static_outcomes(
+        [
+            item
+            for group in groups
+            for item in group.nodes
+            if bound is None
+            or not (isinstance(item, ast.Constant) and isinstance(item.value, str))
+            or (item.value >= bound if largest else item.value <= bound)
+        ],
+        may_be_empty=all(group.may_be_empty for group in groups),
+    )
 
 
 def _static_ordered_sequence_first_outcomes(
-    elements: list[ast.expr],
+    elements: list[ast.expr], *, reverse: bool = False
 ) -> _StaticIterableOutcomes:
     outcomes: list[ast.AST | None] = [None]
-    for element in elements:
+    for element in reversed(elements) if reverse else elements:
         if not any(outcome is None for outcome in outcomes):
             break
         if isinstance(element, ast.Starred):
-            element_outcomes = _static_iterable_first_outcomes(element.value).ordered
+            element_outcomes = _static_iterable_first_outcomes(
+                element.value, reverse=reverse
+            ).ordered
         else:
             element_outcomes = (element,)
         next_outcomes: list[ast.AST | None] = []
@@ -272,7 +369,19 @@ def _static_iterable_element_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
     return _static_outcomes((), may_be_empty=True)
 
 
-def _static_mapping_first_key_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
+def _static_mapping_first_key_outcomes(
+    node: ast.AST, *, reverse: bool = False
+) -> _StaticIterableOutcomes:
+    if reverse:
+        if isinstance(node, ast.Dict):
+            # Reassigning an existing literal key does not move its insertion position.
+            keys: dict[str, ast.AST] = {}
+            for key in node.keys:
+                if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+                    return _static_mapping_key_outcomes(node)
+                keys.setdefault(key.value, key)
+            return _static_outcomes(list(keys.values())[-1:], may_be_empty=not keys)
+        return _static_mapping_key_outcomes(node)
     if isinstance(node, ast.NamedExpr):
         return _static_mapping_first_key_outcomes(node.value)
     if isinstance(node, ast.IfExp):

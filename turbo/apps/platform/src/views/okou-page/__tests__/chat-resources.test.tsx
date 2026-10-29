@@ -279,7 +279,6 @@ test("Show all three artifacts without an overflow control at the limit", async 
       return button.getAttribute("aria-label") === "Show more";
     }),
   ).toBeUndefined();
-  expect(within(panel).queryByText("View all")).not.toBeInTheDocument();
 });
 
 test("Expand and collapse the artifacts list in place", async () => {

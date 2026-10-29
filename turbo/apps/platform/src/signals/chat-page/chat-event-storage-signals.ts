@@ -220,6 +220,17 @@ export function createChatEventStorageSignals({
   threadId: string;
 }) {
   const persistentChatEvents$ = state<PersistedChatEvent[]>([]);
+  const lastUsageEventIdByRunId$ = computed(
+    (get): ReadonlyMap<string, string> => {
+      const lastUsageEventIdByRunId = new Map<string, string>();
+      for (const event of get(persistentChatEvents$)) {
+        if (event.eventType === "usage.recorded" && event.runId !== undefined) {
+          lastUsageEventIdByRunId.set(event.runId, event.id);
+        }
+      }
+      return lastUsageEventIdByRunId;
+    },
+  );
   const optimisticEvents$ = createOptimisticChatEventsForThread(threadId);
   const hasOptimisticUserMessage$ = computed((get): boolean => {
     return get(optimisticEvents$).some((entry) => {
@@ -294,6 +305,7 @@ export function createChatEventStorageSignals({
 
   return {
     chatEvents$,
+    lastUsageEventIdByRunId$,
     hasOptimisticUserMessage$,
     serverRunState$,
     initializeIndexedDbEvents$,
