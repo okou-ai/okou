@@ -2,7 +2,6 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
-import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
@@ -22,6 +21,9 @@ import {
 } from "./agentphone-chat-callback-payload";
 import {
   agentPhoneReplyDestination,
+  agentPhoneRouteLinkColumn,
+  agentPhoneReplyChunks,
+  agentPhoneUserLinksForChannel,
   markdownToImessagePlain,
   resolveAgentPhoneConversationVisibilityRecipients$,
   resolveAgentPhoneReplyFooterText$,
@@ -175,20 +177,18 @@ const loadAgentPhoneRouteBinding$ = command(
     },
     signal: AbortSignal,
   ): Promise<{ readonly userLinkId: string } | undefined> => {
+    const links = agentPhoneUserLinksForChannel(args.target.channel);
     const [route] = await get(db$)
-      .select({ userLinkId: agentphoneUserLinks.id })
+      .select({ userLinkId: links.id })
       .from(agentphoneChatThreadRoutes)
       .innerJoin(
-        agentphoneUserLinks,
-        eq(
-          agentphoneUserLinks.id,
-          agentphoneChatThreadRoutes.agentphoneUserLinkId,
-        ),
+        links,
+        eq(links.id, agentPhoneRouteLinkColumn(args.target.channel)),
       )
       .where(
         and(
           eq(
-            agentphoneChatThreadRoutes.agentphoneUserLinkId,
+            agentPhoneRouteLinkColumn(args.target.channel),
             args.target.userLinkId,
           ),
           eq(
@@ -196,8 +196,8 @@ const loadAgentPhoneRouteBinding$ = command(
             args.target.rootMessageId,
           ),
           eq(agentphoneChatThreadRoutes.chatThreadId, args.run.chatThreadId),
-          eq(agentphoneUserLinks.userId, args.run.userId),
-          eq(agentphoneUserLinks.orgId, args.run.orgId),
+          eq(links.userId, args.run.userId),
+          eq(links.orgId, args.run.orgId),
         ),
       )
       .limit(1);
@@ -301,7 +301,10 @@ function buildAgentPhoneResponseText(args: {
 }
 
 interface AgentPhoneChatSendResult {
-  readonly message: AgentPhoneSendResult;
+  readonly messages: readonly {
+    readonly message: AgentPhoneSendResult;
+    readonly body: string;
+  }[];
   readonly visibilityRecipients: readonly {
     readonly orgId: string;
     readonly userId: string;
@@ -335,25 +338,47 @@ const sendAgentPhoneReply$ = command(
       : [];
     signal.throwIfAborted();
 
-    const message = await sendAgentPhoneMessage(
-      {
-        agentphoneAgentId: args.target.agentphoneAgentId,
-        toNumber,
-        ...(args.target.channel === "imessage"
-          ? { replyToMessageId: args.target.messageId }
-          : {}),
-        body: args.body,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return { message, visibilityRecipients };
+    const messages: { message: AgentPhoneSendResult; body: string }[] = [];
+    for (const body of agentPhoneReplyChunks(args.body, args.target.channel)) {
+      const message = await sendAgentPhoneMessage(
+        {
+          ...(args.target.channel === "whatsapp"
+            ? { channel: "whatsapp" as const }
+            : {}),
+          agentphoneAgentId: args.target.agentphoneAgentId,
+          toNumber,
+          ...(args.target.channel === "imessage"
+            ? { replyToMessageId: args.target.messageId }
+            : {}),
+          body,
+        },
+        signal,
+      );
+      // Preserve each accepted part before attempting the next one; failures do
+      // not erase earlier receipts or trigger an automatic resend.
+      if (args.target.channel === "whatsapp") {
+        await set(
+          storeOutboundAgentPhoneMessage$,
+          outboundAgentPhoneDeliveryValues({
+            target: args.target,
+            sent: { message, visibilityRecipients },
+            body,
+          }),
+        );
+      }
+      messages.push({ message, body });
+      signal.throwIfAborted();
+    }
+    return { messages, visibilityRecipients };
   },
 );
 
 function outboundAgentPhoneDeliveryValues(args: {
   readonly target: AgentPhoneDeliveryTarget;
-  readonly sent: AgentPhoneChatSendResult;
+  readonly sent: {
+    readonly message: AgentPhoneSendResult;
+    readonly visibilityRecipients: AgentPhoneChatSendResult["visibilityRecipients"];
+  };
   readonly body: string;
 }) {
   return {
@@ -433,14 +458,20 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
       },
       signal,
     );
-    return set(
-      recordAgentPhoneChatDelivery$,
-      outboundAgentPhoneDeliveryValues({
-        target: payload,
-        sent,
-        body,
-      }),
-    );
+    for (const part of payload.channel === "whatsapp" ? [] : sent.messages) {
+      await set(
+        recordAgentPhoneChatDelivery$,
+        outboundAgentPhoneDeliveryValues({
+          target: payload,
+          sent: {
+            message: part.message,
+            visibilityRecipients: sent.visibilityRecipients,
+          },
+          body: part.body,
+        }),
+      );
+    }
+    return "delivered";
   },
 );
 
@@ -533,7 +564,9 @@ export const dispatchAgentPhoneChatDeliveryOnce$ = command(
     if (
       status === "completed" &&
       delivery.ok &&
-      delivery.value === "delivered"
+      delivery.value === "delivered" &&
+      agentphoneChatCallbackPayloadSchema.parse(callback.payload).channel !==
+        "whatsapp"
     ) {
       await tapError(
         set(
@@ -621,21 +654,20 @@ export const deliverAgentPhoneChatAdmissionFailure$ = command(
       },
       signal,
     );
-    await set(storeOutboundAgentPhoneMessage$, {
-      agentphoneMessageId: sent.message.id,
-      conversationId: args.target.conversationId,
-      groupId: args.target.isGroup ? args.target.groupId : null,
-      agentphoneAgentId: args.target.agentphoneAgentId,
-      userLinkId: args.target.userLinkId,
-      phoneHandle: args.target.phoneHandle,
-      fromNumber: args.target.isGroup
-        ? args.target.toNumber
-        : (sent.message.fromNumber ?? args.target.toNumber),
-      toNumber: sent.message.toNumber,
-      body,
-      channel: args.target.isGroup ? args.target.channel : sent.message.channel,
-      userChannel: args.target.channel,
-      visibilityRecipients: sent.visibilityRecipients,
-    });
+    for (const part of args.target.channel === "whatsapp"
+      ? []
+      : sent.messages) {
+      await set(
+        storeOutboundAgentPhoneMessage$,
+        outboundAgentPhoneDeliveryValues({
+          target: args.target,
+          sent: {
+            message: part.message,
+            visibilityRecipients: sent.visibilityRecipients,
+          },
+          body: part.body,
+        }),
+      );
+    }
   },
 );

@@ -110,6 +110,7 @@ jobs:
           bash ios/scripts/test-ci.sh
           node --test ios/scripts/testflight.test.mjs
           python3 ios/scripts/archive-proof.test.py
+          python3 ios/scripts/upload-sentry-symbols.test.py
           python3 ios/scripts/distribution-profile.test.py
           python3 ios/scripts/archive-promotion.test.py
           python3 ios/scripts/preboot-simulator.test.py

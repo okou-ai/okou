@@ -35,7 +35,7 @@ const resolveSharedThreadArtifactDownload$ = command(
       }
       const file = await set(
         resolveSharedThreadArtifactReference$,
-        reference,
+        { ...reference, viewerId: args.viewerId },
         signal,
       );
       return file
@@ -47,7 +47,11 @@ const resolveSharedThreadArtifactDownload$ = command(
           }
         : null;
     }
-    const target = await set(sharedThreadArtifactTarget$, reference, signal);
+    const target = await set(
+      sharedThreadArtifactTarget$,
+      { ...reference, viewerId: args.viewerId },
+      signal,
+    );
     signal.throwIfAborted();
     if (target?.kind !== "html") {
       return null;

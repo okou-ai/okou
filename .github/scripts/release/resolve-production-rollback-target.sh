@@ -23,8 +23,10 @@ readonly PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT=625c4607ccdcd2d46a5c7227f6141992
 readonly FINALIZING_SOURCE_API_WRITER_COMMIT=968063848aea8cf54acd6f56facdf7cdcbd79051
 # Runner is selected independently and must understand the source-bearing wire shape.
 readonly FINALIZING_SOURCE_RUNNER_READER_COMMIT=b610ff61043274157618e3925b13a66dc56ef84b
-# #41808 stopped naming runner_state.wss_ingress_service_active in ORM statements.
-# Migration drop_runner_state_wss_ingress drops it, so earlier APIs fail Runner state SQL.
+# #41808 stopped naming runner_state.wss_ingress_service_active in ORM statements
+# and removed every runner_wss_tickets reader and writer. Migrations
+# drop_runner_state_wss_ingress and drop_runner_wss_tickets drop that storage,
+# so earlier APIs fail Runner state and WSS ticket SQL.
 readonly RUNNER_STATE_WSS_INGRESS_FREE_COMMIT=430cb92b5431e1554d0a1dceed6d9cfb27762921
 # #42935 removed retired Data job mappings and pricing columns from API SQL.
 # The later storage contraction must not restore an API that still names them.

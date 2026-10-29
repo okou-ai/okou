@@ -1,34 +1,13 @@
 import { command, computed, type Computed } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq, exists, isNull, ne, or } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
-import {
-  createUserFeatureSwitchContext,
-  loadUserFeatureSwitchContext$,
-} from "./feature-switches.service";
 
 interface SlackAccountOwner {
   readonly orgId: string;
   readonly userId: string;
-}
-
-export function slackWorkspaceIdentityEnabled(
-  identity$: Computed<SlackAccountOwner | Promise<SlackAccountOwner>>,
-) {
-  const resolvedIdentity$ = computed(async (get) => {
-    return await get(identity$);
-  });
-  const context$ = createUserFeatureSwitchContext(resolvedIdentity$);
-  return computed(async (get) => {
-    return isFeatureEnabled(
-      FeatureSwitchKey.SlackWorkspaceIdentity,
-      await get(context$),
-    );
-  });
 }
 
 /** Match both explicitly owned accounts and legacy installation-owned links. */
@@ -186,7 +165,7 @@ export const connectSlackAccount$ = command(
   },
 );
 
-/** Account connections survive bot removal; legacy links retain their lifecycle. */
+/** Preserve account ownership before removing an installation and its legacy FK. */
 export const removeSlackWorkspaceInstallation$ = command(
   async ({ set }, workspaceId: string, signal: AbortSignal) => {
     const db = set(writeDb$);
@@ -208,29 +187,19 @@ export const removeSlackWorkspaceInstallation$ = command(
         );
       signal.throwIfAborted();
       for (const connection of legacy) {
-        const features = await set(
-          loadUserFeatureSwitchContext$,
-          installation.orgId,
-          connection.userId,
-          signal,
-        );
-        if (
-          isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, features)
-        ) {
-          await db
-            .update(slackOrgConnections)
-            .set({
-              orgId: installation.orgId,
-              slackWorkspaceName: installation.slackWorkspaceName,
-            })
-            .where(
-              and(
-                eq(slackOrgConnections.id, connection.id),
-                isNull(slackOrgConnections.orgId),
-              ),
-            );
-          signal.throwIfAborted();
-        }
+        await db
+          .update(slackOrgConnections)
+          .set({
+            orgId: installation.orgId,
+            slackWorkspaceName: installation.slackWorkspaceName,
+          })
+          .where(
+            and(
+              eq(slackOrgConnections.id, connection.id),
+              isNull(slackOrgConnections.orgId),
+            ),
+          );
+        signal.throwIfAborted();
       }
     }
     await db

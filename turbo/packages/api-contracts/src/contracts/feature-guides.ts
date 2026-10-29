@@ -20,6 +20,36 @@ const editionIdSchema = string()
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
 const mediaUrlSchema = url({ protocol: /^https$/u });
 
+const featureGuideConversationSchema = object({
+  provider: literal("discord"),
+  label: string().min(1).max(60),
+  title: string().min(1).max(80),
+  subtitle: string().min(1).max(120),
+  messages: array(
+    object({
+      id: string().min(1).max(60),
+      role: literal(["user", "assistant"]),
+      author: string().min(1).max(60),
+      text: string().min(1).max(1000),
+    }).strict(),
+  )
+    .min(1)
+    .max(4)
+    .refine((messages) => {
+      return (
+        new Set(
+          messages.map((message) => {
+            return message.id;
+          }),
+        ).size === messages.length
+      );
+    }, "Message IDs must be unique within a conversation"),
+}).strict();
+
+export type FeatureGuideConversation = zInfer<
+  typeof featureGuideConversationSchema
+>;
+
 export const featureGuideMediaSchema = discriminatedUnion("type", [
   object({
     type: literal("image"),
@@ -39,6 +69,7 @@ export const featureGuideMediaSchema = discriminatedUnion("type", [
         title: string().min(1).max(120),
         description: string().min(1).max(1000),
         imageUrl: mediaUrlSchema.optional(),
+        conversation: featureGuideConversationSchema.optional(),
       }).strict(),
     )
       .min(1)
@@ -57,6 +88,12 @@ export const featureGuideContentSchema = object({
       description: string().min(1).max(1000),
       media: featureGuideMediaSchema.optional(),
       prompt: string().min(1).max(4000).optional(),
+      action: object({
+        type: literal("connect-discord"),
+        label: string().min(1).max(80),
+      })
+        .strict()
+        .optional(),
     }).strict(),
   )
     .min(1)

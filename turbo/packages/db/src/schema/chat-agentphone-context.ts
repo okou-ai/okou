@@ -32,7 +32,7 @@ export const chatAgentphoneContext = pgTable(
     rootMessageId: text("root_message_id"),
     conversationId: text("conversation_id"),
     groupId: text("group_id"),
-    channel: text("channel").$type<"imessage" | "sms" | "mms">(),
+    channel: text("channel").$type<"imessage" | "sms" | "mms" | "whatsapp">(),
     isGroup: boolean("is_group"),
     phoneHandle: text("phone_handle"),
     fromNumber: text("from_number"),

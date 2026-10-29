@@ -412,40 +412,44 @@ async fn close_during_reconnect_backoff_stops_before_next_attempt() {
     mock_token_endpoint(&http, "testKey.testId");
 
     let ws_port = ws.port;
-    let (checked_tx, checked_rx) = tokio::sync::oneshot::channel::<()>();
-    let server_task = tokio::spawn(async move {
+    let server = async {
         let conn = ws.accept_and_handshake("ch", "conn-1").await.unwrap();
         drop(conn);
+        // The first interruption retries immediately; only the next one has
+        // a previous reconnect attempt against which to enforce spacing.
+        let conn = ws.accept_and_handshake("ch", "conn-2").await.unwrap();
+        drop(conn);
+    };
+    let client = async {
+        let mut timing = TimingConfig::default();
+        timing.min_reconnect_interval = Duration::from_secs(30);
+        let mut sub = subscribe(test_config_with_timing(ws_port, http.port(), "ch", timing))
+            .await
+            .unwrap();
 
-        assert!(
-            tokio::time::timeout(Duration::from_millis(1500), ws.accept_raw())
-                .await
-                .is_err(),
-            "subscription close during reconnect backoff should stop before the next attempt"
-        );
-        checked_tx.send(()).unwrap();
-    });
+        for context in ["initial connection", "reconnected transport"] {
+            expect_connected(&mut sub, context).await.unwrap();
+            let event = expect_event(&mut sub, "Disconnected").await.unwrap();
+            assert!(
+                matches!(event, Event::Disconnected { .. }),
+                "expected Disconnected, got {event:?}"
+            );
+        }
+        sub.close_and_wait().await.unwrap();
+    };
+    tokio::time::timeout(TEST_IO_TIMEOUT, async {
+        tokio::join!(server, client);
+    })
+    .await
+    .expect("subscription and peer must finish during reconnect backoff");
 
-    let mut timing = TimingConfig::default();
-    timing.disconnected_retry_timeout = Duration::from_millis(250);
-    let mut sub = subscribe(test_config_with_timing(ws_port, http.port(), "ch", timing))
-        .await
-        .unwrap();
-
-    expect_connected(&mut sub, "Connected event").await.unwrap();
-    let event = expect_event(&mut sub, "Disconnected").await.unwrap();
+    // Local close completion retires the reconnect owner; inspect the actual
+    // kernel backlog rather than waiting for an arbitrary quiet interval.
+    let reconnect = ws.listener.into_std().unwrap().accept();
     assert!(
-        matches!(event, Event::Disconnected { .. }),
-        "expected Disconnected, got {event:?}"
+        matches!(reconnect, Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock),
+        "subscription reconnected despite close during backoff: {reconnect:?}"
     );
-
-    sub.close();
-
-    tokio::time::timeout(Duration::from_secs(3), checked_rx)
-        .await
-        .expect("timed out waiting for reconnect suppression check")
-        .unwrap();
-    join_server_task(server_task, "mock server").await.unwrap();
 }
 
 #[tokio::test]
@@ -455,8 +459,7 @@ async fn close_during_protocol_disconnected_reconnect_backoff_closes_socket() {
     mock_token_endpoint(&http, "testKey.testId");
 
     let ws_port = ws.port;
-    let (closed_tx, closed_rx) = tokio::sync::oneshot::channel::<()>();
-    let server_task = tokio::spawn(async move {
+    let server = async {
         let mut conn = ws.accept_and_handshake("ch", "conn-1").await.unwrap();
         let disconnected = ProtocolMessage {
             action: action::DISCONNECTED,
@@ -482,38 +485,35 @@ async fn close_during_protocol_disconnected_reconnect_backoff_closes_socket() {
             matches!(frame, tungstenite::Message::Close(_)),
             "expected websocket close frame, got {frame:?}"
         );
+    };
+    let client = async {
+        let mut timing = TimingConfig::default();
+        timing.disconnected_retry_timeout = Duration::from_secs(5);
+        let mut sub = subscribe(test_config_with_timing(ws_port, http.port(), "ch", timing))
+            .await
+            .unwrap();
 
+        expect_connected(&mut sub, "Connected event").await.unwrap();
+        let event = expect_event(&mut sub, "protocol DISCONNECTED")
+            .await
+            .unwrap();
         assert!(
-            tokio::time::timeout(Duration::from_millis(500), ws.accept_raw())
-                .await
-                .is_err(),
-            "subscription close should stop before reconnecting after protocol DISCONNECTED"
+            matches!(event, Event::Disconnected { .. }),
+            "expected Disconnected, got {event:?}"
         );
-        closed_tx.send(()).unwrap();
-    });
+        sub.close_and_wait().await.unwrap();
+    };
+    tokio::time::timeout(TEST_IO_TIMEOUT, async {
+        tokio::join!(server, client);
+    })
+    .await
+    .expect("subscription and protocol-close peer must finish during backoff");
 
-    let mut timing = TimingConfig::default();
-    timing.disconnected_retry_timeout = Duration::from_secs(5);
-    let mut sub = subscribe(test_config_with_timing(ws_port, http.port(), "ch", timing))
-        .await
-        .unwrap();
-
-    expect_connected(&mut sub, "Connected event").await.unwrap();
-    let event = expect_event(&mut sub, "protocol DISCONNECTED")
-        .await
-        .unwrap();
+    let reconnect = ws.listener.into_std().unwrap().accept();
     assert!(
-        matches!(event, Event::Disconnected { .. }),
-        "expected Disconnected, got {event:?}"
+        matches!(reconnect, Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock),
+        "subscription reconnected despite close after protocol DISCONNECTED: {reconnect:?}"
     );
-
-    sub.close();
-
-    tokio::time::timeout(Duration::from_secs(5), closed_rx)
-        .await
-        .expect("timed out waiting for protocol DISCONNECTED backoff close check")
-        .unwrap();
-    join_server_task(server_task, "mock server").await.unwrap();
 }
 
 #[tokio::test]

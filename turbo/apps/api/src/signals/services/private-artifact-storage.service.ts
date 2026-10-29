@@ -270,7 +270,9 @@ export const privateArtifactRecord$ = command(
     const [row] = await get(db$)
       .select()
       .from(runUploadedFiles)
-      .where(eq(runUploadedFiles.id, id))
+      .where(
+        and(eq(runUploadedFiles.id, id), isNull(runUploadedFiles.deletedAt)),
+      )
       .limit(1);
     signal.throwIfAborted();
     if (!row || row.metadata.storage === undefined) {

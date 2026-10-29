@@ -7,16 +7,6 @@ import { authRoute } from "../auth/auth-route";
 import { slackUserInstallation } from "../services/slack-data.service";
 import type { RouteEntry } from "../route-entry";
 
-const slackInstallationNotFound = Object.freeze({
-  status: 404 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "No Slack installation found for this org",
-      code: "NOT_FOUND",
-    }),
-  }),
-});
-
 const slackConnectionNotFound = Object.freeze({
   status: 404 as const,
   body: Object.freeze({
@@ -36,9 +26,6 @@ const slackInstallation$ = slackUserInstallation(slackInstallationInput$);
 
 const getSlackChannelsInner$ = computed(async (get) => {
   const installation = await get(slackInstallation$);
-  if (installation.kind === "not-installed") {
-    return slackInstallationNotFound;
-  }
   if (installation.kind === "not-connected") {
     return slackConnectionNotFound;
   }

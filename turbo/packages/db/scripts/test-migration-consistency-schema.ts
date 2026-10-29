@@ -5,6 +5,7 @@ import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
 import { validateRunOutputMemoryCitationRetirement } from "./test-run-output-memory-citation-retirement";
 import { validateStripeInvoicePaidRetirement } from "./test-stripe-invoice-paid-retirement";
 import { validateManagedDataRetirement } from "./test-managed-data-retirement";
+import { validateHistoricalRunCleanup } from "./test-historical-run-cleanup";
 /**
  * Migration Consistency Test - Schema Comparison
  *
@@ -2844,6 +2845,7 @@ async function main(): Promise<void> {
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
     await validateCanonicalBillingSources(dbUrl1);
     await validateBillingRunLifecycle(dbUrl1);
+    await validateHistoricalRunCleanup(dbUrl1);
     await validatePermanentArtifactThreadCatalog(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePiMemoryRetirement(dbUrl1);

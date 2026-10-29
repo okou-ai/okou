@@ -18,7 +18,9 @@ const context = testContext();
 const MAIL_ID = "e0000000-0000-4000-a000-000000000901";
 const MAIL_PATH = `/mail/drafts/${MAIL_ID}`;
 
-function mailDraft(overrides: Partial<MailDraft> = {}): MailDraft {
+function mailDraft(
+  overrides: Partial<Extract<MailDraft, { provider: "gmail" }>> = {},
+): Extract<MailDraft, { provider: "gmail" }> {
   return {
     version: 3,
     provider: "gmail",

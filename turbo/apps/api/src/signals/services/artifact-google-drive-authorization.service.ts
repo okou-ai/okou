@@ -71,6 +71,7 @@ export const ownedGoogleDriveArtifact$ = command(
               eq(artifacts.id, args.artifactId),
               eq(artifacts.orgId, args.orgId),
               eq(artifacts.authorUserId, args.userId),
+              isNull(artifacts.deletedAt),
             ),
             args.catalogOnly
               ? undefined
@@ -78,6 +79,7 @@ export const ownedGoogleDriveArtifact$ = command(
           ),
           eq(runUploadedFiles.orgId, args.orgId),
           eq(runUploadedFiles.userId, args.userId),
+          isNull(runUploadedFiles.deletedAt),
           isNotNull(runUploadedFiles.url),
           // Noncanonical upload/host writers legitimately omit assetVersion
           // and materializationStatus. Only canonical assets have a ready gate.

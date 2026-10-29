@@ -23,6 +23,7 @@ const teamsEnvironmentSchema = object({
 });
 
 const teamsConnectStatusSchema = object({
+  workspaceIdentity: boolean().optional(),
   isInstalled: boolean(),
   isConnected: boolean(),
   isAdmin: boolean(),

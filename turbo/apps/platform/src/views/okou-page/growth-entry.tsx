@@ -293,7 +293,11 @@ function useGetStartedShown(): boolean {
   return summaryLoadable.state === "hasData" && summaryLoadable.data.total > 0;
 }
 
-export function GrowthEntryHeader() {
+export function GrowthEntryHeader({
+  children,
+}: {
+  children?: React.ReactNode;
+}) {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin = isAdminLoadable.state === "hasData" && isAdminLoadable.data;
   const getStartedShown = useGetStartedShown();
@@ -305,6 +309,7 @@ export function GrowthEntryHeader() {
   const showGrowthEntry = isAdmin && !getStartedShown;
   return (
     <CornerHeader>
+      {children}
       <GetStartedEntry />
       {showGrowthEntry ? <AdminGrowthEntry /> : null}
     </CornerHeader>

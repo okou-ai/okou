@@ -44,8 +44,8 @@ function mailCard(mailDraftId: string, label: string): string {
 
 function mailDraft(
   mailDraftId: string,
-  overrides: Partial<MailDraft> = {},
-): MailDraft {
+  overrides: Partial<Extract<MailDraft, { provider: "gmail" }>> = {},
+): Extract<MailDraft, { provider: "gmail" }> {
   return {
     version: 3,
     provider: "gmail",
@@ -482,7 +482,7 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
   const firstBody = "Approve the launch plan before Friday.";
   const secondBody = "Confirm the vendor delivery date.";
   const sentThreadId = "gmail-sent-thread-853";
-  const drafts = new Map<string, MailDraft>([
+  const drafts = new Map<string, Extract<MailDraft, { provider: "gmail" }>>([
     [
       FIRST_MAIL_ID,
       mailDraft(FIRST_MAIL_ID, { subject: firstSubject, body: firstBody }),
@@ -512,7 +512,7 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
         error: { code: "NOT_FOUND", message: "Email not found" },
       });
     }
-    const sent: MailDraft = {
+    const sent: Extract<MailDraft, { provider: "gmail" }> = {
       ...current,
       status: "sent",
       gmailThreadId: sentThreadId,
@@ -577,6 +577,54 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
     ).not.toBeInTheDocument();
   });
   await expect(findMailCard(firstSubject)).resolves.toHaveTextContent("Sent");
+});
+
+test("Review an Outlook draft and reconcile an accepted send from chat", async () => {
+  const {
+    gmailDraftId: _gmailDraftId,
+    gmailThreadId: _gmailThreadId,
+    gmailMessageId: _gmailMessageId,
+    ...common
+  } = mailDraft(FIRST_MAIL_ID);
+  let current: MailDraft = {
+    ...common,
+    provider: "outlook",
+    outlookMessageId: "outlook-immutable-id",
+    outlookConversationId: "outlook-conversation",
+    outlookWebLink: "https://outlook.live.com/mail/0/drafts/id/outlook-draft",
+    subject: "Outlook launch approval",
+    body: "Review the launch proposal in Outlook.",
+  };
+  installCapabilityChat({
+    events: completedConversation(mailCard(FIRST_MAIL_ID, current.subject)),
+  });
+  context.mocks.api(mailContract.getDraft, ({ respond }) => {
+    return respond(200, mailResponse(FIRST_MAIL_ID, current));
+  });
+  context.mocks.api(mailContract.sendDraft, ({ respond }) => {
+    current = { ...current, status: "sending" };
+    return respond(200, mailResponse(FIRST_MAIL_ID, current));
+  });
+  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
+  await readyChat();
+  click(await findMailCard(current.subject));
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Email details",
+  });
+  expect(within(sidebar).getByText(current.body)).toBeInTheDocument();
+  await expect(
+    findControl("link", "Open in Outlook", sidebar),
+  ).resolves.toHaveAttribute("href", current.outlookWebLink);
+  click(await findControl("button", "Send", sidebar));
+  await expect(
+    within(sidebar).findByText("Awaiting send confirmation"),
+  ).resolves.toBeInTheDocument();
+  expect(queryControl("button", "Send", sidebar)).toBeNull();
+  expect(within(sidebar).queryByText("Sent")).not.toBeInTheDocument();
+  current = { ...current, status: "sent", sentAt: "2026-10-28T10:00:00.000Z" };
+  click(await findControl("button", "Refresh status", sidebar));
+  await expect(within(sidebar).findByText("Sent")).resolves.toBeInTheDocument();
+  expect(queryControl("button", "Send", sidebar)).toBeNull();
 });
 
 test("Open a trusted email card with safe, complete details", async () => {
@@ -739,7 +787,7 @@ test("Open a trusted email card with safe, complete details", async () => {
 test("Deleting an earlier mail draft preserves the currently open mail", async () => {
   const firstSubject = "First pending deletion";
   const secondSubject = "Second current email";
-  const drafts = new Map<string, MailDraft>([
+  const drafts = new Map<string, Extract<MailDraft, { provider: "gmail" }>>([
     [FIRST_MAIL_ID, mailDraft(FIRST_MAIL_ID, { subject: firstSubject })],
     [
       SECOND_MAIL_ID,

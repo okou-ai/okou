@@ -10,7 +10,7 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, asc, desc, eq, notExists, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, notExists, or } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 
@@ -44,6 +44,13 @@ export function agentResponse(row: {
       avatarUrl: row.avatarUrl,
     }),
     visibility: row.visibility,
+  };
+}
+
+export function publicAgentCountReadPlan(orgId: string) {
+  return {
+    selection: { value: count() },
+    condition: and(eq(agents.orgId, orgId), eq(agents.visibility, "public")),
   };
 }
 

@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { agentphoneUserLinks } from "./agentphone-user-link";
+import { whatsappUserLinks } from "./whatsapp";
 
 /**
  * AgentPhone message store for context retrieval and webhook idempotency.
@@ -35,6 +36,12 @@ export const agentphoneMessages = pgTable(
       { onDelete: "set null" },
     ),
     phoneHandle: varchar("phone_handle", { length: 254 }).notNull(),
+    whatsappUserLinkId: uuid("whatsapp_user_link_id").references(
+      () => {
+        return whatsappUserLinks.id;
+      },
+      { onDelete: "set null" },
+    ),
     fromNumber: varchar("from_number", { length: 254 }).notNull(),
     toNumber: varchar("to_number", { length: 254 }).notNull(),
     direction: varchar("direction", { length: 16 }).notNull(),
@@ -47,6 +54,9 @@ export const agentphoneMessages = pgTable(
   },
   (table) => {
     return [
+      index("idx_agentphone_messages_whatsapp_link").on(
+        table.whatsappUserLinkId,
+      ),
       uniqueIndex("idx_agentphone_messages_agentphone_message").on(
         table.agentphoneMessageId,
       ),

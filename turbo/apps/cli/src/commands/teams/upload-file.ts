@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "fs";
 import { basename, extname } from "path";
 import { Command } from "commander";
@@ -52,6 +53,7 @@ export const uploadFileCommand = new Command()
   .option("--reply-to <activity-id>", "Activity ID to reply to in thread")
   .option("-t, --text <message>", "Message text to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
+  .option("--operation-id <uuid>", "Resume an existing file delivery operation")
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
@@ -71,6 +73,8 @@ Notes:
   - Requires your verified account; group targets require access for both you and the bot
   - You can DM other recipients, subject to the platform's bot delivery rules
   - Sending a DM does not grant access to its private history or attachments
+  - The operation ID is printed to stderr before upload; reuse --operation-id to resume a supported canonical delivery
+  - An uncertain canonical send is never automatically repeated
   - Uploads through Okou storage first, then sends the Teams message with the file URL
   - Use the Conversation ID and Activity ID from the current Teams run prompt`,
   )
@@ -83,6 +87,7 @@ Notes:
         text?: string;
         contentType?: string;
         json?: boolean;
+        operationId?: string;
       }) => {
         const destination = resolveTeamsDestination(
           options.to,
@@ -110,29 +115,45 @@ Notes:
         const filename = basename(options.file);
         const contentType =
           options.contentType ?? inferContentType(options.file);
+        const fileContent = readFileSync(options.file);
+        const operationId = options.operationId ?? randomUUID();
+        console.warn(`Upload operation: ${operationId}`);
         const prepared = await initTeamsFileUpload({
+          canonical: {
+            operationId,
+            checksumSha256: createHash("sha256")
+              .update(fileContent)
+              .digest("hex"),
+            ...destination,
+            ...(options.text ? { text: options.text } : {}),
+          },
           filename,
           contentType,
           length: fileSize,
         });
 
-        const fileContent = readFileSync(options.file);
-        const uploadResponse = await fetch(prepared.uploadUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Type": prepared.contentType,
-            ...prepared.uploadHeaders,
-          },
-          body: new Uint8Array(fileContent),
-        });
+        // GA flag-off and non-Run responses omit canonical fields. Removal
+        // requires retiring those callers and the API/Runner gates in #43729.
+        if (prepared.uploadRequired !== false) {
+          const uploadResponse = await fetch(prepared.uploadUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type": prepared.contentType,
+              ...prepared.uploadHeaders,
+            },
+            body: new Uint8Array(fileContent),
+          });
 
-        if (!uploadResponse.ok) {
-          throw new Error(
-            `File upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`,
-          );
+          if (!uploadResponse.ok) {
+            throw new Error(
+              `File upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`,
+            );
+          }
         }
-
         const result = await completeTeamsFileUpload({
+          ...(prepared.operationId
+            ? { operationId: prepared.operationId }
+            : {}),
           uploadId: prepared.uploadId,
           ...destination,
           contentType: prepared.contentType,

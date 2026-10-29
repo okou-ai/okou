@@ -30,6 +30,7 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import {
+  checkTeamsConversationMember,
   fetchTeamsChannelMessage,
   fetchTeamsChannelMessageReplies,
   fetchTeamsChannelMessages,
@@ -73,6 +74,10 @@ import {
 } from "./teams-connect.service";
 import type { TeamsFileTokenPayload } from "./teams-file-token";
 import { formatTeamsFileForContext } from "./teams-prompt";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT = "`help`, `connect`, `disconnect`";
 const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
@@ -84,7 +89,9 @@ const TEAMS_CHAT_MESSAGE_ID_NAMESPACE = "b60a5846-d85f-4db8-b9aa-d7d803efbb57";
 type TeamsBotCommand = "help" | "connect" | "disconnect";
 
 type TeamsInstallation = typeof teamsOrgInstallations.$inferSelect;
-type BoundTeamsInstallation = TeamsInstallation & { readonly orgId: string };
+type BoundTeamsInstallation = TeamsInstallation & {
+  readonly executionOrgId: string;
+};
 type TeamsConnection = typeof teamsOrgConnections.$inferSelect;
 type TeamsConnectionLookup = TeamsConnection | undefined;
 type TeamsMessageActivity = Extract<TeamsInboundActivity, { kind: "message" }>;
@@ -1339,7 +1346,7 @@ const persistTeamsChatMessage$ = command(
         initialModel: await set(
           resolveDefaultModelFirstPin$,
           {
-            orgId: args.installation.orgId,
+            orgId: args.installation.executionOrgId,
             userId: args.connection.userId,
             orgPlanCapabilities: undefined,
           },
@@ -1349,7 +1356,7 @@ const persistTeamsChatMessage$ = command(
         conversationId: args.activity.conversationId,
         threadId,
         userId: args.connection.userId,
-        orgId: args.installation.orgId,
+        orgId: args.installation.executionOrgId,
         agentId: args.composeId,
         currentTime,
       },
@@ -1361,7 +1368,7 @@ const persistTeamsChatMessage$ = command(
       materializeIntegrationInputAssets$,
       {
         userId: args.connection.userId,
-        orgId: args.installation.orgId,
+        orgId: args.installation.executionOrgId,
         chatThreadId: route.chatThreadId,
         files: teamsInputFiles(
           args.activity,
@@ -1388,7 +1395,7 @@ const persistTeamsChatMessage$ = command(
       resolveEnqueuedChatInputModel$,
       {
         threadId: route.chatThreadId,
-        orgId: args.installation.orgId,
+        orgId: args.installation.executionOrgId,
         userId: args.connection.userId,
       },
       signal,
@@ -1427,7 +1434,7 @@ const persistTeamsChatMessage$ = command(
     const eventId = await set(
       enqueueIntegrationChatInput$,
       {
-        orgId: args.installation.orgId,
+        orgId: args.installation.executionOrgId,
         input: values,
         threadModelReplacement: enqueuedModel.threadModelReplacement,
       },
@@ -1520,7 +1527,7 @@ const runAgentForTeams$ = command(
           set(
             pickEnqueuedChatThread$,
             {
-              orgId: args.installation.orgId,
+              orgId: args.installation.executionOrgId,
               chatThreadId: persisted.chatThreadId,
             },
             signal,
@@ -1537,11 +1544,11 @@ const runAgentForTeams$ = command(
         );
         await publishThreadListChangedSafely({
           userId: args.connection.userId,
-          orgId: args.installation.orgId,
+          orgId: args.installation.executionOrgId,
         });
         await publishChatThreadMessageCreatedSafely({
           userId: args.connection.userId,
-          orgId: args.installation.orgId,
+          orgId: args.installation.executionOrgId,
           threadId: persisted.chatThreadId,
         });
         const noticed = await settle(
@@ -1549,7 +1556,7 @@ const runAgentForTeams$ = command(
             const pick = await set(
               enqueuedChatQueueWaitReason$,
               {
-                orgId: args.installation.orgId,
+                orgId: args.installation.executionOrgId,
                 chatThreadId: persisted.chatThreadId,
                 eventId: persisted.chatEventId,
               },
@@ -1686,7 +1693,7 @@ const connectedCommandBeforeCompose$ = command(
         const result = await set(
           disconnectTeamsConnection$,
           {
-            orgId: args.installation.orgId,
+            orgId: args.installation.executionOrgId,
             userId: args.connection.userId,
           },
           signal,
@@ -1833,6 +1840,118 @@ function preparedTeamsNotice(
   );
 }
 
+const teamsConnectionForActivity$ = command(
+  async (
+    { set },
+    activity: TeamsMessageActivity,
+    signal: AbortSignal,
+  ): Promise<TeamsConnectionLookup> => {
+    const connectionDb = set(writeDb$);
+    const tenantId = activity.tenantId;
+    const teamsUserId = activity.sender.id;
+    const teamsAadObjectId = activity.sender.aadObjectId;
+    if (teamsAadObjectId) {
+      const [connection] = await connectionDb
+        .select()
+        .from(teamsOrgConnections)
+        .where(aadConnectionWhere(tenantId, teamsAadObjectId))
+        .limit(1);
+      signal.throwIfAborted();
+
+      if (connection) {
+        if (teamsUserId && connection.teamsUserId !== teamsUserId) {
+          await connectionDb
+            .update(teamsOrgConnections)
+            .set({ teamsUserId, updatedAt: nowDate() })
+            .where(eq(teamsOrgConnections.id, connection.id));
+          signal.throwIfAborted();
+        }
+        return { ...connection, ...(teamsUserId ? { teamsUserId } : {}) };
+      }
+    }
+
+    if (!teamsUserId) {
+      return undefined;
+    }
+
+    const [connection] = await connectionDb
+      .select()
+      .from(teamsOrgConnections)
+      .where(userConnectionWhere(tenantId, teamsUserId))
+      .limit(1);
+    signal.throwIfAborted();
+    return connection;
+  },
+);
+
+const teamsExecutionInstallation$ = command(
+  async (
+    { set },
+    installation: TeamsInstallation,
+    connection: TeamsConnection,
+    activity: TeamsMessageActivity,
+    signal: AbortSignal,
+  ): Promise<BoundTeamsInstallation | undefined> => {
+    const executionOrgId = connection.orgId ?? installation.orgId;
+    if (!executionOrgId) {
+      return undefined;
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      executionOrgId,
+      connection.userId,
+      signal,
+    );
+    const identityEnabled = isFeatureEnabled(
+      FeatureSwitchKey.TeamsWorkspaceIdentity,
+      features,
+    );
+    if (
+      connection.orgId &&
+      !identityEnabled &&
+      connection.orgId !== installation.orgId
+    ) {
+      return undefined;
+    }
+    if (identityEnabled) {
+      const member = await set(
+        getMemberRoleAndUpdateCache$,
+        executionOrgId,
+        connection.userId,
+        signal,
+      );
+      if (
+        member.kind !== "member" ||
+        !installation.serviceUrl ||
+        (connection.orgId &&
+          (!connection.teamsAadObjectId ||
+            connection.teamsAadObjectId !== activity.sender.aadObjectId))
+      ) {
+        return undefined;
+      }
+      const access = await checkTeamsConversationMember(
+        {
+          serviceUrl: activity.serviceUrl,
+          tenantId: activity.tenantId,
+          conversationId: activity.conversationId,
+          teamsUserId: activity.sender.id,
+          ...(connection.teamsAadObjectId
+            ? { aadObjectId: connection.teamsAadObjectId }
+            : {}),
+        },
+        signal,
+      );
+      if (access.kind === "teams-error") {
+        throw new Error(`Microsoft Teams API error: ${access.error}`);
+      }
+      if (access.kind === "denied") {
+        return undefined;
+      }
+    }
+    return { ...installation, executionOrgId };
+  },
+);
+
 export const dispatchTeamsMessageToAgent$ = command(
   async (
     { set },
@@ -1862,51 +1981,23 @@ export const dispatchTeamsMessageToAgent$ = command(
     }
     signal.throwIfAborted();
 
-    if (!installation?.orgId) {
+    if (!installation) {
       return unboundInstallationNotice(message, installation);
     }
-    const boundInstallation: BoundTeamsInstallation = {
-      ...installation,
-      orgId: installation.orgId,
-    };
 
-    const connectionDb = db;
-    const tenantId = activity.tenantId;
-    const teamsUserId = activity.sender.id;
-    const teamsAadObjectId = activity.sender.aadObjectId;
-    const connection = await (async (): Promise<TeamsConnectionLookup> => {
-      if (teamsAadObjectId) {
-        const [connection] = await connectionDb
-          .select()
-          .from(teamsOrgConnections)
-          .where(aadConnectionWhere(tenantId, teamsAadObjectId))
-          .limit(1);
-
-        if (connection) {
-          if (teamsUserId && connection.teamsUserId !== teamsUserId) {
-            await connectionDb
-              .update(teamsOrgConnections)
-              .set({ teamsUserId, updatedAt: nowDate() })
-              .where(eq(teamsOrgConnections.id, connection.id));
-          }
-          return connection;
-        }
-      }
-
-      if (!teamsUserId) {
-        return undefined;
-      }
-
-      const [connection] = await connectionDb
-        .select()
-        .from(teamsOrgConnections)
-        .where(userConnectionWhere(tenantId, teamsUserId))
-        .limit(1);
-      return connection;
-    })();
-    signal.throwIfAborted();
-
+    const connection = await set(teamsConnectionForActivity$, activity, signal);
     if (!connection) {
+      return missingConnectionNotice(message, installation);
+    }
+
+    const boundInstallation = await set(
+      teamsExecutionInstallation$,
+      installation,
+      connection,
+      activity,
+      signal,
+    );
+    if (!boundInstallation) {
       return missingConnectionNotice(message, installation);
     }
 
@@ -1926,7 +2017,7 @@ export const dispatchTeamsMessageToAgent$ = command(
 
     const composeDb = db;
     const userId = connection.userId;
-    const orgId = boundInstallation.orgId;
+    const orgId = boundInstallation.executionOrgId;
     const effectiveCompose =
       await (async (): Promise<EffectiveComposeResolution> => {
         const [metadata] = await composeDb

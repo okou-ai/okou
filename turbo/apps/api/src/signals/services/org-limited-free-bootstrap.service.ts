@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";

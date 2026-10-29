@@ -6,12 +6,14 @@ import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/arti
 import {
   linkLayoutFromSegment,
   linkLayoutSegment,
+  linkLayoutSegmentSchema,
   type LinkLayout,
 } from "@okouai/api-contracts/contracts/link-layout";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { command, computed } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import {
   hostedSites,
   privateHostedDeployments,
@@ -45,6 +47,7 @@ import { resolveArtifactDownloadUrl$ } from "./artifact-download-url.service";
 import {
   privateArtifactRecord$,
   privateArtifactUrl,
+  artifactStorageBucket,
 } from "./private-artifact-storage.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
@@ -403,6 +406,33 @@ const snapshotFileTarget$ = command(
   },
 );
 
+const shareTargetStillAvailable$ = command(
+  async (
+    { set },
+    args: {
+      readonly candidate: ShareCandidate;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (args.candidate.target.kind !== "file") {
+      return true;
+    }
+    return (
+      (await set(
+        ownedShareTarget$,
+        {
+          target: { kind: "file", id: args.candidate.target.id },
+          userId: args.userId,
+          orgId: args.orgId,
+        },
+        signal,
+      )) !== null
+    );
+  },
+);
+
 const publishArtifactShare$ = command(
   async (
     { get, set },
@@ -424,6 +454,12 @@ const publishArtifactShare$ = command(
     const stored = await get(policyFor(row, signal));
     signal.throwIfAborted();
     const previous = stored?.policy;
+    // Read the policy before checking the live target. A deletion either makes
+    // this target unavailable or changes the policy ETag before our write.
+    if (!(await set(shareTargetStillAvailable$, args, signal))) {
+      return null;
+    }
+    signal.throwIfAborted();
     // Files need a durable revocation even before their first publication.
     // A delayed If-None-Match writer must not grant access after this succeeds.
     // HTML no longer has a publication writer; absent grants remain inert.
@@ -484,6 +520,99 @@ const publishArtifactShare$ = command(
     );
     signal.throwIfAborted();
     return prepared;
+  },
+);
+
+/** Retrying deletion must finish revocation even though the file is now hidden. */
+export const revokeDeletedFileArtifactShare$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly fileId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const [file] = await db
+      .select()
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.id, args.fileId),
+          eq(runUploadedFiles.userId, args.userId),
+          eq(runUploadedFiles.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!file?.deletedAt || file.metadata.storage === undefined) {
+      return;
+    }
+    artifactStorageBucket(file.metadata);
+    if (!file.storageKey || !file.filename || !file.contentType) {
+      throw new Error(
+        "Deleted private artifact has incomplete storage metadata",
+      );
+    }
+    const segment = linkLayoutSegmentSchema.parse(file.metadata.publicBrand);
+    // Allocate an inert identity even if a delayed first share has not done so.
+    await db
+      .insert(artifactShares)
+      .values({
+        userId: args.userId,
+        orgId: args.orgId,
+        targetKind: "file",
+        targetId: file.id,
+        linkLayoutSegment: segment,
+      })
+      .onConflictDoNothing({
+        target: [artifactShares.targetKind, artifactShares.targetId],
+      });
+    signal.throwIfAborted();
+    const row = await get(shareIdentity("file", file.id));
+    signal.throwIfAborted();
+    if (!row || row.userId !== args.userId || row.orgId !== args.orgId) {
+      throw new Error("Deleted artifact share does not match its owner");
+    }
+    const stored = await get(policyFor(row, signal));
+    signal.throwIfAborted();
+    const previous = stored?.policy;
+    const policy = artifactSharePolicySchema.parse({
+      version: 1,
+      delivery: "artifact-registry-v1",
+      revision: randomUUID(),
+      shareId: row.id,
+      ownerId: row.userId,
+      orgId: row.orgId,
+      publicBrand: segment,
+      audience: "private",
+      status: "revoked",
+      publicToken: null,
+      target: previous?.target ?? {
+        kind: "file",
+        id: file.id,
+        key: file.storageKey,
+        filename: file.filename,
+        contentType: file.contentType,
+      },
+    });
+    const prepared = await set(
+      prepareArtifactShareAliases$,
+      { policy, previous },
+      signal,
+    );
+    await get(
+      writeArtifactSharePolicyObject(
+        policyBucket(),
+        policyKey(row),
+        JSON.stringify(prepared),
+        stored?.etag ?? null,
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
   },
 );
 

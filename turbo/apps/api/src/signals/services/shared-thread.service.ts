@@ -1,3 +1,4 @@
+import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { randomUUID } from "node:crypto";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
 import { joinAll, onRejection, settle } from "../utils";
@@ -58,12 +59,13 @@ import {
 
 const SHARED_THREAD_MAX_SERIALIZED_BYTES = 2 * 1024 * 1024;
 
-interface CreateSharedThreadArgs {
+export interface CreateSharedThreadArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly threadId: string;
   readonly eventIds: readonly string[];
   readonly canReadAttachments: boolean;
+  readonly audience?: SharedThreadAudience;
   /** Client-generated ID, so the caller can copy the link before creation. */
   readonly id?: string;
 }
@@ -435,6 +437,9 @@ const insertSharedThreadIdentity$ = command(
               thumbnail: sql`NULL::jsonb`
                 .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
                 .as("thumbnail"),
+              deletedAt: sql`NULL::timestamp`
+                .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
+                .as("deleted_at"),
               createdAt: sql`${createdAt}::timestamp`
                 .mapWith(artifacts.createdAt)
                 .as("created_at"),
@@ -610,7 +615,7 @@ const prepareAndPersistSharedThread$ = command(
     const preparation = await settle(
       set(
         prepareSharedThreadArtifacts$,
-        { ...args, threadId: id, messages },
+        { ...args, threadId: id, messages, attachmentCopies },
         signal,
       ),
       signal,
@@ -634,11 +639,13 @@ const prepareAndPersistSharedThread$ = command(
     ) {
       return { kind: "too-large" } as const;
     }
-    await set(
-      publishSharedThreadAttachments$,
-      attachmentCopies.values(),
-      signal,
-    );
+    if (args.audience === undefined) {
+      await set(
+        publishSharedThreadAttachments$,
+        attachmentCopies.values(),
+        signal,
+      );
+    }
     const publication = await settle(
       set(
         persistSharedThread$,
@@ -695,7 +702,7 @@ export const createSharedThread$ = command(
     );
     signal.throwIfAborted();
 
-    const shareId = args.id ?? randomUUID();
+    const shareId = args.id?.toLowerCase() ?? randomUUID();
     const prepared = await set(
       prepareSharedThreadMessages$,
       args,
@@ -747,7 +754,12 @@ export const createSharedThread$ = command(
 );
 
 export const readSharedThread$ = command(
-  async ({ get, set }, id: string, signal: AbortSignal) => {
+  async (
+    { get, set },
+    id: string,
+    viewerId: string | undefined,
+    signal: AbortSignal,
+  ) => {
     const [row] = await get(db$)
       .select({
         id: sharedThreads.id,
@@ -764,7 +776,8 @@ export const readSharedThread$ = command(
       .where(eq(sharedThreads.id, id))
       .limit(1);
     signal.throwIfAborted();
-    return row && (await set(sharedThreadArtifactsReadable$, row, signal))
+    return row &&
+      (await set(sharedThreadArtifactsReadable$, row, viewerId, signal))
       ? {
           id: row.id,
           title: row.title,
@@ -796,10 +809,10 @@ export const readSharedThreadMeta$ = command(
       .where(eq(sharedThreads.id, id))
       .limit(1);
     signal.throwIfAborted();
-    return row && (await set(sharedThreadArtifactsReadable$, row, signal))
+    return row &&
+      (await set(sharedThreadArtifactsReadable$, row, undefined, signal))
       ? {
           title: row.title,
-          hasArtifactSnapshot: row.hasArtifactSnapshot,
         }
       : null;
   },

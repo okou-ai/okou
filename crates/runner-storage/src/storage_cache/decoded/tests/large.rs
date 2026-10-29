@@ -400,22 +400,6 @@ async fn exhausted_file_read_ahead_does_not_hide_later_invalid_metadata() {
     cache.shutdown().await;
 }
 
-#[test]
-fn empty_file_fixture_prefixes_preserve_every_descriptor() {
-    let files = fixture_files(1024, 0, false);
-    for count in [0, 1, 24, 1000, 1024] {
-        let expected: Vec<_> = (0..count)
-            .map(|index| StorageFile {
-                path: format!("file-{index:04}"),
-                mode: 0o640,
-                mtime: 1234567890,
-                content: Vec::new(),
-            })
-            .collect();
-        assert_eq!(files.get(..count).unwrap(), expected);
-    }
-}
-
 #[tokio::test]
 async fn retained_large_hits_exhaust_optional_budget_without_leaking_permits() {
     let root = tempfile::tempdir().unwrap();

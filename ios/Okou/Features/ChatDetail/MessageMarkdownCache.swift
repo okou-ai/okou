@@ -5,6 +5,7 @@ import Textual
 /// A workspace owns this disposable presentation cache; durable chat data stays in ChatCache.
 @MainActor
 final class MessageMarkdownCache {
+  private(set) var diagrams = MessageMermaidRenderer()
   private struct Entry {
     let content: AttributedString
     let cost: Int
@@ -69,6 +70,7 @@ final class MessageMarkdownCache {
   }
 
   func clear() {
+    diagrams = MessageMermaidRenderer()
     generation = UUID()
     for task in inFlight.values { task.cancel() }
     inFlight.removeAll()
@@ -87,10 +89,12 @@ private actor MarkdownWorker {
     // Foundation drops imageURL for an image inside a link. Source positions let us recover
     // that image node without scanning code/HTML or changing the authored outer destination.
     let tracksImages = text.contains("![")
+    let tracksDiagrams = text.contains("mermaid")
     guard
       var content = try? AttributedString(
         markdown: text, including: \.textual,
-        options: .init(appliesSourcePositionAttributes: tracksImages), baseURL: baseURL)
+        options: .init(appliesSourcePositionAttributes: tracksImages || tracksDiagrams),
+        baseURL: baseURL)
     else {
       return AttributedString(text)
     }
@@ -106,8 +110,8 @@ private actor MarkdownWorker {
         else { continue }
         content[run.range].imageURL = url
       }
-      content.markdownSourcePosition = nil
     }
+    if !tracksDiagrams { content.markdownSourcePosition = nil }
     return content
   }
 }

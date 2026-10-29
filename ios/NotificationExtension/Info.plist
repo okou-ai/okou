@@ -31,6 +31,8 @@
 	<string>$(OKOU_API_BASE_URL)</string>
 	<key>ClerkPublishableKey</key>
 	<string>$(CLERK_PUBLISHABLE_KEY)</string>
+	<key>SentryDSN</key>
+	<string>$(OKOU_SENTRY_DSN)</string>
 	<key>NotificationAppGroup</key>
 	<string>group.ai.okou.ios</string>
 	<key>ClerkKeychainAccessGroup</key>

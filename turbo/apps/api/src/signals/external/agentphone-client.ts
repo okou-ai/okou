@@ -61,6 +61,41 @@ export function isAgentPhoneApiError(
   );
 }
 
+const whatsappNumbersSchema = object({
+  data: array(object({ phoneNumber: string(), whatsappEnabled: boolean() })),
+  hasMore: boolean(),
+});
+
+export async function isAgentPhoneWhatsappNumberEnabled(
+  phoneNumber: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  let offset = 0;
+  for (;;) {
+    const response = await accept(
+      fetch(`${agentPhoneApiBase()}/v1/numbers?limit=100&offset=${offset}`, {
+        headers: { Authorization: `Bearer ${agentPhoneApiKey()}` },
+        signal,
+      }),
+      [200],
+    );
+    const page = whatsappNumbersSchema.parse(await response.json());
+    const number = page.data.find((item) => {
+      return item.phoneNumber === phoneNumber;
+    });
+    if (number) {
+      return number.whatsappEnabled;
+    }
+    if (!page.hasMore) {
+      return false;
+    }
+    if (page.data.length === 0) {
+      throw new Error("AgentPhone number pagination did not advance");
+    }
+    offset += page.data.length;
+  }
+}
+
 export async function sendAgentPhoneMessage(
   opts: {
     readonly agentphoneAgentId: string;
@@ -69,9 +104,17 @@ export async function sendAgentPhoneMessage(
     readonly body: string;
     readonly mediaUrl?: string | null;
     readonly mediaUrls?: readonly string[] | null;
+    readonly channel?: "whatsapp";
   },
   signal?: AbortSignal,
 ): Promise<AgentPhoneSentMessage> {
+  const fromNumber =
+    opts.channel === "whatsapp"
+      ? optionalEnv("AGENTPHONE_PHONE_NUMBER")
+      : undefined;
+  if (opts.channel === "whatsapp" && !fromNumber) {
+    throw new Error("AGENTPHONE_PHONE_NUMBER is not configured");
+  }
   const responseResult = await settle(
     accept(
       fetch(`${agentPhoneApiBase()}/v1/messages`, {
@@ -82,6 +125,9 @@ export async function sendAgentPhoneMessage(
         },
         body: JSON.stringify({
           agent_id: opts.agentphoneAgentId,
+          ...(opts.channel
+            ? { channel: opts.channel, from_number: fromNumber }
+            : {}),
           to_number: opts.toNumber,
           ...(opts.replyToMessageId
             ? { reply_to_message_id: opts.replyToMessageId }

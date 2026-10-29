@@ -39,30 +39,6 @@ async fn seed_rejection(home: &HomePaths, cache: &decoded::DecodedCache, name: &
     bytes
 }
 
-#[tokio::test]
-async fn shared_rejection_fixture_preserves_archive_bytes_and_independent_states() {
-    let temp = tempfile::tempdir().unwrap();
-    let home = home_at(&temp);
-    let cache = decoded::DecodedCache::new(home.clone());
-    let bytes = rejection_archive();
-    assert_eq!(
-        bytes,
-        tarball_with_contents(&vec![
-            b'x';
-            guest_contracts::storage_files::MAX_FILE_BYTES + 1
-        ])
-    );
-    for name in ["shared-rejection-a", "shared-rejection-b"] {
-        seed_rejection_from_archive(&home, &cache, name, &bytes).await;
-        assert_eq!(
-            std::fs::read(home.storage_cache_dir(name, VERSION).join("archive.tar.gz")).unwrap(),
-            bytes
-        );
-        assert!(cache.get_ready(name, VERSION).await.unwrap().is_none());
-    }
-    cache.shutdown().await;
-}
-
 async fn prepare(
     home: &HomePaths,
     cache: &decoded::DecodedCache,

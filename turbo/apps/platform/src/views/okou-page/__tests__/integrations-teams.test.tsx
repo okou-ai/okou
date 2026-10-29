@@ -204,3 +204,51 @@ test("An overlapping focus refresh keeps later realtime notifications active", a
     ).toBeInTheDocument();
   });
 });
+
+test("Members can connect a Teams identity without an organization bot", async () => {
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    return respond(
+      200,
+      status({
+        workspaceIdentity: true,
+        isAdmin: false,
+        installUrl: null,
+        connectUrl: "/api/teams/oauth/connect?connectState=verified-identity",
+      }),
+    );
+  });
+  const open = context.mocks.browser.open();
+  await setupPage({ context, path: "/works" });
+  const card = getIntegrationCard("Microsoft Teams");
+  click(getAction("button", "Connect", card));
+  expect(
+    new URL(open.calls[0]?.url ?? "").searchParams.get("connectState"),
+  ).toBe("verified-identity");
+});
+
+test("An independent Teams identity remains connected after bot removal", async () => {
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    return respond(
+      200,
+      status({
+        workspaceIdentity: true,
+        isInstalled: false,
+        isConnected: true,
+        isAdmin: true,
+        connectUrl: null,
+        tenantName: "Personal identity tenant",
+        installUrl: "/api/teams/oauth/connect?connectState=admin-install",
+      }),
+    );
+  });
+  const open = context.mocks.browser.open();
+  await setupPage({ context, path: "/works" });
+  await expect(
+    screen.findByText("Connected (Personal identity tenant)"),
+  ).resolves.toBeInTheDocument();
+  const card = getIntegrationCard("Microsoft Teams");
+  click(getAction("button", "Install in Teams", card));
+  expect(
+    new URL(open.calls[0]?.url ?? "").searchParams.get("connectState"),
+  ).toBe("admin-install");
+});

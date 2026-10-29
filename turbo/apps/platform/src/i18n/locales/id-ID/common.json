@@ -520,6 +520,16 @@
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak"
     },
+    "deletion": {
+      "cancel": "Batal",
+      "delete": "Hapus",
+      "deleting": "Menghapus…",
+      "description": "Artefak ini akan dihapus dan tautan Okou-nya dinonaktifkan. Salinan yang sudah diunduh atau disimpan di layanan lain akan tetap ada.",
+      "hostedDescription": "Situs web dan semua versi yang dipublikasikan akan dinonaktifkan. Salinan yang disimpan di layanan lain akan tetap ada.",
+      "menu": "Tindakan lainnya untuk {{title}}",
+      "sharedDescription": "Hapus percakapan tersimpan ini dari artefak Anda. Percakapan asli dan tautan berbaginya akan tetap tersedia.",
+      "title": "Hapus {{title}}?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",
@@ -619,7 +629,8 @@
       "organizationOptionUnnamed": "Siapa pun di organisasi Anda",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
-      "publicOption": "Siapa pun yang memiliki tautan"
+      "publicOption": "Siapa pun yang memiliki tautan",
+      "updateFailed": "Tidak dapat memperbarui akses"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",
@@ -2050,6 +2061,7 @@
         "open": "Kelola email",
         "openEmail": "Buka email: {{subject}}",
         "result": "{{succeeded}} selesai · {{failed}} gagal",
+        "resultAwaiting": "{{succeeded}} selesai · {{failed}} gagal · {{awaitingConfirmation}} Menunggu konfirmasi pengiriman",
         "search": "Cari berdasarkan subjek atau pengirim",
         "selectAll": "Pilih semua",
         "selected": "{{quantity}} dipilih",
@@ -2065,16 +2077,19 @@
       "noSubject": "(Tidak ada subjek)",
       "noSubjectPlain": "Tidak ada subjek",
       "openEmail": "Buka email {{status}}: {{subject}}",
-      "openInGmail": "Buka di Gmail",
+      "openInProvider": "Buka di {{provider}}",
       "recipientsLine": "ke {{recipients}}",
-      "reconnectDescription": "Anda tidak lagi memiliki izin untuk mengakses email ini. Sambungkan ulang Gmail untuk melanjutkan.",
-      "reconnectGmail": "Sambungkan ulang Gmail",
+      "reconnectDescription": "Anda tidak lagi memiliki izin untuk mengakses email ini. Sambungkan ulang {{provider}} untuk melanjutkan.",
       "reconnecting": "Menyambungkan ulang…",
-      "reconnectToAccess": "Sambungkan ulang Gmail untuk mengakses email: {{subject}}",
+      "reconnectProvider": "Sambungkan ulang {{provider}}",
+      "reconnectToAccess": "Sambungkan ulang {{provider}} untuk mengakses email: {{subject}}",
+      "refreshStatus": "Perbarui status",
+      "sendingDescription": "Outlook belum mengonfirmasi pengiriman. Perbarui status atau periksa Outlook sebelum melanjutkan.",
       "sentToast": "Email terkirim",
       "status": {
         "deleted": "Dihapus",
         "draft": "Draf",
+        "sending": "Menunggu konfirmasi pengiriman",
         "sent": "Terkirim"
       },
       "toRecipients": "Ke: {{recipients}}",
@@ -2181,12 +2196,12 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "emptyDescription": "File dan obrolan dari chat ini akan muncul di sini.",
-      "emptyTitle": "Belum ada sumber daya",
-      "loadFailed": "Tidak dapat memuat sumber daya",
-      "loading": "Memuat sumber daya",
+      "emptyDescription": "File, situs web, dan artefak lain yang dibuat di chat ini akan muncul di sini.",
+      "emptyTitle": "Belum ada artefak",
+      "loadFailed": "Tidak dapat memuat artefak",
+      "loading": "Memuat artefak",
       "showMore": "Tampilkan lebih banyak",
-      "title": "Sumber daya chat"
+      "title": "Artefak dan obrolan"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
@@ -2251,7 +2266,8 @@
       "shareLink": "Tautan percakapan yang dibagikan",
       "shareLinkCopied": "Tautan berbagi disalin",
       "start": "Bagikan pesan",
-      "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan"
+      "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan",
+      "visibilityDescription": "Pilih siapa yang dapat melihat percakapan ini. Hanya Anda yang dapat mengubah akses."
     },
     "shortcuts": {
       "number": "nomor"
@@ -3466,7 +3482,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Kembali ke {{brandName}}",
         "connectDescription": "Hubungkan nomor telepon ini ke akun {{brandName}} Anda agar Anda dapat berinteraksi dengan {{assistantName}} lewat pesan teks.",
         "connectTitle": "Hubungkan nomor telepon",
         "documentTitle": "Hubungkan Pesan",
@@ -3476,9 +3491,16 @@
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
         "invalidTitle": "Tautan koneksi tidak valid",
+        "keepPhone": "Tetap gunakan {{phone}}",
+        "phoneInUseDescription": "Nomor ini terhubung ke akun atau organisasi Okou lain. Putuskan koneksinya di sana sebelum mencoba lagi.",
+        "phoneInUseTitle": "Nomor telepon sudah terhubung",
+        "phoneMismatchDescription": "Akun Okou Anda saat ini menggunakan {{currentPhone}} di organisasi ini. Beralih ke {{requestedPhone}}, nomor yang membuka tautan ini?",
+        "phoneMismatchTitle": "Ganti nomor telepon?",
         "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor ini.",
         "successDescription": "{{phone}} terhubung. Kirim pesan teks untuk mulai mengobrol dengan {{assistantName}}.",
-        "successTitle": "Nomor telepon terhubung"
+        "successTitle": "Nomor telepon terhubung",
+        "switchPhone": "Beralih ke {{phone}}",
+        "unavailable": "Koneksi telepon saat ini tidak tersedia."
       },
       "common": {
         "backToSettings": "Kembali ke setelan",
@@ -5907,6 +5929,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "Anda tidak dapat melihat percakapan ini",
     "handoffDescription": "{{assistantName}} membawa konteks ke percakapan baru",
     "handoffPrompt": "Lanjutkan percakapan yang dibagikan ini dengan saya: {{url}}",
     "makeConversationYours": "Jadikan percakapan ini milik Anda",
@@ -7116,6 +7139,23 @@
       "verify": "Verifikasi",
       "waiting": "Menunggu pemindaian…",
       "workspaceLabel": "Ruang kerja"
+    },
+    "whatsapp": {
+      "codeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
+      "connect": "Hubungkan WhatsApp",
+      "connected": "WhatsApp terhubung",
+      "description": "Mengobrol dengan Okou langsung dari WhatsApp",
+      "disconnected": "WhatsApp terputus",
+      "expires": "Kode ini kedaluwarsa dalam 10 menit. Biarkan halaman ini terbuka untuk melihat konfirmasi koneksi.",
+      "instructions": "Buka WhatsApp atau pindai kode QR, lalu kirim kode koneksi untuk menautkan akun Anda.",
+      "loading": "Membuat kode koneksi Anda…",
+      "markets": "Tersedia untuk nomor WhatsApp di Wilayah Ekonomi Eropa, Brasil, dan Turki.",
+      "name": "WhatsApp",
+      "open": "Buka WhatsApp",
+      "options": "Opsi WhatsApp",
+      "qrTitle": "Pindai untuk menghubungkan WhatsApp",
+      "regenerate": "Buat kode baru",
+      "unavailable": "WhatsApp belum dikonfigurasi"
     }
   }
 }

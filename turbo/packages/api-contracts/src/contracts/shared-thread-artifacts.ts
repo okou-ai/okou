@@ -1,4 +1,5 @@
 import {
+  discriminatedUnion,
   literal,
   object,
   record,
@@ -10,12 +11,12 @@ import {
 
 import { linkLayoutSegmentSchema, type LinkLayoutSegment } from "./link-layout";
 import { artifactSharePolicySchema } from "./artifact-shares";
+import { sharedThreadAudienceSchema } from "./shared-thread-visibility";
 
 const resourceTokenSchema = string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u);
 
 /** One mutable authority owns every immutable resource in a conversation share. */
-export const sharedThreadArtifactPolicySchema = object({
-  version: literal(1),
+const policySchema = object({
   threadId: uuid(),
   ownerId: string().min(1),
   orgId: string().min(1),
@@ -33,7 +34,18 @@ export const sharedThreadArtifactPolicySchema = object({
       reference: string().regex(/^[a-z0-9]{10}$/u),
     }),
   ).optional(),
-}).superRefine((policy, context) => {
+});
+
+// Persisted public snapshots keep their v1 policy. Visibility-managed snapshots
+// use v2 so previous API/Worker readers reject them rather than ignore scope.
+export const sharedThreadArtifactPolicySchema = discriminatedUnion("version", [
+  policySchema.extend({ version: literal(1) }),
+  policySchema.extend({
+    version: literal(2),
+    audience: sharedThreadAudienceSchema,
+    revision: uuid(),
+  }),
+]).superRefine((policy, context) => {
   for (const [token, target] of Object.entries(policy.resources)) {
     const valid =
       target.kind === "file"
@@ -75,4 +87,8 @@ export function sharedThreadArtifactPolicyKey(
   threadId: string,
 ): string {
   return `shared-thread-artifacts/${segment}/${threadId}.json`;
+}
+
+export function sharedThreadPolicyAudience(policy: SharedThreadArtifactPolicy) {
+  return policy.version === 1 ? "public" : policy.audience;
 }

@@ -239,6 +239,7 @@ describe("agent-facing operational CLI help", () => {
     const mail = await helpFor(mailCommand, ["link"]);
     expect(mail).toContain("does not create, update, or send email");
     expect(mail).toContain("do not add a mail callback prompt");
-    expect(mail).toContain("verify the Gmail thread has the SENT label");
+    expect(mail).toContain("verify the provider reports the email as sent");
+    expect(mail).toContain("Gmail: the SENT label");
   });
 });
