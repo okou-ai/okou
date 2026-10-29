@@ -1,7 +1,10 @@
 import { retireWorkflowAttachmentSql } from "./workflow-attachment-cleanup.service";
 import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
 import { agents } from "@okouai/db/schema/agent";
-import { workflows } from "@okouai/db/schema/workflow";
+import {
+  officialWorkflowAutomationIdentities,
+  workflows,
+} from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
@@ -99,6 +102,13 @@ const deleteWorkflowRows$ = command(
         })
         .from(workflowAutomations)
         .where(eq(workflowAutomations.workflowId, workflow.id));
+      // Active identities cannot survive their Automation's SET NULL action.
+      // The Workflow cascade owns these rows, so remove them before its children.
+      await tx
+        .delete(officialWorkflowAutomationIdentities)
+        .where(
+          eq(officialWorkflowAutomationIdentities.workflowId, workflow.id),
+        );
       // Preserve the observed watch targets and capture the rows actually removed
       // before the Workflow cascade can discard their cleanup identities.
       const removedAutomations = await tx
