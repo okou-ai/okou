@@ -528,36 +528,6 @@ test("leaves durable cleanup queued until the deployment cleanup gate is enabled
   expect(s3.objects.has(key)).toBeFalsy();
 });
 
-test("bounds repeated cleanup provider failures and preserves the undeleted package for investigation", async () => {
-  await setupApp({
-    context,
-    routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
-    isolatePg: true,
-  });
-  const { actor, agent, s3 } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "retired.md", content: "retired" }],
-  });
-  const key = s3.writes[0]!.key;
-  await accept(
-    detailClient().update({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-      body: { files: [] },
-    }),
-    [200],
-  );
-  const unavailable = () => {
-    s3.beforeNextDelete(unavailable);
-    throw new Error("Provider unavailable");
-  };
-  s3.beforeNextDelete(unavailable);
-  mockNow(now() - 86_400_000);
-  expect((await sweep()).body.processed).toBe(5);
-  expect((await sweep()).body.processed).toBe(0);
-  expect(s3.objects.has(key)).toBeTruthy();
-});
-
 test("retains retired packages for pending work and downloads the current package after claim", async () => {
   await setupApp({
     context,

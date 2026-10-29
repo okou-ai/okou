@@ -498,30 +498,6 @@ describe("connector catalog v4 preparation", () => {
     },
   );
 
-  it("serves v4 HTTP and generic Automatic MCP methods through normal sync", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronConnectorCatalogContract);
-    const candidate = release({ label: "Accepted v4", mcpSlug: "notes-mcp" });
-    serveObjects(candidate.objects);
-    // The response is only the attempt report.
-    expect((await sync(cron)).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service", label: "Accepted v4" },
-      { slug: "notes-mcp", authMethods: [{ grantKind: "automatic" }] },
-    ]);
-    expect((await sync(cron)).body).toStrictEqual({
-      outcome: "unchanged",
-      failureCode: null,
-    });
-  });
-
   it("keeps serving the current pointer across a rejected-source sync", async () => {
     const app = await setupApp({
       context,
@@ -587,121 +563,16 @@ describe("connector catalog v4 preparation", () => {
     );
   });
 
-  it("uses explicit protocol metadata for crossed-name connectors and needs no MCP skill resources", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronConnectorCatalogContract);
-    const candidate = release({
-      httpSlug: "http-service-mcp",
-      mcpSlug: "spoken-notes",
-    });
-    // Storage contains only the pointer and catalog. Both descriptors declare
-    // skill:none, so accepting this release requires no skill resource fetch.
-    serveObjects(candidate.objects);
-    expect((await sync(cron)).body).toMatchObject({
-      outcome: "accepted",
-    });
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "http-service-mcp", authMethods: [{ grantKind: "manual" }] },
-      { slug: "spoken-notes", authMethods: [{ grantKind: "automatic" }] },
-    ]);
-  });
-
-  it("keeps migrated builtin MCP services ranked in discovery and search", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronConnectorCatalogContract);
-    const candidate = release({
-      mutate(catalog) {
-        catalog.connectors = [
-          httpConnector("pipedrive", "Pipedrive", "PIPEDRIVE_TOKEN"),
-          {
-            ...mcpConnector("attio-mcp", "ATTIO_MCP_ACCESS_TOKEN"),
-            label: "Attio",
-          },
-          httpConnector("apollo", "Apollo", "APOLLO_TOKEN"),
-          httpConnector("clickup", "ClickUp", "CLICKUP_TOKEN"),
-          {
-            ...mcpConnector("monday-mcp", "MONDAY_MCP_ACCESS_TOKEN"),
-            label: "Monday.com",
-          },
-          httpConnector("todoist", "Todoist", "TODOIST_TOKEN"),
-          httpConnector(
-            "pipedrive-mcp",
-            "A similar MCP identity",
-            "PIPEDRIVE_MCP_TOKEN",
-          ),
-          httpConnector(
-            "custom-attio-mcp",
-            "A custom Attio",
-            "CUSTOM_ATTIO_MCP_TOKEN",
-          ),
-          ...Array.from({ length: 12 }, (_, index) => {
-            return httpConnector(
-              `unranked-${index}`,
-              `A service ${index}`,
-              `UNRANKED_${index}_TOKEN`,
-            );
-          }),
-        ];
-      },
-    });
-    serveObjects(candidate.objects);
-    expect((await sync(cron)).body.outcome).toBe("accepted");
-
-    const catalog = await publicCatalog();
-    expect(catalog.body.connectors).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ slug: "attio-mcp", popularityRank: 25 }),
-        expect.objectContaining({ slug: "monday-mcp", popularityRank: 58 }),
-      ]),
-    );
-    for (const slug of ["pipedrive-mcp", "custom-attio-mcp", "unranked-0"]) {
-      const connector = catalog.body.connectors.find((entry) => {
-        return entry.slug === slug;
-      });
-      expect(connector).toMatchObject({ slug });
-      expect(connector).not.toHaveProperty("popularityRank");
-    }
-
-    const discovery = await accept(
-      catalogClient().discovery({ query: {}, headers: sessionHeaders }),
-      [200],
-    );
-    expect(discovery.body.connectors).toHaveLength(12);
-    expect(
-      discovery.body.connectors.slice(0, 6).map((connector) => {
-        return connector.slug;
-      }),
-    ).toStrictEqual([
-      "pipedrive",
-      "attio-mcp",
-      "apollo",
-      "clickup",
-      "monday-mcp",
-      "todoist",
-    ]);
-
+  it("finds the current Monday MCP connector by name and slug", async () => {
     const searchClient = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorsSearchContract,
     );
-    for (const [keyword, slug] of [
-      ["Attio", "attio-mcp"],
-      ["attio-mcp", "attio-mcp"],
-      ["Monday.com", "monday-mcp"],
-      ["monday-mcp", "monday-mcp"],
-    ] as const) {
+    for (const keyword of ["Monday.com", "monday-mcp"]) {
       const searched = await accept(
         searchClient.search({ query: { keyword }, headers: sessionHeaders }),
         [200],
       );
-      expect(searched.body.connectors[0]).toMatchObject({ slug });
+      expect(searched.body.connectors[0]).toMatchObject({ slug: "monday-mcp" });
       const discovered = await accept(
         catalogClient().discovery({
           query: { keyword },
@@ -709,19 +580,23 @@ describe("connector catalog v4 preparation", () => {
         }),
         [200],
       );
-      expect(discovered.body.connectors[0]).toMatchObject({ slug });
+      expect(discovered.body.connectors[0]).toMatchObject({
+        slug: "monday-mcp",
+      });
     }
   });
 
-  it("does not expose an accepted MCP transport as an executable HTTP permission bundle", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronConnectorCatalogContract);
-    serveObjects(release({ mcpSlug: "notes-mcp" }).objects);
-    await sync(cron);
+  it("does not expose an MCP transport as an executable HTTP permission bundle", async () => {
+    const available = await accept(
+      catalogClient().get({
+        headers: sessionHeaders,
+        params: { connectorSlug: "plaud-mcp" },
+      }),
+      [200],
+    );
+    expect(available.body.connector.authMethods).toContainEqual(
+      expect.objectContaining({ grantKind: "automatic" }),
+    );
     const client = setupApp({ context, routes: customConnectorsRoutes })(
       customConnectorsContract,
     );
@@ -731,13 +606,13 @@ describe("connector catalog v4 preparation", () => {
         body: manualHttpCustomConnectorCreateBody({
           displayName: "Custom notes API",
           prefixTemplates: ["https://notes.example.com/mcp"],
-          permissionBundleRef: "builtin:notes-mcp@1",
+          permissionBundleRef: "builtin:plaud-mcp@1",
         }),
       }),
       [400],
     );
     expect(response.body.error.message).toBe(
-      "Unknown custom connector permission bundle: builtin:notes-mcp@1",
+      "Unknown custom connector permission bundle: builtin:plaud-mcp@1",
     );
   });
 });

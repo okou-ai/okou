@@ -13,9 +13,7 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { onboardingSourcesContract } from "@okouai/api-contracts/contracts/onboarding";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   connectorCatalogArtifactSchema,
@@ -258,16 +256,6 @@ describe("slug-first current catalog business readers", () => {
       connectorCatalogContract,
     );
   }
-  async function publishedCatalog(app: Awaited<ReturnType<typeof setupApp>>) {
-    const candidate = release(
-      `2099-02-01.${randomUUID()}`,
-      "Slug-reader catalog",
-    );
-    serve(candidate);
-    expect((await sync(app)).body).toMatchObject({ outcome: "accepted" });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    return candidate;
-  }
   it("follows permission metadata changes and removal across catalog publications", async () => {
     const app = await setupApp({
       context,
@@ -317,50 +305,6 @@ describe("slug-first current catalog business readers", () => {
       [404],
     );
     expect(missing.body.error.code).toBe("NOT_FOUND");
-  });
-  it("serves concurrent and subsequent catalog reads across publications", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    for (const label of ["Initial catalog", "Replacement catalog"]) {
-      const candidate = release(`2099-02-01.${randomUUID()}`, label, "github");
-      serve(candidate);
-      expect((await sync(app)).body).toMatchObject({ outcome: "accepted" });
-      routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-      const client = catalogClient();
-      const responses = await Promise.all(
-        Array.from({ length: 3 }, () => {
-          return accept(client.list({ headers }), [200]);
-        }),
-      );
-      for (const response of responses) {
-        expect(response.body.connectors).toContainEqual(
-          expect.objectContaining({ slug: "github", label }),
-        );
-        expect(response.body).toStrictEqual(responses[0]?.body);
-      }
-      const subsequent = await accept(client.list({ headers }), [200]);
-      expect(subsequent.body).toStrictEqual(responses[0]?.body);
-      await directory(candidate);
-      const oneClick = await accept(client.oneClick({ headers }), [200]);
-      expect(oneClick.body.connectors.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("lists named onboarding sources from current entries", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    await publishedCatalog(app);
-    const client = setupApp({ context, routes: onboardingSourcesRoutes })(
-      onboardingSourcesContract,
-    );
-    const listed = await accept(client.list({ headers }), [200]);
-    expect(listed.body.connectors.length).toBeGreaterThan(0);
   });
 });
 

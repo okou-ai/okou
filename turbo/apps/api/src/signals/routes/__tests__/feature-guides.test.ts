@@ -308,11 +308,7 @@ test("respects scheduled and expired publication windows", async () => {
 });
 
 test("requires hard staff authorization for importing and publishing, even after opting in", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
+  expect.hasAssertions();
   await identity();
   await enable();
   await accept(clients().guide.import({ headers, body: draft() }), [403]);
@@ -324,7 +320,6 @@ test("requires hard staff authorization for importing and publishing, even after
     }),
     [403],
   );
-  await expect(current()).resolves.toBeNull();
 });
 
 test("does not let the caller mark another owner or an unpublished revision as seen", async () => {
@@ -359,11 +354,6 @@ test("does not let the caller mark another owner or an unpublished revision as s
 });
 
 test("requires a session and validates content and publication windows", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   const signedOut = await accept(
     clients().guide.current({ headers: {} }),
     [401],

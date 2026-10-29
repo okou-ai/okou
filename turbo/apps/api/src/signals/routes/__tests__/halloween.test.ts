@@ -89,9 +89,8 @@ describe("Halloween quiz", () => {
     "accepts finale %s and requires explicit result confirmation",
     async (optionId) => {
       const { game } = clients(
-        await setupApp({
+        setupApp({
           context,
-          isolatePg: true,
           routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
         }),
       );
@@ -136,9 +135,8 @@ describe("Halloween quiz", () => {
 
   it("restores account progress until an explicit restart", async () => {
     const { game } = clients(
-      await setupApp({
+      setupApp({
         context,
-        isolatePg: true,
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
@@ -195,9 +193,8 @@ describe("Halloween quiz", () => {
 
   it("locks a wrong answer and prevents regrading or advancing", async () => {
     const { game } = clients(
-      await setupApp({
+      setupApp({
         context,
-        isolatePg: true,
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
@@ -245,9 +242,8 @@ describe("Halloween quiz", () => {
 
   it("uses the feature switch as the only availability gate for signed-in users", async () => {
     const { game } = clients(
-      await setupApp({
+      setupApp({
         context,
-        isolatePg: true,
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
@@ -312,9 +308,8 @@ describe("Halloween quiz", () => {
 
   it("requires authentication for every gameplay endpoint", async () => {
     const { game } = clients(
-      await setupApp({
+      setupApp({
         context,
-        isolatePg: true,
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );

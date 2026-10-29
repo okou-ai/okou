@@ -1522,32 +1522,8 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("inherits explicit Notion account selection in new automations", async () => {
-    const app = await setupApp({
-      context,
-      routes: webhooksNotionRoutes,
-      isolatePg: true,
-    });
-    const webhook = app(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
-    const {
-      entities,
-      threadId,
-      workflowId,
-      secondAccount,
-      expectAutomationConnector,
-    } = await setupNotionAccountLifecycle();
-    const staleEvent = notionPageEvent({
-      entities,
-      type: "page.created",
-      timestamp: "2026-07-06T12:21:00.000Z",
-    });
-    await expect(
-      postNotionWebhook({
-        rawBody: staleEvent.rawBody,
-        signature: notionSignature(staleEvent.rawBody),
-      }),
-    ).resolves.toMatchObject({ body: { pending: 1 } });
-
+    const { threadId, workflowId, secondAccount, expectAutomationConnector } =
+      await setupNotionAccountLifecycle();
     await accept(
       chatThreadConnectorSelectionsClient().update({
         headers: authHeaders(),

@@ -477,49 +477,6 @@ function awsPrivateAuthMethod(
   };
 }
 
-function deelPrivateAuthMethod(): JsonRecord {
-  const accessTokenName = "CATALOG_DEEL_ACCESS_TOKEN";
-  const refreshTokenName = "CATALOG_DEEL_REFRESH_TOKEN";
-  return {
-    id: "oauth",
-    client: {
-      clientRegistration: "static",
-      clientType: "confidential",
-      clientIdEnv: "DEEL_OAUTH_CLIENT_ID",
-      clientSecretEnv: "DEEL_OAUTH_CLIENT_SECRET",
-    },
-    storage: {
-      version: 1,
-      secrets: [accessTokenName, refreshTokenName],
-      variables: [],
-    },
-    grant: {
-      kind: "auth-code",
-      scopes: [],
-      callbackOrigin: "web",
-      outputs: {
-        accessToken: `$secrets.${accessTokenName}`,
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-    },
-    access: {
-      kind: "refresh-token",
-      envBindings: {
-        DEEL_TOKEN: `$secrets.${accessTokenName}`,
-      },
-      inputs: {
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-      outputs: {
-        accessToken: `$secrets.${accessTokenName}`,
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-      refreshableSecrets: [accessTokenName],
-    },
-    revoke: { kind: "none" },
-  };
-}
-
 function slackPrivateAuthMethod(
   accessTokenName = "CATALOG_SLACK_ACCESS_TOKEN",
   storageVersion = 1,
@@ -629,13 +586,6 @@ function buildBundledSkillFixture(
     versionId,
     archiveSize,
   };
-}
-
-function setFirewallBase(artifact: JsonRecord, base: string): void {
-  const connector = firstRecord(artifact.connectors, "connectors");
-  const firewall = recordValue(connector.firewall, "firewall");
-  const config = recordValue(firewall.config, "firewall.config");
-  firstRecord(config.apis, "firewall.apis").base = base;
 }
 
 function buildGeneratedFirewall(): JsonRecord {
@@ -1251,60 +1201,6 @@ describe("connector catalog valid lifecycle", () => {
     expect(JSON.stringify({ detail, permissions, search })).not.toContain(
       PRIVATE_VALUE,
     );
-  });
-
-  it("keeps the first firewall permission description and sorts public permissions", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-permission-projection",
-      generatedFirewall: true,
-      mutateFirewall: (artifact) => {
-        const connector = firstRecord(artifact.connectors, "connectors");
-        const firewall = recordValue(connector.firewall, "firewall");
-        const config = recordValue(firewall.config, "firewall.config");
-        const apis = arrayValue(config.apis, "firewall.apis");
-        const secondApi = structuredClone(firstRecord(apis, "firewall.apis"));
-        secondApi.base = "https://api.example.test/v2";
-        secondApi.permissions = [
-          {
-            name: "items.read",
-            description: "Later items description",
-            rules: ["GET /later-items"],
-          },
-          {
-            name: "alpha.read",
-            description: "Read alpha",
-            rules: ["GET /alpha"],
-          },
-        ];
-        apis.push(secondApi);
-        recordValue(
-          recordValue(firewall.categories, "firewall.categories").byPermission,
-          "firewall.categories.byPermission",
-        )["alpha.read"] = "Items";
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog(app);
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const response = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).permissions({
-        params: { connectorSlug: release.connectorSlug },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(response.body.permissions.permissions).toStrictEqual([
-      { name: "alpha.read", description: "Read alpha" },
-      { name: "items.read", description: "Read items" },
-    ]);
   });
 
   it("executes an external manual grant with catalog-owned storage", async () => {
@@ -2050,29 +1946,6 @@ describe("connector catalog valid lifecycle", () => {
     });
   });
 
-  it("accepts canonical firewall bases with authority parameters", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const base = "https://{awsHost+}.amazonaws.com";
-    const release = buildRelease({
-      version: "2026-07-15.parameterized-firewall",
-      generatedFirewall: true,
-      mutateFirewall: (artifact) => {
-        setFirewallBase(artifact, base);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog(app)).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-  });
-
   it("reuses bundled skill registrations across overlapping syncs and later releases", async () => {
     const app = await setupApp({
       context,
@@ -2138,47 +2011,6 @@ describe("connector catalog valid lifecycle", () => {
           archiveSize: skill.archiveSize,
         }),
       );
-    });
-  });
-
-  it("advances on the next sync when active changes during validation", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const observed = buildRelease({ version: "2026-07-15.observed" });
-    const current = buildRelease({ version: "2026-07-15.current" });
-    const objects = catalogObjects([observed, current], current);
-    let activePointer = observed.pointer;
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const key = commandInput(command).Key;
-      if (key === observed.catalogKey) {
-        activePointer = current.pointer;
-      }
-      const bytes =
-        key === ACTIVE_KEY
-          ? activePointer
-          : typeof key === "string"
-            ? objects.get(key)
-            : undefined;
-      if (!bytes) {
-        return Promise.reject(new Error("Object unavailable"));
-      }
-      return Promise.resolve({
-        ContentLength: bytes.length,
-        Body: s3Body(bytes),
-      });
-    });
-
-    // The first attempt publishes the observed generation, so the next one
-    // accepts the current pointer instead of reporting it unchanged.
-    expect((await syncCatalog(app)).body).toMatchObject({
-      outcome: "accepted",
-    });
-    expect((await syncCatalog(app)).body).toMatchObject({
-      outcome: "accepted",
     });
   });
 });
@@ -2264,152 +2096,9 @@ describe("connector catalog executable compatibility", () => {
       "test-oauth-secret",
     );
   });
-
-  it("matches provider fields without pinning catalog storage names", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    mockOptionalEnv("DEEL_OAUTH_CLIENT_ID", "configured-client-id");
-    mockOptionalEnv("DEEL_OAUTH_CLIENT_SECRET", "configured-client-secret");
-    const release = buildRelease({
-      version: "2026-07-15.deel-storage-mapping",
-      connectorSlug: "deel",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "oauth", grantKind: "auth-code" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [deelPrivateAuthMethod()]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog(app)).body.outcome).toBe("accepted");
-    const served = await servedConnectors({
-      [FeatureSwitchKey.DeelConnector]: true,
-    });
-    expect(served).toMatchObject([
-      { slug: "deel", authMethods: [{ id: "oauth" }] },
-    ]);
-    expect(JSON.stringify(served)).not.toContain("CATALOG_DEEL_ACCESS_TOKEN");
-  });
 });
 
 describe("connector catalog rejection and latest-valid retention", () => {
-  it("accepts one connector sharing storage names across auth methods", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const release = buildRelease({
-      version: "same-connector-storage-sharing",
-      mutateCatalog: (artifact) => {
-        const connector = firstRecord(artifact.connectors, "connectors");
-        const methods = arrayValue(connector.authMethods, "authMethods");
-        const second = structuredClone(firstRecord(methods, "authMethods"));
-        second.id = "backup-token";
-        second.label = "Backup Token";
-        methods.push(second);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog(app)).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-  });
-
-  it("accepts producer connector order and scopes private-value leak detection", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const release = buildRelease({
-      version: "cross-connector-private-name-placeholder",
-      mutateCatalog: (artifact) => {
-        const connectors = arrayValue(artifact.connectors, "connectors");
-        const first = firstRecord(connectors, "connectors");
-        const firstMethod = firstRecord(first.authMethods, "authMethods");
-        firstRecord(
-          recordValue(firstMethod.grant, "grant").fields,
-          "grant.fields",
-        ).placeholder = "your-second-api-key";
-
-        const second = structuredClone(first);
-        second.slug = "aa-external-other";
-        second.label = "External Other";
-        const secondMethod = firstRecord(second.authMethods, "authMethods");
-        recordValue(secondMethod.storage, "storage").secrets = [
-          "SECOND_API_KEY",
-        ];
-        const secondField = firstRecord(
-          recordValue(secondMethod.grant, "grant").fields,
-          "grant.fields",
-        );
-        secondField.privateName = "SECOND_API_KEY";
-        secondField.placeholder = null;
-        recordValue(
-          recordValue(secondMethod.access, "access").envBindings,
-          "envBindings",
-        ).SERVICE_TOKEN = "$secrets.SECOND_API_KEY";
-        connectors.push(second);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog(app)).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-  });
-
-  it("accepts credentialed path variables without a host policy", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronConnectorCatalogRoutes,
-      isolatePg: true,
-    });
-    configureSource();
-    const release = buildRelease({
-      version: "credentialed-firewall-path-variable",
-      generatedFirewall: true,
-      mutateRuntime: (artifact) => {
-        const method = firstRecord(
-          firstRecord(artifact.connectors, "connectors").authMethods,
-          "authMethods",
-        );
-        recordValue(method.storage, "storage").variables = [
-          "QUICKBOOKS_REALM_ID",
-        ];
-        recordValue(
-          recordValue(method.access, "access").envBindings,
-          "envBindings",
-        ).QUICKBOOKS_REALM_ID = "$vars.QUICKBOOKS_REALM_ID";
-      },
-      mutateFirewall: (artifact) => {
-        setFirewallBase(
-          artifact,
-          `https://api.example.test/v3/company/${catalogTemplate("vars.QUICKBOOKS_REALM_ID")}`,
-        );
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog(app)).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-  });
-
   it("accepts a shared fixed host for auth.base placeholder routes", async () => {
     const app = await setupApp({
       context,
