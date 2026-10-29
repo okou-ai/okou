@@ -63,6 +63,16 @@ describe("shared Browser public consumers", () => {
       expect(f.provider.stoppedSessionIds.size).toBe(0);
 
       f.provider.native.windowReply = "reply";
+      const retry = await client().use({ headers: runHeaders(a), body: {} });
+      expect({
+        status: retry.status,
+        windows: new Set(
+          [...f.provider.native.targets.values()].map((target) => {
+            return target.windowId;
+          }),
+        ).size,
+      }).toStrictEqual({ status: 409, windows: 1 });
+      expect(f.provider.sessionRequests).toHaveLength(1);
       mockNow(START + 2 * MINUTE);
       const recovered = await use(a);
       expect(recovered.browser.status).toBe("active");
@@ -75,6 +85,77 @@ describe("shared Browser public consumers", () => {
       ]);
     });
   }, 20_000);
+
+  it("waits for the first window before admitting a sibling into a newly published instance", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let hold = true;
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/:id`, async ({ params }) => {
+          if (hold && f.provider.sessionIds.has(String(params.id))) {
+            hold = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return;
+        }),
+      );
+      const opening = settleIncludingAbort(
+        accept(client().use({ headers: runHeaders(a), body: {} }), [200]),
+      );
+      const waiting = await settleIncludingAbort(async () => {
+        await Promise.race([
+          entered.promise,
+          opening.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error("The first open never reached its provider read");
+          }),
+        ]);
+        expect(
+          (await client().use({ headers: runHeaders(b), body: {} })).status,
+        ).toBe(409);
+        expect([...f.provider.native.targets.values()]).toHaveLength(1);
+        expect(f.provider.sessionRequests).toHaveLength(1);
+      });
+      if (!release.settled()) {
+        release.resolve();
+      }
+      const completed = await opening;
+      if (!waiting.ok) {
+        throw waiting.error;
+      }
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      const first = completed.value.body.browser;
+      const sibling = (await use(b)).browser;
+      expect(sibling.window?.instanceId).toBe(first.window?.instanceId);
+      expect(sibling.window?.primaryWindowId).not.toBe(
+        first.window?.primaryWindowId,
+      );
+      expect(
+        new Set(
+          [...f.provider.native.targets.values()].map((target) => {
+            return target.windowId;
+          }),
+        ),
+      ).toStrictEqual(
+        new Set([
+          first.window?.primaryWindowId,
+          sibling.window?.primaryWindowId,
+        ]),
+      );
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  });
 
   it.each([true, false])(
     "creates a Browser with the mode's egress when shared admission enabled=%s",
