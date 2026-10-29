@@ -1,7 +1,25 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..48fc503474ac501f82df9f807898753b42bbaa42 100644
+index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..7092915d99ca11d2861279a4b936472e421c3d33 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
+@@ -1395,7 +1395,7 @@ var NodeViewDesc = function (_ViewDesc4) {
+       if (!(view.state.selection instanceof prosemirrorState.TextSelection) || from < pos || to > pos + this.node.content.size) return null;
+       var textNode = view.input.compositionNode;
+       if (!textNode || !this.dom.contains(textNode.parentNode)) return null;
+-      if (this.node.inlineContent) {
++      if (this.node.inlineContent && view.state.selection.$from.parent == this.node) {
+         var text = textNode.nodeValue;
+         var textPos = findTextInFragment(this.node.content, text, from - pos, to - pos);
+         return textPos < 0 ? null : {
+@@ -1888,7 +1888,7 @@ var ViewTreeUpdater = function () {
+     key: "updateNodeAt",
+     value: function updateNodeAt(node, outerDeco, innerDeco, index, view) {
+       var child = this.top.children[index];
+-      if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM) child.dirty = CONTENT_DIRTY;
++      if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM || child.contentDOM && child.contentDOM.contains(view.input.compositionNode))) child.dirty = CONTENT_DIRTY;
+       if (!child.update(node, outerDeco, innerDeco, view)) return false;
+       this.destroyBetween(this.index, index);
+       this.index++;
 @@ -2963,6 +2963,7 @@ var InputState = _createClass(function InputState() {
    this.mouseDown = null;
    this.lastKeyCode = null;
@@ -98,7 +116,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..48fc503474ac501f82df9f807898753b
 -  if (view.state.selection.anchor > change.start && (inlineChange ? change.endA > change.start && change.endB == change.start : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) && view.someProp("handleKeyDown", function (f) {
 -    return f(view, keyEvent(8, "Backspace"));
 -  })) {
-+  if (view.state.selection.anchor > change.start && (inlineChange ? change.endA > change.start && change.endB == change.start : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) && dispatchKey(view, "Backspace")) {
++  if (view.state.selection.anchor > change.start && (inlineChange ? !compositionID && change.endA > change.start && change.endB == change.start : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) && dispatchKey(view, "Backspace")) {
      if (android && chrome) view.domObserver.suppressSelectionUpdates();
      return;
    }
@@ -114,10 +132,30 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..48fc503474ac501f82df9f807898753b
    }
    var chFrom = change.start,
 diff --git a/dist/index.js b/dist/index.js
-index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c98c3b76d7 100644
+index 37521100e6800b065f48f551ceddfae2f9b48386..9df9dce198ab05991cb390632578e1ca8428f9cb 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -3137,6 +3137,7 @@ class InputState {
+@@ -1452,7 +1452,8 @@ class NodeViewDesc extends ViewDesc {
+         let textNode = view.input.compositionNode;
+         if (!textNode || !this.dom.contains(textNode.parentNode))
+             return null;
+-        if (this.node.inlineContent) {
++        // Editable inline descendants own their composition, like block descendants.
++        if (this.node.inlineContent && view.state.selection.$from.parent == this.node) {
+             // Find the text in the focused node in the node, stop if it's not
+             // there (may have been modified through other means, in which
+             // case it should overwritten)
+@@ -1901,7 +1902,8 @@ class ViewTreeUpdater {
+     }
+     updateNodeAt(node, outerDeco, innerDeco, index, view) {
+         let child = this.top.children[index];
+-        if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM)
++        if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM ||
++            child.contentDOM && child.contentDOM.contains(view.input.compositionNode)))
+             child.dirty = CONTENT_DIRTY;
+         if (!child.update(node, outerDeco, innerDeco, view))
+             return false;
+@@ -3137,6 +3139,7 @@ class InputState {
          this.mouseDown = null;
          this.lastKeyCode = null;
          this.lastKeyCodeTime = 0;
@@ -125,7 +163,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
          this.lastClick = { time: 0, x: 0, y: 0, type: "", button: 0 };
          this.lastSelectionOrigin = null;
          this.lastSelectionTime = 0;
-@@ -3217,6 +3218,15 @@ function dispatchEvent(view, event) {
+@@ -3217,6 +3220,15 @@ function dispatchEvent(view, event) {
          (view.editable || !(event.type in editHandlers)))
          handlers[event.type](view, event);
  }
@@ -141,7 +179,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
  editHandlers.keydown = (view, _event) => {
      let event = _event;
      view.input.shiftKey = event.keyCode == 16 || event.shiftKey;
-@@ -3224,6 +3234,7 @@ editHandlers.keydown = (view, _event) => {
+@@ -3224,6 +3236,7 @@ editHandlers.keydown = (view, _event) => {
          return;
      view.input.lastKeyCode = event.keyCode;
      view.input.lastKeyCodeTime = Date.now();
@@ -149,7 +187,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
      // Suppress enter key events on Chrome Android, because those tend
      // to be part of a confused sequence of composition events fired,
      // and handling them eagerly tends to corrupt the input.
-@@ -3240,12 +3251,12 @@ editHandlers.keydown = (view, _event) => {
+@@ -3240,12 +3253,12 @@ editHandlers.keydown = (view, _event) => {
          view.input.lastIOSEnter = now;
          view.input.lastIOSEnterFallbackTimeout = setTimeout(() => {
              if (view.input.lastIOSEnter == now) {
@@ -164,7 +202,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
          event.preventDefault();
      }
      else {
-@@ -3970,7 +3981,7 @@ handlers.beforeinput = (view, _event) => {
+@@ -3970,7 +3983,7 @@ handlers.beforeinput = (view, _event) => {
              // This bug tends to close the virtual keyboard, so we refocus
              view.dom.blur();
              view.focus();
@@ -173,7 +211,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
                  return;
              let { $cursor } = view.state.selection;
              // Crude approximation of backspace behavior when no command handled it
-@@ -5172,7 +5183,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -5172,7 +5185,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
          if (newSel && !view.state.selection.eq(newSel)) {
              if (chrome && android &&
                  view.input.lastKeyCode === 13 && Date.now() - 100 < view.input.lastKeyCodeTime &&
@@ -182,7 +220,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
                  return;
              let tr = view.state.tr.setSelection(newSel);
              if (origin == "pointer")
-@@ -5209,7 +5220,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -5209,7 +5222,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
      if ((ios && view.input.lastIOSEnter > Date.now() - 225 || android) &&
          addedNodes.some(n => isElt(n) && !isInline.test(n.nodeName)) &&
          (!change || change.endA >= change.endB) &&
@@ -191,7 +229,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
          view.input.lastIOSEnter = 0;
          return;
      }
-@@ -5266,7 +5277,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -5266,15 +5279,15 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
      if (((ios && view.input.lastIOSEnter > Date.now() - 225 &&
          (!inlineChange || addedNodes.some(n => n.nodeName == "DIV" || n.nodeName == "P"))) ||
          (!inlineChange && looksLikeEnter(parse.doc, $from.pos, $to.pos))) &&
@@ -200,16 +238,17 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
          view.input.lastIOSEnter = 0;
          return;
      }
-@@ -5274,7 +5285,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+     // Same for backspace
      if (view.state.selection.anchor > change.start &&
-         (inlineChange ? change.endA > change.start && change.endB == change.start
+-        (inlineChange ? change.endA > change.start && change.endB == change.start
++        (inlineChange ? !compositionID && change.endA > change.start && change.endB == change.start
              : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) &&
 -        view.someProp("handleKeyDown", f => f(view, keyEvent(8, "Backspace")))) {
 +        dispatchKey(view, "Backspace")) {
          if (android && chrome)
              view.domObserver.suppressSelectionUpdates(); // #820
          return;
-@@ -5296,9 +5307,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+@@ -5296,9 +5309,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
          parse.sel && parse.sel.anchor == parse.sel.head && parse.sel.head == change.endA) {
          change.endB -= 2;
          $to = parse.doc.resolveNoCache(change.endB - parse.from);
@@ -221,7 +260,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..be142bd1313d646e066a9ee2ca37c7c9
      let chFrom = change.start, chTo = change.endA;
      let mkTr = (base) => {
 diff --git a/src/domchange.ts b/src/domchange.ts
-index 5e441c3e9219185ad647cae11c1c85f8a3b48474..ae9c16138f7e1ad61fcbc061934de6c34cbb3d18 100644
+index 5e441c3e9219185ad647cae11c1c85f8a3b48474..50bd30265e318a50ff87e9fcba63c31d95190eef 100644
 --- a/src/domchange.ts
 +++ b/src/domchange.ts
 @@ -2,9 +2,10 @@ import {Fragment, DOMParser, TagParseRule, Node, Mark, ResolvedPos} from "prosem
@@ -254,7 +293,7 @@ index 5e441c3e9219185ad647cae11c1c85f8a3b48474..ae9c16138f7e1ad61fcbc061934de6c3
      view.input.lastIOSEnter = 0
      return
    }
-@@ -181,7 +182,7 @@ export function readDOMChange(view: EditorView, from: number, to: number, typeOv
+@@ -181,15 +182,15 @@ export function readDOMChange(view: EditorView, from: number, to: number, typeOv
    if (((browser.ios && view.input.lastIOSEnter > Date.now() - 225 &&
          (!inlineChange || addedNodes.some(n => n.nodeName == "DIV" || n.nodeName == "P"))) ||
         (!inlineChange && looksLikeEnter(parse.doc, $from.pos, $to.pos))) &&
@@ -263,9 +302,10 @@ index 5e441c3e9219185ad647cae11c1c85f8a3b48474..ae9c16138f7e1ad61fcbc061934de6c3
      view.input.lastIOSEnter = 0
      return
    }
-@@ -189,7 +190,7 @@ export function readDOMChange(view: EditorView, from: number, to: number, typeOv
+   // Same for backspace
    if (view.state.selection.anchor > change.start &&
-       (inlineChange ? change.endA > change.start && change.endB == change.start
+-      (inlineChange ? change.endA > change.start && change.endB == change.start
++      (inlineChange ? !compositionID && change.endA > change.start && change.endB == change.start
          : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) &&
 -      view.someProp("handleKeyDown", f => f(view, keyEvent(8, "Backspace")))) {
 +      dispatchKey(view, "Backspace")) {
@@ -340,3 +380,27 @@ index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..965db969ce342355cab57d4353f7909d
        let {$cursor} = view.state.selection as TextSelection
        // Crude approximation of backspace behavior when no command handled it
        if ($cursor && $cursor.pos > 0) view.dispatch(view.state.tr.delete($cursor.pos - 1, $cursor.pos).scrollIntoView())
+diff --git a/src/viewdesc.ts b/src/viewdesc.ts
+index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..da280cbc8183400840e83b8626573f87058110fe 100644
+--- a/src/viewdesc.ts
++++ b/src/viewdesc.ts
+@@ -842,7 +842,8 @@ export class NodeViewDesc extends ViewDesc {
+     let textNode = view.input.compositionNode
+     if (!textNode || !this.dom.contains(textNode.parentNode)) return null
+ 
+-    if (this.node.inlineContent) {
++    // Editable inline descendants own their composition, like block descendants.
++    if (this.node.inlineContent && view.state.selection.$from.parent == this.node) {
+       // Find the text in the focused node in the node, stop if it's not
+       // there (may have been modified through other means, in which
+       // case it should overwritten)
+@@ -1296,7 +1297,8 @@ class ViewTreeUpdater {
+ 
+   updateNodeAt(node: Node, outerDeco: readonly Decoration[], innerDeco: DecorationSource, index: number, view: EditorView) {
+     let child = this.top.children[index] as NodeViewDesc
+-    if (child.dirty == NODE_DIRTY && child.dom == child.contentDOM) child.dirty = CONTENT_DIRTY
++    if (child.dirty == NODE_DIRTY && (child.dom == child.contentDOM ||
++        child.contentDOM && child.contentDOM.contains(view.input.compositionNode))) child.dirty = CONTENT_DIRTY
+     if (!child.update(node, outerDeco, innerDeco, view)) return false
+     this.destroyBetween(this.index, index)
+     this.index++

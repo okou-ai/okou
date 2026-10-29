@@ -95,8 +95,8 @@ patchedDependencies:
   "@earendil-works/pi-coding-agent@1.1.0": patches/@earendil-works__pi-coding-agent@1.1.0.patch
   # Remove when upstream jest-dom declarations support Vitest 5's Matchers.
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch
-  # Backport prosemirror-view@df03e40059 to avoid repeated key dispatch.
-  # Remove after its upstream release passes the native IME smoke test.
+  # Backport df03e40059 and preserve IME edits in paragraphs and inline nodes.
+  # Remove after upstream fixes pass the native IME smoke test.
   "prosemirror-view@1.42.8": patches/prosemirror-view@1.42.8.patch
   # Remove when upstream centerView and resetTransform persist recalculated pan bounds.
   "react-zoom-pan-pinch@4.0.3": patches/react-zoom-pan-pinch@4.0.3.patch
