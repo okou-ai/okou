@@ -527,7 +527,7 @@
       "description": "Artefak ini akan dihapus dan tautan Okou-nya dinonaktifkan. Salinan yang sudah diunduh atau disimpan di layanan lain akan tetap ada.",
       "hostedDescription": "Situs web dan semua versi yang dipublikasikan akan dinonaktifkan. Salinan yang disimpan di layanan lain akan tetap ada.",
       "menu": "Tindakan lainnya untuk {{title}}",
-      "sharedDescription": "Hapus percakapan tersimpan ini dari artefak Anda. Percakapan asli dan tautan berbaginya akan tetap tersedia.",
+      "sharedDescription": "Hapus percakapan yang dibagikan ini dari artefak Anda. Tautan berbaginya tidak akan berfungsi lagi. Percakapan asli Anda akan tetap tersedia.",
       "title": "Hapus {{title}}?"
     },
     "fileBadges": {

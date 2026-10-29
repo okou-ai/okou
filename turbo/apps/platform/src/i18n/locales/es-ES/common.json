@@ -543,7 +543,7 @@
       "description": "Se eliminará el artefacto y se desactivarán sus enlaces de Okou. Las copias ya descargadas o guardadas en otros servicios se conservarán.",
       "hostedDescription": "El sitio web y todas sus versiones publicadas dejarán de estar disponibles. Las copias guardadas en otros servicios se conservarán.",
       "menu": "Más acciones para {{title}}",
-      "sharedDescription": "Elimina esta conversación guardada de tus artefactos. La conversación original y su enlace compartido seguirán disponibles.",
+      "sharedDescription": "Elimina esta conversación compartida de tus artefactos. Su enlace compartido dejará de funcionar. Tu conversación original seguirá disponible.",
       "title": "¿Eliminar {{title}}?"
     },
     "fileBadges": {

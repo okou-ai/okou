@@ -245,7 +245,7 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("deleting a saved shared conversation explains that its original link remains", async () => {
+test("deleting a shared conversation explains that its shared link will stop working", async () => {
   let removed = false;
   const conversation = artifact({ kind: "shared-thread" });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
@@ -265,9 +265,7 @@ test("deleting a saved shared conversation explains that its original link remai
   });
   const dialog = await openSharedConversationDeletion();
   expect(
-    within(dialog).getByText(
-      /The original conversation and its shared link will stay available/,
-    ),
+    within(dialog).getByText(/Its shared link will stop working/),
   ).toBeInTheDocument();
   click(getButtonByName("Delete", dialog));
   await expect(
