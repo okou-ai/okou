@@ -15,7 +15,7 @@ const DESKTOP_FLOOR_FILE = "turbo/apps/api/src/lib/desktop-compatibility.json";
 const DESKTOP_TRANSFORMS_FILE =
   "turbo/packages/api-contracts/src/client-transforms/desktop.ts";
 export const DESKTOP_PUBLISHED_VERSION_ORACLE =
-  "currentRelease of GET https://api.okou.ai/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json";
+  "release tag version in the redirect from GET https://api.okou.ai/api/desktop/updates/stable/darwin/arm64/release";
 
 /** The Desktop floor in the change under review and on the base branch. */
 export interface DesktopFloorChange {
