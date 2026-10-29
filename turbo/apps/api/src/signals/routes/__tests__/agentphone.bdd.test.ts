@@ -3893,7 +3893,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
       participants: [{ identifier: phone }],
     });
-    await waitForTyping(sends, [groupId]);
+    await waitForTyping(sends, [conversationId]);
     const run = await claimDispatchedRun(runnerGroup);
 
     server.use(
@@ -4055,7 +4055,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         },
       ],
     });
-    await waitForTyping(sends, [bddGroupId(conversationId)]);
+    await waitForTyping(sends, [conversationId]);
     const groupLifecycle = await createChatFilesBddApi(
       context,
     ).requestThreadEvents(actor, {}, [200]);
