@@ -29,11 +29,12 @@ type Validation = "unchanged" | "invalid" | "available" | "taken";
 type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 
 function createSiteVisibilitySignals(sourceUrl: string) {
+  const currentSource$ = computed((get) => {
+    return currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$));
+  });
   const reload$ = state(0);
   const details$ = computed(async (get) => {
-    const url = new URL(
-      currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$)),
-    );
+    const url = new URL(get(currentSource$));
     if (!url.hostname.endsWith(`.${resolveEditableHostedSiteDomain()}`)) {
       return null;
     }
