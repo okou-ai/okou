@@ -173,21 +173,21 @@ describe("default Agent bootstrap", () => {
       }),
     ]);
 
-    const edited = "Must not replace the system instructions.";
+    const edited = "Shared team instructions must survive repeated bootstrap.";
     await accept(
       api.instructions.update({
         headers,
         params: { id: agentId },
         body: { content: edited },
       }),
-      [400],
+      [200],
     );
     await accept(api.status.getStatus({ headers }), [200]);
     const after = await accept(
       api.instructions.get({ headers, params: { id: agentId } }),
       [200],
     );
-    expect(after.body.content).toBe(SEED_INSTRUCTIONS);
+    expect(after.body.content).toBe(edited);
     await expectSingleOnboardingGrant(api);
   });
 
@@ -338,7 +338,7 @@ describe("default Agent bootstrap", () => {
     expect(replayed.body).toStrictEqual(initial.body);
   });
 
-  it("bootstraps and preserves the read-only default while object storage is unavailable", async () => {
+  it("bootstraps and preserves the default identity while object storage is unavailable", async () => {
     authenticateAdmin();
     context.mocks.s3.send.mockRejectedValue(
       new Error("Object storage is unavailable"),
@@ -352,11 +352,11 @@ describe("default Agent bootstrap", () => {
         params: { id: agentId },
         body: { content: "Edited default" },
       }),
-      [400],
+      [200],
     );
     const peers = await Promise.all([readDefaultId(api), readDefaultId(api)]);
     expect(peers).toStrictEqual([agentId, agentId]);
-    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
+    await expectInstructions(api, agentId, "Edited default");
     await expectSingleOnboardingGrant(api);
   });
 

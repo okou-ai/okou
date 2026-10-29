@@ -3,7 +3,6 @@ import { command, computed } from "ccstate";
 import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agentConfigurationUpdateError } from "@okouai/core/agent-protection";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -12,10 +11,7 @@ import { writeDb$ } from "../external/db";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
-import {
-  agentResponse,
-  nonDefaultAgentCondition,
-} from "../services/agent-data.service";
+import { agentResponse } from "../services/agent-data.service";
 import { agentInstructions } from "../services/agent-instructions.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -81,7 +77,6 @@ const updateAgentInstructionsInner$ = command(
         and(
           eq(agents.orgId, auth.orgId),
           eq(agents.id, params.id),
-          nonDefaultAgentCondition(auth.orgId),
           or(
             eq(agents.owner, member.userId),
             member.role === "admin"
@@ -103,13 +98,10 @@ const updateAgentInstructionsInner$ = command(
     }
     const [current] = await db
       .select({
-        id: agents.id,
         owner: agents.owner,
         visibility: agents.visibility,
-        defaultAgentId: orgMetadata.defaultAgentId,
       })
       .from(agents)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
       .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
       .limit(1);
     signal.throwIfAborted();
@@ -124,12 +116,6 @@ const updateAgentInstructionsInner$ = command(
     );
     if (permissionError) {
       return permissionError;
-    }
-    const configurationError = agentConfigurationUpdateError(
-      current.id === current.defaultAgentId,
-    );
-    if (configurationError) {
-      return { status: 400 as const, body: { error: configurationError } };
     }
     // A second concurrent permission change may have made the Agent writable again.
     return conflict(

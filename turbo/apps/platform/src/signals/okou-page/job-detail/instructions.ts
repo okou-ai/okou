@@ -1,6 +1,5 @@
 import { command, computed, state } from "ccstate";
 import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
-import { agentConfigurationUpdateError } from "@okouai/core/agent-protection";
 import { apiClient$ } from "../../api-client.ts";
 import { accept } from "../../../lib/accept.ts";
 import type { AgentInstructions } from "../agent-types.ts";
@@ -74,12 +73,6 @@ export const buildAgentInstructions$ = command(
     const raw = get(editedContent$);
     if (!detail?.agentId || raw === null) {
       return;
-    }
-    const configurationError = agentConfigurationUpdateError(
-      detail.isDefaultAgent,
-    );
-    if (configurationError) {
-      throw new Error(configurationError.message);
     }
     const edited = raw.trim();
 

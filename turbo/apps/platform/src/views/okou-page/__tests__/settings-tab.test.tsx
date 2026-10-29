@@ -416,39 +416,83 @@ test("Allow an org admin to update another user's public agent avatar", async ()
   expect(update).not.toHaveProperty("visibility");
 });
 
-test.each(["profile", "instructions"])(
-  "Keep default Okou read-only through the %s deep link",
-  async (tab) => {
-    const defaultAgent: AgentResponse = {
-      agentId: DEFAULT_AGENT_ID,
-      isDefaultAgent: true,
-      ownerId: "test-user-123",
-      description: "The default assistant",
-      displayName: "Okou",
-      sound: "professional",
-      avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      visibility: "public",
-    };
-    context.mocks.data.agents([defaultAgent]);
-    context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-      return respond(200, defaultAgent);
-    });
-    context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
-    await setupPage({
-      context,
-      path: `/agents/${DEFAULT_AGENT_ID}?tab=${tab}`,
-    });
-    expect(tabByText("Authorization")).toHaveAttribute("aria-selected", "true");
-    const tabs = queryAllByRoleFast("tab").map((candidate) => {
-      return candidate.textContent?.trim();
-    });
-    expect(tabs).not.toContain("Profile");
-    expect(tabs).not.toContain("Instructions");
-    expect(screen.queryByLabelText("Customize avatar")).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(screen.queryByText("Delete agent")).not.toBeInTheDocument();
-  },
-);
+function prepareDefaultAgentProfile(): void {
+  let defaultAgent: AgentResponse = {
+    agentId: DEFAULT_AGENT_ID,
+    isDefaultAgent: true,
+    ownerId: "test-user-123",
+    description: "The default assistant",
+    displayName: "Okou",
+    sound: "professional",
+    avatarUrl: DEFAULT_AGENT_AVATAR_URL,
+    visibility: "public",
+  };
+  context.mocks.data.agents([defaultAgent]);
+  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
+    return respond(200, defaultAgent);
+  });
+  context.mocks.api(agentsByIdContract.updateMetadata, ({ body, respond }) => {
+    defaultAgent = { ...defaultAgent, ...body };
+    return respond(200, defaultAgent);
+  });
+  let content = "Original team instructions";
+  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
+    return respond(200, { content, filename: "AGENTS.md" });
+  });
+  context.mocks.api(agentInstructionsContract.update, ({ body, respond }) => {
+    content = body.content;
+    return respond(200, defaultAgent);
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
+}
+
+test("Edit default Okou description and tone through the profile deep link", async () => {
+  prepareDefaultAgentProfile();
+  await setupPage({ context, path: `/agents/${DEFAULT_AGENT_ID}?tab=profile` });
+
+  await expect(screen.findByLabelText("Name")).resolves.toHaveAttribute(
+    "readonly",
+  );
+  expect(tabByText("Profile")).toHaveAttribute("aria-selected", "true");
+  expect(screen.queryByLabelText("Customize avatar")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Make public")).not.toBeInTheDocument();
+  expect(screen.queryByText("Delete agent")).not.toBeInTheDocument();
+  await fill(screen.getByLabelText("Description"), "Updated shared role");
+  click(screen.getByText("Friendly"));
+  click(await screen.findByText("Save"));
+  await expect(screen.findByText("Profile saved")).resolves.toBeInTheDocument();
+
+  click(tabByText("Instructions"));
+  await screen.findByLabelText("Instructions editor");
+  click(tabByText("Profile"));
+  await expect(
+    screen.findByDisplayValue("Updated shared role"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByText("Warm and approachable")).toBeInTheDocument();
+  expect(screen.getByLabelText("Name")).toHaveValue("Okou");
+});
+
+test("Edit and reopen default Okou instructions through the deep link", async () => {
+  prepareDefaultAgentProfile();
+  await setupPage({
+    context,
+    path: `/agents/${DEFAULT_AGENT_ID}?tab=instructions`,
+  });
+
+  const editor = await screen.findByLabelText("Instructions editor");
+  expect(tabByText("Instructions")).toHaveAttribute("aria-selected", "true");
+  await fill(editor, "Updated shared instructions");
+  click(await screen.findByText("Save"));
+  await expect(
+    screen.findByText("Instructions saved"),
+  ).resolves.toBeInTheDocument();
+
+  click(tabByText("Profile"));
+  await screen.findByLabelText("Name");
+  click(tabByText("Instructions"));
+  const savedEditor = await screen.findByLabelText("Instructions editor");
+  expect(savedEditor).toHaveTextContent("Updated shared instructions");
+});
 
 test("Edit and save an agent profile", async () => {
   const profile = prepareAgentProfile();

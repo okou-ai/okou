@@ -11,7 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
-import { agentConfigurationUpdateError } from "@okouai/core/agent-protection";
+import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
@@ -182,8 +182,9 @@ function agentMetadataUpdateRejection(
     return permissionError;
   }
 
-  const identityError = agentConfigurationUpdateError(
+  const identityError = agentIdentityUpdateError(
     existing.id === existing.defaultAgentId,
+    updateBody,
   );
   if (identityError) {
     return { status: 400 as const, body: { error: identityError } };
@@ -200,8 +201,9 @@ function agentConfigurationUpdateRejection(
   if (permissionError) {
     return permissionError;
   }
-  const identityError = agentConfigurationUpdateError(
+  const identityError = agentIdentityUpdateError(
     existing.id === existing.defaultAgentId,
+    updateBody,
   );
   if (identityError) {
     return { status: 400 as const, body: { error: identityError } };
@@ -544,7 +546,7 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         visibility: agents.visibility,
         defaultAgentId: orgMetadata.defaultAgentId,
         publicAgentCount: (updateBody.visibility === "public"
-          ? sql`CASE WHEN ${and(eq(agents.visibility, "private"), eq(agents.owner, member.userId), nonDefaultAgentCondition(auth.orgId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
+          ? sql`CASE WHEN ${and(eq(agents.visibility, "private"), eq(agents.owner, member.userId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
           : sql`0::bigint`
         )
           .mapWith(pgInt8ToSafeIntegerDecoder)
@@ -565,7 +567,9 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         and(
           eq(agents.orgId, auth.orgId),
           eq(agents.id, locked.id),
-          nonDefaultAgentCondition(auth.orgId),
+          agentIdentityUpdateError(true, updateBody)
+            ? nonDefaultAgentCondition(auth.orgId)
+            : undefined,
           or(
             eq(locked.owner, member.userId),
             member.role === "admin"
@@ -731,20 +735,10 @@ const updateAgentMetadataInner$ = command(
         }
       }
 
-      const [updated] = await tx
+      await tx
         .update(agents)
         .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
-        .where(
-          and(
-            eq(agents.orgId, auth.orgId),
-            eq(agents.id, params.id),
-            nonDefaultAgentCondition(auth.orgId),
-          ),
-        )
-        .returning({ id: agents.id });
-      if (!updated) {
-        throw new Error("Agent became read-only during configuration update");
-      }
+        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
       const responseDb = tx;
       const responseOrgId = auth.orgId;
       const responseAgentId = params.id;

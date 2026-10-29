@@ -9,12 +9,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { http, HttpResponse } from "msw";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { server } from "../../../mocks/server";
 import { editCommand } from "../edit";
 import chalk from "chalk";
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 
 const mockAgent = {
   agentId: "my-agent",
@@ -24,6 +25,14 @@ const mockAgent = {
   sound: null,
   avatarUrl: null,
   visibility: "private",
+};
+
+const defaultAgent = {
+  ...mockAgent,
+  isDefaultAgent: true,
+  displayName: "Okou",
+  avatarUrl: DEFAULT_AGENT_AVATAR_URL,
+  visibility: "public",
 };
 
 describe("okou agent edit command", () => {
@@ -260,23 +269,13 @@ describe("okou agent edit command", () => {
   describe("default agent protection", () => {
     it.each([
       ["--display-name", "Renamed"],
-      ["--display-name", "Okou"],
       ["--avatar", "preset:2"],
       ["--visibility", "private"],
-      ["--visibility", "public"],
-      ["--description", "New role"],
-      ["--sound", "friendly"],
-      ["--instructions-file", "/unused-on-rejected-edit.md"],
     ])("rejects %s before any writes", async (flag, value) => {
       let writes = 0;
       server.use(
         http.get("http://localhost:3000/api/agents/my-agent", () => {
-          return HttpResponse.json({
-            ...mockAgent,
-            isDefaultAgent: true,
-            displayName: "Okou",
-            visibility: "public",
-          });
+          return HttpResponse.json(defaultAgent);
         }),
         http.put("http://localhost:3000/api/agents/my-agent", () => {
           writes++;
@@ -295,9 +294,68 @@ describe("okou agent edit command", () => {
       ).rejects.toThrow("process.exit called");
       expect(mockExit).toHaveBeenCalledWith(1);
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("read-only"),
+        expect.stringContaining("must"),
       );
       expect(writes).toBe(0);
+    });
+
+    it.each([
+      ["--description", "New role", "description"],
+      ["--sound", "friendly", "sound"],
+      ["--display-name", "Okou", "displayName"],
+      ["--visibility", "public", "visibility"],
+    ])("allows %s on the default agent", async (flag, value, field) => {
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.get("http://localhost:3000/api/agents/my-agent", () => {
+          return HttpResponse.json(defaultAgent);
+        }),
+        http.put(
+          "http://localhost:3000/api/agents/my-agent",
+          async ({ request }) => {
+            saved = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ...defaultAgent, ...saved });
+          },
+        ),
+      );
+      await editCommand.parseAsync(["node", "cli", "my-agent", flag!, value!]);
+      expect(saved).toMatchObject({ [field!]: value });
+      expect(mockConsoleLog).toHaveBeenCalledWith(
+        expect.stringContaining("updated"),
+      );
+    });
+
+    it("saves instructions on the default agent", async () => {
+      const directory = mkdtempSync(
+        join(tmpdir(), "okou-default-instructions-"),
+      );
+      const path = join(directory, "instructions.md");
+      writeFileSync(path, "Shared team instructions");
+      let saved: unknown;
+      server.use(
+        http.put(
+          "http://localhost:3000/api/agents/my-agent/instructions",
+          async ({ request }) => {
+            saved = await request.json();
+            return HttpResponse.json(defaultAgent);
+          },
+        ),
+      );
+      try {
+        await editCommand.parseAsync([
+          "node",
+          "cli",
+          "my-agent",
+          "--instructions-file",
+          path,
+        ]);
+        expect(saved).toMatchObject({ content: "Shared team instructions" });
+        expect(mockConsoleLog).toHaveBeenCalledWith(
+          expect.stringContaining("updated"),
+        );
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
     });
   });
 

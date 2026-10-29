@@ -59,6 +59,7 @@ import {
 
 interface SettingsTabProps {
   agentId: string;
+  isDefaultAgent: boolean;
   displayName: string;
   description: string;
   sound: Tone;
@@ -165,17 +166,20 @@ function AgentNameControl({
   label,
   placeholder,
   onChange,
+  readOnly,
 }: {
   name: string;
   inputId: string;
   label: string;
   placeholder: string;
   onChange: (name: string) => void;
+  readOnly: boolean;
 }) {
   return (
     <Input
       id={inputId}
       value={name}
+      readOnly={readOnly}
       onChange={(event) => {
         onChange(event.target.value);
       }}
@@ -200,6 +204,7 @@ function willDemoteAgentVisibility(
 
 export function SettingsTab({
   agentId,
+  isDefaultAgent,
   displayName: resolvedAgentName,
   description: initialDescription,
   sound: initialSound,
@@ -357,46 +362,48 @@ export function SettingsTab({
       <div className="mx-auto max-w-[900px]">
         <Card className={surfaceVariants({ className: "overflow-hidden" })}>
           <CardContent className="p-4 sm:p-5">
-            <InlineSettingsRow
-              label={t(($) => {
-                return $.profile.fields.avatar.label;
-              })}
-              description={t(($) => {
-                return $.profile.fields.avatar.description;
-              })}
-              wideControls
-            >
-              <div className="min-w-0 w-full">
-                <div className="flex flex-wrap gap-2 items-center">
-                  <AvatarSettingsControl
-                    avatarUrl={avatarUrl}
-                    onConfirm={async (cfg, signal) => {
-                      const newAvatarUrl = serializeAvatarSvgConfig(cfg);
-                      patchForm({
-                        agentId,
-                        patch: { avatarUrl: newAvatarUrl },
-                      });
-                      await updateSettings(
-                        {
-                          displayName: agentName,
-                          description: desc,
-                          sound: tone,
-                          avatarUrl: newAvatarUrl,
-                          ...(canEditVisibility ? { visibility } : {}),
-                        },
-                        signal,
-                      );
-                      signal.throwIfAborted();
-                      toast.success(
-                        t(($) => {
-                          return $.profile.saved;
-                        }),
-                      );
-                    }}
-                  />
+            {!isDefaultAgent && (
+              <InlineSettingsRow
+                label={t(($) => {
+                  return $.profile.fields.avatar.label;
+                })}
+                description={t(($) => {
+                  return $.profile.fields.avatar.description;
+                })}
+                wideControls
+              >
+                <div className="min-w-0 w-full">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <AvatarSettingsControl
+                      avatarUrl={avatarUrl}
+                      onConfirm={async (cfg, signal) => {
+                        const newAvatarUrl = serializeAvatarSvgConfig(cfg);
+                        patchForm({
+                          agentId,
+                          patch: { avatarUrl: newAvatarUrl },
+                        });
+                        await updateSettings(
+                          {
+                            displayName: agentName,
+                            description: desc,
+                            sound: tone,
+                            avatarUrl: newAvatarUrl,
+                            ...(canEditVisibility ? { visibility } : {}),
+                          },
+                          signal,
+                        );
+                        signal.throwIfAborted();
+                        toast.success(
+                          t(($) => {
+                            return $.profile.saved;
+                          }),
+                        );
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            </InlineSettingsRow>
+              </InlineSettingsRow>
+            )}
 
             <InlineSettingsRow
               label={t(($) => {
@@ -410,6 +417,7 @@ export function SettingsTab({
               <div className="min-w-0 w-full">
                 <AgentNameControl
                   name={agentName}
+                  readOnly={isDefaultAgent}
                   inputId={inputId}
                   label={t(($) => {
                     return $.profile.fields.name.label;

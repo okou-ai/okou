@@ -358,7 +358,7 @@ describe("PUT /api/agents/:id", () => {
     });
   });
 
-  it("keeps default configuration and its permission-error precedence", async () => {
+  it("edits default configuration while preserving identity and permission-error precedence", async () => {
     const owner = newOrgUser();
     mocks.clerk.session(owner.userId, owner.orgId, "org:admin");
     context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
@@ -373,11 +373,35 @@ describe("PUT /api/agents/:id", () => {
     if (!agentId) {
       throw new Error("Expected onboarding to create a default Agent");
     }
-    const before = await accept(
-      agentsClient().get({ params: { id: agentId }, headers: authHeaders() }),
+    const configured = await accept(
+      agentsClient().update({
+        params: { id: agentId },
+        headers: authHeaders(),
+        body: { description: "Shared responsibility", sound: "friendly" },
+      }),
       [200],
     );
-    for (const body of [{ description: "Rejected\0configuration" }, {}]) {
+    expect(configured.body).toMatchObject({
+      agentId,
+      isDefaultAgent: true,
+      displayName: "Okou",
+      description: "Shared responsibility",
+      sound: "friendly",
+      visibility: "public",
+    });
+    const unchanged = await accept(
+      agentsClient().update({
+        params: { id: agentId },
+        headers: authHeaders(),
+        body: {},
+      }),
+      [200],
+    );
+    expect(unchanged.body).toStrictEqual(configured.body);
+    for (const body of [
+      { displayName: "Renamed", description: "Rejected\0configuration" },
+      { displayName: "Renamed" },
+    ]) {
       const response = await accept(
         agentsClient().update({
           params: { id: agentId },
@@ -386,7 +410,7 @@ describe("PUT /api/agents/:id", () => {
         }),
         [400],
       );
-      expect(response.body.error.code).toBe("DEFAULT_AGENT_READ_ONLY");
+      expect(response.body.error.code).toBe("DEFAULT_AGENT_NAME_LOCKED");
     }
     mocks.clerk.session(`user_${randomUUID()}`, owner.orgId, "org:member");
     const forbidden = await accept(
@@ -403,7 +427,7 @@ describe("PUT /api/agents/:id", () => {
       agentsClient().get({ params: { id: agentId }, headers: authHeaders() }),
       [200],
     );
-    expect(after.body).toStrictEqual(before.body);
+    expect(after.body).toStrictEqual(configured.body);
   });
 
   it("keeps private configuration when the public limit rejects promotion", async () => {

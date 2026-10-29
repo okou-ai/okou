@@ -1007,6 +1007,7 @@ function AgentHeader({
 // offer to copy bound workflows onto another agent before the agent is removed.
 function AgentProfileSettings({
   agentId,
+  isDefaultAgent,
   displayName,
   description,
   avatarUrl,
@@ -1016,6 +1017,7 @@ function AgentProfileSettings({
   onDelete,
 }: {
   agentId: string;
+  isDefaultAgent: boolean;
   displayName: string;
   description: string;
   avatarUrl: string | null;
@@ -1062,15 +1064,16 @@ function AgentProfileSettings({
     <SettingsTab
       key={agentId}
       agentId={agentId}
+      isDefaultAgent={isDefaultAgent}
       displayName={displayName}
       description={description}
       sound={resolvedSound}
       avatarUrl={avatarUrl}
       visibility={visibility}
-      canEditVisibility={canEditVisibility}
+      canEditVisibility={canEditVisibility && !isDefaultAgent}
       updateSettings$={updateAgentSettings$}
       inputId="job-agent-name"
-      onDelete={onDelete}
+      onDelete={isDefaultAgent ? undefined : onDelete}
       deleteWorkflows={deleteWorkflows}
       deleteWorkflowsState={
         workflowsStatus.state === "hasData"
@@ -1088,6 +1091,7 @@ function AgentProfileSettings({
 function AgentTabContent({
   activeTab,
   agentId,
+  isDefaultAgent,
   displayName,
   description,
   avatarUrl,
@@ -1097,6 +1101,7 @@ function AgentTabContent({
 }: {
   activeTab: string;
   agentId: string;
+  isDefaultAgent: boolean;
   displayName: string;
   description: string;
   avatarUrl: string | null;
@@ -1121,6 +1126,7 @@ function AgentTabContent({
       return (
         <AgentProfileSettings
           agentId={agentId}
+          isDefaultAgent={isDefaultAgent}
           displayName={displayName}
           description={description}
           avatarUrl={avatarUrl}
@@ -1179,11 +1185,7 @@ function useAgentFields() {
   };
 }
 
-function useTabVisibility(
-  ownerId: string,
-  visibility: "public" | "private",
-  isDefaultAgent: boolean | undefined,
-) {
+function useTabVisibility(ownerId: string, visibility: "public" | "private") {
   const adminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin = adminLoadable.state === "hasData" && adminLoadable.data;
 
@@ -1191,9 +1193,7 @@ function useTabVisibility(
   const currentUserId =
     userLoadable.state === "hasData" ? userLoadable.data?.id : undefined;
   const isOwner = currentUserId === ownerId;
-  const canEditProfile =
-    isDefaultAgent === false &&
-    (isOwner || (isAdmin && visibility === "public"));
+  const canEditProfile = isOwner || (isAdmin && visibility === "public");
 
   const rawTab = useGet(agentActiveTab$);
   const setActiveTab = useSet(setAgentActiveTab$);
@@ -1221,7 +1221,7 @@ export function JobDetailPage() {
   const fields = useAgentFields();
   const errorAgentId = fields.agentId || currentAgentId || "";
   const { hideProfileAndInstructions, isOwner, activeTab, setActiveTab } =
-    useTabVisibility(fields.ownerId, fields.visibility, fields.isDefaultAgent);
+    useTabVisibility(fields.ownerId, fields.visibility);
   const isDefaultAgent = fields.isDefaultAgent;
 
   if (!fields.detail && !error) {
@@ -1249,6 +1249,7 @@ export function JobDetailPage() {
         <AgentTabContent
           activeTab={activeTab}
           agentId={fields.agentId}
+          isDefaultAgent={isDefaultAgent !== false}
           displayName={fields.displayName}
           description={fields.description}
           avatarUrl={fields.avatarUrl}
