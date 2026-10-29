@@ -36,6 +36,7 @@ import {
   teamsConnectFixture,
   postTeamsActivityForTest,
   teamsMessageActivityForTest,
+  type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 
 const context = testContext();
@@ -151,6 +152,207 @@ function expectOAuthSuccess(response: Response) {
   expect(location.searchParams.get("error")).toBeNull();
   return location;
 }
+
+function welcomeDeliveries() {
+  mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "welcome-bot-password");
+  const conversations: unknown[] = [];
+  const messages: unknown[] = [];
+  server.use(
+    http.post(
+      "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/oauth2/v2.0/token",
+      () => {
+        return HttpResponse.json({ access_token: "welcome-bot-token" });
+      },
+    ),
+    http.post(
+      "https://smba.trafficmanager.net/amer/v3/conversations",
+      async ({ request }) => {
+        conversations.push(await request.json());
+        return HttpResponse.json({ id: "a:personal-welcome" });
+      },
+    ),
+    http.post(
+      "https://smba.trafficmanager.net/amer/v3/conversations/:conversationId/activities",
+      async ({ request, params }) => {
+        if (params.conversationId === "a:personal-welcome") {
+          messages.push(await request.json());
+        }
+        return HttpResponse.json({ id: "welcome-message" });
+      },
+    ),
+  );
+  return { conversations, messages };
+}
+
+async function botInstalled(fixture: TeamsConnectFixture) {
+  const response = await postTeamsActivityForTest({
+    signal: context.signal,
+    activity: teamsMessageActivityForTest(fixture, {
+      type: "installationUpdate",
+      action: "add",
+      id: randomUUID(),
+    }),
+  });
+  expect(response.status).toBe(200);
+  await flushWaitUntilForTest();
+}
+
+test("oauth connection sends one personal welcome using the verified AAD identity", async () => {
+  const actor = await enabledActor("org:admin");
+  const fixture = teamsConnectFixture({
+    orgId: actor.orgId,
+    userId: actor.userId,
+  });
+  const sent = welcomeDeliveries();
+  expectOAuthSuccess(
+    await oauth(
+      actor,
+      fixture.teamsTenantId,
+      fixture.teamsAadObjectId,
+      "install",
+    ),
+  );
+  await installTeamsForTest(context.signal, fixture);
+  await flushWaitUntilForTest();
+  expect(sent.messages).toHaveLength(0);
+
+  expectOAuthSuccess(
+    await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
+  );
+  await flushWaitUntilForTest();
+  expect(sent.conversations).toStrictEqual([
+    expect.objectContaining({
+      members: [{ id: fixture.teamsAadObjectId, name: "Verified person" }],
+      isGroup: false,
+      channelData: { tenant: { id: fixture.teamsTenantId } },
+    }),
+  ]);
+  expect(sent.messages).toStrictEqual([
+    expect.objectContaining({ summary: "You're connected to Okou!" }),
+  ]);
+  expectOAuthSuccess(
+    await oauth(
+      actor,
+      fixture.teamsTenantId,
+      fixture.teamsAadObjectId,
+      "reconnect",
+    ),
+  );
+  await flushWaitUntilForTest();
+  expect(sent.messages).toHaveLength(1);
+  await removeTeamsForTest(context.signal, fixture);
+});
+
+test("an account connected before bot installation receives its pending DM welcome once the bot is ready", async () => {
+  const actor = await enabledActor("org:admin");
+  const fixture = teamsConnectFixture({
+    orgId: actor.orgId,
+    userId: actor.userId,
+  });
+  const sent = welcomeDeliveries();
+  expectOAuthSuccess(
+    await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
+  );
+  await flushWaitUntilForTest();
+  expect(sent.messages).toHaveLength(0);
+  expectOAuthSuccess(
+    await oauth(
+      actor,
+      fixture.teamsTenantId,
+      fixture.teamsAadObjectId,
+      "install",
+    ),
+  );
+  await installTeamsForTest(context.signal, fixture);
+  await botInstalled(fixture);
+  expect(sent.messages).toHaveLength(1);
+  await botInstalled(fixture);
+  expect(sent.messages).toHaveLength(1);
+  await removeTeamsForTest(context.signal, fixture);
+});
+
+test("a rejected Teams welcome remains pending without failing or duplicating the connection", async () => {
+  const actor = await enabledActor("org:admin");
+  const fixture = teamsConnectFixture({
+    orgId: actor.orgId,
+    userId: actor.userId,
+  });
+  const sent = welcomeDeliveries();
+  expectOAuthSuccess(
+    await oauth(
+      actor,
+      fixture.teamsTenantId,
+      fixture.teamsAadObjectId,
+      "install",
+    ),
+  );
+  await installTeamsForTest(context.signal, fixture);
+  await flushWaitUntilForTest();
+  let attempts = 0;
+  server.use(
+    http.post(
+      "https://smba.trafficmanager.net/amer/v3/conversations/a:personal-welcome/activities",
+      () => {
+        attempts++;
+        return HttpResponse.json(
+          { error: { message: "Forbidden" } },
+          { status: 403 },
+        );
+      },
+    ),
+  );
+  expectOAuthSuccess(
+    await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
+  );
+  await flushWaitUntilForTest();
+  await expect(status(actor)).resolves.toMatchObject({ isConnected: true });
+  expect(attempts).toBe(1);
+  // A later installation event delivers only the still-pending welcome.
+  const recovered = welcomeDeliveries();
+  await botInstalled(fixture);
+  expect(recovered.messages).toHaveLength(1);
+  expect(sent.conversations).toHaveLength(1);
+  expect(attempts).toBe(1);
+  expectOAuthSuccess(
+    await oauth(
+      actor,
+      fixture.teamsTenantId,
+      fixture.teamsAadObjectId,
+      "reconnect",
+    ),
+  );
+  await flushWaitUntilForTest();
+  expect(recovered.messages).toHaveLength(1);
+  expect(attempts).toBe(1);
+  await removeTeamsForTest(context.signal, fixture);
+});
+
+test("connecting an identity never borrows another workspace's bot for a welcome DM", async () => {
+  const owner = await enabledActor("org:admin");
+  const fixture = teamsConnectFixture({
+    orgId: owner.orgId,
+    userId: owner.userId,
+  });
+  const sent = welcomeDeliveries();
+  expectOAuthSuccess(
+    await oauth(
+      owner,
+      fixture.teamsTenantId,
+      fixture.teamsAadObjectId,
+      "install",
+    ),
+  );
+  await installTeamsForTest(context.signal, fixture);
+  await flushWaitUntilForTest();
+  const external = await enabledActor();
+  expectOAuthSuccess(
+    await oauth(external, fixture.teamsTenantId, fixture.teamsAadObjectId),
+  );
+  await flushWaitUntilForTest();
+  expect(sent.conversations).toHaveLength(0);
+  expect(sent.messages).toHaveLength(0);
+  await removeTeamsForTest(context.signal, fixture);
+});
 
 test("a member connects an OAuth identity before installation and can disconnect it", async () => {
   const actor = await enabledActor();
