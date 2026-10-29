@@ -4605,12 +4605,6 @@ function FinishedRunRow({
   source: RecommendedFollowupSource | null;
 }) {
   const { t } = useTranslation();
-  const renderedGroups = useLastResolved(thread.visibleRenderedChatGroups$);
-  const billing = useLastResolved(billingStatusAsync$);
-  const planUpgrade =
-    billing?.tier === "limited-free-1"
-      ? completedResponsePlanUpgrade(renderedGroups ?? [])
-      : undefined;
   const donePhrase =
     useLastResolved(thread.donePhrase$) ??
     t(($) => {
@@ -4639,14 +4633,26 @@ function FinishedRunRow({
         label={label}
         className={CHAT_THREAD_RESPONSE_FLUSH_CLASS}
       />
-      {planUpgrade ? (
-        <div className="@container w-full max-w-2xl">
-          <PlanUpgradeCard signals={planUpgrade} placement="run-end" />
-        </div>
-      ) : null}
       {source ? (
         <RecommendedFollowupList thread={thread} source={source} />
       ) : null}
+    </div>
+  );
+}
+
+function CompletedResultUpgrade({ thread }: { thread: ChatPanelSignals }) {
+  const renderedGroups = useLastResolved(thread.visibleRenderedChatGroups$);
+  const billing = useLastResolved(billingStatusAsync$);
+  const planUpgrade =
+    billing?.tier === "limited-free-1"
+      ? completedResponsePlanUpgrade(renderedGroups ?? [])
+      : undefined;
+  if (!planUpgrade) {
+    return null;
+  }
+  return (
+    <div className="@container w-full max-w-2xl">
+      <PlanUpgradeCard signals={planUpgrade} placement="result-end" />
     </div>
   );
 }
@@ -8200,6 +8206,9 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         mainActions={mainActions}
       />
+      {statusRow?.kind === "finished" ? (
+        <CompletedResultUpgrade thread={thread} />
+      ) : null}
       {(statusTailEvents?.length ?? 0) > 0 || statusRow !== undefined ? (
         <div
           data-chat-run-status-tail

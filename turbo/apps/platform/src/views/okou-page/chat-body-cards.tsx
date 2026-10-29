@@ -749,7 +749,7 @@ export function PlanUpgradeCard({
   placement = "message",
 }: {
   signals: PlanUpgradeSignals;
-  placement?: "message" | "run-end";
+  placement?: "message" | "result-end";
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -765,12 +765,15 @@ export function PlanUpgradeCard({
   }
 
   if (billing.state === "hasData" && billing.data.tier === "limited-free-1") {
-    return placement === "run-end" ? (
-      <FreePlanUpgradeCard onUpgrade={handleClick} />
+    return placement === "result-end" ? (
+      <FreePlanUpgradeCard
+        onUpgrade={handleClick}
+        remainingCredits={billing.data.credits}
+      />
     ) : null;
   }
 
-  if (placement === "run-end") {
+  if (placement === "result-end") {
     return null;
   }
 
@@ -809,7 +812,17 @@ export function PlanUpgradeCard({
   );
 }
 
-function FreePlanUpgradeCard({ onUpgrade }: { onUpgrade: () => void }) {
+// Rounded mean credit usage from the introductory task-usage benchmark.
+const FREE_TASK_BENCHMARK_CREDITS = 620;
+const INTRODUCTORY_UPGRADE_BONUS_CREDITS = 400;
+
+function FreePlanUpgradeCard({
+  onUpgrade,
+  remainingCredits,
+}: {
+  onUpgrade: () => void;
+  remainingCredits: number;
+}) {
   const catalog = useLastLoadable(memberUsagePackOptionsAsync$);
   const paidPrices =
     catalog.state === "hasData"
@@ -823,9 +836,17 @@ function FreePlanUpgradeCard({ onUpgrade }: { onUpgrade: () => void }) {
       : [];
   const monthlyPriceUsd =
     paidPrices.length > 0 ? Math.min(...paidPrices) : undefined;
+  // The headline says "Fewer than", so use an exclusive upper bound.
+  const estimatedTasksUpperBound =
+    Math.floor(Math.max(0, remainingCredits) / FREE_TASK_BENCHMARK_CREDITS) + 1;
 
   return (
-    <ProUpgradeCard onUpgrade={onUpgrade} monthlyPriceUsd={monthlyPriceUsd} />
+    <ProUpgradeCard
+      onUpgrade={onUpgrade}
+      monthlyPriceUsd={monthlyPriceUsd}
+      estimatedTasksUpperBound={estimatedTasksUpperBound}
+      bonusCredits={INTRODUCTORY_UPGRADE_BONUS_CREDITS}
+    />
   );
 }
 

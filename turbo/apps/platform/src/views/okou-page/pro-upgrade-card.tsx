@@ -10,7 +10,7 @@ interface ProUpgradeCardProps {
   readonly monthlyPriceUsd?: number;
   // Supply a positive estimate bound derived from credits and typical task usage.
   readonly estimatedTasksUpperBound?: number;
-  // Only supply when a trusted campaign source confirms eligibility.
+  // The introductory upgrade offer shown by the calling surface.
   readonly bonusCredits?: number;
 }
 

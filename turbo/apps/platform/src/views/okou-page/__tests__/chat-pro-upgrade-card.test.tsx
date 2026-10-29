@@ -30,11 +30,12 @@ const { installRunChat } = createChatRunFixtures(context);
 const UPGRADE_LINK =
   "[Compare plans](https://app.okou.ai/?settings=billing&billingView=plans)";
 
-function mockBilling(tier = "limited-free-1") {
+function mockBilling(tier = "limited-free-1", credits = 1000) {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       ...defaultBillingStatus(),
       tier,
+      credits,
       ...billingPlanCapabilities(tier),
       onboardingPaymentPending: false,
     });
@@ -45,12 +46,20 @@ async function openUpgradeChat(tier = "limited-free-1") {
   mockBilling(tier);
   installRunChat({
     chatEvents: [
-      ...completedConversation(UPGRADE_LINK),
+      ...completedConversation(`Your report is ready.\n\n${UPGRADE_LINK}`),
       completedEvent({
         id: "upgrade-completed",
         runId: FIRST_CAPABILITY_RUN_ID,
         seqId: 3,
       }),
+      {
+        id: "upgrade-followups",
+        content: null,
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 4,
+        createdAt: "2026-08-01T10:00:04.000Z",
+        followups: [{ prompt: "Summarize the report", kind: "talk" }],
+      },
     ],
   });
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
@@ -88,15 +97,33 @@ test("Show the lowest paid catalog price and open the existing plans dialog", as
   if (!completion) {
     throw new Error("Expected the task completion status");
   }
-  expect(completion).toContainElement(card);
+  expect(completion).not.toContainElement(card);
   const separator = within(completion).getByRole("separator");
   expect(
-    separator.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+    card.compareDocumentPosition(separator) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  expect(
+    screen.getByText("Your report is ready.").compareDocumentPosition(card) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  const assistant = card.closest<HTMLElement>('[data-role="assistant"]');
+  if (!assistant) {
+    throw new Error("Expected the completed result");
+  }
+  const copy = await findEnabledButton("Copy message", assistant);
+  expect(
+    copy.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    within(completion).getByRole("group", { name: "Keep going" }),
+  ).toBeInTheDocument();
   await expect(within(card).findByText("$18")).resolves.toBeVisible();
   expect(within(card).queryByText("$0")).toBeNull();
-  expect(within(card).queryByText(/tasks? left/u)).toBeNull();
-  expect(within(card).queryByText(/400/u)).toBeNull();
+  expect(within(card).getByText("Fewer than 2 tasks left")).toBeInTheDocument();
+  expect(within(card).getByText("+400")).toBeInTheDocument();
+  expect(
+    within(card).getByText(/bonus credits · Just now/u),
+  ).toBeInTheDocument();
   click(await findEnabledButton("Upgrade now", card));
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
@@ -115,6 +142,7 @@ test("Keep the upgrade action usable when the price catalog is unavailable", asy
     within(card).findByText("See plans for current pricing"),
   ).resolves.toBeVisible();
   expect(within(card).queryByText(/\$/u)).toBeNull();
+  expect(within(card).getByText("+400")).toBeInTheDocument();
   await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
 });
 
@@ -124,6 +152,7 @@ test("Keep the general plans action for an existing paid workspace", async () =>
     within(card).findByText("Upgrade your workspace"),
   ).resolves.toBeVisible();
   expect(within(card).queryByText("Do more with Pro")).toBeNull();
+  expect(within(card).queryByText("+400")).toBeNull();
   click(await findEnabledButton("Compare plans", card));
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
@@ -148,7 +177,7 @@ test("Wait for successful completion, show one trailing card, and retire it on t
 
   const card = await screen.findByTestId("plan-upgrade-card");
   expect(screen.getAllByTestId("plan-upgrade-card")).toHaveLength(1);
-  expect(card.closest("[data-chat-run-status-tail]")).not.toBeNull();
+  expect(card.closest("[data-chat-run-status-tail]")).toBeNull();
 
   await sendText("Summarize the report");
   await findButton("Stop");
