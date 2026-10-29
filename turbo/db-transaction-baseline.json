@@ -52,11 +52,6 @@
       "owner": "startRunBuiltInAdmission$"
     },
     {
-      "id": "TX-0264",
-      "file": "turbo/apps/api/src/signals/services/threadless-run-cleanup.service.ts",
-      "owner": "deleteIfStillEligible"
-    },
-    {
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"

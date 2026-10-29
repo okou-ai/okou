@@ -159,6 +159,12 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "66e1cae65d0468a50149f0dafab9d0d35abd0819" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_RUN_REFERENCE_PREPARATION_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_RUN_REFERENCE_PREPARATION_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a" ]; then
       [ "${MOCK_PI_MEMORY_RETIRED_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "a635ec3afa20cdb5df9c8125afe6cec24ef53e16" ]; then
@@ -324,6 +330,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/run-reference-preparation" ]; then
+      [ "${MOCK_RUN_REFERENCE_PREPARATION_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_RUN_REFERENCE_PREPARATION_COMMIT-66e1cae65d0468a50149f0dafab9d0d35abd0819}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/home-cache-capacity-reader" ]; then
       [ "${MOCK_HOME_CACHE_CAPACITY_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_HOME_CACHE_CAPACITY_READER_COMMIT-$MOCK_HOME_CACHE_CAPACITY_READER_FLOOR}"
@@ -1948,5 +1959,27 @@ assert_failure "Rollback target predates direct Workflow attachment ownership" \
 assert_failure "predates verified Workflow attachment delivery" \
   run_resolver "${tmp_dir}/workflow-attachment-runner.output" MOCK_WORKFLOW_ATTACHMENT_RUNNER_VALID=0
 [ ! -s "${tmp_dir}/workflow-attachment-runner.output" ] || fail "unverified Workflow Runner must not publish outputs"
+
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates explicit Run reference cleanup" \
+  run_resolver "${tmp_dir}/run-reference-preparation.output" MOCK_RUN_REFERENCE_PREPARATION_VALID=0
+[ ! -s "${tmp_dir}/run-reference-preparation.output" ] || fail "cascade-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "Run reference preparation must reject before provider or host access"
+fi
+
+for run_reference_case in \
+  "MOCK_RUN_REFERENCE_PREPARATION_AVAILABLE=0|Cannot read the Run reference preparation rollback floor from main" \
+  "MOCK_RUN_REFERENCE_PREPARATION_COMMIT=invalid|Missing or invalid Run reference preparation rollback floor" \
+  "MOCK_RUN_REFERENCE_PREPARATION_ON_MAIN=0|Run reference preparation rollback floor is not on main"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${run_reference_case#*|}" \
+    run_resolver "${tmp_dir}/run-reference-policy.output" "${run_reference_case%%|*}"
+  [ ! -s "${tmp_dir}/run-reference-policy.output" ] || fail "invalid Run policy must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Run policy must reject before provider or host access"
+  fi
+done
 
 echo "resolve-production-rollback-target tests passed"
