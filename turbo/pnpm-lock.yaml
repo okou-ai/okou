@@ -786,8 +786,8 @@ importers:
         specifier: ^6.1.0
         version: 6.1.0(@types/react@19.2.14)(react@19.2.6)
       cdp-viewer:
-        specifier: github:okou-ai/cdp-viewer#d42b5345c605c5e3cd28acb5d560e7c02d7329b1
-        version: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/d42b5345c605c5e3cd28acb5d560e7c02d7329b1(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: github:okou-ai/cdp-viewer#ae6f0289f3f3a321aed118751df0ab9e73f65420
+        version: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/ae6f0289f3f3a321aed118751df0ab9e73f65420(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -5996,8 +5996,8 @@ packages:
   ccstate@6.1.0:
     resolution: {integrity: sha512-p7FFf8dJDsLFORC/xwOnJ70RO0M8ix9JI95utUJBPo4lIAlZ/XIkGLDztY6ciCrH92jrln1uKk2OSUzemLcHiA==}
 
-  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/d42b5345c605c5e3cd28acb5d560e7c02d7329b1:
-    resolution: {gitHosted: true, integrity: sha512-IDmIXV7mKgLnqKZF9j5fLPneWsXQQg1yKBsb3mADFdDsUz5oYUe99YJ11rKlm3VOWm0c+P97u9z5HxFe+NleIA==, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/d42b5345c605c5e3cd28acb5d560e7c02d7329b1}
+  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/ae6f0289f3f3a321aed118751df0ab9e73f65420:
+    resolution: {gitHosted: true, integrity: sha512-0u2jT2G86z+LP17lWgD2DCHdw2/Ol/WSsqkvTr1JDEaP4lPpYtdRpN8sakbmxSC3jI21PsKWGBRxEmlgX/C44Q==, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/ae6f0289f3f3a321aed118751df0ab9e73f65420}
     version: 0.0.0
     engines: {node: '>=22.12.0'}
     peerDependencies:
@@ -14245,7 +14245,7 @@ snapshots:
 
   ccstate@6.1.0: {}
 
-  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/d42b5345c605c5e3cd28acb5d560e7c02d7329b1(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/ae6f0289f3f3a321aed118751df0ab9e73f65420(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       '@base-ui/react': 1.9.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       ccstate: 6.1.0
