@@ -73,10 +73,11 @@ async fn codex_app_server_delivers_buffered_notifications_before_turn_start_resp
             assert_eq!(output.len(), 65 * 1024 * 1024 + 22);
             assert!(output.starts_with("large-head-"));
             assert!(output.ends_with("-large-tail"));
+            const EXPECTED_CHUNK: [u8; 8192] = [b'x'; 8192];
             assert!(
-                output[11..output.len() - 11]
-                    .bytes()
-                    .all(|byte| byte == b'x')
+                output.as_bytes()[11..output.len() - 11]
+                    .chunks(EXPECTED_CHUNK.len())
+                    .all(|chunk| chunk == &EXPECTED_CHUNK[..chunk.len()])
             );
         }
     }
