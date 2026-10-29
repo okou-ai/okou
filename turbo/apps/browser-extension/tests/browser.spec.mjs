@@ -298,9 +298,9 @@ test("keeps document/opener messaging and script-close; does not undo a later de
         return !!window.opener;
       }),
     ).toBe(true);
-    await page.evaluate(() => {
-      return window.opener.postMessage("moved", "*");
-    });
+    await page.evaluate((targetOrigin) => {
+      return window.opener.postMessage("moved", targetOrigin);
+    }, origin);
     await expect
       .poll(() => {
         return a.page.evaluate(() => {
