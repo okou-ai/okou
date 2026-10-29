@@ -1,7 +1,3 @@
-import type {
-  WorkflowSkillDocument,
-  WorkflowSkillReference,
-} from "@okouai/api-contracts/contracts/workflow-attachments";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
@@ -83,14 +79,13 @@ import { authRoute } from "../auth/auth-route";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { generateSandboxToken } from "../auth/tokens";
 import { authorization$, request$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import { readAgentInstructionsForClaim$ } from "../services/agent-instructions-claim.service";
 import {
   workflowClaimInput,
-  materializeClaimedWorkflowDocuments$,
   type WorkflowClaimInput,
 } from "../services/workflow-claim.service";
 import {
@@ -1081,51 +1076,38 @@ type ClaimedTransitionResult = Extract<
   ClaimTransitionResult,
   { readonly status: "claimed" }
 >;
-const withClaimedWorkflows$ = command(
-  async (
-    { set },
-    args: {
-      readonly responseBody: ExecutionContext;
-      readonly workflows: ClaimedTransitionResult["workflows"];
-      readonly workflowInput: WorkflowClaimInput;
-    },
-    signal: AbortSignal,
-  ): Promise<ExecutionContext> => {
-    const { responseBody, workflowInput } = args;
-    const workflowSkills: WorkflowSkillReference[] | WorkflowSkillDocument[] =
-      workflowInput.delivery === "inline"
-        ? await set(
-            materializeClaimedWorkflowDocuments$,
-            { workflows: args.workflows, skillRoot: workflowInput.skillRoot },
-            signal,
-          )
-        : args.workflows.map((workflow) => {
-            return {
-              workflowId: workflow.id,
-              mountPath: `${workflowInput.skillRoot}/${workflow.name}`,
-            };
-          });
-    const workflowMountPaths = new Set(
-      workflowSkills.map((skill) => {
-        return skill.mountPath;
-      }),
-    );
+function withClaimedWorkflows(args: {
+  readonly responseBody: ExecutionContext;
+  readonly workflows: ClaimedTransitionResult["workflows"];
+  readonly workflowInput: WorkflowClaimInput;
+}): ExecutionContext {
+  const { responseBody, workflowInput } = args;
+  const workflowSkills = args.workflows.map((workflow) => {
     return {
-      ...responseBody,
-      storageManifest: {
-        storageMounts: (
-          responseBody.storageManifest?.storageMounts ?? []
-        ).filter((mount) => {
+      workflowId: workflow.id,
+      mountPath: `${workflowInput.skillRoot}/${workflow.name}`,
+    };
+  });
+  const workflowMountPaths = new Set(
+    workflowSkills.map((skill) => {
+      return skill.mountPath;
+    }),
+  );
+  return {
+    ...responseBody,
+    storageManifest: {
+      storageMounts: (responseBody.storageManifest?.storageMounts ?? []).filter(
+        (mount) => {
           return (
             !mount.name.startsWith("custom-skill@") &&
             !workflowMountPaths.has(mount.mountPath)
           );
-        }),
-        workflowSkills,
-      },
-    };
-  },
-);
+        },
+      ),
+      workflowSkills,
+    },
+  };
+}
 
 type FailedClaimTransitionResult = Exclude<
   ClaimTransitionResult,
@@ -1945,7 +1927,7 @@ const resolveStoredExecutionContextForClaim$ = command(
 
 const claimAuthorizedJob$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly runId: string;
       readonly authType: RunnerAuthContext["type"];
@@ -1976,17 +1958,7 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
-    const workflowReader = get(
-      queryOf(runnersJobClaimContract.claim),
-    ).workflowSkills;
-    if (run.agentId !== null && workflowReader === undefined) {
-      return notFound("Job requires a Workflow document reader");
-    }
-    const workflowInput = workflowClaimInput(
-      storedContext,
-      run.prompt,
-      workflowReader === "2" ? "download" : "inline",
-    );
+    const workflowInput = workflowClaimInput(storedContext, run.prompt);
 
     let responseBody = await set(
       buildClaimResponseBodyForClaim$,
@@ -2050,11 +2022,11 @@ const claimAuthorizedJob$ = command(
       return claimTransitionErrorResponse(claimResult);
     }
 
-    responseBody = await set(
-      withClaimedWorkflows$,
-      { responseBody, workflows: claimResult.workflows, workflowInput },
-      signal,
-    );
+    responseBody = withClaimedWorkflows({
+      responseBody,
+      workflows: claimResult.workflows,
+      workflowInput,
+    });
 
     const response = {
       status: 200 as const,

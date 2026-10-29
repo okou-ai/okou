@@ -809,11 +809,10 @@ export function createRunsApi(context: TestContext) {
       runId: string,
       body: RunnerJobClaimRequest = {},
       extraHeaders?: Readonly<Record<string, string>>,
-      workflowReader: "1" | "2" = "2",
     ) {
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: workflowReader },
+          query: { workflowSkills: "2" },
           headers: runnerHeaders(true),
           extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },

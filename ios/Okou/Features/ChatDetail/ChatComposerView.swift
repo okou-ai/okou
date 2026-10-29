@@ -138,11 +138,12 @@ struct ChatComposerView: View {
         alignment: expandsInput ? .topLeading : .leading
       )
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
-      .overlay(alignment: .top) {
-        if let workflows = draftState?.editor.workflows, workflows.query != nil {
-          ComposerWorkflowMenu(suggestions: workflows)
-            .disabled(isBusy || needsUpgrade)
+      .anchorPreference(key: ComposerWorkflowPresentation.self, value: .bounds) { bounds in
+        guard let workflows = draftState?.editor.workflows, workflows.query != nil else {
+          return nil
         }
+        return ComposerWorkflowPresentation.Presentation(
+          bounds: bounds, suggestions: workflows, isDisabled: isBusy || needsUpgrade)
       }
       .overlay(alignment: expandsInput ? .bottomLeading : .leading) {
         HStack(spacing: 0) {

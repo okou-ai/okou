@@ -544,6 +544,7 @@
       "hostedDescription": "Ce site et toutes ses versions publiées seront mis hors ligne. Les copies enregistrées dans d’autres services seront conservées.",
       "menu": "Plus d’actions pour {{title}}",
       "sharedDescription": "Supprimez cette conversation partagée de vos artefacts. Son lien de partage ne fonctionnera plus. Votre conversation originale restera accessible.",
+      "success": "Artefact supprimé",
       "title": "Supprimer {{title}} ?"
     },
     "fileBadges": {

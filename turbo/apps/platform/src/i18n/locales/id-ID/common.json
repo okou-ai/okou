@@ -528,6 +528,7 @@
       "hostedDescription": "Situs web dan semua versi yang dipublikasikan akan dinonaktifkan. Salinan yang disimpan di layanan lain akan tetap ada.",
       "menu": "Tindakan lainnya untuk {{title}}",
       "sharedDescription": "Hapus percakapan yang dibagikan ini dari artefak Anda. Tautan berbaginya tidak akan berfungsi lagi. Percakapan asli Anda akan tetap tersedia.",
+      "success": "Artefak dihapus",
       "title": "Hapus {{title}}?"
     },
     "fileBadges": {

@@ -70,6 +70,21 @@ jobs:
       - name: Validate approved action SHAs
         run: python3 .github/scripts/checks/check-action-pins.py .
 
+  cdp-viewer-pin:
+    needs: [detect-release]
+    if: needs.detect-release.outputs.skip != 'true'
+    name: cdp-viewer Main Pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify cdp-viewer belongs to upstream main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/checks/check-cdp-viewer-pin.sh .
+
   detect-native-only:
     needs: [detect-release]
     if: needs.detect-release.outputs.skip != 'true'
@@ -294,6 +309,7 @@ jobs:
             .github/scripts/checks/check-release-please-component-releases.sh \
             .github/scripts/checks/check-release-please-workspace-coverage.sh \
             .github/scripts/checks/check-pr-ci-capacity.sh \
+            .github/scripts/checks/check-cdp-viewer-pin.sh \
             .github/scripts/checks/check-workflow-shell-compatibility.sh \
             .github/scripts/checks/crates-coverage-needed.sh \
             .github/scripts/tests/crates-coverage-workflow-test.sh \
@@ -326,6 +342,7 @@ jobs:
             .github/scripts/artifacts/verify-okou-desktop-artifact.sh \
             .github/scripts/runner/with-runner-lifecycle-lock.sh \
             .github/scripts/tests/check-action-pins-test.sh \
+            .github/scripts/tests/check-cdp-viewer-pin-test.sh \
             .github/scripts/tests/ansible-ssh-control-path-test.sh \
             .github/scripts/tests/cancel-superseded-merge-group-runs-test.sh \
             .github/scripts/tests/wait-runner-image-cancellation-test.sh \
@@ -527,6 +544,7 @@ jobs:
     needs:
       - detect-release
       - action-pins
+      - cdp-viewer-pin
       - detect-native-only
       - pr-title
       - semgrep
@@ -576,6 +594,7 @@ jobs:
           }
 
           check_result "detect-release" "${{ needs.detect-release.result }}"
+          check_result "cdp-viewer-pin" "${{ needs.cdp-viewer-pin.result }}"
           check_result "detect-native-only" "${{ needs.detect-native-only.result }}"
           check_result "pr-title" "${{ needs.pr-title.result }}"
           check_result "semgrep" "${{ needs.semgrep.result }}"

@@ -132,7 +132,9 @@ test("Keep the exact account and current reconnect UI when future setup metadata
   const manager = await screen.findByRole("dialog", {
     name: "Manage GitHub accounts",
   });
-  expect(manager).toHaveTextContent("Loading accounts…");
+  expect(
+    within(manager).getByRole("status", { name: "Loading accounts…" }),
+  ).toBeInTheDocument();
   accountsResponse.resolve();
   await expect(
     within(manager).findByText("Prepared work account"),

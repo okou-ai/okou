@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/okou-ai/okou/compare/ios-v0.22.1...ios-v0.22.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **ios:** keep workflow suggestions in the workspace touch layer ([#43852](https://github.com/okou-ai/okou/issues/43852)) ([47e4a00](https://github.com/okou-ai/okou/commit/47e4a00e88b42092169509da68dbfc8c93428b76))
+
 ## [0.22.1](https://github.com/okou-ai/okou/compare/ios-v0.22.0...ios-v0.22.1) (2026-10-29)
 
 

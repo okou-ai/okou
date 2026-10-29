@@ -544,6 +544,7 @@
       "hostedDescription": "Il sito e tutte le versioni pubblicate verranno messi offline. Le copie salvate in altri servizi rimarranno disponibili.",
       "menu": "Altre azioni per {{title}}",
       "sharedDescription": "Elimina questa conversazione condivisa dai tuoi artefatti. Il suo link di condivisione smetterà di funzionare. La conversazione originale resterà disponibile.",
+      "success": "Artefatto eliminato",
       "title": "Eliminare {{title}}?"
     },
     "fileBadges": {
