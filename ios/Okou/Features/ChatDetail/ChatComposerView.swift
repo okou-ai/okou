@@ -110,6 +110,8 @@ struct ChatComposerView: View {
       if let editor = draftState?.editor, !editor.mentionSuggestions.isEmpty {
         ComposerMentionMenu(editor: editor, suggestions: editor.mentionSuggestions)
       }
+      // Retired native editors must leave immediately. Fading a first responder
+      // through a draft reset can restart keyboard avoidance during the send flight.
       Group {
         if let state = draftState {
           ChatFeedbackComposer(
@@ -117,6 +119,7 @@ struct ChatComposerView: View {
             acceptsImages: !isBusy && !needsUpgrade
           )
           .id(inputID)
+          .transition(.identity)
           .disabled(!state.document.isSupported)
         } else {
           ChatComposerTextInput(
@@ -126,6 +129,7 @@ struct ChatComposerView: View {
             pasteImages: attachments.importPastedImages
           )
           .id(inputID)
+          .transition(.identity)
         }
       }
       .accessibilityIdentifier("message-input")

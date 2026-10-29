@@ -9,14 +9,14 @@ Telegram uses UIKit and its own display nodes, list transactions, and reactive
 data layer. The useful reference is how it separates work and preserves state.
 The Okou implementation described here is independently written.
 
-| Responsibility                            | Telegram reference                                                                                                                                                                                                                                        | Okou ownership                                                                                    |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Account and feature services              | [TelegramEngine](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramCore/Sources/TelegramEngine/TelegramEngine.swift)                                                                     | AuthenticationService; workspace-scoped ChatSync, ChatCommands, and feature stores                |
-| Serialized durable data                   | [Postbox](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Postbox/Sources/Postbox.swift)                                                                                                       | ChatCache actor; raw snapshots and ordered events                                                 |
-| Stable history updates                    | [PreparedChatHistoryViewTransition](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramUI/Sources/PreparedChatHistoryViewTransition.swift)                                                | ChatEventProjection; stable message IDs in the collection snapshot                                |
-| Visible rows and asynchronous preparation | [ListView](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Display/Source/ListView.swift)                                                                                                      | UICollectionView reuse, viewport measurements, and offscreen size estimates; MarkdownWorker actor |
-| Reusable text preparation                 | [ChatMessageTextBubbleContentNode](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift) | MessageMarkdownCache; value-based MessageBodyView equality                                        |
-| Directional gesture recognition           | [InteractiveTransitionGestureRecognizer](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Display/Source/InteractiveTransitionGestureRecognizer.swift)                                          | SidebarPanGesture rejects vertical movement and restricts opening to the leading edge             |
+| Responsibility                            | Telegram reference                                                                                                                                                                                                                                        | Okou ownership                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Account and feature services              | [TelegramEngine](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramCore/Sources/TelegramEngine/TelegramEngine.swift)                                                                     | AuthenticationService; workspace-scoped ChatSync, ChatCommands, and feature stores    |
+| Serialized durable data                   | [Postbox](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Postbox/Sources/Postbox.swift)                                                                                                       | ChatCache actor; raw snapshots and ordered events                                     |
+| Stable history updates                    | [PreparedChatHistoryViewTransition](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramUI/Sources/PreparedChatHistoryViewTransition.swift)                                                | ChatEventProjection; stable message IDs in the collection snapshot                    |
+| Visible rows and asynchronous preparation | [ListView](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Display/Source/ListView.swift)                                                                                                      | UICollectionView reuse and measured row sizes; MarkdownWorker actor                   |
+| Reusable text preparation                 | [ChatMessageTextBubbleContentNode](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift) | MessageMarkdownCache; value-based MessageBodyView equality                            |
+| Directional gesture recognition           | [InteractiveTransitionGestureRecognizer](https://github.com/TelegramMessenger/Telegram-iOS/blob/6ad963e5b62d354da79040f388ae2b9132fb17b8/submodules/Display/Source/InteractiveTransitionGestureRecognizer.swift)                                          | SidebarPanGesture rejects vertical movement and restricts opening to the leading edge |
 
 ## Data and presentation flow
 
@@ -35,14 +35,11 @@ flowchart TD
   Sync --> Projection[Domain events and pure projections]
   Projection --> Conversation
   Conversation --> Window[ConversationRenderWindow]
-  Window --> Landing[Landing viewport and offscreen size estimates]
-  Landing --> Prepare[MarkdownWorker actor]
+  Window --> Prepare[MarkdownWorker actor]
   Prepare --> Presentation[Bounded workspace Markdown cache]
   Presentation --> Measure[Bounded row measurement hosts]
-  Measure --> List[UICollectionView with stable IDs and explicit sizes]
-  List --> Nearby[Visible and adjacent rows needing measurement]
-  Nearby --> Prepare
-  List --> Body[Textual renders measured message content]
+  Measure --> List[UICollectionView with stable IDs and measured sizes]
+  List --> Body[Textual renders prepared attributed content]
 ```
 
 The server event protocol remains the authority. Presentation caches contain
@@ -195,23 +192,16 @@ durable history.
 
 ConversationCollectionView owns native cell reuse, sizing, refresh, and scroll
 callbacks. SwiftUI still renders each message. Before applying a snapshot, it
-prepares Markdown and settled heights only for the landing viewport, using
-batches of up to four temporary measurement hosts. Other rows receive explicit
-height estimates. Visible rows and one viewport on either side are then measured
-on demand, with visible rows taking priority. Estimates stay separate from the
-conversation-owned cache of pixel-rounded heights, whose keys include presentation
-revision, container width, and content-size category. Reopening a detail reuses
-its measured landing rows without measuring the unvisited history.
-
-The collection keeps automatic self-sizing disabled and renders message content
-only inside an exactly measured cell. A row reached before measurement finishes
-shows a loading placeholder; placeholder and content share one hosting configuration
-type for native reuse. Pending snapshots and asynchronous attachment height changes
-wait until scrolling ends. Attachment observations are checked against their row
-revision, width, and current native cell identity; the resulting resize preserves
-the visible row or follows the bottom. Closing the controller cancels initial and
-nearby preparation, resize, and refresh tasks. This bounds measurement work without
-eagerly preparing the whole expanded history.
+prepares Markdown and mounts at most four temporary measurement hosts at a time.
+It samples settled layout and caches pixel-rounded heights by presentation
+revision, container width, and content-size category. The collection uses those
+sizes with automatic self-sizing disabled. Reused cells keep their settled
+heights when they reenter the viewport.
+Pending snapshots and asynchronous attachment height changes wait until scrolling
+ends. Attachment observations are checked against their row revision, width, and current native cell identity;
+the resulting resize preserves the visible row or follows the bottom. Closing
+the controller cancels preparation, resize, and refresh tasks. This bounds live
+measurement views without eagerly retaining the whole expanded history.
 
 The collection captures a message ID and its content offset from native row
 geometry, including row spacing, without waiting for SwiftUI markers to mount.
