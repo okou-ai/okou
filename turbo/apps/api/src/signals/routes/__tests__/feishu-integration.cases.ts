@@ -2342,71 +2342,157 @@ export function registerFeishuIntegrationTests(
         });
       });
 
-      it("converges concurrent setup retries for the same Feishu app", async () => {
-        const actor = createActor({
-          userId: `user_${randomUUID()}`,
-          orgId: `org_${randomUUID()}`,
-          orgRole: "org:admin",
-        });
-        authOrgApi.acceptAgentStorageWrites();
-        await own(() => {
-          return enableFeishuIntegration(platform, actor);
-        });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu replay setup agent",
-            visibility: "public",
+      it.each(["overlapping", "after callback verification"] as const)(
+        "converges concurrent setup retries for the same Feishu app (%s)",
+        async (completion) => {
+          const actor = createActor({
+            userId: `user_${randomUUID()}`,
+            orgId: `org_${randomUUID()}`,
+            orgRole: "org:admin",
           });
-        });
-        mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-        const client = feishuConnectClient(platform);
-        const headers = { authorization: "Bearer clerk-session" };
-        const body = {
-          appId: `cli_${randomUUID()}`,
-          appSecret: APP_SECRET,
-          verificationToken: VERIFICATION_TOKEN,
-        };
-        const responses = await Promise.all([
-          own(() => {
-            return accept(client.setup({ headers, body }), [200]);
-          }),
-          own(() => {
-            return accept(client.setup({ headers, body }), [200]);
-          }),
-        ]);
-        const status = await own(() => {
-          return accept(client.getStatus({ headers }), [200]);
-        });
-        expect(status.body.installations).toHaveLength(1);
-        const installation = requireValue(
-          status.body.installations?.[0],
-          "Expected one Feishu installation after concurrent setup retries",
-        );
-        expect(installation.appId).toBe(body.appId);
-        expect(
-          responses.map((response) => {
-            return response.body.installationId;
-          }),
-        ).toStrictEqual([installation.id, installation.id]);
-        const listed = await own(() => {
-          return accept(
-            setupApp({ context, routes: customConnectorsRoutes })(
-              customConnectorsContract,
-            ).list({ headers }),
-            [200],
+          authOrgApi.acceptAgentStorageWrites();
+          await own(() => {
+            return enableFeishuIntegration(platform, actor);
+          });
+          await own(() => {
+            return authOrgApi.createAgent(actor, {
+              displayName: "Feishu replay setup agent",
+              visibility: "public",
+            });
+          });
+          mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+          const client = feishuConnectClient(platform);
+          const headers = { authorization: "Bearer clerk-session" };
+          const body = {
+            appId: `cli_${randomUUID()}`,
+            appSecret: APP_SECRET,
+            verificationToken: VERIFICATION_TOKEN,
+          };
+          const bothValidationsStarted = createDeferredPromise<void>(
+            context.signal,
           );
-        });
-        expect(listed.body.connectors).toHaveLength(1);
-        await own(() => {
-          return accept(
-            client.removeInstallation({
-              headers,
-              params: { installationId: installation.id },
+          const validationReplies = [
+            createDeferredPromise<void>(context.signal),
+            createDeferredPromise<void>(context.signal),
+          ] as const;
+          const firstSetupCompleted = createDeferredPromise<string>(
+            context.signal,
+          );
+          const secondSetupCompleted = createDeferredPromise<string>(
+            context.signal,
+          );
+          let validations = 0;
+          server.use(
+            http.post(
+              `${provider.apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
+              async () => {
+                const reply = requireValue(
+                  validationReplies[validations++],
+                  "Expected two concurrent credential validations",
+                );
+                if (validations === 2) {
+                  bothValidationsStarted.resolve();
+                }
+                await reply.promise;
+                return HttpResponse.json({
+                  code: 0,
+                  tenant_access_token: "tenant-access-token",
+                  expire: 7200,
+                });
+              },
+            ),
+          );
+          const [first, second] = await Promise.all([
+            own(async () => {
+              const response = await accept(
+                client.setup({ headers, body }),
+                [200],
+              );
+              firstSetupCompleted.resolve(
+                requireValue(
+                  response.body.callbackUrl,
+                  "Expected setup to return a callback URL",
+                ),
+              );
+              return response;
             }),
-            [200],
+            own(async () => {
+              const response = await accept(
+                client.setup({ headers, body }),
+                [200],
+              );
+              secondSetupCompleted.resolve(
+                requireValue(
+                  response.body.callbackUrl,
+                  "Expected setup to return a callback URL",
+                ),
+              );
+              return response;
+            }),
+            own(async () => {
+              // Both requests must prepare as new installations before either wins.
+              await bothValidationsStarted.promise;
+              validationReplies[0].resolve();
+              if (completion === "after callback verification") {
+                const callbackUrl = await Promise.race([
+                  firstSetupCompleted.promise,
+                  secondSetupCompleted.promise,
+                ]);
+                const verified = await postEvent(
+                  callbackUrl,
+                  {
+                    type: "url_verification",
+                    challenge: "concurrent-setup-challenge",
+                    token: VERIFICATION_TOKEN,
+                  },
+                  { signed: false },
+                );
+                expect(verified.status).toBe(200);
+                await expect(verified.json()).resolves.toStrictEqual({
+                  challenge: "concurrent-setup-challenge",
+                });
+              }
+              validationReplies[1].resolve();
+            }),
+          ]);
+          const responses = [first, second];
+          const status = await own(() => {
+            return accept(client.getStatus({ headers }), [200]);
+          });
+          expect(status.body.installations).toHaveLength(1);
+          const installation = requireValue(
+            status.body.installations?.[0],
+            "Expected one Feishu installation after concurrent setup retries",
           );
-        });
-      });
+          expect(installation.appId).toBe(body.appId);
+          if (completion === "after callback verification") {
+            expect(status.body.callbackVerified).toBeTruthy();
+          }
+          expect(
+            responses.map((response) => {
+              return response.body.installationId;
+            }),
+          ).toStrictEqual([installation.id, installation.id]);
+          const listed = await own(() => {
+            return accept(
+              setupApp({ context, routes: customConnectorsRoutes })(
+                customConnectorsContract,
+              ).list({ headers }),
+              [200],
+            );
+          });
+          expect(listed.body.connectors).toHaveLength(1);
+          await own(() => {
+            return accept(
+              client.removeInstallation({
+                headers,
+                params: { installationId: installation.id },
+              }),
+              [200],
+            );
+          });
+        },
+      );
 
       it("keeps a concurrently registered Feishu app in its winning organization", async () => {
         authOrgApi.acceptAgentStorageWrites();
