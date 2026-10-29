@@ -67,3 +67,46 @@ it("rejects an arbitrary recipient instead of borrowing another connection", asy
     expect.stringContaining("only go to the phone connected"),
   );
 });
+
+it("preserves accepted receipts and unknown delivery in JSON when a later part fails", async () => {
+  let attempts = 0;
+  server.use(
+    http.post("http://localhost:3000/api/integrations/whatsapp/message", () => {
+      attempts += 1;
+      return HttpResponse.json(
+        {
+          acceptedMessages: [{ id: "accepted-part" }],
+          delivery: "unknown",
+          error: {
+            code: "WHATSAPP_SEND_FAILED",
+            message:
+              "The latest send has an unknown outcome. Do not retry automatically.",
+          },
+        },
+        { status: 502 },
+      );
+    }),
+  );
+  await expect(
+    whatsappCommand.parseAsync([
+      "node",
+      "cli",
+      "message",
+      "send",
+      "--text",
+      "Long message",
+      "--json",
+    ]),
+  ).rejects.toThrow("process.exit called");
+  expect(attempts).toBe(1);
+  expect(JSON.parse(output.mock.calls.flat().join("\n"))).toEqual({
+    integration: "whatsapp",
+    messages: [{ id: "accepted-part", url: null }],
+    delivery: "unknown",
+    error: {
+      code: "WHATSAPP_SEND_FAILED",
+      message: expect.stringContaining("Do not retry"),
+      status: 502,
+    },
+  });
+});

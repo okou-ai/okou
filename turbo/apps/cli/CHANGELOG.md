@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.10.0](https://github.com/okou-ai/okou/compare/cli-v10.9.0...cli-v10.10.0) (2026-10-29)
+
+
+### Features
+
+* **cli:** support file uploads to imessage groups ([#44002](https://github.com/okou-ai/okou/issues/44002)) ([ea08509](https://github.com/okou-ai/okou/commit/ea0850926d622ac4a7a4f7cbe9144af34866dc7e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.20.0
+    * @okouai/core bumped to 8.800.3
+    * @okouai/pi-agent-runtime bumped to 1.51.22
+
 ## [10.9.0](https://github.com/okou-ai/okou/compare/cli-v10.8.0...cli-v10.9.0) (2026-10-29)
 
 

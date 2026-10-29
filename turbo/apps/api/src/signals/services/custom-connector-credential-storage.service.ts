@@ -1,7 +1,23 @@
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { boolean, literal, object, string } from "zod";
+import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
-import { and, eq, getTableColumns, SQL, sql, type Column } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  getTableColumns,
+  inArray,
+  ne,
+  SQL,
+  sql,
+  type Column,
+} from "drizzle-orm";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import {
   connectorConnectionMetadataWritePlan,
@@ -325,4 +341,135 @@ export function customConnectorValuesPublicationSql(
   return sql`WITH value_definition AS (${definition}), ${sql.join(clauses, sql`,\n`)}
     SELECT ${admitted} AS definition_current,
       (SELECT id FROM value_connection) AS connection_id`;
+}
+
+interface AccountDeletionInput {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly memberConnectorId: string;
+}
+
+export const customConnectorAccountDeletionRow = object({
+  definition_current: boolean(),
+  deleted_count: pgInt8ToSafeIntegerSchema,
+  resolved_selection_count: pgInt8ToSafeIntegerSchema,
+  promoted_default_connection_id: string().uuid().nullable(),
+  promotion_guard: literal(1),
+  cleanup_complete: pgInt8ToSafeIntegerSchema,
+});
+
+function accountOwner(args: AccountDeletionInput) {
+  return and(
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+    eq(connectors.customConnectorId, args.connectorId),
+  );
+}
+
+function accountDeletionStatements(
+  args: AccountDeletionInput,
+  definitionRevision: string,
+) {
+  const query = new QueryBuilder();
+  const dialect = new PgDialect();
+  const definition = query
+    .select({ id: orgCustomConnectors.id })
+    .from(orgCustomConnectors)
+    .where(
+      and(
+        eq(orgCustomConnectors.id, args.connectorId),
+        eq(orgCustomConnectors.orgId, args.orgId),
+        sql`${orgCustomConnectors}.xmin::text = ${definitionRevision}`,
+      ),
+    )
+    .for("update")
+    .limit(1);
+  const removed = dialect.buildDeleteQuery({
+    table: connectors,
+    where: and(
+      accountOwner(args),
+      eq(connectors.id, args.memberConnectorId),
+      exists(sql`(SELECT 1 FROM deletion_definition)`),
+    ),
+  });
+  const sibling = query
+    .select({ id: connectors.id })
+    .from(connectors)
+    .where(
+      and(
+        accountOwner(args),
+        ne(connectors.id, args.memberConnectorId),
+        exists(sql`(SELECT 1 FROM deleted_account WHERE is_default)`),
+      ),
+    )
+    .orderBy(asc(connectors.createdAt), asc(connectors.id))
+    .limit(1);
+  const promoted = dialect.buildUpdateQuery({
+    table: connectors,
+    set: { isDefault: sql`true`, updatedAt: sql`clock_timestamp()` },
+    joins: [],
+    where: and(
+      accountOwner(args),
+      eq(connectors.id, sql`(SELECT id FROM deletion_sibling)`),
+    ),
+  });
+  return { definition, removed, sibling, promoted };
+}
+
+/** One mutation unit; credentials are owned by the existing account cascades. */
+export function customConnectorAccountDeletionSql(
+  args: AccountDeletionInput,
+  definitionRevision: string,
+) {
+  const { definition, removed, sibling, promoted } = accountDeletionStatements(
+    args,
+    definitionRevision,
+  );
+  const dialect = new PgDialect();
+  const selections = dialect.buildDeleteQuery({
+    table: chatThreadConnectorSelections,
+    where: inArray(
+      chatThreadConnectorSelections.connectorId,
+      sql`(SELECT id FROM deleted_account)`,
+    ),
+  });
+  const query = new QueryBuilder();
+  const cursors = dialect.buildDeleteQuery({
+    table: googleFormsAutomationCursors,
+    where: and(
+      inArray(
+        googleFormsAutomationCursors.automationId,
+        query
+          .select({ id: workflowAutomations.id })
+          .from(workflowAutomations)
+          .where(
+            and(
+              eq(
+                workflowAutomations.eventType,
+                "google-forms-response-submitted",
+              ),
+              sql`${workflowAutomations.eventConfig} ->> 'connectorId' IN (SELECT id::text FROM deleted_account)`,
+            ),
+          ),
+      ),
+      sql`(SELECT count(*) FROM deleted_selections) >= 0`,
+    ),
+  });
+  // A concurrently created, snapshot-invisible non-default account is not
+  // silently selected. A visible promotion target that disappears aborts all
+  // writes instead of committing a known incomplete default transition.
+  return sql`WITH deletion_definition AS MATERIALIZED (${definition}),
+    deleted_account AS (${removed} RETURNING id, is_default),
+    deletion_sibling AS MATERIALIZED (${sibling}),
+    promoted_default AS (${promoted} RETURNING id),
+    deleted_selections AS (${selections} RETURNING connector_id),
+    deleted_cursors AS (${cursors} RETURNING automation_id)
+    SELECT EXISTS(SELECT 1 FROM deletion_definition) AS definition_current,
+      (SELECT count(*) FROM deleted_account) AS deleted_count,
+      (SELECT count(*) FROM deleted_selections) AS resolved_selection_count,
+      (SELECT id FROM promoted_default) AS promoted_default_connection_id,
+      1 / CASE WHEN EXISTS(SELECT 1 FROM deletion_sibling)
+        AND NOT EXISTS(SELECT 1 FROM promoted_default) THEN 0 ELSE 1 END AS promotion_guard,
+      (SELECT count(*) FROM deleted_cursors) AS cleanup_complete`;
 }

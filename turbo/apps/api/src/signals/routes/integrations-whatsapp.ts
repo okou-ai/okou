@@ -183,17 +183,15 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       ) {
         throw sent.error;
       }
+      const rejected = providerError !== null && providerError.status < 500;
       return {
-        status:
-          !providerError || providerError.status >= 500
-            ? (502 as const)
-            : (400 as const),
+        status: rejected ? (400 as const) : (502 as const),
         body: {
           acceptedMessages: messages,
-          delivery: providerError ? ("failed" as const) : ("unknown" as const),
+          delivery: rejected ? ("failed" as const) : ("unknown" as const),
           error: {
             code: "WHATSAPP_SEND_FAILED",
-            message: `${providerError ? `WhatsApp rejected the message (HTTP ${providerError.status}).` : "The latest WhatsApp send has an unknown delivery outcome. Do not retry it automatically."} ${messages.length} part(s) accepted${
+            message: `${rejected ? `WhatsApp rejected the message (HTTP ${providerError.status}).` : "The latest WhatsApp send has an unknown delivery outcome. Do not retry it automatically."} ${messages.length} part(s) accepted${
               messages.length
                 ? ` (${messages
                     .map((message) => {
