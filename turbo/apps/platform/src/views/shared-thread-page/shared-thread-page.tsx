@@ -1,6 +1,7 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { SharedThreadShareMenu } from "../okou-page/shared-thread-share-menu.tsx";
+import { ArtifactPageDeleteButton } from "../okou-page/artifact-deletion.tsx";
 import { ResourceAccessCard } from "../components/resource-access-card.tsx";
 import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -453,7 +454,9 @@ function SharedThreadHeader({
   signUpUrl,
   title,
   visibility,
+  sharedThreadId,
 }: {
+  readonly sharedThreadId?: string;
   readonly visibility?: SharedThreadVisibilitySignals;
   readonly brandName: BrandName;
   readonly homeUrl: string;
@@ -520,6 +523,12 @@ function SharedThreadHeader({
             <Share2 size={18} />
           </Button>
         ) : null}
+        {sharedThreadId && (
+          <ArtifactPageDeleteButton
+            artifactId={sharedThreadId}
+            sourceKind="shared-thread"
+          />
+        )}
         {signInUrl !== null ? (
           <a
             href={signInUrl}
@@ -717,6 +726,7 @@ export function SharedThreadPage({
           signInUrl={signInHref}
           signUpUrl={signUpHref}
           title={sharedThread?.title ?? null}
+          sharedThreadId={sharedThread?.id}
           visibility={sharedThread?.visibility}
         />
         {sharedThread ? (

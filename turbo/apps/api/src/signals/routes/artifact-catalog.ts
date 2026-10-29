@@ -55,6 +55,7 @@ const getArtifactCatalogEntryInner$ = command(
       getArtifactCatalogEntry$,
       {
         artifactId: params.artifactId,
+        sourceKind: query.sourceKind,
         orgId: auth.orgId,
         userId: auth.userId,
       },
@@ -87,7 +88,7 @@ const getArtifactCatalogEntryInner$ = command(
         ? {}
         : await set(
             googleDriveArtifactDetailStatus$,
-            { ...context, artifactId: params.artifactId },
+            { ...context, artifactId: artifact.id },
             signal,
           );
     signal.throwIfAborted();

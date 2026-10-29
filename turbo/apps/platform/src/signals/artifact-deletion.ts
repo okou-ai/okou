@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { animationFrame } from "signal-timers";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   artifactCatalogContract,
   type ArtifactSummary,
@@ -9,6 +10,9 @@ import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { onRef, resetSignal } from "./utils.ts";
 import { pageSignal$ } from "./page-signal.ts";
+import { authenticatedSessionKey$ } from "./auth.ts";
+
+export type ArtifactDeletionSourceKind = "shared-thread" | "reference";
 
 const internalArtifactCatalogRevision$ = state(0);
 export const artifactCatalogRevision$ = computed((get) => {
@@ -107,25 +111,49 @@ const deleteOwnedArtifact$ = command(
 
 function createPreviewArtifactDeletion(
   artifactId: string,
-  surface: "dialog" | "sidebar",
+  surface: "dialog" | "sidebar" | "page",
+  sourceKind?: ArtifactDeletionSourceKind,
 ) {
   const target$ = state<ArtifactSummary | null>(null);
   const trigger$ = state<HTMLElement | null>(null);
   const completed$ = state(false);
-  // Thread artifacts can carry a resource ID rather than a catalog ID. The
-  // owner-scoped detail read also hides management for foreign or deleted files.
+  // Shared pages carry source resource IDs. Only an owner-scoped catalog read
+  // can resolve the identity accepted by deletion, including for public links.
   const detail$ = computed(async (get) => {
     get(artifactCatalogRevision$);
+    // A token refresh must not reload the action and unmount its focus target.
+    if (surface === "page" && !get(authenticatedSessionKey$)) {
+      return null;
+    }
+    let catalogId = artifactId;
+    if (sourceKind === "reference") {
+      const owner = await accept(
+        get(apiClient$)(artifactReferencesContract).ownerArtifact({
+          params: { reference: artifactId },
+          fetchOptions: { cache: "no-store" },
+        }),
+        [200, 401, 403, 404],
+      );
+      if (owner.status !== 200) {
+        return null;
+      }
+      catalogId = owner.body.artifactId;
+    }
     const result = await accept(
       get(apiClient$)(artifactCatalogContract).get({
-        params: { artifactId },
+        params: { artifactId: catalogId },
+        ...(sourceKind && sourceKind !== "reference"
+          ? { query: { sourceKind } }
+          : {}),
+        fetchOptions: { cache: "no-store" },
       }),
-      [200, 403, 404],
+      [200, 401, 403, 404],
     );
     return result.status === 200 ? result.body : null;
   });
   return {
     artifactId,
+    sourceKind,
     detail$,
     target$: computed((get) => {
       return get(target$);
@@ -145,11 +173,13 @@ function createPreviewArtifactDeletion(
       set(target$, null);
     }),
     finalFocus$: command(({ get }) => {
+      if (!get(completed$)) {
+        return get(trigger$);
+      }
       // On success the preview itself closes. Let its outer dialog restore
-      // chat focus; the catalog has a stable viewport after its card is removed.
-      return get(completed$)
-        ? (get(internalViewport$) ?? false)
-        : get(trigger$);
+      // chat focus, or let the standalone page's destination own focus. The
+      // catalog has a stable viewport after its card is removed.
+      return surface === "page" ? false : (get(internalViewport$) ?? false);
     }),
     confirm$: command(
       async ({ get, set }, onDeleted: () => void, signal: AbortSignal) => {
@@ -179,11 +209,20 @@ function createPreviewArtifactDeletion(
   };
 }
 
-function createPreviewDeletionScope(surface: "dialog" | "sidebar") {
-  const identity$ = state<string | null>(null);
+function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
+  const identity$ = state<{
+    readonly artifactId: string;
+    readonly sourceKind?: ArtifactDeletionSourceKind;
+  } | null>(null);
   const session$ = computed((get) => {
     const identity = get(identity$);
-    return identity ? createPreviewArtifactDeletion(identity, surface) : null;
+    return identity
+      ? createPreviewArtifactDeletion(
+          identity.artifactId,
+          surface,
+          identity.sourceKind,
+        )
+      : null;
   });
   const resetMountSignal$ = resetSignal();
   const mountRef$ = onRef(
@@ -193,8 +232,16 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar") {
         if (!artifactId) {
           return;
         }
+        const sourceKind = element.dataset.sourceKind;
+        if (
+          sourceKind !== undefined &&
+          sourceKind !== "reference" &&
+          sourceKind !== "shared-thread"
+        ) {
+          return;
+        }
         const signal = set(resetMountSignal$, mountSignal, get(pageSignal$));
-        set(identity$, artifactId);
+        set(identity$, { artifactId, sourceKind });
         const session = get(session$)!;
         signal.addEventListener(
           "abort",
@@ -214,10 +261,11 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar") {
 export type PreviewArtifactDeletion = ReturnType<
   typeof createPreviewArtifactDeletion
 >;
-// The two existing preview surfaces each own their mounted artifact; no URL cache.
+// Each preview surface owns its mounted artifact; no URL cache.
 const previewDeletionScopes = Object.freeze({
   dialog: createPreviewDeletionScope("dialog"),
   sidebar: createPreviewDeletionScope("sidebar"),
+  page: createPreviewDeletionScope("page"),
 });
 export function artifactPreviewDeletionScope(
   surface: keyof typeof previewDeletionScopes,

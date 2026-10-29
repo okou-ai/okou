@@ -2414,3 +2414,72 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
   const stale = await accept(og.image({ query: imageQuery }), [302]);
   expect(stale.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
 });
+
+test.each(["private", "organization", "public"] as const)(
+  "only the owner can resolve a %s artifact reference for deletion",
+  async (audience) => {
+    const { owner, members, session } = fixture();
+    const target = await file();
+    const artifactId = await onlyCatalogArtifactId();
+    const share = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience },
+      }),
+      [200],
+    );
+    const request = {
+      headers,
+      params: { reference: artifactReferenceFromUrl(share.body.ownerUrl) },
+    };
+    await enableArtifactDeletion(false);
+    await accept(
+      api()(artifactReferencesContract).ownerArtifact(request),
+      [403],
+    );
+    await enableArtifactDeletion();
+    const managed = await accept(
+      api()(artifactReferencesContract).ownerArtifact(request),
+      [200],
+    );
+    expect(managed.body).toStrictEqual({ artifactId });
+    const legacy = await accept(
+      api()(artifactReferencesContract).ownerArtifact({
+        headers,
+        params: {
+          reference: artifactReferencePath(target.id).slice(
+            "/artifacts/".length,
+          ),
+        },
+      }),
+      [200],
+    );
+    expect(legacy.body).toStrictEqual({ artifactId });
+    const recipient = `user_${randomUUID()}`;
+    members.add(recipient);
+    session(recipient);
+    await enableArtifactDeletion();
+    await accept(
+      api()(artifactReferencesContract).ownerArtifact(request),
+      [404],
+    );
+    session(owner);
+    await accept(
+      api()(artifactReferencesContract).ownerArtifact({
+        params: request.params,
+      }),
+      [401],
+    );
+    await accept(
+      api()(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId },
+      }),
+      [200],
+    );
+    await accept(
+      api()(artifactReferencesContract).ownerArtifact(request),
+      [404],
+    );
+  },
+);

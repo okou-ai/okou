@@ -26,9 +26,11 @@ import {
   deleteCatalogArtifact$,
   setArtifactDeleteTarget$,
   type PreviewArtifactDeletion,
+  type ArtifactDeletionSourceKind,
 } from "../../signals/artifact-deletion.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 
@@ -103,15 +105,38 @@ export function ArtifactDeleteDialog() {
   );
 }
 
-/** Owner-only action shared by catalog and chat previews, next to Share. */
+export function ArtifactPageDeleteButton({
+  artifactId,
+  sourceKind,
+}: {
+  readonly artifactId: string;
+  readonly sourceKind: ArtifactDeletionSourceKind;
+}) {
+  const navigate = useSet(detachedNavigateTo$);
+  return (
+    <ArtifactDeleteButton
+      artifactId={artifactId}
+      sourceKind={sourceKind}
+      surface="page"
+      iconSize={18}
+      onDeleted={() => {
+        navigate("/artifacts");
+      }}
+    />
+  );
+}
+
+/** Owner-only action shared by catalog, chat, and standalone previews. */
 export function ArtifactDeleteButton({
   artifactId,
+  sourceKind,
   surface,
   onDeleted,
   iconSize = 16,
 }: {
   readonly artifactId?: string;
-  readonly surface: "dialog" | "sidebar";
+  readonly sourceKind?: ArtifactDeletionSourceKind;
+  readonly surface: "dialog" | "sidebar" | "page";
   readonly onDeleted: () => void;
   readonly iconSize?: number;
 }) {
@@ -127,16 +152,18 @@ export function ArtifactDeleteButton({
       key={artifactId}
       ref={mountRef}
       data-artifact-id={artifactId}
+      data-source-kind={sourceKind}
       className="inline-flex"
     >
-      {session?.artifactId === artifactId && (
-        <PreviewArtifactDeleteButton
-          key={artifactId}
-          session={session}
-          onDeleted={onDeleted}
-          iconSize={iconSize}
-        />
-      )}
+      {session?.artifactId === artifactId &&
+        session.sourceKind === sourceKind && (
+          <PreviewArtifactDeleteButton
+            key={artifactId}
+            session={session}
+            onDeleted={onDeleted}
+            iconSize={iconSize}
+          />
+        )}
     </span>
   );
 }

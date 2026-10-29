@@ -2147,3 +2147,63 @@ describe("shared thread routes", () => {
     });
   });
 });
+
+describe("artifact catalog source identity", () => {
+  it("resolves an owned shared conversation without exposing it to other viewers", async () => {
+    const owner = await catalogActor("Shared page artifact owner");
+    const run = await sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Share this conversation",
+    });
+    await completeChatRunWithMessage(owner, run.runId, "A shared plan");
+    const events = await listSharedThreadEventRefs(owner.actor, run.threadId);
+    const prompt = events.find((event) => {
+      return event.eventType === "input.prompt" && event.runId === run.runId;
+    });
+    if (!prompt) {
+      throw new Error("Expected a visible prompt");
+    }
+    const shared = await createSharedThreadSnapshot(owner.actor, run.threadId, [
+      prompt.id,
+    ]);
+    const listed = await chat.listArtifactCatalog(owner.actor);
+    const entry = listed.artifacts[0];
+    if (!entry) {
+      throw new Error("Expected an artifact catalog entry");
+    }
+    const catalog = setupApp({ context, routes: artifactCatalogRoutes })(
+      artifactCatalogContract,
+    );
+    const request = {
+      params: { artifactId: shared.id },
+      query: { sourceKind: "shared-thread" as const },
+    };
+    const resolved = await accept(
+      catalog.get({
+        headers: authenticateSharedThread(owner.actor),
+        ...request,
+      }),
+      [200],
+    );
+    expect(resolved.body).toMatchObject({
+      id: entry.id,
+      kind: "shared-thread",
+      sharedThread: { id: shared.id },
+    });
+    const byCatalogId = await accept(
+      catalog.get({
+        headers: authenticateSharedThread(owner.actor),
+        params: { artifactId: entry.id },
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual(byCatalogId.body);
+    for (const viewer of [bdd.user({ orgId: owner.actor.orgId }), bdd.user()]) {
+      await accept(
+        catalog.get({ headers: authenticateSharedThread(viewer), ...request }),
+        [404],
+      );
+    }
+    await accept(catalog.get(request), [401]);
+  });
+});
