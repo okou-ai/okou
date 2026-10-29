@@ -411,6 +411,12 @@ function ArtifactSharedConversationList({
       })}
     >
       {artifacts.map((artifact) => {
+        // New App -> old API during deployment or rollback: retain the catalog
+        // deep link until APIs without sharedThreadId are neither serving nor
+        // retained as production rollback targets. Follow-up: #43928.
+        const href = artifact.sharedThreadId
+          ? `/share/threads/${encodeURIComponent(artifact.sharedThreadId)}`
+          : `${ROUTES.artifacts}?tab=shared-thread&artifact=${encodeURIComponent(artifact.id)}`;
         return (
           <li key={artifact.id} className="flex items-center">
             <a
@@ -419,7 +425,7 @@ function ArtifactSharedConversationList({
                   ? scrollArtifactCardIntoViewRef
                   : undefined
               }
-              href={`${ROUTES.artifacts}?tab=shared-thread&artifact=${encodeURIComponent(artifact.id)}`}
+              href={href}
               target="_blank"
               rel="noopener noreferrer"
               data-artifact-id={artifact.id}

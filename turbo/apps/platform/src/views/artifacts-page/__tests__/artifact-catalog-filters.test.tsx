@@ -79,63 +79,75 @@ test("Artifact kind filters remain available while switching catalogs", async ()
   expect(screen.queryByText("launch-deck")).not.toBeInTheDocument();
 });
 
-test("A shared-conversation artifact links to its shared thread in a new tab", async () => {
-  const sharedRequestStarted = context.mocks.deferred<void>();
-  const releaseSharedConversation = context.mocks.deferred<void>();
-  context.mocks.api(
-    artifactCatalogContract.list,
-    async ({ query, respond }) => {
-      if (query.kind === "shared-thread") {
-        sharedRequestStarted.resolve();
-        await releaseSharedConversation.promise;
+test.each([false, true])(
+  "A shared conversation links directly to its shared thread with sidebar preview %s",
+  async (sidebarPreview) => {
+    const sharedRequestStarted = context.mocks.deferred<void>();
+    const releaseSharedConversation = context.mocks.deferred<void>();
+    context.mocks.api(
+      artifactCatalogContract.list,
+      async ({ query, respond }) => {
+        if (query.kind === "shared-thread") {
+          sharedRequestStarted.resolve();
+          await releaseSharedConversation.promise;
+          return respond(200, {
+            artifacts: [
+              artifact({
+                kind: "shared-thread",
+                title: "Weekly launch review",
+                sharedThreadId: "b0000000-0000-4000-a000-000000000001",
+              }),
+            ],
+            nextCursor: null,
+          });
+        }
         return respond(200, {
-          artifacts: [
-            artifact({
-              kind: "shared-thread",
-              title: "Weekly launch review",
-            }),
-          ],
+          artifacts: [artifact({ kind: "presentation", title: "launch-deck" })],
           nextCursor: null,
         });
-      }
-      return respond(200, {
-        artifacts: [artifact({ kind: "presentation", title: "launch-deck" })],
-        nextCursor: null,
-      });
-    },
-  );
+      },
+    );
 
-  await setupArtifactCatalogPage(context);
+    await setupPage({
+      context,
+      path: "/artifacts",
+      featureSwitches: {
+        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreview,
+      },
+    });
 
-  await expect(findArtifactAction("launch-deck")).resolves.toBeInTheDocument();
-  const filters = screen.getByLabelText("Artifact kind filters");
-  click(getButtonByName("Show shared conversation artifacts", filters));
-  await sharedRequestStarted.promise;
+    await expect(
+      findArtifactAction("launch-deck"),
+    ).resolves.toBeInTheDocument();
+    const filters = screen.getByLabelText("Artifact kind filters");
+    click(getButtonByName("Show shared conversation artifacts", filters));
+    await sharedRequestStarted.promise;
 
-  await expect(
-    screen.findByLabelText("Loading artifacts"),
-  ).resolves.toBeInTheDocument();
+    await expect(
+      screen.findByLabelText("Loading artifacts"),
+    ).resolves.toBeInTheDocument();
 
-  releaseSharedConversation.resolve();
+    releaseSharedConversation.resolve();
 
-  const conversation = await findArtifactAction("Weekly launch review");
-  const listItem = conversation.closest("li");
-  if (!listItem?.parentElement) {
-    throw new Error("Expected a shared conversation in a compact list");
-  }
-  expect(conversation).toHaveRole("link");
-  expect(conversation).toHaveAttribute(
-    "href",
-    "/artifacts?tab=shared-thread&artifact=a0000000-0000-4000-a000-000000000001",
-  );
-  expect(conversation).toHaveAttribute("target", "_blank");
-  expect(conversation).toHaveAttribute("rel", "noopener noreferrer");
-  expect(listItem).toHaveRole("listitem");
-  expect(listItem.parentElement).toHaveRole("list");
-});
+    const conversation = await findArtifactAction("Weekly launch review");
+    const listItem = conversation.closest("li");
+    if (!listItem?.parentElement) {
+      throw new Error("Expected a shared conversation in a compact list");
+    }
+    expect(conversation).toHaveRole("link");
+    expect(conversation).toHaveAttribute(
+      "href",
+      "/share/threads/b0000000-0000-4000-a000-000000000001",
+    );
+    expect(conversation).toHaveAttribute("target", "_blank");
+    expect(conversation).toHaveAttribute("rel", "noopener noreferrer");
+    expect(listItem).toHaveRole("listitem");
+    expect(listItem.parentElement).toHaveRole("list");
+  },
+);
 
 test.each([false, true])(
-  "A shared-conversation link resolves to its shared thread with sidebar preview %s",
+  "An older API retains catalog deep links with sidebar preview %s",
   async (sidebarPreview) => {
     const locationAssign = context.mocks.browser.locationAssign();
     const conversation = artifact({
@@ -159,6 +171,12 @@ test.each([false, true])(
         [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreview,
       },
     });
+    await expect(
+      findArtifactAction(conversation.title),
+    ).resolves.toHaveAttribute(
+      "href",
+      `/artifacts?tab=shared-thread&artifact=${conversation.id}`,
+    );
     await waitFor(() => {
       expect(locationAssign.calls).toStrictEqual([
         "/share/threads/b0000000-0000-4000-a000-000000000001",

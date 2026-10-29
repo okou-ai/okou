@@ -2188,6 +2188,10 @@ describe("artifact catalog source identity", () => {
     if (!entry) {
       throw new Error("Expected an artifact catalog entry");
     }
+    expect(entry).toMatchObject({
+      kind: "shared-thread",
+      sharedThreadId: shared.id,
+    });
     const catalog = setupApp({ context, routes: artifactCatalogRoutes })(
       artifactCatalogContract,
     );
