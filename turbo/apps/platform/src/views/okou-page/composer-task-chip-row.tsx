@@ -60,7 +60,7 @@ function TaskOverflowIcons({
           return (
             <span
               key={task}
-              className="-ml-1.5 flex size-6 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-card text-muted-foreground first:ml-0"
+              className="-ml-1.5 flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground first:ml-0"
             >
               <Icon size={16} />
             </span>
