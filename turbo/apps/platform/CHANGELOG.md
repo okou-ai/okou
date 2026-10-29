@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1075.3](https://github.com/okou-ai/okou/compare/app-v0.1075.2...app-v0.1075.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** align halloween quiz copy with v1 ([#43861](https://github.com/okou-ai/okou/issues/43861)) ([a44c7f3](https://github.com/okou-ai/okou/commit/a44c7f3baf50059be9a017767fa6159fe167002b))
+
+
+### Performance Improvements
+
+* **platform:** localize sidebar row status subscriptions ([#43851](https://github.com/okou-ai/okou/issues/43851)) ([7955288](https://github.com/okou-ai/okou/commit/795528843b0e17b5c68443fcb3f5bc875aa3456f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.3
+    * @okouai/core bumped to 8.799.3
+
 ## [0.1075.2](https://github.com/okou-ai/okou/compare/app-v0.1075.1...app-v0.1075.2) (2026-10-29)
 
 
