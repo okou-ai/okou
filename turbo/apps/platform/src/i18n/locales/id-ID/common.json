@@ -1360,6 +1360,12 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Masukkan URL",
+    "blankPage": {
+      "description": "{{assistantName}} membuka halaman di sini saat bekerja. Masukkan URL di atas untuk menjelajah sendiri.",
+      "title": "Belum ada yang dibuka"
+    },
+    "blankTabTitle": "Tab baru",
     "cardTitle": "Browser cloud",
     "close": "Tutup browser cloud",
     "documentTitle": "Browser cloud",

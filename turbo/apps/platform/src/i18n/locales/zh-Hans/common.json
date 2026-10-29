@@ -1360,6 +1360,12 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "输入网址",
+    "blankPage": {
+      "description": "{{assistantName}} 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
+      "title": "还没有打开网页"
+    },
+    "blankTabTitle": "新标签页",
     "cardTitle": "云端浏览器",
     "close": "关闭云端浏览器",
     "documentTitle": "云端浏览器",

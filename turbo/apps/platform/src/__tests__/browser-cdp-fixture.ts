@@ -23,6 +23,15 @@ export function mockBrowserCdp(
   const targets = options.targets ?? [
     { targetId: "example-page", title: "Example", url: "https://example.com" },
   ];
+  function targetForSession(sessionId: string | undefined) {
+    const target = targets.find((candidate) => {
+      return `${candidate.targetId}-session` === sessionId;
+    });
+    if (!target) {
+      throw new Error("Unknown viewer target session");
+    }
+    return target;
+  }
   const socket = context.mocks.browser.webSocket((data, url) => {
     if (url !== cdpUrl) {
       throw new Error("Unexpected viewer endpoint");
@@ -101,7 +110,7 @@ export function mockBrowserCdp(
             frame: {
               id: "example-frame",
               loaderId: "example-loader",
-              url: "https://example.com",
+              url: targetForSession(request.sessionId).url,
             },
           },
         };
@@ -123,14 +132,15 @@ export function mockBrowserCdp(
         break;
       }
       case "Page.getNavigationHistory": {
+        const target = targetForSession(request.sessionId);
         result = {
           currentIndex: 0,
           entries: [
             {
               id: 1,
-              url: "https://example.com",
-              userTypedURL: "https://example.com",
-              title: "Example",
+              url: target.url,
+              userTypedURL: target.url,
+              title: target.title,
               transitionType: "typed",
             },
           ],

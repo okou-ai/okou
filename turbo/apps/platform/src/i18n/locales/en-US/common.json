@@ -1362,6 +1362,12 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Enter a URL",
+    "blankPage": {
+      "description": "{{assistantName}} opens pages here as it works. Enter a URL above to browse yourself.",
+      "title": "Nothing open yet"
+    },
+    "blankTabTitle": "New tab",
     "cardTitle": "Cloud browser",
     "close": "Close cloud browser",
     "documentTitle": "Cloud browser",

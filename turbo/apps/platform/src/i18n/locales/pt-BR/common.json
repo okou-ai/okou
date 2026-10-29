@@ -1384,6 +1384,12 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Digite uma URL",
+    "blankPage": {
+      "description": "{{assistantName}} abre páginas aqui enquanto trabalha. Digite uma URL acima para navegar por conta própria.",
+      "title": "Nada aberto ainda"
+    },
+    "blankTabTitle": "Nova guia",
     "cardTitle": "Navegador na nuvem",
     "close": "Fechar navegador na nuvem",
     "documentTitle": "Navegador na nuvem",

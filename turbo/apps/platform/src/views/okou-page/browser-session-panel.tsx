@@ -2,7 +2,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import { CdpViewer, type CdpViewerStyle } from "cdp-viewer";
 import { browserUse } from "cdp-viewer/extensions/browser-use";
-import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
+import { AppWindow, AppWindowMac, Globe, Loader2, Play } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
@@ -22,7 +22,10 @@ import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
   readonly showPausedScreenshot?: boolean;
-  /** Panel actions for a host without its own header. */
+  /**
+   * Panel actions for a host without its own header. The live viewer places
+   * them at the end of its tab row; other states give them a row of their own.
+   */
   readonly actions?: ReactNode;
   /** Status layered over the live viewer, such as who is in control. */
   readonly overlay?: ReactNode;
@@ -195,6 +198,25 @@ function PanelActions({ actions }: { readonly actions: ReactNode }) {
   );
 }
 
+function BrowserBlankPage() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-8 pb-10 text-center">
+      <Globe size={20} aria-hidden className="text-muted-foreground" />
+      <p className="mt-3 text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.browserSession.blankPage.title;
+        })}
+      </p>
+      <p className="mt-1 max-w-72 text-xs leading-5 text-muted-foreground">
+        {t(($) => {
+          return $.browserSession.blankPage.description;
+        })}
+      </p>
+    </div>
+  );
+}
+
 function BrowserCdpViewer({
   signals,
   liveUrl,
@@ -213,6 +235,7 @@ function BrowserCdpViewer({
   readonly actions: ReactNode;
   readonly overlay: ReactNode;
 }) {
+  const { t } = useTranslation();
   const connection = useLastLoadable(signals.viewerConnection$);
   const windowSizeSync = useGet(signals.viewerWindowSizeSync$);
   const setWindowSizeSync = useSet(signals.setViewerWindowSizeSync$);
@@ -263,9 +286,22 @@ function BrowserCdpViewer({
           onCaptureChange={setCapture}
           extensions={[browserUse()]}
           colorScheme={theme}
-          tabStyle={refined ? "floating" : "attached"}
-          toolbarEnd={refined ? actions : undefined}
-          stageOverlay={refined ? overlay : undefined}
+          {...(refined
+            ? {
+                tabStyle: "floating",
+                toolbarEnd: actions ?? undefined,
+                stageOverlay: overlay ?? undefined,
+                blankPage: <BrowserBlankPage />,
+                labels: {
+                  addressPlaceholder: t(($) => {
+                    return $.browserSession.addressPlaceholder;
+                  }),
+                  blankTabTitle: t(($) => {
+                    return $.browserSession.blankTabTitle;
+                  }),
+                },
+              }
+            : {})}
           className="w-full flex-1"
           style={refined ? okouViewerStyle() : { height: "100%", minHeight: 0 }}
         />

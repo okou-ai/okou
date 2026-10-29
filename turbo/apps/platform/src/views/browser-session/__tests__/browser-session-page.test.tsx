@@ -6,6 +6,8 @@ import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-thr
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { HttpResponse } from "msw";
 
 import {
   click,
@@ -14,6 +16,8 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
+import zhHansCommon from "../../../i18n/locales/zh-Hans/common.json?raw";
+import zhHansCommonUrl from "../../../i18n/locales/zh-Hans/common.json?url";
 
 const context = testContext();
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
@@ -138,6 +142,68 @@ test("The interactive Okou viewer lets the owner change automatic sizing", async
     within(sizingMenu).getByText("Do not sync automatically"),
   ).toHaveAttribute("aria-checked", "false");
   await selectViewerSizingOption(sizingMenu, "Do not sync automatically");
+});
+
+test("The Okou viewer localizes a blank tab and removes its empty page when another tab is selected", async () => {
+  context.mocks.browser.languages(["zh-CN"]);
+  // This story needs the real locale asset instead of the shared English-copy fixture.
+  context.mocks.http.get(zhHansCommonUrl, () => {
+    return new HttpResponse(zhHansCommon, {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  const activeSession = browserSession();
+  const cdpUrl = "wss://cdp.browser-use.com/blank-page";
+  mockBrowserSession(activeSession);
+  mockBrowserCdp(context, cdpUrl, {
+    streaming: true,
+    targets: [
+      { targetId: "blank-page", title: "about:blank", url: "about:blank" },
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+      },
+    ],
+  });
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: activeSession });
+  });
+
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    host: "app.okou.ai",
+    locale: "zh-Hans",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+
+  expect(document.documentElement).toHaveAttribute("lang", "zh-Hans");
+  const viewer = await screen.findByRole("region", {
+    name: "Remote browser viewer",
+  });
+  await within(viewer).findByText("还没有打开网页");
+  expect(
+    within(viewer).getByText(
+      "Okou 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
+    ),
+  ).toBeInTheDocument();
+  expect(within(viewer).getByPlaceholderText("输入网址")).toBeEnabled();
+  const blankTab = within(viewer).getByLabelText("新标签页", {
+    selector: '[role="tab"]',
+  });
+  expect(blankTab).toHaveAttribute("aria-selected", "true");
+
+  click(within(viewer).getByLabelText("Example", { selector: '[role="tab"]' }));
+  await within(viewer).findByDisplayValue("https://example.com");
+  expect(within(viewer).queryByText("还没有打开网页")).toBeNull();
+
+  click(blankTab);
+  await within(viewer).findByText("还没有打开网页");
+  expect(blankTab).toHaveAttribute("aria-selected", "true");
 });
 
 test("The Okou viewer starts with WebP and lets the owner change capture settings", async () => {
@@ -600,7 +666,9 @@ test.each(["legacy", "instance", "window"] as const)(
     await userEvent.keyboard("{End}x");
     expect(screen.getByLabelText("Remote page address")).toHaveFocus();
     expect(screen.getByLabelText("Remote page address")).toHaveValue(
-      "https://example.comx",
+      previous === "window"
+        ? "https://other.example.comx"
+        : "https://example.comx",
     );
   },
 );
