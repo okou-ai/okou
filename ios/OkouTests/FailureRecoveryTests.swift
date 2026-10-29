@@ -104,6 +104,23 @@ final class FailureRecoveryTests: XCTestCase {
     await conversation.modelSelection?.open()
     await conversation.refresh()
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
+    let oldReadGate = ModelResponseGate()
+    let oldReadStarted = expectation(description: "Thread read captured before local model write")
+    fixture.state.value.withLock {
+      $0.threadEvents = [
+        FailureRecoveryFixture.threadEvent(
+          1, kind: "model_selection_updated", fields: #""selectedModel":null"#)
+      ]
+      $0.threadEventsGate = oldReadGate
+      $0.threadEventsRequested = { oldReadStarted.fulfill() }
+    }
+    let oldRead = Task { await workspace.refresh([.threadList]) }
+    addTeardownBlock {
+      oldRead.cancel()
+      oldReadGate.open()
+      await oldRead.value
+    }
+    await fulfillment(of: [oldReadStarted], timeout: 3)
     let gate = ModelResponseGate()
     let started = expectation(description: "Model switch reached the HTTP boundary")
     fixture.state.value.withLock {
@@ -127,12 +144,13 @@ final class FailureRecoveryTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
 
     await conversation.modelSelection?.refresh()
+    oldReadGate.open()
+    await oldRead.value
     // An unrelated list update must not replace the acknowledged local choice
     // with the older selection still present in the thread projection.
     fixture.state.value.withLock {
-      $0.threadEvents = [
-        FailureRecoveryFixture.threadEvent(1, kind: "renamed", fields: #""title":"Renamed""#)
-      ]
+      $0.threadEvents.append(
+        FailureRecoveryFixture.threadEvent(2, kind: "renamed", fields: #""title":"Renamed""#))
     }
     await workspace.refresh([.threadList])
     await conversation.recoverFailure(failure.id)

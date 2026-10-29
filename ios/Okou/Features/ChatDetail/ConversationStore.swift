@@ -38,7 +38,7 @@ final class ConversationStore {
   var thread: ChatThread {
     didSet {
       if ChatModelSelection(thread: oldValue) != ChatModelSelection(thread: thread) {
-        modelSelection?.apply(thread: thread)
+        modelSelection?.apply(thread: thread, replacing: oldValue)
       }
     }
   }

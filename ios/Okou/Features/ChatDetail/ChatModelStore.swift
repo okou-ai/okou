@@ -110,6 +110,7 @@ final class ChatModelSelectionStore {
   private(set) var error: String?
   private(set) var savedDefault = false
   private(set) var uncertain = false
+  private(set) var needsThreadReadback = false
   var isSending = false
   private var refreshAfterSave = false
   private var revision = 0
@@ -148,7 +149,7 @@ final class ChatModelSelectionStore {
   var effectiveEffort: String? { models.configuration?.effectiveEffort(for: selection) }
   var requestedEffort: String? { models.configuration?.requestedEffort(for: selection) }
 
-  func apply(thread: ChatThread) {
+  func apply(thread: ChatThread, replacing previous: ChatThread) {
     guard !closed, thread.id == threadID else { return }
     if isSaving {
       refreshAfterSave = true
@@ -158,7 +159,15 @@ final class ChatModelSelectionStore {
     guard !uncertain else { return }
     revision += 1
     isLoading = false
-    stored = ChatModelSelection(thread: thread)
+    let next = ChatModelSelection(thread: thread)
+    // A thread read started before a local write can finish after its readback.
+    // Retain the acknowledged choice until this conflicting projection is resolved.
+    if hasLoaded, let stored, stored != ChatModelSelection(thread: previous), stored != next {
+      needsThreadReadback = true
+      return
+    }
+    needsThreadReadback = false
+    stored = next
     hasLoaded = true
   }
 
@@ -183,6 +192,7 @@ final class ChatModelSelectionStore {
       stored = value
       hasLoaded = true
       uncertain = false
+      needsThreadReadback = false
       error = nil
     } catch is CancellationError {
     } catch {
@@ -245,6 +255,7 @@ final class ChatModelSelectionStore {
       guard !closed, !Task.isCancelled else { return }
       stored = confirmed
       hasLoaded = true
+      needsThreadReadback = false
       error = nil
     } catch {
       guard !closed else { return }

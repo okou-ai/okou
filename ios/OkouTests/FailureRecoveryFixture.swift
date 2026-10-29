@@ -19,6 +19,8 @@ final class FailureRecoveryFixture: Sendable {
     var modelSaveGate: ModelResponseGate?
     var modelSaveRequested: (@Sendable () -> Void)?
     var threadEvents: [String] = []
+    var threadEventsGate: ModelResponseGate?
+    var threadEventsRequested: (@Sendable () -> Void)?
     var failNextSend = false
     var markReadGate: ModelResponseGate?
     var markReadRequested: (@Sendable () -> Void)?
@@ -78,12 +80,20 @@ final class FailureRecoveryFixture: Sendable {
         let since =
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
           .first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
-        return state.value.withLock {
-          ChatHTTPResponse(
+        let (response, gate, requested) = state.value.withLock { value in
+          let response = ChatHTTPResponse(
             body:
-              "{\"events\":[\($0.threadEvents.dropFirst(since).joined(separator: ","))],\"hasMore\":false}"
+              "{\"events\":[\(value.threadEvents.dropFirst(since).joined(separator: ","))],\"hasMore\":false}"
           )
+          let gate = value.threadEventsGate
+          let requested = value.threadEventsRequested
+          value.threadEventsGate = nil
+          value.threadEventsRequested = nil
+          return (response, gate, requested)
         }
+        requested?()
+        if let gate { await gate.wait() }
+        return response
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
       case threadPath + "/event-snapshot":
