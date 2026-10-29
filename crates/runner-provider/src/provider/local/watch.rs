@@ -129,14 +129,15 @@ impl LocalQueueWatcher {
                                 changed = true;
                                 continue;
                             }
+                            if !self.path_by_watch.contains_key(&event.wd) {
+                                continue;
+                            }
                             if event.mask.intersects(INVALIDATION_FLAGS) {
                                 invalidated_watches.push(event.wd);
                                 changed = true;
                                 continue;
                             }
-                            if !event.mask.intersects(PUBLICATION_FLAGS)
-                                || !self.path_by_watch.contains_key(&event.wd)
-                            {
+                            if !event.mask.intersects(PUBLICATION_FLAGS) {
                                 continue;
                             }
                             if event.name.as_deref().is_some_and(|name| {
@@ -158,7 +159,7 @@ impl LocalQueueWatcher {
             }
             drop(ready);
             for watch in invalidated_watches {
-                self.forget_watch(watch);
+                self.retire_watch(watch)?;
             }
 
             if changed || !drained_all_events {
@@ -167,10 +168,18 @@ impl LocalQueueWatcher {
         }
     }
 
-    fn forget_watch(&mut self, watch: WatchDescriptor) {
-        if let Some(path) = self.path_by_watch.remove(&watch) {
-            self.watch_by_path.remove(&path);
+    fn retire_watch(&mut self, watch: WatchDescriptor) -> ProviderResult<()> {
+        let Some(path) = self.path_by_watch.get(&watch) else {
+            return Ok(());
+        };
+        // Moving an inode keeps its watch; deletion may already have removed it.
+        match self.inotify.get_ref().0.rm_watch(watch) {
+            Ok(()) | Err(Errno::EINVAL) => {}
+            Err(error) => return Err(watcher_error("remove queue directory watch", error)),
         }
+        self.watch_by_path.remove(path);
+        self.path_by_watch.remove(&watch);
+        Ok(())
     }
 }
 
@@ -215,6 +224,14 @@ mod tests {
         let mut watcher = LocalQueueWatcher::new(vec![path.to_path_buf()], kind).unwrap();
         watcher.reconcile().unwrap();
         watcher
+    }
+
+    fn kernel_watch_count(watcher: &LocalQueueWatcher) -> usize {
+        std::fs::read_to_string(format!("/proc/self/fdinfo/{}", watcher.inotify.as_raw_fd()))
+            .unwrap()
+            .lines()
+            .filter(|line| line.starts_with("inotify wd:"))
+            .count()
     }
 
     #[tokio::test]
@@ -275,6 +292,68 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(2), watcher.next_change())
             .await
             .expect("recreated directory should be watched again")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn moved_directories_retire_kernel_watches_before_reconciliation() {
+        let root = tempfile::tempdir().unwrap();
+        let watched_dir = root.path().join("jobs");
+        let other_dir = root.path().join("other-jobs");
+        std::fs::create_dir(&watched_dir).unwrap();
+        std::fs::create_dir(&other_dir).unwrap();
+        let mut watcher = LocalQueueWatcher::new(
+            vec![watched_dir.clone(), other_dir.clone()],
+            QueueFileKind::Job,
+        )
+        .unwrap();
+        watcher.reconcile().unwrap();
+        assert_eq!(kernel_watch_count(&watcher), 2);
+
+        for cycle in 0..8 {
+            let retired_dir = root.path().join(format!("retired-{cycle}"));
+            std::fs::rename(&watched_dir, &retired_dir).unwrap();
+            tokio::time::timeout(Duration::from_secs(2), watcher.next_change())
+                .await
+                .expect("directory move should request reconciliation")
+                .unwrap();
+            assert_eq!(
+                kernel_watch_count(&watcher),
+                1,
+                "moved inode must lose its watch while the other watch stays live"
+            );
+
+            std::fs::create_dir(&watched_dir).unwrap();
+            watcher.reconcile().unwrap();
+            assert_eq!(kernel_watch_count(&watcher), 2);
+
+            // rm_watch queues IN_IGNORED. Wait for actual readiness before
+            // checking that next_change drains it and waits for a live event.
+            tokio::time::timeout(Duration::from_secs(2), watcher.inotify.readable())
+                .await
+                .expect("watch retirement should queue IN_IGNORED")
+                .unwrap()
+                .retain_ready();
+            assert!(futures_util::poll!(std::pin::pin!(watcher.next_change())).is_pending());
+
+            std::fs::write(retired_dir.join("retired.job"), b"job").unwrap();
+            std::fs::rename(&retired_dir, root.path().join(format!("kept-{cycle}"))).unwrap();
+            assert!(matches!(
+                watcher.inotify.get_ref().0.read_events(),
+                Err(Errno::EAGAIN)
+            ));
+
+            std::fs::write(watched_dir.join("replacement.job"), b"job").unwrap();
+            tokio::time::timeout(Duration::from_secs(2), watcher.next_change())
+                .await
+                .expect("replacement directory publication should wake watcher")
+                .unwrap();
+        }
+
+        std::fs::write(other_dir.join("unaffected.job"), b"job").unwrap();
+        tokio::time::timeout(Duration::from_secs(2), watcher.next_change())
+            .await
+            .expect("unaffected directory publication should wake watcher")
             .unwrap();
     }
 }
