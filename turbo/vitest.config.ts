@@ -36,6 +36,12 @@ export default defineConfig({
       junit: "junit.xml",
     },
 
-    projects: ["packages/*", "apps/*"],
+    projects: [
+      "packages/*",
+      "apps/*",
+      // These suites run through their package-owned Node/Playwright commands.
+      "!apps/browser-extension",
+      "!packages/browser-extension-client",
+    ],
   },
 });
