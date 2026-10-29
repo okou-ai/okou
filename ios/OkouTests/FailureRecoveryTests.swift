@@ -8,6 +8,52 @@ import XCTest
 
 @MainActor
 final class FailureRecoveryTests: XCTestCase {
+  func testNewFailureAcceptsOneRetryBeforeTheAcceptedSendFinishesHistoryRefresh() async throws {
+    var visible = false
+    let fixture = FailureRecoveryFixture()
+    let (conversation, models) = await fixture.conversation(isVisible: { visible })
+    defer {
+      conversation.close()
+      models.close()
+    }
+    visible = true
+    let gate = ModelResponseGate()
+    let started = expectation(description: "Failed run rendered before mark-read completes")
+    fixture.state.value.withLock {
+      $0.failNextSend = true
+      $0.markReadGate = gate
+      $0.markReadRequested = { started.fulfill() }
+    }
+    conversation.draft = "New request"
+    let sending = Task { await conversation.send() }
+    addTeardownBlock {
+      sending.cancel()
+      gate.open()
+      await sending.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    let failure = try XCTUnwrap(conversation.messages.last?.failure)
+    XCTAssertFalse(conversation.failureState(failure).isBusy)
+    XCTAssertTrue(conversation.failureState(failure).canSend)
+    let recovery = Task { await conversation.recoverFailure(failure.id) }
+    addTeardownBlock {
+      recovery.cancel()
+      gate.open()
+      await recovery.value
+    }
+    try await waitForBusinessResult { conversation.isRecoveringFailure }
+    gate.open()
+    await sending.value
+    await recovery.value
+
+    let sends = fixture.state.value.withLock { $0.sends }
+    XCTAssertEqual(sends.count, 2)
+    let data = try XCTUnwrap(sends.last)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(body["prompt"] as? String, "continue")
+    XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
+  }
+
   func testOneRetrySendsWhileBackgroundModelReadIsStillPending() async throws {
     let fixture = FailureRecoveryFixture(
       reason: "provider_server_error", error: "Provider unavailable")

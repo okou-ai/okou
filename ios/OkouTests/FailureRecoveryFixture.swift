@@ -19,6 +19,9 @@ final class FailureRecoveryFixture: Sendable {
     var modelSaveGate: ModelResponseGate?
     var modelSaveRequested: (@Sendable () -> Void)?
     var threadEvents: [String] = []
+    var failNextSend = false
+    var markReadGate: ModelResponseGate?
+    var markReadRequested: (@Sendable () -> Void)?
     var accounts = ModelHTTPFixtures.subscriptions.replacingOccurrences(
       of: "\"remainingPercent\":80", with: "\"remainingPercent\":0"
     )
@@ -115,6 +118,15 @@ final class FailureRecoveryFixture: Sendable {
       case "/api/uploads/prepare":
         return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Upload unavailable"}}"#)
       case threadPath + "/mark-read":
+        let (gate, requested) = state.value.withLock { value in
+          let gate = value.markReadGate
+          let requested = value.markReadRequested
+          value.markReadGate = nil
+          value.markReadRequested = nil
+          return (gate, requested)
+        }
+        requested?()
+        if let gate { await gate.wait() }
         return ChatHTTPResponse(body: #"{"lastReadAt":"2030-01-01T00:00:00Z"}"#)
       case threadPath + "/connector-selections":
         return ChatHTTPResponse(body: #"{"selections":[]}"#)
@@ -164,6 +176,15 @@ final class FailureRecoveryFixture: Sendable {
                 value.rows.count + 1, type: "input.prompt",
                 payload: String(decoding: document, as: UTF8.self), id: id))
             value.lastID = id
+            if value.failNextSend {
+              value.failNextSend = false
+              let seq = value.rows.count + 1
+              value.rows.append(
+                Self.row(
+                  seq, type: "run.failed",
+                  payload: #"{"error":"Unavailable","failureReason":"provider_server_error"}"))
+              value.lastID = Self.id(seq)
+            }
           }
           return value.sendStatus == 200
             ? ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
@@ -210,9 +231,10 @@ final class FailureRecoveryFixture: Sendable {
     }
   }
 
-  @MainActor func conversation(cache: ChatCache? = nil, draftStorage: ChatDraftStorage? = nil) async
-    -> (ConversationStore, ChatModelStore)
-  {
+  @MainActor func conversation(
+    cache: ChatCache? = nil, draftStorage: ChatDraftStorage? = nil,
+    isVisible: @escaping @MainActor () -> Bool = { false }
+  ) async -> (ConversationStore, ChatModelStore) {
     let resource = ChatModelStore(client: http.client, webURL: http.baseURL, didFail: { _ in })
     let thread = ChatThread(
       id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
@@ -224,7 +246,7 @@ final class FailureRecoveryFixture: Sendable {
     let conversation = ConversationStore(
       thread: thread, sync: sync, commands: ChatCommands(client: http.client, sync: sync),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
-      isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
+      isVisible: isVisible, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       modelSelection: selection,
       draftRepository: ChatDraftRepository(client: http.client), draftStorage: draftStorage)
     await conversation.refresh()

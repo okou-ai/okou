@@ -117,7 +117,7 @@ final class ConversationStore {
   private var refreshTask: Task<Void, Never>?
   private var refreshGeneration = UUID()
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
-  private var sendTask: Task<Void, Never>?
+  private var sendTask: Task<Bool, Never>?
   private var stopTask: Task<Void, Never>?
   private var expansionTask: Task<Void, Never>?
   private var renderWindow = ConversationRenderWindow()
@@ -464,7 +464,7 @@ final class ConversationStore {
     isSending = true
     modelSelection?.isSending = true
     let task = Task { [weak self] in
-      guard let self else { return }
+      guard let self else { return false }
       defer {
         isSending = false
         modelSelection?.isSending = false
@@ -481,24 +481,28 @@ final class ConversationStore {
           clientEventID: message.id, modelSelection: message.modelSelection,
           reasoningEffort: message.reasoningEffort, computerAccess: message.computerAccess)
         try Task.checkCancellation()
-        guard !closed else { return }
+        guard !closed else { return false }
         workflowSource?.recordUse(workflowIDs)
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = false
         }
         error = nil
-        await refresh()
-        didSend()
+        return true
       } catch {
-        guard !closed else { return }
+        guard !closed else { return false }
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = true
         }
         show(error)
+        return false
       }
     }
     sendTask = task
-    await task.value
+    // API acceptance ends sending. History can publish a failure card before its
+    // read/mark-read work settles, and that card must already accept recovery.
+    guard await task.value, !closed, !needsUpgrade, !Task.isCancelled else { return }
+    await refresh()
+    didSend()
   }
 
   func stop() async {
