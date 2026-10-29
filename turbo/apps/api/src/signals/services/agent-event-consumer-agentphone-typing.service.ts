@@ -25,7 +25,7 @@ function parseAgentPhoneTypingTarget(
   }
 
   const data = payload as Record<string, unknown>;
-  const conversationId = data.isGroup ? data.groupId : data.conversationId;
+  const conversationId = data.conversationId;
   if (
     data.channel !== "imessage" ||
     typeof conversationId !== "string" ||

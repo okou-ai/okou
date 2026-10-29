@@ -3893,7 +3893,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
       participants: [{ identifier: phone }],
     });
-    await waitForTyping(sends, [groupId]);
+    await waitForTyping(sends, [conversationId]);
     const run = await claimDispatchedRun(runnerGroup);
 
     server.use(
@@ -4030,6 +4030,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   it("handles the iMessage group lifecycle: mentions, stored context, ambient silence, and account-command guards", async () => {
     const runs = createRunsApi(context);
     const integrations = createBddIntegrationApi(context);
+    const webhooks = createWebhookCallbackApi(context);
     const { actor, phone, runnerGroup, sends, ap } =
       await entitledLinkedActor();
     const conversationId = `${uniqueConversationId()}-${"g".repeat(230)}`;
@@ -4055,7 +4056,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         },
       ],
     });
-    await waitForTyping(sends, [bddGroupId(conversationId)]);
+    await waitForTyping(sends, [conversationId]);
     const groupLifecycle = await createChatFilesBddApi(
       context,
     ).requestThreadEvents(actor, {}, [200]);
@@ -4088,6 +4089,33 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     const run1 = await claimDispatchedRun(runnerGroup);
     expect(run1.prompt).toBe("@Okou summarize this thread");
+
+    // Typing uses the conversation id on ingress and subsequent refreshes,
+    // while the final message below still uses the group id as its address.
+    await webhooks.requestAgentEvents(
+      {
+        runId: run1.runId,
+        events: [{ type: "assistant", sequenceNumber: 1 }],
+      },
+      { authorization: `Bearer ${run1.sandboxToken}` },
+      [200],
+    );
+    await waitForTyping(sends, [conversationId, conversationId]);
+    const heartbeat = await webhooks.requestAgentHeartbeat(
+      { runId: run1.runId },
+      { authorization: `Bearer ${run1.sandboxToken}` },
+      [200],
+    );
+    expect(heartbeat.body).toStrictEqual({
+      ok: true,
+      typingRefreshIntervalSeconds: 4,
+    });
+    await waitForTyping(sends, [
+      conversationId,
+      conversationId,
+      conversationId,
+    ]);
+
     // The provider's unfiltered group history is not trusted as local context.
     expect(run1.appendSystemPrompt).not.toContain("Earlier group context");
 
