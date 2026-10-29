@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.25.0](https://github.com/okou-ai/okou/compare/api-v2.24.0...api-v2.25.0) (2026-10-29)
+
+
+### Features
+
+* **cli:** support file uploads to imessage groups ([#44002](https://github.com/okou-ai/okou/issues/44002)) ([ea08509](https://github.com/okou-ai/okou/commit/ea0850926d622ac4a7a4f7cbe9144af34866dc7e))
+
+
+### Refactoring
+
+* **api:** localize hosted site file signing ([#44007](https://github.com/okou-ai/okou/issues/44007)) ([5c8b615](https://github.com/okou-ai/okou/commit/5c8b615ebd186bf474e10dfeb75dbb1dce9801a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.20.0
+    * @okouai/core bumped to 8.800.3
+    * @okouai/db bumped to 2.11.2
+    * @okouai/pi-agent-runtime bumped to 1.51.22
+
 ## [2.24.0](https://github.com/okou-ai/okou/compare/api-v2.23.0...api-v2.24.0) (2026-10-29)
 
 
