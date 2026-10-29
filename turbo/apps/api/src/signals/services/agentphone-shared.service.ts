@@ -11,6 +11,7 @@ import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-th
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -24,6 +25,47 @@ export function agentPhoneRouteLinkColumn(channel?: AgentPhoneChannel) {
     ? agentphoneChatThreadRoutes.whatsappUserLinkId
     : agentphoneChatThreadRoutes.agentphoneUserLinkId;
 }
+
+export function agentPhoneGroupMessageRouteKey(
+  conversationId: string,
+  messageId: string,
+): string {
+  return `group:${createHash("sha256")
+    .update(JSON.stringify([conversationId, messageId]))
+    .digest("hex")}`;
+}
+
+// Record the accepted provider message before observing caller cancellation.
+export const recordAgentPhoneGroupReplyRoute$ = command(
+  async (
+    { set },
+    args: {
+      readonly userLinkId: string;
+      readonly conversationId: string;
+      readonly messageId: string;
+      readonly chatThreadId: string;
+    },
+  ): Promise<void> => {
+    await set(writeDb$)
+      .insert(agentphoneChatThreadRoutes)
+      .values({
+        agentphoneUserLinkId: args.userLinkId,
+        rootMessageId: agentPhoneGroupMessageRouteKey(
+          args.conversationId,
+          args.messageId,
+        ),
+        conversationId: args.conversationId,
+        chatThreadId: args.chatThreadId,
+        createdAt: nowDate(),
+      })
+      .onConflictDoNothing({
+        target: [
+          agentphoneChatThreadRoutes.agentphoneUserLinkId,
+          agentphoneChatThreadRoutes.rootMessageId,
+        ],
+      });
+  },
+);
 
 export function agentPhoneUserLinksForChannel(channel: AgentPhoneChannel) {
   return channel === "whatsapp" ? whatsappUserLinks : agentphoneUserLinks;
