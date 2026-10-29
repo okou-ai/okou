@@ -1,5 +1,3 @@
-import { performance } from "node:perf_hooks";
-
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
@@ -31,29 +29,6 @@ export async function recordWorkflowAdmissionDuration(
   await settleIncludingAbort(() => {
     timing?.recordDuration(actionType, "nested", durationMs, now(), dimensions);
   });
-}
-
-export async function measureWorkflowAdmissionStep<T>(
-  timing: AdmissionTimingRecorder | undefined,
-  actionType: ApiDispatchTimingActionType,
-  operation: () => Promise<T>,
-  dimensions?: ApiDispatchTimingDimensionsInput,
-): Promise<T> {
-  if (!timing) {
-    return await operation();
-  }
-  const startedAt = performance.now();
-  const measured = await settleIncludingAbort(operation);
-  await recordWorkflowAdmissionDuration(
-    timing,
-    actionType,
-    performance.now() - startedAt,
-    dimensions,
-  );
-  if (!measured.ok) {
-    throw measured.error;
-  }
-  return measured.value;
 }
 
 /** Preserve the admission result and count exactly one terminal attempt, even on abort. */

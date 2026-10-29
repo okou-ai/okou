@@ -64,17 +64,14 @@ import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
 import { publishSkillImportAfterCommit } from "../services/skill-import-telemetry";
-import {
-  ApiDispatchTimingCollector,
-  measureApiDispatchTiming,
-} from "../services/api-dispatch-timing.service";
+import { ApiDispatchTimingCollector } from "../services/api-dispatch-timing.service";
 import {
   autonomyBudgetExhausted,
   conflict,
   notFound,
   providerUnavailable,
 } from "../../lib/error";
-import { nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { isOrdinaryWorkflowNameConflict } from "./workflow-name-conflicts";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { deleteWorkflow$ } from "../services/workflow-delete.service";
@@ -1515,11 +1512,9 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const currentTime = nowDate();
   const apiStartTime = currentTime.getTime();
   const timing = new ApiDispatchTimingCollector();
-  const mappedChatThreadId = await measureApiDispatchTiming(
-    timing,
-    "api_dispatch_pre_create_agent_workflow_slash_load_thread_mapping",
-    "nested",
-    async () => {
+  const mappedChatThreadId = await (async () => {
+    const startedAt = performance.now();
+    return await (async () => {
       return await set(
         loadWorkflowUserAutomationThreadId$,
         {
@@ -1529,16 +1524,21 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         },
         signal,
       );
-    },
-  );
+    })().finally(() => {
+      timing.recordDuration(
+        "api_dispatch_pre_create_agent_workflow_slash_load_thread_mapping",
+        "nested",
+        performance.now() - startedAt,
+        now(),
+      );
+    });
+  })();
   signal.throwIfAborted();
   const chatThreadId =
     mappedChatThreadId ??
-    (await measureApiDispatchTiming(
-      timing,
-      "api_dispatch_pre_create_agent_workflow_slash_ensure_thread",
-      "nested",
-      async () => {
+    (await (async () => {
+      const startedAt = performance.now();
+      return await (async () => {
         return await set(
           ensureWorkflowUserAutomationThread$,
           {
@@ -1551,8 +1551,15 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           },
           signal,
         );
-      },
-    ));
+      })().finally(() => {
+        timing.recordDuration(
+          "api_dispatch_pre_create_agent_workflow_slash_ensure_thread",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
+    })());
   signal.throwIfAborted();
 
   // Invoking a workflow is exactly typing its slash command in chat.
