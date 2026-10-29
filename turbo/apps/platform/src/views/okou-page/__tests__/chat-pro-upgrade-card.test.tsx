@@ -179,11 +179,51 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
   ).toBeInTheDocument();
   expect(within(card).getByText("20,000")).toBeInTheDocument();
   expect(within(card).getByText("+2,000")).toBeInTheDocument();
-  expect(within(card).getByText(/credits · Just now/u)).toBeInTheDocument();
+  expect(
+    within(card).getByText(/credits · Just now/u, {
+      ignore: '[aria-hidden="true"]',
+    }),
+  ).toBeInTheDocument();
   click(await findEnabledButton("Upgrade now", card));
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
   ).resolves.toBeVisible();
+});
+
+test("Keep the offer usable while the catalog loads and then show its credits", async () => {
+  const catalogReady = context.mocks.deferred<void>();
+  context.mocks.api(
+    billingUsagePackCatalogContract.get,
+    async ({ respond }) => {
+      await catalogReady.promise;
+      return respond(200, {
+        supportsFreeMembers: true,
+        usagePacks: [
+          {
+            usagePackUsd: 20,
+            priceUsd: 20,
+            purchasedCredits: 20_000,
+            bonusCredits: 400,
+            totalCredits: 20_400,
+          },
+        ],
+      });
+    },
+  );
+
+  const card = await openUpgradeChat();
+  expect(
+    within(card).getByText("See plans for current pricing", {
+      ignore: '[aria-hidden="true"]',
+    }),
+  ).toBeInTheDocument();
+  await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
+
+  catalogReady.resolve();
+
+  await expect(within(card).findByText("+400")).resolves.toBeInTheDocument();
+  expect(within(card).getByText("20,000")).toBeInTheDocument();
+  expect(within(card).getByText("$20")).toBeInTheDocument();
 });
 
 test("Keep the upgrade action usable when the price catalog is unavailable", async () => {
@@ -195,11 +235,17 @@ test("Keep the upgrade action usable when the price catalog is unavailable", asy
 
   const card = await openUpgradeChat();
   await expect(
-    within(card).findByText("See plans for current pricing"),
+    within(card).findByText("See plans for current pricing", {
+      ignore: '[aria-hidden="true"]',
+    }),
   ).resolves.toBeVisible();
   expect(within(card).queryByText(/\$/u)).toBeNull();
   expect(within(card).queryByText("20,000")).toBeNull();
-  expect(within(card).queryByText(/credits · Just now/u)).toBeNull();
+  expect(
+    within(card).queryByText(/credits · Just now/u, {
+      ignore: '[aria-hidden="true"]',
+    }),
+  ).toBeNull();
   await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
 });
 

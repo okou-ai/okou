@@ -50,52 +50,81 @@ export function ProUpgradeCard({
         </p>
       </div>
 
-      <div className="col-span-2 flex flex-wrap items-center justify-between gap-1 p-3 pt-2 @[480px]:col-span-1 @[480px]:col-start-2 @[480px]:gap-x-3">
-        <p className="order-1 flex min-w-0 flex-wrap items-baseline gap-1 text-sm text-muted-foreground">
-          {monthlyPriceUsd !== undefined ? (
-            <>
-              {t(($) => {
-                return $.billing.plans.usagePacks.priceFrom;
-              })}
-              <span className="text-2xl font-semibold tracking-tight text-foreground">
-                {formatUsd(monthlyPriceUsd, 0)}
-              </span>
-              {t(($) => {
-                return $.billing.plans.perMonth;
-              })}
-            </>
-          ) : (
-            t(($) => {
+      {/* Reserve localized price and credit geometry before the catalog loads. */}
+      <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1 p-3 pt-2 @[480px]:col-span-1 @[480px]:col-start-2 @[640px]:grid-cols-[minmax(0,9rem)_minmax(0,1fr)_auto] @[640px]:gap-x-3">
+        <div className="col-start-1 row-start-1 grid min-w-0 items-center text-sm text-muted-foreground">
+          <p
+            aria-hidden="true"
+            className="invisible flex flex-wrap items-baseline gap-1 [grid-area:1/1]"
+          >
+            {t(($) => {
+              return $.billing.plans.usagePacks.priceFrom;
+            })}
+            <span className="inline-block w-28 text-2xl">&nbsp;</span>
+            {t(($) => {
+              return $.billing.plans.perMonth;
+            })}
+          </p>
+          <p aria-hidden="true" className="invisible [grid-area:1/1]">
+            {t(($) => {
               return $.chat.billing.proCard.priceUnavailable;
-            })
-          )}
-        </p>
-        {bonusCredits !== undefined && bonusCredits > 0 && (
-          <p className="order-3 basis-full text-sm font-medium text-brand-text @[480px]:order-2 @[480px]:basis-auto">
-            {includedCredits !== undefined && (
+            })}
+          </p>
+          <p className="flex min-w-0 flex-wrap items-baseline gap-1 [grid-area:1/1]">
+            {monthlyPriceUsd !== undefined ? (
               <>
-                <strong className="text-xl font-semibold tracking-tight text-foreground">
-                  {formatLocalizedNumber(includedCredits)}
-                </strong>{" "}
+                {t(($) => {
+                  return $.billing.plans.usagePacks.priceFrom;
+                })}
+                <span className="text-2xl font-semibold tracking-tight text-foreground">
+                  {formatUsd(monthlyPriceUsd, 0)}
+                </span>
+                {t(($) => {
+                  return $.billing.plans.perMonth;
+                })}
               </>
+            ) : (
+              t(($) => {
+                return $.chat.billing.proCard.priceUnavailable;
+              })
             )}
-            <strong className="text-xl font-semibold tracking-tight">
-              {formatLocalizedNumber(bonusCredits, {
-                signDisplay: "always",
-              })}
-            </strong>{" "}
+          </p>
+        </div>
+        <div className="col-span-2 row-start-2 grid min-w-0 text-sm font-medium text-brand-text @[640px]:col-span-1 @[640px]:col-start-2 @[640px]:row-start-1">
+          <p aria-hidden="true" className="invisible [grid-area:1/1]">
+            <span className="inline-block w-24 text-xl">&nbsp;</span>{" "}
+            <span className="inline-block w-16 text-xl">&nbsp;</span>{" "}
             {t(($) => {
               return $.chat.billing.proCard.creditsNow;
             })}
           </p>
-        )}
+          {bonusCredits !== undefined && bonusCredits > 0 && (
+            <p className="[grid-area:1/1]">
+              {includedCredits !== undefined && (
+                <>
+                  <strong className="text-xl font-semibold tracking-tight text-foreground">
+                    {formatLocalizedNumber(includedCredits)}
+                  </strong>{" "}
+                </>
+              )}
+              <strong className="text-xl font-semibold tracking-tight">
+                {formatLocalizedNumber(bonusCredits, {
+                  signDisplay: "always",
+                })}
+              </strong>{" "}
+              {t(($) => {
+                return $.chat.billing.proCard.creditsNow;
+              })}
+            </p>
+          )}
+        </div>
 
         <Button
           type="button"
           variant="default"
           size="default"
           onClick={onUpgrade}
-          className="order-2 shrink-0 @[480px]:order-3"
+          className="col-start-2 row-start-1 shrink-0 @[640px]:col-start-3"
         >
           {t(($) => {
             return $.chat.billing.proCard.upgradeNow;
