@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1075.1](https://github.com/okou-ai/okou/compare/app-v0.1075.0...app-v0.1075.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **platform:** use connector in rewards label ([#43821](https://github.com/okou-ai/okou/issues/43821)) ([c846335](https://github.com/okou-ai/okou/commit/c8463354bb3470de4a0992dad42032a124db7ff8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.1
+    * @okouai/core bumped to 8.799.1
+
 ## [0.1075.0](https://github.com/okou-ai/okou/compare/app-v0.1074.0...app-v0.1075.0) (2026-10-29)
 
 
