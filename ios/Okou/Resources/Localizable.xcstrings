@@ -1208,12 +1208,6 @@
             "state": "translated",
             "value": "Loading connector…"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载连接器…"
-          }
         }
       }
     },
@@ -1224,12 +1218,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Action unavailable"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "操作不可用"
           }
         }
       }
@@ -1253,12 +1241,6 @@
             "state": "translated",
             "value": "Could not load connector"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法加载连接器"
-          }
         }
       }
     },
@@ -1269,12 +1251,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect an account for this Agent"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "为此 Agent 连接账号"
           }
         }
       }
@@ -1573,12 +1549,6 @@
             "state": "translated",
             "value": "Saving permission…"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在保存权限…"
-          }
         }
       }
     },
@@ -1589,12 +1559,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Checking permission…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在检查权限…"
           }
         }
       }
@@ -1618,12 +1582,6 @@
             "state": "translated",
             "value": "Permission unavailable"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "权限不可用"
-          }
         }
       }
     },
@@ -1646,12 +1604,6 @@
             "state": "translated",
             "value": "Expires %@"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有效期至 %@"
-          }
         }
       }
     },
@@ -1662,12 +1614,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Allowed · No expiration"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已允许 · 长期有效"
           }
         }
       }
@@ -1680,12 +1626,6 @@
             "state": "translated",
             "value": "Denied"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已拒绝"
-          }
         }
       }
     },
@@ -1696,12 +1636,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Allowed"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已允许"
           }
         }
       }
@@ -1714,12 +1648,6 @@
             "state": "translated",
             "value": "Previous permission expired"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "之前的权限已过期"
-          }
         }
       }
     },
@@ -1730,12 +1658,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Waiting for your confirmation"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等待确认"
           }
         }
       }
@@ -1748,12 +1670,6 @@
             "state": "translated",
             "value": "Allow %@"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "允许 %@"
-          }
         }
       }
     },
@@ -1764,12 +1680,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Deny %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拒绝 %@"
           }
         }
       }
@@ -1793,12 +1703,6 @@
             "state": "translated",
             "value": "this Agent"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此 Agent"
-          }
         }
       }
     },
@@ -1809,12 +1713,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Review permission"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看权限请求"
           }
         }
       }
@@ -2014,12 +1912,6 @@
             "state": "translated",
             "value": "Permission request unavailable"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "权限请求不可用"
-          }
         }
       }
     },
@@ -2108,12 +2000,6 @@
             "state": "translated",
             "value": "Open details to retry"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开详情重试"
-          }
         }
       }
     },
@@ -2124,12 +2010,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Permission saved · Continuation needed"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "权限已保存 · 等待继续对话"
           }
         }
       }
@@ -2142,12 +2022,6 @@
             "state": "translated",
             "value": "For %@ · %@"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "用于 %1$@ · %2$@"
-          }
         }
       }
     },
@@ -2158,12 +2032,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "View details"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看详情"
           }
         }
       }
@@ -2176,12 +2044,6 @@
             "state": "translated",
             "value": "Review continuation"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看并继续"
-          }
         }
       }
     },
@@ -2192,12 +2054,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ permissions"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 权限"
           }
         }
       }
