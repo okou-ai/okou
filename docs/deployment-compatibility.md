@@ -322,8 +322,10 @@ Transform lifecycle: a shape-only break registers its transform with
 `maxVersion: null`, the Desktop PR that adopts the new shape sets `maxVersion`
 as defined in
 [`client-transforms/types.ts`](../turbo/packages/api-contracts/src/client-transforms/types.ts),
-and once a floor raise passes `maxVersion` the gate reports the transform as
-unreachable until it is deleted.
+and once a floor raise passes `maxVersion` the gate rejects the unreachable
+transform. Remove its entry, runtime wiring, and retired tests together with the
+floor raise, verifying that the owning admission boundary rejects unsupported
+clients before producing the changed response.
 
 ### Coupled Guest Disk and Retained-Image Contracts
 

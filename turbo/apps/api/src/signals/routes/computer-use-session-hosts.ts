@@ -1,4 +1,3 @@
-import { computerUseClaimTransforms } from "@okouai/api-contracts/client-transforms/computer-use-claim";
 import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
 import { command, computed, type Command } from "ccstate";
 import { computerUseSessionHostsContract as contract } from "@okouai/api-contracts/contracts/computer-use";
@@ -248,7 +247,6 @@ export const computerUseSessionHostRoutes: readonly RouteEntry[] = [
   {
     route: contract.next,
     handler: sessionRoute(next$),
-    responseTransforms: computerUseClaimTransforms,
   },
   { route: contract.complete, handler: sessionRoute(complete$) },
 ];
