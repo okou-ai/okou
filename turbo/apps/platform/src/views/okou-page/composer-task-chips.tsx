@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
@@ -86,9 +87,46 @@ const TASK_CHIP = "shrink-0 px-3";
 // Center the row when it fits; overflow scrolls from the first chip. Padding
 // keeps focus rings and the active shadow inside the scrollport.
 const TASK_CHIP_ROW = cn(
-  "-my-1 mx-auto flex h-auto w-max max-w-full flex-nowrap items-center justify-start gap-2 overflow-x-auto overscroll-x-contain bg-transparent p-1",
+  "mx-auto flex h-auto w-max max-w-full flex-nowrap items-center justify-start gap-2 overflow-x-auto overscroll-x-contain scroll-smooth scroll-px-14 bg-transparent p-1 motion-reduce:scroll-auto",
   SCROLLBAR_HIDDEN,
 );
+
+function ComposerTaskChipRow({
+  signals,
+  tabs = false,
+  children,
+}: {
+  readonly signals: ComposerSignals;
+  readonly tabs?: boolean;
+  readonly children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const travel = useGet(signals.taskChips.railTravel$).tasks;
+  const setTravel = useSet(signals.taskChips.setRailTravel$);
+  const bindRail = useSet(signals.taskChips.bindRail$);
+  // Keep Base UI in charge of tab semantics and keyboard navigation.
+  const Row = tabs ? TabsList : "div";
+  return (
+    <div className="relative -my-1 min-w-0" data-rail-root="">
+      <Row
+        ref={bindRail}
+        data-rail="tasks"
+        role={tabs ? undefined : "group"}
+        aria-label={t(($) => {
+          return $.chat.taskChips.chooseTask;
+        })}
+        className={cn(TASK_CHIP_ROW, composerRailFade(travel))}
+        onScroll={(event) => {
+          setTravel("tasks", measureRail(event.currentTarget));
+        }}
+      >
+        {children}
+      </Row>
+      {travel?.canScrollBack && <ComposerRailPager side="back" />}
+      {travel?.canScrollForward && <ComposerRailPager side="forward" />}
+    </div>
+  );
+}
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
  * the task row uses. A fixed box is what makes the row read as one set: the
@@ -746,7 +784,7 @@ function ComposerTaskTabs({
         return $.chat.taskChips.label;
       })}
     >
-      <TabsList className={TASK_CHIP_ROW}>
+      <ComposerTaskChipRow signals={signals} tabs>
         {tasks.map((task) => {
           const Icon = TASK_ICONS[task];
           // Keep the Button's chip geometry; the styled TabsTrigger supplies
@@ -765,7 +803,7 @@ function ComposerTaskTabs({
             </TabsPrimitive.Tab>
           );
         })}
-      </TabsList>
+      </ComposerTaskChipRow>
       {tasks.map((task) => {
         return (
           <TabsContent key={task} value={task}>
@@ -850,13 +888,7 @@ export function ComposerTaskChips({
       })}
     >
       {selected === null && (
-        <div
-          className={TASK_CHIP_ROW}
-          role="group"
-          aria-label={t(($) => {
-            return $.chat.taskChips.chooseTask;
-          })}
-        >
+        <ComposerTaskChipRow signals={signals}>
           {tasks.map((task) => {
             const Icon = TASK_ICONS[task];
             return (
@@ -874,7 +906,7 @@ export function ComposerTaskChips({
               </Button>
             );
           })}
-        </div>
+        </ComposerTaskChipRow>
       )}
       {selected !== null && (
         <ComposerTaskPanel signals={signals} selected={selected} />
