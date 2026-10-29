@@ -113,6 +113,8 @@ case "${1:-}" in
       [ "${MOCK_STRIPE_INVOICE_PAID_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "26bacab4693d32e4a4453dce5c84e565d7129b9c" ]; then
       [ "${MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "94389e2203aaa62408b780156c2cf8f9a9cc5414" ]; then
+      [ "${MOCK_MEMBER_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "c8de6212dc54a5aae0d4658acf1afa6a35f939ab" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_DAV_RUNNER_READER_VALID:-1}" = "1" ]
@@ -1948,6 +1950,13 @@ assert_failure "Rollback target predates the Run output memory citation retireme
 [ ! -s "${tmp_dir}/memory-citation-floor.output" ] || fail "citation-dependent API must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Run output memory citation retirement must reject before artifact or host access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired member preference mapping" \
+  run_resolver "${tmp_dir}/member-preference-floor.output" MOCK_MEMBER_PREFERENCE_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/member-preference-floor.output" ] || fail "member-preference-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Retired member preference mapping must reject before artifact or host access"
 fi
 
 assert_failure "Cannot resolve the merged direct Workflow attachment runtime" \

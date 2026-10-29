@@ -1,7 +1,7 @@
 import { readHostedSitePolicy$ } from "./hosted-site-access.service";
 import { createHash, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { hostedSitePreviewGrantSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { db$, writeDb$ } from "../external/db";
@@ -103,7 +103,6 @@ export const createHostedSitePreviewGrant$ = command(
       ttlSeconds: PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS,
       presignedUrl: url,
       expiresAt,
-      refreshAfter: expiresAt,
       lastRequestedAt: issuedAt,
       updatedAt: issuedAt,
     };
