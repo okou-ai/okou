@@ -658,6 +658,29 @@ mod tests {
     const TEST_WORKING_DIR: &str = "/home/user/workspace";
     const TEST_ROOTFS: &str = "test-rootfs";
 
+    async fn create_watch_limit_entries(cache: &HomeImageCache) {
+        let root = cache.home_image_cache_dir().to_path_buf();
+        // These fresh empty entries only fill the watch budget. Prepare them
+        // before any watcher exists, without repeated recovery/path walks.
+        tokio::task::spawn_blocking(move || {
+            use runner_host::host_file::PRIVATE_DIR_MODE;
+            use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+            host_file::ensure_dir(&root, DirMode::Private, "watch-limit fixture root").unwrap();
+            for index in 0..MAX_HELD_HOME_STATES {
+                let entry = root.join(format!("{index:064x}"));
+                std::fs::DirBuilder::new()
+                    .mode(PRIVATE_DIR_MODE)
+                    .create(&entry)
+                    .unwrap();
+                std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(PRIVATE_DIR_MODE))
+                    .unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    }
+
     async fn commit_entry(cache: &HomeImageCache, reuse_key: &str) -> String {
         let image = format!("image-{reuse_key}");
         let cache_key = cache.scoped_cache_key(TEST_PROFILE_NAME, reuse_key, image.len() as u64);
@@ -792,12 +815,7 @@ mod tests {
     async fn startup_reconciliation_reports_eviction_at_the_watch_limit() {
         let temp = tempfile::tempdir().unwrap();
         let cache = HomeImageCache::new(RunnerPaths::new(temp.path().join("runner")));
-        for index in 0..MAX_HELD_HOME_STATES {
-            cache
-                .ensure_home_cache_entry_dir(&format!("{index:064x}"))
-                .await
-                .unwrap();
-        }
+        create_watch_limit_entries(&cache).await;
         let mut watcher = HomeCacheWatcher::new(cache.clone()).await.unwrap();
         let cache_key = commit_entry(&cache, "startup-at-limit").await;
         let change = watcher
@@ -852,12 +870,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(temp.path().join("runner"));
         let cache = HomeImageCache::new(paths);
-        for index in 0..MAX_HELD_HOME_STATES {
-            cache
-                .ensure_home_cache_entry_dir(&format!("{index:064x}"))
-                .await
-                .unwrap();
-        }
+        create_watch_limit_entries(&cache).await;
         let mut watcher = HomeCacheWatcher::new(cache.clone()).await.unwrap();
         assert_eq!(watcher.watch_by_cache_key.len(), MAX_HELD_HOME_STATES);
 
@@ -986,12 +999,7 @@ mod tests {
             .unwrap();
         let observer = HomeImageCache::shared(observer_paths, &home, "group-a");
         let publisher = HomeImageCache::shared(publisher_paths, &home, "group-b");
-        for index in 0..MAX_HELD_HOME_STATES {
-            observer
-                .ensure_home_cache_entry_dir(&format!("{index:064x}"))
-                .await
-                .unwrap();
-        }
+        create_watch_limit_entries(&observer).await;
         let mut watcher = HomeCacheWatcher::new(observer.clone()).await.unwrap();
         assert_eq!(watcher.watch_by_cache_key.len(), MAX_HELD_HOME_STATES);
         let foreign_cache_key = commit_entry(&publisher, "foreign-at-limit").await;
