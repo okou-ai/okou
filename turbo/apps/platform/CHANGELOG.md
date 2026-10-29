@@ -12,6 +12,59 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1073.0](https://github.com/okou-ai/okou/compare/app-v0.1072.2...app-v0.1073.0) (2026-10-29)
+
+
+### Features
+
+* add shared conversation visibility controls ([#43707](https://github.com/okou-ai/okou/issues/43707)) ([eb74ccc](https://github.com/okou-ai/okou/commit/eb74ccccd7aec24c2f29f1711a9b9f56decfe945))
+* **api:** add automatic continuation for busy chats ([#43725](https://github.com/okou-ai/okou/issues/43725)) ([e8a7e7e](https://github.com/okou-ai/okou/commit/e8a7e7e2127e2321a7c9919b04fe25ef47f0e6ac))
+* **app:** add in-app halloween quiz and participant review ([#43223](https://github.com/okou-ai/okou/issues/43223)) ([7311d2f](https://github.com/okou-ai/okou/commit/7311d2fa1557cd8eb079a7f73b388dd489c94f31))
+* **app:** give the cloud browser panel the app's own chrome ([#43676](https://github.com/okou-ai/okou/issues/43676)) ([c3c53d7](https://github.com/okou-ai/okou/commit/c3c53d7484884d81694cbe5ec99e87c14d1d3f1c))
+* **app:** recess the unified chat list and seat its ground below the sheet ([#43693](https://github.com/okou-ai/okou/issues/43693)) ([d102b12](https://github.com/okou-ai/okou/commit/d102b123ad85d759b9e3aa481b725a0fe7af419d))
+* **artifacts:** add deletion from catalog and chat previews ([#43708](https://github.com/okou-ai/okou/issues/43708)) ([61f19e3](https://github.com/okou-ai/okou/commit/61f19e3b89855ddcdcdfa2e6635c5b6224c237f1))
+* **connector:** support http custom api connectors ([#43736](https://github.com/okou-ai/okou/issues/43736)) ([78bcdb5](https://github.com/okou-ai/okou/commit/78bcdb51732ba11746f1807da98189458f7aa5ab))
+* introduce discord in the feature guide ([#43734](https://github.com/okou-ai/okou/issues/43734)) ([2495c4c](https://github.com/okou-ai/okou/commit/2495c4c82ccca5a82bb1261615c8822d5795a92e))
+* **platform:** dress the default agent's greeting avatar for halloween ([#43689](https://github.com/okou-ai/okou/issues/43689)) ([3cb3782](https://github.com/okou-ai/okou/commit/3cb37821515f983b0f59562b7a4a6e4e15977cd8))
+* prepare feature guide data and modal framework ([#43663](https://github.com/okou-ai/okou/issues/43663)) ([529e7dc](https://github.com/okou-ai/okou/commit/529e7dcdda27f1262f281ea399df57741f317152))
+* support outlook mail review in chat ([#43751](https://github.com/okou-ai/okou/issues/43751)) ([d4a01db](https://github.com/okou-ai/okou/commit/d4a01dbac178e4d112e2e88aeb9a515aeb5560d9))
+* **teams:** separate account identity from bot installation ([#43730](https://github.com/okou-ai/okou/issues/43730)) ([9a65fcc](https://github.com/okou-ai/okou/commit/9a65fcc9237e91f7e05213bfc5d37d9572098454))
+
+
+### Bug Fixes
+
+* align agentphone connection flow with slack ([#43735](https://github.com/okou-ai/okou/issues/43735)) ([8981509](https://github.com/okou-ai/okou/commit/898150923631a8d1e5ccac17e5eb76819391fafe))
+* **app:** copy website links directly when no share settings are available ([#43690](https://github.com/okou-ai/okou/issues/43690)) ([2760672](https://github.com/okou-ai/okou/commit/2760672b547e8b1cbf55b8539c3a5253fc3673ee))
+* **app:** make remote access settings responsive ([#43720](https://github.com/okou-ai/okou/issues/43720)) ([31530cb](https://github.com/okou-ai/okou/commit/31530cb000090b7e469efc39d7a62d802a8d9daf))
+* **app:** name the chat resources panel after the artifacts it shows ([#43698](https://github.com/okou-ai/okou/issues/43698)) ([dc49c72](https://github.com/okou-ai/okou/commit/dc49c72560ea7393cc52723e68ae6b4d379b55b0))
+* **app:** preserve settings during shared preference refresh ([#43701](https://github.com/okou-ai/okou/issues/43701)) ([4a7ea0b](https://github.com/okou-ai/okou/commit/4a7ea0b0662db0a65678321ddf73d247370e8bb7))
+* **app:** preserve tool toggle states during preference refresh ([#43677](https://github.com/okou-ai/okou/issues/43677)) ([859120e](https://github.com/okou-ai/okou/commit/859120e0ca63b28f8165511f0ab1715abb01d608))
+* **app:** reduce image viewer zoom with a consistent step ([#43653](https://github.com/okou-ai/okou/issues/43653)) ([2c30a37](https://github.com/okou-ai/okou/commit/2c30a372b0178f4f4d86b113bc09a9507cf4accc))
+* **app:** reduce password-manager prompts on credential relay forms ([#43711](https://github.com/okou-ai/okou/issues/43711)) ([205973f](https://github.com/okou-ai/okou/commit/205973f219f7709bad94c57303c70b30e534f3aa))
+* **platform:** draw a brand default for workspaces without a logo ([#43697](https://github.com/okou-ai/okou/issues/43697)) ([8590e4e](https://github.com/okou-ai/okou/commit/8590e4edb25eb067ea8c6e8039458769e3824300))
+
+
+### Refactoring
+
+* **platform:** remove ui loading demand history ([#43763](https://github.com/okou-ai/okou/issues/43763)) ([bc02e5e](https://github.com/okou-ai/okou/commit/bc02e5e7611620ceb6ffb7d0e593f42666bd0e29))
+* **platform:** serve pdf fonts and emoji from static cdn ([#43744](https://github.com/okou-ai/okou/issues/43744)) ([f2afea6](https://github.com/okou-ai/okou/commit/f2afea63f2874afd4b5d6c4c5522b942eca85379))
+
+
+### Performance Improvements
+
+* **app:** keep browser connections stable during lease refreshes ([#43772](https://github.com/okou-ai/okou/issues/43772)) ([2e61c1f](https://github.com/okou-ai/okou/commit/2e61c1fd69a72706508a4f406a94adc84c5be43e))
+* **app:** narrow sidebar chat subscriptions ([#43783](https://github.com/okou-ai/okou/issues/43783)) ([25e0778](https://github.com/okou-ai/okou/commit/25e0778de4596226a6c0957652ffaf93c41e57ba))
+* **app:** separate vnc fields from form status renders ([#43790](https://github.com/okou-ai/okou/issues/43790)) ([41cc437](https://github.com/okou-ai/okou/commit/41cc437bbb6586ac49c029666b5366104e7fb2a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.16.0
+    * @okouai/core bumped to 8.797.0
+    * @okouai/ui bumped to 1.18.6
+
 ## [0.1072.2](https://github.com/okou-ai/okou/compare/app-v0.1072.1...app-v0.1072.2) (2026-10-28)
 
 

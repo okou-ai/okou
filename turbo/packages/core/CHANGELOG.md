@@ -1,5 +1,39 @@
 # Changelog
 
+## [8.797.0](https://github.com/okou-ai/okou/compare/core-v8.796.2...core-v8.797.0) (2026-10-29)
+
+
+### Features
+
+* add shared conversation visibility controls ([#43707](https://github.com/okou-ai/okou/issues/43707)) ([eb74ccc](https://github.com/okou-ai/okou/commit/eb74ccccd7aec24c2f29f1711a9b9f56decfe945))
+* **api:** add automatic continuation for busy chats ([#43725](https://github.com/okou-ai/okou/issues/43725)) ([e8a7e7e](https://github.com/okou-ai/okou/commit/e8a7e7e2127e2321a7c9919b04fe25ef47f0e6ac))
+* **app:** add in-app halloween quiz and participant review ([#43223](https://github.com/okou-ai/okou/issues/43223)) ([7311d2f](https://github.com/okou-ai/okou/commit/7311d2fa1557cd8eb079a7f73b388dd489c94f31))
+* **app:** give the cloud browser panel the app's own chrome ([#43676](https://github.com/okou-ai/okou/issues/43676)) ([c3c53d7](https://github.com/okou-ai/okou/commit/c3c53d7484884d81694cbe5ec99e87c14d1d3f1c))
+* **artifacts:** add deletion from catalog and chat previews ([#43708](https://github.com/okou-ai/okou/issues/43708)) ([61f19e3](https://github.com/okou-ai/okou/commit/61f19e3b89855ddcdcdfa2e6635c5b6224c237f1))
+* **core:** enable chat timeline for staff ([#43745](https://github.com/okou-ai/okou/issues/43745)) ([d7941bd](https://github.com/okou-ai/okou/commit/d7941bd52f356f7591aa826f8aed2a1272c08d9d))
+* enable icloud connector for all users ([#43719](https://github.com/okou-ai/okou/issues/43719)) ([0fde908](https://github.com/okou-ai/okou/commit/0fde9085a848da626925cd29430e4541d84d7dc3))
+* prepare feature guide data and modal framework ([#43663](https://github.com/okou-ai/okou/issues/43663)) ([529e7dc](https://github.com/okou-ai/okou/commit/529e7dcdda27f1262f281ea399df57741f317152))
+* support outlook mail review in chat ([#43751](https://github.com/okou-ai/okou/issues/43751)) ([d4a01db](https://github.com/okou-ai/okou/commit/d4a01dbac178e4d112e2e88aeb9a515aeb5560d9))
+* **teams:** separate account identity from bot installation ([#43730](https://github.com/okou-ai/okou/issues/43730)) ([9a65fcc](https://github.com/okou-ai/okou/commit/9a65fcc9237e91f7e05213bfc5d37d9572098454))
+
+
+### Bug Fixes
+
+* align agentphone connection flow with slack ([#43735](https://github.com/okou-ai/okou/issues/43735)) ([8981509](https://github.com/okou-ai/okou/commit/898150923631a8d1e5ccac17e5eb76819391fafe))
+* **platform:** draw a brand default for workspaces without a logo ([#43697](https://github.com/okou-ai/okou/issues/43697)) ([8590e4e](https://github.com/okou-ai/okou/commit/8590e4edb25eb067ea8c6e8039458769e3824300))
+
+
+### Refactoring
+
+* remove slack workspace identity feature switch ([#43717](https://github.com/okou-ai/okou/issues/43717)) ([63323e7](https://github.com/okou-ai/okou/commit/63323e79be903c6316e5052d9c3c54cc9f543db9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.16.0
+
 ## [8.796.2](https://github.com/okou-ai/okou/compare/core-v8.796.1...core-v8.796.2) (2026-10-28)
 
 
