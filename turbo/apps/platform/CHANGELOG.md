@@ -12,6 +12,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1076.0](https://github.com/okou-ai/okou/compare/app-v0.1075.5...app-v0.1076.0) (2026-10-29)
+
+
+### Features
+
+* **app:** show a compact pro offer after the first task ([#43724](https://github.com/okou-ai/okou/issues/43724)) ([9388a08](https://github.com/okou-ai/okou/commit/9388a085626407cbcc8032cfd061e8527d88df17))
+
+
+### Bug Fixes
+
+* **app:** show access guidance in artifact lightboxes ([#43873](https://github.com/okou-ai/okou/issues/43873)) ([1e8cd78](https://github.com/okou-ai/okou/commit/1e8cd78ba36b66cdb44f564a267229bad4c2f1df))
+* **artifacts:** expose owner deletion on shared pages ([#43889](https://github.com/okou-ai/okou/issues/43889)) ([56f4bbe](https://github.com/okou-ai/okou/commit/56f4bbec6c59f81389ad0e158f9b090799872988))
+* **browser:** scope shared viewers and keepalive to the chat window ([#43872](https://github.com/okou-ai/okou/issues/43872)) ([21e89be](https://github.com/okou-ai/okou/commit/21e89bedb30ed755d9f41825f102607cea3635a0))
+* **mail:** treat outlook accepted sends as successful ([#43888](https://github.com/okou-ai/okou/issues/43888)) ([59d7bcb](https://github.com/okou-ai/okou/commit/59d7bcbb97937af5a48ca65c3c86153e0d73c678))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.4
+    * @okouai/core bumped to 8.800.0
+
 ## [0.1075.5](https://github.com/okou-ai/okou/compare/app-v0.1075.4...app-v0.1075.5) (2026-10-29)
 
 

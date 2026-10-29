@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.800.0](https://github.com/okou-ai/okou/compare/core-v8.799.3...core-v8.800.0) (2026-10-29)
+
+
+### Features
+
+* **app:** show a compact pro offer after the first task ([#43724](https://github.com/okou-ai/okou/issues/43724)) ([9388a08](https://github.com/okou-ai/okou/commit/9388a085626407cbcc8032cfd061e8527d88df17))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.17.4
+
 ## [8.799.3](https://github.com/okou-ai/okou/compare/core-v8.799.2...core-v8.799.3) (2026-10-29)
 
 
