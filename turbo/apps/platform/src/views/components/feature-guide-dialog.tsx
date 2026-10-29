@@ -31,6 +31,12 @@ import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { FeatureGuideConversationPreview } from "./feature-guide-conversation.tsx";
 
+const FEATURE_GUIDE_ACTION_ROUTES = {
+  "connect-discord": ROUTES.settingsDiscord,
+  "open-artifacts": ROUTES.artifacts,
+  "open-chats": ROUTES.home,
+} as const;
+
 function GuideMedia({
   media,
   selection,
@@ -249,9 +255,9 @@ function GuideContents({
           selection={snapshot.selection}
         />
       )}
-      {activeItem.action?.type === "connect-discord" ? (
+      {activeItem.action ? (
         <Link
-          pathname={ROUTES.settingsDiscord}
+          pathname={FEATURE_GUIDE_ACTION_ROUTES[activeItem.action.type]}
           className="inline-flex min-h-8 w-fit items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
           onClick={(event) => {
             if (shouldHandleLinkClick(event)) {

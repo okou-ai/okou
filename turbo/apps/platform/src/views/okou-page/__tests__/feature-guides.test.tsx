@@ -238,6 +238,84 @@ test("shows a Discord image, hides single-feature navigation, and opens setup wi
   });
 });
 
+test.each([
+  {
+    target: "artifacts",
+    action: "open-artifacts",
+    title: "Delete artifacts you no longer need",
+    label: "Manage your artifacts",
+    href: "/artifacts",
+    destinationRole: "heading",
+    destinationName: "Artifacts",
+  },
+  {
+    target: "chats",
+    action: "open-chats",
+    title: "Choose who can view a shared chat",
+    label: "Open your chats",
+    href: "/",
+    destinationRole: "textbox",
+    destinationName: "Message",
+  },
+] as const)(
+  "opens $target from the feature guide text link",
+  async (example) => {
+    const navigationEdition: FeatureGuideEdition = {
+      ...edition,
+      content: {
+        ...edition.content,
+        items: [
+          {
+            featureId: "overview",
+            title: "This week's updates",
+            description: "Explore the new capabilities",
+          },
+          {
+            featureId: example.action,
+            title: example.title,
+            description: "Manage your work in Okou",
+            action: { type: example.action, label: example.label },
+          },
+        ],
+      },
+    };
+    context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+      return respond(200, { edition: navigationEdition, preview: true });
+    });
+    await setupPage({
+      context,
+      path: `${path}?featureGuidePreview=1`,
+      featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: "This week's updates",
+    });
+    const navigation = within(dialog).getByRole("group", {
+      name: "Features in this update",
+    });
+    click(button(example.title, navigation));
+    await expect(
+      within(dialog).findByRole("heading", { name: example.title }),
+    ).resolves.toBeInTheDocument();
+    const link = queryAllByRoleFast("link", dialog).find((candidate) => {
+      return candidate.textContent?.trim() === example.label;
+    });
+    if (!link) {
+      throw new Error("Expected a feature navigation link");
+    }
+    expect(link).toHaveAttribute("href", example.href);
+    click(link);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    await expect(
+      screen.findByRole(example.destinationRole, {
+        name: example.destinationName,
+      }),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
 test("keeps an already-seen edition closed based on the server response", async () => {
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
     return respond(200, { edition: null });

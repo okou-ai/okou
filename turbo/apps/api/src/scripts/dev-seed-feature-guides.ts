@@ -1,6 +1,6 @@
 import { importFeatureGuideSchema } from "@okouai/api-contracts/contracts/feature-guides";
 import { command } from "ccstate";
-import discordGuide from "../feature-guides/discord-2026-10-28.json";
+import productGuide from "../feature-guides/product-updates-2026-10-28.json";
 import { optionalEnv } from "../lib/env";
 import {
   importFeatureGuide$,
@@ -14,7 +14,7 @@ export const seedPreviewFeatureGuide$ = command(
     }
     const result = await set(
       importFeatureGuide$,
-      importFeatureGuideSchema.parse(discordGuide),
+      importFeatureGuideSchema.parse(productGuide),
       "preview-seed",
       signal,
     );
