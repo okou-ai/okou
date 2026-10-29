@@ -60,15 +60,9 @@ def prepare(flow: http.HTTPFlow, *, registry_path: str) -> Awaitable[None] | Non
     state = registry.load_registry_state(registry_path)
     if peer is None or isinstance(state, registry.RegistryUnavailable):
         return None
-    compiled = state.compiled_firewalls.get(peer[0])
-    if compiled is None:
+    custom_candidates = state.compiled_custom_firewalls.get(peer[0])
+    if custom_candidates is None:
         return None
-    custom_firewalls = tuple(
-        firewall for firewall in compiled.firewalls if firewall.connector_runtime_kind == "custom"
-    )
-    if not custom_firewalls:
-        return None
-    custom_candidates = matching.CompiledFirewallSet(custom_firewalls)
 
     def matches(url: str) -> bool:
         return (
