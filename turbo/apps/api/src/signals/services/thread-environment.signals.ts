@@ -86,7 +86,7 @@ export function createModelProviderEnvironmentSignals(
 /** The integration a picked event arrived from, as the sandbox sees it. */
 function currentIntegration(
   contextType: PickedThreadInputEvent["contextType"],
-  feishuPlatform: string | undefined,
+  sourceIntegration: string | undefined,
 ): string | undefined {
   switch (contextType) {
     case "web":
@@ -94,10 +94,10 @@ function currentIntegration(
       return "web";
     }
     case "feishu": {
-      return feishuPlatform;
+      return sourceIntegration;
     }
     case "agentphone": {
-      return "phone";
+      return sourceIntegration === "whatsapp" ? "whatsapp" : "phone";
     }
     case "slack":
     case "teams":
@@ -136,7 +136,9 @@ export function createPlatformEnvironmentSignals(
       event.contextType,
       event.contextType === "feishu"
         ? (await get(threadContext.feishuContext$))?.platform
-        : undefined,
+        : event.contextType === "agentphone"
+          ? (await get(threadContext.agentPhoneContext$))?.channel
+          : undefined,
     );
     const previewAutomationBypass = get(previewAutomationBypass$);
     return {

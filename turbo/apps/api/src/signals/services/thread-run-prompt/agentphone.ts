@@ -37,6 +37,7 @@ export function createAgentPhoneThreadPrompt(
           },
           resolveIntegrationNotePrompt({
             triggerSource: "agentphone",
+            agentPhoneChannel: context.channel,
             featureSwitchContext: await get(featureSwitches$),
           }),
           context.threadContext,

@@ -316,6 +316,11 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       expect(run.appendSystemPrompt).toContain(
         "currently running inside: WhatsApp",
       );
+      expect(run.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("whatsapp");
+      expect(run.appendSystemPrompt).toContain(
+        "okou whatsapp message send --help",
+      );
+      expect(run.appendSystemPrompt).toContain("private `/artifacts/...");
       expect(run.appendSystemPrompt).toContain("/help");
       expect(run.appendSystemPrompt).not.toContain("Private SMS history");
       if (connectionState === "unlink") {

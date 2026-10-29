@@ -204,6 +204,7 @@ export const loadAgentPhoneQueuedLaunchMaterial$ = command(
         },
         resolveIntegrationNotePrompt({
           triggerSource: "agentphone",
+          agentPhoneChannel: context.channel,
           featureSwitchContext: args.featureSwitchContext,
         }),
         context.threadContext,
