@@ -131,24 +131,13 @@ function PublicArtifactDialog({
             scrollable={false}
             className="overflow-hidden bg-background"
           >
-            {resource.state === "hasError" ? (
-              <div
-                role="status"
-                className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground"
-              >
-                {t(($) => {
-                  return $.artifacts.access.title;
-                })}
-              </div>
-            ) : (
-              <ArtifactPreviewBody
-                artifact={undefined}
-                focusHtmlOnMount={false}
-                fullscreen={fullscreen}
-                imageCanvasSignals={signals.imageCanvas}
-                preview={current.preview}
-              />
-            )}
+            <ArtifactPreviewBody
+              artifact={undefined}
+              focusHtmlOnMount={false}
+              fullscreen={fullscreen}
+              imageCanvasSignals={signals.imageCanvas}
+              preview={current.preview}
+            />
           </DialogBody>
         </PreserveScrollAnchor>
       </DialogContent>

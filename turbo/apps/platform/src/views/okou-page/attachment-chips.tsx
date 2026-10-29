@@ -6,18 +6,19 @@ import {
   DialogIconButton,
 } from "./artifact-preview-dialog-frame.tsx";
 import type { ReactNode } from "react";
+import { ApiError } from "../../lib/api-error.ts";
 import {
   hostedSiteRecoveryTarget,
   hostedSiteRecoveryReason,
 } from "../../lib/hosted-site-access.ts";
 import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
+import { ArtifactAccessCard } from "../components/artifact-access-card.tsx";
 import { Button, DialogBody, cn } from "@okouai/ui";
 import {
   useGet,
   useLastLoadable,
   useLastResolved,
   useLoadable,
-  useResolved,
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -675,22 +676,22 @@ function ArtifactDialogTextBody({
   );
 }
 
-function ArtifactDialogImageStage({
+function ArtifactDialogImageBody({
   filename,
   fullscreen,
   imageCanvasSignals,
   imageNavigation,
   preview,
-  resourceUrl,
 }: {
   filename: string;
   fullscreen: boolean;
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
-  resourceUrl: string | null;
 }) {
   const { t } = useTranslation();
+  const resource = useLoadable(preview.resourceUrl$);
+  const resourceUrl = resource.state === "hasData" ? resource.data : null;
   // Marks live on the draft rather than in the file, so the viewer has to draw
   // them too — otherwise reopening an annotated image shows a clean picture.
   const annotation = preview.annotationTarget?.annotations ?? null;
@@ -704,7 +705,12 @@ function ArtifactDialogImageStage({
           navigation={imageNavigation}
           testIdPrefix="artifact-dialog"
         >
-          {resourceUrl === null ? (
+          {resource.state === "hasError" ? (
+            <ArtifactDialogResourceError
+              preview={preview}
+              error={resource.error}
+            />
+          ) : resourceUrl === null ? (
             <div
               role="status"
               aria-label={t(($) => {
@@ -756,32 +762,6 @@ function ArtifactDialogImageStage({
         </ArtifactImageNavigationRegion>
       </ArtifactDialogCard>
     </ArtifactDialogStage>
-  );
-}
-
-function ArtifactDialogImageBody({
-  filename,
-  fullscreen,
-  imageCanvasSignals,
-  imageNavigation,
-  preview,
-}: {
-  filename: string;
-  fullscreen: boolean;
-  imageCanvasSignals: ZoomableImageCanvasSignals;
-  imageNavigation?: ArtifactImageNavigationActions;
-  preview: Extract<AttachmentLightboxState, { kind: "image" }>;
-}) {
-  const resourceUrl = useResolved(preview.resourceUrl$) ?? null;
-  return (
-    <ArtifactDialogImageStage
-      filename={filename}
-      fullscreen={fullscreen}
-      imageCanvasSignals={imageCanvasSignals}
-      imageNavigation={imageNavigation}
-      preview={preview}
-      resourceUrl={resourceUrl}
-    />
   );
 }
 
@@ -1002,6 +982,42 @@ function ArtifactDialogOfficeDocumentBody({
   );
 }
 
+function ArtifactDialogResourceError({
+  preview,
+  error,
+}: {
+  preview: AttachmentLightboxState;
+  error: unknown;
+}) {
+  const { t } = useTranslation();
+  const target =
+    preview.kind === "html" ? hostedSiteRecoveryTarget(preview.url) : null;
+  if (target) {
+    return (
+      <HostedSiteAccessCard
+        target={target}
+        reason={hostedSiteRecoveryReason(error)}
+      />
+    );
+  }
+  if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <ArtifactAccessCard />
+      </div>
+    );
+  }
+  return (
+    <ArtifactDialogStage centered>
+      <p role="status" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.artifacts.preview.genericUnavailable;
+        })}
+      </p>
+    </ArtifactDialogStage>
+  );
+}
+
 export function ArtifactPreviewBody({
   artifact,
   focusHtmlOnMount = true,
@@ -1019,7 +1035,15 @@ export function ArtifactPreviewBody({
   preview: AttachmentLightboxState;
   textMaxCharacters?: number;
 }) {
+  const resource = useLoadable(preview.resourceUrl$);
   const filename = artifactDialogFilename(preview);
+
+  // Images keep their navigation region mounted across loading and errors.
+  if (resource.state === "hasError" && preview.kind !== "image") {
+    return (
+      <ArtifactDialogResourceError preview={preview} error={resource.error} />
+    );
+  }
 
   if (preview.kind === "image") {
     return (
@@ -1111,16 +1135,6 @@ function ArtifactDialogHtmlBody({
   const resource = useLastLoadable(preview.resourceUrl$);
   const src = resource.state === "hasData" ? resource.data : null;
   const isPresentationHtml = artifact?.artifactKind === "presentation-html";
-  const target = hostedSiteRecoveryTarget(preview.url);
-  if (resource.state === "hasError" && target) {
-    return (
-      <HostedSiteAccessCard
-        target={target}
-        reason={hostedSiteRecoveryReason(resource.error)}
-      />
-    );
-  }
-
   if (src === null) {
     // A blank panel is indistinguishable from an artifact that rendered
     // nothing, so the unresolved frame shows the same spinner every other
