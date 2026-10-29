@@ -148,52 +148,90 @@ export function createRunnerBrowserAllocation(
         return { outcome: "unavailable" };
       }
       const { owner, profile } = context;
-      const retainedProfileId = profile
-        ? await getBrowserUseProfile(profile.providerProfileId, signal)
-        : null;
+      return await set(allocateBrowserOwnerProfile$, owner, profile, signal);
+    },
+  );
+}
+
+export const allocateBrowserOwnerProfile$ = command(
+  async (
+    { set },
+    owner: BrowserOwnerAuthority,
+    profile: {
+      readonly providerProfileId: string;
+      readonly instanceId: string;
+      readonly status: string;
+    } | null,
+    signal: AbortSignal,
+  ): Promise<RunnerBrowserResponse> => {
+    if (profile && profile.status !== "stopped") {
+      return { outcome: "unavailable" };
+    }
+    const retainedProfileId = profile
+      ? await getBrowserUseProfile(profile.providerProfileId, signal)
+      : null;
+    signal.throwIfAborted();
+    // Only a confirmed missing profile permits fresh, empty-state recovery.
+    const created = retainedProfileId === null;
+    const providerProfileId =
+      retainedProfileId ??
+      (await createBrowserUseProfile(
+        `okou-owner-profile-${createHash("sha256")
+          .update(JSON.stringify([owner.orgId, owner.userId]))
+          .digest("hex")}`,
+        signal,
+      ));
+    const candidate = {
+      providerProfileId,
+      previousProfileId: profile?.providerProfileId ?? null,
+    };
+    if (signal.aborted) {
+      if (created) {
+        await set(
+          cleanupProfileCandidate$,
+          owner,
+          candidate,
+          false,
+          AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
+        );
+      }
       signal.throwIfAborted();
-      // Only a confirmed missing profile permits fresh, empty-state recovery.
-      const created = retainedProfileId === null;
-      const providerProfileId =
-        retainedProfileId ??
-        (await createBrowserUseProfile(
-          `okou-owner-profile-${createHash("sha256")
-            .update(JSON.stringify([owner.orgId, owner.userId]))
-            .digest("hex")}`,
-          signal,
-        ));
-      const candidate = {
-        providerProfileId,
-        previousProfileId: profile?.providerProfileId ?? null,
-      };
-      if (signal.aborted) {
-        if (created) {
-          await set(
+    }
+    // Cancellation can arrive after publication committed; reconcile first.
+    const published = await settleIncludingAbort(
+      set(
+        controlBrowserOwner$,
+        owner,
+        {
+          kind: "allocate",
+          providerProfileId,
+          previousProfile: profile,
+        },
+        signal,
+      ),
+    );
+    if (signal.aborted) {
+      if (created) {
+        await settle(
+          set(
             cleanupProfileCandidate$,
             owner,
             candidate,
-            false,
+            !published.ok,
             AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
-          );
-        }
+          ),
+        );
         signal.throwIfAborted();
       }
-      // Cancellation can arrive after publication committed; reconcile first.
-      const published = await settleIncludingAbort(
-        set(
-          controlBrowserOwner$,
-          owner,
-          {
-            kind: "allocate",
-            providerProfileId,
-            previousProfile: profile,
-          },
-          signal,
-        ),
-      );
-      if (signal.aborted) {
-        if (created) {
-          await settle(
+      signal.throwIfAborted();
+    }
+    const adopted =
+      published.ok &&
+      published.value.outcome === "accepted" &&
+      published.value.instance.providerProfileId === providerProfileId;
+    const cleaned =
+      created && !adopted
+        ? await settle(
             set(
               cleanupProfileCandidate$,
               owner,
@@ -201,35 +239,15 @@ export function createRunnerBrowserAllocation(
               !published.ok,
               AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
             ),
-          );
-          signal.throwIfAborted();
-        }
-        signal.throwIfAborted();
-      }
-      const adopted =
-        published.ok &&
-        published.value.outcome === "accepted" &&
-        published.value.instance.providerProfileId === providerProfileId;
-      const cleaned =
-        created && !adopted
-          ? await settle(
-              set(
-                cleanupProfileCandidate$,
-                owner,
-                candidate,
-                !published.ok,
-                AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
-              ),
-            )
-          : null;
-      signal.throwIfAborted();
-      if (!published.ok) {
-        throw published.error;
-      }
-      if (cleaned && !cleaned.ok) {
-        throw cleaned.error;
-      }
-      return published.value;
-    },
-  );
-}
+          )
+        : null;
+    signal.throwIfAborted();
+    if (!published.ok) {
+      throw published.error;
+    }
+    if (cleaned && !cleaned.ok) {
+      throw cleaned.error;
+    }
+    return published.value;
+  },
+);

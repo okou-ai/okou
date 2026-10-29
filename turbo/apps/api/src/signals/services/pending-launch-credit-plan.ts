@@ -1,6 +1,6 @@
-import { boolean, number, object, string, type output } from "zod";
+import { boolean, number, object, string } from "zod";
 
-import { eq, notExists, sql } from "drizzle-orm";
+import { and, eq, notExists, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -9,7 +9,6 @@ import {
   pgBooleanDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service";
 
 const capabilitiesSchema = object({
   planKey: string(),
@@ -25,13 +24,8 @@ const capabilitiesSchema = object({
   audioDailyRateLimit: number(),
   audioDailyDurationSeconds: number(),
 });
-export const pendingCreditPlanRowSchema = object({
-  caps: capabilitiesSchema.nullable(),
-  orgExists: boolean(),
-});
-
 /** Match entitlement-first locking, probing/locking org_metadata only on a miss. */
-export function pendingCreditPlanSql(orgId: string) {
+export function pendingCreditPlanSql(orgId: string, prerequisite?: SQL) {
   const builder = new QueryBuilder();
   const projection = sql`jsonb_build_object(
     'planKey', ${orgPlanEntitlements.planKey}, 'status', ${orgPlanEntitlements.status},
@@ -44,22 +38,23 @@ export function pendingCreditPlanSql(orgId: string) {
     'audioDailyDurationSeconds', ${orgPlanEntitlements.audioDailyDurationSeconds})`
     .mapWith(zodDriverValueDecoder(capabilitiesSchema))
     .as("caps");
-  const entitlement = builder
-    .$with("pending_credit_entitlement")
-    .as(
-      builder
-        .select({ caps: projection })
-        .from(orgPlanEntitlements)
-        .where(eq(orgPlanEntitlements.orgId, orgId))
-        .limit(1)
-        .for("update"),
-    );
+  const entitlement = builder.$with("pending_credit_entitlement").as(
+    builder
+      .select({ caps: projection })
+      .from(orgPlanEntitlements)
+      .where(and(eq(orgPlanEntitlements.orgId, orgId), prerequisite))
+      .limit(1)
+      .for("update"),
+  );
   const missingOrg = builder.$with("pending_credit_missing_org").as(
     builder
       .select({ orgId: orgMetadata.orgId })
       .from(orgMetadata)
       .where(
-        sql`${eq(orgMetadata.orgId, orgId)} AND ${notExists(builder.select({ caps: entitlement.caps }).from(entitlement))}`,
+        and(
+          sql`${eq(orgMetadata.orgId, orgId)} AND ${notExists(builder.select({ caps: entitlement.caps }).from(entitlement))}`,
+          prerequisite,
+        ),
       )
       .limit(1)
       .for("update"),
@@ -77,22 +72,6 @@ export function pendingCreditPlanSql(orgId: string) {
         .as("orgExists"),
     })
     .from(sql`(VALUES (1)) AS pending_credit_probe(value)`)
+    .where(prerequisite)
     .getSQL();
-}
-
-export function pendingCreditPlanResult(
-  rows: readonly output<typeof pendingCreditPlanRowSchema>[],
-  orgId: string,
-) {
-  const row = rows[0];
-  if (!row) {
-    throw new Error("Pending credit plan read returned no result");
-  }
-  if (!row.caps) {
-    if (row.orgExists) {
-      throw new Error(`Missing org plan entitlement for ${orgId}`);
-    }
-    return null;
-  }
-  return orgPlanCapabilitiesFromRow(row.caps, orgId);
 }

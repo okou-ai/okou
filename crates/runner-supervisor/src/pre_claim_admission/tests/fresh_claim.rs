@@ -43,7 +43,7 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
         active_runs: &active_runs,
         home_cache_snapshot: &home,
         sandbox_op_reporter: None,
-        has_home_cache: false,
+        home_cache: None,
         idle_destroy_tracker: &tracker,
         reuse_state_notify: &notify,
         blank_pool_diagnostics: &diagnostics,

@@ -13,15 +13,17 @@ use crate::executor::tests::support::{
 
 fn context_with_documents(bodies: &[String]) -> serde_json::Result<ExecutionContext> {
     let mut context = minimal_context();
-    context.storage_manifest = Some(serde_json::from_value(serde_json::json!({
-        "storageMounts": [],
-        "workflowSkills": bodies.iter().enumerate().map(|(index, body)| serde_json::json!({
-            "workflowId": uuid::Uuid::new_v4(),
-            "mountPath": format!("/home/user/.codex/skills/workflow-{index}"),
-            "skillMd": body,
-            "attachments": null,
-        })).collect::<Vec<_>>()
-    }))?);
+    context.storage_manifest = Some(
+        crate::executor::tests::support::downloaded_workflow_manifest(serde_json::json!({
+            "storageMounts": [],
+            "workflowSkills": bodies.iter().enumerate().map(|(index, body)| serde_json::json!({
+                "workflowId": uuid::Uuid::new_v4(),
+                "mountPath": format!("/home/user/.codex/skills/workflow-{index}"),
+                "skillMd": body,
+                "attachments": null,
+            })).collect::<Vec<_>>()
+        }))?,
+    );
     Ok(context)
 }
 

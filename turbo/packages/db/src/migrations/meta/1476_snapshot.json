@@ -1,5 +1,5 @@
 {
-  "id": "11d4cb37-146f-4dc5-901a-f18b3f3a1836",
+  "id": "829813ca-9094-44e0-a29c-b5dcf514b1ae",
   "prevId": "c949909c-de9e-40df-9ed3-b259ead27fbd",
   "version": "7",
   "dialect": "postgresql",
@@ -1287,13 +1287,7 @@
           "name": "agentphone_user_link_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "whatsapp_user_link_id": {
-          "name": "whatsapp_user_link_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "root_message_id": {
           "name": "root_message_id",
@@ -1322,27 +1316,6 @@
         }
       },
       "indexes": {
-        "idx_agentphone_chat_routes_whatsapp_root": {
-          "name": "idx_agentphone_chat_routes_whatsapp_root",
-          "columns": [
-            {
-              "expression": "whatsapp_user_link_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "root_message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_agentphone_chat_thread_routes_thread": {
           "name": "idx_agentphone_chat_thread_routes_thread",
           "columns": [
@@ -1424,19 +1397,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "agentphone_chat_thread_routes_whatsapp_user_link_id_whatsapp_user_links_id_fk": {
-          "name": "agentphone_chat_thread_routes_whatsapp_user_link_id_whatsapp_user_links_id_fk",
-          "tableFrom": "agentphone_chat_thread_routes",
-          "tableTo": "whatsapp_user_links",
-          "columnsFrom": [
-            "whatsapp_user_link_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "agentphone_chat_thread_routes_chat_thread_id_chat_threads_id_fk": {
           "name": "agentphone_chat_thread_routes_chat_thread_id_chat_threads_id_fk",
           "tableFrom": "agentphone_chat_thread_routes",
@@ -1454,12 +1414,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "chk_agentphone_chat_route_one_link": {
-          "name": "chk_agentphone_chat_route_one_link",
-          "value": "num_nonnulls(\"agentphone_chat_thread_routes\".\"agentphone_user_link_id\", \"agentphone_chat_thread_routes\".\"whatsapp_user_link_id\") = 1"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.agentphone_connection_codes": {
@@ -1850,12 +1805,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "whatsapp_user_link_id": {
-          "name": "whatsapp_user_link_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "from_number": {
           "name": "from_number",
           "type": "varchar(254)",
@@ -1914,21 +1863,6 @@
         }
       },
       "indexes": {
-        "idx_agentphone_messages_whatsapp_link": {
-          "name": "idx_agentphone_messages_whatsapp_link",
-          "columns": [
-            {
-              "expression": "whatsapp_user_link_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_agentphone_messages_agentphone_message": {
           "name": "idx_agentphone_messages_agentphone_message",
           "columns": [
@@ -2037,19 +1971,6 @@
           "tableTo": "agentphone_user_links",
           "columnsFrom": [
             "agentphone_user_link_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agentphone_messages_whatsapp_user_link_id_whatsapp_user_links_id_fk": {
-          "name": "agentphone_messages_whatsapp_user_link_id_whatsapp_user_links_id_fk",
-          "tableFrom": "agentphone_messages",
-          "tableTo": "whatsapp_user_links",
-          "columnsFrom": [
-            "whatsapp_user_link_id"
           ],
           "columnsTo": [
             "id"
@@ -17637,6 +17558,238 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.halloween_2026_batches": {
+      "name": "halloween_2026_batches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "captured_by": {
+          "name": "captured_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "participants": {
+          "name": "participants",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.halloween_2026_reviews": {
+      "name": "halloween_2026_reviews",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "batch_id": {
+          "name": "batch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_by": {
+          "name": "reviewed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "notified_at": {
+          "name": "notified_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rewarded_at": {
+          "name": "rewarded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "halloween_2026_reviews_batch_id_halloween_2026_batches_id_fk": {
+          "name": "halloween_2026_reviews_batch_id_halloween_2026_batches_id_fk",
+          "tableFrom": "halloween_2026_reviews",
+          "tableTo": "halloween_2026_batches",
+          "columnsFrom": [
+            "batch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.halloween_2026_rounds": {
+      "name": "halloween_2026_rounds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "questions": {
+          "name": "questions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "question_index": {
+          "name": "question_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "correct": {
+          "name": "correct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "selected_id": {
+          "name": "selected_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'playing'"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "halloween_2026_rounds_user": {
+          "name": "halloween_2026_rounds_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "halloween_2026_rounds_correct": {
+          "name": "halloween_2026_rounds_correct",
+          "value": "\"halloween_2026_rounds\".\"correct\" between 0 and 5"
+        },
+        "halloween_2026_rounds_question_index": {
+          "name": "halloween_2026_rounds_question_index",
+          "value": "\"halloween_2026_rounds\".\"question_index\" between 0 and 4"
+        },
+        "halloween_2026_rounds_outcome": {
+          "name": "halloween_2026_rounds_outcome",
+          "value": "\"halloween_2026_rounds\".\"outcome\" in ('playing', 'success', 'wrong', 'left')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.hosted_site_browser_sessions": {
@@ -34637,238 +34790,6 @@
           "value": "(\"wechat_messages\".\"direction\" = 'inbound' AND \"wechat_messages\".\"status\" = 'received') OR (\"wechat_messages\".\"direction\" = 'outbound' AND \"wechat_messages\".\"status\" IN ('sent', 'unknown'))"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.whatsapp_connection_codes": {
-      "name": "whatsapp_connection_codes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "code_hash": {
-          "name": "code_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "consumed_at": {
-          "name": "consumed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consumed_phone_handle": {
-          "name": "consumed_phone_handle",
-          "type": "varchar(254)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_whatsapp_connection_codes_hash_expires": {
-          "name": "idx_whatsapp_connection_codes_hash_expires",
-          "columns": [
-            {
-              "expression": "code_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_whatsapp_connection_codes_expires": {
-          "name": "idx_whatsapp_connection_codes_expires",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_whatsapp_connection_codes_user_org": {
-          "name": "idx_whatsapp_connection_codes_user_org",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.whatsapp_user_links": {
-      "name": "whatsapp_user_links",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "phone_handle": {
-          "name": "phone_handle",
-          "type": "varchar(254)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_whatsapp_user_links_phone_handle": {
-          "name": "idx_whatsapp_user_links_phone_handle",
-          "columns": [
-            {
-              "expression": "phone_handle",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_whatsapp_user_links_user_org": {
-          "name": "idx_whatsapp_user_links_user_org",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_whatsapp_user_links_org": {
-          "name": "idx_whatsapp_user_links_org",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.workflow_schedule_skips": {

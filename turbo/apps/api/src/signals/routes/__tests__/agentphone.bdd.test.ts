@@ -1976,7 +1976,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           isGroup: true,
         });
         expect(lastSend(sends).body).toContain("message this number directly");
-        expect(lastSend(sends).body).not.toContain("/agentphone/connect?");
+        expect(lastSend(sends).body).not.toContain("/settings/agentphone?");
         const status = await integrations.getAgentPhoneLinkStatus(actor);
         expect(status.linked).toBeTruthy();
         return;
@@ -2980,7 +2980,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     const switchPrompt = await commandReply("/switch");
     expect(switchPrompt).toContain("Open this link to connect");
-    expect(switchPrompt).toContain("/agentphone/connect?");
+    expect(switchPrompt).toContain("/settings/agentphone?");
     expect(switchPrompt).toContain(SMS_RISK_WARNING);
 
     const plainPromptUnlinked = await commandReply("hello again");
@@ -2988,7 +2988,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       "Click the link below to start using Okou.",
     );
     expect(plainPromptUnlinked).not.toContain("AgentPhone");
-    expect(plainPromptUnlinked).toContain("/agentphone/connect?");
+    expect(plainPromptUnlinked).toContain("/settings/agentphone?");
     expect(plainPromptUnlinked).not.toContain(SMS_RISK_WARNING);
   });
 
@@ -3857,7 +3857,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const blockedReply = lastSend(sends);
     expect(blockedReply.toNumber).toBe(bddGroupId(conversationId));
     expect(blockedReply.body).toContain("Only the linked sender");
-    expect(blockedReply.body).not.toContain("/agentphone/connect?");
+    expect(blockedReply.body).not.toContain("/settings/agentphone?");
     const stillLinked = await integrations.getAgentPhoneLinkStatus(actor);
     expect(stillLinked).toMatchObject({ linked: true, phoneHandle: phone });
 
@@ -3886,7 +3886,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(dmPrompt.toNumber).toBe(bddGroupId(strangerConversationId));
     expect(dmPrompt.replyToMessageId).toBe(strangerMessageId);
     expect(dmPrompt.body).toContain("message this number directly");
-    expect(dmPrompt.body).not.toContain("/agentphone/connect?");
+    expect(dmPrompt.body).not.toContain("/settings/agentphone?");
 
     // /connect from an unlinked sender in the linked conversation hits the
     // same account-command guard.
@@ -3925,7 +3925,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         );
       },
     );
-    expect(borrowPrompt.body).not.toContain("/agentphone/connect?");
+    expect(borrowPrompt.body).not.toContain("/settings/agentphone?");
     await runs.heartbeatRunner(runnerGroup);
     const borrowIdle = await runs.pollRunner(runnerGroup);
     expect(borrowIdle.body.job).toBeNull();
@@ -4237,8 +4237,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
   });
 
-  it.each(["unlink", "switch"] as const)(
-    "skips completion delivery after the phone link is removed through %s",
+  it.each(["unlink", "switch", "replace"] as const)(
+    "skips completion delivery after the phone link changes through %s",
     async (method) => {
       const integrations = createBddIntegrationApi(context);
       const ap = createAgentPhoneBddApi(context);
@@ -4271,7 +4271,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           body: "/switch",
           conversationId: dmConversationId,
         });
-        expect(lastSend(sends).body).toContain("/agentphone/connect?");
+        expect(lastSend(sends).body).toContain("/settings/agentphone?");
+      } else if (method === "replace") {
+        const proof = await ap.requestConnectLink(uniquePhoneHandle(), sends);
+        await integrations.requestConnectAgentPhone(
+          actor,
+          { ...proof, replacePhoneHandle: phone },
+          [200],
+        );
       } else {
         await integrations.requestUnlinkAgentPhone(actor, [204]);
       }

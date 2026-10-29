@@ -3,11 +3,13 @@ import UIKit
 
 /// Extend the rendered text's native edit menu through its public responder chain.
 final class MessageSelectionCell: UICollectionViewCell {
+  var representedRowID: String?
   var message: ChatMessage?
   var quote: ((ChatFeedbackSelection) -> Void)?
 
   override func prepareForReuse() {
     super.prepareForReuse()
+    representedRowID = nil
     message = nil
     quote = nil
   }

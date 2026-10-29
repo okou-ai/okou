@@ -1,3 +1,4 @@
+import type { TeamsConnectStatus } from "@okouai/api-contracts/contracts/teams-connect";
 import type { Command } from "ccstate";
 import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
 import { ConnectedIndicator } from "./components/connected-indicator.tsx";
@@ -94,6 +95,7 @@ const telegramIconImg = settingsIconAssetUrl("telegram");
 
 function ProviderCardActions({
   isConnected,
+  independentIdentity = false,
   isInstalled,
   isAdmin,
   installUrl,
@@ -111,6 +113,7 @@ function ProviderCardActions({
   disconnecting,
 }: {
   isConnected: boolean;
+  independentIdentity?: boolean;
   isInstalled: boolean;
   isAdmin: boolean;
   installUrl: string | null | undefined;
@@ -150,7 +153,7 @@ function ProviderCardActions({
           {installLabel}
         </Button>
       )}
-      {isInstalled && !isConnected && connectUrl && (
+      {(isInstalled || independentIdentity) && !isConnected && connectUrl && (
         <Button
           data-testid={connectTestId}
           variant="outline"
@@ -165,14 +168,15 @@ function ProviderCardActions({
           })}
         </Button>
       )}
-      {isInstalled && (isConnected || isAdmin) && (
+      {((isInstalled && (isConnected || isAdmin)) ||
+        (independentIdentity && isConnected)) && (
         <ProviderCardMenu
           moreOptionsLabel={moreOptionsLabel}
           disconnectLabel={disconnectLabel}
           uninstallLabel={uninstallLabel}
           disconnecting={disconnecting}
           onDisconnect={isConnected ? onDisconnect : undefined}
-          onUninstall={isAdmin ? onUninstall : undefined}
+          onUninstall={isAdmin && isInstalled ? onUninstall : undefined}
         />
       )}
     </>
@@ -574,6 +578,43 @@ function teamsCardDescription(args: {
   });
 }
 
+function teamsCardConnection(data: TeamsConnectStatus | null) {
+  if (!data) {
+    return {
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: false,
+      connectedDetail: null,
+      independentIdentity: false,
+      descriptionInstalled: false,
+      installUrl: null,
+      connectUrl: null,
+    };
+  }
+  const independentIdentity = data.workspaceIdentity === true;
+  const isConnected =
+    data.isConnected === true &&
+    (data.workspaceIdentity === true ||
+      (data.isInstalled && data.pendingInstallation !== true));
+  const isInstalled = data.isInstalled;
+  const isAdmin = data.isAdmin;
+  const connectedDetail = independentIdentity
+    ? (data.linkedAccounts[0]?.displayName ?? data.tenantName)
+    : (data.teamName ?? data.tenantName);
+
+  const entryUrl = teamsEntryUrl(data);
+  return {
+    isConnected,
+    isInstalled,
+    isAdmin,
+    connectedDetail,
+    independentIdentity: independentIdentity,
+    descriptionInstalled: independentIdentity || isInstalled,
+    installUrl: independentIdentity ? data.installUrl : entryUrl,
+    connectUrl: independentIdentity ? data.connectUrl : entryUrl,
+  };
+}
+
 function TeamsCard({ displayName }: { displayName: string }) {
   const { t } = useTranslation();
   const brandName = useGet(brandName$);
@@ -587,16 +628,15 @@ function TeamsCard({ displayName }: { displayName: string }) {
   const showUninstallDialog = useGet(showTeamsUninstallDialog$);
   const setShowUninstallDialog = useSet(setShowTeamsUninstallDialog$);
 
-  const isConnected =
-    teamsData?.isConnected === true &&
-    teamsData.isInstalled &&
-    teamsData.pendingInstallation !== true;
-  const isInstalled = teamsData?.isInstalled ?? false;
-  const isAdmin = teamsData?.isAdmin ?? false;
-  const connectedDetail = teamsData?.teamName ?? teamsData?.tenantName;
+  const connection = teamsCardConnection(teamsData);
+  const { isConnected, isInstalled, isAdmin, connectedDetail } = connection;
   const permissionMismatch = teamsData?.permissionMismatch === true;
   const description = teamsData
-    ? teamsCardDescription({ isInstalled, isConnected, isAdmin })
+    ? teamsCardDescription({
+        isInstalled: connection.descriptionInstalled,
+        isConnected,
+        isAdmin,
+      })
     : teamsDataLoadable.state === "hasError"
       ? t(($) => {
           return $.connectors.providerConnect.teams.statusFailed;
@@ -624,11 +664,12 @@ function TeamsCard({ displayName }: { displayName: string }) {
             <div className="text-sm text-muted-foreground">{description}</div>
           </div>
           <ProviderCardActions
+            independentIdentity={connection.independentIdentity}
             isConnected={isConnected}
             isInstalled={isInstalled}
             isAdmin={isAdmin}
-            installUrl={teamsData ? teamsEntryUrl(teamsData) : null}
-            connectUrl={teamsData ? teamsEntryUrl(teamsData) : null}
+            installUrl={connection.installUrl}
+            connectUrl={connection.connectUrl}
             connectedDetail={connectedDetail}
             connectedTestId="teams-connected-indicator"
             installTestId="teams-install-button"

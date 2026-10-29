@@ -54,7 +54,7 @@ export const createAgentPhoneLinkCode$ = command(
   },
 );
 
-const reloadAgentPhoneLinkStatus$ = command(({ set }) => {
+export const reloadAgentPhoneLinkStatus$ = command(({ set }) => {
   set(internalReload$, (prev) => {
     return prev + 1;
   });

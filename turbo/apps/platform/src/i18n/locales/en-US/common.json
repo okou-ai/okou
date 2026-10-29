@@ -521,6 +521,16 @@
       "kindIcon": "{{kind}} artifact",
       "loading": "Loading artifacts"
     },
+    "deletion": {
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "deleting": "Deleting…",
+      "description": "This removes the artifact and disables its Okou links. Copies already downloaded or saved to other services will remain.",
+      "hostedDescription": "This takes the website and all its published versions offline. Copies saved to other services will remain.",
+      "menu": "More actions for {{title}}",
+      "sharedDescription": "Remove this saved conversation from your artifacts. The original conversation and its shared link will stay available.",
+      "title": "Delete {{title}}?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",
@@ -620,7 +630,8 @@
       "organizationOptionUnnamed": "Anyone in your organization",
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
-      "publicOption": "Anyone with the link"
+      "publicOption": "Anyone with the link",
+      "updateFailed": "Couldn’t update access"
     },
     "sidebar": {
       "openSharedConversation": "Open shared conversation",
@@ -2057,6 +2068,7 @@
         "open": "Manage emails",
         "openEmail": "Open email: {{subject}}",
         "result": "{{succeeded}} completed · {{failed}} failed",
+        "resultAwaiting": "{{succeeded}} completed · {{awaitingConfirmation}} awaiting confirmation · {{failed}} failed",
         "search": "Search by subject or sender",
         "selectAll": "Select all",
         "selected": "{{quantity}} selected",
@@ -2072,16 +2084,19 @@
       "noSubject": "(No subject)",
       "noSubjectPlain": "No subject",
       "openEmail": "Open {{status}} email: {{subject}}",
-      "openInGmail": "Open in Gmail",
+      "openInProvider": "Open in {{provider}}",
       "recipientsLine": "to {{recipients}}",
-      "reconnectDescription": "You no longer have permission to access this email. Reconnect Gmail to continue.",
-      "reconnectGmail": "Reconnect Gmail",
+      "reconnectDescription": "You no longer have permission to access this email. Reconnect {{provider}} to continue.",
       "reconnecting": "Reconnecting…",
-      "reconnectToAccess": "Reconnect Gmail to access email: {{subject}}",
+      "reconnectProvider": "Reconnect {{provider}}",
+      "reconnectToAccess": "Reconnect {{provider}} to access email: {{subject}}",
+      "refreshStatus": "Refresh status",
+      "sendingDescription": "Outlook has not confirmed sending yet. Refresh the status or check Outlook before taking any further action.",
       "sentToast": "Email sent",
       "status": {
         "deleted": "Deleted",
         "draft": "Draft",
+        "sending": "Awaiting send confirmation",
         "sent": "Sent"
       },
       "toRecipients": "To: {{recipients}}",
@@ -2189,12 +2204,12 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "emptyDescription": "Files and chats from this chat will show up here.",
-      "emptyTitle": "No resources yet",
-      "loadFailed": "Could not load resources",
-      "loading": "Loading resources",
+      "emptyDescription": "Files, websites, and other artifacts made in this chat will show up here.",
+      "emptyTitle": "No artifacts yet",
+      "loadFailed": "Could not load artifacts",
+      "loading": "Loading artifacts",
       "showMore": "Show more",
-      "title": "Resources"
+      "title": "Artifacts and chats"
     },
     "run": {
       "collapseWorkHistory": "Collapse work history",
@@ -2260,7 +2275,8 @@
       "shareLink": "Shared conversation link",
       "shareLinkCopied": "Share link copied",
       "start": "Share messages",
-      "tooLarge": "Select fewer messages to share"
+      "tooLarge": "Select fewer messages to share",
+      "visibilityDescription": "Choose who can view this conversation. Only you can change access."
     },
     "shortcuts": {
       "number": "number"
@@ -3479,7 +3495,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Back to {{brandName}}",
         "connectDescription": "Link this phone number to your {{brandName}} account so you can interact with {{assistantName}} from text messages.",
         "connectTitle": "Connect phone number",
         "documentTitle": "Connect Messages",
@@ -3489,9 +3504,16 @@
         "invalidSignature": "The signature on this link is not valid.",
         "invalidTimestamp": "The timestamp on this link is not valid.",
         "invalidTitle": "Connect link is invalid",
+        "keepPhone": "Keep {{phone}}",
+        "phoneInUseDescription": "This phone number is connected to another Okou account or organization. Disconnect it there before trying again.",
+        "phoneInUseTitle": "Phone number already connected",
+        "phoneMismatchDescription": "Your Okou account currently uses {{currentPhone}} in this organization. Switch to {{requestedPhone}}, the number that opened this link?",
+        "phoneMismatchTitle": "Switch phone number?",
         "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.",
         "successDescription": "{{phone}} is connected. Send a text message to start chatting with {{assistantName}}.",
-        "successTitle": "Phone number connected"
+        "successTitle": "Phone number connected",
+        "switchPhone": "Switch to {{phone}}",
+        "unavailable": "Phone connection is currently unavailable."
       },
       "common": {
         "backToSettings": "Back to settings",
@@ -5922,6 +5944,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "You can’t view this conversation",
     "handoffDescription": "{{assistantName}} carries the context into a new chat",
     "handoffPrompt": "Continue this shared conversation with me: {{url}}",
     "makeConversationYours": "Make this conversation yours",

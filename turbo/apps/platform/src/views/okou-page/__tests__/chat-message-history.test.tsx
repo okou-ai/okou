@@ -88,9 +88,9 @@ test("A chat with no artifacts shows an empty resources panel", async () => {
   await expect(
     screen.findByText("The launch brief is complete."),
   ).resolves.toBeVisible();
-  click(await findFastControl("button", "Resources"));
+  click(await findFastControl("button", "Artifacts and chats"));
   await expect(
-    screen.findByText("No resources yet"),
+    screen.findByText("No artifacts yet"),
   ).resolves.toBeInTheDocument();
 });
 

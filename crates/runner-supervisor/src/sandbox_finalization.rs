@@ -2341,6 +2341,7 @@ mod tests {
 
                 let sandbox = cache_sandbox(format!("home-promotion-{session_id}"));
                 let current_manifest = StorageManifest {
+                    workflow_references: Vec::new(),
                     workflow_skills: Vec::new(),
                     storages: vec![StorageEntry {
                         name: "current-storage".into(),

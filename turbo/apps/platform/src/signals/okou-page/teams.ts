@@ -52,7 +52,9 @@ function createTeamsStatus(owner: string | null) {
     const current = {
       isInstalled: next.isInstalled,
       isConnected:
-        next.isInstalled && next.isConnected && !next.pendingInstallation,
+        next.isConnected &&
+        (next.workspaceIdentity === true ||
+          (next.isInstalled && !next.pendingInstallation)),
     };
     set(previous$, current);
     if (hasTeamsStatusChanged(previous, current)) {

@@ -209,7 +209,7 @@ async fn bootstrap_preserves_workflow_order_and_stops_on_document_helper_failure
         let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
         let mut context = minimal_context();
         context.agent_instructions = Some("current instructions".into());
-        context.storage_manifest = Some(serde_json::from_value(serde_json::json!({
+        context.storage_manifest = Some(crate::executor::tests::support::downloaded_workflow_manifest(serde_json::json!({
             "storageMounts": [],
             "workflowSkills": [
                 {"workflowId": uuid::Uuid::new_v4(), "mountPath": "/home/user/.codex/skills/first-workflow", "skillMd": "first document", "attachments": null},
@@ -284,15 +284,17 @@ async fn bootstrap_cancellation_while_publishing_never_applies_or_spawns() {
 fn batch_workflow_context() -> serde_json::Result<runner_types::types::ExecutionContext> {
     let mut context = minimal_context();
     context.agent_instructions = Some("current Agent instructions".into());
-    context.storage_manifest = Some(serde_json::from_value(serde_json::json!({
-        "storageMounts": [],
-        "workflowSkills": (0..65).map(|index| serde_json::json!({
-            "workflowId": uuid::Uuid::new_v4(),
-            "mountPath": format!("/home/user/.codex/skills/workflow-{index}"),
-            "skillMd": format!("captured document {index}"),
-            "attachments": null,
-        })).collect::<Vec<_>>()
-    }))?);
+    context.storage_manifest = Some(
+        crate::executor::tests::support::downloaded_workflow_manifest(serde_json::json!({
+            "storageMounts": [],
+            "workflowSkills": (0..65).map(|index| serde_json::json!({
+                "workflowId": uuid::Uuid::new_v4(),
+                "mountPath": format!("/home/user/.codex/skills/workflow-{index}"),
+                "skillMd": format!("captured document {index}"),
+                "attachments": null,
+            })).collect::<Vec<_>>()
+        }))?,
+    );
     Ok(context)
 }
 

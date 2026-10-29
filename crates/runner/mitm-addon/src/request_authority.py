@@ -13,6 +13,10 @@ from typing import Final, Literal
 
 from mitmproxy import http
 
+import connection_endpoints
+import connector_runtime_metadata
+import flow_metadata_keys as metadata_keys
+import public_destination
 from authority_utils import (
     IPV6_VERSION,
     format_url_host,
@@ -34,14 +38,85 @@ class TrustedAuthority:
     """Authority components trusted by firewall/auth decisions.
 
     For HTTPS, ``host`` is the normalized TLS SNI after HTTP request authority
-    validation. For non-HTTPS traffic, ``host`` is the transparent destination
-    because there is no SNI binding. ``url`` is the reconstructed URL used by
-    firewall matching and credential injection.
+    validation. HTTP uses the transparent destination unless a flow-owned custom
+    API binding independently pins its asserted domain to a public destination.
+    ``url`` is the reconstructed URL used by firewall matching and injection.
     """
 
     host: str
     port: int
     url: str
+
+
+@dataclass(frozen=True)
+class CustomHttpBinding:
+    """Flow-owned proof connecting a custom HTTP authority to a pinned public IP.
+
+    Neither a client Host assertion nor source-provided connector metadata
+    creates proof. Credential handling separately rechecks current ownership.
+    """
+
+    host: str
+    port: int
+    endpoint: tuple[str, int]
+    client_id: str
+    server_id: str
+
+
+def custom_http_destination_endpoint(flow: http.HTTPFlow) -> tuple[str, int] | None:
+    """Require the original IP target and any connected peer to agree publicly."""
+    address = connection_endpoints.server_address(flow.server_conn)
+    if address is None or address[1] != flow.request.port:
+        return None
+    if not public_destination.validate_runtime_destination_host(address[0]).allowed:
+        return None
+    if flow.server_conn.connected:
+        peer = connection_endpoints.server_peername(flow.server_conn)
+        if peer is not None and (
+            peer[1] != address[1]
+            or not public_destination.validate_runtime_destination_host(peer[0]).allowed
+            or ipaddress.ip_address(peer[0]) != ipaddress.ip_address(address[0])
+        ):
+            return None
+    return address
+
+
+def custom_http_binding(flow: http.HTTPFlow) -> CustomHttpBinding | None:
+    binding = flow.metadata.get(metadata_keys.CUSTOM_HTTP_BINDING)
+    return binding if isinstance(binding, CustomHttpBinding) else None
+
+
+def custom_http_binding_is_current(flow: http.HTTPFlow, binding: CustomHttpBinding) -> bool:
+    return (
+        flow.request.scheme == "http"
+        and flow.request.port == binding.port
+        and flow.client_conn.id == binding.client_id
+        and flow.server_conn.id == binding.server_id
+        and flow.error is None
+        and not flow.server_conn.error
+        and not flow.server_conn.tls
+        and flow.request.host == binding.endpoint[0]
+        and custom_http_destination_endpoint(flow) == binding.endpoint
+    )
+
+
+def custom_http_auth_is_allowed(flow: http.HTTPFlow, api_entry: dict, sandbox_info: dict) -> bool:
+    """Narrow the HTTP credential exception to the bound registered custom API."""
+    binding = custom_http_binding(flow)
+    auth_config = api_entry.get("auth", {})
+    if not isinstance(auth_config, dict) or any(
+        key not in ("headers", "query") for key in auth_config
+    ):
+        return False
+    firewalls = sandbox_info.get("firewalls", ())
+    if binding is None or not any(
+        connector_runtime_metadata.connector_runtime_kind(firewall) == "custom"
+        and any(api_entry is entry for entry in firewall.get("apis", ()))
+        for firewall in firewalls
+    ):
+        return False
+    authority = get_trusted_authority(flow)
+    return authority.host == binding.host and custom_http_binding_is_current(flow, binding)
 
 
 AuthorityValidationReason = Literal[
@@ -55,7 +130,7 @@ AuthorityValidationReason = Literal[
 
 
 class AuthorityValidationError(Exception):
-    """HTTPS authority validation failure with a public diagnostic reason.
+    """HTTPS authority or custom HTTP binding failure with a public reason.
 
     ``reason`` is exposed in proxy logs as ``reason``, network logs as
     ``firewall_error``, and the 403 JSON response body as ``error``.
@@ -63,11 +138,11 @@ class AuthorityValidationError(Exception):
     Valid reason values:
     - ``missing_sni``: the HTTPS request had no TLS SNI.
     - ``invalid_sni``: the TLS SNI failed hostname normalization.
-    - ``missing_authority``: the HTTPS request had no Host/``:authority``.
+    - ``missing_authority``: the request had no required Host/``:authority``.
     - ``invalid_authority``: an asserted HTTP authority was ambiguous or failed
       parsing or normalization.
-    - ``authority_mismatch``: an asserted authority hostname did not match TLS
-      SNI.
+    - ``authority_mismatch``: asserted authorities conflicted, disagreed with TLS
+      SNI, or failed the custom HTTP public-destination binding.
     - ``authority_port_mismatch``: an asserted authority port did not match the
       destination port.
     """
@@ -162,6 +237,55 @@ def _parse_host_authority(authority: str) -> tuple[str, int | None]:
     return host, parse_authority_port(raw_port)
 
 
+def get_http_authority_assertion(flow: http.HTTPFlow) -> TrustedAuthority:
+    """Parse untrusted HTTP assertions; callers must independently bind the IP."""
+    fallback_url = _build_url("http", flow.request.host, flow.request.port, flow.request.path)
+
+    def invalid(reason: AuthorityValidationReason, message: str) -> AuthorityValidationError:
+        return AuthorityValidationError(
+            reason,
+            message=message,
+            sni=None,
+            request_host=flow.request.host,
+            host_header=None,
+            request_port=flow.request.port,
+            fallback_url=fallback_url,
+        )
+
+    if not _host_headers_within_budget(flow.request.headers):
+        raise invalid("invalid_authority", "Request blocked: invalid HTTP Host authority")
+    raw_headers = flow.request.headers.get_all("Host")
+    if len(raw_headers) > 1:
+        raise invalid("invalid_authority", "Request blocked: multiple HTTP Host fields")
+    asserted_host = flow.request.host_header
+    if not asserted_host:
+        raise invalid("missing_authority", "Request blocked: missing HTTP Host authority")
+    assertions = [asserted_host, *raw_headers]
+    if flow.request.authority:
+        assertions.append(flow.request.authority)
+    normalized_host = ""
+    for assertion in assertions:
+        try:
+            host, port = _parse_host_authority(assertion)
+            host = normalize_hostname(host)
+        except UnicodeError, ValueError:
+            raise invalid(
+                "invalid_authority", "Request blocked: invalid HTTP Host authority"
+            ) from None
+        if normalized_host and host != normalized_host:
+            raise invalid("authority_mismatch", "Request blocked: conflicting HTTP authorities")
+        if (port if port is not None else 80) != flow.request.port:
+            raise invalid(
+                "authority_port_mismatch", "Request blocked: HTTP authority port mismatch"
+            )
+        normalized_host = host
+    return TrustedAuthority(
+        host=normalized_host,
+        port=flow.request.port,
+        url=_build_url("http", normalized_host, flow.request.port, flow.request.path),
+    )
+
+
 def get_trusted_authority(flow: http.HTTPFlow) -> TrustedAuthority:
     """Resolve the authority trusted for firewall/auth decisions.
 
@@ -170,16 +294,31 @@ def get_trusted_authority(flow: http.HTTPFlow) -> TrustedAuthority:
     upstream TLS, while Host, HTTP/1 request-target authority, and HTTP/2/3
     ``:authority`` values are only client assertions. Require every HTTP
     authority to agree with SNI before using the URL for firewall matching or
-    credential injection. For non-HTTPS traffic there is no SNI binding, so use
-    the transparent destination host and do not trust Host.
+    credential injection. HTTP has no SNI: use its transparent destination unless
+    custom API preparation established a still-current public-IP binding. Host
+    assertions alone never change authority.
 
-    HTTPS validation failures raise ``AuthorityValidationError`` with one of
-    the documented ``AuthorityValidationReason`` values.
+    HTTPS validation and custom HTTP binding failures raise
+    ``AuthorityValidationError`` with a documented ``AuthorityValidationReason``.
     """
     scheme = flow.request.scheme
     port = flow.request.port
     path = flow.request.path
     request_host = flow.request.host
+
+    if scheme == "http" and (binding := custom_http_binding(flow)) is not None:
+        asserted = get_http_authority_assertion(flow)
+        if asserted.host != binding.host or not custom_http_binding_is_current(flow, binding):
+            raise AuthorityValidationError(
+                "authority_mismatch",
+                message="Request blocked: custom HTTP destination binding changed",
+                sni=None,
+                request_host=request_host,
+                host_header=None,
+                request_port=port,
+                fallback_url=_build_url(scheme, binding.host, port, path),
+            )
+        return asserted
 
     if scheme != "https":
         return TrustedAuthority(

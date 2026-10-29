@@ -1,3 +1,4 @@
+import { canReadSharedThreadPolicy$ } from "./shared-thread-access.service";
 import { command } from "ccstate";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import {
@@ -25,8 +26,8 @@ import { createHostedSiteDownloadGrant$ } from "./hosted-site-download.service";
 /** Snapshot authority is independent of the original resource's current state. */
 export const sharedThreadArtifactSnapshot$ = command(
   async (
-    { get },
-    reference: SharedThreadArtifactReference,
+    { get, set },
+    reference: SharedThreadArtifactReference & { readonly viewerId?: string },
     signal: AbortSignal,
   ) => {
     const stored = await settle(
@@ -54,7 +55,13 @@ export const sharedThreadArtifactSnapshot$ = command(
     if (
       policy.threadId !== reference.threadId ||
       policy.publicBrand !== reference.publicBrand ||
-      policy.status !== "active"
+      policy.status !== "active" ||
+      !(await set(
+        canReadSharedThreadPolicy$,
+        policy,
+        reference.viewerId,
+        signal,
+      ))
     ) {
       return null;
     }
@@ -94,7 +101,7 @@ export const sharedThreadArtifactSnapshot$ = command(
 export const sharedThreadArtifactTarget$ = command(
   async (
     { set },
-    reference: SharedThreadArtifactReference,
+    reference: SharedThreadArtifactReference & { readonly viewerId?: string },
     signal: AbortSignal,
   ) => {
     const snapshot = await set(

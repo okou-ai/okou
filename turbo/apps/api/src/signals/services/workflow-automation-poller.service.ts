@@ -3,7 +3,7 @@ import { PROACTIVE_JOBS_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/pr
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import {
   workflows,
   workflowUserAutomationThreads,

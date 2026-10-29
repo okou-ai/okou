@@ -1,7 +1,6 @@
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import {
-  threadModelReplacementEventStatements,
   threadModelReplacementWritePlan,
   resolveEnqueuedChatInputModel$,
   type EnqueuedChatInputModel,
@@ -11,10 +10,7 @@ import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { waitUntil } from "../context/wait-until";
-import {
-  ApiDispatchTimingCollector,
-  type ApiDispatchTimingDimensions,
-} from "./api-dispatch-timing.service";
+import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
   pickEnqueuedChatThread$,
@@ -27,8 +23,6 @@ import {
 import {
   ScheduleOccurrenceUnavailableError,
   workflowAutomationQueueEventPlan,
-  pendingWorkflowScheduleTickCondition,
-  workflowScheduleRevocationRows,
   type RunWorkflowAutomationNowArgs,
   type RunWorkflowAutomationResult,
 } from "./workflow-automation-enqueue.service";
@@ -38,23 +32,21 @@ import {
   type WorkflowAdmissionOutcome,
   type WorkflowAdmissionSchedulePath,
 } from "./workflow-queue-admission-timing.service";
-import {
-  consumeWorkflowScheduleAnchorSql,
-  journalWorkflowScheduleClaimSql,
-} from "./workflow-schedule-queue.service";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { now, nowDate } from "../../lib/time";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import {
+  workflowInputCommitSql,
+  workflowInputCommitRowSchema,
+  workflowInputRollbackReason,
+} from "./workflow-input-commit-plan";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
-import {
-  appendCanonicalChatEventsSql,
-  canonicalChatEventAppendCtes,
-} from "./chat-event-append.service";
+import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { PROACTIVE_JOBS_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { runnableJobsExistSql } from "./user-jobs-query";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
@@ -70,7 +62,7 @@ import {
 import { gmailQueueAdmissionSql } from "./workflow-gmail-queue.service";
 import { googleCalendarQueueAdmissionSql } from "./workflow-google-calendar-queue.service";
 import {
-  googleFormsQueueReceiptSql,
+  googleFormsQueueReceiptPlan,
   GoogleFormsSourceTransitionChangedError,
 } from "./workflow-google-forms-queue.service";
 import { googleMeetQueueAdmissionSql } from "./workflow-google-meet-queue.service";
@@ -303,7 +295,7 @@ const prepareWorkflowQueueSource$ = command(
         return {
           steps: [
             {
-              statement: googleFormsQueueReceiptSql(plan.source, nowDate()),
+              ...googleFormsQueueReceiptPlan(plan.source, nowDate()),
               failure: { kind: "google-forms" },
             },
           ],
@@ -326,57 +318,6 @@ const prepareWorkflowQueueSource$ = command(
   },
 );
 
-const WORKFLOW_SQL_TIMING_ACTIONS = {
-  context: "api_dispatch_workflow_enqueue_event_context_insert",
-  event: "api_dispatch_workflow_enqueue_event_insert",
-  schedule: "api_dispatch_workflow_enqueue_schedule_claim",
-  ticks: "api_dispatch_workflow_enqueue_replace_pending_ticks",
-  source: "api_dispatch_workflow_enqueue_source_transition",
-  queue: "api_dispatch_workflow_enqueue_queue_upsert",
-} as const;
-type WorkflowSqlTimingMark = {
-  readonly step: keyof typeof WORKFLOW_SQL_TIMING_ACTIONS | "finished";
-  readonly startedAt: number;
-};
-
-class WorkflowPendingTickTiming {
-  lookupStartedAt?: number;
-  lookupFinishedAt?: number;
-  revocationStartedAt?: number;
-  revocationFinishedAt?: number;
-  targetCount?: number;
-
-  readonly finishLookup = (): void => {
-    safeSync(() => {
-      this.lookupFinishedAt = now();
-    });
-  };
-
-  startRevocation(): void {
-    safeSync(() => {
-      this.revocationStartedAt = now();
-    });
-  }
-
-  readonly finishRevocation = (): void => {
-    safeSync(() => {
-      this.revocationFinishedAt = now();
-    });
-  };
-}
-
-function createWorkflowSqlTiming(): {
-  readonly startedAt: number;
-  readonly marks: WorkflowSqlTimingMark[];
-  readonly tickTiming: WorkflowPendingTickTiming;
-} {
-  return {
-    startedAt: now(),
-    marks: [],
-    tickTiming: new WorkflowPendingTickTiming(),
-  };
-}
-
 function workflowPendingTickTargetCountBucket(count: number): string {
   if (count === 0) {
     return "0";
@@ -391,83 +332,6 @@ function workflowPendingTickTargetCountBucket(count: number): string {
     return "5_16";
   }
   return "17_plus";
-}
-
-function recordWorkflowPendingTickTimings(
-  timing: ApiDispatchTimingCollector,
-  observation: WorkflowPendingTickTiming,
-  dimensions: ApiDispatchTimingDimensions | undefined,
-): void {
-  const intervals = [
-    [
-      "api_dispatch_workflow_enqueue_pending_tick_lookup",
-      observation.lookupStartedAt,
-      observation.lookupFinishedAt,
-    ],
-    [
-      "api_dispatch_workflow_enqueue_pending_tick_revocation_append",
-      observation.revocationStartedAt,
-      observation.revocationFinishedAt,
-    ],
-  ] as const;
-  for (const [action, startedAt, finishedAt] of intervals) {
-    if (startedAt !== undefined && finishedAt !== undefined) {
-      timing.recordElapsed(action, "nested", startedAt, finishedAt, dimensions);
-    }
-  }
-}
-
-/** Recording reads numeric metadata only, never SQL resources or query callbacks. */
-function recordWorkflowSqlTimings(
-  timing: ApiDispatchTimingCollector,
-  marks: readonly WorkflowSqlTimingMark[],
-  transactionStartedAt: number,
-  pendingTickTiming: WorkflowPendingTickTiming,
-) {
-  safeSync(() => {
-    const finishedAt = now();
-    const pendingTickDimensions =
-      pendingTickTiming.targetCount === undefined
-        ? undefined
-        : {
-            workflow_pending_tick_target_count_bucket:
-              workflowPendingTickTargetCountBucket(
-                pendingTickTiming.targetCount,
-              ),
-          };
-    timing.recordElapsed(
-      "api_dispatch_workflow_enqueue_transaction",
-      "nested",
-      transactionStartedAt,
-      finishedAt,
-    );
-    const first = marks[0];
-    if (first) {
-      const last = marks.at(-1);
-      timing.recordElapsed(
-        "api_dispatch_workflow_enqueue_transaction_callback",
-        "nested",
-        first.startedAt,
-        last?.step === "finished" ? last.startedAt : finishedAt,
-      );
-    }
-    for (const [index, mark] of marks.entries()) {
-      if (mark.step !== "finished") {
-        timing.recordElapsed(
-          WORKFLOW_SQL_TIMING_ACTIONS[mark.step],
-          "nested",
-          mark.startedAt,
-          marks[index + 1]?.startedAt ?? finishedAt,
-          mark.step === "ticks" ? pendingTickDimensions : undefined,
-        );
-      }
-    }
-    recordWorkflowPendingTickTimings(
-      timing,
-      pendingTickTiming,
-      pendingTickDimensions,
-    );
-  });
 }
 
 interface PreparedWorkflowInputCommit {
@@ -561,28 +425,6 @@ const commitProactiveWorkflowInput$ = command(
   },
 );
 
-/** Compose the existing append from plain values; SQL executes in the owner. */
-function pendingTickRevocationSql(
-  chatThreadId: string,
-  targets: Parameters<typeof workflowScheduleRevocationRows>[0]["targets"],
-  currentTime: Date,
-) {
-  return appendCanonicalChatEventsSql(
-    workflowScheduleRevocationRows({ chatThreadId, targets, currentTime }),
-    "any",
-  );
-}
-
-function requireWorkflowInputInserted(
-  inserted: number | null,
-  conflict: PreparedWorkflowInputCommit["plan"]["conflict"],
-): boolean {
-  if (inserted === 0 && conflict === "none") {
-    throw new Error("Workflow queue event insert returned no row");
-  }
-  return inserted !== 0;
-}
-
 function usesProactiveWorkflowInput(input: PreparedWorkflowInputCommit) {
   const proactiveKind =
     input.args.due.automation.officialBlueprintKey === null
@@ -596,27 +438,6 @@ function usesProactiveWorkflowInput(input: PreparedWorkflowInputCommit) {
   );
 }
 
-function pendingTickLookup(
-  chatThreadId: string,
-  automationId: string,
-  eventId: string,
-) {
-  return {
-    fields: {
-      id: chatEvents.id,
-      createdAt: chatEvents.createdAt,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-    },
-    join: eq(chatAutomationContext.id, chatEvents.contextId),
-    condition: pendingWorkflowScheduleTickCondition({
-      chatThreadId,
-      automationId,
-      eventId,
-    }),
-  };
-}
-
 const commitWorkflowInput$ = command(
   async (
     { set },
@@ -626,133 +447,126 @@ const commitWorkflowInput$ = command(
     if (usesProactiveWorkflowInput(input)) {
       return await set(commitProactiveWorkflowInput$, input, signal);
     }
+    signal.throwIfAborted();
     const { args, plan, source, replacePendingTicks, model, timing } = input;
     const { automation, chatThreadId } = args.due;
-    const queueTarget = { chatThreadId, orgId: automation.orgId };
-    const { startedAt, marks, tickTiming } = createWorkflowSqlTiming();
-    // Context + input + thread model replacement + queue + receipt/claim share
-    // one rollback authority.
-    // The finite callback performs only SQL, never commands or external I/O.
-    const eventId = await set(writeDb$)
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0333; new non-billing transactions are prohibited.
-      .transaction(async (tx) => {
-        signal.throwIfAborted();
-        // Event sequence precedes the context FK's thread KEY SHARE, matching
-        // the pick/session writer's lock order (main #37567).
-        marks.push({ step: "event", startedAt: now() });
-        const inserted = (
-          await tx.execute(
-            appendCanonicalChatEventsSql([plan.row], plan.conflict),
-          )
-        ).rowCount;
-        if (!requireWorkflowInputInserted(inserted, plan.conflict)) {
-          return null;
-        }
-        // Context failure rolls back the sequence and event with this owner;
-        // an idempotent loser never writes a new context.
-        marks.push({ step: "context", startedAt: now() });
-        await tx
-          .insert(chatAutomationContext)
-          .values(plan.context)
-          .onConflictDoNothing();
-        signal.throwIfAborted();
-        const eventId = plan.row.id;
-        if (args.scheduleClaim) {
-          marks.push({ step: "schedule", startedAt: now() });
-          const claim = args.scheduleClaim;
-          const admittedAt = nowDate();
-          if (
-            (
-              await tx.execute(
-                consumeWorkflowScheduleAnchorSql(claim, admittedAt),
-              )
-            ).rowCount !== 1
-          ) {
-            throw new ScheduleOccurrenceUnavailableError();
-          }
-          if (
-            (
-              await tx.execute(
-                journalWorkflowScheduleClaimSql(claim, eventId, admittedAt),
-              )
-            ).rowCount !== 1
-          ) {
-            throw new Error("Morning Brief schedule claim was not journaled");
-          }
-        }
-        // Claim first, so a losing tick never revokes the winner. Manual runs
-        // stay distinct. A batch preserves target ordering and context edges.
-        if (replacePendingTicks) {
-          tickTiming.lookupStartedAt = now();
-          marks.push({ step: "ticks", startedAt: tickTiming.lookupStartedAt });
-          const tick = pendingTickLookup(chatThreadId, automation.id, eventId);
-          const targets = await tx
-            .select(tick.fields)
-            .from(chatEvents)
-            .innerJoin(chatAutomationContext, tick.join)
-            .where(tick.condition)
-            .orderBy(asc(chatEvents.seqId))
-            .finally(tickTiming.finishLookup);
-          tickTiming.targetCount = targets.length;
-          if (targets.length > 0) {
-            tickTiming.startRevocation();
-            // Discard raw rows inside the owner; only the void promise is observed.
-            await (async () => {
-              await tx.execute(
-                pendingTickRevocationSql(chatThreadId, targets, nowDate()),
-              );
-            })().finally(tickTiming.finishRevocation);
-          }
-        }
-        marks.push({ step: "source", startedAt: now() });
-        for (const step of source.steps) {
-          const rowCount = (await tx.execute(step.statement)).rowCount;
-          if (step.failure && rowCount === 0) {
-            if (
-              source.callbackDuplicateSql &&
-              (await tx.execute(source.callbackDuplicateSql)).rowCount !== 0
-            ) {
-              throw new ChatRunFinishedAutomationAlreadyAdmittedError();
-            }
-            throw workflowSourceAdmissionError(step.failure);
-          }
-        }
-        const replacement = model.threadModelReplacement;
-        await (async () => {
-          if (!replacement) {
-            return;
-          }
-          const updatedAt = nowDate();
-          const write = threadModelReplacementWritePlan(replacement, updatedAt);
-          const [updated] = await tx
+    const database = set(writeDb$);
+    const startedAt = now();
+    const currentTime = nowDate();
+    const queue = queuedChatThreadEnqueuePlan({
+      chatThreadId,
+      orgId: automation.orgId,
+    });
+    const queueStatement = database
+      .insert(queuedChatThreads)
+      .select(
+        sql`SELECT ${queue.values.chatThreadId}::uuid, ${queue.values.orgId},
+        ${sql.param(queue.values.queuedAt, queuedChatThreads.queuedAt)}, NULL::uuid, NULL::timestamp
+        FROM inserted`,
+      )
+      .onConflictDoUpdate(queue.conflict)
+      .returning({ id: queuedChatThreads.chatThreadId })
+      .getSQL();
+    const replacement = model.threadModelReplacement;
+    const write = replacement
+      ? threadModelReplacementWritePlan(replacement, currentTime)
+      : null;
+    const replacementPlan = write
+      ? {
+          statement: database
             .update(write.table)
             .set(write.values)
-            .where(write.where)
-            .returning(write.returning);
-          if (!updated) {
-            return;
-          }
-          for (const statement of threadModelReplacementEventStatements(
-            write.eventScope,
-          )) {
-            await tx.execute(statement);
-          }
-        })();
-        marks.push({ step: "queue", startedAt: now() });
-        const queuePlan = queuedChatThreadEnqueuePlan(queueTarget);
-        await tx
-          .insert(queuedChatThreads)
-          .values(queuePlan.values)
-          .onConflictDoUpdate(queuePlan.conflict);
+            .where(and(write.where, sql`EXISTS (SELECT 1 FROM inserted)`))
+            .returning(write.returning)
+            .getSQL(),
+          eventScope: write.eventScope,
+        }
+      : undefined;
+    const statement = workflowInputCommitSql({
+      plan,
+      source,
+      automationId: automation.id,
+      currentTime,
+      replacePendingTicks: replacePendingTicks !== undefined,
+      scheduleClaim: args.scheduleClaim,
+      queueStatement,
+      replacement: replacementPlan,
+    });
+    let tickCount: number | undefined;
+    const executionStartedAt = now();
+    const result = await settle(
+      (async () => {
+        const [row] = parseRawRows(
+          workflowInputCommitRowSchema,
+          await database.execute(statement),
+        );
         signal.throwIfAborted();
-        marks.push({ step: "finished", startedAt: now() });
-        return eventId;
-      })
-      .finally(() => {
-        recordWorkflowSqlTimings(timing, marks, startedAt, tickTiming);
-      });
+        if (!row || row.guard !== 0) {
+          throw new Error("Workflow queue commit returned no accepted input");
+        }
+        tickCount = row.tickCount;
+        return row.eventId;
+      })().finally(() => {
+        safeSync(() => {
+          const finishedAt = now();
+          const dimensions =
+            tickCount === undefined
+              ? undefined
+              : {
+                  workflow_pending_tick_target_count_bucket:
+                    workflowPendingTickTargetCountBucket(tickCount),
+                };
+          // Keep the historical total metric; leaf timings no longer describe
+          // separate round trips in this atomic statement.
+          timing.recordElapsed(
+            "api_dispatch_workflow_enqueue_transaction",
+            "nested",
+            startedAt,
+            finishedAt,
+            dimensions,
+          );
+          timing.recordElapsed(
+            "api_dispatch_workflow_enqueue_transaction_callback",
+            "nested",
+            executionStartedAt,
+            finishedAt,
+            dimensions,
+          );
+        });
+      }),
+    );
     signal.throwIfAborted();
-    return eventId === null ? null : { eventId, committedAt: now() };
+    if (!result.ok) {
+      const reason = workflowInputRollbackReason(result.error);
+      if (reason === "DUPLICATE") {
+        return null;
+      }
+      if (reason === "SCHEDULE") {
+        throw new ScheduleOccurrenceUnavailableError();
+      }
+      if (reason === "JOURNAL") {
+        throw new Error("Morning Brief schedule claim was not journaled");
+      }
+      const failed = source.steps.find((_, index) => {
+        return reason === `SOURCE_${String(index)}`;
+      });
+      if (failed?.failure) {
+        // The failed statement rolled back. Read a fresh snapshot to recognize
+        // a receipt committed by the concurrent callback winner.
+        if (source.callbackDuplicateSql) {
+          const duplicate = (
+            await database.execute(source.callbackDuplicateSql)
+          ).rowCount;
+          signal.throwIfAborted();
+          if (duplicate !== 0) {
+            throw new ChatRunFinishedAutomationAlreadyAdmittedError();
+          }
+        }
+        throw workflowSourceAdmissionError(failed.failure);
+      }
+      throw result.error;
+    }
+    return { eventId: result.value, committedAt: now() };
   },
 );
 

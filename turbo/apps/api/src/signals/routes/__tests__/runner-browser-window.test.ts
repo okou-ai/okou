@@ -300,11 +300,19 @@ describe("native owner Browser window admission", () => {
           if (count !== 2) {
             return;
           }
+          const winner = accepted(await chat.request({ kind: "inspect" }));
+          const target = f.provider.native.targets.get(targetId);
+          // Whole-window cleanup may inspect sibling pages as well. This
+          // scenario changes only the unreferenced losing candidate.
+          if (
+            !winner.window ||
+            target?.windowId === winner.window.primaryWindowId
+          ) {
+            return;
+          }
           if (cleanup === "already-gone") {
             f.provider.native.targets.delete(targetId);
           } else if (cleanup === "moved") {
-            const winner = accepted(await chat.request({ kind: "inspect" }));
-            const target = f.provider.native.targets.get(targetId);
             if (!target || !winner.window) {
               throw new Error("Expected the published native winner");
             }

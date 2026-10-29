@@ -1,6 +1,4 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectSlackWorkspace$ } from "./slack-workspace-write.service";
 import { randomBytes } from "node:crypto";
 
@@ -35,10 +33,7 @@ import {
   insertConnectorOAuthState$,
 } from "./connector-oauth-state.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-import {
-  loadUserFeatureSwitchContext$,
-  userFeatureSwitchContext,
-} from "./feature-switches.service";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
   decryptPersistentSecretValue,
   encryptPersistentSecretValue,
@@ -130,25 +125,10 @@ export const startSlackConnectorOAuth$ = command(
     signal: AbortSignal,
   ): Promise<Response> => {
     const signedContext = verifySlackConnectorOAuthStart(args.connectorState);
-    const featureContext = signedContext
-      ? await set(
-          loadUserFeatureSwitchContext$,
-          signedContext.orgId,
-          signedContext.userId,
-          signal,
-        )
-      : undefined;
-    signal.throwIfAborted();
-    const accountEnabled =
-      featureContext &&
-      isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, featureContext);
     const context =
-      signedContext && signedContext.flow !== "install" && accountEnabled
+      signedContext && signedContext.flow !== "install"
         ? { ...signedContext, accountConnection: true }
         : signedContext;
-    if (context?.accountConnection && !accountEnabled) {
-      return failed("Slack workspace identity is not enabled.", context);
-    }
     const routeFlow = context?.flow === "switch" ? "connect" : context?.flow;
     if (!context || routeFlow !== args.flow) {
       return failed(
@@ -330,20 +310,6 @@ const resolveSlackConnectorCallback$ = command(
       stored.redirectUri,
     );
     signal.throwIfAborted();
-    if (context.accountConnection) {
-      const features = await set(
-        loadUserFeatureSwitchContext$,
-        context.orgId,
-        context.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (
-        !isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, features)
-      ) {
-        return failed("Slack workspace identity is not enabled.", context);
-      }
-    }
     if (context.workspaceId && context.workspaceId !== oauth.teamId) {
       return failed(
         "Use the Slack workspace that opened this connection.",
@@ -584,30 +550,20 @@ const promoteSlackAccountConnection$ = command(
     signal: AbortSignal,
   ): Promise<Response | null> => {
     const { context, oauth } = args;
-    const accountFeatures = await set(
-      loadUserFeatureSwitchContext$,
-      context.orgId,
-      context.userId,
+    const account = await set(
+      connectSlackAccount$,
+      {
+        orgId: context.orgId,
+        userId: context.userId,
+        workspaceId: oauth.teamId,
+        workspaceName: oauth.teamName,
+        slackUserId: oauth.userId,
+        replace: context.flow === "switch",
+      },
       signal,
     );
-    if (
-      isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, accountFeatures)
-    ) {
-      const account = await set(
-        connectSlackAccount$,
-        {
-          orgId: context.orgId,
-          userId: context.userId,
-          workspaceId: oauth.teamId,
-          workspaceName: oauth.teamName,
-          slackUserId: oauth.userId,
-          replace: context.flow === "switch",
-        },
-        signal,
-      );
-      if (account.kind !== "ok") {
-        return failed(account.message, context);
-      }
+    if (account.kind !== "ok") {
+      return failed(account.message, context);
     }
     return null;
   },

@@ -66,9 +66,7 @@ test("hosted snapshots retain no-store headers and recheck access for every reso
   }
   const file = await fetchWorker(new Request(f.fileUrl), env);
   expect(file.status).toBe(200);
-  expect(file.headers.get("Cache-Control")).toBe(
-    "private, max-age=31536000, immutable",
-  );
+  expect(file.headers.get("Cache-Control")).toBe("private, no-store");
 });
 
 function fixture(tokenLength = 10) {
@@ -208,18 +206,14 @@ test.each([10, 24])(
     const f = fixture(tokenLength);
     const file = await fetchWorker(new Request(f.fileUrl), f.env);
     expect(file.status).toBe(200);
-    expect(file.headers.get("cache-control")).toBe(
-      "private, max-age=31536000, immutable",
-    );
+    expect(file.headers.get("cache-control")).toBe("private, no-store");
     expect(await file.text()).toBe("0123456789");
     const range = await fetchWorker(
       new Request(f.fileUrl, { headers: { Range: "bytes=2-5" } }),
       f.env,
     );
     expect(range.status).toBe(206);
-    expect(range.headers.get("cache-control")).toBe(
-      "private, max-age=31536000, immutable",
-    );
+    expect(range.headers.get("cache-control")).toBe("private, no-store");
     expect(range.headers.get("content-range")).toBe("bytes 2-5/10");
     expect(await range.text()).toBe("2345");
     expect(
@@ -334,12 +328,8 @@ test("revoking the parent denies network requests with warm Worker caches, inclu
     for (const method of ["GET", "GET", "HEAD"]) {
       const response = await fetchWorker(new Request(url, { method }), f.env);
       expect(response.status).toBe(200);
-      // Files retain immutable caching; HTML resources recheck Site access.
-      expect(response.headers.get("cache-control")).toBe(
-        url === f.fileUrl
-          ? "private, max-age=31536000, immutable"
-          : "private, no-store",
-      );
+      // All mutable conversation grants keep browser responses uncached.
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
     }
   }
   f.objects.set(
@@ -445,3 +435,48 @@ test("snapshot publication cannot be used as an unrevocable image-transform sour
   );
   expect(response.status).toBe(404);
 });
+
+test.each(["private", "organization"] as const)(
+  "%s conversation visibility denies file, range, HEAD, thumbnail and hosted resources after public delivery",
+  async (audience) => {
+    const f = fixture();
+    const urls = [
+      f.fileUrl,
+      `${f.fileUrl}?thumbnail=1`,
+      f.siteUrl,
+      `${f.siteUrl}assets/style.css`,
+    ];
+    expect((await fetchWorker(new Request(f.fileUrl), f.env)).status).toBe(200);
+    expect((await fetchWorker(new Request(f.siteUrl), f.env)).status).toBe(200);
+    f.objects.set(
+      f.policyKey,
+      JSON.stringify({
+        ...f.policy,
+        version: 2,
+        audience,
+        revision: crypto.randomUUID(),
+      }),
+    );
+    for (const url of urls) {
+      for (const method of ["GET", "HEAD"]) {
+        const denied = await fetchWorker(
+          new Request(url, { method, headers: { Range: "bytes=0-3" } }),
+          f.env,
+        );
+        expect(denied.status).toBe(404);
+        expect(denied.headers.get("cache-control")).toBe("private, no-store");
+      }
+    }
+    f.objects.set(
+      f.policyKey,
+      JSON.stringify({
+        ...f.policy,
+        version: 2,
+        audience: "public",
+        revision: crypto.randomUUID(),
+      }),
+    );
+    expect((await fetchWorker(new Request(f.fileUrl), f.env)).status).toBe(200);
+    expect((await fetchWorker(new Request(f.siteUrl), f.env)).status).toBe(200);
+  },
+);

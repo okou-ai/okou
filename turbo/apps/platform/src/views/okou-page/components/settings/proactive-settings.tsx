@@ -4,7 +4,7 @@ import type {
   ProactiveWorkflowKind,
 } from "@okouai/api-contracts/contracts/proactive";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { useGet, useLoadable } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -63,7 +63,7 @@ function ProactivePreference({ kind }: { kind: ProactivePreferenceKind }) {
   const { t } = useTranslation();
   const key = PREFERENCE_KEYS[kind];
   const { preference$, update$ } = PREFERENCE_SIGNALS[kind];
-  const preference = useLoadable(preference$);
+  const preference = useLastLoadable(preference$);
   const [mutation, update] = useLoadableSet(update$);
   const signal = useGet(pageSignal$);
   const value = preference.state === "hasData" ? preference.data : undefined;

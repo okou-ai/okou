@@ -6,31 +6,44 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import deDEAgentsUrl from "./locales/de-DE/agents.json?url";
 import deDECommonUrl from "./locales/de-DE/common.json?url";
+import deDEHalloweenUrl from "./locales/de-DE/halloween.json?url";
 import enUSAgents from "./locales/en-US/agents.json";
 import enUSCommon from "./locales/en-US/common.json";
+import enUSHalloweenUrl from "./locales/en-US/halloween.json?url";
 import esESAgentsUrl from "./locales/es-ES/agents.json?url";
 import esESCommonUrl from "./locales/es-ES/common.json?url";
+import esESHalloweenUrl from "./locales/es-ES/halloween.json?url";
 import frFRAgentsUrl from "./locales/fr-FR/agents.json?url";
 import frFRCommonUrl from "./locales/fr-FR/common.json?url";
+import frFRHalloweenUrl from "./locales/fr-FR/halloween.json?url";
 import hiINAgentsUrl from "./locales/hi-IN/agents.json?url";
 import hiINCommonUrl from "./locales/hi-IN/common.json?url";
+import hiINHalloweenUrl from "./locales/hi-IN/halloween.json?url";
 import idIDAgentsUrl from "./locales/id-ID/agents.json?url";
 import idIDCommonUrl from "./locales/id-ID/common.json?url";
+import idIDHalloweenUrl from "./locales/id-ID/halloween.json?url";
 import itITAgentsUrl from "./locales/it-IT/agents.json?url";
 import itITCommonUrl from "./locales/it-IT/common.json?url";
+import itITHalloweenUrl from "./locales/it-IT/halloween.json?url";
 import jaJPAgentsUrl from "./locales/ja-JP/agents.json?url";
 import jaJPCommonUrl from "./locales/ja-JP/common.json?url";
+import jaJPHalloweenUrl from "./locales/ja-JP/halloween.json?url";
 import koKRAgentsUrl from "./locales/ko-KR/agents.json?url";
 import koKRCommonUrl from "./locales/ko-KR/common.json?url";
+import koKRHalloweenUrl from "./locales/ko-KR/halloween.json?url";
 import ptBRAgentsUrl from "./locales/pt-BR/agents.json?url";
 import ptBRCommonUrl from "./locales/pt-BR/common.json?url";
+import ptBRHalloweenUrl from "./locales/pt-BR/halloween.json?url";
 import zhHansAgentsUrl from "./locales/zh-Hans/agents.json?url";
 import zhHansCommonUrl from "./locales/zh-Hans/common.json?url";
+import zhHansHalloweenUrl from "./locales/zh-Hans/halloween.json?url";
 import zhHantAgentsUrl from "./locales/zh-Hant/agents.json?url";
 import zhHantCommonUrl from "./locales/zh-Hant/common.json?url";
+import zhHantHalloweenUrl from "./locales/zh-Hant/halloween.json?url";
 
 export const DEFAULT_LOCALE = DEFAULT_USER_LOCALE;
 export const DEFAULT_NAMESPACE = "common";
+export const HALLOWEEN_NAMESPACE = "halloween";
 export const SUPPORTED_LOCALES = SUPPORTED_USER_LOCALES;
 
 export type SupportedLocale = UserLocale;
@@ -50,6 +63,21 @@ interface LocaleResourceUrls {
   readonly agents: string;
   readonly common: string;
 }
+
+const HALLOWEEN_RESOURCE_URLS = {
+  "de-DE": deDEHalloweenUrl,
+  "en-US": enUSHalloweenUrl,
+  "es-ES": esESHalloweenUrl,
+  "fr-FR": frFRHalloweenUrl,
+  "hi-IN": hiINHalloweenUrl,
+  "id-ID": idIDHalloweenUrl,
+  "it-IT": itITHalloweenUrl,
+  "ja-JP": jaJPHalloweenUrl,
+  "ko-KR": koKRHalloweenUrl,
+  "pt-BR": ptBRHalloweenUrl,
+  "zh-Hans": zhHansHalloweenUrl,
+  "zh-Hant": zhHantHalloweenUrl,
+} as const satisfies Record<SupportedLocale, string>;
 
 export function isSupportedLocale(value: string): value is SupportedLocale {
   return SUPPORTED_LOCALES.some((locale) => {
@@ -108,8 +136,8 @@ function isLocaleResourceNamespace(
 
 async function loadLocaleResourceNamespace(
   resourceUrl: string,
-  locale: NonDefaultLocale,
-  namespace: "agents" | "common",
+  locale: SupportedLocale,
+  namespace: string,
   signal?: AbortSignal,
 ): Promise<LocaleResourceNamespace> {
   const response = await fetchResource(
@@ -127,6 +155,18 @@ async function loadLocaleResourceNamespace(
     throw new Error(`Invalid ${locale} ${namespace} locale resources`);
   }
   return resource;
+}
+
+export function loadHalloweenResources(
+  locale: SupportedLocale,
+  signal?: AbortSignal,
+): Promise<LocaleResourceNamespace> {
+  return loadLocaleResourceNamespace(
+    HALLOWEEN_RESOURCE_URLS[locale],
+    locale,
+    HALLOWEEN_NAMESPACE,
+    signal,
+  );
 }
 
 export async function loadLocaleResources(

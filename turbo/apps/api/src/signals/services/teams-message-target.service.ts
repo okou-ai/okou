@@ -1,3 +1,7 @@
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { and, eq } from "drizzle-orm";
@@ -61,13 +65,70 @@ export function teamsErrorResponse(result: {
   );
 }
 
+const resolveTeamsMessageConnection$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly installation: TeamsInstallation;
+    },
+    signal: AbortSignal,
+  ) => {
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    const identityEnabled = isFeatureEnabled(
+      FeatureSwitchKey.TeamsWorkspaceIdentity,
+      features,
+    );
+    const connections = await get(db$)
+      .select({
+        teamsUserId: teamsOrgConnections.teamsUserId,
+        teamsAadObjectId: teamsOrgConnections.teamsAadObjectId,
+        tenantId: teamsOrgConnections.teamsTenantId,
+        teamsUserDisplayName: teamsOrgConnections.teamsUserDisplayName,
+      })
+      .from(teamsOrgConnections)
+      .leftJoin(
+        teamsOrgInstallations,
+        eq(
+          teamsOrgInstallations.teamsTenantId,
+          teamsOrgConnections.teamsTenantId,
+        ),
+      )
+      .where(
+        and(
+          identityEnabled
+            ? teamsAccountOwnerCondition(args)
+            : and(
+                eq(
+                  teamsOrgConnections.teamsTenantId,
+                  args.installation.teamsTenantId,
+                ),
+                eq(teamsOrgConnections.userId, args.userId),
+                eq(teamsOrgInstallations.orgId, args.orgId),
+              ),
+        ),
+      )
+      .limit(2);
+    signal.throwIfAborted();
+    const connection = connections.length === 1 ? connections[0] : undefined;
+    return { connection, identityEnabled };
+  },
+);
+
 /** Resolve shared conversations or explicitly addressed outbound bot DMs. */
 export const resolveTeamsMessageTarget$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly installation: TeamsInstallation;
       readonly userId: string;
+      readonly orgId: string;
       readonly mode?: "read" | "write";
       readonly body: {
         readonly conversationId?: string;
@@ -77,24 +138,16 @@ export const resolveTeamsMessageTarget$ = command(
     },
     signal: AbortSignal,
   ): Promise<TeamsMessageTarget | ReturnType<typeof routeError>> => {
-    const [connection] = await get(db$)
-      .select({
-        teamsUserId: teamsOrgConnections.teamsUserId,
-        teamsUserDisplayName: teamsOrgConnections.teamsUserDisplayName,
-      })
-      .from(teamsOrgConnections)
-      .where(
-        and(
-          eq(
-            teamsOrgConnections.teamsTenantId,
-            args.installation.teamsTenantId,
-          ),
-          eq(teamsOrgConnections.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!connection?.teamsUserId || !args.installation.serviceUrl) {
+    const { connection, identityEnabled } = await set(
+      resolveTeamsMessageConnection$,
+      args,
+      signal,
+    );
+    if (
+      !connection?.teamsUserId ||
+      connection.tenantId !== args.installation.teamsTenantId ||
+      !args.installation.serviceUrl
+    ) {
       return routeError(
         404,
         "This Teams conversation is unavailable to your connected account and Okou.",
@@ -144,6 +197,11 @@ export const resolveTeamsMessageTarget$ = command(
         tenantId: args.installation.teamsTenantId,
         conversationId,
         teamsUserId: memberId,
+        ...(identityEnabled &&
+        memberId === connection.teamsUserId &&
+        connection.teamsAadObjectId
+          ? { aadObjectId: connection.teamsAadObjectId }
+          : {}),
       },
       signal,
     );

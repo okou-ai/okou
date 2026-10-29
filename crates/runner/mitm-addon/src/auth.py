@@ -68,6 +68,7 @@ from firewall_auth_client import (
 )
 from firewall_auth_config import auth_config_injects_credentials
 from logging_utils import log_proxy_entry
+from request_authority import custom_http_auth_is_allowed
 from runtime_url_parsing import split_runtime_url
 from url_syntax import has_unsafe_runtime_url_syntax
 
@@ -545,7 +546,11 @@ def _build_firewall_auth_plan(
         # The firewall authorizes the wire method. Providers such as Mailchimp
         # can reinterpret this header as DELETE even when only POST is allowed.
         failure = _FirewallAuthPlanFailure.METHOD_OVERRIDE
-    elif injects_credentials and flow.request.scheme.lower() != "https":
+    elif (
+        injects_credentials
+        and flow.request.scheme.lower() != "https"
+        and not custom_http_auth_is_allowed(flow, allow.api_entry, sandbox_info)
+    ):
         failure = _FirewallAuthPlanFailure.INSECURE_TRANSPORT
     elif needs_resolution and not sandbox_info.get("encryptedSecrets"):
         failure = _FirewallAuthPlanFailure.AUTH_UNAVAILABLE

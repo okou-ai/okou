@@ -1,3 +1,4 @@
+import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
@@ -344,7 +345,7 @@ const teamsScopeExists$ = command(
         and(
           eq(teamsOrgConnections.id, args.connectionId),
           eq(teamsOrgConnections.userId, args.userId),
-          eq(teamsOrgInstallations.orgId, args.orgId),
+          teamsAccountOwnerCondition(args),
         ),
       )
       .limit(1);

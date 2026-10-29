@@ -173,10 +173,10 @@ export function recordPreferenceUpdates(
 }
 
 export function resourceButton() {
-  return buttonNamed("Resources");
+  return buttonNamed("Artifacts and chats");
 }
 export function resourcePanel() {
-  return screen.queryByRole("region", { name: "Resources" });
+  return screen.queryByRole("region", { name: "Artifacts and chats" });
 }
 export function composer() {
   const editor = document.querySelector<HTMLElement>(
@@ -287,7 +287,9 @@ export async function setupOverflowResources(
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
   });
-  const panel = await screen.findByRole("region", { name: "Resources" });
+  const panel = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   await within(panel).findByText("report-1.pdf");
   return { panel, media, resize };
 }

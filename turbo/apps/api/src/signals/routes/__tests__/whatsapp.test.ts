@@ -1,9 +1,10 @@
 import { integrationsWhatsappContract as contract } from "@okouai/api-contracts/contracts/integrations-whatsapp";
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { randomInt, randomUUID } from "node:crypto";
+import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
@@ -11,12 +12,14 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockNow, now } from "../../../lib/time";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv, mockEnv } from "../../../lib/env";
 import { integrationsWhatsappRoutes } from "../integrations-whatsapp";
+import { integrationsAgentPhoneRoutes } from "../integrations-agentphone";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   createAgentPhoneBddApi,
+  AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
 } from "./helpers/api-bdd-agentphone";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -163,6 +166,50 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     expect(
       (await setup.integrations.getAgentPhoneLinkStatus(setup.actor)).linked,
     ).toBeTruthy();
+    expect(
+      (
+        await accept(
+          client().getLinkStatus({ headers: headers(setup.actor) }),
+          [200],
+        )
+      ).body.linked,
+    ).toBeFalsy();
+  });
+
+  it("rejects WhatsApp transport proofs on phone connection routes", async () => {
+    const setup = await configure();
+    const phone = sender();
+    const key = "a".repeat(64);
+    mockEnv("SECRETS_ENCRYPTION_KEY", key);
+    const timestamp = Math.floor(now() / 1000);
+    const proof = {
+      phoneHandle: phone,
+      agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+      timestamp,
+      channel: "whatsapp",
+      signature: createHmac("sha256", key)
+        .update(`${phone}:${AGENTPHONE_BDD_AGENT_ID}:${timestamp}:whatsapp`)
+        .digest("hex"),
+    };
+    const phoneClient = setupApp({
+      context,
+      routes: integrationsAgentPhoneRoutes,
+    })(integrationsAgentPhoneContract);
+    await accept(
+      phoneClient.getConnectStatus({
+        headers: headers(setup.actor),
+        query: proof,
+      }),
+      [400],
+    );
+    await setup.integrations.requestConnectAgentPhone(
+      setup.actor,
+      proof,
+      [400],
+    );
+    expect(
+      (await setup.integrations.getAgentPhoneLinkStatus(setup.actor)).linked,
+    ).toBeFalsy();
     expect(
       (
         await accept(

@@ -4,10 +4,12 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  HalloweenQuiz = "halloweenQuiz",
   FeatureGuides = "featureGuides",
   OnboardingSourceOutcomes = "onboardingSourceOutcomes",
-  SlackWorkspaceIdentity = "slackWorkspaceIdentity",
+  TeamsWorkspaceIdentity = "teamsWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
+  SharedThreadVisibility = "sharedThreadVisibility",
   HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
@@ -46,6 +48,8 @@ export enum FeatureSwitchKey {
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
+  ArtifactDeletion = "artifactDeletion",
+  OutlookChatMail = "outlookChatMail",
   ThreadEmailManager = "threadEmailManager",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
@@ -55,6 +59,7 @@ export enum FeatureSwitchKey {
   WhatsappIntegration = "whatsappIntegration",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",
+  AutoContinueBusyChats = "_autoContinueBusyChats",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
