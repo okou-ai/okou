@@ -2417,6 +2417,9 @@ function createChatThreadMessagePipeline({
   return {
     scroll,
     sidebar: effects.sidebar,
+    firstTaskUpgradeEligible$: createFirstTaskUpgradeEligibility(
+      projections.allSemanticChatGroups$,
+    ),
     ...lifecycle,
     initialEventsReady$: initialEventsReadyView$,
     ...assistantErrorRecovery,
@@ -3522,6 +3525,7 @@ function createThinkingIndicatorSignals() {
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
+    firstTaskUpgradeEligible$: events.firstTaskUpgradeEligible$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
@@ -3882,9 +3886,6 @@ export function createChatPanelSignals(
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
-    firstTaskUpgradeEligible$: createFirstTaskUpgradeEligibility(
-      messagePipeline.allSemanticChatGroups$,
-    ),
     threadId,
     agentId,
     threadDraft$,
