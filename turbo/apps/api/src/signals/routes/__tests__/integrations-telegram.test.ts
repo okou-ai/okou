@@ -461,47 +461,81 @@ describe("POST /api/integrations/telegram/link", () => {
     });
   });
 
-  it("links the official bot account via Telegram Login Widget auth", async () => {
-    const fixture = seedLinkContext();
-    await fixture.run(async () => {
-      const { token } = fixture;
-      await fixture.onboard();
-      const telegramUserId = Number(newTelegramBotId());
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-
-      const response = await accept(
-        fixture.run(async () => {
-          return await client.link({
-            headers: { authorization: `Bearer ${token}` },
-            body: {
-              telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
-              telegramAuth: makeTelegramAuth(
-                telegramUserId,
-                "official_tg",
-                OFFICIAL_BOT_TOKEN,
-              ),
+  it.each([200, 403])(
+    "links via Telegram Login Widget and attempts a DM welcome (Telegram returns %s)",
+    async (status) => {
+      const fixture = seedLinkContext();
+      await fixture.run(async () => {
+        const { token } = fixture;
+        await fixture.onboard();
+        const telegramUserId = Number(newTelegramBotId());
+        const sentMessages: unknown[] = [];
+        server.use(
+          http.post(
+            `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
+            async ({ request }) => {
+              sentMessages.push(await request.json());
+              if (status === 403) {
+                return HttpResponse.json(
+                  {
+                    ok: false,
+                    error_code: 403,
+                    description: "Bot was blocked",
+                  },
+                  { status },
+                );
+              }
+              return HttpResponse.json({
+                ok: true,
+                result: { message_id: 1, chat: { id: telegramUserId } },
+              });
             },
-          });
-        }),
-        [200],
-      );
+          ),
+        );
+        const client = setupApp({
+          context,
+          routes: integrationsTelegramRoutes,
+        })(integrationsTelegramContract);
 
-      expect(response.body).toStrictEqual({
-        botUsername: OFFICIAL_BOT_USERNAME,
-        telegramUserId: String(telegramUserId),
+        const response = await accept(
+          fixture.run(async () => {
+            return await client.link({
+              headers: { authorization: `Bearer ${token}` },
+              body: {
+                telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+                telegramAuth: makeTelegramAuth(
+                  telegramUserId,
+                  "official_tg",
+                  OFFICIAL_BOT_TOKEN,
+                ),
+              },
+            });
+          }),
+          [200],
+        );
+
+        expect(response.body).toStrictEqual({
+          botUsername: OFFICIAL_BOT_USERNAME,
+          telegramUserId: String(telegramUserId),
+        });
+        await flushWaitUntilForTest();
+        expect(sentMessages).toStrictEqual([
+          {
+            chat_id: String(telegramUserId),
+            parse_mode: "HTML",
+            text: "✅ Account linked.\nSend me a message to start chatting with Okou.",
+          },
+        ]);
+        await expectTelegramBotConnection({
+          token,
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
+          telegramUserId: String(telegramUserId),
+          telegramUsername: "official_tg",
+          telegramDisplayName: "Test",
+        });
       });
-      await expectTelegramBotConnection({
-        token,
-        botId: OFFICIAL_TELEGRAM_BOT_ID,
-        telegramUserId: String(telegramUserId),
-        telegramUsername: "official_tg",
-        telegramDisplayName: "Test",
-      });
-    });
-  });
+    },
+  );
 
   it("connects the official Telegram bot with a signed payload", async () => {
     const fixture = seedLinkContext();
