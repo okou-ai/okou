@@ -6,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { runnersRoutes } from "../runners";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -416,7 +417,7 @@ test("downloads authoritative empty attachments after a clear", async () => {
   await bdd.deleteAgent(actor, agent.agentId);
 });
 
-test("waits for Runner acknowledgement before Agent deletion after rejected completion and cancellation", async () => {
+test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {
   const { actor, agent, group } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId, {
     files: [{ path: "keep.md", content: "claimed attachment" }],
@@ -455,10 +456,18 @@ test("waits for Runner acknowledgement before Agent deletion after rejected comp
     { authorization: `Bearer ${claim.sandboxToken}` },
     [400],
   );
-  await runs.requestCancelRun(actor, run.runId, [200]);
+  await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
+    status: "running",
+  });
   const blocked = await bdd.requestDeleteAgent(actor, agent.agentId, [409]);
   expect(blocked.body).toMatchObject({ error: { code: "CONFLICT" } });
+  await runs.requestCancelRun(actor, run.runId, [200]);
+  await flushWaitUntilForTest();
   await finish(run.runId, claim.sandboxToken);
+  await flushWaitUntilForTest();
+  await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
+    status: "cancelled",
+  });
   await bdd.deleteAgent(actor, agent.agentId);
 });
 

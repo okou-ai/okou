@@ -124,6 +124,9 @@ describe("durable OpenAI Responses image generation", () => {
       expect(checkpoint.status).toBe("running");
       expect(checkpoint.result).toBeUndefined();
       await expect(orgCredits(context, fixture.actor)).resolves.toBe(10_000);
+      expect(
+        JSON.stringify(context.mocks.ably.publish.mock.calls),
+      ).not.toContain("A private revised prompt");
       await fixture.reconcile();
       const completed = await fixture.status(generationId);
       expect(completed).toMatchObject({
@@ -140,6 +143,10 @@ describe("durable OpenAI Responses image generation", () => {
           url: expect.stringMatching(/\/artifacts\//u),
         },
       });
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        `built-in-generation:${generationId}`,
+        completed,
+      );
       await fixture.reconcile();
       await expect(fixture.status(generationId)).resolves.toStrictEqual(
         completed,
@@ -157,7 +164,6 @@ describe("durable OpenAI Responses image generation", () => {
       );
       expect(imageUploads).toHaveLength(1);
       const published = JSON.stringify(context.mocks.ably.publish.mock.calls);
-      expect(published).not.toContain("A private revised prompt");
       expect(published).not.toContain("generated image bytes");
     });
   });

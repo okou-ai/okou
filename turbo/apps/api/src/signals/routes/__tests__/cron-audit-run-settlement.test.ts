@@ -30,13 +30,20 @@ beforeEach(() => {
 
 describe("Run settlement", () => {
   it("restricts the aggregate operator report and bounds each page", async () => {
-    expect.hasAssertions();
     const client = setupApp({
       context,
       routes: cronAuditRunSettlementRoutes,
     })(cronAuditRunSettlementContract);
-    await accept(client.audit({ headers: {}, query: { limit: 100 } }), [401]);
-    await accept(client.audit({ headers, query: { limit: 101 } }), [400]);
+    const unauthorized = await accept(
+      client.audit({ headers: {}, query: { limit: 100 } }),
+      [401],
+    );
+    expect(unauthorized.status).toBe(401);
+    const outOfBounds = await accept(
+      client.audit({ headers, query: { limit: 101 } }),
+      [400],
+    );
+    expect(outOfBounds.status).toBe(400);
   });
 
   it("reports execution blockers and completed handoffs without changing either Run", async () => {

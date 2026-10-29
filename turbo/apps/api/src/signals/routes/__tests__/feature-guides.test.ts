@@ -308,11 +308,14 @@ test("respects scheduled and expired publication windows", async () => {
 });
 
 test("requires hard staff authorization for importing and publishing, even after opting in", async () => {
-  expect.hasAssertions();
   await identity();
   await enable();
-  await accept(clients().guide.import({ headers, body: draft() }), [403]);
-  await accept(
+  const imported = await accept(
+    clients().guide.import({ headers, body: draft() }),
+    [403],
+  );
+  expect(imported.status).toBe(403);
+  const published = await accept(
     clients().guide.publish({
       headers,
       params: { editionId: "unknown-edition" },
@@ -320,6 +323,7 @@ test("requires hard staff authorization for importing and publishing, even after
     }),
     [403],
   );
+  expect(published.status).toBe(403);
 });
 
 test("does not mark an unpublished revision as seen", async () => {
