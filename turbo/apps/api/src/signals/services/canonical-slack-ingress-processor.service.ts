@@ -70,7 +70,7 @@ import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { resolveOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import {
   isSlackDirectMessageSessionThreadTs,
   slackSessionThreadTs,
@@ -674,18 +674,16 @@ async function loadCanonicalSlackEnrichment(
 ) {
   const { client, ingressId, event, messageContent, userInfoResolver } = args;
   return await Promise.all([
-    loadOptionalChatEnrichment(
-      "slack",
-      () => {
-        return enrichMessageContent({
-          messageContent,
-          files: undefined,
-          client,
-          userId: event.user,
-          userInfoResolver,
-        });
-      },
-      (error) => {
+    (async () => {
+      const read = enrichMessageContent({
+        messageContent,
+        files: undefined,
+        client,
+        userId: event.user,
+        userInfoResolver,
+      });
+      const result = await settle(read, signal);
+      return resolveOptionalChatEnrichment("slack", result, (error) => {
         rethrowClassifiedSlackFailure(error);
         return {
           prompt: messageContent,
@@ -693,25 +691,21 @@ async function loadCanonicalSlackEnrichment(
           userInfoExtras: { slackUserId: event.user },
           mentionDisplayNames: {},
         };
-      },
-      signal,
-    ),
-    loadOptionalChatEnrichment(
-      "slack",
-      () => {
-        return fetchCanonicalConversationContext({
-          client,
-          ingressId,
-          event,
-          userInfoResolver,
-        });
-      },
-      (error) => {
+      });
+    })(),
+    (async () => {
+      const read = fetchCanonicalConversationContext({
+        client,
+        ingressId,
+        event,
+        userInfoResolver,
+      });
+      const result = await settle(read, signal);
+      return resolveOptionalChatEnrichment("slack", result, (error) => {
         rethrowClassifiedSlackFailure(error);
         return { executionContext: "" };
-      },
-      signal,
-    ),
+      });
+    })(),
     client.getMessagePermalink(event.channel, event.ts),
   ]);
 }

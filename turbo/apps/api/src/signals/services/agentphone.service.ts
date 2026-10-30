@@ -83,7 +83,7 @@ import {
 } from "./integration-input-assets.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { resolveOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
@@ -1688,16 +1688,13 @@ export const handleAgentPhoneMessage$ = command(
       recentHistory: params.event.recentHistory,
       currentMessageId: params.event.messageId,
     });
-    const { executionContext } = await loadOptionalChatEnrichment(
-      "agentphone",
-      () => {
-        return contextRead;
-      },
-      () => {
+    const { executionContext } = await (async () => {
+      const read = contextRead;
+      const result = await settle(read, signal);
+      return resolveOptionalChatEnrichment("agentphone", result, () => {
         return { executionContext: "" };
-      },
-      signal,
-    );
+      });
+    })();
     signal.throwIfAborted();
 
     const prompt = enrichAgentPhonePrompt({

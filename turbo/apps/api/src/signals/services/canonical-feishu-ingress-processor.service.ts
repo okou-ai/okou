@@ -95,7 +95,7 @@ import {
 } from "./integration-input-assets.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { resolveOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 
 const L = logger("CanonicalFeishuIngressProcessor");
 const feishuDispatchL = logger("FeishuDispatch");
@@ -1066,16 +1066,13 @@ const processClaimedIngress$ = command(
         .set({ reactionId, updatedAt: nowDate() })
         .where(eq(feishuChatIngress.id, ingress.ingressId));
     }
-    const history = await loadOptionalChatEnrichment(
-      "feishu",
-      () => {
-        return set(loadFeishuConversationHistory$, { message }, signal);
-      },
-      () => {
+    const history = await (async () => {
+      const read = set(loadFeishuConversationHistory$, { message }, signal);
+      const result = await settle(read, signal);
+      return resolveOptionalChatEnrichment("feishu", result, () => {
         return { text: "", files: [] };
-      },
-      signal,
-    );
+      });
+    })();
     signal.throwIfAborted();
     const persistInput = {
       ingress,
