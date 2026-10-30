@@ -268,7 +268,13 @@ const claimSharedWindowRetirement$ = command(
           ),
         ),
       )
-      .returning();
+      .returning({
+        chatThreadId: windows.chatThreadId,
+        instanceId: windows.instanceId,
+        state: windows.state,
+        primaryWindowId: windows.primaryWindowId,
+        expiresAt: windows.expiresAt,
+      });
     signal.throwIfAborted();
     if (!closing) {
       return null;
@@ -291,7 +297,13 @@ const retireSharedWindow$ = command(
     };
     const identity = sharedBrowserLifetime(owner, profile, target.window);
     const [currentRow] = await get(db$)
-      .select()
+      .select({
+        chatThreadId: windows.chatThreadId,
+        instanceId: windows.instanceId,
+        state: windows.state,
+        primaryWindowId: windows.primaryWindowId,
+        expiresAt: windows.expiresAt,
+      })
       .from(windows)
       .where(identity)
       .limit(1);
@@ -554,7 +566,17 @@ const recoverSharedCreations$ = command(
 const reconcileSharedWindows$ = command(
   async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
     const rows = await get(db$)
-      .select({ profile: profiles, window: windows, threadId: chatThreads.id })
+      .select({
+        profile: profiles,
+        window: {
+          chatThreadId: windows.chatThreadId,
+          instanceId: windows.instanceId,
+          state: windows.state,
+          primaryWindowId: windows.primaryWindowId,
+          expiresAt: windows.expiresAt,
+        },
+        threadId: chatThreads.id,
+      })
       .from(windows)
       .innerJoin(profiles, eq(profiles.instanceId, windows.instanceId))
       .leftJoin(chatThreads, eq(chatThreads.id, windows.chatThreadId))
@@ -708,7 +730,11 @@ const deleteOrphanedBrowserChats$ = command(
             ),
           ),
         )
-        .returning(),
+        .returning({
+          screenshotObjectKey: windows.screenshotObjectKey,
+          chatThreadId: windows.chatThreadId,
+          updatedAt: windows.updatedAt,
+        }),
     );
     // Rotate retained chats in the same bounded observation batch. Its live
     // parent predicate is disjoint from deletion, so each row is mutated once.

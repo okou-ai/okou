@@ -85,7 +85,10 @@ type Result<T> =
   { readonly kind: "ok"; readonly value: T } | BrowserServiceError;
 type Profile = typeof profiles.$inferSelect;
 type Window = BrowserChatWindow;
-type Metadata = typeof windows.$inferSelect;
+type Metadata = Pick<
+  typeof windows.$inferSelect,
+  "chatThreadId" | "orgId" | "userId" | "name" | "createdAt" | "updatedAt"
+>;
 type Connection = { readonly browser: BrowserSession; readonly cdpUrl: string };
 const unavailable = (): BrowserServiceError => {
   return {
@@ -159,7 +162,10 @@ const loadSharedBrowserScreenshotUrl$ = command(
     signal: AbortSignal,
   ) => {
     const [chat] = await get(db$)
-      .select()
+      .select({
+        screenshotObjectKey: windows.screenshotObjectKey,
+        screenshotUrl: windows.screenshotUrl,
+      })
       .from(windows)
       .where(
         and(
@@ -437,7 +443,13 @@ const admitSharedWindow$ = command(
       return unavailable();
     }
     const [window] = await get(db$)
-      .select()
+      .select({
+        chatThreadId: windows.chatThreadId,
+        instanceId: windows.instanceId,
+        state: windows.state,
+        primaryWindowId: windows.primaryWindowId,
+        expiresAt: windows.expiresAt,
+      })
       .from(windows)
       .where(liveSharedWindow(args.owner, args.profile, result.window));
     signal.throwIfAborted();
@@ -463,7 +475,14 @@ const publishSharedMetadata$ = command(
       .update(windows)
       .set({ name: input.name ?? windows.name, updatedAt: nowDate() })
       .where(liveSharedWindow(owner, profile, window))
-      .returning();
+      .returning({
+        chatThreadId: windows.chatThreadId,
+        orgId: windows.orgId,
+        userId: windows.userId,
+        name: windows.name,
+        createdAt: windows.createdAt,
+        updatedAt: windows.updatedAt,
+      });
     signal.throwIfAborted();
     if (!meta) {
       return unavailable();
@@ -614,7 +633,18 @@ function sharedBrowserView(context$: ReturnType<typeof sharedBrowserContext>) {
     const [view] = await get(db$)
       .select({
         profile: getTableColumns(profiles),
-        browser: getTableColumns(windows),
+        browser: {
+          chatThreadId: windows.chatThreadId,
+          instanceId: windows.instanceId,
+          state: windows.state,
+          primaryWindowId: windows.primaryWindowId,
+          expiresAt: windows.expiresAt,
+          orgId: windows.orgId,
+          userId: windows.userId,
+          name: windows.name,
+          createdAt: windows.createdAt,
+          updatedAt: windows.updatedAt,
+        },
       })
       .from(profiles)
       .leftJoin(
@@ -980,7 +1010,13 @@ function sharedBrowserResize(
             signal,
           );
           const [currentWindow] = await get(db$)
-            .select()
+            .select({
+              chatThreadId: windows.chatThreadId,
+              instanceId: windows.instanceId,
+              state: windows.state,
+              primaryWindowId: windows.primaryWindowId,
+              expiresAt: windows.expiresAt,
+            })
             .from(windows)
             .where(
               and(
