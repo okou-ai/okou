@@ -8,6 +8,7 @@ use runner_lifecycle::idle_pool::{
     ParkResult, ParkedIdleCandidate, RestoreReservedIdleResult,
     test_support::ParkedIdleCandidateBuilder,
 };
+use runner_lifecycle::resource_budget::BudgetLeaseWitness;
 use sandbox::{SandboxFactory, SandboxId};
 use sandbox_mock::{
     MockBackingProcess, MockBackingProcessCompletion, MockLifecycleGate, MockSandbox,
@@ -56,7 +57,7 @@ async fn seed(
     overrides: &Arc<MockSandboxOverrides>,
     exact: Option<&str>,
     age: Duration,
-) -> (SandboxId, MockBackingProcessCompletion) {
+) -> (SandboxId, MockBackingProcessCompletion, BudgetLeaseWitness) {
     let id = SandboxId::new_v4();
     let (exit, backing) = MockBackingProcess::channel();
     let sandbox = Box::new(
@@ -67,6 +68,7 @@ async fn seed(
         MockSandboxFactory::with_overrides(overrides.clone()),
     ));
     let lease = ResourceBudget::try_reserve_lease(&config.capacity.budget, 2, 4096).unwrap();
+    let lease_witness = lease.witness().unwrap();
     let candidate = match exact {
         Some(key) => ParkedIdleCandidateBuilder::new(key, lease)
             .with_sandbox(sandbox)
@@ -95,7 +97,7 @@ async fn seed(
             .park_at_for_test(candidate, std::time::Instant::now() - age),
         ParkResult::Parked
     ));
-    (id, exit)
+    (id, exit, lease_witness)
 }
 
 #[tokio::test]
@@ -108,10 +110,10 @@ async fn memavailable_reclaims_blank_then_oldest_idle_without_a_job() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let destroy = MockLifecycleGate::new();
     overrides.set_destroy_lifecycle_gate(destroy.clone());
-    let (old, old_exit) = seed(&config, &overrides, Some("old"), Duration::from_secs(60)).await;
-    let (new, _) = seed(&config, &overrides, Some("new"), Duration::ZERO).await;
-    let (blank, blank_exit) = seed(&config, &overrides, None, Duration::ZERO).await;
-    let (reserved, _) = seed(
+    let (old, old_exit, _) = seed(&config, &overrides, Some("old"), Duration::from_secs(60)).await;
+    let (new, _, _) = seed(&config, &overrides, Some("new"), Duration::ZERO).await;
+    let (blank, blank_exit, _) = seed(&config, &overrides, None, Duration::ZERO).await;
+    let (reserved, _, _) = seed(
         &config,
         &overrides,
         Some("reserved"),
@@ -266,11 +268,16 @@ async fn held_cleanup(uncertain: bool) {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let destroy = MockLifecycleGate::new();
     overrides.set_destroy_lifecycle_gate(destroy.clone());
-    let (_, exit) = seed(&config, &overrides, None, Duration::ZERO).await;
+    let (victim, exit, victim_lease_witness) =
+        seed(&config, &overrides, None, Duration::ZERO).await;
     seed(&config, &overrides, Some("remaining-idle"), Duration::ZERO).await;
+    let pool = config.shared.idle_pool.clone();
     let budget = config.capacity.budget.clone();
     let runner = tokio::spawn(run(config));
     destroy.wait_entered(1, WAIT).await.unwrap();
+    assert!(!pool.lock().await.contains_sandbox_id(victim));
+    assert_eq!(victim_lease_witness.resources(), (2, 4096));
+    assert!(victim_lease_witness.is_active());
     assert_eq!(budget.allocated(), (4, 8192, 2));
     let before = env.handle.heartbeat_count();
     heartbeat.send(()).unwrap();
@@ -296,6 +303,10 @@ async fn held_cleanup(uncertain: bool) {
         exit.fail_wait();
         destroy.release_one();
         memory_completed(&env, cursor).await;
+        assert!(
+            victim_lease_witness.is_active(),
+            "uncertain cleanup retains its original full lease after completion"
+        );
         memory_tick(&env, &ticks).await;
         assert_eq!(
             overrides.destroy_call_count(),
@@ -303,8 +314,8 @@ async fn held_cleanup(uncertain: bool) {
             "uncertainty fences further reclamation"
         );
         assert!(
-            budget.allocated().2 >= 1,
-            "uncertain cleanup retains its original full lease"
+            victim_lease_witness.is_active(),
+            "uncertain cleanup retains its original full lease after a fenced tick"
         );
     } else {
         let cursor = env.start_observer.cursor();
@@ -324,6 +335,7 @@ async fn held_cleanup(uncertain: bool) {
     }
     destroy.release_one();
     shutdown(&env, runner).await;
+    assert!(!victim_lease_witness.is_active());
     assert_eq!(budget.allocated(), (0, 0, 0));
 }
 
