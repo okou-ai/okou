@@ -173,7 +173,7 @@ export function ArtifactActionTooltip({
 
 export function ArtifactShareButton({
   artifactShareIdentity$,
-  shareUrl$,
+  shareUrl,
   surface,
   ariaLabel,
   className,
@@ -181,7 +181,7 @@ export function ArtifactShareButton({
   url,
 }: {
   artifactShareIdentity$?: AttachmentPreviewSignals["artifactShareIdentity$"];
-  shareUrl$: AttachmentPreviewSignals["shareUrl$"];
+  shareUrl: string | null | undefined;
   surface: "dialog" | "sidebar";
   ariaLabel?: string;
   className?: string;
@@ -189,8 +189,6 @@ export function ArtifactShareButton({
   url: string;
 }) {
   const { t } = useTranslation();
-  const share = useLoadable(shareUrl$);
-  const shareUrl = share.state === "hasData" ? share.data : undefined;
   const label =
     ariaLabel ??
     t(($) => {
@@ -209,34 +207,9 @@ export function ArtifactShareButton({
     );
   }
   if (!shareUrl) {
-    const reason =
-      share.state === "loading"
-        ? t(($) => {
-            return $.artifacts.sharing.loadingPermissions;
-          })
-        : share.state === "hasError"
-          ? t(($) => {
-              return $.artifacts.sharing.linkLoadFailed;
-            })
-          : t(($) => {
-              return $.artifacts.sharing.unavailable;
-            });
-    return (
-      <ArtifactActionTooltip label={reason}>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          className={className}
-          disabled
-          aria-label={label}
-          aria-description={reason}
-          aria-busy={share.state === "loading" || undefined}
-        >
-          <Share2 size={iconSize} />
-        </Button>
-      </ArtifactActionTooltip>
-    );
+    // Private artifacts have no public address. Keep the action hidden while
+    // resolving, and until explicit publication provides a share URL.
+    return null;
   }
   if (isHostedSiteUrl(shareUrl)) {
     return (

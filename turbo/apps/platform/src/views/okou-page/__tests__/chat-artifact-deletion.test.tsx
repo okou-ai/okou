@@ -4,7 +4,11 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifactRun,
@@ -15,6 +19,8 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
   openResourceArtifact,
 } from "./chat-navigation-artifact-test-helpers.ts";
+
+import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
 const report = artifactSummary(
@@ -81,7 +87,7 @@ function mockReport(available: () => boolean) {
 }
 
 test.each(["lightbox", "sidebar", "resources"] as const)(
-  "a thread artifact can be deleted from the %s toolbar",
+  "a thread artifact can be deleted through the %s More menu",
   async (surface) => {
     let removed = false;
     mockReport(() => {
@@ -115,9 +121,10 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
       within(preview).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect(buttonNamed("Delete", preview)).toBeEnabled();
+      expect(buttonNamed("More artifact actions", preview)).toBeInTheDocument();
     });
-    click(buttonNamed("Delete", preview));
+    click(buttonNamed("More artifact actions", preview));
+    click(await findNamedMenuItem("Delete"));
     const cancelled = await screen.findByRole("dialog", {
       name: `Delete ${report.title}?`,
     });
@@ -127,7 +134,8 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
     });
     expect(preview).toBeInTheDocument();
     expect(removed).toBeFalsy();
-    click(buttonNamed("Delete", preview));
+    click(buttonNamed("More artifact actions", preview));
+    click(await findNamedMenuItem("Delete"));
     const confirmed = await screen.findByRole("dialog", {
       name: `Delete ${report.title}?`,
     });
@@ -150,45 +158,47 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
     await expect(
       within(reopened).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
-    expect(buttonNamed("Delete", reopened)).toBeDisabled();
+    click(buttonNamed("More artifact actions", reopened));
+    const emptyMenu = await screen.findByRole("menu");
+    await expect(
+      within(emptyMenu).findByText("No actions available"),
+    ).resolves.toBeInTheDocument();
+    expect(queryAllByRoleFast("menuitem", emptyMenu)).toHaveLength(0);
   },
 );
 
 test.each([
-  ["lightbox", "owner"],
-  ["lightbox", "unavailable"],
-  ["lightbox", "failed"],
-  ["sidebar", "owner"],
-  ["sidebar", "unavailable"],
-  ["sidebar", "failed"],
+  { surface: "lightbox", outcome: "owner" },
+  { surface: "lightbox", outcome: "unavailable" },
+  { surface: "lightbox", outcome: "failed" },
+  { surface: "sidebar", outcome: "owner" },
+  { surface: "sidebar", outcome: "unavailable" },
+  { surface: "sidebar", outcome: "failed" },
 ] as const)(
-  "the %s delete action stays visible while access resolves to %s",
-  async (surface, outcome) => {
+  "$surface keeps More available while delete access resolves to $outcome",
+  async ({ surface, outcome }) => {
     mockReport(() => {
       return true;
     });
-    const started = context.mocks.deferred<void>();
-    const release = context.mocks.deferred<void>();
+    const permission = context.mocks.deferred<void>();
     context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
-      started.resolve();
-      await release.promise;
+      await permission.promise;
       if (outcome === "failed") {
         throw new Error("Owner lookup unavailable");
       }
-      if (outcome === "unavailable") {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Artifact not found" },
-        });
-      }
-      return respond(
-        200,
-        fileArtifactDetail(report, {
-          filename: report.title,
-          contentType: "text/plain",
-          fileId: "f0000000-0000-4000-a000-000000000921",
-          url,
-        }),
-      );
+      return outcome === "owner"
+        ? respond(
+            200,
+            fileArtifactDetail(report, {
+              filename: report.title,
+              contentType: "text/plain",
+              fileId: "f0000000-0000-4000-a000-000000000921",
+              url,
+            }),
+          )
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Artifact not found" },
+          });
     });
     await setupPage({
       context,
@@ -205,38 +215,35 @@ test.each([
     const preview = await screen.findByTestId(
       surface === "lightbox" ? "attachment-lightbox" : "artifact-sidebar",
     );
-    await started.promise;
-    const deletion = buttonNamed("Delete", preview);
-    expect(deletion).toBeDisabled();
-    expect(deletion).toHaveAttribute("aria-busy", "true");
-    expect(deletion).toHaveAccessibleDescription("Checking delete access");
-    click(deletion);
+    await expect(
+      within(preview).findByText("Thread report content"),
+    ).resolves.toBeInTheDocument();
+    const more = buttonNamed("More artifact actions", preview);
+    expect(more).toBeEnabled();
     expect(
-      screen.queryByRole("dialog", {
-        name: `Delete ${report.title}?`,
+      queryAllByRoleFast("button", preview).find((button) => {
+        return button.getAttribute("aria-label") === "Delete";
       }),
-    ).not.toBeInTheDocument();
-    release.resolve();
-    const description =
+    ).toBeUndefined();
+    click(more);
+    const menu = await screen.findByRole("menu");
+    await expect(
+      within(menu).findByText("Checking delete access"),
+    ).resolves.toBeInTheDocument();
+    expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(0);
+    permission.resolve();
+    const readyText =
       outcome === "owner"
-        ? ""
+        ? "Delete"
         : outcome === "failed"
-          ? "Couldn't check delete access"
-          : "You can't delete this artifact";
-    await waitFor(() => {
-      const settled = buttonNamed("Delete", preview);
-      expect(settled).toHaveProperty("disabled", outcome !== "owner");
-      expect(settled).toHaveAccessibleDescription(description);
-      expect(settled).not.toHaveAttribute("aria-busy");
-    });
-    expect(buttonNamed("Delete", preview)).toBeVisible();
-    click(buttonNamed("Delete", preview));
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", {
-          name: `Delete ${report.title}?`,
-        }) !== null,
-      ).toBe(outcome === "owner");
-    });
+          ? "Couldn’t check delete access"
+          : "No actions available";
+    await expect(
+      within(menu).findByText(readyText),
+    ).resolves.toBeInTheDocument();
+    expect(buttonNamed("More artifact actions", preview)).toBeEnabled();
+    expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(
+      outcome === "owner" ? 1 : 0,
+    );
   },
 );

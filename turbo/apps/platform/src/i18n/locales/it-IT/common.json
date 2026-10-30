@@ -545,10 +545,10 @@
       "hostedDescription": "Il sito e tutte le versioni pubblicate verranno messi offline. Le copie salvate in altri servizi rimarranno disponibili.",
       "loadFailed": "Impossibile verificare il permesso di eliminazione",
       "menu": "Altre azioni per {{title}}",
+      "noActions": "Nessuna azione disponibile",
       "sharedDescription": "Elimina questa conversazione condivisa dai tuoi artefatti. Il suo link di condivisione smetterà di funzionare. La conversazione originale resterà disponibile.",
       "success": "Artefatto eliminato",
-      "title": "Eliminare {{title}}?",
-      "unavailable": "Non puoi eliminare questo risultato"
+      "title": "Eliminare {{title}}?"
     },
     "fileBadges": {
       "artwork": "ARTE",
@@ -641,7 +641,6 @@
       "accessLabel": "Chi può accedere",
       "copied": "Copiato",
       "copyLink": "Copia link",
-      "linkLoadFailed": "Impossibile caricare il link di condivisione",
       "loadFailed": "Impossibile caricare le autorizzazioni",
       "loadingPermissions": "Caricamento delle autorizzazioni",
       "onlyMe": "Solo io",
@@ -652,7 +651,6 @@
       "permissionsUpdated": "Accesso aggiornato",
       "publicAccess": "Accesso pubblico",
       "publicOption": "Chiunque abbia il link",
-      "unavailable": "Nessun link condivisibile disponibile",
       "updateFailed": "Impossibile aggiornare l’accesso"
     },
     "sidebar": {

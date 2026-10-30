@@ -527,12 +527,12 @@
       "deleting": "Menghapus…",
       "description": "Artefak ini akan dihapus dan tautan Okou-nya dinonaktifkan. Salinan yang sudah diunduh atau disimpan di layanan lain akan tetap ada.",
       "hostedDescription": "Situs web dan semua versi yang dipublikasikan akan dinonaktifkan. Salinan yang disimpan di layanan lain akan tetap ada.",
-      "loadFailed": "Izin penghapusan tidak dapat diperiksa",
+      "loadFailed": "Tidak dapat memeriksa izin penghapusan",
       "menu": "Tindakan lainnya untuk {{title}}",
+      "noActions": "Tidak ada tindakan yang tersedia",
       "sharedDescription": "Hapus percakapan yang dibagikan ini dari artefak Anda. Tautan berbaginya tidak akan berfungsi lagi. Percakapan asli Anda akan tetap tersedia.",
       "success": "Artefak dihapus",
-      "title": "Hapus {{title}}?",
-      "unavailable": "Anda tidak dapat menghapus hasil ini"
+      "title": "Hapus {{title}}?"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -624,7 +624,6 @@
       "accessLabel": "Siapa yang dapat mengakses",
       "copied": "Tersalin",
       "copyLink": "Salin tautan",
-      "linkLoadFailed": "Tautan berbagi tidak dapat dimuat",
       "loadFailed": "Gagal memuat izin",
       "loadingPermissions": "Memuat izin",
       "onlyMe": "Hanya saya",
@@ -635,7 +634,6 @@
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
       "publicOption": "Siapa pun yang memiliki tautan",
-      "unavailable": "Tidak ada tautan yang dapat dibagikan",
       "updateFailed": "Tidak dapat memperbarui akses"
     },
     "sidebar": {

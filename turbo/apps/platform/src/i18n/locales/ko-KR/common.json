@@ -527,12 +527,12 @@
       "deleting": "삭제 중…",
       "description": "이 작업물을 삭제하고 Okou 링크를 비활성화합니다. 이미 다운로드했거나 다른 서비스에 저장한 사본은 유지됩니다.",
       "hostedDescription": "이 웹사이트와 게시된 모든 버전을 오프라인으로 전환합니다. 다른 서비스에 저장한 사본은 유지됩니다.",
-      "loadFailed": "삭제 권한을 확인하지 못했습니다",
+      "loadFailed": "삭제 권한을 확인할 수 없습니다",
       "menu": "{{title}} 추가 작업",
+      "noActions": "사용 가능한 작업이 없습니다",
       "sharedDescription": "이 공유된 대화를 작업물에서 삭제합니다. 공유 링크는 더 이상 사용할 수 없습니다. 원본 대화는 유지됩니다.",
       "success": "작업물이 삭제되었습니다",
-      "title": "{{title}}을(를) 삭제할까요?",
-      "unavailable": "이 결과물을 삭제할 수 없습니다"
+      "title": "{{title}}을(를) 삭제할까요?"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -624,7 +624,6 @@
       "accessLabel": "액세스 권한",
       "copied": "복사됨",
       "copyLink": "링크 복사",
-      "linkLoadFailed": "공유 링크를 불러오지 못했습니다",
       "loadFailed": "권한을 불러올 수 없습니다",
       "loadingPermissions": "권한을 불러오는 중",
       "onlyMe": "나만",
@@ -635,7 +634,6 @@
       "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
       "publicAccess": "공개 액세스",
       "publicOption": "링크가 있는 모든 사람",
-      "unavailable": "공유할 수 있는 링크가 없습니다",
       "updateFailed": "액세스 권한을 업데이트할 수 없습니다"
     },
     "sidebar": {

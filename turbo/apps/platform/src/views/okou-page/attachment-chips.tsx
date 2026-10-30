@@ -1,4 +1,4 @@
-import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import { ArtifactPreviewMoreMenu } from "./artifact-deletion.tsx";
 import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import {
   ArtifactPreviewCloseButton,
@@ -1368,6 +1368,7 @@ function ArtifactPreviewDialogActions({
   const toggleLightboxDialogFullscreen = useSet(
     toggleLightboxDialogFullscreen$,
   );
+  const shareUrl = useLastResolved(preview.shareUrl$);
   const closeDeletedPreview = useSet(closeArtifactCatalogPreview$);
   const showShare = preview.shareAvailable !== false;
   const showSplitView = preview.splitViewAvailable !== false;
@@ -1405,7 +1406,7 @@ function ArtifactPreviewDialogActions({
         <ArtifactShareButton
           artifactShareIdentity$={preview.artifactShareIdentity$}
           surface="dialog"
-          shareUrl$={preview.shareUrl$}
+          shareUrl={shareUrl}
           ariaLabel={t(($) => {
             return $.artifacts.actions.share;
           })}
@@ -1425,14 +1426,6 @@ function ArtifactPreviewDialogActions({
         syncTarget={artifactDialogSyncTarget(artifact)}
         url={preview.url}
       />
-      <ArtifactDeleteButton
-        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-        surface="dialog"
-        iconSize={18}
-        onDeleted={() => {
-          closeDeletedPreview(rootSignal);
-        }}
-      />
       <ArtifactActionSeparator />
       {showSplitView && (
         <ArtifactDialogSplitViewButton onClick={openInSplitView} />
@@ -1445,6 +1438,14 @@ function ArtifactPreviewDialogActions({
           }}
         />
       )}
+      <ArtifactPreviewMoreMenu
+        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+        surface="dialog"
+        iconSize={18}
+        onDeleted={() => {
+          closeDeletedPreview(rootSignal);
+        }}
+      />
       <ArtifactPreviewCloseButton />
     </div>
   );

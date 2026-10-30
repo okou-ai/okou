@@ -528,12 +528,12 @@
       "deleting": "Wird gelöscht…",
       "description": "Das Artefakt wird entfernt und seine Okou-Links werden deaktiviert. Bereits heruntergeladene oder in anderen Diensten gespeicherte Kopien bleiben erhalten.",
       "hostedDescription": "Die Website und alle veröffentlichten Versionen werden offline genommen. In anderen Diensten gespeicherte Kopien bleiben erhalten.",
-      "loadFailed": "Die Löschberechtigung konnte nicht geprüft werden",
+      "loadFailed": "Löschberechtigung konnte nicht geprüft werden",
       "menu": "Weitere Aktionen für {{title}}",
+      "noActions": "Keine Aktionen verfügbar",
       "sharedDescription": "Lösche diese geteilte Unterhaltung aus deinen Artefakten. Ihr Freigabelink funktioniert danach nicht mehr. Deine ursprüngliche Unterhaltung bleibt erhalten.",
       "success": "Artefakt gelöscht",
-      "title": "{{title}} löschen?",
-      "unavailable": "Du kannst dieses Ergebnis nicht löschen"
+      "title": "{{title}} löschen?"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -625,7 +625,6 @@
       "accessLabel": "Wer hat Zugriff",
       "copied": "Kopiert",
       "copyLink": "Link kopieren",
-      "linkLoadFailed": "Der Freigabelink konnte nicht geladen werden",
       "loadFailed": "Berechtigungen konnten nicht geladen werden",
       "loadingPermissions": "Berechtigungen werden geladen",
       "onlyMe": "Nur ich",
@@ -636,7 +635,6 @@
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
       "publicOption": "Alle mit dem Link",
-      "unavailable": "Kein teilbarer Link verfügbar",
       "updateFailed": "Zugriff konnte nicht aktualisiert werden"
     },
     "sidebar": {

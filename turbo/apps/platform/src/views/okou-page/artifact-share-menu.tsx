@@ -333,11 +333,6 @@ function ShareButtonPlaceholder({
       variant="quiet"
       size="icon-sm"
       className={className}
-      disabled
-      aria-busy="true"
-      aria-description={t(($) => {
-        return $.artifacts.sharing.loadingPermissions;
-      })}
       aria-label={
         ariaLabel ??
         t(($) => {

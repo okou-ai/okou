@@ -538,17 +538,17 @@
     },
     "deletion": {
       "cancel": "Cancelar",
-      "checking": "Verificando permissão para excluir",
+      "checking": "Verificando a permissão para excluir",
       "delete": "Excluir",
       "deleting": "Excluindo…",
       "description": "Isso remove o artefato e desativa seus links do Okou. Cópias já baixadas ou salvas em outros serviços serão mantidas.",
       "hostedDescription": "Isso tira o site e todas as versões publicadas do ar. Cópias salvas em outros serviços serão mantidas.",
       "loadFailed": "Não foi possível verificar a permissão para excluir",
       "menu": "Mais ações para {{title}}",
+      "noActions": "Nenhuma ação disponível",
       "sharedDescription": "Exclua esta conversa compartilhada dos seus artefatos. Seu link de compartilhamento deixará de funcionar. Sua conversa original continuará disponível.",
       "success": "Artefato excluído",
-      "title": "Excluir {{title}}?",
-      "unavailable": "Você não pode excluir este resultado"
+      "title": "Excluir {{title}}?"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -641,7 +641,6 @@
       "accessLabel": "Quem pode acessar",
       "copied": "Copiado",
       "copyLink": "Copiar link",
-      "linkLoadFailed": "Não foi possível carregar o link de compartilhamento",
       "loadFailed": "Não foi possível carregar as permissões",
       "loadingPermissions": "Carregando permissões",
       "onlyMe": "Somente eu",
@@ -652,7 +651,6 @@
       "permissionsUpdated": "Acesso atualizado",
       "publicAccess": "Acesso público",
       "publicOption": "Qualquer pessoa com o link",
-      "unavailable": "Nenhum link disponível para compartilhar",
       "updateFailed": "Não foi possível atualizar o acesso"
     },
     "sidebar": {

@@ -22,6 +22,8 @@ import {
   queryButtonByName,
 } from "./artifact-catalog-test-helpers.ts";
 
+import { findNamedMenuItem } from "../../okou-page/__tests__/chat-attachment-test-helpers.ts";
+
 const context = testContext();
 const report = artifact();
 
@@ -89,28 +91,42 @@ async function openDeletion() {
   });
   const preview = currentPreview()!;
   await waitFor(() => {
-    expect(getButtonByName("Delete", preview)).toBeEnabled();
+    expect(
+      getButtonByName("More artifact actions", preview),
+    ).toBeInTheDocument();
   });
-  click(getButtonByName("Delete", preview));
+  click(getButtonByName("More artifact actions", preview));
+  click(await findNamedMenuItem("Delete"));
   return await screen.findByRole("dialog", { name: `Delete ${report.title}?` });
 }
 
-test("the deletion switch hides artifact management actions", async () => {
-  mockPreview();
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [report], nextCursor: null });
-  });
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: false },
-  });
-  await expect(findArtifactAction(report.title)).resolves.toBeInTheDocument();
-  expect(queryButtonByName(`More actions for ${report.title}`)).toBeUndefined();
-  click(await findArtifactAction(report.title));
-  const preview = await screen.findByTestId("attachment-lightbox");
-  expect(queryButtonByName("Delete", preview)).toBeUndefined();
-});
+test.each([false, true])(
+  "the deletion switch hides artifact management actions (sidebar=%s)",
+  async (sidebar) => {
+    mockPreview();
+    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+      return respond(200, { artifacts: [report], nextCursor: null });
+    });
+    await setupPage({
+      context,
+      path: "/artifacts?tab=file",
+      featureSwitches: {
+        [FeatureSwitchKey.ArtifactDeletion]: false,
+        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
+      },
+    });
+    await expect(findArtifactAction(report.title)).resolves.toBeInTheDocument();
+    expect(
+      queryButtonByName(`More actions for ${report.title}`),
+    ).toBeUndefined();
+    click(await findArtifactAction(report.title));
+    const preview = await screen.findByTestId(
+      sidebar ? "artifact-sidebar" : "attachment-lightbox",
+    );
+    expect(queryButtonByName("More artifact actions", preview)).toBeUndefined();
+    expect(queryButtonByName("Delete", preview)).toBeUndefined();
+  },
+);
 
 test.each([false, true])(
   "preview cancellation and deletion keep the catalog consistent (sidebar=%s)",
@@ -158,7 +174,12 @@ test.each([false, true])(
       const preview =
         screen.queryByTestId("attachment-lightbox") ??
         screen.getByTestId("artifact-sidebar");
-      expect(getButtonByName("Delete", preview)).toHaveFocus();
+      expect(getButtonByName("More artifact actions", preview)).toHaveFocus();
+    });
+    await user.keyboard("{Enter}");
+    const keyboardItem = await findNamedMenuItem("Delete");
+    await waitFor(() => {
+      return expect(keyboardItem).toHaveFocus();
     });
     await user.keyboard("{Enter}");
     const keyboardDialog = await screen.findByRole("dialog", {
@@ -167,7 +188,9 @@ test.each([false, true])(
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(keyboardDialog).not.toBeInTheDocument();
-      expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
+      expect(
+        getButtonByName("More artifact actions", currentPreview()!),
+      ).toHaveFocus();
     });
     const dialog = await openDeletion();
     click(getButtonByName("Delete", dialog));
@@ -236,7 +259,9 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   click(getButtonByName("Cancel", dialog));
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
-    expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
+    expect(
+      getButtonByName("More artifact actions", currentPreview()!),
+    ).toHaveFocus();
   });
   const preview = currentPreview()!;
   click(getButtonByName("Close", preview));

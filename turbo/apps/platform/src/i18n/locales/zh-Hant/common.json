@@ -529,10 +529,10 @@
       "hostedDescription": "此網站及其所有已發佈版本將下線。儲存至其他服務的副本會保留。",
       "loadFailed": "無法檢查刪除權限",
       "menu": "{{title}}的更多操作",
+      "noActions": "暫無可用操作",
       "sharedDescription": "從你的作品中刪除此分享對話，其分享連結將失效。原始對話仍會保留。",
       "success": "作品已刪除",
-      "title": "刪除{{title}}？",
-      "unavailable": "你無法刪除此成果"
+      "title": "刪除{{title}}？"
     },
     "fileBadges": {
       "artwork": "美術",
@@ -624,7 +624,6 @@
       "accessLabel": "誰可以訪問",
       "copied": "已複製",
       "copyLink": "複製連結",
-      "linkLoadFailed": "無法載入分享連結",
       "loadFailed": "無法載入權限",
       "loadingPermissions": "正在載入權限",
       "onlyMe": "僅自己",
@@ -635,7 +634,6 @@
       "permissionsUpdated": "訪問權限已更新",
       "publicAccess": "公開訪問",
       "publicOption": "知道連結的所有人",
-      "unavailable": "暫無可分享的連結",
       "updateFailed": "無法更新存取權限"
     },
     "sidebar": {

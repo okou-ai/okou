@@ -528,12 +528,12 @@
       "deleting": "Deleting…",
       "description": "This removes the artifact and disables its Okou links. Copies already downloaded or saved to other services will remain.",
       "hostedDescription": "This takes the website and all its published versions offline. Copies saved to other services will remain.",
-      "loadFailed": "Couldn't check delete access",
+      "loadFailed": "Couldn’t check delete access",
       "menu": "More actions for {{title}}",
+      "noActions": "No actions available",
       "sharedDescription": "Delete this shared conversation from your artifacts. Its shared link will stop working. Your original conversation will stay available.",
       "success": "Artifact deleted",
-      "title": "Delete {{title}}?",
-      "unavailable": "You can't delete this artifact"
+      "title": "Delete {{title}}?"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -625,7 +625,6 @@
       "accessLabel": "Who can access",
       "copied": "Copied",
       "copyLink": "Copy link",
-      "linkLoadFailed": "Couldn't load the share link",
       "loadFailed": "Unable to load permissions",
       "loadingPermissions": "Loading permissions",
       "onlyMe": "Only me",
@@ -636,7 +635,6 @@
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
       "publicOption": "Anyone with the link",
-      "unavailable": "No shareable link is available",
       "updateFailed": "Couldn’t update access"
     },
     "sidebar": {

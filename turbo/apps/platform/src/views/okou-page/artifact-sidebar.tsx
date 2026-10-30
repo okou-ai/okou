@@ -1,6 +1,8 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { closeDeletedThreadArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import { ArtifactPreviewMoreMenu } from "./artifact-deletion.tsx";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
 import {
@@ -38,7 +40,6 @@ import {
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
   CsvPreviewTable,
@@ -266,8 +267,8 @@ export function ArtifactSidebarContent({
 
   return (
     <ArtifactSidebarResolvedContent
-      deleteAction={
-        <ArtifactDeleteButton
+      moreAction={
+        <ArtifactPreviewMoreMenu
           artifactId={artifactId ?? syncTarget?.artifactId}
           surface="sidebar"
           onDeleted={onDeleted ?? onClose}
@@ -276,7 +277,6 @@ export function ArtifactSidebarContent({
       recovery={recovery}
       resourceUrl={resourceUrl}
       shareUrl={shareUrl}
-      shareUrl$={artifactRef.shareUrl$}
       closePreview={onClose}
       display={display}
       fullscreen={fullscreen}
@@ -292,11 +292,10 @@ export function ArtifactSidebarContent({
 }
 
 type ArtifactSidebarResolvedContentProps = {
-  readonly deleteAction: ReactNode;
+  readonly moreAction: ReactNode;
   readonly recovery: ReactNode;
   readonly resourceUrl: string | null;
   readonly shareUrl: string | null | undefined;
-  readonly shareUrl$: AttachmentPreviewSignals["shareUrl$"];
   readonly closePreview: () => void;
   readonly display: ArtifactDisplay;
   readonly fullscreen: boolean;
@@ -310,11 +309,10 @@ type ArtifactSidebarResolvedContentProps = {
 };
 
 function ArtifactSidebarResolvedContent({
-  deleteAction,
+  moreAction,
   recovery,
   resourceUrl,
   shareUrl,
-  shareUrl$,
   closePreview,
   display,
   fullscreen,
@@ -343,8 +341,8 @@ function ArtifactSidebarResolvedContent({
       }
     >
       <ArtifactSidebarHeader
-        deleteAction={deleteAction}
-        shareUrl$={shareUrl$}
+        moreAction={moreAction}
+        shareUrl={shareUrl}
         title={display.title}
         filename={display.filename}
         kind={display.kind}
@@ -493,8 +491,8 @@ function resolveArtifactDisplay(
 }
 
 function ArtifactSidebarHeader({
-  deleteAction,
-  shareUrl$,
+  moreAction,
+  shareUrl,
   title,
   filename,
   kind,
@@ -509,8 +507,8 @@ function ArtifactSidebarHeader({
   onToggleFullscreen,
   onClose,
 }: {
-  deleteAction: ReactNode;
-  shareUrl$: AttachmentPreviewSignals["shareUrl$"];
+  moreAction: ReactNode;
+  shareUrl?: string | null;
   title: string;
   filename: string;
   kind?: ArtifactKindForBody;
@@ -561,8 +559,8 @@ function ArtifactSidebarHeader({
         )}
       </div>
       <ArtifactSidebarActions
-        deleteAction={deleteAction}
-        shareUrl$={shareUrl$}
+        moreAction={moreAction}
+        shareUrl={shareUrl}
         compactActions={compactActions}
         artifactKind={artifactKind}
         fullscreen={fullscreen}
@@ -579,8 +577,8 @@ function ArtifactSidebarHeader({
 }
 
 function ArtifactSidebarActions({
-  deleteAction,
-  shareUrl$,
+  moreAction,
+  shareUrl,
   artifactKind,
   compactActions,
   fullscreen,
@@ -592,8 +590,8 @@ function ArtifactSidebarActions({
   filename,
   url,
 }: {
-  deleteAction: ReactNode;
-  shareUrl$: AttachmentPreviewSignals["shareUrl$"];
+  moreAction: ReactNode;
+  shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   compactActions: boolean;
   fullscreen: boolean;
@@ -605,12 +603,13 @@ function ArtifactSidebarActions({
   filename: string;
   url?: string;
 }) {
+  const deletionEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
   return (
     <div className="flex shrink-0 items-center gap-1">
       {url && (
         <ArtifactSidebarPreviewActions
-          deleteAction={deleteAction}
-          shareUrl$={shareUrl$}
+          shareUrl={shareUrl}
           artifactKind={artifactKind}
           kind={kind}
           shareAvailable={shareAvailable}
@@ -623,7 +622,8 @@ function ArtifactSidebarActions({
         fullscreen={fullscreen}
         onToggleFullscreen={onToggleFullscreen}
       />
-      {compactActions ? (
+      {moreAction}
+      {compactActions && !deletionEnabled ? (
         <ArtifactMoreActions onClose={onClose} />
       ) : (
         <ArtifactCloseAction onClose={onClose} />
@@ -633,8 +633,7 @@ function ArtifactSidebarActions({
 }
 
 function ArtifactSidebarPreviewActions({
-  deleteAction,
-  shareUrl$,
+  shareUrl,
   artifactKind,
   kind,
   shareAvailable,
@@ -642,8 +641,7 @@ function ArtifactSidebarPreviewActions({
   filename,
   url,
 }: {
-  deleteAction: ReactNode;
-  shareUrl$: AttachmentPreviewSignals["shareUrl$"];
+  shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   kind?: ArtifactKindForBody;
   shareAvailable: boolean;
@@ -658,7 +656,7 @@ function ArtifactSidebarPreviewActions({
       {shareAvailable && (
         <ArtifactShareButton
           surface="sidebar"
-          shareUrl$={shareUrl$}
+          shareUrl={shareUrl}
           ariaLabel={t(($) => {
             return $.artifacts.actions.shareArtifact;
           })}
@@ -675,7 +673,6 @@ function ArtifactSidebarPreviewActions({
         syncTarget={syncTarget}
         url={url}
       />
-      {deleteAction}
       <ArtifactActionSeparator />
     </>
   );

@@ -545,10 +545,10 @@
       "hostedDescription": "Ce site et toutes ses versions publiées seront mis hors ligne. Les copies enregistrées dans d’autres services seront conservées.",
       "loadFailed": "Impossible de vérifier le droit de suppression",
       "menu": "Plus d’actions pour {{title}}",
+      "noActions": "Aucune action disponible",
       "sharedDescription": "Supprimez cette conversation partagée de vos artefacts. Son lien de partage ne fonctionnera plus. Votre conversation originale restera accessible.",
       "success": "Artefact supprimé",
-      "title": "Supprimer {{title}} ?",
-      "unavailable": "Vous ne pouvez pas supprimer ce résultat"
+      "title": "Supprimer {{title}} ?"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -641,7 +641,6 @@
       "accessLabel": "Qui peut y accéder",
       "copied": "Copié",
       "copyLink": "Copier le lien",
-      "linkLoadFailed": "Impossible de charger le lien de partage",
       "loadFailed": "Impossible de charger les autorisations",
       "loadingPermissions": "Chargement des autorisations",
       "onlyMe": "Moi uniquement",
@@ -652,7 +651,6 @@
       "permissionsUpdated": "Accès mis à jour",
       "publicAccess": "Accès public",
       "publicOption": "Toute personne disposant du lien",
-      "unavailable": "Aucun lien à partager disponible",
       "updateFailed": "Impossible de modifier l’accès"
     },
     "sidebar": {

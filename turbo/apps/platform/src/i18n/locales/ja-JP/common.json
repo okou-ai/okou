@@ -522,17 +522,17 @@
     },
     "deletion": {
       "cancel": "キャンセル",
-      "checking": "削除権限を確認中",
+      "checking": "削除権限を確認しています",
       "delete": "削除",
       "deleting": "削除中…",
       "description": "この作品を削除し、Okou のリンクを無効にします。ダウンロード済み、または他のサービスに保存されたコピーは残ります。",
       "hostedDescription": "このウェブサイトと公開済みの全バージョンを非公開にします。他のサービスに保存されたコピーは残ります。",
       "loadFailed": "削除権限を確認できませんでした",
       "menu": "{{title}}のその他の操作",
+      "noActions": "利用可能な操作はありません",
       "sharedDescription": "この共有された会話を作品から削除します。共有リンクは利用できなくなります。元の会話は残ります。",
       "success": "作品を削除しました",
-      "title": "{{title}}を削除しますか？",
-      "unavailable": "この成果物は削除できません"
+      "title": "{{title}}を削除しますか？"
     },
     "fileBadges": {
       "artwork": "アート",
@@ -624,7 +624,6 @@
       "accessLabel": "アクセスできるユーザー",
       "copied": "コピーしました",
       "copyLink": "リンクをコピー",
-      "linkLoadFailed": "共有リンクを読み込めませんでした",
       "loadFailed": "権限を読み込めませんでした",
       "loadingPermissions": "権限を読み込み中",
       "onlyMe": "自分のみ",
@@ -635,7 +634,6 @@
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
       "publicOption": "リンクを知っている全員",
-      "unavailable": "共有できるリンクはありません",
       "updateFailed": "アクセス権を更新できませんでした"
     },
     "sidebar": {
