@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   halloweenContract,
   halloweenOperationsContract,
@@ -11,6 +13,7 @@ import { mockNow } from "../../../lib/time";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { halloweenRoutes } from "../halloween";
 import { halloweenOperationsRoutes } from "../halloween-operations";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -241,13 +244,17 @@ describe("Halloween quiz", () => {
   });
 
   it("uses the feature switch as the only availability gate for signed-in users", async () => {
-    const { game } = clients(
-      setupApp({
-        context,
-        routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
-      }),
-    );
-    const enabledActor = actor();
+    const app = setupApp({
+      context,
+      routes: [
+        ...halloweenRoutes,
+        ...halloweenOperationsRoutes,
+        ...featureSwitchesRoutes,
+      ],
+    });
+    const { game } = clients(app);
+    const switches = app(featureSwitchesContract);
+    actor(false);
     let activeRound: HalloweenRound | null = null;
     for (const now of ["2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z"]) {
       mockNow(new Date(now));
@@ -262,7 +269,13 @@ describe("Halloween quiz", () => {
       throw new Error("Expected an active Halloween round");
     }
 
-    mocks.clerk.session(enabledActor.userId, `org_${randomUUID()}`);
+    await accept(
+      switches.update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.HalloweenQuiz]: false } },
+      }),
+      [200],
+    );
     expect((await accept(game.status({ headers }), [200])).body).toStrictEqual({
       phase: "unavailable",
     });
@@ -300,7 +313,7 @@ describe("Halloween quiz", () => {
       game.leave({ headers, body: roundReference(activeRound) }),
     ).resolves.toMatchObject(unavailable);
 
-    mocks.clerk.session(enabledActor.userId, enabledActor.orgId);
+    await accept(switches.delete({ headers }), [200]);
     expect((await accept(game.current({ headers }), [200])).body).toStrictEqual(
       activeRound,
     );
