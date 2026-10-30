@@ -61,14 +61,10 @@ export function readMarkdownTable(table: Element): string[][] {
 }
 
 function xml(value: string): string {
-  return value
-    .replace(/[\p{Cc}\p{Cs}\uFFFE\uFFFF]/gu, (character) => {
-      return "\t\n\r".includes(character) ? character : "";
-    })
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+  const text = value.replace(/[\p{Cc}\p{Cs}\uFFFE\uFFFF]/gu, (character) => {
+    return "\t\n\r".includes(character) ? character : "";
+  });
+  return new XMLSerializer().serializeToString(document.createTextNode(text));
 }
 
 function columnName(index: number): string {
