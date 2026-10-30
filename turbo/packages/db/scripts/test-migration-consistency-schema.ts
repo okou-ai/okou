@@ -1061,6 +1061,14 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${agentDeletion}`,
   );
+  const workflowDeletion = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/delete-workflow-rows.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${workflowDeletion}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1379,6 +1387,17 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "92643bf0c1e256d924d2cf022c7c3657",
+  },
+  {
+    schemaName: "public",
+    functionName: "delete_workflow_rows",
+    identityArguments:
+      "p_org_id text, p_workflow_id uuid, p_allow_official_installation_deletion boolean, p_required_official_installation_state text",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "10474201f5b27fc7f34631dcc0a84e10",
   },
 ];
 

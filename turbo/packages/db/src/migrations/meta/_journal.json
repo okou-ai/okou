@@ -2913,6 +2913,13 @@
       "when": 1793344891499,
       "tag": "1494_atomic_agent_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 1495,
+      "version": "7",
+      "when": 1793349563883,
+      "tag": "1495_atomic_workflow_deletion",
+      "breakpoints": true
     }
   ]
 }
