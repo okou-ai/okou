@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.240.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.17...runner-rs-v0.240.18) (2026-10-30)
+
+
+### Refactoring
+
+* **runner:** separate local cancel test source ownership ([#44153](https://github.com/okou-ai/okou/issues/44153)) ([7c3c70b](https://github.com/okou-ai/okou/commit/7c3c70b240a64b1fd9f97b327c3f53ef7acdb280))
+
 ## [0.240.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.16...runner-rs-v0.240.17) (2026-10-30)
 
 
