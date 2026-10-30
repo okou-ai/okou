@@ -756,30 +756,32 @@ export function canonicalFirewallPathPercentEncoding(path: string): string {
   });
 }
 
-/** Authorization-only interpretations; callers must keep the original wire path. */
-export function firewallRequestPathInterpretations(
-  path: string,
-): readonly string[] | null {
+/** Bounded owner-discovery paths; unsafe candidates must never authorize a request. */
+export function firewallRequestPathInterpretations(path: string): {
+  readonly paths: readonly string[];
+  readonly unsafe: boolean;
+} {
   const paths = [path];
   let current = path;
+  let unsafe = false;
   for (let pass = 0; pass < MAX_PATH_PERCENT_DECODE_PASSES; pass += 1) {
     const canonical = canonicalFirewallPathPercentEncoding(current);
     if (canonical !== current && !paths.includes(canonical))
       paths.push(canonical);
-    if (!current.includes("%")) return paths;
+    if (!current.includes("%")) return { paths, unsafe };
     let decoded: string;
     try {
       decoded = decodeURIComponent(current);
     } catch {
-      return null;
+      return { paths, unsafe: true };
     }
-    // Decoding path data must never create a new query or fragment boundary.
-    if (decoded.includes("?") || decoded.includes("#")) return null;
-    if (decoded === current) return paths;
+    // Keep these opaque paths only to discover an owner before rejecting.
+    unsafe ||= decoded.includes("?") || decoded.includes("#");
+    if (decoded === current) return { paths, unsafe };
     paths.push(decoded);
     current = decoded;
   }
-  return current.includes("%") ? null : paths;
+  return { paths, unsafe: unsafe || current.includes("%") };
 }
 
 function validateBaseUrlVariablePercentEncoding({

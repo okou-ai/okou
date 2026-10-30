@@ -36,6 +36,10 @@ _MAX_CONNECTOR_INTENT_BYTES = 64
         "/v2/files/%64elegations%2Ffoo",
         "/v2/files/a",
         "/v2/files/abx",
+        "/v%32/registries/id%3Fignored",
+        "/v%32/registries/id%23ignored",
+        "/v%2532/registries/id%3Fignored",
+        "/v%2532/registries/id%23ignored",
     ],
 )
 async def test_encoded_routes_are_denied_before_connector_credentials(
@@ -85,7 +89,9 @@ async def test_encoded_routes_are_denied_before_connector_credentials(
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
         fake_firewall_headers() as auth_fetch,
     ):
-        assert mitm_addon.requestheaders(flow) is None
+        header_result = mitm_addon.requestheaders(flow)
+        if header_result is not None:
+            await await_requestheaders_result(header_result)
         await mitm_addon.request(flow)
 
     assert flow.response is not None

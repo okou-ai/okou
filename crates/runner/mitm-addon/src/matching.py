@@ -2793,20 +2793,18 @@ def _match_request_interpretations(
         return original
     if not track_authorization_routes:
         return original
-    paths = request_path_interpretations(url_parts.path)
-    if paths is None:
-        if isinstance(original, FirewallAllow):
-            return FirewallBlock(
-                original.api_entry["base"],
-                original.name,
-                upper_method,
-                original.rel_path,
-                (),
-                "unsafe_path",
-            )
-        return original
+    interpretations = request_path_interpretations(url_parts.path)
+    if interpretations.unsafe and isinstance(original, FirewallAllow):
+        return FirewallBlock(
+            original.api_entry["base"],
+            original.name,
+            upper_method,
+            original.rel_path,
+            (),
+            "unsafe_path",
+        )
     seen: set[str] = set()
-    for path in paths:
+    for path in interpretations.paths:
         canonical_path = canonical_path_percent_encoding(path)
         if canonical_path in seen or (normalized is None and canonical_path == url_parts.path):
             continue

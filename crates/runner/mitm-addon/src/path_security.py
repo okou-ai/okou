@@ -3,6 +3,7 @@
 import re
 import unicodedata
 import urllib.parse
+from typing import NamedTuple
 
 from url_syntax import has_unsafe_url_codepoint
 
@@ -65,26 +66,33 @@ def canonical_path_percent_encoding(path: str) -> str:
     return _PERCENT_ESCAPE.sub(replace_escape, path)
 
 
-def request_path_interpretations(path: str) -> tuple[str, ...] | None:
-    """Return bounded authorization interpretations without changing the wire path."""
+class PathInterpretations(NamedTuple):
+    paths: tuple[str, ...]
+    unsafe: bool
+
+
+def request_path_interpretations(path: str) -> PathInterpretations:
+    """Retain bounded owner-discovery paths, marking unsafe authorization separately."""
     if len(path) > MAX_PATH_VALIDATION_CHARACTERS:
-        return None
+        return PathInterpretations((path,), True)
     paths = [path]
     current = path
+    unsafe = False
     for _ in range(_MAX_PERCENT_DECODE_PASSES):
         canonical = canonical_path_percent_encoding(current)
         if canonical != current and canonical not in paths:
             paths.append(canonical)
         if "%" not in current:
-            return tuple(paths)
+            return PathInterpretations(tuple(paths), unsafe)
         decoded = _percent_decode_segment(current)
-        if decoded is None or "?" in decoded or "#" in decoded:
-            return None
+        if decoded is None:
+            return PathInterpretations(tuple(paths), True)
+        unsafe |= "?" in decoded or "#" in decoded
         if decoded == current:
-            return tuple(paths)
+            return PathInterpretations(tuple(paths), unsafe)
         paths.append(decoded)
         current = decoded
-    return None if "%" in current else tuple(paths)
+    return PathInterpretations(tuple(paths), unsafe or "%" in current)
 
 
 def _segment_has_unsafe_path(raw_segment: str) -> bool:

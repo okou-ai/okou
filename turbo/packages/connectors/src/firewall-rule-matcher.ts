@@ -2711,21 +2711,19 @@ export function matchFirewallRequestDecision(
   if (!trackAuthorizationRoutes) return original;
   const interpretations = path.includes("%")
     ? firewallRequestPathInterpretations(path)
-    : [path];
-  if (interpretations === null) {
-    return original.kind === "allow"
-      ? {
-          kind: "block",
-          firewallName: original.firewallName,
-          base: original.base,
-          relativePath: original.relativePath,
-          reason: "unsafe_path",
-          permissions: [],
-        }
-      : original;
+    : { paths: [path], unsafe: false };
+  if (interpretations.unsafe && original.kind === "allow") {
+    return {
+      kind: "block",
+      firewallName: original.firewallName,
+      base: original.base,
+      relativePath: original.relativePath,
+      reason: "unsafe_path",
+      permissions: [],
+    };
   }
   const seen = new Set<string>();
-  for (const interpretedPath of interpretations) {
+  for (const interpretedPath of interpretations.paths) {
     const matchPath = canonicalFirewallPathPercentEncoding(interpretedPath);
     if (seen.has(matchPath) || (canonical === null && matchPath === path))
       continue;

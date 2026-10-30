@@ -1169,6 +1169,13 @@ or a decoded-only owner selection is rejected with `unsafe_path`. Original denia
 are never promoted to decoded allowances. Decoding cannot introduce a query or fragment
 boundary, and query escapes are not path input.
 
+When decoding introduces a query or fragment delimiter, retain the bounded
+interpretations solely to discover an encoded API owner before rejecting the request.
+Treat those candidates as opaque path text, never as a replacement URL or query.
+An unsafe interpretation must not authorize the request or erase a discovered
+owner into ordinary network fallback. Unowned paths and different authorities
+remain outside connector credential selection.
+
 An unchanged selected allowance is insufficient when a newly applicable denied or
 asked alias is hidden by another granted rule. Compare the actual matching routes,
 including API identity, permission and original rule text, after method and selector
