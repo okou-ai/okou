@@ -37,6 +37,7 @@ export function createNativeWindowProvider(context: TestContext) {
       readonly sessionId?: string;
     }[];
     beforeNativeWindowReply?: (windowId: number) => Promise<void> | void;
+    afterNativeWindowReply?: (windowId: number) => Promise<void> | void;
     beforeCloseWindowReply?: (windowId: number) => Promise<void> | void;
     bridgeAvailable: boolean;
     snapshotEventWindowId?: number;
@@ -108,6 +109,42 @@ export function createNativeWindowProvider(context: TestContext) {
         : {}),
     };
   }
+  async function readNativeWindows(
+    request: NonNullable<ReturnType<typeof browserExtensionRequest>>,
+  ): Promise<unknown> {
+    await state.beforeNativeWindowReply?.(Number(request.windowId));
+    context.signal.throwIfAborted();
+    const error =
+      state.nativeWindowErrors.get(Number(request.windowId)) ??
+      state.windowError;
+    if (error) {
+      return new Error(error);
+    }
+    if (
+      request.populate &&
+      state.emptySnapshot &&
+      request.method === "getWindow"
+    ) {
+      return { id: request.windowId, focused: true, tabs: [] };
+    }
+    const value =
+      request.method === "getWindow"
+        ? windowInfo(Number(request.windowId), request.populate === true)
+        : [
+            ...new Set(
+              [...state.targets.values()].map((target) => {
+                return target.windowId;
+              }),
+            ),
+          ].map((id) => {
+            return windowInfo(id, request.populate === true);
+          });
+    if (request.method === "getWindow" && request.populate) {
+      await state.afterNativeWindowReply?.(Number(request.windowId));
+      context.signal.throwIfAborted();
+    }
+    return value;
+  }
   async function invokeNative(
     request: NonNullable<ReturnType<typeof browserExtensionRequest>>,
   ): Promise<unknown> {
@@ -120,32 +157,7 @@ export function createNativeWindowProvider(context: TestContext) {
       }
       case "getWindow":
       case "listWindows": {
-        await state.beforeNativeWindowReply?.(Number(request.windowId));
-        context.signal.throwIfAborted();
-        const error =
-          state.nativeWindowErrors.get(Number(request.windowId)) ??
-          state.windowError;
-        if (error) {
-          return new Error(error);
-        }
-        if (
-          request.populate &&
-          state.emptySnapshot &&
-          request.method === "getWindow"
-        ) {
-          return { id: request.windowId, focused: true, tabs: [] };
-        }
-        return request.method === "getWindow"
-          ? windowInfo(Number(request.windowId), request.populate === true)
-          : [
-              ...new Set(
-                [...state.targets.values()].map((target) => {
-                  return target.windowId;
-                }),
-              ),
-            ].map((id) => {
-              return windowInfo(id, request.populate === true);
-            });
+        return await readNativeWindows(request);
       }
       case "closeWindow": {
         await state.beforeCloseWindowReply?.(Number(request.windowId));
