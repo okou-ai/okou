@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.1...guest-contracts-v0.29.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
 ## [0.29.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.0...guest-contracts-v0.29.1) (2026-10-30)
 
 

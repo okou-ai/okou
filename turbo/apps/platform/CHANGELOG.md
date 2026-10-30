@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1080.2](https://github.com/okou-ai/okou/compare/app-v0.1080.1...app-v0.1080.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* **platform:** allow native browser viewing without provider urls ([#44334](https://github.com/okou-ai/okou/issues/44334)) ([2f25522](https://github.com/okou-ai/okou/commit/2f25522e5c79a8faecd7a731a142ea140dffd63d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.1
+    * @okouai/core bumped to 8.805.2
+
 ## [0.1080.1](https://github.com/okou-ai/okou/compare/app-v0.1080.0...app-v0.1080.1) (2026-10-30)
 
 
