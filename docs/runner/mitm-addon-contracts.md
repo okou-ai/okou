@@ -1161,13 +1161,23 @@ Firewall authorization intersects the original path with each bounded percent-de
 interpretation, including URI normalization that decodes unreserved bytes while
 retaining reserved escapes and normalizing escape hex case. Configured literal path
 text uses the same URI normalization for these checks; parameter names and original
-rule/API identities are retained. Newly equivalent but distinct route declarations
-are ambiguous and cannot supply credentials. Every interpretation must select the same owner, API base, permission
+rule/API identities are retained. Each interpretation must preserve the selected
+owner's complete applicable API and rule sets as well as its chosen owner, API base, permission
 and exact rule before a connector credential can be prepared. An encoded literal that
 falls through to a broader ID rule, an encoded separator that hides a nested resource,
 or a decoded-only owner selection is rejected with `unsafe_path`. Original denials
 are never promoted to decoded allowances. Decoding cannot introduce a query or fragment
 boundary, and query escapes are not path input.
+
+An unchanged selected allowance is insufficient when a newly applicable denied or
+asked alias is hidden by another granted rule. Compare the actual matching routes,
+including API identity, permission and original rule text, after method and selector
+matching, before base/rule specificity can hide a newly applicable alias. This includes
+overlaps such as `ANY` with `GET` without classifying them
+separately. Disjoint methods/selectors, unrelated resources and non-selected owners
+retain their ordinary authorization; a URI alias does not invalidate an entire API.
+Matching API identities are retained even when they have no applicable permission
+rules, so precedence cannot hide a newly applicable unknown-endpoint boundary.
 
 Successful decisions retain the original URL, query, raw parameter captures and API
 entry for forwarding and signing. Ordinary encoded Unicode/space IDs and greedy file

@@ -93,6 +93,31 @@ def _assert_unknown(result: object) -> None:
     assert result.permissions == ()
 
 
+@pytest.mark.parametrize("indexed", [True, False])
+@pytest.mark.parametrize(("service", "expected"), [("s3", "unsafe_path"), ("ec2", "allow")])
+def test_uri_alias_compares_applicable_conditional_routes(
+    indexed: bool, service: str, expected: str
+) -> None:
+    result = _match(
+        base="https://s3.example.com",
+        permissions=[
+            firewall_permission("ordinary", "GET /files/a"),
+            firewall_permission("restricted", "GET /files/%61 AWS sigv4=s3"),
+        ],
+        url="https://s3.example.com/files/a",
+        method="GET",
+        headers=_headers(host="s3.example.com", service=service),
+        allow=("ordinary",),
+        deny=("restricted",),
+        indexed=indexed,
+    )
+    if expected == "allow":
+        _assert_allowed(result, "ordinary")
+    else:
+        assert isinstance(result, matching.FirewallBlock)
+        assert result.reason == "unsafe_path"
+
+
 def test_query_action_distinguishes_ec2_permissions_with_index_parity() -> None:
     permissions = [
         firewall_permission(

@@ -251,7 +251,6 @@ class _CompiledApiCore(NamedTuple):
 class _CompiledApi(NamedTuple):
     raw_api_entry: dict
     core: _CompiledApiCore
-    uri_path_ambiguous: bool = False
 
     @property
     def base(self) -> _CompiledBase:
@@ -1127,17 +1126,6 @@ def _canonical_uri_rule(rule: _CompiledRule) -> _CompiledRule:
     return rule._replace(path=path, specificity=_path_specificity(path))
 
 
-def _uri_rule_identity(rule: _CompiledRule) -> str:
-    return json.dumps(
-        (
-            rule.method,
-            tuple(_aws_path_segment_identity(segment) for segment in rule.path.segments),
-            sorted(rule.query_requirements, key=json.dumps),
-            sorted(rule.aws_predicates.items()) if rule.aws_predicates is not None else (),
-        )
-    )
-
-
 def _canonical_uri_firewalls(
     firewalls: tuple[_CompiledFirewall, ...],
 ) -> tuple[_CompiledFirewall, ...] | None:
@@ -1151,23 +1139,14 @@ def _canonical_uri_firewalls(
     changed = False
     normalized_firewalls: list[_CompiledFirewall] = []
     for firewall in firewalls:
-        identities: dict[tuple[str, str, str, str], dict[str, set[int]]] = {}
         normalized_apis: list[_CompiledApi] = []
-        for api_index, api in enumerate(firewall.apis):
+        for api in firewall.apis:
             base = _canonical_uri_base(api.base)
             permissions: list[_CompiledPermission] = []
             for permission in api.permissions:
                 rules: list[_CompiledRule] = []
                 for rule in permission.rules:
                     normalized_rule = _canonical_uri_rule(rule)
-                    key = (
-                        base.parts.scheme,
-                        base.parts.authority,
-                        base.parts.path,
-                        _uri_rule_identity(normalized_rule),
-                    )
-                    original = json.dumps((api.base.parts.path, _uri_rule_identity(rule)))
-                    identities.setdefault(key, {}).setdefault(original, set()).add(api_index)
                     rules.append(normalized_rule)
                     changed |= normalized_rule.path != rule.path
                 permissions.append(permission._replace(rules=tuple(rules)))
@@ -1182,17 +1161,7 @@ def _canonical_uri_firewalls(
                     rule_index=_compile_rule_index(compiled_permissions),
                 )
                 normalized_apis.append(api._replace(core=core))
-        ambiguous_apis = {
-            index
-            for originals in identities.values()
-            if len(originals) > 1
-            for indices in originals.values()
-            for index in indices
-        }
-        apis = tuple(
-            api._replace(uri_path_ambiguous=index in ambiguous_apis)
-            for index, api in enumerate(normalized_apis)
-        )
+        apis = tuple(normalized_apis)
         normalized_firewalls.append(
             firewall._replace(
                 core=firewall.core._replace(api_cores=tuple(api.core for api in apis)), apis=apis
@@ -1615,6 +1584,16 @@ class FirewallAmbiguous(NamedTuple):
     path: str
     candidates: tuple[str, ...]
     reason: ConnectorRouteAmbiguityReason
+
+
+_AuthorizationRoute = tuple[Literal["api"], int] | tuple[Literal["rule"], int, str, str]
+
+
+class _FirewallInterpretation(NamedTuple):
+    """Decision and applicable selected-owner APIs/rules before precedence."""
+
+    decision: FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None
+    authorization_routes: frozenset[_AuthorizationRoute]
 
 
 class _BaseMatch(NamedTuple):
@@ -2102,12 +2081,18 @@ def _collect_rule_routes(
     get_sigv4_service: Callable[[], str | None],
     get_form_action_result: Callable[[], _AwsFormActionResult],
     request_context: FirewallRequestContext | None,
+    record_winning: bool,
+    applicable_routes: dict[str, set[_AuthorizationRoute]] | None,
 ) -> None:
     for entry in rule_entries:
         rule = entry.rule
         if rule.method not in ("ANY", upper_method):
             continue
-        if not collection.can_rule_affect_collection(rule.specificity):
+        # URI checks retain applicable rules even when they cannot win precedence.
+        if (
+            not (record_winning and collection.can_rule_affect_collection(rule.specificity))
+            and applicable_routes is None
+        ):
             continue
 
         if rule.aws_predicates is None:
@@ -2126,7 +2111,12 @@ def _collect_rule_routes(
             is None
         ):
             continue
-        collection.record_rule_route(api_match.order, rule.specificity)
+        if applicable_routes is not None:
+            applicable_routes.setdefault(api_match.firewall.name, set()).add(
+                ("rule", api_match.order, entry.permission, rule.raw)
+            )
+        if record_winning:
+            collection.record_rule_route(api_match.order, rule.specificity)
 
 
 def _winning_api_matches(
@@ -2465,8 +2455,12 @@ def _match_compiled_firewall_request_with_api_candidates(
     intent: connector_intent.ConnectorIntent,
     is_asterisk_form: bool,
     request_context: FirewallRequestContext | None,
-) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
+    track_authorization_routes: bool,
+) -> _FirewallInterpretation:
     collection = _FirewallMatchCollection()
+    applicable_routes: dict[str, set[_AuthorizationRoute]] | None = (
+        {} if track_authorization_routes else None
+    )
     base_matches: list[_MatchedApi] = []
     parsed_query_pairs: list[tuple[str, str]] | None = None
     sigv4_service_unset = object()
@@ -2523,14 +2517,17 @@ def _match_compiled_firewall_request_with_api_candidates(
         if unsafe_path is None:
             unsafe_path = has_unsafe_path(url_parts.path)
 
-        if unsafe_path or api_entry.uri_path_ambiguous:
-            return FirewallBlock(
-                api_entry.base.raw,
-                fw_entry.name,
-                upper_method,
-                rel_path,
-                (),
-                "unsafe_path",
+        if unsafe_path:
+            return _FirewallInterpretation(
+                FirewallBlock(
+                    api_entry.base.raw,
+                    fw_entry.name,
+                    upper_method,
+                    rel_path,
+                    (),
+                    "unsafe_path",
+                ),
+                frozenset(),
             )
 
         block_match = _BlockMatch(
@@ -2565,7 +2562,12 @@ def _match_compiled_firewall_request_with_api_candidates(
             and api_match.firewall.connector_runtime_kind == "builtin"
         ):
             continue
-        if not collection.accept_api(api_match):
+        if applicable_routes is not None:
+            applicable_routes.setdefault(api_match.firewall.name, set()).add(
+                ("api", api_match.order)
+            )
+        record_winning = collection.accept_api(api_match)
+        if not record_winning and applicable_routes is None:
             continue
 
         if is_asterisk_form or not api_match.api.permissions:
@@ -2587,6 +2589,8 @@ def _match_compiled_firewall_request_with_api_candidates(
             get_sigv4_service=get_sigv4_service,
             get_form_action_result=get_form_action_result,
             request_context=request_context,
+            record_winning=record_winning,
+            applicable_routes=applicable_routes,
         )
 
     selected_name = _selected_owner_name(
@@ -2596,7 +2600,7 @@ def _match_compiled_firewall_request_with_api_candidates(
         path=decision_path,
     )
     if isinstance(selected_name, FirewallAmbiguous):
-        return selected_name
+        return _FirewallInterpretation(selected_name, frozenset())
     result = _reduce_selected_owner(
         collection,
         selected_name=selected_name,
@@ -2625,8 +2629,13 @@ def _match_compiled_firewall_request_with_api_candidates(
     ):
         result = result._replace(aws_sigv4_body_pending=True)
     if is_asterisk_form and isinstance(result, FirewallAllow):
-        return FirewallPolicyAllow(result)
-    return result
+        return _FirewallInterpretation(FirewallPolicyAllow(result), frozenset())
+    return _FirewallInterpretation(
+        result,
+        frozenset(applicable_routes.get(selected_name, ()))
+        if applicable_routes is not None and selected_name is not None
+        else frozenset(),
+    )
 
 
 def _prepare_compiled_request_match(
@@ -2747,11 +2756,15 @@ def _match_request_interpretations(
         return None
 
     url_parts, url_has_backslash, upper_method, compiled_network_policies = prepared
+    normalized = compiled_firewalls._uri_normalized
+    track_authorization_routes = not is_asterisk_form and (
+        "%" in url_parts.path or normalized is not None
+    )
 
     def match_path(
         path: str,
         definitions: CompiledFirewallSet,
-    ) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
+    ) -> _FirewallInterpretation:
         parts = url_parts._replace(path=path)
         candidates = (
             definitions.indexed_api_candidates(parts)
@@ -2769,15 +2782,16 @@ def _match_request_interpretations(
             intent=intent or connector_intent.ABSENT,
             is_asterisk_form=is_asterisk_form,
             request_context=request_context,
+            track_authorization_routes=track_authorization_routes,
         )
 
-    original = match_path(url_parts.path, compiled_firewalls)
+    original_match = match_path(url_parts.path, compiled_firewalls)
+    original = original_match.decision
     if is_asterisk_form or isinstance(
         original, FirewallBlock | FirewallAmbiguous | FirewallPolicyAllow
     ):
         return original
-    normalized = compiled_firewalls._uri_normalized
-    if "%" not in url_parts.path and normalized is None:
+    if not track_authorization_routes:
         return original
     paths = request_path_interpretations(url_parts.path)
     if paths is None:
@@ -2797,9 +2811,10 @@ def _match_request_interpretations(
         if canonical_path in seen or (normalized is None and canonical_path == url_parts.path):
             continue
         seen.add(canonical_path)
-        interpreted = match_path(
+        interpreted_match = match_path(
             canonical_path, normalized if normalized is not None else compiled_firewalls
         )
+        interpreted = interpreted_match.decision
         if original is None:
             if interpreted is None:
                 continue
@@ -2830,6 +2845,7 @@ def _match_request_interpretations(
             or interpreted.api_entry != original.api_entry
             or interpreted.permission != original.permission
             or interpreted.rule != original.rule
+            or interpreted_match.authorization_routes != original_match.authorization_routes
         ):
             return FirewallBlock(
                 original.api_entry["base"],

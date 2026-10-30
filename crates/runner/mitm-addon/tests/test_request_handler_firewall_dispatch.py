@@ -34,6 +34,8 @@ _MAX_CONNECTOR_INTENT_BYTES = 64
         "/v2/registries/%2564elegations",
         "/v2/pods/pod-id%2Flogs",
         "/v2/files/%64elegations%2Ffoo",
+        "/v2/files/a",
+        "/v2/files/abx",
     ],
 )
 async def test_encoded_routes_are_denied_before_connector_credentials(
@@ -53,11 +55,20 @@ async def test_encoded_routes_are_denied_before_connector_credentials(
                     {"name": "pods-read", "rules": ["GET /pods/{id}"]},
                     {"name": "files-read", "rules": ["GET /files/{key+}"]},
                     {"name": "files-restricted", "rules": ["GET /files/delegations%2Ffoo"]},
+                    {"name": "files-any", "rules": ["ANY /files/a"]},
+                    {"name": "files-a-restricted", "rules": ["GET /files/%61"]},
+                    {"name": "files-mixed", "rules": ["GET /files/a{id}x"]},
+                    {"name": "files-prefix-restricted", "rules": ["GET /files/%61{id}"]},
                 ],
             },
             network_policy={
-                "allow": ["registry-read", "pods-read", "files-read"],
-                "deny": ["delegations-read", "files-restricted"],
+                "allow": ["registry-read", "pods-read", "files-read", "files-any", "files-mixed"],
+                "deny": [
+                    "delegations-read",
+                    "files-restricted",
+                    "files-a-restricted",
+                    "files-prefix-restricted",
+                ],
                 "ask": [],
                 "unknownPolicy": "deny",
             },

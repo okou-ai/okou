@@ -177,7 +177,6 @@ interface DecisionRule {
 interface DecisionApi {
   readonly rawBase: string;
   readonly uriMatchBase?: string;
-  readonly uriPathAmbiguous?: true;
   readonly baseMalformed: boolean;
   readonly authMalformed: boolean;
   readonly hasMalformedRules: boolean;
@@ -245,6 +244,18 @@ interface FirewallMatchCollection {
   bestRuleSpecificity: PathSpecificity | null;
   apiMatches: CollectedApiMatch[];
   ruleMatches: CollectedRuleMatch[];
+}
+
+interface FirewallRequestInterpretation {
+  readonly decision: FirewallRequestDecision;
+  /** Selected-owner API and rule matches before specificity can hide an alias. */
+  readonly authorizationRoutes: ReadonlySet<string>;
+}
+
+function authorizationRouteIdentity(
+  route: readonly ["api", number] | readonly ["rule", number, string, string],
+): string {
+  return JSON.stringify(route);
 }
 
 const VALID_RULE_METHODS = new Set([
@@ -2123,6 +2134,8 @@ function collectDecisionRules(
   apiMatch: CollectedApiMatch,
   upperMethod: string,
   awsContext: FirewallAwsDiagnosticContext | undefined,
+  recordWinning: boolean,
+  applicableRoutes: Map<string, Set<string>> | undefined,
 ): void {
   for (const rule of apiMatch.api.rules) {
     if (rule.method !== "ANY" && rule.method !== upperMethod) continue;
@@ -2132,13 +2145,35 @@ function collectDecisionRules(
     ) {
       continue;
     }
-    if (!canRuleAffectCollection(collection, rule.specificity)) continue;
+    // URI checks retain applicable rules even when they cannot win precedence.
+    if (
+      !(
+        recordWinning && canRuleAffectCollection(collection, rule.specificity)
+      ) &&
+      applicableRoutes === undefined
+    )
+      continue;
     if (
       matchFirewallPath(apiMatch.baseMatch.relativePath, rule.path) === null
     ) {
       continue;
     }
-    recordCollectedRule(collection, { apiMatch, rule });
+    if (applicableRoutes !== undefined) {
+      let routes = applicableRoutes.get(apiMatch.firewall.name);
+      if (routes === undefined) {
+        routes = new Set();
+        applicableRoutes.set(apiMatch.firewall.name, routes);
+      }
+      routes.add(
+        authorizationRouteIdentity([
+          "rule",
+          apiMatch.order,
+          rule.permission,
+          rule.raw,
+        ]),
+      );
+    }
+    if (recordWinning) recordCollectedRule(collection, { apiMatch, rule });
   }
 }
 
@@ -2461,22 +2496,6 @@ function canonicalUriBase(base: string): string {
     : base.slice(0, pathStart) + canonicalUriPattern(base.slice(pathStart));
 }
 
-function uriRuleIdentity(rule: DecisionRule): string {
-  return JSON.stringify([
-    rule.method,
-    splitPathSegments(rule.path).map((segment) => {
-      const parsed = parseSegment(segment);
-      return parsed.kind === "param"
-        ? ["param", parsed.prefix, parsed.suffix, parsed.greedy]
-        : parsed;
-    }),
-    [...(rule.awsPredicates ?? [])].sort(),
-    [...(rule.awsQueryRequirements ?? [])].sort((left, right) => {
-      return JSON.stringify(left).localeCompare(JSON.stringify(right));
-    }),
-  ]);
-}
-
 function canonicalUriFirewalls(
   firewalls: readonly DecisionFirewall[],
 ): readonly DecisionFirewall[] | null {
@@ -2495,8 +2514,7 @@ function canonicalUriFirewalls(
     return null;
   let changed = false;
   const canonical = firewalls.map((firewall) => {
-    const identities = new Map<string, Map<string, Set<number>>>();
-    const apis = firewall.apis.map((api, apiIndex) => {
+    const apis = firewall.apis.map((api) => {
       const uriMatchBase = canonicalUriBase(api.rawBase);
       const rules = api.rules.map((rule) => {
         const path = canonicalUriPattern(rule.path);
@@ -2511,40 +2529,13 @@ function canonicalUriFirewalls(
           rule.specificity[6],
         ];
         const normalized = { ...rule, path, specificity };
-        const key = JSON.stringify([uriMatchBase, uriRuleIdentity(normalized)]);
-        const original = JSON.stringify([api.rawBase, uriRuleIdentity(rule)]);
-        let originals = identities.get(key);
-        if (originals === undefined) {
-          originals = new Map();
-          identities.set(key, originals);
-        }
-        let indices = originals.get(original);
-        if (indices === undefined) {
-          indices = new Set();
-          originals.set(original, indices);
-        }
-        indices.add(apiIndex);
         if (path !== rule.path) changed = true;
         return normalized;
       });
       if (uriMatchBase !== api.rawBase) changed = true;
       return { ...api, uriMatchBase, rules: attachAwsQuerySelectorKeys(rules) };
     });
-    const ambiguousApis = new Set<number>();
-    for (const originals of identities.values()) {
-      if (originals.size < 2) continue;
-      for (const indices of originals.values()) {
-        for (const index of indices) ambiguousApis.add(index);
-      }
-    }
-    return {
-      ...firewall,
-      apis: apis.map((api, index) => {
-        return ambiguousApis.has(index)
-          ? { ...api, uriPathAmbiguous: true as const }
-          : api;
-      }),
-    };
+    return { ...firewall, apis };
   });
   return changed ? canonical : null;
 }
@@ -2554,12 +2545,14 @@ function matchFirewallRequestInterpretation(
   method: string,
   url: string,
   compiledNetworkPolicies: CompiledNetworkPolicies,
-  connectorIntent: FirewallConnectorIntent = { status: "absent" },
-  options: FirewallRequestDecisionOptions = {},
-  requestPath = rawPathFromUrl(url),
-): FirewallRequestDecision {
+  connectorIntent: FirewallConnectorIntent,
+  options: FirewallRequestDecisionOptions,
+  requestPath: string,
+  trackAuthorizationRoutes: boolean,
+): FirewallRequestInterpretation {
   const awsDiagnosticEnabled = options.awsDiagnostic !== undefined;
-  if (decisionFirewalls.length === 0) return { kind: "no_match" };
+  if (decisionFirewalls.length === 0)
+    return { decision: { kind: "no_match" }, authorizationRoutes: new Set() };
 
   const suppliedAwsContext = options.awsDiagnostic?.context;
   const awsContext =
@@ -2570,6 +2563,9 @@ function matchFirewallRequestInterpretation(
 
   const upperMethod = method.toUpperCase();
   const collection = createMatchCollection();
+  const applicableRoutes = trackAuthorizationRoutes
+    ? new Map<string, Set<string>>()
+    : undefined;
   const unsafePath = url.includes("\\") || hasUnsafeFirewallPath(requestPath);
   let apiOrder = 0;
 
@@ -2587,8 +2583,11 @@ function matchFirewallRequestInterpretation(
         ...matchedBase,
         displayBase: stripTrailingSlash(api.rawBase),
       };
-      if (unsafePath || api.uriPathAmbiguous === true)
-        return unsafePathBlockDecision(firewall, baseMatch);
+      if (unsafePath)
+        return {
+          decision: unsafePathBlockDecision(firewall, baseMatch),
+          authorizationRoutes: new Set(),
+        };
 
       const decisionBaseMatch: DecisionBaseMatch = {
         firewallName: firewall.name,
@@ -2608,8 +2607,24 @@ function matchFirewallRequestInterpretation(
         },
         score: baseMatch.score,
       };
-      if (!acceptCollectedApi(collection, apiMatch)) continue;
-      collectDecisionRules(collection, apiMatch, upperMethod, awsContext);
+      if (applicableRoutes !== undefined) {
+        let routes = applicableRoutes.get(firewall.name);
+        if (routes === undefined) {
+          routes = new Set();
+          applicableRoutes.set(firewall.name, routes);
+        }
+        routes.add(authorizationRouteIdentity(["api", order]));
+      }
+      const recordWinning = acceptCollectedApi(collection, apiMatch);
+      if (!recordWinning && applicableRoutes === undefined) continue;
+      collectDecisionRules(
+        collection,
+        apiMatch,
+        upperMethod,
+        awsContext,
+        recordWinning,
+        applicableRoutes,
+      );
     }
   }
 
@@ -2619,33 +2634,49 @@ function matchFirewallRequestInterpretation(
     upperMethod,
     requestPath,
   );
-  if (selection.kind === "ambiguous") return selection.decision;
+  if (selection.kind === "ambiguous")
+    return { decision: selection.decision, authorizationRoutes: new Set() };
   const decision = reduceSelectedOwner(
     collection,
     selection.name,
     compiledNetworkPolicies,
   );
-  return annotateIncompleteAwsContext(
-    decision,
-    collection,
-    selection.name,
-    upperMethod,
-    awsContext,
-    awsDiagnosticEnabled,
-  );
+  return {
+    decision: annotateIncompleteAwsContext(
+      decision,
+      collection,
+      selection.name,
+      upperMethod,
+      awsContext,
+      awsDiagnosticEnabled,
+    ),
+    authorizationRoutes:
+      selection.name === null
+        ? new Set()
+        : (applicableRoutes?.get(selection.name) ?? new Set()),
+  };
 }
 
-function firewallAllowsSameRule(
-  original: Extract<FirewallRequestDecision, { readonly kind: "allow" }>,
-  interpreted: FirewallRequestDecision,
+function sameFirewallAuthorization(
+  original: FirewallRequestInterpretation,
+  interpreted: FirewallRequestInterpretation,
 ): boolean {
-  return (
-    interpreted.kind === "allow" &&
-    interpreted.firewallName === original.firewallName &&
-    interpreted.base === original.base &&
-    interpreted.permission === original.permission &&
-    interpreted.rule === original.rule
-  );
+  const originalDecision = original.decision;
+  const interpretedDecision = interpreted.decision;
+  if (originalDecision.kind !== "allow" || interpretedDecision.kind !== "allow")
+    return false;
+  if (
+    interpretedDecision.firewallName !== originalDecision.firewallName ||
+    interpretedDecision.base !== originalDecision.base ||
+    interpretedDecision.permission !== originalDecision.permission ||
+    interpretedDecision.rule !== originalDecision.rule ||
+    interpreted.authorizationRoutes.size !== original.authorizationRoutes.size
+  )
+    return false;
+  for (const route of original.authorizationRoutes) {
+    if (!interpreted.authorizationRoutes.has(route)) return false;
+  }
+  return true;
 }
 
 export function matchFirewallRequestDecision(
@@ -2661,19 +2692,23 @@ export function matchFirewallRequestDecision(
     options.awsDiagnostic !== undefined,
   );
   const policies = compileNetworkPolicies(networkPolicies);
-  const original = matchFirewallRequestInterpretation(
+  const path = rawPathFromUrl(url);
+  const canonical = canonicalUriFirewalls(compiled);
+  const trackAuthorizationRoutes = path.includes("%") || canonical !== null;
+  const originalMatch = matchFirewallRequestInterpretation(
     compiled,
     method,
     url,
     policies,
     connectorIntent,
     options,
+    path,
+    trackAuthorizationRoutes,
   );
+  const original = originalMatch.decision;
   if (original.kind !== "allow" && original.kind !== "no_match")
     return original;
-  const path = rawPathFromUrl(url);
-  const canonical = canonicalUriFirewalls(compiled);
-  if (!path.includes("%") && canonical === null) return original;
+  if (!trackAuthorizationRoutes) return original;
   const interpretations = path.includes("%")
     ? firewallRequestPathInterpretations(path)
     : [path];
@@ -2695,7 +2730,7 @@ export function matchFirewallRequestDecision(
     if (seen.has(matchPath) || (canonical === null && matchPath === path))
       continue;
     seen.add(matchPath);
-    const interpreted = matchFirewallRequestInterpretation(
+    const interpretedMatch = matchFirewallRequestInterpretation(
       canonical ?? compiled,
       method,
       url,
@@ -2703,7 +2738,9 @@ export function matchFirewallRequestDecision(
       connectorIntent,
       options,
       matchPath,
+      true,
     );
+    const interpreted = interpretedMatch.decision;
     if (original.kind === "no_match") {
       if (interpreted.kind === "no_match") continue;
       if (interpreted.kind === "ambiguous") return { ...interpreted, path };
@@ -2716,7 +2753,7 @@ export function matchFirewallRequestDecision(
         permissions: [],
       };
     }
-    if (!firewallAllowsSameRule(original, interpreted)) {
+    if (!sameFirewallAuthorization(originalMatch, interpretedMatch)) {
       return {
         kind: "block",
         firewallName: original.firewallName,
