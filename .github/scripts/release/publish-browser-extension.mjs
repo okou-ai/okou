@@ -5,7 +5,6 @@ import { execFileSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const variable = "OKOU_BROWSER_USE_EXTENSION_ID";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const repository = required("GITHUB_REPOSITORY");
 if (!/^[\w.-]+\/[\w.-]+$/.test(repository))
@@ -48,17 +47,7 @@ async function json(response, service) {
   }
 }
 
-async function github(
-  path,
-  {
-    method = "GET",
-    body,
-    missing = false,
-    raw = false,
-    binary = false,
-    variables = false,
-  } = {},
-) {
+async function github(path, { raw = false, binary = false } = {}) {
   const url = new URL(path, githubOrigin);
   if (
     url.origin !== githubOrigin &&
@@ -67,23 +56,17 @@ async function github(
     throw new Error("Unexpected GitHub upload origin");
   }
   const response = await fetch(url, {
-    method,
     headers: {
-      Authorization: `Bearer ${required(variables ? "GITHUB_VARIABLES_TOKEN" : "GH_TOKEN")}`,
+      Authorization: `Bearer ${required("GH_TOKEN")}`,
       Accept:
         raw || binary
           ? "application/octet-stream"
           : "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(45_000),
   });
-  if (missing && response.status === 404) return null;
-  if (!response.ok)
-    throw new Error(`GitHub ${method} failed (${response.status})`);
-  if (response.status === 204) return null;
+  if (!response.ok) throw new Error(`GitHub GET failed (${response.status})`);
   if (binary) return Buffer.from(await response.arrayBuffer());
   return json(response, "GitHub");
 }
@@ -142,7 +125,7 @@ async function latest(version) {
     );
     if (difference !== -1 && candidate[difference] > selected[difference]) {
       throw new Error(
-        "This extension release was superseded; refusing to publish older configuration",
+        "This extension release was superseded; refusing to upload older artifacts",
       );
     }
   }
@@ -157,7 +140,6 @@ function matches(receipt, expected) {
 
 async function publish() {
   required("GH_TOKEN");
-  required("GITHUB_VARIABLES_TOKEN");
   required("OKOU_BROWSER_USE_API_KEY");
   const sourceCommit = required("RELEASE_TARGET");
   const version = required("BROWSER_EXTENSION_VERSION");
@@ -202,6 +184,7 @@ async function publish() {
     JSON.stringify(entries) !==
       JSON.stringify(["background.js", "manifest.json"]) ||
     manifest.version !== version ||
+    manifest.name !== "Okou Browser" ||
     manifest.manifest_version !== 3
   ) {
     throw new Error("Invalid extension ZIP contents");
@@ -269,6 +252,10 @@ async function publish() {
     const uploaded = await json(response, "Browser Use");
     if (!uuid.test(uploaded.id))
       throw new Error("Browser Use returned an invalid uploaded extension ID");
+    if (uploaded.name !== manifest.name || uploaded.version !== version)
+      throw new Error(
+        "Browser Use returned a different extension name or version",
+      );
     extensionId = uploaded.id;
     console.log(
       `Browser Use registered ${extensionId}; source ${sourceCommit}; sha256 ${sha256}`,
@@ -278,28 +265,6 @@ async function publish() {
       extensionId,
     });
   }
-  await latest(version);
-  const existing = await github(`${root}/actions/variables/${variable}`, {
-    missing: true,
-    variables: true,
-  });
-  if (existing?.value !== extensionId) {
-    await github(
-      existing === null
-        ? `${root}/actions/variables`
-        : `${root}/actions/variables/${variable}`,
-      {
-        method: existing === null ? "POST" : "PATCH",
-        body: { name: variable, value: extensionId },
-        variables: true,
-      },
-    );
-  }
-  const configured = await github(`${root}/actions/variables/${variable}`, {
-    variables: true,
-  });
-  if (configured.value !== extensionId)
-    throw new Error("Published GitHub Variable could not be confirmed");
   return extensionId;
 }
 

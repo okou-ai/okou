@@ -156,6 +156,8 @@ with tempfile.TemporaryDirectory() as temporary:
                        INPUT_JOB_REF='staging', INPUT_WEB_URL='https://staging.invalid',
                        INPUT_APP_URL='https://staging-app.invalid',
                        INPUT_API_BACKEND_URL='https://staging-api.invalid',
+                       INPUT_BROWSER_EXTENSION_RELEASE_CREATED='true',
+                       INPUT_BROWSER_EXTENSION_ID='11111111-1111-4111-8111-111111111111',
                        REPO_VARS_JSON='{}', DOPPLER_SECRETS_JSON=json.dumps(doppler))
 
     def render_preview(secrets):
