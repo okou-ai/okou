@@ -6,8 +6,9 @@
     "boo": "Vaia!",
     "brand": "Okou",
     "campaign": "Halloween assustador",
-    "climb": "A subida",
+    "climb": "Seu progresso",
     "correct": "Correto",
+    "correctAnswers": "Respostas corretas",
     "error": "Não foi possível carregar o questionário. Por favor, tente novamente.",
     "footerAfter": "para detalhes de elegibilidade e recompensa.",
     "footerBefore": "Ver atividade",
@@ -15,7 +16,6 @@
     "hint": "Quatro respostas certas. Um doce final.",
     "intro": "Um pequeno quiz. Algumas surpresas.",
     "language": "Português (Brasil)",
-    "leave": "Sair do teste",
     "lost": "Você foi enganado!",
     "lostRewardEmphasis": "Você ainda tem a chance de ganhar um teste de 7 dias!",
     "lostRewardRest": "Continue explorando com o Okou. Talvez você receba uma surpresa de Halloween.",
@@ -554,7 +554,7 @@
       "title": "Disponibilidade de atividades"
     },
     "play": {
-      "text": "Jogue com sua conta Okou conectada, sem a necessidade de tarefas. Cada rodada é salva diretamente nessa conta e tem quatro perguntas selecionadas aleatoriamente, sem repetições nessa rodada, seguidas por ‘Você gosta de Okou?’ – todas as respostas à última pergunta estão corretas. Uma resposta errada encerra a rodada. Fechar ou atualizar o questionário mantém seu progresso ou resultado atual. Escolha ‘Sair do quiz’ para abandonar uma rodada inacabada ou ‘Jogar novamente’ após um resultado para iniciar uma nova.",
+      "text": "Jogue com sua conta Okou conectada, sem a necessidade de tarefas. Cada rodada é salva diretamente nessa conta e tem quatro perguntas selecionadas aleatoriamente, sem repetições nessa rodada, seguidas por ‘Você gosta de Okou?’ – todas as respostas à última pergunta estão corretas. Uma resposta errada encerra a rodada. Fechar ou atualizar o questionário mantém seu progresso ou resultado atual. Escolha ‘Jogar novamente’ após um resultado para iniciar uma nova rodada.",
       "title": "Como jogar"
     },
     "reward": {

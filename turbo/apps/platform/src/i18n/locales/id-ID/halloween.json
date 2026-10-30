@@ -6,8 +6,9 @@
     "boo": "Huhu!",
     "brand": "Okou",
     "campaign": "Halloween yang menyeramkan",
-    "climb": "Pendakian",
+    "climb": "Progres Anda",
     "correct": "Benar",
+    "correctAnswers": "Jawaban benar",
     "error": "Kami tidak dapat memuat kuis. Silakan coba lagi.",
     "footerAfter": "untuk rincian kelayakan dan hadiah.",
     "footerBefore": "Lihat aktivitas",
@@ -15,7 +16,6 @@
     "hint": "Empat jawaban yang benar. Satu akhir yang manis.",
     "intro": "Kuis kecil. Beberapa kejutan.",
     "language": "Bahasa Indonesia",
-    "leave": "Tinggalkan kuis",
     "lost": "Anda tertipu!",
     "lostRewardEmphasis": "Kamu masih berkesempatan memenangkan uji coba 7 hari!",
     "lostRewardRest": "Terus jelajahi bersama Okou. Mungkin ada kejutan Halloween untukmu.",
@@ -554,7 +554,7 @@
       "title": "Ketersediaan aktivitas"
     },
     "play": {
-      "text": "Mainkan dari akun Okou yang Anda masuki, tanpa perlu melakukan tugas apa pun. Setiap putaran disimpan langsung ke akun tersebut dan memiliki empat pertanyaan yang dipilih secara acak, tanpa pengulangan di putaran tersebut, diikuti dengan 'Apakah Anda suka Okou?'—setiap jawaban pada pertanyaan terakhir adalah benar. Satu jawaban yang salah mengakhiri putaran. Menutup atau menyegarkan kuis akan mempertahankan kemajuan atau hasil Anda saat ini. Pilih 'Tinggalkan kuis' untuk meninggalkan babak yang belum selesai, atau 'Mainkan lagi' setelah hasil untuk memulai babak baru.",
+      "text": "Mainkan dari akun Okou yang Anda masuki, tanpa perlu melakukan tugas apa pun. Setiap putaran disimpan langsung ke akun tersebut dan memiliki empat pertanyaan yang dipilih secara acak, tanpa pengulangan di putaran tersebut, diikuti dengan 'Apakah Anda suka Okou?'—setiap jawaban pada pertanyaan terakhir adalah benar. Satu jawaban yang salah mengakhiri putaran. Menutup atau menyegarkan kuis akan mempertahankan kemajuan atau hasil Anda saat ini. Pilih 'Mainkan lagi' setelah hasil untuk memulai babak baru.",
       "title": "Cara bermain"
     },
     "reward": {

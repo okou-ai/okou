@@ -2,7 +2,7 @@ import type { HalloweenRound } from "@okouai/api-contracts/contracts/halloween";
 import { Button, cn } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ArrowRight, Check, Diamond } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 import {
   useHalloweenCopy,
   useLocalizedHalloweenRound,
@@ -24,8 +24,8 @@ import { halloweenTypography as typography } from "./halloween-typography.ts";
 function Progress({ round }: { readonly round: HalloweenRound }) {
   const copy = useHalloweenCopy();
   return (
-    <aside className="order-first flex items-center justify-between gap-5 rounded-2xl border border-[#a9c1df1c] bg-[linear-gradient(150deg,#ffffff05,#ffffff01)] px-4 py-3 md:order-last md:rounded-3xl md:flex-col md:items-stretch md:p-5">
-      <h2 className={cn("text-[#b2bfd0] md:mb-1", typography.labelClassName)}>
+    <aside className="order-first flex flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-surface border border-[#a9c1df33] px-4 py-3 md:order-last md:flex-col md:items-stretch md:gap-5 md:rounded-none md:border-0 md:border-l md:py-0 md:pl-6 md:pr-0">
+      <h2 className={cn("text-[#c2cddd]", typography.labelClassName)}>
         {copy.climb}
       </h2>
       <ol className="hidden flex-col-reverse gap-1.5 md:flex">
@@ -35,25 +35,38 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
           return (
             <li
               key={level}
+              aria-current={current ? "step" : undefined}
               className={cn(
-                "flex h-11 items-center gap-3 rounded-lg border border-transparent px-3 text-[#8090a7]",
-                current &&
-                  "border-[#eed2a0] bg-[linear-gradient(120deg,#e7c793,#d5ad70)] text-[#30291e]",
-                done && "border-[#e6c58e14] bg-[#e6c58e07] text-[#c9b28a]",
+                "flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-[#adbbce]",
+                current && "border-[#e8c68d80] bg-[#e8c68d0d] text-[#ebcf9d]",
+                done && "text-[#c9b28a]",
               )}
             >
               <span
                 className={cn(
-                  "min-w-[17px] tabular-nums opacity-70",
                   typography.labelClassName,
+                  "min-w-[17px] shrink-0 text-xs font-normal tabular-nums text-[#94a6be]",
+                  (current || done) && "text-current",
                 )}
               >
                 {String(index + 1).padStart(2, "0")}
               </span>
-              <span className={typography.labelClassName}>{level}</span>
-              {done && <Check className="ml-auto size-[11px] shrink-0" />}
+              <span
+                className={cn(
+                  typography.labelClassName,
+                  !current && "font-normal",
+                )}
+              >
+                {level}
+              </span>
+              {done && (
+                <Check aria-hidden className="ml-auto size-3 shrink-0" />
+              )}
               {current && (
-                <Diamond className="ml-auto size-2 shrink-0 fill-current" />
+                <span
+                  aria-hidden
+                  className="ml-auto size-1.5 shrink-0 rounded-full bg-current"
+                />
               )}
             </li>
           );
@@ -61,20 +74,19 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
       </ol>
       <p
         className={cn(
-          "text-[#8fa0b7] md:border-t md:border-[#a9c1df14] md:pt-4",
           typography.labelClassName,
+          "flex items-center justify-between gap-3 font-normal text-[#b8c6d8] md:border-t md:border-[#a9c1df26] md:pt-4",
         )}
       >
-        {copy.correct}{" "}
+        <span>{copy.correctAnswers}</span>
         <strong
           className={cn(
-            "ml-1 tabular-nums text-[#ead0a7]",
+            "shrink-0 tabular-nums text-[#ece6db]",
             typography.labelClassName,
           )}
         >
-          {round.correct}
-        </strong>{" "}
-        / 5
+          {round.correct} / 5
+        </strong>
       </p>
     </aside>
   );

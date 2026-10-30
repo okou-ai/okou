@@ -108,16 +108,6 @@ beforeEach(() => {
     context.store.set(currentRound$, answered);
     return respond(200, answered);
   });
-  context.mocks.api(halloweenContract.leave, ({ body, respond }) => {
-    const left = {
-      ...round(body.id),
-      question: null,
-      outcome: "left",
-      completedAt: "2026-10-30T12:01:00Z",
-    } as const;
-    context.store.set(currentRound$, left);
-    return respond(200, left);
-  });
 });
 
 test("shows the first-visit home animation", async () => {
@@ -244,29 +234,6 @@ test.each(["success", "wrong"] as const)(
     await within(dialog).findByRole("heading", { name: question.text });
   },
 );
-
-test("keeps the current question when leaving the round fails", async () => {
-  await setupPage({ context, path: "/", featureSwitches: switches });
-  const entry = await waitFor(() => {
-    return button("Play the Halloween quiz");
-  });
-  click(entry);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Spooky Halloween",
-  });
-  click(button("Let’s go", dialog));
-  await within(dialog).findByRole("heading", { name: question.text });
-  context.mocks.api(halloweenContract.leave, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_ERROR", message: "Leave request failed" },
-    });
-  });
-  click(button("Leave quiz", dialog));
-  await screen.findByText("Leave request failed");
-  expect(
-    within(dialog).getByRole("heading", { name: question.text }),
-  ).toBeInTheDocument();
-});
 
 test("rules open over the quiz and return to the same answer and feedback", async () => {
   await setupPage({ context, path: "/", featureSwitches: switches });

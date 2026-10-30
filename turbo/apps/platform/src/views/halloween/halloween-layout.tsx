@@ -9,7 +9,6 @@ import {
   IconButton,
 } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -29,7 +28,6 @@ import {
   halloweenRulesOpen$,
   halloweenScreen$,
   halloweenSound$,
-  leaveHalloween$,
   setHalloweenRulesOpen$,
   toggleHalloweenSound$,
 } from "../../signals/halloween/halloween.ts";
@@ -70,7 +68,6 @@ export function HalloweenHeader() {
   const setRules = useSet(setHalloweenRulesOpen$);
   const playSound = useSet(playHalloweenClick$);
   const signal = useGet(pageSignal$);
-  const [operation, leave] = useLoadableSet(leaveHalloween$);
   const playing = screen === "question";
   return (
     <header
@@ -90,24 +87,6 @@ export function HalloweenHeader() {
             ? copy.questionProgress(round!.questionNumber, 5)
             : copy.campaign}
         </span>
-        {playing ? (
-          <Button
-            variant="quiet"
-            size="sm"
-            pending={operation.state === "loading"}
-            className={cn(
-              "h-8 gap-1 p-0 text-[#aebcd0] hover:bg-transparent hover:text-[#e8c68d]",
-              typography.labelClassName,
-              "hidden md:inline-flex",
-            )}
-            onClick={() => {
-              detach(leave(signal), Reason.DomCallback);
-            }}
-          >
-            {copy.leave}
-            <ArrowUpRight className="size-3" />
-          </Button>
-        ) : null}
         {screen !== "result" && (
           <Button
             variant="quiet"

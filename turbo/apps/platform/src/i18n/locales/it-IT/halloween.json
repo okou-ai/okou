@@ -6,8 +6,9 @@
     "boo": "Boh!",
     "brand": "Okou",
     "campaign": "Halloween spettrale",
-    "climb": "La salita",
+    "climb": "I tuoi progressi",
     "correct": "Corretto",
+    "correctAnswers": "Risposte corrette",
     "error": "Non è stato possibile caricare il quiz. Per favore riprova.",
     "footerAfter": "per l'idoneità e i dettagli del premio.",
     "footerBefore": "Vedi l'attività",
@@ -15,7 +16,6 @@
     "hint": "Quattro risposte giuste. Un dolce finale.",
     "intro": "Un piccolo quiz. Qualche sorpresa.",
     "language": "Italiano",
-    "leave": "Lascia il quiz",
     "lost": "Sei stato ingannato!",
     "lostRewardEmphasis": "Hai ancora la possibilità di vincere una prova di 7 giorni!",
     "lostRewardRest": "Continua a esplorare con Okou. Potrebbe riservarti una sorpresa di Halloween.",
@@ -554,7 +554,7 @@
       "title": "Disponibilità di attività"
     },
     "play": {
-      "text": "Gioca dal tuo account Okou a cui hai effettuato l'accesso, senza alcuna attività richiesta. Ogni round viene salvato direttamente su quell'account e contiene quattro domande selezionate casualmente, senza ripetizioni in quel round, seguite da \"Ti piace Okou?\": ogni risposta all'ultima domanda è corretta. Una risposta sbagliata pone fine al round. Chiudendo o aggiornando il quiz mantieni i tuoi progressi o risultati attuali. Scegli \"Lascia il quiz\" per abbandonare un round incompiuto o \"Gioca di nuovo\" dopo un risultato per iniziarne uno nuovo.",
+      "text": "Gioca dal tuo account Okou a cui hai effettuato l'accesso, senza alcuna attività richiesta. Ogni round viene salvato direttamente su quell'account e contiene quattro domande selezionate casualmente, senza ripetizioni in quel round, seguite da \"Ti piace Okou?\": ogni risposta all'ultima domanda è corretta. Una risposta sbagliata pone fine al round. Chiudendo o aggiornando il quiz mantieni i tuoi progressi o risultati attuali. Scegli \"Gioca di nuovo\" dopo un risultato per iniziare un nuovo round.",
       "title": "Come giocare"
     },
     "reward": {
