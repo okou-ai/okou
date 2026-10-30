@@ -38,6 +38,7 @@ import {
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
   CsvPreviewTable,
@@ -275,6 +276,7 @@ export function ArtifactSidebarContent({
       recovery={recovery}
       resourceUrl={resourceUrl}
       shareUrl={shareUrl}
+      shareUrl$={artifactRef.shareUrl$}
       closePreview={onClose}
       display={display}
       fullscreen={fullscreen}
@@ -294,6 +296,7 @@ type ArtifactSidebarResolvedContentProps = {
   readonly recovery: ReactNode;
   readonly resourceUrl: string | null;
   readonly shareUrl: string | null | undefined;
+  readonly shareUrl$: AttachmentPreviewSignals["shareUrl$"];
   readonly closePreview: () => void;
   readonly display: ArtifactDisplay;
   readonly fullscreen: boolean;
@@ -311,6 +314,7 @@ function ArtifactSidebarResolvedContent({
   recovery,
   resourceUrl,
   shareUrl,
+  shareUrl$,
   closePreview,
   display,
   fullscreen,
@@ -340,7 +344,7 @@ function ArtifactSidebarResolvedContent({
     >
       <ArtifactSidebarHeader
         deleteAction={deleteAction}
-        shareUrl={shareUrl}
+        shareUrl$={shareUrl$}
         title={display.title}
         filename={display.filename}
         kind={display.kind}
@@ -490,7 +494,7 @@ function resolveArtifactDisplay(
 
 function ArtifactSidebarHeader({
   deleteAction,
-  shareUrl,
+  shareUrl$,
   title,
   filename,
   kind,
@@ -506,7 +510,7 @@ function ArtifactSidebarHeader({
   onClose,
 }: {
   deleteAction: ReactNode;
-  shareUrl?: string | null;
+  shareUrl$: AttachmentPreviewSignals["shareUrl$"];
   title: string;
   filename: string;
   kind?: ArtifactKindForBody;
@@ -558,7 +562,7 @@ function ArtifactSidebarHeader({
       </div>
       <ArtifactSidebarActions
         deleteAction={deleteAction}
-        shareUrl={shareUrl}
+        shareUrl$={shareUrl$}
         compactActions={compactActions}
         artifactKind={artifactKind}
         fullscreen={fullscreen}
@@ -576,7 +580,7 @@ function ArtifactSidebarHeader({
 
 function ArtifactSidebarActions({
   deleteAction,
-  shareUrl,
+  shareUrl$,
   artifactKind,
   compactActions,
   fullscreen,
@@ -589,7 +593,7 @@ function ArtifactSidebarActions({
   url,
 }: {
   deleteAction: ReactNode;
-  shareUrl?: string | null;
+  shareUrl$: AttachmentPreviewSignals["shareUrl$"];
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   compactActions: boolean;
   fullscreen: boolean;
@@ -606,7 +610,7 @@ function ArtifactSidebarActions({
       {url && (
         <ArtifactSidebarPreviewActions
           deleteAction={deleteAction}
-          shareUrl={shareUrl}
+          shareUrl$={shareUrl$}
           artifactKind={artifactKind}
           kind={kind}
           shareAvailable={shareAvailable}
@@ -630,7 +634,7 @@ function ArtifactSidebarActions({
 
 function ArtifactSidebarPreviewActions({
   deleteAction,
-  shareUrl,
+  shareUrl$,
   artifactKind,
   kind,
   shareAvailable,
@@ -639,7 +643,7 @@ function ArtifactSidebarPreviewActions({
   url,
 }: {
   deleteAction: ReactNode;
-  shareUrl?: string | null;
+  shareUrl$: AttachmentPreviewSignals["shareUrl$"];
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   kind?: ArtifactKindForBody;
   shareAvailable: boolean;
@@ -652,16 +656,14 @@ function ArtifactSidebarPreviewActions({
     <>
       {kind === "html" && <ArtifactOpenExternalAction url={url} />}
       {shareAvailable && (
-        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
-          <ArtifactShareButton
-            surface="sidebar"
-            shareUrl={shareUrl}
-            ariaLabel={t(($) => {
-              return $.artifacts.actions.shareArtifact;
-            })}
-            url={url}
-          />
-        </span>
+        <ArtifactShareButton
+          surface="sidebar"
+          shareUrl$={shareUrl$}
+          ariaLabel={t(($) => {
+            return $.artifacts.actions.shareArtifact;
+          })}
+          url={url}
+        />
       )}
       <ArtifactDownloadMenu
         key={`${url}:${filename}`}
@@ -673,10 +675,7 @@ function ArtifactSidebarPreviewActions({
         syncTarget={syncTarget}
         url={url}
       />
-      {/* Keep the slot even before the artifact's owner check has resolved. */}
-      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
-        {deleteAction}
-      </span>
+      {deleteAction}
       <ArtifactActionSeparator />
     </>
   );

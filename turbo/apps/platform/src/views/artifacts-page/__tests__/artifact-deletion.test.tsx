@@ -89,7 +89,7 @@ async function openDeletion() {
   });
   const preview = currentPreview()!;
   await waitFor(() => {
-    expect(getButtonByName("Delete", preview)).toBeInTheDocument();
+    expect(getButtonByName("Delete", preview)).toBeEnabled();
   });
   click(getButtonByName("Delete", preview));
   return await screen.findByRole("dialog", { name: `Delete ${report.title}?` });

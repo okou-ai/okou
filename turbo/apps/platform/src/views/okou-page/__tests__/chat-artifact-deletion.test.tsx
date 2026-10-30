@@ -115,7 +115,7 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
       within(preview).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect(buttonNamed("Delete", preview)).toBeInTheDocument();
+      expect(buttonNamed("Delete", preview)).toBeEnabled();
     });
     click(buttonNamed("Delete", preview));
     const cancelled = await screen.findByRole("dialog", {
@@ -150,37 +150,93 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
     await expect(
       within(reopened).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
-    expect(
-      Array.from(reopened.querySelectorAll("button")).find((button) => {
-        return button.getAttribute("aria-label") === "Delete";
-      }),
-    ).toBeUndefined();
+    expect(buttonNamed("Delete", reopened)).toBeDisabled();
   },
 );
 
-test("a missing or foreign catalog identity does not expose deletion in a thread preview", async () => {
-  mockReport(() => {
-    return true;
-  });
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact not found" },
+test.each([
+  ["lightbox", "owner"],
+  ["lightbox", "unavailable"],
+  ["lightbox", "failed"],
+  ["sidebar", "owner"],
+  ["sidebar", "unavailable"],
+  ["sidebar", "failed"],
+] as const)(
+  "the %s delete action stays visible while access resolves to %s",
+  async (surface, outcome) => {
+    mockReport(() => {
+      return true;
     });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
-  });
-  click(await screen.findByLabelText(`Open text preview for ${report.title}`));
-  const preview = await screen.findByTestId("attachment-lightbox");
-  await expect(
-    within(preview).findByText("Thread report content"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    Array.from(preview.querySelectorAll("button")).find((button) => {
-      return button.getAttribute("aria-label") === "Delete";
-    }),
-  ).toBeUndefined();
-});
+    const started = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
+      started.resolve();
+      await release.promise;
+      if (outcome === "failed") {
+        throw new Error("Owner lookup unavailable");
+      }
+      if (outcome === "unavailable") {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Artifact not found" },
+        });
+      }
+      return respond(
+        200,
+        fileArtifactDetail(report, {
+          filename: report.title,
+          contentType: "text/plain",
+          fileId: "f0000000-0000-4000-a000-000000000921",
+          url,
+        }),
+      );
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: {
+        [FeatureSwitchKey.ArtifactDeletion]: true,
+        [FeatureSwitchKey.ArtifactSidebarPreview]: surface === "sidebar",
+      },
+    });
+    click(
+      await screen.findByLabelText(`Open text preview for ${report.title}`),
+    );
+    const preview = await screen.findByTestId(
+      surface === "lightbox" ? "attachment-lightbox" : "artifact-sidebar",
+    );
+    await started.promise;
+    const deletion = buttonNamed("Delete", preview);
+    expect(deletion).toBeDisabled();
+    expect(deletion).toHaveAttribute("aria-busy", "true");
+    expect(deletion).toHaveAccessibleDescription("Checking delete access");
+    click(deletion);
+    expect(
+      screen.queryByRole("dialog", {
+        name: `Delete ${report.title}?`,
+      }),
+    ).not.toBeInTheDocument();
+    release.resolve();
+    const description =
+      outcome === "owner"
+        ? ""
+        : outcome === "failed"
+          ? "Couldn't check delete access"
+          : "You can't delete this artifact";
+    await waitFor(() => {
+      const settled = buttonNamed("Delete", preview);
+      expect(settled).toHaveProperty("disabled", outcome !== "owner");
+      expect(settled).toHaveAccessibleDescription(description);
+      expect(settled).not.toHaveAttribute("aria-busy");
+    });
+    expect(buttonNamed("Delete", preview)).toBeVisible();
+    click(buttonNamed("Delete", preview));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", {
+          name: `Delete ${report.title}?`,
+        }) !== null,
+      ).toBe(outcome === "owner");
+    });
+  },
+);

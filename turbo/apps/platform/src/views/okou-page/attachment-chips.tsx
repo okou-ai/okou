@@ -1368,7 +1368,6 @@ function ArtifactPreviewDialogActions({
   const toggleLightboxDialogFullscreen = useSet(
     toggleLightboxDialogFullscreen$,
   );
-  const shareUrl = useLastResolved(preview.shareUrl$);
   const closeDeletedPreview = useSet(closeArtifactCatalogPreview$);
   const showShare = preview.shareAvailable !== false;
   const showSplitView = preview.splitViewAvailable !== false;
@@ -1403,18 +1402,16 @@ function ArtifactPreviewDialogActions({
         </Button>
       )}
       {showShare && (
-        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
-          <ArtifactShareButton
-            artifactShareIdentity$={preview.artifactShareIdentity$}
-            surface="dialog"
-            shareUrl={shareUrl}
-            ariaLabel={t(($) => {
-              return $.artifacts.actions.share;
-            })}
-            iconSize={18}
-            url={preview.url}
-          />
-        </span>
+        <ArtifactShareButton
+          artifactShareIdentity$={preview.artifactShareIdentity$}
+          surface="dialog"
+          shareUrl$={preview.shareUrl$}
+          ariaLabel={t(($) => {
+            return $.artifacts.actions.share;
+          })}
+          iconSize={18}
+          url={preview.url}
+        />
       )}
       <ArtifactDownloadMenu
         surface="dialog"
@@ -1428,17 +1425,14 @@ function ArtifactPreviewDialogActions({
         syncTarget={artifactDialogSyncTarget(artifact)}
         url={preview.url}
       />
-      {/* Async identity and permission checks must not move adjacent actions. */}
-      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
-        <ArtifactDeleteButton
-          artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-          surface="dialog"
-          iconSize={18}
-          onDeleted={() => {
-            closeDeletedPreview(rootSignal);
-          }}
-        />
-      </span>
+      <ArtifactDeleteButton
+        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+        surface="dialog"
+        iconSize={18}
+        onDeleted={() => {
+          closeDeletedPreview(rootSignal);
+        }}
+      />
       <ArtifactActionSeparator />
       {showSplitView && (
         <ArtifactDialogSplitViewButton onClick={openInSplitView} />

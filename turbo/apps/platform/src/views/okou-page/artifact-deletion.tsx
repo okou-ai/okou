@@ -18,6 +18,8 @@ import {
 } from "@okouai/ui";
 import { Loader2, MoreHorizontal, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { MouseEvent } from "react";
+import { ArtifactActionTooltip } from "./artifact-actions.tsx";
 
 import {
   artifactDeleteTarget$,
@@ -140,12 +142,23 @@ export function ArtifactDeleteButton({
   readonly onDeleted: () => void;
   readonly iconSize?: number;
 }) {
+  const { t } = useTranslation();
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
   const scope = artifactPreviewDeletionScope(surface);
   const mountRef = useSet(scope.mountRef$);
   const session = useGet(scope.session$);
-  if (!enabled || !artifactId) {
+  if (!enabled) {
     return null;
+  }
+  if (!artifactId) {
+    return surface === "page" ? null : (
+      <ArtifactDeleteControl
+        iconSize={iconSize}
+        disabledReason={t(($) => {
+          return $.artifacts.deletion.unavailable;
+        })}
+      />
+    );
   }
   return (
     <span
@@ -156,15 +169,58 @@ export function ArtifactDeleteButton({
       className="inline-flex"
     >
       {session?.artifactId === artifactId &&
-        session.sourceKind === sourceKind && (
-          <PreviewArtifactDeleteButton
-            key={artifactId}
-            session={session}
-            onDeleted={onDeleted}
-            iconSize={iconSize}
-          />
-        )}
+      session.sourceKind === sourceKind ? (
+        <PreviewArtifactDeleteButton
+          key={artifactId}
+          session={session}
+          onDeleted={onDeleted}
+          iconSize={iconSize}
+          showUnavailable={surface !== "page"}
+        />
+      ) : surface === "page" ? null : (
+        <ArtifactDeleteControl
+          iconSize={iconSize}
+          loading
+          disabledReason={t(($) => {
+            return $.artifacts.deletion.checking;
+          })}
+        />
+      )}
     </span>
+  );
+}
+
+function ArtifactDeleteControl({
+  iconSize,
+  disabledReason,
+  loading = false,
+  onClick,
+}: {
+  readonly iconSize: number;
+  readonly disabledReason?: string;
+  readonly loading?: boolean;
+  readonly onClick?: (event: MouseEvent<HTMLElement>) => void;
+}) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return $.artifacts.deletion.delete;
+  });
+  return (
+    <ArtifactActionTooltip label={disabledReason ?? label}>
+      <Button
+        type="button"
+        variant="quiet"
+        size="icon-sm"
+        className="shrink-0 text-muted-foreground hover:text-destructive"
+        disabled={disabledReason !== undefined}
+        aria-label={label}
+        aria-description={disabledReason}
+        aria-busy={loading || undefined}
+        onClick={onClick}
+      >
+        <Trash2 size={iconSize} />
+      </Button>
+    </ArtifactActionTooltip>
   );
 }
 
@@ -172,10 +228,12 @@ function PreviewArtifactDeleteButton({
   session,
   onDeleted,
   iconSize,
+  showUnavailable,
 }: {
   readonly session: PreviewArtifactDeletion;
   readonly onDeleted: () => void;
   readonly iconSize: number;
+  readonly showUnavailable: boolean;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -185,18 +243,27 @@ function PreviewArtifactDeleteButton({
   const close = useSet(session.close$);
   const finalFocus = useSet(session.finalFocus$);
   const [deletion, confirm] = useLoadableSet(session.confirm$);
+  const canDelete = detail.state === "hasData" && detail.data !== null;
+  const disabledReason = canDelete
+    ? undefined
+    : detail.state === "loading"
+      ? t(($) => {
+          return $.artifacts.deletion.checking;
+        })
+      : detail.state === "hasError"
+        ? t(($) => {
+            return $.artifacts.deletion.loadFailed;
+          })
+        : t(($) => {
+            return $.artifacts.deletion.unavailable;
+          });
   return (
     <>
-      {detail.state === "hasData" && detail.data && (
-        <Button
-          showTooltip
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          className="shrink-0 text-muted-foreground hover:text-destructive"
-          aria-label={t(($) => {
-            return $.artifacts.deletion.delete;
-          })}
+      {(canDelete || showUnavailable) && (
+        <ArtifactDeleteControl
+          iconSize={iconSize}
+          disabledReason={disabledReason}
+          loading={detail.state === "loading"}
           onClick={(event) => {
             detach(
               requestDeletion(event.currentTarget, pageSignal),
@@ -204,9 +271,7 @@ function PreviewArtifactDeleteButton({
               "confirm artifact deletion",
             );
           }}
-        >
-          <Trash2 size={iconSize} />
-        </Button>
+        />
       )}
       <ArtifactDeleteConfirmation
         target={target}

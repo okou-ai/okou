@@ -538,14 +538,17 @@
     },
     "deletion": {
       "cancel": "Cancelar",
+      "checking": "Comprobando el permiso para eliminar",
       "delete": "Eliminar",
       "deleting": "Eliminando…",
       "description": "Se eliminará el artefacto y se desactivarán sus enlaces de Okou. Las copias ya descargadas o guardadas en otros servicios se conservarán.",
       "hostedDescription": "El sitio web y todas sus versiones publicadas dejarán de estar disponibles. Las copias guardadas en otros servicios se conservarán.",
+      "loadFailed": "No se pudo comprobar el permiso para eliminar",
       "menu": "Más acciones para {{title}}",
       "sharedDescription": "Elimina esta conversación compartida de tus artefactos. Su enlace compartido dejará de funcionar. Tu conversación original seguirá disponible.",
       "success": "Artefacto eliminado",
-      "title": "¿Eliminar {{title}}?"
+      "title": "¿Eliminar {{title}}?",
+      "unavailable": "No puedes eliminar este resultado"
     },
     "fileBadges": {
       "artwork": "ARTE",
@@ -638,6 +641,7 @@
       "accessLabel": "Quién tiene acceso",
       "copied": "Copiado",
       "copyLink": "Copiar enlace",
+      "linkLoadFailed": "No se pudo cargar el enlace para compartir",
       "loadFailed": "No se pudieron cargar los permisos",
       "loadingPermissions": "Cargando permisos",
       "onlyMe": "Solo yo",
@@ -648,6 +652,7 @@
       "permissionsUpdated": "Acceso actualizado",
       "publicAccess": "Acceso público",
       "publicOption": "Cualquier persona con el enlace",
+      "unavailable": "No hay ningún enlace para compartir",
       "updateFailed": "No se pudo actualizar el acceso"
     },
     "sidebar": {
