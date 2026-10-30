@@ -47,11 +47,6 @@
       "owner": "applyVisibleAgentGrantRows"
     },
     {
-      "id": "TX-0342",
-      "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
-      "owner": "deleteWorkflowRows$"
-    },
-    {
       "id": "TX-0357",
       "file": "turbo/packages/db/scripts/migration-runner.ts",
       "owner": "applyPendingMigrations"
