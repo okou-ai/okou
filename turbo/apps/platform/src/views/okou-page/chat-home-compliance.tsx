@@ -31,7 +31,7 @@ export function ChatHomeCompliance() {
   return (
     <section
       aria-label={title}
-      className="hidden shrink-0 justify-center px-6 py-2 sm:flex"
+      className="hidden shrink-0 justify-center border-t border-border/50 px-6 py-2 sm:flex"
     >
       <ComplianceBadges
         quiet
