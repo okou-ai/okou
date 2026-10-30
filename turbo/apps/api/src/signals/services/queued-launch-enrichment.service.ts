@@ -1,4 +1,4 @@
-import { settle } from "../utils";
+import type { settle } from "../utils";
 import { logger } from "../../lib/log";
 
 const L = logger("QueuedLaunchEnrichment");
@@ -6,15 +6,13 @@ const L = logger("QueuedLaunchEnrichment");
 /**
  * Optional history/name lookups cannot block an accepted input: unavailable
  * optional enrichment is omitted with a warning and the fallback is used.
- * Cancellation still propagates.
+ * Callers own loading and cancellation before resolving the completed result.
  */
-export async function loadOptionalChatEnrichment<T>(
+export function resolveOptionalChatEnrichment<T>(
   channel: string,
-  load: () => Promise<T>,
+  result: Awaited<ReturnType<typeof settle<T>>>,
   fallback: (error: unknown) => T,
-  signal: AbortSignal,
-): Promise<T> {
-  const result = await settle(load(), signal);
+): T {
   if (result.ok) {
     return result.value;
   }

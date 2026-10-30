@@ -65,7 +65,7 @@ import {
 } from "./integration-input-assets.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { resolveOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { ensureTeamsChatThreadRoute$ } from "./teams-chat-ingress.service";
 import {
   buildTeamsConnectUrlForActivity,
@@ -1744,16 +1744,13 @@ const runResolvedTeamsAgentForActivity$ = command(
     );
     signal.throwIfAborted();
 
-    const promptContext = await loadOptionalChatEnrichment(
-      "teams",
-      () => {
-        return fetchTeamsPromptContext({ activity: args.activity }, signal);
-      },
-      () => {
+    const promptContext = await (async () => {
+      const read = fetchTeamsPromptContext({ activity: args.activity }, signal);
+      const result = await settle(read, signal);
+      return resolveOptionalChatEnrichment("teams", result, () => {
         return { text: "", files: [] };
-      },
-      signal,
-    );
+      });
+    })();
     signal.throwIfAborted();
 
     return await set(
