@@ -429,12 +429,12 @@ jobs:
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
-            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} publishing to Browser Use..."
+            text: "*Browser Extension* publishing to Browser Use..."
             blocks:
               - type: section
                 text:
                   type: mrkdwn
-                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} publishing to Browser Use...\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  text: "*Browser Extension* publishing to Browser Use...\n📦 Version: `${{ needs.release-please.outputs.browser_extension_version }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.browser_extension_tag }}|View Release>"
 
       - name: Record start time
         id: timer
@@ -473,12 +473,12 @@ jobs:
           payload: |
             channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
             ts: "${{ steps.slack-start.outputs.ts }}"
-            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ✅ Published to Browser Use; configuration verified"
+            text: "*Browser Extension* ✅ Published to Browser Use"
             blocks:
               - type: section
                 text:
                   type: mrkdwn
-                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ✅ Published to Browser Use; configuration verified\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  text: "*Browser Extension* ✅ Published to Browser Use\n📦 Version: `${{ needs.release-please.outputs.browser_extension_version }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.browser_extension_tag }}|View Release>"
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
@@ -489,12 +489,12 @@ jobs:
           payload: |
             channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
             ts: "${{ steps.slack-start.outputs.ts }}"
-            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ❌ Publish failed"
+            text: "*Browser Extension* ❌ Publish failed"
             blocks:
               - type: section
                 text:
                   type: mrkdwn
-                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ❌ Publish failed\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  text: "*Browser Extension* ❌ Publish failed\n📦 Version: `${{ needs.release-please.outputs.browser_extension_version }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.browser_extension_tag }}|View Release>\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
   publish-ios-testflight:
     name: publish-ios-testflight
