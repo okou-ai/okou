@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, generateKeyPairSync, verify } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -12,15 +12,14 @@ const publication = resolve(
   import.meta.dirname,
   "publish-browser-extension.mjs",
 );
-const authentication = resolve(
+const resolution = resolve(
   import.meta.dirname,
-  "browser-extension-variable-token.mjs",
+  "resolve-browser-extension.mjs",
 );
 const source = "1".repeat(40);
 const version = "0.2.0";
 const oldId = "11111111-1111-4111-8111-111111111111";
 const newId = "22222222-2222-4222-8222-222222222222";
-const variable = "OKOU_BROWSER_USE_EXTENSION_ID";
 
 async function run(t, script, env, args = []) {
   const child = spawn(process.execPath, [script, ...args], {
@@ -113,7 +112,7 @@ async function fixture(t) {
   await mkdir(artifacts);
   await writeFile(
     resolve(directory, "manifest.json"),
-    JSON.stringify({ manifest_version: 3, version }),
+    JSON.stringify({ manifest_version: 3, name: "Okou Browser", version }),
   );
   await writeFile(
     resolve(directory, "background.js"),
@@ -142,13 +141,13 @@ async function fixture(t) {
     assets: [],
     contents: new Map(),
     uploads: 0,
-    writes: 0,
-    current: oldId,
     uploadFailure: false,
     lostReply: false,
-    variableFailure: false,
     superseded: false,
-    missingVariable: false,
+    extensions: [{ id: oldId, name: "Okou Browser", version: "0.1.0" }],
+    lookupFailure: false,
+    listRequests: [],
+    uploadedVersion: version,
     events: [],
   };
   let api;
@@ -195,39 +194,38 @@ async function fixture(t) {
       return send({ id }, 201);
     }
     if (url.pathname === "/api/v4/extensions") {
-      state.uploads++;
-      state.events.push("provider-upload");
       assert.equal(
         request.headers["x-browser-use-api-key"],
         "provider-fixture-key",
       );
+      if (request.method === "GET") {
+        const pageNumber = Number(url.searchParams.get("pageNumber"));
+        const pageSize = Number(url.searchParams.get("pageSize"));
+        state.listRequests.push(pageNumber);
+        return send(
+          {
+            items: state.extensions.slice(
+              (pageNumber - 1) * pageSize,
+              pageNumber * pageSize,
+            ),
+            totalItems: state.extensions.length,
+            pageNumber,
+            pageSize,
+          },
+          state.lookupFailure ? 503 : 200,
+        );
+      }
+      state.uploads++;
+      state.events.push("provider-upload");
       assert.ok(
         payload.includes(bytes),
         "the uploaded multipart includes the exact verified ZIP bytes",
       );
       if (state.lostReply) return response.destroy();
-      return send({ id: newId }, state.uploadFailure ? 503 : 201);
-    }
-    if (
-      url.pathname === `${prefix}/actions/variables/${variable}` &&
-      request.method === "GET"
-    )
       return send(
-        { name: variable, value: state.current },
-        state.missingVariable ? 404 : 200,
+        { id: newId, name: "Okou Browser", version: state.uploadedVersion },
+        state.uploadFailure ? 503 : 201,
       );
-    if (
-      (url.pathname === `${prefix}/actions/variables/${variable}` &&
-        request.method === "PATCH") ||
-      (url.pathname === `${prefix}/actions/variables` &&
-        request.method === "POST")
-    ) {
-      if (state.variableFailure) return send({}, 403);
-      state.writes++;
-      state.events.push("variable-update");
-      state.current = JSON.parse(payload).value;
-      state.missingVariable = false;
-      return send({}, 204);
     }
     return send({ unhandled: `${request.method} ${url.pathname}` }, 404);
   });
@@ -236,7 +234,6 @@ async function fixture(t) {
     GITHUB_API_URL: api,
     BROWSER_USE_API_URL: api,
     GH_TOKEN: "contents-fixture-token",
-    GITHUB_VARIABLES_TOKEN: "variables-fixture-token",
     OKOU_BROWSER_USE_API_KEY: "provider-fixture-key",
     RELEASE_TARGET: source,
     BROWSER_EXTENSION_VERSION: version,
@@ -255,51 +252,22 @@ async function fixture(t) {
     async outputs() {
       return readOutputs(output);
     },
-    async apiEnvironment({
-      extensionReleased = true,
-      configuredId = oldId,
-    } = {}) {
-      const step = readWorkflow().jobs["promote-api-production"].steps.find(
-        (step) => step.id === "browser-extension-env",
-      );
-      const file = resolve(directory, "api-output");
-      await writeFile(file, "");
-      const child = spawn("bash", ["-c", step.run], {
-        cwd: root,
-        env: {
-          ...process.env,
-          GH_TOKEN: "",
-          GITHUB_VARIABLES_TOKEN: "",
-          REPO_VARS_JSON: JSON.stringify(
-            { [variable]: configuredId, OTHER: "retained" },
-            null,
-            2,
-          ),
-          BROWSER_EXTENSION_RELEASE_CREATED: String(extensionReleased),
-          BROWSER_EXTENSION_ID: extensionReleased
-            ? (await readOutputs(output)).extension_id
-            : "",
-          GITHUB_OUTPUT: file,
-        },
-        signal: t.signal,
-        stdio: ["ignore", "pipe", "pipe"],
+    async resolve({ extensionReleased = false, publishedId = "" } = {}) {
+      return run(t, resolution, {
+        BROWSER_USE_API_URL: api,
+        OKOU_BROWSER_USE_API_KEY: "provider-fixture-key",
+        BROWSER_EXTENSION_RELEASE_CREATED: String(extensionReleased),
+        BROWSER_EXTENSION_ID: publishedId,
       });
-      const resolved = await completed(child);
-      assert.equal(resolved.code, 0, resolved.stderr);
-      return JSON.parse((await readOutputs(file)).json);
     },
   };
 }
 
-test("publication preserves artifact identity, replaces stale vars and reuses a completed upload", async (t) => {
+test("publication preserves artifact identity and reuses a completed upload", async (t) => {
   const f = await fixture(t);
   assert.equal((await f.run()).code, 0);
   const outputs = await f.outputs();
   assert.equal(outputs.extension_id, newId);
-  assert.deepEqual(await f.apiEnvironment(), {
-    [variable]: newId,
-    OTHER: "retained",
-  });
   assert.deepEqual(f.state.events, [
     `browser-extension-${version}.zip`,
     `browser-extension-${version}.zip.sha256`,
@@ -307,11 +275,9 @@ test("publication preserves artifact identity, replaces stale vars and reuses a 
     "browser-extension-upload-attempt.json",
     "provider-upload",
     "browser-extension-upload.json",
-    "variable-update",
   ]);
   assert.equal((await f.run()).code, 0);
   assert.equal(f.state.uploads, 1);
-  assert.equal(f.state.writes, 1);
 });
 
 test("published release artifacts are immutable and retain the exact uploaded ZIP", async (t) => {
@@ -324,15 +290,6 @@ test("published release artifacts are immutable and retain the exact uploaded ZI
   assert.notEqual(rerun.code, 0);
   assert.match(rerun.stderr, /Conflicting release artifact/);
   assert.equal(f.state.uploads, 1);
-  assert.equal(f.state.writes, 1);
-});
-
-test("the first extension release creates the singular configuration Variable", async (t) => {
-  const f = await fixture(t);
-  f.state.missingVariable = true;
-  assert.equal((await f.run()).code, 0);
-  assert.equal(f.state.current, newId);
-  assert.equal((await f.outputs()).extension_id, newId);
 });
 
 test("an uncertain provider upload is not replayed by a rerun", async (t) => {
@@ -344,34 +301,29 @@ test("an uncertain provider upload is not replayed by a rerun", async (t) => {
   assert.notEqual(retried.code, 0);
   assert.match(retried.stderr, /no completion receipt/);
   assert.equal(f.state.uploads, 1);
-  assert.equal(f.state.writes, 0);
 });
 
-test("provider rejection cannot publish configuration or deployment outputs", async (t) => {
+test("provider rejection cannot publish deployment outputs", async (t) => {
   const f = await fixture(t);
   f.state.uploadFailure = true;
   assert.notEqual((await f.run()).code, 0);
-  assert.equal(f.state.writes, 0);
   assert.deepEqual(await f.outputs(), {});
 });
 
-test("a failed Variable update blocks deployment and retries from its completed receipt", async (t) => {
+test("a different uploaded version cannot become a verified publication output", async (t) => {
   const f = await fixture(t);
-  f.state.variableFailure = true;
+  f.state.uploadedVersion = "0.1.0";
   assert.notEqual((await f.run()).code, 0);
   assert.deepEqual(await f.outputs(), {});
-  f.state.variableFailure = false;
-  assert.equal((await f.run()).code, 0);
+  assert.notEqual((await f.run()).code, 0);
   assert.equal(f.state.uploads, 1);
-  assert.equal((await f.outputs()).extension_id, newId);
 });
 
-test("a superseded release cannot overwrite newer configuration", async (t) => {
+test("a superseded release cannot upload older artifacts", async (t) => {
   const f = await fixture(t);
   f.state.superseded = true;
   assert.notEqual((await f.run()).code, 0);
   assert.equal(f.state.uploads, 0);
-  assert.equal(f.state.writes, 0);
 });
 
 test("artifact tampering is rejected before publication", async (t) => {
@@ -379,15 +331,80 @@ test("artifact tampering is rejected before publication", async (t) => {
   await writeFile(f.archive, "different bytes");
   assert.notEqual((await f.run()).code, 0);
   assert.equal(f.state.uploads, 0);
-  assert.equal(f.state.writes, 0);
 });
 
-test("an API-only release preserves its required configuration without publication credentials", async (t) => {
+test("an extension release deploys its exact publication even when a higher version exists", async (t) => {
   const f = await fixture(t);
-  assert.deepEqual(
-    await f.apiEnvironment({ extensionReleased: false, configuredId: newId }),
-    { [variable]: newId, OTHER: "retained" },
-  );
+  assert.equal((await f.run()).code, 0);
+  f.state.extensions = [{ id: oldId, name: "Okou Browser", version: "9.0.0" }];
+  const resolved = await f.resolve({
+    extensionReleased: true,
+    publishedId: (await f.outputs()).extension_id,
+  });
+  assert.equal(resolved.code, 0, resolved.stderr);
+  assert.equal(resolved.stdout.trim(), newId);
+  assert.deepEqual(f.state.listRequests, []);
+});
+
+test("a required publication output cannot be replaced by a registry lookup", async (t) => {
+  const f = await fixture(t);
+  for (const publishedId of ["", "invalid"]) {
+    const resolved = await f.resolve({ extensionReleased: true, publishedId });
+    assert.notEqual(resolved.code, 0);
+    assert.equal(resolved.stdout, "");
+    assert.match(resolved.stderr, /must provide a valid published ID/);
+  }
+});
+
+test("an API-only deployment selects the highest numeric version across all pages", async (t) => {
+  const f = await fixture(t);
+  f.state.extensions = [
+    { id: oldId, name: "Okou Browser", version: "0.9.0" },
+    ...Array.from({ length: 99 }, () => ({
+      id: randomUUID(),
+      name: "Other extension",
+      version: "99.0.0",
+    })),
+    { id: newId, name: "Okou Browser", version: "0.10.0" },
+    { id: randomUUID(), name: "Okou Browser", version: "0.2.0" },
+  ];
+  const resolved = await f.resolve({ publishedId: oldId });
+  assert.equal(resolved.code, 0, resolved.stderr);
+  assert.equal(resolved.stdout.trim(), newId);
+  assert.deepEqual(f.state.listRequests, [1, 2]);
+});
+
+test("an absent or ambiguous highest matching version blocks deployment selection", async (t) => {
+  const f = await fixture(t);
+  for (const extensions of [
+    [{ id: oldId, name: "Other extension", version: "1.0.0" }],
+    [oldId, newId].map((id) => ({
+      id,
+      name: "Okou Browser",
+      version: "1.0.0",
+    })),
+  ]) {
+    f.state.extensions = extensions;
+    const resolved = await f.resolve();
+    assert.notEqual(resolved.code, 0);
+    assert.equal(resolved.stdout, "");
+  }
+});
+
+test("provider failures and invalid matching metadata cannot produce a deployment ID", async (t) => {
+  const f = await fixture(t);
+  f.state.lookupFailure = true;
+  const failed = await f.resolve();
+  assert.notEqual(failed.code, 0);
+  assert.match(failed.stderr, /lookup failed \(503\)/);
+  assert.equal(failed.stdout, "");
+  f.state.lookupFailure = false;
+  f.state.extensions = [
+    { id: newId, name: "Okou Browser", version: "not-a-version" },
+  ];
+  const invalid = await f.resolve();
+  assert.notEqual(invalid.code, 0);
+  assert.equal(invalid.stdout, "");
 });
 
 test("the API production gate requires publication only when an extension is released", () => {
@@ -460,95 +477,11 @@ test("the API production gate requires publication only when an extension is rel
     return step.id === "api-production-env";
   });
   assert.equal(
-    renderer.env.REPO_VARS_JSON,
-    "${{ steps.browser-extension-env.outputs.json }}",
-  );
-  const variables = job.steps.find(
-    (step) => step.id === "browser-extension-env",
-  );
-  assert.equal(
-    variables.env.BROWSER_EXTENSION_ID,
+    renderer.with["browser-extension-id"],
     "${{ needs.publish-browser-extension.outputs.extension_id }}",
   );
-});
-
-test("the CI App token is scoped to this repository's Variables and is revoked", async (t) => {
-  const directory = await mkdtemp(resolve(tmpdir(), "extension-app-token-"));
-  t.after(() => {
-    return rm(directory, { recursive: true, force: true });
-  });
-  const output = resolve(directory, "output");
-  const { publicKey, privateKey } = generateKeyPairSync("rsa", {
-    modulusLength: 2048,
-  });
-  let scope,
-    revoked = false;
-  const api = await serve(t, async (request, response) => {
-    if (request.url === "/installation/token") {
-      assert.equal(request.method, "DELETE");
-      assert.equal(
-        request.headers.authorization,
-        "Bearer fixture-installation-token",
-      );
-      revoked = true;
-      return response.writeHead(204).end();
-    }
-    const jwt = request.headers.authorization
-      .slice("Bearer ".length)
-      .split(".");
-    assert.ok(
-      verify(
-        "RSA-SHA256",
-        Buffer.from(jwt.slice(0, 2).join(".")),
-        publicKey,
-        Buffer.from(jwt[2], "base64url"),
-      ),
-    );
-    const claims = JSON.parse(Buffer.from(jwt[1], "base64url"));
-    assert.equal(claims.iss, "99");
-    assert.equal(claims.exp - claims.iat, 600);
-    response.setHeader("content-type", "application/json");
-    if (request.method === "GET")
-      return response.end(JSON.stringify({ id: 7 }));
-    scope = JSON.parse(await body(request));
-    return response.end(
-      JSON.stringify({
-        token: "fixture-installation-token",
-        permissions: { variables: "write" },
-      }),
-    );
-  });
-  const env = {
-    GITHUB_API_URL: api,
-    GITHUB_REPOSITORY: "okou-ai/okou",
-    GITHUB_REPOSITORY_ID: "42",
-    OKOU_CI_APP_ID: "99",
-    OKOU_CI_APP_PRIVATE_KEY: privateKey
-      .export({ type: "pkcs8", format: "pem" })
-      .replaceAll("\n", "\\n"),
-    GITHUB_OUTPUT: output,
-  };
-  const created = await run(t, authentication, env);
-  assert.equal(created.code, 0, created.stderr);
-  assert.deepEqual(scope, {
-    repository_ids: [42],
-    permissions: { variables: "write" },
-  });
-  assert.equal(created.stdout.trim(), "::add-mask::fixture-installation-token");
   assert.equal(
-    await readFile(output, "utf8"),
-    "token=fixture-installation-token\n",
+    renderer.with["browser-extension-release-created"],
+    "${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}",
   );
-  assert.equal(
-    (
-      await run(
-        t,
-        authentication,
-        { ...env, GITHUB_VARIABLES_TOKEN: "fixture-installation-token" },
-        ["--revoke"],
-      )
-    ).code,
-    0,
-  );
-  assert.equal(revoked, true);
 });
