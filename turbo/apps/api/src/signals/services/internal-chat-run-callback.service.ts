@@ -18,6 +18,7 @@ import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/ch
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { serializeError } from "@okouai/core/log-utils";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -28,9 +29,11 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
+import { DatabaseError } from "pg";
 import { object, string, type infer as zInfer } from "zod";
 
 import { logger } from "../../lib/log";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
@@ -1685,6 +1688,30 @@ const handleCompletedChatCallback$ = command(
   },
 );
 
+/** Child errors can contain private provider responses, SQL and parameters. */
+function completedChatCallbackFailure(
+  operation: "save_summary" | "followups" | "push",
+  error: unknown,
+) {
+  const sqlState =
+    error instanceof Error && error.cause instanceof DatabaseError
+      ? safeSqlStateCode(error)
+      : undefined;
+  return {
+    operation,
+    reason: sqlState
+      ? "database_error"
+      : error instanceof TypeError
+        ? "type_error"
+        : error instanceof SyntaxError
+          ? "syntax_error"
+          : error instanceof Error
+            ? "error"
+            : "non_error",
+    ...(sqlState === undefined ? {} : { sqlState }),
+  };
+}
+
 const runCompletedChatCallbackSideEffects$ = command(
   async (
     { set },
@@ -1782,17 +1809,24 @@ const runCompletedChatCallbackSideEffects$ = command(
       pushStep,
     ]);
     signal.throwIfAborted();
-    const errors = results.flatMap((result) => {
+    const operations = [
+      ["save_summary", results[0]],
+      ["followups", results[1]],
+      ["push", results[2]],
+    ] as const;
+    const failures = operations.flatMap(([operation, result]) => {
       if (result.status === "fulfilled") {
         return [];
       }
       throwIfAbort(result.reason);
-      return [result.reason];
+      return [completedChatCallbackFailure(operation, result.reason)];
     });
-    if (errors.length > 0) {
+    if (failures.length > 0) {
+      // `cause` preserves the finite projection through Error serialization.
       throw new AggregateError(
-        errors,
+        failures,
         "Completed chat callback side effects failed",
+        { cause: { failures } },
       );
     }
   },
@@ -1900,7 +1934,10 @@ async function runTerminalChatCallbackSideEffects(args: {
     log.warn("Failed to process terminal chat callback side effects", {
       runId: args.runId,
       status: args.status,
-      error,
+      error:
+        args.status === "completed" && error instanceof AggregateError
+          ? serializeError(error)
+          : error,
     });
   });
 }
