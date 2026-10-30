@@ -142,7 +142,7 @@ test.each([false, true])(
         filename: "Table.xlsx",
         contentType: TYPE,
         size: body.size,
-        url: artifactReferencePath(FILE_ID, "table.xlsx"),
+        url: `https://app.example.test${artifactReferencePath(FILE_ID, "table.xlsx")}`,
         uploadUrl: "https://storage.example.test/table-export",
         uploadHeaders: {},
       });
@@ -160,7 +160,7 @@ test.each([false, true])(
         filename: "Table.xlsx",
         contentType: TYPE,
         size: 100,
-        url: artifactReferencePath(FILE_ID, "table.xlsx"),
+        url: `https://app.example.test${artifactReferencePath(FILE_ID, "table.xlsx")}`,
       });
     });
     context.mocks.api(
@@ -177,7 +177,7 @@ test.each([false, true])(
             fileId: FILE_ID,
             filename: "Table.xlsx",
             contentType: TYPE,
-            url: artifactReferencePath(FILE_ID, "table.xlsx"),
+            url: `https://app.example.test${artifactReferencePath(FILE_ID, "table.xlsx")}`,
           },
         ),
         googleDriveConnectionId: CONNECTION_ID,

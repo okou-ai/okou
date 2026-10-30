@@ -3,7 +3,7 @@ import type { Element } from "hast";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import {
   artifactReferencesContract,
-  parseArtifactReference,
+  artifactReferencePath,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -89,16 +89,13 @@ const uploadTable$ = command(
       [200],
       signal,
     );
-    const reference = parseArtifactReference(
-      completed.body.url,
-      location.origin,
-    );
-    if (!reference) {
-      throw new Error("Private table upload is missing its artifact reference");
-    }
     const owner = await accept(
       get(apiClient$)(artifactReferencesContract).ownerArtifact({
-        params: { reference: `${reference.hash}${reference.extension}` },
+        params: {
+          reference: artifactReferencePath(completed.body.id, filename).slice(
+            "/artifacts/".length,
+          ),
+        },
         fetchOptions: { signal },
       }),
       [200],
