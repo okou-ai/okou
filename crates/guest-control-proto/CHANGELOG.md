@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.49](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.48...guest-control-proto-v0.22.49) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
 ## [0.22.48](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.47...guest-control-proto-v0.22.48) (2026-10-30)
 
 ## [0.22.47](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.46...guest-control-proto-v0.22.47) (2026-10-30)
