@@ -1096,6 +1096,17 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${chatEventSearchProjection}`,
   );
+  const usagePackPendingSnapshot = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/write-usage-pack-pending-snapshot.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${usagePackPendingSnapshot}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1382,6 +1393,16 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
 const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
+  {
+    schemaName: "public",
+    functionName: "write_usage_pack_pending_snapshot",
+    identityArguments: "p_input jsonb, p_clock timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "7401f5cb04ba3cc021f8c39b3dce1b8d",
+  },
   {
     schemaName: "public",
     functionName: "update_agent_metadata",
