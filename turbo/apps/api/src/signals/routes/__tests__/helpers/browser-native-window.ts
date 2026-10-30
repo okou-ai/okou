@@ -45,6 +45,7 @@ export function createNativeWindowProvider(context: TestContext) {
     windowError?: string;
     closeSucceeds: boolean;
     closeReply: "reply" | "withhold" | "disconnect";
+    seedCloseError?: string;
     windowReply: "reply" | "withhold";
     createReply: "reply" | "disconnect" | "withhold";
     command?: (command: {
@@ -311,14 +312,13 @@ export function createNativeWindowProvider(context: TestContext) {
         };
       } else if (command.method === "Target.closeTarget") {
         const targetId = String(command.params.targetId);
-        if (state.closeReply === "withhold") {
-          return;
-        }
-        if (state.closeSucceeds) {
+        if (state.seedCloseError) {
+          result = new Error(state.seedCloseError);
+        } else {
           state.targets.delete(targetId);
           state.closed.push(targetId);
+          result = { success: true };
         }
-        result = { success: state.closeSucceeds };
       } else {
         if (!state.command) {
           throw new Error(`Unhandled external CDP method: ${command.method}`);

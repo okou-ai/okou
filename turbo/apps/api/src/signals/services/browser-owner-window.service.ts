@@ -21,7 +21,7 @@ import {
 } from "./browser-owner.service";
 import {
   BrowserUseProviderError,
-  closeBrowserUseWindow,
+  tryCloseBrowserUseWindow,
   initialBrowserUseWindow,
   resizeBrowserUseSession,
   restoreBrowserUseWindowTabUrls,
@@ -67,7 +67,11 @@ const cleanupWindowCandidate$ = command(
     if (references.length > 0) {
       return;
     }
-    await closeBrowserUseWindow(args, args.candidate.primaryWindowId, signal);
+    await tryCloseBrowserUseWindow(
+      args,
+      args.candidate.primaryWindowId,
+      signal,
+    );
   },
 );
 

@@ -13,7 +13,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
   createSharedBrowserFixtures,
   MINUTE,
@@ -166,56 +165,41 @@ describe("shared Browser expiry through public reopen", () => {
     });
   });
 
-  it.each(["capture", "close"] as const)(
-    "retains an expired lifetime after failed %s until normal reopen reconciles it",
-    async (failure) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await open(a);
-        const sibling = await open(b);
-        const aPage = navigate(
-          f,
-          first.window.primaryWindowId,
-          "https://a.example.test/saved",
-        );
-        const kms = useSecretKmsProbe();
-        mockNow(START + 9 * MINUTE);
-        await renew(b);
-        mockNow(START + 11 * MINUTE);
-        if (failure === "capture") {
-          f.provider.native.windowError = "Provider unavailable";
-        } else {
-          f.provider.native.closeSucceeds = false;
-        }
-        const blocked = await use(a);
-        expect(blocked.status).toBe(409);
-        expect(f.provider.native.targets.get(aPage.targetId)).toStrictEqual(
-          aPage,
-        );
-        expect(f.provider.sessionRequests).toHaveLength(1);
-        if (failure === "close") {
-          const captures = kms.generateDataKeyCalls;
-          const workingSibling = await open(b);
-          expect(workingSibling.window).toStrictEqual(sibling.window);
-          expect(kms.generateDataKeyCalls).toBe(captures);
-        }
-        f.provider.native.windowError = undefined;
-        f.provider.native.closeSucceeds = true;
-        const recovered = await open(a);
-        expect(recovered.window.instanceId).toBe(first.window.instanceId);
-        expect(
-          pages(f, recovered.window.primaryWindowId).map((page) => {
-            return page.url;
-          }),
-        ).toStrictEqual(["https://a.example.test/saved"]);
-        expect(pages(f, sibling.window.primaryWindowId)).toHaveLength(1);
-        expect(f.provider.sessionRequests).toHaveLength(1);
-      });
-    },
-  );
+  it("preserves recovery after required native capture fails until normal reopen reconciles it", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await open(a);
+      const sibling = await open(b);
+      const aPage = navigate(
+        f,
+        first.window.primaryWindowId,
+        "https://a.example.test/saved",
+      );
+      mockNow(START + 9 * MINUTE);
+      await renew(b);
+      mockNow(START + 11 * MINUTE);
+      f.provider.native.windowError = "Provider unavailable";
+      const blocked = await use(a);
+      expect(blocked.status).toBe(409);
+      expect(f.provider.native.targets.get(aPage.targetId)).toStrictEqual(
+        aPage,
+      );
+      expect(f.provider.sessionRequests).toHaveLength(1);
+      f.provider.native.windowError = undefined;
+      const recovered = await open(a);
+      expect(recovered.window.instanceId).toBe(first.window.instanceId);
+      expect(
+        pages(f, recovered.window.primaryWindowId).map((page) => {
+          return page.url;
+        }),
+      ).toStrictEqual(["https://a.example.test/saved"]);
+      expect(pages(f, sibling.window.primaryWindowId)).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  });
 
   it.each(["failed", "accepted", "lost-response"] as const)(
     "waits for a confirmed provider stop after a %s stop request",
@@ -311,7 +295,7 @@ describe("shared Browser expiry through public reopen", () => {
           f.provider.native.closeSucceeds = false;
         }
       };
-      expect((await use(a)).status).toBe(409);
+      const reopened = await open(a);
       expect(f.provider.native.targets.has(page.targetId)).toBeFalsy();
       expect(f.provider.native.targets.get(second.targetId)).toStrictEqual(
         second,
@@ -326,7 +310,6 @@ describe("shared Browser expiry through public reopen", () => {
       );
       f.provider.native.beforeCloseWindowReply = undefined;
       f.provider.native.closeSucceeds = true;
-      const reopened = await open(a);
       expect(reopened.window.instanceId).toBe(first.window.instanceId);
       expect(
         pages(f, reopened.window.primaryWindowId).map((target) => {
@@ -394,7 +377,7 @@ describe("shared Browser expiry through public reopen", () => {
             throw new Error("The earlier reclaim did not reach provider IO");
           }),
         ]);
-        expect((await use(a)).status).toBe(409);
+        expect((await use(a)).status).toBe(200);
         expect(f.provider.native.targets.has(page.targetId)).toBeFalsy();
         expect(f.provider.native.targets.has(second.targetId)).toBeTruthy();
       });
@@ -406,7 +389,7 @@ describe("shared Browser expiry through public reopen", () => {
       if (!loser.ok) {
         throw loser.error;
       }
-      expect(loser.value.status).toBe(409);
+      expect(loser.value.status).toBe(200);
       f.provider.native.beforeCloseWindowReply = undefined;
       f.provider.native.closeSucceeds = true;
       const reopened = await open(a);

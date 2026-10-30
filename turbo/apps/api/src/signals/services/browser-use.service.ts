@@ -45,6 +45,7 @@ import {
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import {
+  bestEffort,
   readBoundedResponseText,
   safeJsonParse,
   safeSync,
@@ -573,19 +574,14 @@ async function nativeBrowserWindow(
 async function withBrowserUseBridge<T>(
   connection: BrowserUseNativeConnection,
   signal: AbortSignal,
-  operation: (
-    client: OkouBrowserClient,
-    socket: WebSocket,
-    sequence: { next: number },
-    signal: AbortSignal,
-  ) => Promise<T>,
+  operation: (client: OkouBrowserClient) => Promise<T>,
 ): Promise<T> {
   return await withBrowserUseCdpDeadline(signal, async (deadline) => {
     return await withBrowserUseCdpSocket(
       connection.cdpUrl,
       deadline,
       async (socket) => {
-        const sequence = { next: 1 };
+        let nextId = 1;
         const disconnected = new AbortController();
         const connectionSignal = AbortSignal.any([
           deadline,
@@ -606,7 +602,7 @@ async function withBrowserUseBridge<T>(
                 return await sendBrowserUseCdpCommand(
                   socket,
                   {
-                    id: sequence.next++,
+                    id: nextId++,
                     method,
                     params,
                     sessionId,
@@ -637,7 +633,7 @@ async function withBrowserUseBridge<T>(
               },
             },
           });
-          return await operation(client, socket, sequence, connectionSignal);
+          return await operation(client);
         });
         const released = await settleIncludingAbort(async () => {
           await client?.close();
@@ -3505,30 +3501,37 @@ function disposableBrowserUseTabUrl(url: string): boolean {
   return url === "about:blank" || url === "chrome://newtab/";
 }
 
-async function closeRestoredBrowserSeed(
-  socket: WebSocket,
+async function tryCloseRestoredBrowserSeed(
+  cdpUrl: string,
   window: BrowserUseWindowCandidate,
-  sequence: { next: number },
-  cdpSignal: AbortSignal,
+  signal: AbortSignal,
 ) {
-  if (
-    (await nativeWindowForTarget(
-      socket,
-      window.targetId,
-      sequence,
-      cdpSignal,
-    )) === window.primaryWindowId
-  ) {
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: sequence.next++,
-        method: "Target.closeTarget",
-        params: { targetId: window.targetId },
-      },
-      cdpSignal,
-    );
-  }
+  await bestEffort(
+    withBrowserUseCdpDeadline(signal, async (deadline) => {
+      await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+        const sequence = { next: 1 };
+        if (
+          (await nativeWindowForTarget(
+            socket,
+            window.targetId,
+            sequence,
+            deadline,
+          )) === window.primaryWindowId
+        ) {
+          await sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: sequence.next++,
+              method: "Target.closeTarget",
+              params: { targetId: window.targetId },
+            },
+            deadline,
+          );
+        }
+      });
+    }),
+    signal,
+  );
 }
 
 export async function restoreBrowserUseWindowTabUrls(
@@ -3541,45 +3544,38 @@ export async function restoreBrowserUseWindowTabUrls(
   if (bounded.length === 0) {
     return;
   }
-  await withBrowserUseBridge(
-    connection,
-    signal,
-    async (client, socket, sequence, cdpSignal) => {
-      if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
-        throw new Error("The Browser restore window is unavailable");
+  await withBrowserUseBridge(connection, signal, async (client) => {
+    if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
+      throw new Error("The Browser restore window is unavailable");
+    }
+    for (const url of bounded) {
+      const created = await client.call("createTab", {
+        windowId: window.primaryWindowId,
+        url,
+        active: false,
+      });
+      const tab = browserUseNativeTabSchema.parse(created.value);
+      if (tab.windowId !== window.primaryWindowId) {
+        throw new Error("The Browser could not confirm restored tab placement");
       }
-      for (const url of bounded) {
-        const created = await client.call("createTab", {
-          windowId: window.primaryWindowId,
-          url,
-          active: false,
-        });
-        const tab = browserUseNativeTabSchema.parse(created.value);
-        if (tab.windowId !== window.primaryWindowId) {
-          throw new Error(
-            "The Browser could not confirm restored tab placement",
-          );
-        }
-      }
-      await closeRestoredBrowserSeed(socket, window, sequence, cdpSignal);
-    },
-  );
+    }
+  });
+  // The restored URLs are ready; blank-seed cleanup cannot undo that result.
+  await tryCloseRestoredBrowserSeed(connection.cdpUrl, window, signal);
 }
 
-export async function closeBrowserUseWindow(
+/** Residual native windows are reclaimed when the physical Browser stops. */
+export async function tryCloseBrowserUseWindow(
   connection: BrowserUseNativeConnection,
   primaryWindowId: number,
   signal: AbortSignal,
 ): Promise<void> {
-  await withBrowserUseBridge(connection, signal, async (client) => {
-    if (!(await nativeBrowserWindow(client, primaryWindowId))) {
-      return;
-    }
-    await client.call("closeWindow", { windowId: primaryWindowId });
-    if (await nativeBrowserWindow(client, primaryWindowId)) {
-      throw new Error("Shared Browser window closure is not confirmed");
-    }
-  });
+  await bestEffort(
+    withBrowserUseBridge(connection, signal, async (client) => {
+      await client.call("closeWindow", { windowId: primaryWindowId });
+    }),
+    signal,
+  );
 }
 
 export async function restoreBrowserUseTabUrls(

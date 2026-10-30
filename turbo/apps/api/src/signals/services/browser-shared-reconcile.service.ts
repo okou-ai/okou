@@ -31,7 +31,7 @@ import {
   BrowserUseProviderError,
   browserUseWindowExists,
   browserUseNativeConnection,
-  closeBrowserUseWindow,
+  tryCloseBrowserUseWindow,
   findBrowserUseSession,
   findBrowserUseSessionByInstance,
   stopBrowserUseSessionForCleanup,
@@ -296,8 +296,13 @@ const retireSharedWindow$ = command(
       current = closing;
     }
     if (!nativeMissing) {
-      await closeBrowserUseWindow(connection, current.primaryWindowId, signal);
+      await tryCloseBrowserUseWindow(
+        connection,
+        current.primaryWindowId,
+        signal,
+      );
     }
+    // The accepted snapshot owns recovery; native cleanup is advisory.
     const [closed] = await db
       .delete(windows)
       .where(and(identity, eq(windows.state, "closing")))
