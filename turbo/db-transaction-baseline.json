@@ -2,11 +2,6 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0012",
-      "file": "turbo/apps/api/src/signals/routes/agents.ts",
-      "owner": "updateAgentMetadataInner$"
-    },
-    {
       "id": "TX-0047",
       "file": "turbo/apps/api/src/signals/services/agent-deletion.service.ts",
       "owner": "deleteAgentRows$"
