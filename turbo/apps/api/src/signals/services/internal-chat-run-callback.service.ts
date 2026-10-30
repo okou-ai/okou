@@ -29,6 +29,7 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
+import { DatabaseError } from "pg";
 import { object, string, type infer as zInfer } from "zod";
 
 import { logger } from "../../lib/log";
@@ -1687,6 +1688,30 @@ const handleCompletedChatCallback$ = command(
   },
 );
 
+/** Child errors can contain private provider responses, SQL and parameters. */
+function completedChatCallbackFailure(
+  operation: "save_summary" | "followups" | "push",
+  error: unknown,
+) {
+  const sqlState =
+    error instanceof Error && error.cause instanceof DatabaseError
+      ? safeSqlStateCode(error)
+      : undefined;
+  return {
+    operation,
+    reason: sqlState
+      ? "database_error"
+      : error instanceof TypeError
+        ? "type_error"
+        : error instanceof SyntaxError
+          ? "syntax_error"
+          : error instanceof Error
+            ? "error"
+            : "non_error",
+    ...(sqlState === undefined ? {} : { sqlState }),
+  };
+}
+
 const runCompletedChatCallbackSideEffects$ = command(
   async (
     { set },
@@ -1794,26 +1819,10 @@ const runCompletedChatCallbackSideEffects$ = command(
         return [];
       }
       throwIfAbort(result.reason);
-      const sqlState = safeSqlStateCode(result.reason);
-      return [
-        {
-          operation,
-          reason: sqlState
-            ? "database_error"
-            : result.reason instanceof TypeError
-              ? "type_error"
-              : result.reason instanceof SyntaxError
-                ? "syntax_error"
-                : result.reason instanceof Error
-                  ? "error"
-                  : "non_error",
-          ...(sqlState === undefined ? {} : { sqlState }),
-        },
-      ];
+      return [completedChatCallbackFailure(operation, result.reason)];
     });
     if (failures.length > 0) {
-      // Keep only finite diagnostics: child errors can contain prompts, provider
-      // responses, SQL and parameters. `cause` survives Error serialization.
+      // `cause` preserves the finite projection through Error serialization.
       throw new AggregateError(
         failures,
         "Completed chat callback side effects failed",

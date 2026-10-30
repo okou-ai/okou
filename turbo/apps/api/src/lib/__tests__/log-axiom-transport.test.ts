@@ -338,7 +338,7 @@ describe("completed chat callback failure diagnostics", () => {
       owned.rememberClaim(run.runId, claim.sandboxToken);
       context.mocks.ably.presenceGet.mockRejectedValue(
         new TypeError(privateDetail, {
-          cause: { response: privateDetail },
+          cause: { code: "EPIPE", response: privateDetail },
         }),
       );
       fixture.chatCallbacks.mockChatOutputEvents([
