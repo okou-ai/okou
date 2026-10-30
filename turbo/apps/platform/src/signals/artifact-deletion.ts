@@ -279,6 +279,10 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
   );
   return {
     session$,
+    detail$: computed(async (get) => {
+      const session = get(session$);
+      return session ? await get(session.detail$) : null;
+    }),
     mountRef$,
     menuTriggerRef$,
     menuTrigger$: computed((get) => {

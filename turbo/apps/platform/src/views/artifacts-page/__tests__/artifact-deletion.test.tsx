@@ -91,9 +91,7 @@ async function openDeletion() {
   });
   const preview = currentPreview()!;
   await waitFor(() => {
-    expect(
-      getButtonByName("More artifact actions", preview),
-    ).toBeInTheDocument();
+    expect(getButtonByName("More artifact actions", preview)).toBeEnabled();
   });
   click(getButtonByName("More artifact actions", preview));
   click(await findNamedMenuItem("Delete"));

@@ -1,6 +1,7 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -121,7 +122,7 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
       within(preview).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect(buttonNamed("More artifact actions", preview)).toBeInTheDocument();
+      expect(buttonNamed("More artifact actions", preview)).toBeEnabled();
     });
     click(buttonNamed("More artifact actions", preview));
     click(await findNamedMenuItem("Delete"));
@@ -158,25 +159,31 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
     await expect(
       within(reopened).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
-    click(buttonNamed("More artifact actions", reopened));
-    const emptyMenu = await screen.findByRole("menu");
-    await expect(
-      within(emptyMenu).findByText("No actions available"),
-    ).resolves.toBeInTheDocument();
-    expect(queryAllByRoleFast("menuitem", emptyMenu)).toHaveLength(0);
+    await waitFor(() => {
+      expect(
+        buttonNamed("More artifact actions", reopened),
+      ).toHaveAccessibleDescription("No actions available");
+    });
+    const more = buttonNamed("More artifact actions", reopened);
+    expect(more).toBeDisabled();
+    click(more);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   },
 );
 
 test.each([
   { surface: "lightbox", outcome: "owner" },
   { surface: "lightbox", outcome: "unavailable" },
+  { surface: "lightbox", outcome: "forbidden" },
   { surface: "lightbox", outcome: "failed" },
   { surface: "sidebar", outcome: "owner" },
   { surface: "sidebar", outcome: "unavailable" },
+  { surface: "sidebar", outcome: "forbidden" },
   { surface: "sidebar", outcome: "failed" },
 ] as const)(
-  "$surface keeps More available while delete access resolves to $outcome",
+  "$surface disables More until delete access resolves to $outcome",
   async ({ surface, outcome }) => {
+    const user = userEvent.setup();
     mockReport(() => {
       return true;
     });
@@ -185,6 +192,11 @@ test.each([
       await permission.promise;
       if (outcome === "failed") {
         throw new Error("Owner lookup unavailable");
+      }
+      if (outcome === "forbidden") {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Access denied" },
+        });
       }
       return outcome === "owner"
         ? respond(
@@ -219,18 +231,21 @@ test.each([
       within(preview).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
     const more = buttonNamed("More artifact actions", preview);
-    expect(more).toBeEnabled();
+    expect(more).toBeDisabled();
+    expect(more).toHaveAttribute("aria-busy", "true");
+    expect(more).toHaveAccessibleDescription("Checking delete access");
     expect(
       queryAllByRoleFast("button", preview).find((button) => {
         return button.getAttribute("aria-label") === "Delete";
       }),
     ).toBeUndefined();
     click(more);
-    const menu = await screen.findByRole("menu");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await user.hover(more.parentElement!);
     await expect(
-      within(menu).findByText("Checking delete access"),
+      screen.findByText("Checking delete access"),
     ).resolves.toBeInTheDocument();
-    expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(0);
+    await user.unhover(more.parentElement!);
     permission.resolve();
     const readyText =
       outcome === "owner"
@@ -238,11 +253,24 @@ test.each([
         : outcome === "failed"
           ? "Couldn’t check delete access"
           : "No actions available";
+    await waitFor(() => {
+      expect(
+        buttonNamed("More artifact actions", preview),
+      ).toHaveAccessibleDescription(outcome === "owner" ? "" : readyText);
+    });
+    const resolvedMore = buttonNamed("More artifact actions", preview);
+    expect(resolvedMore).toHaveProperty("disabled", outcome !== "owner");
+    expect(resolvedMore).not.toHaveAttribute("aria-busy");
+    click(resolvedMore);
+    if (outcome !== "owner") {
+      await user.hover(resolvedMore.parentElement!);
+    }
     await expect(
-      within(menu).findByText(readyText),
+      outcome === "owner"
+        ? findNamedMenuItem("Delete")
+        : screen.findByText(readyText),
     ).resolves.toBeInTheDocument();
-    expect(buttonNamed("More artifact actions", preview)).toBeEnabled();
-    expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(
+    expect(screen.queryAllByRole("menu")).toHaveLength(
       outcome === "owner" ? 1 : 0,
     );
   },

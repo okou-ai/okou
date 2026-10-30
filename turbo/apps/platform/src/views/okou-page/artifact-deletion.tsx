@@ -33,6 +33,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
+import { ArtifactActionTooltip } from "./artifact-actions.tsx";
 
 export function ArtifactDeleteMenu({
   artifact,
@@ -126,7 +127,7 @@ export function ArtifactPageDeleteButton({
   );
 }
 
-/** The toolbar entry stays mounted independently of the owner lookup. */
+/** The toolbar entry keeps its place independently of the owner lookup. */
 export function ArtifactPreviewMoreMenu({
   artifactId,
   surface,
@@ -143,30 +144,50 @@ export function ArtifactPreviewMoreMenu({
   const scope = artifactPreviewDeletionScope(surface);
   const mountRef = useSet(scope.mountRef$);
   const session = useGet(scope.session$);
+  const detail = useLoadable(scope.detail$);
   const triggerRef = useSet(scope.menuTriggerRef$);
   const menuTrigger = useGet(scope.menuTrigger$);
   const label = t(($) => {
     return $.artifacts.actions.more;
   });
+  const loading =
+    Boolean(artifactId) &&
+    (session?.artifactId !== artifactId || detail.state === "loading");
+  const canDelete =
+    Boolean(artifactId) &&
+    session?.artifactId === artifactId &&
+    detail.state === "hasData" &&
+    detail.data !== null;
+  const tooltip = loading
+    ? t(($) => {
+        return $.artifacts.deletion.checking;
+      })
+    : detail.state === "hasError"
+      ? t(($) => {
+          return $.artifacts.deletion.loadFailed;
+        })
+      : canDelete
+        ? label
+        : t(($) => {
+            return $.artifacts.deletion.noActions;
+          });
   if (!enabled) {
     return null;
   }
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        ref={triggerRef}
-        aria-label={label}
-        render={
-          <Button
-            showTooltip
-            aria-label={label}
-            variant="quiet"
-            size="icon-sm"
-          />
-        }
-      >
-        <MoreHorizontal size={iconSize} />
-      </DropdownMenuTrigger>
+      <ArtifactActionTooltip label={tooltip}>
+        <DropdownMenuTrigger
+          ref={triggerRef}
+          disabled={!canDelete}
+          aria-label={label}
+          aria-description={canDelete ? undefined : tooltip}
+          aria-busy={loading || undefined}
+          render={<Button variant="quiet" size="icon-sm" />}
+        >
+          <MoreHorizontal size={iconSize} />
+        </DropdownMenuTrigger>
+      </ArtifactActionTooltip>
       <span
         key={`mount:${artifactId ?? ""}`}
         ref={mountRef}
