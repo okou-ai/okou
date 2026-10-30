@@ -84,6 +84,7 @@ import {
 } from "../../test/mocks/sentry-behavior.ts";
 import { createDeferredPromise } from "../utils.ts";
 import { mockDedicatedWorker } from "../../test/mocks/dedicated-worker.ts";
+import { mockFonts } from "../../test/mocks/fonts.ts";
 
 interface WindowOpenCall {
   url: string | null;
@@ -472,6 +473,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
       userAgent: (ua: string): void => {
         vi.spyOn(navigator, "userAgent", "get").mockReturnValue(ua);
+      },
+      fonts: (localFaces: readonly string[]) => {
+        return mockFonts(localFaces, getSignal());
       },
       fedCm: (options: BrowserFedCmOptions = {}): void => {
         const secureContextDescriptor = defineWindowProperty(

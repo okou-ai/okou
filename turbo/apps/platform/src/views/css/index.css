@@ -24,21 +24,11 @@
   --okou-auth-card-padding-inline: 2.5rem;
   --okou-auth-card-padding-block: 2rem;
   /* Font families */
-  --font-family-cjk:
-    "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR";
-  --font-family-fallback: var(--font-family-cjk), "Noto Sans Devanagari";
   --font-family-sans:
-    "Geist", system-ui, var(--font-family-fallback), sans-serif;
+    var(--font-fallback-prefix,) "Geist", system-ui, sans-serif;
   --font-family-mono:
-    "Geist Mono", ui-monospace, "SF Mono", Monaco, Consolas, system-ui,
-    var(--font-family-fallback), monospace;
-  /* Standard utilities share the App's font supply instead of bypassing it. */
-  --font-sans: var(--font-family-sans);
-  --font-mono: var(--font-family-mono);
-  /* Keep native serif Latin faces ahead of the shared script fallback. */
-  --font-serif:
-    ui-serif, Georgia, Cambria, "Times New Roman", Times, "Noto Serif",
-    "Liberation Serif", var(--font-family-fallback), serif;
+    var(--font-fallback-prefix,) "Geist Mono", ui-monospace, "SF Mono", Monaco,
+    Consolas, monospace;
   /* Color-emoji fonts must come first so dual-presentation codepoints (e.g. the
      "squared CJK" buttons 🈶🈯🈹) resolve to their color glyph instead of the
      text glyph a CJK text font would otherwise supply. */
@@ -264,21 +254,32 @@
   --border-width-annotation-box: 2.5px;
 }
 
+/* The runtime's optional prefix references this token, so retain it even
+   though no static utility consumes it directly. */
+@theme static {
+  --font-fallback-han:
+    "Okou Fallback Han Noto Sans SC", "Okou Fallback Han Noto Sans TC",
+    "Okou Fallback Han Noto Sans JP", "Okou Fallback Han Noto Sans KR";
+}
+
 /* Shared Han codepoints have localized forms; all families remain available
    for mixed-language text regardless of the UI language. */
 :root:lang(zh-Hant) {
-  --font-family-cjk:
-    "Noto Sans TC", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR";
+  --font-fallback-han:
+    "Okou Fallback Han Noto Sans TC", "Okou Fallback Han Noto Sans SC",
+    "Okou Fallback Han Noto Sans JP", "Okou Fallback Han Noto Sans KR";
 }
 
 :root:lang(ja) {
-  --font-family-cjk:
-    "Noto Sans JP", "Noto Sans SC", "Noto Sans TC", "Noto Sans KR";
+  --font-fallback-han:
+    "Okou Fallback Han Noto Sans JP", "Okou Fallback Han Noto Sans SC",
+    "Okou Fallback Han Noto Sans TC", "Okou Fallback Han Noto Sans KR";
 }
 
 :root:lang(ko) {
-  --font-family-cjk:
-    "Noto Sans KR", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP";
+  --font-fallback-han:
+    "Okou Fallback Han Noto Sans KR", "Okou Fallback Han Noto Sans SC",
+    "Okou Fallback Han Noto Sans TC", "Okou Fallback Han Noto Sans JP";
 }
 
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.

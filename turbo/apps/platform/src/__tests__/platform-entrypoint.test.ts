@@ -2,9 +2,11 @@ import { screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Sentry from "@sentry/react";
 import { posthog } from "posthog-js/dist/module.slim";
+import { HttpResponse } from "msw";
 
 import { startPlatformEntrypoint } from "../lib/platform-entrypoint.ts";
 import { testContext } from "../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../signals/utils.ts";
 
 const context = testContext();
 async function waitForApplicationStart(): Promise<void> {
@@ -41,6 +43,10 @@ describe("platform entrypoint", () => {
   });
 
   it("starts the application in a supported browser", async () => {
+    context.mocks.browser.fonts([
+      "NotoSansCJKsc-Regular",
+      "NotoSansDevanagari-Regular",
+    ]);
     context.mocks.browser.userAgent(
       "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36",
     );
@@ -54,6 +60,10 @@ describe("platform entrypoint", () => {
   });
 
   it("strips Discord approval fragments synchronously before analytics initialize", async () => {
+    context.mocks.browser.fonts([
+      "NotoSansCJKsc-Regular",
+      "NotoSansDevanagari-Regular",
+    ]);
     const proof = "p".repeat(43);
     const attemptState = "s".repeat(43);
     context.mocks.browser.url(
@@ -81,6 +91,26 @@ describe("platform entrypoint", () => {
       }),
     );
     await waitForApplicationStart();
+  });
+
+  it("starts the application while optional font metadata is still pending", async () => {
+    context.mocks.browser.userAgent(
+      "Mozilla/5.0 Chrome/142.0.0.0 Safari/537.36",
+    );
+    context.mocks.browser.fonts(["NotoSansCJKsc-Regular"]);
+    vi.stubGlobal("SharedWorker", class extends EventTarget {});
+    const requested = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    context.mocks.http.get("https://fonts.googleapis.com/css2", async () => {
+      requested.resolve();
+      await release.promise;
+      return new HttpResponse(null, { status: 503 });
+    });
+    startPlatformEntrypoint();
+    await requested.promise;
+    await waitForApplicationStart();
+    expect(document.getElementById("root")).not.toBeEmptyDOMElement();
+    release.resolve();
   });
 
   it("shows browser guidance before bootstrap when SharedWorker is unavailable", async () => {

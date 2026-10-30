@@ -12,6 +12,7 @@ import { ASSISTANT_NAME } from "../signals/branding.ts";
 import { detach, Reason } from "../signals/utils.ts";
 import { setupRouter } from "../views/main.tsx";
 import { renderUnsupportedBrowserPage } from "../views/unsupported-browser-page.tsx";
+import { installFontFallback } from "./font-fallback.ts";
 
 // (no-op Platform release marker refreshed for production delivery at 2026-10-30T11:35:01+08:00)
 
@@ -25,6 +26,7 @@ function startApplication(
   initSentry();
   initPostHog();
   captureFirstSkeletonPaint();
+  detach(installFontFallback(rootSignal), Reason.Entrance, "font fallback");
 
   async function main() {
     await store.set(
