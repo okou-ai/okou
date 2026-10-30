@@ -563,6 +563,40 @@ const recoverSharedCreations$ = command(
   },
 );
 
+function sharedBrowserStopCondition(
+  owner: Owner | null,
+  closedInstances: readonly string[],
+  at: Date,
+) {
+  return and(
+    ownerScope(owner),
+    isNotNull(profiles.providerSessionId),
+    noWindows("active"),
+    or(
+      eq(profiles.status, "stopping"),
+      and(
+        eq(profiles.status, "active"),
+        or(
+          // Fresh setup keeps its deadline; final retirement stops immediately.
+          lte(profiles.creationExpiresAt, at),
+          inArray(profiles.instanceId, closedInstances),
+          exists(
+            new QueryBuilder()
+              .select({ id: windows.chatThreadId })
+              .from(windows)
+              .where(
+                and(
+                  eq(windows.instanceId, profiles.instanceId),
+                  eq(windows.state, "closing"),
+                ),
+              ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 const reconcileSharedWindows$ = command(
   async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
     const rows = await get(db$)
@@ -640,36 +674,7 @@ const reconcileSharedWindows$ = command(
     const empty = await get(db$)
       .select()
       .from(profiles)
-      .where(
-        and(
-          ownerScope(owner),
-          isNotNull(profiles.providerSessionId),
-          noWindows("active"),
-          or(
-            eq(profiles.status, "stopping"),
-            and(
-              eq(profiles.status, "active"),
-              or(
-                // Give a newly published instance its existing setup window.
-                // Normal final retirement stops immediately in this call.
-                lte(profiles.creationExpiresAt, nowDate()),
-                inArray(profiles.instanceId, [...closedInstances]),
-                exists(
-                  new QueryBuilder()
-                    .select({ id: windows.chatThreadId })
-                    .from(windows)
-                    .where(
-                      and(
-                        eq(windows.instanceId, profiles.instanceId),
-                        eq(windows.state, "closing"),
-                      ),
-                    ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      )
+      .where(sharedBrowserStopCondition(owner, [...closedInstances], nowDate()))
       .orderBy(profiles.updatedAt)
       .limit(BATCH_SIZE);
     signal.throwIfAborted();
