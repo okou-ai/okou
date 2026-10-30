@@ -126,7 +126,7 @@ function ExportableTable({
         </DropdownMenu>
       </div>
       <div className="overflow-x-auto rounded-2xl">
-        <table {...props} className={cn("m-0! border-0!", className)}>
+        <table {...props} className={cn("m-0! min-w-max border-0!", className)}>
           {children}
         </table>
       </div>
