@@ -193,7 +193,9 @@ export const createBrowserOwnerWindow$ = command(
       result.value.window?.primaryWindowId ===
         cleanup.candidate?.primaryWindowId;
     if (!accepted) {
-      const cleaned = await settleIncludingAbort(
+      // This cleanup owns its deadline; even expiry cannot replace admission's
+      // result. An unreferenced residual window is reclaimed at Browser stop.
+      await settleIncludingAbort(
         set(
           cleanupWindowCandidate$,
           cleanup,
@@ -201,13 +203,6 @@ export const createBrowserOwnerWindow$ = command(
         ),
       );
       signal.throwIfAborted();
-      if (!cleaned.ok) {
-        throw new BrowserUseProviderError(
-          502,
-          "BROWSER_USE_WINDOW_CLEANUP_FAILED",
-          "Managed Browser window cleanup could not be confirmed",
-        );
-      }
     }
     signal.throwIfAborted();
     if (!result.ok) {
