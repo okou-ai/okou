@@ -3146,7 +3146,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await entitledLinkedActor();
 
     const conversationId = uniqueConversationId();
-    const activeMessageId = await ap.postAgentPhoneInboundMessage({
+    await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
       body: "@Okou finish before the queued group launch",
@@ -3159,7 +3159,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       channel: "imessage",
       from: phone,
       body: "@Okou fail this queued group launch",
-      replyToMessageId: activeMessageId,
       conversationId,
       isGroup: true,
       participants: [{ identifier: phone }],
@@ -4425,7 +4424,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     }
   });
 
-  it("opens new iMessage group threads and resumes user, nested, and bot replies in the original thread", async () => {
+  it("shares a main thread per iMessage group and forks persistent reply threads", async () => {
     const { actor, phone, runnerGroup, sends, ap } =
       await entitledLinkedActor();
     const chat = createChatFilesBddApi(context);
@@ -4441,48 +4440,94 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const first = await claimDispatchedRun(runnerGroup);
     await completeSandboxRun(first.sandboxToken, first.runId, 0);
     await flushWaitUntilForTest();
-    const answerMessageId = lastSend(sends).messageId;
-    const originalSession = await waitForRunSessionIdPresent(
-      actor,
-      first.runId,
-    );
+    const mainAnswerMessageId = lastSend(sends).messageId;
+    const mainSession = await waitForRunSessionIdPresent(actor, first.runId);
 
-    const independentPrompt = "@Okou start a separate budget review";
+    const followUpPrompt = "@Okou review the budget too";
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
-      body: independentPrompt,
+      body: followUpPrompt,
       conversationId,
       isGroup: true,
     });
-    const independent = await claimDispatchedRun(runnerGroup);
-    expect(independent.resumedSessionId).toBeUndefined();
-    await completeSandboxRun(independent.sandboxToken, independent.runId, 0);
-    const independentSession = await waitForRunSessionIdPresent(
-      actor,
-      independent.runId,
-    );
-    expect(independentSession).not.toBe(originalSession);
+    const followUp = await claimDispatchedRun(runnerGroup);
+    expect(followUp.resumedSessionId).toBe(mainSession);
+    await completeSandboxRun(followUp.sandboxToken, followUp.runId, 0);
+    await waitForRunSessionId(actor, followUp.runId, mainSession);
+
+    const branchPrompt = "@Okou add a launch date";
+    const branchMessageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: branchPrompt,
+      conversationId,
+      isGroup: true,
+      replyToMessageId: rootMessageId,
+    });
+    const branch = await claimDispatchedRun(runnerGroup);
+    expect(branch.resumedSessionId).toBeUndefined();
+    await completeSandboxRun(branch.sandboxToken, branch.runId, 0);
+    await flushWaitUntilForTest();
+    const branchAnswerMessageId = lastSend(sends).messageId;
+    const branchSession = await waitForRunSessionIdPresent(actor, branch.runId);
+    expect(branchSession).not.toBe(mainSession);
 
     const replyPrompts = [
-      "@Okou add a launch date",
-      "@Okou move that date one week later",
-      "@Okou expand your original answer",
+      { body: "@Okou move that date one week later", parent: branchMessageId },
+      { body: "@Okou expand your answer", parent: branchAnswerMessageId },
+      { body: "@Okou list launch risks", parent: rootMessageId },
     ];
-    let previousMessageId = rootMessageId;
-    for (const [index, body] of replyPrompts.entries()) {
-      previousMessageId = await ap.postAgentPhoneInboundMessage({
+    for (const { body, parent } of replyPrompts) {
+      await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
         from: phone,
         body,
         conversationId,
         isGroup: true,
-        replyToMessageId: index === 2 ? answerMessageId : previousMessageId,
+        replyToMessageId: parent,
       });
       const reply = await claimDispatchedRun(runnerGroup);
-      expect(reply.resumedSessionId).toBe(originalSession);
+      expect(reply.resumedSessionId).toBe(branchSession);
       await completeSandboxRun(reply.sandboxToken, reply.runId, 0);
-      await waitForRunSessionId(actor, reply.runId, originalSession);
+      await waitForRunSessionId(actor, reply.runId, branchSession);
+    }
+
+    const returnPrompt = "@Okou back to the group discussion";
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: returnPrompt,
+      conversationId,
+      isGroup: true,
+    });
+    const returned = await claimDispatchedRun(runnerGroup);
+    expect(returned.resumedSessionId).toBe(mainSession);
+    await completeSandboxRun(returned.sandboxToken, returned.runId, 0);
+    await waitForRunSessionId(actor, returned.runId, mainSession);
+
+    const botReplyPrompt = "@Okou discuss your first answer separately";
+    const otherGroupPrompt = "@Okou discuss another group's plan";
+    for (const message of [
+      {
+        body: botReplyPrompt,
+        conversationId,
+        replyToMessageId: mainAnswerMessageId,
+      },
+      { body: otherGroupPrompt, conversationId: uniqueConversationId() },
+    ]) {
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        isGroup: true,
+        ...message,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.resumedSessionId).toBeUndefined();
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      const session = await waitForRunSessionIdPresent(actor, run.runId);
+      expect(session).not.toBe(mainSession);
+      expect(session).not.toBe(branchSession);
     }
 
     const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
@@ -4492,7 +4537,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const threads = lifecycle.body.events.filter((event) => {
       return event.kind === "created";
     });
-    expect(threads).toHaveLength(2);
+    expect(threads).toHaveLength(4);
     const threadPrompts = await Promise.all(
       threads.map(async (thread) => {
         const history = await chat.listThreadEvents(actor, thread.chatThreadId);
@@ -4513,8 +4558,15 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(threadPrompts).toStrictEqual(
       expect.arrayContaining([
-        [rootPrompt, ...replyPrompts],
-        [independentPrompt],
+        [rootPrompt, followUpPrompt, returnPrompt],
+        [
+          branchPrompt,
+          ...replyPrompts.map((reply) => {
+            return reply.body;
+          }),
+        ],
+        [botReplyPrompt],
+        [otherGroupPrompt],
       ]),
     );
   });
@@ -4732,8 +4784,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(run2.appendSystemPrompt).toContain("# Phone Message Context");
     expect(run2.appendSystemPrompt).toContain(`SENDER: {id: ${phone}}`);
     expect(run2.appendSystemPrompt).toContain("SENDER: {id: BOT}");
+    expect(run2.resumedSessionId).toBeUndefined();
     await completeSandboxRun(run2.sandboxToken, run2.runId, 0);
-    await waitForRunSessionId(actor, run2.runId, groupSession);
+    await expect(
+      waitForRunSessionIdPresent(actor, run2.runId),
+    ).resolves.not.toBe(groupSession);
 
     // Ambient group chatter is stored but never dispatched as a run.
     await ap.postAgentPhoneInboundMessage({

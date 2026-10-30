@@ -365,6 +365,7 @@ const sendAgentPhoneReply$ = command(
           conversationId: args.target.conversationId!,
           messageId: message.id,
           chatThreadId: args.chatThreadId,
+          rootMessageId: args.target.rootMessageId,
         });
       }
       if (args.target.channel === "whatsapp") {
