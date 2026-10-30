@@ -296,7 +296,13 @@ function PendingFormHeader({
         compact ? "gap-2.5 @[520px]:flex-1" : "gap-3",
       )}
     >
-      <Globe size={16} className="mt-1 shrink-0 self-start text-brand-text" />
+      <Globe
+        size={16}
+        className={cn(
+          "shrink-0 self-start text-brand-text",
+          showTitle && "mt-1",
+        )}
+      />
       <div className="min-w-0 max-w-sm">
         {showTitle && (
           <h2
@@ -316,7 +322,7 @@ function PendingFormHeader({
         <div
           className={cn(
             "flex items-start gap-1.5 text-xs text-muted-foreground",
-            compact ? "mt-1" : "mt-2",
+            showTitle && (compact ? "mt-1" : "mt-2"),
           )}
         >
           <span className="shrink-0 font-medium text-foreground">
