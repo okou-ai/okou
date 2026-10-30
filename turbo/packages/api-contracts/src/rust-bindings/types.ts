@@ -624,6 +624,9 @@ export const rustTypeBindings = [
           terms_acceptance_required: [
             "The provider requires acceptance of updated terms.",
           ],
+          account_verification_required: [
+            "The provider requires account verification before replying.",
+          ],
           context_window_exceeded: ["The model context window was exceeded."],
           input_too_large: ["The Codex app-server input limit was exceeded."],
           provider_image_too_large: [

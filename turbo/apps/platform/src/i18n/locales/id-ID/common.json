@@ -2017,6 +2017,8 @@
       "recovery": {
         "accessProgramDescription": "Coba lagi sebentar lagi. Chat ini bisa tetap terbuka.",
         "accessProgramTitle": "Akses Codex sementara tidak tersedia",
+        "accountVerificationDescription": "Akun Claude Anda saat ini tidak dapat menerima balasan. Periksa langkah berikutnya di Portal Verifikasi Anthropic.",
+        "accountVerificationTitle": "Verifikasi akun Claude diperlukan",
         "autonomyLimitDescription": "Batas proses otomatis berturut-turut telah tercapai. Konfirmasi untuk melanjutkan.",
         "autonomyLimitTitle": "Batas proses otomatis tercapai",
         "capacityDescription": "Coba lagi sebentar, atau pilih model lain agar pekerjaan tetap berjalan.",

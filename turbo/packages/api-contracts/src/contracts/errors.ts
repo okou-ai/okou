@@ -242,6 +242,9 @@ export const CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE =
 export const CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE =
   "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.";
 
+export const CLAUDE_ACCOUNT_VERIFICATION_REQUIRED_MESSAGE =
+  "Your Claude account can't receive replies right now. Check the Anthropic Verification Portal for the next step.";
+
 const CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL = "Claude Model";
 export const CLAUDE_PROVIDER_OVERLOADED_GUIDANCE =
   "is overloaded. Please wait a few minutes and try again, or switch to another model.";
@@ -314,6 +317,7 @@ export const ACTIONABLE_RUN_ERROR_SNIPPETS = [
   CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE,
   CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
   CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
+  CLAUDE_ACCOUNT_VERIFICATION_REQUIRED_MESSAGE,
 ] as const;
 
 type ClaudeCodeCredentialRecovery = {
@@ -700,6 +704,7 @@ type StructuredRunErrorBehavior =
   | "usage-limit"
   | "unsupported-model"
   | "model-restricted"
+  | "account-verification"
   | "reconnect"
   | "terms";
 
@@ -716,6 +721,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   invalid_api_key: "generic",
   invalid_credentials: "credential",
   terms_acceptance_required: "terms",
+  account_verification_required: "account-verification",
   context_window_exceeded: "generic",
   input_too_large: "generic",
   provider_image_too_large: "generic",
@@ -786,6 +792,9 @@ function formatStructuredRunError(params: {
   }
 
   switch (STRUCTURED_RUN_ERROR_BEHAVIOR[knownReason.data]) {
+    case "account-verification": {
+      return CLAUDE_ACCOUNT_VERIFICATION_REQUIRED_MESSAGE;
+    }
     case "codex-access-program-unavailable": {
       return CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE;
     }

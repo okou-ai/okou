@@ -721,6 +721,51 @@ fn cli_failure_reason_classifies_claude_terms_acceptance_required() {
 }
 
 #[test]
+fn cli_failure_reason_classifies_only_claude_terminal_account_verification() {
+    let message = "API Error: Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://example.invalid/verification?token=private-verification-token";
+    for (framework, source, expected) in [
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            Some(FailureReason::AccountVerificationRequired),
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            None,
+        ),
+        (AgentFramework::Codex, FailureDetailSource::CodexJsonl, None),
+        (AgentFramework::Pi, FailureDetailSource::PiResult, None),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            expected,
+            "framework={framework:?}, source={source:?}",
+        );
+    }
+}
+
+#[test]
+fn cli_failure_reason_keeps_ambiguous_account_verification_unclassified() {
+    for message in [
+        "Your account can't receive replies from Claude right now.",
+        "API Error: Your account can't receive replies from Claude right now.",
+        "API Error: Visit the Anthropic Verification Portal: https://example.invalid/verification",
+        "Tool output: API Error: Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://example.invalid/verification",
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+                message,
+            ),
+            None,
+            "message={message}",
+        );
+    }
+}
+
+#[test]
 fn cli_failure_reason_classifies_claude_terms_acceptance_wording_variant() {
     let reason = classify_cli_failure_reason(
         AgentFramework::ClaudeCode,

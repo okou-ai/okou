@@ -513,6 +513,7 @@ describe("agent completion failure reasons", () => {
       "invalid_api_key",
       "invalid_credentials",
       "terms_acceptance_required",
+      "account_verification_required",
       "context_window_exceeded",
       "input_too_large",
       "provider_image_too_large",

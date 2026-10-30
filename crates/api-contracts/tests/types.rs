@@ -57,6 +57,7 @@ fn generated_completion_failure_reason_tokens_preserve_the_wire_contract() {
         "invalid_api_key",
         "invalid_credentials",
         "terms_acceptance_required",
+        "account_verification_required",
         "context_window_exceeded",
         "input_too_large",
         "provider_image_too_large",

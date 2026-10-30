@@ -12790,6 +12790,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "invalid_api_key",
           "invalid_credentials",
           "terms_acceptance_required",
+          "account_verification_required",
           "context_window_exceeded",
           "output_token_limit",
           "provider_rate_limited",

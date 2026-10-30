@@ -2024,6 +2024,8 @@
       "recovery": {
         "accessProgramDescription": "Versuchen Sie es in Kürze erneut. Sie können diesen Chat geöffnet lassen.",
         "accessProgramTitle": "Codex-Zugriff ist vorübergehend nicht verfügbar",
+        "accountVerificationDescription": "Ihr Claude-Konto kann derzeit keine Antworten empfangen. Den nächsten Schritt finden Sie im Anthropic Verification Portal.",
+        "accountVerificationTitle": "Claude-Kontoverifizierung erforderlich",
         "autonomyLimitDescription": "Das Limit für aufeinanderfolgende automatische Ausführungen wurde erreicht. Bestätige, um fortzufahren.",
         "autonomyLimitTitle": "Limit für automatische Ausführungen erreicht",
         "capacityDescription": "Versuchen Sie es gleich noch einmal oder arbeiten Sie mit einem anderen Modell weiter.",

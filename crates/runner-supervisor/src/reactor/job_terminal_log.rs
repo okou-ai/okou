@@ -525,6 +525,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
                     | FailureReason::InvalidApiKey
                     | FailureReason::InvalidCredentials
                     | FailureReason::TermsAcceptanceRequired
+                    | FailureReason::AccountVerificationRequired
                     | FailureReason::ContextWindowExceeded
                     | FailureReason::ProviderImageTooLarge
                     | FailureReason::OutputTokenLimit
@@ -751,6 +752,7 @@ mod tests {
             FailureReason::InvalidApiKey,
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,
+            FailureReason::AccountVerificationRequired,
             FailureReason::ContextWindowExceeded,
             FailureReason::ProviderImageTooLarge,
             FailureReason::OutputTokenLimit,
@@ -1279,6 +1281,7 @@ mod tests {
             FailureReason::InvalidApiKey,
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,
+            FailureReason::AccountVerificationRequired,
             FailureReason::ContextWindowExceeded,
             FailureReason::OutputTokenLimit,
             FailureReason::ProviderRateLimited,

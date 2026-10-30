@@ -2055,6 +2055,8 @@
       "recovery": {
         "accessProgramDescription": "Réessayez dans quelques instants. Vous pouvez laisser cette conversation ouverte.",
         "accessProgramTitle": "L’accès à Codex est temporairement indisponible",
+        "accountVerificationDescription": "Votre compte Claude ne peut pas recevoir de réponses pour le moment. Consultez le portail de vérification Anthropic pour connaître la prochaine étape.",
+        "accountVerificationTitle": "Vérification du compte Claude requise",
         "autonomyLimitDescription": "La limite des exécutions automatiques consécutives a été atteinte. Confirmez pour continuer.",
         "autonomyLimitTitle": "Limite des exécutions automatiques atteinte",
         "capacityDescription": "Réessayez dans un instant ou choisissez un autre modèle pour continuer.",
