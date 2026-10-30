@@ -234,8 +234,9 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
 }
 
 test.each([false, true])(
-  "consecutive site renames preserve the title, link and Share copy address (sidebar=%s)",
+  "consecutive site renames preserve the title, link and Share/Resources copy addresses (sidebar=%s)",
   async (sidebar) => {
+    installResourceGeometry(480);
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
     expect(title).toHaveTextContent(siteTitle);
@@ -254,30 +255,21 @@ test.each([false, true])(
       "https://renamed-site.okou.app",
       "https://final-site.okou.app",
     ]);
-  },
-);
-
-test.each([false, true])(
-  "Resources copies the final address after consecutive site renames (sidebar=%s)",
-  async (sidebar) => {
-    installResourceGeometry(480);
-    const preview = await setupHostedSite(sidebar);
-    const title = await within(preview).findByTestId("artifact-title-link");
-    expect(title).toHaveTextContent(siteTitle);
-    const shareMenu = await openHostedSiteShare(preview, sidebar);
-    for (const slug of ["renamed-site", "final-site"]) {
-      await renameHostedSite(shareMenu, slug);
-    }
     await userEvent.keyboard("{Escape}");
     click(buttonNamed(sidebar ? "Close artifact" : "Close", preview));
     await waitFor(() => {
       expect(title).not.toBeInTheDocument();
     });
-    const clipboard = context.mocks.browser.clipboardWriteText();
+    const resourceClipboard = context.mocks.browser.clipboardWriteText();
     await copyFromResources();
     await waitFor(() => {
-      expect(clipboard.writes.at(-1)).toBe("https://final-site.okou.app");
+      expect(resourceClipboard.writes.at(-1)).toBe(
+        "https://final-site.okou.app",
+      );
     });
+    expect(resourceClipboard.writes).toStrictEqual([
+      "https://final-site.okou.app",
+    ]);
   },
 );
 
