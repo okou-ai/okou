@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.32.0](https://github.com/okou-ai/okou/compare/api-v2.31.5...api-v2.32.0) (2026-10-30)
+
+
+### Features
+
+* activate hash-addressed content bundle claims ([#44319](https://github.com/okou-ai/okou/issues/44319)) ([8c5dde4](https://github.com/okou-ai/okou/commit/8c5dde4aba9158e9bb946c391923e8a2b666cd44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.0
+    * @okouai/core bumped to 8.805.1
+    * @okouai/db bumped to 2.13.9
+    * @okouai/pi-agent-runtime bumped to 1.51.35
+
 ## [2.31.5](https://github.com/okou-ai/okou/compare/api-v2.31.4...api-v2.31.5) (2026-10-30)
 
 
