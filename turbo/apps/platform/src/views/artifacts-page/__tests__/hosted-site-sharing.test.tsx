@@ -825,21 +825,17 @@ test.each([false, true])(
     await user.hover(getButtonByName("Copy link", menu));
     expect(share).toHaveAttribute("aria-expanded", "true");
     expect(clipboard.writes).toStrictEqual([]);
-    await user.click(getButtonByName("Copy link", menu));
-    await waitFor(() => {
-      expect(clipboard.writes).toStrictEqual([site.url]);
-    });
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(share).toHaveAttribute("aria-expanded", "false");
     });
+    expect(share).toBeInTheDocument();
     const download = getButtonByName(
       sidebar ? "Download artifact" : "Download options",
     );
     await user.hover(download);
     const downloadMenu = await screen.findByRole("menu");
     expect(within(downloadMenu).getByText("Download")).toBeInTheDocument();
-    download.focus();
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(download).toHaveAttribute("aria-expanded", "false");

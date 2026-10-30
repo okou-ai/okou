@@ -303,3 +303,19 @@ test("sign-in treats an artifact query as part of the same-origin return URL", a
     ),
   ).toBe(`https://app.okou.ai${path}`);
 });
+
+test("Escape dismisses a hovered share menu before its artifact preview", async () => {
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, sharingStatus());
+  });
+  await openArtifact();
+  const share = action("button", "Share");
+  await userEvent.hover(share);
+  await screen.findByRole("dialog", { name: "Share" });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(share).toHaveAttribute("aria-expanded", "false");
+  });
+  expect(share).toBeInTheDocument();
+  expect(screen.getByTestId("artifact-dialog-site-frame")).toBeInTheDocument();
+});
