@@ -435,6 +435,204 @@ export function assertWorkerRoleOwnership(
   return groups;
 }
 
+function expectedWorkerRoleImports(config, aggregate) {
+  const expected = new Map([
+    [
+      "createAppWithRoutes",
+      {
+        module: "../app-factory-runtime",
+        name: "createAppWithRoutes",
+        typeOnly: false,
+      },
+    ],
+    [
+      "createWorkerHandler",
+      {
+        module: "../worker-runtime",
+        name: "createWorkerHandler",
+        typeOnly: false,
+      },
+    ],
+    [
+      "RouteEntry",
+      {
+        module: "../signals/route-entry",
+        name: "RouteEntry",
+        typeOnly: true,
+      },
+    ],
+    ...config.groups.map((name) => {
+      const group = aggregate.find((item) => {
+        return item.name === name;
+      });
+      return [
+        name,
+        {
+          module: `../signals/${group.module.slice(2)}`,
+          name: group.exportName,
+          typeOnly: false,
+        },
+      ];
+    }),
+  ]);
+  const initializer = config.initializeChatRunFinishedEvents
+    ? "configureChatRunFinishedEventDispatcher$"
+    : "initializeNoServices$";
+  expected.set(initializer, {
+    module: config.initializeChatRunFinishedEvents
+      ? "../signals/services/chat-run-finished-event-registration.service"
+      : "./initialize-no-services",
+    name: initializer,
+    typeOnly: false,
+  });
+  return { expected, initializer };
+}
+
+function assertWorkerRoleImports(source, role, expected) {
+  const imports = new Map();
+  const importStatements = source.statements.filter(ts.isImportDeclaration);
+  for (const statement of importStatements) {
+    assert.ok(ts.isStringLiteral(statement.moduleSpecifier));
+    assert.ok(
+      statement.importClause &&
+        !statement.importClause.name &&
+        statement.importClause.namedBindings &&
+        ts.isNamedImports(statement.importClause.namedBindings),
+      `Role imports must be explicit named imports: ${role}`,
+    );
+    for (const binding of statement.importClause.namedBindings.elements) {
+      assert.ok(
+        !imports.has(binding.name.text),
+        `Duplicate root import: ${role}/${binding.name.text}`,
+      );
+      imports.set(binding.name.text, {
+        module: statement.moduleSpecifier.text,
+        name: binding.propertyName?.text ?? binding.name.text,
+        typeOnly: statement.importClause.isTypeOnly || binding.isTypeOnly,
+      });
+    }
+  }
+  assert.deepEqual(
+    imports,
+    expected,
+    `Unexpected static root imports: ${role}`,
+  );
+  assert.equal(
+    importStatements.length,
+    new Set(
+      [...expected.values()].map((item) => {
+        return item.module;
+      }),
+    ).size,
+    `Duplicate root module imports: ${role}`,
+  );
+  // Only imports, one private routes declaration and the complete handler export.
+  assert.equal(
+    source.statements.length,
+    importStatements.length + 2,
+    `Unexpected root statements: ${role}`,
+  );
+}
+
+function assertWorkerRoleRoutes(source, role, config) {
+  const declarations = source.statements.filter(ts.isVariableStatement);
+  assert.equal(
+    declarations.length,
+    1,
+    `Expected one private routes array: ${role}`,
+  );
+  const statement = declarations[0];
+  assert.equal(
+    statement.modifiers?.length ?? 0,
+    0,
+    `Role routes must stay private: ${role}`,
+  );
+  assert.equal(
+    statement.declarationList.flags,
+    ts.NodeFlags.Const,
+    `Role routes must be const: ${role}`,
+  );
+  assert.equal(statement.declarationList.declarations.length, 1);
+  const routes = statement.declarationList.declarations[0];
+  assert.ok(ts.isIdentifier(routes.name) && routes.name.text === "roleRoutes");
+  assert.ok(
+    routes.initializer && ts.isArrayLiteralExpression(routes.initializer),
+    `Role routes must be an explicit array: ${role}`,
+  );
+  assert.deepEqual(
+    routes.initializer.elements.map((element) => {
+      assert.ok(
+        ts.isSpreadElement(element) && ts.isIdentifier(element.expression),
+        `Role routes must be named spreads: ${role}`,
+      );
+      return element.expression.text;
+    }),
+    config.groups,
+    `Unexpected role route composition: ${role}`,
+  );
+}
+
+function assertWorkerRoleHandler(source, role, initializer) {
+  const exported = source.statements.filter(ts.isExportAssignment);
+  assert.equal(exported.length, 1);
+  assert.ok(
+    !exported[0].isExportEquals,
+    `Role requires a default export: ${role}`,
+  );
+  const worker = exported[0].expression;
+  assert.ok(
+    ts.isCallExpression(worker) &&
+      ts.isIdentifier(worker.expression) &&
+      worker.expression.text === "createWorkerHandler",
+    `Role must export its complete Worker handler: ${role}`,
+  );
+  assert.equal(worker.arguments.length, 1);
+  const factory = worker.arguments[0];
+  assert.ok(ts.isArrowFunction(factory) && ts.isBlock(factory.body));
+  assert.equal(factory.modifiers?.length ?? 0, 0);
+  assert.equal(factory.parameters.length, 1);
+  const signal = factory.parameters[0];
+  assert.ok(
+    ts.isIdentifier(signal.name) &&
+      signal.name.text === "signal" &&
+      !signal.initializer &&
+      !signal.dotDotDotToken,
+  );
+  assert.equal(factory.body.statements.length, 1);
+  const returned = factory.body.statements[0];
+  assert.ok(ts.isReturnStatement(returned));
+  const app = returned.expression;
+  assert.ok(
+    app &&
+      ts.isCallExpression(app) &&
+      ts.isIdentifier(app.expression) &&
+      app.expression.text === "createAppWithRoutes",
+  );
+  assert.equal(app.arguments.length, 1);
+  const options = app.arguments[0];
+  assert.ok(ts.isObjectLiteralExpression(options));
+  assert.deepEqual(
+    options.properties.map((property) => {
+      assert.ok(
+        (ts.isShorthandPropertyAssignment(property) ||
+          ts.isPropertyAssignment(property)) &&
+          ts.isIdentifier(property.name),
+      );
+      const value = ts.isShorthandPropertyAssignment(property)
+        ? property.name
+        : property.initializer;
+      assert.ok(ts.isIdentifier(value));
+      return [property.name.text, value.text];
+    }),
+    [
+      ["signal", "signal"],
+      ["routes", "roleRoutes"],
+      ["initializeServices$", initializer],
+    ],
+    `Unexpected app initialization: ${role}`,
+  );
+}
+
 /** Validate actual static roots before a role build, without importing API code. */
 export function assertWorkerRoleEntries(root = apiRoot) {
   const aggregate = assertWorkerRoleOwnership(
@@ -450,193 +648,13 @@ export function assertWorkerRoleEntries(root = apiRoot) {
       true,
     );
     assert.equal(source.parseDiagnostics.length, 0, `Cannot parse ${file}`);
-    const expected = new Map([
-      [
-        "createAppWithRoutes",
-        {
-          module: "../app-factory-runtime",
-          name: "createAppWithRoutes",
-          typeOnly: false,
-        },
-      ],
-      [
-        "createWorkerHandler",
-        {
-          module: "../worker-runtime",
-          name: "createWorkerHandler",
-          typeOnly: false,
-        },
-      ],
-      [
-        "RouteEntry",
-        {
-          module: "../signals/route-entry",
-          name: "RouteEntry",
-          typeOnly: true,
-        },
-      ],
-      ...config.groups.map((name) => {
-        const group = aggregate.find((item) => {
-          return item.name === name;
-        });
-        return [
-          name,
-          {
-            module: `../signals/${group.module.slice(2)}`,
-            name: group.exportName,
-            typeOnly: false,
-          },
-        ];
-      }),
-    ]);
-    const initializer = config.initializeChatRunFinishedEvents
-      ? "configureChatRunFinishedEventDispatcher$"
-      : "initializeNoServices$";
-    expected.set(initializer, {
-      module: config.initializeChatRunFinishedEvents
-        ? "../signals/services/chat-run-finished-event-registration.service"
-        : "./initialize-no-services",
-      name: initializer,
-      typeOnly: false,
-    });
-    const imports = new Map();
-    const importStatements = source.statements.filter(ts.isImportDeclaration);
-    for (const statement of importStatements) {
-      assert.ok(ts.isStringLiteral(statement.moduleSpecifier));
-      assert.ok(
-        statement.importClause &&
-          !statement.importClause.name &&
-          statement.importClause.namedBindings &&
-          ts.isNamedImports(statement.importClause.namedBindings),
-        `Role imports must be explicit named imports: ${role}`,
-      );
-      for (const binding of statement.importClause.namedBindings.elements) {
-        assert.ok(
-          !imports.has(binding.name.text),
-          `Duplicate root import: ${role}/${binding.name.text}`,
-        );
-        imports.set(binding.name.text, {
-          module: statement.moduleSpecifier.text,
-          name: binding.propertyName?.text ?? binding.name.text,
-          typeOnly: statement.importClause.isTypeOnly || binding.isTypeOnly,
-        });
-      }
-    }
-    assert.deepEqual(
-      imports,
-      expected,
-      `Unexpected static root imports: ${role}`,
+    const { expected, initializer } = expectedWorkerRoleImports(
+      config,
+      aggregate,
     );
-    assert.equal(
-      importStatements.length,
-      new Set(
-        [...expected.values()].map((item) => {
-          return item.module;
-        }),
-      ).size,
-      `Duplicate root module imports: ${role}`,
-    );
-    // Only imports, one private routes declaration and the complete handler export.
-    assert.equal(
-      source.statements.length,
-      importStatements.length + 2,
-      `Unexpected root statements: ${role}`,
-    );
-    const declarations = source.statements.filter(ts.isVariableStatement);
-    assert.equal(
-      declarations.length,
-      1,
-      `Expected one private routes array: ${role}`,
-    );
-    const statement = declarations[0];
-    assert.equal(
-      statement.modifiers?.length ?? 0,
-      0,
-      `Role routes must stay private: ${role}`,
-    );
-    assert.equal(
-      statement.declarationList.flags,
-      ts.NodeFlags.Const,
-      `Role routes must be const: ${role}`,
-    );
-    assert.equal(statement.declarationList.declarations.length, 1);
-    const routes = statement.declarationList.declarations[0];
-    assert.ok(
-      ts.isIdentifier(routes.name) && routes.name.text === "roleRoutes",
-    );
-    assert.ok(
-      routes.initializer && ts.isArrayLiteralExpression(routes.initializer),
-      `Role routes must be an explicit array: ${role}`,
-    );
-    assert.deepEqual(
-      routes.initializer.elements.map((element) => {
-        assert.ok(
-          ts.isSpreadElement(element) && ts.isIdentifier(element.expression),
-          `Role routes must be named spreads: ${role}`,
-        );
-        return element.expression.text;
-      }),
-      config.groups,
-      `Unexpected role route composition: ${role}`,
-    );
-    const exported = source.statements.filter(ts.isExportAssignment);
-    assert.equal(exported.length, 1);
-    assert.ok(
-      !exported[0].isExportEquals,
-      `Role requires a default export: ${role}`,
-    );
-    const worker = exported[0].expression;
-    assert.ok(
-      ts.isCallExpression(worker) &&
-        ts.isIdentifier(worker.expression) &&
-        worker.expression.text === "createWorkerHandler",
-      `Role must export its complete Worker handler: ${role}`,
-    );
-    assert.equal(worker.arguments.length, 1);
-    const factory = worker.arguments[0];
-    assert.ok(ts.isArrowFunction(factory) && ts.isBlock(factory.body));
-    assert.equal(factory.modifiers?.length ?? 0, 0);
-    assert.equal(factory.parameters.length, 1);
-    const signal = factory.parameters[0];
-    assert.ok(
-      ts.isIdentifier(signal.name) &&
-        signal.name.text === "signal" &&
-        !signal.initializer &&
-        !signal.dotDotDotToken,
-    );
-    assert.equal(factory.body.statements.length, 1);
-    const returned = factory.body.statements[0];
-    assert.ok(ts.isReturnStatement(returned));
-    const app = returned.expression;
-    assert.ok(
-      app &&
-        ts.isCallExpression(app) &&
-        ts.isIdentifier(app.expression) &&
-        app.expression.text === "createAppWithRoutes",
-    );
-    assert.equal(app.arguments.length, 1);
-    const options = app.arguments[0];
-    assert.ok(ts.isObjectLiteralExpression(options));
-    assert.deepEqual(
-      options.properties.map((property) => {
-        assert.ok(
-          (ts.isShorthandPropertyAssignment(property) ||
-            ts.isPropertyAssignment(property)) &&
-            ts.isIdentifier(property.name),
-        );
-        const value = ts.isShorthandPropertyAssignment(property)
-          ? property.name
-          : property.initializer;
-        assert.ok(ts.isIdentifier(value));
-        return [property.name.text, value.text];
-      }),
-      [
-        ["signal", "signal"],
-        ["routes", "roleRoutes"],
-        ["initializeServices$", initializer],
-      ],
-      `Unexpected app initialization: ${role}`,
-    );
+    assertWorkerRoleImports(source, role, expected);
+    assertWorkerRoleRoutes(source, role, config);
+    assertWorkerRoleHandler(source, role, initializer);
   }
   return workerRoles;
 }

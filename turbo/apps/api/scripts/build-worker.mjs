@@ -27,6 +27,28 @@ for (const directory of outputDirectories) {
   await mkdir(directory, { recursive: true });
 }
 
+function assertNativeExternals(metafile) {
+  // A no-bundle deployment cannot resolve third-party packages at runtime.
+  // Only Workers native modules and nodejs_compat builtins may stay external.
+  const unresolvedDependencies = new Set();
+  for (const output of Object.values(metafile.outputs)) {
+    for (const dependency of output.imports) {
+      if (
+        dependency.external &&
+        !dependency.path.startsWith("cloudflare:") &&
+        !builtins.has(dependency.path.replace(/^node:/, ""))
+      ) {
+        unresolvedDependencies.add(dependency.path);
+      }
+    }
+  }
+  if (unresolvedDependencies.size > 0) {
+    throw new Error(
+      `Unbundled dependencies ${[...unresolvedDependencies].join(", ")} are not Workers native modules or Node builtins. Resolve these Worker compatibility blockers before deploying.`,
+    );
+  }
+}
+
 try {
   for (const selection of selections) {
     const outputDirectory = resolve(apiRoot, selection.directory);
@@ -102,25 +124,7 @@ try {
       ],
     });
 
-    // A no-bundle deployment cannot resolve third-party packages at runtime.
-    // Only Workers native modules and nodejs_compat builtins may stay external.
-    const unresolvedDependencies = new Set();
-    for (const output of Object.values(result.metafile.outputs)) {
-      for (const dependency of output.imports) {
-        if (
-          dependency.external &&
-          !dependency.path.startsWith("cloudflare:") &&
-          !builtins.has(dependency.path.replace(/^node:/, ""))
-        ) {
-          unresolvedDependencies.add(dependency.path);
-        }
-      }
-    }
-    if (unresolvedDependencies.size > 0) {
-      throw new Error(
-        `Unbundled dependencies ${[...unresolvedDependencies].join(", ")} are not Workers native modules or Node builtins. Resolve these Worker compatibility blockers before deploying.`,
-      );
-    }
+    assertNativeExternals(result.metafile);
 
     const audit = selection.role
       ? auditWorkerRole(apiRoot, selection.role, result)

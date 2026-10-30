@@ -26,43 +26,49 @@ function readSource(file) {
   return source;
 }
 
+function recordModuleBindings(imports, statement) {
+  if (
+    ts.isImportDeclaration(statement) &&
+    statement.importClause?.namedBindings &&
+    ts.isNamedImports(statement.importClause.namedBindings)
+  ) {
+    for (const binding of statement.importClause.namedBindings.elements) {
+      imports.set(binding.name.text, {
+        module: statement.moduleSpecifier.text,
+        name: binding.propertyName?.text ?? binding.name.text,
+      });
+    }
+  }
+  if (
+    ts.isExportDeclaration(statement) &&
+    statement.moduleSpecifier &&
+    statement.exportClause &&
+    ts.isNamedExports(statement.exportClause)
+  ) {
+    for (const binding of statement.exportClause.elements) {
+      imports.set(binding.name.text, {
+        module: statement.moduleSpecifier.text,
+        name: binding.propertyName?.text ?? binding.name.text,
+      });
+    }
+  }
+}
+
 function definitions(source) {
   const vars = new Map();
   const imports = new Map();
   for (const statement of source.statements) {
     if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
-        if (ts.isIdentifier(declaration.name))
+        if (ts.isIdentifier(declaration.name)) {
           vars.set(declaration.name.text, declaration.initializer);
+        }
       }
     }
-    if (ts.isFunctionDeclaration(statement) && statement.name)
+    if (ts.isFunctionDeclaration(statement) && statement.name) {
       vars.set(statement.name.text, statement);
-    if (
-      ts.isImportDeclaration(statement) &&
-      statement.importClause?.namedBindings &&
-      ts.isNamedImports(statement.importClause.namedBindings)
-    ) {
-      for (const binding of statement.importClause.namedBindings.elements) {
-        imports.set(binding.name.text, {
-          module: statement.moduleSpecifier.text,
-          name: binding.propertyName?.text ?? binding.name.text,
-        });
-      }
     }
-    if (
-      ts.isExportDeclaration(statement) &&
-      statement.moduleSpecifier &&
-      statement.exportClause &&
-      ts.isNamedExports(statement.exportClause)
-    ) {
-      for (const binding of statement.exportClause.elements) {
-        imports.set(binding.name.text, {
-          module: statement.moduleSpecifier.text,
-          name: binding.propertyName?.text ?? binding.name.text,
-        });
-      }
-    }
+    recordModuleBindings(imports, statement);
   }
   return { source, vars, imports, bindings: new Map() };
 }
@@ -87,10 +93,78 @@ function sourceModule(file, specifier) {
 // Never import API/contract modules, inspect handlers, or execute source functions.
 // Simple source-local factories (including the identity contract router) are
 // projected from their AST return value with lexical argument bindings.
+function metadataFactoryReturn(context, body) {
+  if (!ts.isBlock(body)) {
+    return body;
+  }
+  const returns = [];
+  for (const statement of body.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        assert.ok(
+          ts.isIdentifier(declaration.name),
+          "Factory variable must be named",
+        );
+        context.bindings.set(declaration.name.text, {
+          node: declaration.initializer,
+          context,
+        });
+      }
+    } else {
+      assert.ok(
+        ts.isReturnStatement(statement),
+        "Unsupported metadata factory control flow",
+      );
+      returns.push(statement.expression);
+    }
+  }
+  assert.equal(
+    returns.length,
+    1,
+    "Metadata factory must have one unconditional return",
+  );
+  return returns[0];
+}
+
+function metadataFactoryScope(target, node, context) {
+  const fn = target.node;
+  assert.ok(
+    ts.isFunctionDeclaration(fn) ||
+      ts.isFunctionExpression(fn) ||
+      ts.isArrowFunction(fn),
+    "Only explicit source-local metadata factories are supported",
+  );
+  assert.ok(fn.body, "Metadata factory requires a body");
+  const scoped = {
+    ...target.context,
+    bindings: new Map(target.context.bindings),
+  };
+  for (const [index, parameter] of fn.parameters.entries()) {
+    assert.ok(
+      ts.isIdentifier(parameter.name),
+      "Metadata factory parameter must be named",
+    );
+    const argument = node.arguments[index];
+    assert.ok(
+      argument || parameter.initializer,
+      "Missing metadata factory argument",
+    );
+    scoped.bindings.set(
+      parameter.name.text,
+      argument
+        ? { node: argument, context }
+        : { node: parameter.initializer, context: scoped },
+    );
+  }
+  return { context: scoped, node: metadataFactoryReturn(scoped, fn.body) };
+}
+
 function routeMetadata() {
   const cache = new Map();
   function load(file) {
-    if (!cache.has(file)) cache.set(file, definitions(readSource(file)));
+    if (!cache.has(file)) {
+      cache.set(file, definitions(readSource(file)));
+    }
     return cache.get(file);
   }
   function value(context, node, depth = 0) {
@@ -110,9 +184,12 @@ function routeMetadata() {
     }
     if (ts.isIdentifier(node)) {
       const binding = context.bindings.get(node.text);
-      if (binding) return value(binding.context, binding.node, depth + 1);
-      if (context.vars.has(node.text))
+      if (binding) {
+        return value(binding.context, binding.node, depth + 1);
+      }
+      if (context.vars.has(node.text)) {
         return value(context, context.vars.get(node.text), depth + 1);
+      }
       const imported = context.imports.get(node.text);
       assert.ok(imported, `Unresolved metadata identifier: ${node.text}`);
       return value(
@@ -121,8 +198,9 @@ function routeMetadata() {
         depth + 1,
       );
     }
-    if (ts.isPropertyAccessExpression(node))
+    if (ts.isPropertyAccessExpression(node)) {
       return property(context, node.expression, node.name.text, depth + 1);
+    }
     if (ts.isElementAccessExpression(node)) {
       const key = value(context, node.argumentExpression, depth + 1).node;
       assert.ok(
@@ -133,63 +211,8 @@ function routeMetadata() {
     }
     if (ts.isCallExpression(node)) {
       const target = value(context, node.expression, depth + 1);
-      const fn = target.node;
-      assert.ok(
-        ts.isFunctionDeclaration(fn) ||
-          ts.isFunctionExpression(fn) ||
-          ts.isArrowFunction(fn),
-        "Only explicit source-local metadata factories are supported",
-      );
-      assert.ok(fn.body, "Metadata factory requires a body");
-      const scoped = {
-        ...target.context,
-        bindings: new Map(target.context.bindings),
-      };
-      fn.parameters.forEach((parameter, index) => {
-        assert.ok(
-          ts.isIdentifier(parameter.name),
-          "Metadata factory parameter must be named",
-        );
-        const argument = node.arguments[index];
-        assert.ok(
-          argument || parameter.initializer,
-          "Missing metadata factory argument",
-        );
-        scoped.bindings.set(
-          parameter.name.text,
-          argument
-            ? { node: argument, context }
-            : { node: parameter.initializer, context: scoped },
-        );
-      });
-      if (!ts.isBlock(fn.body)) return value(scoped, fn.body, depth + 1);
-      const returns = [];
-      for (const statement of fn.body.statements) {
-        if (ts.isVariableStatement(statement)) {
-          for (const declaration of statement.declarationList.declarations) {
-            assert.ok(
-              ts.isIdentifier(declaration.name),
-              "Factory variable must be named",
-            );
-            scoped.bindings.set(declaration.name.text, {
-              node: declaration.initializer,
-              context: scoped,
-            });
-          }
-        } else {
-          assert.ok(
-            ts.isReturnStatement(statement),
-            "Unsupported metadata factory control flow",
-          );
-          returns.push(statement.expression);
-        }
-      }
-      assert.equal(
-        returns.length,
-        1,
-        "Metadata factory must have one unconditional return",
-      );
-      return value(scoped, returns[0], depth + 1);
+      const projected = metadataFactoryScope(target, node, context);
+      return value(projected.context, projected.node, depth + 1);
     }
     return { context, node };
   }
@@ -207,7 +230,9 @@ function routeMetadata() {
           key,
           depth + 1,
         );
-        if (found) return found;
+        if (found) {
+          return found;
+        }
       } else if (
         item.name &&
         (ts.isIdentifier(item.name) || ts.isStringLiteral(item.name)) &&
@@ -234,8 +259,9 @@ function routeMetadata() {
       "Route group must resolve to a static array",
     );
     return resolved.node.elements.flatMap((element) => {
-      if (ts.isSpreadElement(element))
+      if (ts.isSpreadElement(element)) {
         return array(resolved.context, element.expression);
+      }
       const route = property(resolved.context, element, "route", 0);
       const method = property(route.context, route.node, "method", 0).node;
       const path = property(route.context, route.node, "path", 0).node;
