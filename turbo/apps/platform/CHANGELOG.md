@@ -12,6 +12,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1079.0](https://github.com/okou-ai/okou/compare/app-v0.1078.1...app-v0.1079.0) (2026-10-30)
+
+
+### Features
+
+* **app:** release the unified chat workspace to everyone ([#44168](https://github.com/okou-ai/okou/issues/44168)) ([e59858c](https://github.com/okou-ai/okou/commit/e59858ca253958200c6560224a32eb8e846bec13))
+
+
+### Bug Fixes
+
+* **app:** refine halloween progress and surrounding controls ([#44138](https://github.com/okou-ai/okou/issues/44138)) ([3f7e168](https://github.com/okou-ai/okou/commit/3f7e16882e3b5f870158a1e7ffbfb58a62108193))
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+* **platform:** add multilingual fallback to serif text ([#44169](https://github.com/okou-ai/okou/issues/44169)) ([c46f447](https://github.com/okou-ai/okou/commit/c46f447cd1c40230b4addb9ce1a7db63217a09e6))
+* **platform:** keep the default workspace mark at one proportion ([#44167](https://github.com/okou-ai/okou/issues/44167)) ([2eb4333](https://github.com/okou-ai/okou/commit/2eb433329bdf14bc3f545197f90cded7a256c792))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.1
+    * @okouai/core bumped to 8.802.0
+
 ## [0.1078.1](https://github.com/okou-ai/okou/compare/app-v0.1078.0...app-v0.1078.1) (2026-10-30)
 
 
