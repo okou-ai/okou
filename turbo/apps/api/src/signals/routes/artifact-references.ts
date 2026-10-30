@@ -37,8 +37,11 @@ const ownerArtifact$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.ArtifactDeletion, features)) {
-    return resourceUnavailable("Artifact deletion is not available");
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.ArtifactDeletion, features) &&
+    !isFeatureEnabled(FeatureSwitchKey.MarkdownTableExport, features)
+  ) {
+    return resourceUnavailable("Artifact ownership lookup is not available");
   }
   const { reference } = get(
     pathParamsOf(artifactReferencesContract.ownerArtifact),

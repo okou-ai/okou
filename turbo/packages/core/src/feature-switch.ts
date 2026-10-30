@@ -199,6 +199,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.MarkdownTableExport]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown table export",
+    description:
+      "Export tables to Excel or save them to Google Drive and Google Sheets.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatMessagePdf]: {
     maintainer: "ethan@okou.ai",
     displayName: "Message PDF export",
