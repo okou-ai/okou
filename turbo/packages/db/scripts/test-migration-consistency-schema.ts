@@ -1069,6 +1069,14 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${workflowDeletion}`,
   );
+  const chatThreadDeletion = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/delete-chat-thread-content.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${chatThreadDeletion}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1398,6 +1406,17 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "10474201f5b27fc7f34631dcc0a84e10",
+  },
+  {
+    schemaName: "public",
+    functionName: "delete_chat_thread_content",
+    identityArguments:
+      "p_thread_id uuid, p_user_id text, p_org_id text, p_event_id text, p_automation_updated_at timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "6c1bccc08d6ef1bfd6f65c4042f82575",
   },
 ];
 

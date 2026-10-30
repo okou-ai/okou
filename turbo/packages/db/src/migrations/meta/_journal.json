@@ -2927,6 +2927,13 @@
       "when": 1793353454921,
       "tag": "1496_slippery_sheva_callister",
       "breakpoints": true
+    },
+    {
+      "idx": 1497,
+      "version": "7",
+      "when": 1793356291934,
+      "tag": "1497_atomic_chat_thread_deletion",
+      "breakpoints": true
     }
   ]
 }
