@@ -46,14 +46,6 @@ export function useHalloweenCopy() {
   );
   return {
     ...copy,
-    questionProgress: (current: number, total: number) => {
-      return t(
-        ($) => {
-          return $.copy.questionProgress;
-        },
-        { current, total },
-      );
-    },
     roundProgress: (current: string, title: string) => {
       return t(
         ($) => {

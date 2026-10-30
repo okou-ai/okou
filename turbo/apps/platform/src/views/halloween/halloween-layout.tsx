@@ -17,7 +17,6 @@ import {
 import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import { playHalloweenClick$ } from "../../signals/halloween/halloween-motion.ts";
 import {
-  halloweenRound$,
   halloweenRulesOpen$,
   halloweenScreen$,
   halloweenSound$,
@@ -55,7 +54,6 @@ function HalloweenBrand() {
 export function HalloweenHeader() {
   const copy = useHalloweenCopy();
   const screen = useGet(halloweenScreen$);
-  const round = useGet(halloweenRound$);
   const sound = useGet(halloweenSound$);
   const toggle = useSet(toggleHalloweenSound$);
   const setRules = useSet(setHalloweenRulesOpen$);
@@ -74,11 +72,11 @@ export function HalloweenHeader() {
           typography.labelClassName,
         )}
       >
-        <span className="hidden text-[#b8c6d8] md:inline">
-          {screen === "question"
-            ? copy.questionProgress(round!.questionNumber, 5)
-            : copy.campaign}
-        </span>
+        {screen !== "question" && (
+          <span className="hidden text-[#b8c6d8] md:inline">
+            {copy.campaign}
+          </span>
+        )}
         {screen !== "result" && (
           <Button
             variant="quiet"

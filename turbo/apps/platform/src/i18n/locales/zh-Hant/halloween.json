@@ -23,7 +23,6 @@
     "lostTaskTitle": "現在輪到你考考 Okou",
     "next": "下一題",
     "nudgeLabel": "參加萬聖節問答",
-    "questionProgress": "第 {{current}} 題，共 {{total}} 題",
     "redeem": "兌換",
     "redeemEmailBody": "Okou 團隊，你們好：\n\n我已通過萬聖節問答，希望領取 7 天 Okou Pro 試用獎勵。\n\nOkou 帳號信箱：[請填寫你的帳號信箱]\n\n謝謝！",
     "redeemEmailSubject": "萬聖節獎勵兌換申請",
