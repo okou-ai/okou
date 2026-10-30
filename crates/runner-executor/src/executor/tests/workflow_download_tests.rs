@@ -191,7 +191,7 @@ async fn cancellation_retires_a_stalled_download_before_sandbox_creation() {
 #[tokio::test]
 async fn prepared_bundle_claim_uses_hash_cache_and_applies_before_agent_spawn() {
     let directory = tempfile::tempdir().unwrap();
-    let config = test_executor_config(directory.path()).await;
+    let (config, _startup_api) = test_executor_config_with_startup_api(directory.path()).await;
     let archive = include_bytes!("../../../tests/fixtures/content-bundle-v1.tar.gz");
     let hash = "d1467f9f02022e04ad66f2e983158c80ea58a152e8eec1ea7d07b0f51d3b3c67";
     let root = config.home.bundles_dir();
