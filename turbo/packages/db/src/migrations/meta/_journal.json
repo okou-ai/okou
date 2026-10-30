@@ -2948,6 +2948,13 @@
       "when": 1793375625566,
       "tag": "1499_atomic_chat_event_search_projection",
       "breakpoints": true
+    },
+    {
+      "idx": 1500,
+      "version": "7",
+      "when": 1793392088046,
+      "tag": "1500_write_usage_pack_pending_snapshot",
+      "breakpoints": true
     }
   ]
 }

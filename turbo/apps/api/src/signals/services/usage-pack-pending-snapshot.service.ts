@@ -1,17 +1,25 @@
-import { record, string, unknown as zUnknown } from "zod";
-import { parseRawRows } from "../../lib/db-raw-rows";
 import {
-  usagePackPendingSnapshotPlan,
-  UsagePackPendingSnapshotConflict,
-} from "./usage-pack-pending-snapshot-plan";
+  array,
+  boolean,
+  enum as zEnum,
+  literal,
+  object,
+  string,
+  union,
+} from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { UsagePackPendingSnapshotConflict } from "./usage-pack-pending-snapshot-plan";
 
 import { usagePackPendingSnapshotGuards } from "@okouai/db/schema/usage-pack-subscription";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { command } from "ccstate";
-import { settle } from "../utils";
+import { safeJsonParse, settle } from "../utils";
 import { writeDb$ } from "../external/db";
-import { nowDate } from "../../lib/time";
+import { nowDateSql } from "../../lib/time";
+import { retireMarketingMetadata } from "../../lib/marketing-metadata";
+import { tierForKnownPlanPrice } from "./billing-checkout.service";
+import { ORG_PLAN_ENTITLEMENT_TIER_VALUES } from "./org-plan-entitlement-tier-values";
 
 import type {
   CreateUsagePackCheckoutSessionArgs,
@@ -19,7 +27,6 @@ import type {
   PreparedPendingUsagePackCheckout,
   UsagePackSubscriptionInput,
 } from "./usage-pack-subscription.service";
-const retainedRowSchema = record(string(), zUnknown());
 
 export function usagePackPendingSnapshotCountWrite(
   orgId: string,
@@ -126,8 +133,157 @@ export type UsagePackPendingSnapshotOutcome =
   | { readonly ok: true; readonly value: UsagePackPendingSnapshotResult }
   | { readonly ok: false; readonly error: unknown };
 
-/** The closed operations are the seven original callbacks. Their early results
- * still pass through after-snapshot/count publication in this same transaction. */
+// The existing fingerprint serializes decoded Date columns as ISO strings or
+// null. Compare their full JavaScript millisecond/TimeClip values in SQL.
+const fingerprintDateSchema = string()
+  .nullable()
+  .transform((value) => {
+    return value === null ? null : new Date(value).getTime();
+  });
+const fingerprintRowSchema = object({
+  currentPeriodStart: fingerprintDateSchema,
+  currentPeriodEnd: fingerprintDateSchema,
+  createdAt: fingerprintDateSchema,
+  updatedAt: fingerprintDateSchema,
+}).passthrough();
+const fingerprintSchema = array(
+  object({
+    subscription: fingerprintRowSchema,
+    allocations: array(fingerprintRowSchema),
+  }),
+);
+
+const pendingSnapshotSqlResultSchema = union([
+  object({
+    kind: literal("prepare-purchase"),
+    value: union([
+      object({ kind: literal("conflict") }),
+      object({ kind: literal("redirect"), url: string() }),
+      object({
+        kind: literal("snapshot"),
+        usagePackSubscriptionId: string().uuid(),
+      }),
+    ]),
+  }),
+  object({
+    kind: literal("correlate-claim"),
+    value: zEnum(["correlated", "changed"]),
+  }),
+  object({
+    kind: zEnum(["claim-purchase", "publish-purchase"]),
+    value: boolean(),
+  }),
+  object({ kind: zEnum(["synchronize", "deactivate", "delete"]) }),
+]);
+
+function pendingSnapshotInput(operation: UsagePackPendingSnapshotOperation) {
+  if (operation.kind === "prepare-purchase") {
+    const { purchase, prepared, customerId } = operation;
+    const retained = prepared.retained;
+    return {
+      kind: operation.kind,
+      orgId: purchase.orgId,
+      tier: purchase.tier,
+      planPriceId: purchase.planPriceId,
+      customerId,
+      allocations: purchase.allocations.map((allocation) => {
+        return {
+          usagePackUsd: allocation.usagePackUsd,
+          stripePriceId: allocation.stripePriceId,
+          ...("userId" in allocation
+            ? { userId: allocation.userId }
+            : { invitationId: allocation.invitationId }),
+        };
+      }),
+      fingerprint: fingerprintSchema.parse(safeJsonParse(prepared.fingerprint)),
+      resolved: prepared.resolved.map((entry) => {
+        const root = entry.context.subscription;
+        return {
+          id: root.id,
+          orgId: root.orgId,
+          status: root.subscriptionStatus,
+          sessionId: root.stripeCheckoutSessionId,
+          subscriptionId: root.stripeSubscriptionId,
+          retained: entry === retained,
+        };
+      }),
+      retained: retained !== undefined,
+      redirect: retained
+        ? retained.session.status === "complete"
+          ? purchase.successUrl.replace(
+              "{CHECKOUT_SESSION_ID}",
+              retained.session.id,
+            )
+          : retained.session.url || null
+        : null,
+    };
+  }
+  const scope = {
+    kind: operation.kind,
+    orgId: operation.orgId,
+    rootId: operation.rootId,
+  };
+  switch (operation.kind) {
+    case "correlate-claim":
+    case "claim-purchase":
+    case "delete": {
+      return operation;
+    }
+    case "publish-purchase": {
+      return {
+        ...scope,
+        subscriptionId: operation.subscription.id,
+        status: operation.subscription.status,
+      };
+    }
+    case "synchronize": {
+      const cancelAt = operation.subscription.cancel_at;
+      const cancelAtPeriodEnd =
+        operation.subscription.cancel_at_period_end ||
+        (typeof cancelAt === "number" &&
+          Number.isSafeInteger(cancelAt) &&
+          cancelAt > 0);
+      return {
+        ...scope,
+        subscriptionId: operation.subscription.id,
+        status: operation.subscription.status,
+        tier: operation.shape.tier,
+        planPriceId: operation.shape.planPriceId,
+        projectsOrgPlan: operation.shape.projectsOrgPlan,
+        cancelAtPeriodEnd,
+        ...(operation.checkoutSessionId
+          ? { checkoutSessionId: operation.checkoutSessionId }
+          : {}),
+      };
+    }
+    case "deactivate": {
+      const projectsLimitedPlan = !operation.subscription.items.data.some(
+        (item) => {
+          return tierForKnownPlanPrice(item.price) === "custom";
+        },
+      );
+      return {
+        ...scope,
+        subscriptionId: operation.subscription.id,
+        status: operation.status,
+        projectsLimitedPlan,
+        ...(projectsLimitedPlan
+          ? {
+              limits: ORG_PLAN_ENTITLEMENT_TIER_VALUES["limited-free-1"],
+              sourceMetadata: retireMarketingMetadata({
+                ...operation.subscription.metadata,
+                usagePackInvalidReason: operation.reason,
+              }),
+            }
+          : {}),
+      };
+    }
+  }
+}
+
+/** One atomic SQL step owns the pending snapshot. Cancellation after SQL
+ * admission can leave a complete retryable preparation; the following signal
+ * check stops the caller before it starts a new provider operation. */
 export const writeUsagePackPendingSnapshots$ = command(
   async function writeUsagePackPendingSnapshots(
     { set },
@@ -135,52 +291,39 @@ export const writeUsagePackPendingSnapshots$ = command(
     signal?: AbortSignal,
   ): Promise<UsagePackPendingSnapshotOutcome> {
     const db = set(writeDb$);
-
-    return await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0284; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const plan = usagePackPendingSnapshotPlan(operation);
-        let step = plan.next();
-        while (!step.done) {
-          const current = step.value;
-          let rows: readonly unknown[] = [];
-          switch (current.kind) {
-            case "timestamp": {
-              rows = [nowDate()];
-              break;
-            }
-            case "abort-check": {
-              signal?.throwIfAborted();
-              break;
-            }
-            case "batch": {
-              rows = await Promise.all(
-                current.statements.map(async (statement) => {
-                  return parseRawRows(
-                    retainedRowSchema,
-                    await tx.execute(statement),
-                  );
-                }),
-              );
-              break;
-            }
-            case "read": {
-              rows = parseRawRows(
-                retainedRowSchema,
-                await tx.execute(current.sql),
-              );
-              break;
-            }
-            case "write": {
-              await tx.execute(current.sql);
-              break;
-            }
-          }
-          step = plan.next(rows);
+    const outcome = await settle(
+      (async () => {
+        signal?.throwIfAborted();
+        const payload = JSON.stringify(pendingSnapshotInput(operation));
+        const [row] = parseRawRows(
+          object({ result: pendingSnapshotSqlResultSchema }),
+          await db.execute(sql`SELECT public.write_usage_pack_pending_snapshot(
+          ${payload}::jsonb, ${nowDateSql(sql`NULL::timestamp`)}
+        ) AS result`),
+        );
+        if (!row) {
+          throw new Error("Pending snapshot write returned no result");
         }
-        return step.value;
-      }),
+        return row.result;
+      })(),
     );
+    // Prevent a cancelled preparation from starting a new provider operation.
+    // A successful SQL statement is already committed at this frontier.
+    signal?.throwIfAborted();
+    if (!outcome.ok) {
+      const conflict = object({
+        cause: object({ code: literal("P0U01"), message: string() }),
+      }).safeParse(outcome.error);
+      if (conflict.success) {
+        return {
+          ok: false,
+          error: new UsagePackPendingSnapshotConflict(
+            conflict.data.cause.message,
+          ),
+        };
+      }
+    }
+    return outcome;
   },
 );
 
