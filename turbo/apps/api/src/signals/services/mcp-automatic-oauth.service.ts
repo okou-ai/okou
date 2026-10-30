@@ -739,13 +739,20 @@ async function registerDcrClient(
   },
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthDcrRegistrationInput> {
+  const supportedMethods = supportedTokenAuthMethods(args.metadata);
+  const publicClientOnly =
+    supportedMethods.includes("none") &&
+    !supportedMethods.includes("client_secret_basic") &&
+    !supportedMethods.includes("client_secret_post");
   const client = await automaticOAuthRemote(
     "dynamic client registration",
     signal,
     async () => {
       const registered = await registerClient(args.issuer, {
         metadata: args.metadata,
-        clientMetadata: args.clientMetadata,
+        clientMetadata: publicClientOnly
+          ? { ...args.clientMetadata, token_endpoint_auth_method: "none" }
+          : args.clientMetadata,
         scope: args.scope,
         fetchFn: fetchWithSignal(signal),
       });

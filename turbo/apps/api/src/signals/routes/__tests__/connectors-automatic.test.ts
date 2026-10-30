@@ -548,31 +548,70 @@ describe("builtin MCP automatic authentication", () => {
     });
   });
 
-  it("keeps DCR clients bound and rejects an OAuth issuer mismatch", async () => {
-    const f = fixture();
-    const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "dcr",
-    });
-    const rejected = await beginOAuth(f);
-    expect(
-      (await callback(rejected.state, "https://other.example.test")).body
-        .status,
-    ).toBe("error");
-    await accept(receipt(f, rejected.oauthAttemptId), [404]);
-    const started = await beginOAuth(f);
-    expect((await callback(started.state, provider.issuer)).body.status).toBe(
-      "success",
-    );
-    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
-    const reconnect = await beginOAuth(f, completed.body.connectionId);
-    expect((await callback(reconnect.state, provider.issuer)).body.status).toBe(
-      "success",
-    );
-    expect(
-      (await accept(receipt(f, reconnect.oauthAttemptId), [200])).body,
-    ).toStrictEqual(completed.body);
-    expect(provider.registrationBodies).toHaveLength(1);
-  });
+  it.each([
+    {
+      name: "public-only",
+      method: "none",
+      advertised: ["none"],
+      requested: "none",
+    },
+    {
+      name: "public with an unsupported alternative",
+      method: "none",
+      advertised: ["private_key_jwt", "none"],
+      requested: "none",
+    },
+    {
+      name: "public and confidential basic",
+      method: "client_secret_basic",
+      advertised: ["none", "client_secret_basic"],
+      requested: undefined,
+    },
+    {
+      name: "public and confidential post",
+      method: "client_secret_post",
+      advertised: ["none", "client_secret_post"],
+      requested: undefined,
+    },
+    {
+      name: "unspecified authentication",
+      method: "client_secret_basic",
+      advertised: null,
+      requested: undefined,
+    },
+  ] as const)(
+    "connects and reuses a $name DCR client with issuer binding",
+    async ({ method, advertised, requested }) => {
+      const f = fixture();
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        dcrTokenEndpointAuthMethod: method,
+        tokenEndpointAuthMethodsSupported: advertised,
+      });
+      const rejected = await beginOAuth(f);
+      expect(
+        (await callback(rejected.state, "https://other.example.test")).body
+          .status,
+      ).toBe("error");
+      await accept(receipt(f, rejected.oauthAttemptId), [404]);
+      const started = await beginOAuth(f);
+      expect((await callback(started.state, provider.issuer)).body.status).toBe(
+        "success",
+      );
+      const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+      const reconnect = await beginOAuth(f, completed.body.connectionId);
+      expect(
+        (await callback(reconnect.state, provider.issuer)).body.status,
+      ).toBe("success");
+      expect(
+        (await accept(receipt(f, reconnect.oauthAttemptId), [200])).body,
+      ).toStrictEqual(completed.body);
+      expect(provider.registrationBodies).toHaveLength(1);
+      expect(provider.registrationBodies[0]?.token_endpoint_auth_method).toBe(
+        requested,
+      );
+    },
+  );
 
   it("connects and reuses a DCR client with millisecond issuance and expiry", async () => {
     const f = fixture();
