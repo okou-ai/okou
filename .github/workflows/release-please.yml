@@ -1388,7 +1388,7 @@ jobs:
           if [[ "$BROWSER_EXTENSION_RELEASE_CREATED" == 'true' ]]; then
             variables=$(jq -c --arg id "$BROWSER_EXTENSION_ID" '.OKOU_BROWSER_USE_EXTENSION_ID = $id' <<< "$REPO_VARS_JSON")
           else
-            variables=$REPO_VARS_JSON
+            variables=$(jq -c . <<< "$REPO_VARS_JSON")
           fi
           printf 'json=%s\n' "$variables" >> "$GITHUB_OUTPUT"
 

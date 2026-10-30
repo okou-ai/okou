@@ -270,10 +270,11 @@ async function fixture(t) {
           ...process.env,
           GH_TOKEN: "",
           GITHUB_VARIABLES_TOKEN: "",
-          REPO_VARS_JSON: JSON.stringify({
-            [variable]: configuredId,
-            OTHER: "retained",
-          }),
+          REPO_VARS_JSON: JSON.stringify(
+            { [variable]: configuredId, OTHER: "retained" },
+            null,
+            2,
+          ),
           BROWSER_EXTENSION_RELEASE_CREATED: String(extensionReleased),
           BROWSER_EXTENSION_ID: extensionReleased
             ? (await readOutputs(output)).extension_id
