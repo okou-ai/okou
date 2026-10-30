@@ -160,7 +160,7 @@ function BrowserCdpViewer({
   overlay,
 }: {
   readonly signals: BrowserSessionSignals;
-  readonly liveUrl: string;
+  readonly liveUrl: string | null;
   readonly instanceId?: string;
   readonly windowId?: number;
   /** The Cloud browser panel switch: app tokens and presence. */
@@ -194,29 +194,27 @@ function BrowserCdpViewer({
       </>
     );
   }
+  const connectionKey = JSON.stringify([
+    signals.threadId,
+    connection.data.instanceId,
+    connection.data.windowId,
+    connection.data.liveUrl,
+    connection.data.cdpUrl,
+    connection.data.extension.id,
+    connection.data.extension.runtimeId,
+    connection.data.extension.version,
+  ]);
   return (
     <>
       {refined ? null : <PanelActions actions={actions} />}
       <div
-        key={instanceId ?? liveUrl}
+        key={connectionKey}
         data-browser-session-cdp-viewer
         className="relative isolate flex min-h-0 flex-1"
       >
         <BrowserViewer
           signals={signals.viewer}
-          connectionKey={
-            (instanceId ?? liveUrl) +
-            ":" +
-            (windowId ?? "") +
-            ":" +
-            connection.data.cdpUrl +
-            ":" +
-            connection.data.extension.id +
-            ":" +
-            connection.data.extension.runtimeId +
-            ":" +
-            connection.data.extension.version
-          }
+          connectionKey={connectionKey}
           actions={refined ? actions : null}
           presence={overlay}
         />
@@ -362,8 +360,7 @@ export function BrowserSessionPanel({
   }
 
   const session = sessionLoadable.data;
-  const liveUrl = session?.status === "active" ? session.liveUrl : null;
-  if (liveUrl === null) {
+  if (session?.status !== "active") {
     return (
       <PausedBrowserSession
         screenshotUrl={session?.screenshotUrl}
@@ -379,14 +376,11 @@ export function BrowserSessionPanel({
     );
   }
 
-  if (!session) {
-    throw new Error("Live managed browser session is unavailable");
-  }
   return (
     <PanelFrame panelRef={keepAliveRef}>
       <BrowserCdpViewer
         signals={signals}
-        liveUrl={liveUrl}
+        liveUrl={session.liveUrl}
         instanceId={session.window?.instanceId}
         windowId={session.window?.primaryWindowId}
         refined={refined}
