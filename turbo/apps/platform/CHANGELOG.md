@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1078.1](https://github.com/okou-ai/okou/compare/app-v0.1078.0...app-v0.1078.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **app:** brighten the halloween ghost entry ([#44154](https://github.com/okou-ai/okou/issues/44154)) ([b3a2e0f](https://github.com/okou-ai/okou/commit/b3a2e0f0fce2eb536483f8746200c15353968f6a))
+
 ## [0.1078.0](https://github.com/okou-ai/okou/compare/app-v0.1077.6...app-v0.1078.0) (2026-10-30)
 
 
