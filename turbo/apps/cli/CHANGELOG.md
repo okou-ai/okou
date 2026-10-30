@@ -1,5 +1,22 @@
 # Changelog
 
+## [10.10.5](https://github.com/okou-ai/okou/compare/cli-v10.10.4...cli-v10.10.5) (2026-10-30)
+
+
+### Bug Fixes
+
+* **cli:** align custom endpoint guidance with policy outcome ([#44091](https://github.com/okou-ai/okou/issues/44091)) ([da67e11](https://github.com/okou-ai/okou/commit/da67e11e9f7922daa38c7044fbacf337e27b103d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.22.0
+    * @okouai/connectors bumped to 3.19.0
+    * @okouai/core bumped to 8.801.0
+    * @okouai/pi-agent-runtime bumped to 1.51.27
+
 ## [10.10.4](https://github.com/okou-ai/okou/compare/cli-v10.10.3...cli-v10.10.4) (2026-10-29)
 
 

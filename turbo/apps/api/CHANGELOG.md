@@ -9,6 +9,44 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.26.0](https://github.com/okou-ai/okou/compare/api-v2.25.4...api-v2.26.0) (2026-10-30)
+
+
+### Features
+
+* add staff-only personal chat folders ([#44100](https://github.com/okou-ai/okou/issues/44100)) ([c8cfe6e](https://github.com/okou-ai/okou/commit/c8cfe6e97b1aaa3513e48ec120234e39e9a5079c))
+* **connectors:** support declared scopes for automatic mcp oauth ([#44072](https://github.com/okou-ai/okou/issues/44072)) ([f8d5751](https://github.com/okou-ai/okou/commit/f8d5751ed41e5ab85d33d7ec1f9c0add42bc3bfe))
+
+
+### Bug Fixes
+
+* **api:** preserve custom http prefix trailing slashes ([#44081](https://github.com/okou-ai/okou/issues/44081)) ([68507fc](https://github.com/okou-ai/okou/commit/68507fc490a0672b547717e9709942abc3ce5be9))
+* **api:** preserve identical concurrent feishu setup ([#44102](https://github.com/okou-ai/okou/issues/44102)) ([57cfebf](https://github.com/okou-ai/okou/commit/57cfebfb235895495b4cc53aa57a81a6352c22d0))
+
+
+### Refactoring
+
+* **api:** detach chat references before agent cascades ([#44092](https://github.com/okou-ai/okou/issues/44092)) ([facc305](https://github.com/okou-ai/okou/commit/facc305a27a819d435cba4b4fad89aa9d8bcc669))
+* **api:** detach chat references before thread deletion ([#44074](https://github.com/okou-ai/okou/issues/44074)) ([af1eca7](https://github.com/okou-ai/okou/commit/af1eca735653814fc0ea92f5339c87e649a85acc))
+* **api:** localize chat callback timing operations ([#44117](https://github.com/okou-ai/okou/issues/44117)) ([99e0f3d](https://github.com/okou-ai/okou/commit/99e0f3dc8e6f4e1ad1530d4ab989eec7d2c60a06))
+* **api:** localize google event timed operations ([#44077](https://github.com/okou-ai/okou/issues/44077)) ([300710f](https://github.com/okou-ai/okou/commit/300710f198f38d38b77cafd9ba26e0436a2e00db))
+* **api:** localize pending launch persistence timing ([#44122](https://github.com/okou-ai/okou/issues/44122)) ([b31930b](https://github.com/okou-ai/okou/commit/b31930be9daabe774c054b0aacfc6c73ae7437af))
+* **api:** localize runner lifecycle timing operations ([#44108](https://github.com/okou-ai/okou/issues/44108)) ([2d06103](https://github.com/okou-ai/okou/commit/2d061034617059558f31b09ff85637930264169d))
+* **api:** localize storage manifest timing ownership ([#44133](https://github.com/okou-ai/okou/issues/44133)) ([4e15364](https://github.com/okou-ai/okou/commit/4e153646ea5573a77209422aea221ffeb9255654))
+* **api:** localize workflow entry timed operations ([#44090](https://github.com/okou-ai/okou/issues/44090)) ([2146e3b](https://github.com/okou-ai/okou/commit/2146e3ba99704034074f9b3daa93a5ae6566c268))
+* remove expired deployment compatibility ([#44123](https://github.com/okou-ai/okou/issues/44123)) ([9a8519a](https://github.com/okou-ai/okou/commit/9a8519a566cd50861fa9edd108a9719660e58f5b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.0
+    * @okouai/connectors bumped to 3.19.0
+    * @okouai/core bumped to 8.801.0
+    * @okouai/db bumped to 2.12.0
+    * @okouai/pi-agent-runtime bumped to 1.51.27
+
 ## [2.25.4](https://github.com/okou-ai/okou/compare/api-v2.25.3...api-v2.25.4) (2026-10-29)
 
 
