@@ -31,7 +31,7 @@ import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
-  connectorActionResolver,
+  readConnectorResolver$,
   type ConnectorActionResolver,
   type ResolvedConnectorActionMethod,
 } from "../services/connector-action-resolver.service";
@@ -517,7 +517,7 @@ async function githubInstallationAdmin(
 
 const prepareGithubSetupUserIdentity$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly code: string;
       readonly installationId: string;
@@ -534,9 +534,7 @@ const prepareGithubSetupUserIdentity$ = command(
         response: worksErrorRedirect("GitHub App OAuth is not configured"),
       };
     }
-    const resolver = await get(
-      connectorActionResolver([GITHUB_CONNECTOR_SLUG]),
-    );
+    const resolver = await set(readConnectorResolver$, [GITHUB_CONNECTOR_SLUG]);
     signal.throwIfAborted();
     const method = await resolveGithubOauthMethod(resolver);
     signal.throwIfAborted();
@@ -770,7 +768,7 @@ const installGithubOauth$ = command(
     const oauthRequestedScopes =
       userId && githubAppUserOauthCredentials()
         ? await githubAppInstallRequestedScopes(
-            get(connectorActionResolver([GITHUB_CONNECTOR_SLUG])),
+            set(readConnectorResolver$, [GITHUB_CONNECTOR_SLUG]),
             signal,
           )
         : undefined;
@@ -887,9 +885,7 @@ const connectGithubUserOauth$ = command(
     const origin = githubApiOrigin(request);
     // Preserve database availability preflight before catalog resolution.
     set(writeDb$);
-    const resolver = await get(
-      connectorActionResolver([GITHUB_CONNECTOR_SLUG]),
-    );
+    const resolver = await set(readConnectorResolver$, [GITHUB_CONNECTOR_SLUG]);
     signal.throwIfAborted();
     const resolvedMethod = await resolveGithubOauthMethodForNewAction(resolver);
     signal.throwIfAborted();
