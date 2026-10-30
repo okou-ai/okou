@@ -1026,7 +1026,7 @@ test("Select an audience before creating a share and change it after creation", 
     },
   );
   click(requiredButtonNamed("Who can access"));
-  expect(requiredRadioNamed("Only me")).toBeChecked();
+  expect(requiredRadioNamed("Anyone with the link")).toBeChecked();
   click(requiredRadioNamed("Anyone at Default Org"));
   await userEvent.keyboard("{Escape}");
   click(within(answerGroup).getByText("Select message group"));
@@ -1053,7 +1053,7 @@ test("Select an audience before creating a share and change it after creation", 
   expect(updates).toStrictEqual(["public"]);
 });
 
-test("A message share starts private and exposes its access controls", async () => {
+test("A message share starts public and exposes its access controls", async () => {
   mockConversation();
   const permissions = context.mocks.deferred<void>();
   const requests: (SharedThreadAudience | undefined)[] = [];
@@ -1071,7 +1071,7 @@ test("A message share starts private and exposes its access controls", async () 
       await permissions.promise;
       return respond(200, {
         id: params.id,
-        audience: "private",
+        audience: "public",
         revision: "b0000000-0000-4000-a000-000000000901",
         organization: { id: "org_mock", name: "Acme" },
       });
@@ -1089,13 +1089,13 @@ test("A message share starts private and exposes its access controls", async () 
   });
   click(requiredButtonNamed("Share message"));
   await screen.findByRole("textbox", { name: "Shared conversation link" });
-  expect(requests).toStrictEqual(["private"]);
+  expect(requests).toStrictEqual(["public"]);
   await screen.findByRole("status", { name: "Loading permissions" });
   expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
   expect(buttonsNamed("Copy link")).toHaveLength(0);
   permissions.resolve();
   await waitFor(() => {
-    expect(requiredRadioNamed("Only me")).toBeChecked();
+    expect(requiredRadioNamed("Anyone with the link")).toBeChecked();
   });
   expect(requiredButtonNamed("Copy link")).toBeEnabled();
   expect(screen.queryByText("0 selected")).not.toBeInTheDocument();
