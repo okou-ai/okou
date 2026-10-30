@@ -1,4 +1,3 @@
-import * as chatThreadFolderSchema from "./schema/chat-thread-folder";
 import * as halloweenSchema from "./schema/halloween";
 import * as iosPushRegistrationSchema from "./schema/ios-push-registration";
 import * as dataRouterRequestSchema from "./schema/data-router-request";
@@ -166,7 +165,6 @@ import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config
 import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
-  ...chatThreadFolderSchema,
   ...iosPushRegistrationSchema,
   ...halloweenSchema,
   ...mailNotificationSchema,

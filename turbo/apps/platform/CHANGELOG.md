@@ -22,11 +22,6 @@ Older releases are archived by month:
 ## [0.1078.0](https://github.com/okou-ai/okou/compare/app-v0.1077.6...app-v0.1078.0) (2026-10-30)
 
 
-### Features
-
-* add staff-only personal chat folders ([#44100](https://github.com/okou-ai/okou/issues/44100)) ([c8cfe6e](https://github.com/okou-ai/okou/commit/c8cfe6e97b1aaa3513e48ec120234e39e9a5079c))
-
-
 ### Refactoring
 
 * **app:** own the cloud browser viewer in platform ([#44085](https://github.com/okou-ai/okou/issues/44085)) ([ff15f20](https://github.com/okou-ai/okou/commit/ff15f203474a78d1456d6a889b1ab2ebbd197ec8))

@@ -2878,6 +2878,13 @@
       "when": 1793308535254,
       "tag": "1489_retire_presigned_url_refresh_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 1490,
+      "version": "7",
+      "when": 1793326405452,
+      "tag": "1490_drop_chat_thread_folders",
+      "breakpoints": true
     }
   ]
 }

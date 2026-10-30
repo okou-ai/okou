@@ -1,4 +1,3 @@
-import { ChatFolderSearchLabel } from "./sidebar-chat-folders.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
@@ -590,9 +589,8 @@ function SpotlightThreadCommandItem({
         alt=""
         className={SPOTLIGHT_AVATAR_CLASS}
       />
-      <span className="min-w-0 flex-1 text-left text-sm text-foreground">
-        <span className="block truncate">{thread.title}</span>
-        <ChatFolderSearchLabel threadId={thread.id} />
+      <span className="min-w-0 flex-1 truncate text-left text-sm text-foreground">
+        {thread.title}
       </span>
       <SpotlightRowMeta
         shortcutNumber={shortcutNumber}
@@ -636,7 +634,6 @@ function SpotlightMessageCommandItem({
       <span className="min-w-0 flex-1 text-left">
         <span className="block truncate text-sm text-foreground">{title}</span>
         <ChatMessageSnippet message={message} />
-        <ChatFolderSearchLabel threadId={message.chatThreadId} />
       </span>
       <SpotlightRowMeta
         shortcutNumber={shortcutNumber}

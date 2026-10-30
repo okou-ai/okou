@@ -225,3 +225,37 @@ export const chatThreads$ = computed(
     return get(list.threads$);
   },
 );
+
+export const currentChatThreadListIds$ = computed(
+  async (get): Promise<readonly string[]> => {
+    return (await get(chatThreads$)).map((thread) => {
+      return thread.id;
+    });
+  },
+);
+
+export interface ChatThreadNavigationList {
+  readonly orderedThreadIds: readonly string[];
+  readonly listedThreadIds: readonly string[];
+}
+
+// A filtered current chat still needs its position in the complete ordering so
+// adjacent navigation can skip hidden chats. Unread navigation intentionally
+// keeps using its independently computed list for both ordering and eligibility.
+export const currentChatThreadNavigationList$ = computed(
+  async (get): Promise<ChatThreadNavigationList> => {
+    if (get(chatThreadOnlyUnread$)) {
+      const listedThreadIds = await get(currentChatThreadListIds$);
+      return {
+        orderedThreadIds: listedThreadIds,
+        listedThreadIds,
+      };
+    }
+
+    const list = await get(currentChatThreadListSignals$);
+    return {
+      orderedThreadIds: get(list.allThreadIds$),
+      listedThreadIds: get(list.threadIds$),
+    };
+  },
+);
