@@ -46,6 +46,7 @@ class NativeTabCreation {
   private movementOverflow = false;
   private preparing = false;
   private pageChanged = false;
+  private tabSequence = 0;
 
   constructor(
     private readonly host: CreationHost,
@@ -62,7 +63,7 @@ class NativeTabCreation {
     this.observed = Promise.allSettled([this.changed.promise]);
   }
 
-  private check(): void {
+  private check(sequence?: number): void {
     if (!this.host.current() || this.signal.aborted) {
       throw new CdpFault("tab", "The tab action is no longer current.");
     }
@@ -75,6 +76,7 @@ class NativeTabCreation {
     if (
       this.movementOverflow ||
       this.pageChanged ||
+      (sequence !== undefined && this.tabSequence > sequence) ||
       (this.receipt && this.movedTabs.has(this.receipt.id))
     ) {
       throw new CdpFault(
@@ -194,6 +196,13 @@ class NativeTabCreation {
 
   private nativeEvent(event: NativeEvent): void {
     if (
+      this.receipt &&
+      (event.tabId === this.receipt.id ||
+        event.removedTabId === this.receipt.id)
+    ) {
+      this.tabSequence = event.sequence;
+    }
+    if (
       !["tab-detached", "tab-attached", "tab-removed", "tab-replaced"].includes(
         event.kind,
       )
@@ -252,17 +261,8 @@ class NativeTabCreation {
     return targetId;
   }
 
-  private async verify(targetId: string): Promise<void> {
+  private async verify(targetId: string): Promise<number> {
     const { native, client } = this.host;
-    const tab = (await native.call("getTab", { tabId: this.receipt!.id }))
-      .value;
-    this.check();
-    if (!this.owned(tab)) {
-      throw new CdpFault(
-        "tab",
-        "The new tab moved or navigated before it was ready.",
-      );
-    }
     const { targetInfo } = await client.request("Target.getTargetInfo", {
       targetId,
     });
@@ -281,6 +281,18 @@ class NativeTabCreation {
     if (windowId !== this.receipt!.windowId) {
       throw new CdpFault("tab", "The new page moved before it was ready.");
     }
+    // Read the native destination last. A pending navigation need not have
+    // changed the CDP page URL yet. Events preceding the read are covered;
+    // another event for this tab since the read started supersedes its reply.
+    const observed = await native.call("getTab", { tabId: this.receipt!.id });
+    this.check(observed.startedSequence);
+    if (!this.owned(observed.value)) {
+      throw new CdpFault(
+        "tab",
+        "The new tab moved or navigated before it was ready.",
+      );
+    }
+    return observed.startedSequence;
   }
 
   private async prepare(targetId: string): Promise<void> {
@@ -302,8 +314,8 @@ class NativeTabCreation {
     }
     this.attached = session.sessionId;
     this.check();
-    await this.verify(targetId);
-    this.check();
+    const verified = await this.verify(targetId);
+    this.check(verified);
     this.preparing = true;
     const navigation = await client.request(
       "Page.navigate",
@@ -314,9 +326,9 @@ class NativeTabCreation {
     if (navigation.errorText) {
       throw new CdpFault("tab", "The new tab could not be prepared.");
     }
-    const tab = (await native.call("getTab", { tabId: this.receipt!.id }))
-      .value;
-    this.check();
+    const observed = await native.call("getTab", { tabId: this.receipt!.id });
+    this.check(observed.startedSequence);
+    const tab = observed.value;
     if (
       tab?.windowId !== this.receipt!.windowId ||
       (tab.pendingUrl ?? tab.url) !== "about:blank"
@@ -340,9 +352,11 @@ class NativeTabCreation {
       return;
     }
     const { native } = this.host;
-    const tab = (await native.call("getTab", { tabId: this.receipt.id })).value;
+    const observed = await native.call("getTab", { tabId: this.receipt.id });
     if (
-      this.owned(tab) &&
+      this.tabSequence <= observed.startedSequence &&
+      !this.pageChanged &&
+      this.owned(observed.value) &&
       !this.movementOverflow &&
       !this.movedTabs.has(this.receipt.id)
     ) {

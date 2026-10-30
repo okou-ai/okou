@@ -6,6 +6,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
+  click,
   fill,
   queryAllByRoleFast,
   setupPage,
@@ -303,6 +304,103 @@ test.each(["movement", "pending navigation"])(
     expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
   },
 );
+
+test("A fresh native tab read covers preceding metadata updates during creation", async () => {
+  const browser = await setupViewer(0);
+  browser.updateBeforeNextTabRead();
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+  expect(
+    browser.targets.find((target) => {
+      return target.targetId === "created-1";
+    }),
+  ).toMatchObject({ url: "about:blank", windowId: 0 });
+});
+
+test.each(["Runtime.evaluate", "Browser.getWindowForTarget"])(
+  "A delayed creation check (%s) preserves another caller's pending navigation",
+  async (method) => {
+    const browser = await setupViewer(0);
+    const attachment = browser.holdNext("Target.attachToTarget");
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await attachment.received;
+    const observation = browser.holdNext(method);
+    await attachment.release();
+    await observation.received;
+    act(() => {
+      browser.beginNavigation(
+        "created-1",
+        "https://user-navigation.example.com",
+      );
+    });
+    await observation.release();
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("New tab", {
+          selector: 'button:not([role="tab"])',
+        }),
+      ).toBeEnabled();
+    });
+    expect(
+      browser.targets.find((target) => {
+        return target.targetId === "created-1";
+      }),
+    ).toMatchObject({
+      url: expect.stringMatching(/^about:blank#okou-create-/),
+      pendingUrl: "https://user-navigation.example.com",
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+    expect(
+      screen.getByText(
+        "The browser action could not be completed. Check the browser before trying again.",
+      ),
+    ).toBeInTheDocument();
+  },
+);
+
+test("A delayed failed-create cleanup preserves another caller's pending navigation", async () => {
+  const browser = await setupViewer(0);
+  browser.corruptNextPageAttachment();
+  const attachment = browser.holdNext("Target.attachToTarget");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await attachment.received;
+  const cleanup = browser.holdNext("Runtime.evaluate");
+  await attachment.release();
+  await cleanup.received;
+  act(() => {
+    browser.beginNavigation("created-1", "https://user-navigation.example.com");
+  });
+  await cleanup.release();
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("New tab", {
+        selector: 'button:not([role="tab"])',
+      }),
+    ).toBeEnabled();
+  });
+  expect(
+    browser.targets.find((target) => {
+      return target.targetId === "created-1";
+    }),
+  ).toMatchObject({
+    url: expect.stringMatching(/^about:blank#okou-create-/),
+    pendingUrl: "https://user-navigation.example.com",
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  expect(
+    screen.getByText(
+      "The browser action could not be completed. Check the browser before trying again.",
+    ),
+  ).toBeInTheDocument();
+});
 
 test("A malformed new-page attachment preserves the established browser pages", async () => {
   const browser = await setupViewer(0);

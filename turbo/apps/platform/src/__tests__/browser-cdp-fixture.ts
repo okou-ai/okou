@@ -57,6 +57,7 @@ export function mockBrowserCdp(
   });
   let created = 0;
   let corruptPageAttachment = false;
+  let updateBeforeTabRead = false;
   let sessionSequence = 0;
   let nativeSequence = 0;
   let nativeEpoch = "fixture-worker";
@@ -156,6 +157,15 @@ export function mockBrowserCdp(
       tabId: number().optional(),
       url: string().optional(),
     }).parse(JSON.parse(raw));
+    if (request.method === "getTab" && updateBeforeTabRead) {
+      updateBeforeTabRead = false;
+      const target = targets.find((target) => {
+        return nativeTab(target).id === request.tabId;
+      });
+      if (target) {
+        nativeEvent("tab-updated", target);
+      }
+    }
     const startedSequence = nativeSequence;
     let value: unknown;
     switch (request.method) {
@@ -370,6 +380,7 @@ export function mockBrowserCdp(
         const { url } = object({ url: string() }).parse(request.params);
         const target = targetForSession(request.sessionId);
         target.url = url;
+        delete target.pendingUrl;
         target.title = url === "about:blank" ? url : new URL(url).hostname;
         event(
           "Page.frameNavigated",
@@ -537,6 +548,9 @@ export function mockBrowserCdp(
     },
     corruptNextPageAttachment() {
       corruptPageAttachment = true;
+    },
+    updateBeforeNextTabRead() {
+      updateBeforeTabRead = true;
     },
     holdNext(method: string) {
       const response = context.mocks.deferred<string>();
