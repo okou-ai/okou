@@ -1,4 +1,4 @@
-import { Button, cn, DialogClose } from "@okouai/ui";
+import { Button, cn, DialogBody, DialogClose } from "@okouai/ui";
 import { useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { ArrowRight } from "lucide-react";
@@ -28,70 +28,84 @@ function StartScreen() {
   const [operation, start] = useLoadableSet(startHalloween$);
   const open = phase === "open";
   return (
-    <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-14 pb-20 text-center md:py-20 md:pb-24">
-      <h1
-        className={cn(
-          "mb-9 max-w-[900px] text-balance text-[#f6f3ed]",
-          typography.titleClassName,
-          "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
-        )}
-      >
+    <main className="relative z-10 flex min-h-0 flex-1 flex-col text-center md:items-center md:justify-center md:px-6 md:py-20 md:pb-24">
+      <DialogBody className="flex flex-col px-5 py-6 md:contents">
+        <div className="my-auto shrink-0 md:contents">
+          <h1
+            className={cn(
+              "mb-6 max-w-[900px] text-balance text-[#f6f3ed] md:mb-9",
+              typography.titleClassName,
+              "text-[28px] leading-9 md:text-[40px] md:leading-[48px]",
+            )}
+          >
+            {open ? (
+              <>
+                {copy.title}
+                <span className="mt-2 block text-[#e8c68d]">
+                  {copy.subtitle}
+                </span>
+              </>
+            ) : (
+              copy.unavailable
+            )}
+          </h1>
+          {open ? (
+            <p
+              className={cn("text-[#96a5b9] md:mb-8", typography.bodyClassName)}
+            >
+              {copy.intro}
+              <br />
+              <strong
+                className={cn("text-[#e8cfaa]", typography.bodyClassName)}
+              >
+                {copy.rewardQuestion}
+              </strong>
+              <br />
+              {copy.hint}
+            </p>
+          ) : (
+            <p
+              className={cn(
+                "mb-8 max-w-[560px] text-[#a9b8ca]",
+                typography.bodyClassName,
+              )}
+            >
+              {copy.unavailableSub}
+            </p>
+          )}
+        </div>
+      </DialogBody>
+      <div className="shrink-0 border-t border-[#c0d1e512] bg-[#091426] px-5 py-4 md:contents">
         {open ? (
-          <>
-            {copy.title}
-            <span className="mt-2 block text-[#e8c68d]">{copy.subtitle}</span>
-          </>
+          <Button
+            className={cn(goldButton, "w-full min-w-[184px] md:w-auto")}
+            pending={operation.state === "loading"}
+            onClick={() => {
+              detach(start(signal), Reason.DomCallback);
+            }}
+          >
+            {copy.start}
+            <ArrowRight className="size-4" />
+          </Button>
         ) : (
-          copy.unavailable
+          <DialogClose
+            render={<Button className={cn(goldButton, "w-full md:w-auto")} />}
+          >
+            {copy.back}
+            <ArrowRight className="size-4" />
+          </DialogClose>
         )}
-      </h1>
-      {open ? (
-        <p className={cn("mb-8 text-[#96a5b9]", typography.bodyClassName)}>
-          {copy.intro}
-          <br />
-          <strong className={cn("text-[#e8cfaa]", typography.bodyClassName)}>
-            {copy.rewardQuestion}
-          </strong>
-          <br />
-          {copy.hint}
-        </p>
-      ) : (
-        <p
-          className={cn(
-            "mb-8 max-w-[560px] text-[#a9b8ca]",
-            typography.bodyClassName,
-          )}
-        >
-          {copy.unavailableSub}
-        </p>
-      )}
-      {open ? (
-        <Button
-          className={cn(goldButton, "min-w-[184px]")}
-          pending={operation.state === "loading"}
-          onClick={() => {
-            detach(start(signal), Reason.DomCallback);
-          }}
-        >
-          {copy.start}
-          <ArrowRight className="size-4" />
-        </Button>
-      ) : (
-        <DialogClose render={<Button className={goldButton} />}>
-          {copy.back}
-          <ArrowRight className="size-4" />
-        </DialogClose>
-      )}
-      {open && (
-        <p
-          className={cn(
-            "mt-6 max-w-[420px] text-[#8292a9]",
-            typography.labelClassName,
-          )}
-        >
-          {copy.review}
-        </p>
-      )}
+        {open && (
+          <p
+            className={cn(
+              "mx-auto mt-3 max-w-[420px] text-[#8292a9] md:mt-6",
+              typography.labelClassName,
+            )}
+          >
+            {copy.review}
+          </p>
+        )}
+      </div>
       {operation.state === "hasError" && (
         <p
           role="alert"
@@ -109,7 +123,7 @@ export function HalloweenPage() {
   return (
     <div
       className={cn(
-        "relative isolate flex min-h-full w-full flex-col overflow-hidden text-[#f6f3ed] antialiased",
+        "relative isolate flex min-h-0 w-full flex-1 flex-col overflow-hidden text-[#f6f3ed] antialiased md:min-h-full",
         typography.bodyClassName,
         screen === "result"
           ? "bg-[radial-gradient(ellipse_at_50%_25%,#172c48,#091426_58%,#060d19)]"
