@@ -1,5 +1,5 @@
 import type { ComponentPropsWithoutRef } from "react";
-import { useGet, useLastResolved } from "ccstate-react";
+import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Download, Loader2 } from "lucide-react";
@@ -10,6 +10,11 @@ import {
   Button,
   Card,
   cn,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -19,7 +24,13 @@ import type { Element } from "hast";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
-import { exportMarkdownTable$ } from "../../signals/markdown-table-export.ts";
+import {
+  exportMarkdownTable$,
+  markdownTableConnection$,
+  connectMarkdownTable$,
+  closeMarkdownTableConnection$,
+} from "../../signals/markdown-table-export.ts";
+import { cancelBuiltinConnectorConnection$ } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 type TableProps = ComponentPropsWithoutRef<"table"> & { node?: Element };
@@ -119,6 +130,64 @@ function ExportableTable({
           {children}
         </table>
       </div>
+      <TableGoogleConnectionDialog node={node} />
     </Card>
+  );
+}
+
+function TableGoogleConnectionDialog({ node }: { readonly node: Element }) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const connection = useGet(markdownTableConnection$);
+  const closeConnection = useSet(closeMarkdownTableConnection$);
+  const cancelConnection = useSet(cancelBuiltinConnectorConnection$);
+  const [connectionOperation, connect] = useLoadableSet(connectMarkdownTable$);
+  if (connection?.params.table !== node) {
+    return null;
+  }
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          cancelConnection();
+          closeConnection();
+        }
+      }}
+    >
+      <DialogContent maxWidth="sm" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>
+            {t(($) => {
+              return $.artifacts.googleDrive.connect;
+            })}
+          </DialogTitle>
+        </DialogHeader>
+        {connectionOperation.state === "hasError" && (
+          <p role="alert" className="text-sm text-destructive">
+            {String(connectionOperation.error)}
+          </p>
+        )}
+        <DialogFooter>
+          <Button
+            disabled={connectionOperation.state === "loading"}
+            onClick={() => {
+              detach(
+                connect(connection, signal),
+                Reason.DomCallback,
+                "connect table export to Google Drive",
+              );
+            }}
+          >
+            {connectionOperation.state === "loading" && (
+              <Loader2 className="animate-spin" />
+            )}
+            {t(($) => {
+              return $.connectors.actions.connect;
+            })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

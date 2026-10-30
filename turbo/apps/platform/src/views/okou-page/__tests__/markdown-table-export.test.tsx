@@ -11,6 +11,9 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   click,
@@ -22,7 +25,10 @@ import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
 import {
   artifactSummary,
   fileArtifactDetail,
+  googleDriveCatalogItem,
+  buttonNamed,
 } from "./chat-navigation-artifact-test-helpers.ts";
+import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
@@ -123,13 +129,73 @@ test("Each table exports its own real workbook with literal values and source UR
   );
 });
 
-test.each([false, true])(
-  "Cloud exports preserve the selected account and upload mode (authorize=%s)",
-  async (needsAuthorization) => {
+test.each(["ready", "authorize", "connect", "reconnect"] as const)(
+  "Cloud exports preserve the selected account and upload mode (%s)",
+  async (accountState) => {
     const storedFiles: ArrayBuffer[] = [];
+    const beforeConnectPopupCounts: number[] = [];
     const saves: { artifactId: string; connectionId?: string; mode: string }[] =
       [];
-    let authorized = !needsAuthorization;
+    let authorized = accountState === "ready";
+    let needsConnection =
+      accountState === "connect" || accountState === "reconnect";
+    const authorizationWindow = context.mocks.browser.authWindow();
+    Object.defineProperty(authorizationWindow, "location", {
+      configurable: true,
+      value: { href: "about:blank" },
+    });
+    const popup = context.mocks.browser.open(authorizationWindow);
+    const completedAttempts = mockOAuthCompletions(context);
+    const oauthAttemptId = crypto.randomUUID();
+    context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+      return respond(200, {
+        connector: googleDriveCatalogItem(
+          accountState === "reconnect" ? "reconnect-required" : "not-connected",
+        ),
+      });
+    });
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ body, respond }) => {
+        expect(body.account).toStrictEqual(
+          accountState === "reconnect"
+            ? { intent: "reconnect", connectionId: CONNECTION_ID }
+            : { intent: "add" },
+        );
+        expect(body.authorizeAgent).toBeTruthy();
+        authorized = true;
+        needsConnection = false;
+        completedAttempts.set(oauthAttemptId, CONNECTION_ID);
+        return respond(200, {
+          authorizationUrl: "https://accounts.google.test/table-export",
+          connectionId: CONNECTION_ID,
+          oauthAttemptId,
+        });
+      },
+    );
+    context.mocks.api(
+      connectorAccountsContract.connection,
+      ({ params, respond }) => {
+        return respond(200, {
+          id: params.connectionId,
+          target: { kind: "builtin", connectorSlug: "google-drive" },
+          authMethod: "oauth",
+          displayName: "Table export account",
+          isDefault: false,
+          externalId: "drive-table-account",
+          externalUsername: "table-owner",
+          externalEmail: "table-owner@example.test",
+          oauthScopes: ["https://www.googleapis.com/auth/drive.file"],
+          connectionStatus: "connected",
+          missingRequiredFields: [],
+          configuredFieldKeys: [],
+          reconnectReason: null,
+          tokenExpiresAt: null,
+          createdAt: "2026-09-01T12:00:00.000Z",
+          updatedAt: "2026-09-01T12:01:00.000Z",
+        });
+      },
+    );
     context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
       expect(body).toMatchObject({
         filename: "Table.xlsx",
@@ -181,9 +247,17 @@ test.each([false, true])(
           },
         ),
         googleDriveConnectionId: CONNECTION_ID,
-        googleDriveSync: authorized
-          ? { status: "not_synced", accountReady: true }
-          : { status: "disconnected", recovery: { action: "authorize" } },
+        googleDriveSync: needsConnection
+          ? {
+              status: "disconnected",
+              recovery:
+                accountState === "reconnect"
+                  ? { action: "reconnect", connectionId: CONNECTION_ID }
+                  : { action: "connect" },
+            }
+          : authorized
+            ? { status: "not_synced", accountReady: true }
+            : { status: "disconnected", recovery: { action: "authorize" } },
       });
     });
     context.mocks.api(
@@ -228,6 +302,11 @@ test.each([false, true])(
         })[0]!,
       );
       click(await findNamedMenuItem(label!));
+      if (needsConnection) {
+        const dialog = await screen.findByRole("dialog");
+        beforeConnectPopupCounts.push(popup.calls.length);
+        click(buttonNamed("Connect", dialog));
+      }
       await waitFor(() => {
         return expect(saves).toContainEqual({
           artifactId: CATALOG_ID,
@@ -243,6 +322,12 @@ test.each([false, true])(
         ).toBeEnabled();
       });
     }
+    expect(beforeConnectPopupCounts).toStrictEqual(
+      accountState === "connect" || accountState === "reconnect" ? [0] : [],
+    );
+    expect(popup.calls).toHaveLength(
+      accountState === "connect" || accountState === "reconnect" ? 1 : 0,
+    );
     expect(storedFiles).toHaveLength(1);
     expect(sheet(storedFiles[0]!).querySelector('c[r="A2"]')?.textContent).toBe(
       "张敏",

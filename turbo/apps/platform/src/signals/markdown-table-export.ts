@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import type { Element } from "hast";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import {
@@ -6,7 +6,11 @@ import {
   artifactReferencePath,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  connectorCatalogContract,
+  type PublicConnectorCatalogDetail,
+  type PublicConnectorCatalogAuthMethodDetail,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import type { GoogleDriveUploadMode } from "@okouai/core/google-workspace-conversion";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { accept } from "../lib/accept.ts";
@@ -105,18 +109,71 @@ const uploadTable$ = command(
   },
 );
 
+interface TableGoogleSave {
+  readonly table: Element;
+  readonly artifactId: string;
+  readonly filename: string;
+  readonly agentId: string;
+  readonly threadId: string;
+  readonly mode: GoogleDriveUploadMode;
+}
+
+interface TableGoogleConnection {
+  readonly params: TableGoogleSave;
+  readonly connector: PublicConnectorCatalogDetail;
+  readonly method: PublicConnectorCatalogAuthMethodDetail;
+  readonly account:
+    | { readonly intent: "add" }
+    | { readonly intent: "reconnect"; readonly connectionId: string };
+}
+
+const pageTableConnection$ = computed((get) => {
+  get(pageVersion$);
+  return state<TableGoogleConnection | null>(null);
+});
+
+export const markdownTableConnection$ = computed((get) => {
+  return get(get(pageTableConnection$));
+});
+
+export const closeMarkdownTableConnection$ = command(({ get, set }) => {
+  set(get(pageTableConnection$), null);
+});
+
+// The dialog's Connect click owns the fresh user gesture needed by Safari.
+export const connectMarkdownTable$ = command(
+  async ({ set }, request: TableGoogleConnection, signal: AbortSignal) => {
+    await set(
+      connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+      {
+        connectorSlug: "google-drive",
+        method: request.method,
+        options: {
+          account: request.account,
+          agentId: request.params.agentId,
+          connectorIcon: request.connector.icon,
+          connectorLabel: request.connector.label,
+        },
+        onSuccess: async (connectedAccountId, ownerSignal) => {
+          await set(
+            syncArtifactAndRefresh$,
+            {
+              ...request.params,
+              connectionId: connectedAccountId,
+              authorize: false,
+            },
+            ownerSignal,
+          );
+          set(closeMarkdownTableConnection$);
+        },
+      },
+      signal,
+    );
+  },
+);
+
 const saveTableToGoogle$ = command(
-  async (
-    { get, set },
-    params: {
-      readonly artifactId: string;
-      readonly filename: string;
-      readonly agentId: string;
-      readonly threadId: string;
-      readonly mode: GoogleDriveUploadMode;
-    },
-    signal: AbortSignal,
-  ) => {
+  async ({ get, set }, params: TableGoogleSave, signal: AbortSignal) => {
     const detail = await accept(
       get(apiClient$)(artifactCatalogContract).get({
         params: { artifactId: params.artifactId },
@@ -173,30 +230,17 @@ const saveTableToGoogle$ = command(
       );
       return;
     }
-    await set(
-      connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-      {
-        connectorSlug: "google-drive",
-        method,
-        options: {
-          account:
-            recovery.action === "reconnect"
-              ? { intent: "reconnect", connectionId: recovery.connectionId }
-              : { intent: "add" },
-          agentId: params.agentId,
-          connectorIcon: catalog.body.connector.icon,
-          connectorLabel: catalog.body.connector.label,
-        },
-        onSuccess: async (connectedAccountId, ownerSignal) => {
-          await set(
-            syncArtifactAndRefresh$,
-            { ...params, connectionId: connectedAccountId, authorize: false },
-            ownerSignal,
-          );
-        },
-      },
-      signal,
-    );
+    // Uploads and metadata requests can outlive browser user activation.
+    // Ask for a fresh Connect click before opening provider authorization.
+    set(get(pageTableConnection$), {
+      params,
+      connector: catalog.body.connector,
+      method,
+      account:
+        recovery.action === "reconnect"
+          ? { intent: "reconnect", connectionId: recovery.connectionId }
+          : { intent: "add" },
+    });
   },
 );
 
@@ -239,7 +283,7 @@ export const exportMarkdownTable$ = command(
     cache.set(table, { content, artifactId });
     await set(
       saveTableToGoogle$,
-      { artifactId, filename, agentId, threadId, mode },
+      { table, artifactId, filename, agentId, threadId, mode },
       signal,
     );
   },
