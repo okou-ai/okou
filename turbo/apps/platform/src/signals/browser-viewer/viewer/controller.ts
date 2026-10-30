@@ -1380,8 +1380,17 @@ export class ViewerController {
       (reason !== "disconnected" || drainControl) &&
       !this.disposed
     ) {
-      const deferred = createDeferredPromise<void>(
-        AbortSignal.timeout(this.options.requestTimeout ?? 10_000),
+      const deferred = createDeferredPromise<void>(this.signal);
+      const cancelDeadline = scheduleTimeout(
+        () => {
+          if (!deferred.settled()) {
+            deferred.reject(
+              new DOMException("signal timed out", "TimeoutError"),
+            );
+          }
+        },
+        this.options.requestTimeout ?? 10_000,
+        this.signal,
       );
       const complete = deferred.promise;
       const start = () => {
@@ -1394,6 +1403,7 @@ export class ViewerController {
                 );
               }),
             ]);
+            cancelDeadline();
             if (!deferred.settled()) {
               if (result.status === "fulfilled") {
                 deferred.resolve();
