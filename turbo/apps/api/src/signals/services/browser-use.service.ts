@@ -3865,7 +3865,7 @@ export async function deleteBrowserUseProfile(
 ): Promise<void> {
   await browserUseRequest(
     `/profiles/${encodeURIComponent(profileId)}`,
-    { method: "DELETE" },
+    { method: "DELETE", signal },
     signal,
     [404],
   );

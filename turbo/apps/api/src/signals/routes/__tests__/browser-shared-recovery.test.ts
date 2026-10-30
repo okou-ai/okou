@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -402,6 +403,92 @@ describe("server-owned shared Browser recovery", () => {
       }
     });
   });
+
+  it("cancels a losing profile cleanup at its real deadline without deleting the winner", async () => {
+    const both = createDeferredPromise<void>(context.signal);
+    const deleting = createDeferredPromise<string>(context.signal);
+    const cancelled = createDeferredPromise<void>(context.signal);
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 2) {
+          both.resolve();
+        }
+        await both.promise;
+      }),
+    );
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      server.use(
+        http.delete(
+          `${PROVIDER_URL}/profiles/:id`,
+          async ({ params, request }) => {
+            deleting.resolve(String(params.id));
+            if (!request.signal.aborted) {
+              await once(request.signal, "abort", { signal: context.signal });
+            }
+            cancelled.resolve();
+            return HttpResponse.error();
+          },
+        ),
+      );
+      const opening = settleIncludingAbort(Promise.all([use(a), use(b)]));
+      const checks = await settleIncludingAbort(async () => {
+        const [result, deletedProfileId] = await Promise.all([
+          opening,
+          deleting.promise,
+          cancelled.promise,
+        ]);
+        if (!result.ok) {
+          throw result.error;
+        }
+        const results = result.value;
+        expect(
+          results
+            .map((response) => {
+              return response.status;
+            })
+            .sort(),
+        ).toStrictEqual([200, 502]);
+        expect(results).toContainEqual(
+          expect.objectContaining({
+            status: 502,
+            body: expect.objectContaining({
+              error: expect.objectContaining({ code: "BROWSER_USE_TIMEOUT" }),
+            }),
+          }),
+        );
+        const winner = results.find((response) => {
+          return response.status === 200;
+        });
+        if (!winner || winner.status !== 200) {
+          throw new Error("Expected one successful Browser open");
+        }
+        expect(f.provider.createdIds).toHaveLength(2);
+        expect(f.provider.sessionRequests).toHaveLength(1);
+        const { profileId } = object({ profileId: uuid() }).parse(
+          f.provider.sessionRequests[0],
+        );
+        expect(deletedProfileId).not.toBe(profileId);
+        expect(
+          (await fetch(`${PROVIDER_URL}/profiles/${profileId}`)).status,
+        ).toBe(200);
+        await expect(
+          view(results[0].status === 200 ? a : b),
+        ).resolves.toMatchObject({
+          status: "active",
+          window: winner.body.browser.window,
+        });
+      });
+      await opening;
+      if (!checks.ok) {
+        throw checks.error;
+      }
+    });
+  }, 20_000);
 
   it("cleans an unadopted profile after the Run ends during preparation", async () => {
     const created = createDeferredPromise<void>(context.signal);
