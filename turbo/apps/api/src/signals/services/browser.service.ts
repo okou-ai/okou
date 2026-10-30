@@ -1178,6 +1178,8 @@ export const captureAndStoreBrowserScreenshot$ = command(
           return;
         }
         stage = "capture";
+        // A delayed native reply must retain its capture-start ordering.
+        const capturedAt = nowDate();
         const image = await captureBrowserUseScreenshot(
           provider.cdpUrl,
           AbortSignal.any([
@@ -1187,7 +1189,6 @@ export const captureAndStoreBrowserScreenshot$ = command(
           shared?.window.primaryWindowId,
         );
         signal.throwIfAborted();
-        const capturedAt = nowDate();
         stage = "upload";
         const artifact = await set(
           allocateUploadedArtifact$,

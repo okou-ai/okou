@@ -2,6 +2,8 @@ import { eq, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 /** A capture may refresh its observed value or supersede an older capture.
+ * Sample capturedAt after reading previousValue and before native capture, so
+ * response delivery cannot promote an older observation over a newer one.
  * Equal-clock competing captures retain the accepted winner. A later capture
  * that observed that winner can still refresh it, even if the clock regresses.
  * No write reserves publication while native/encryption/upload IO is pending.
