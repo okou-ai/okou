@@ -20,6 +20,7 @@ import { encryptPersistentSecretValue } from "./crypto.utils";
 
 type Profile = typeof profiles.$inferSelect;
 type Window = typeof windows.$inferSelect;
+const RETIREMENT_CAPTURE_TIMEOUT_MS = 15_000;
 interface SnapshotOwner {
   readonly orgId: string;
   readonly userId: string;
@@ -67,6 +68,7 @@ export const captureSharedSnapshot$ = command(
     args: BrowserUseNativeConnection & {
       readonly owner: SnapshotOwner;
       readonly window: Pick<Window, "primaryWindowId">;
+      readonly purpose: "active" | "retirement";
     },
     signal: AbortSignal,
   ): Promise<SharedSnapshotCapture | null> => {
@@ -77,36 +79,57 @@ export const captureSharedSnapshot$ = command(
       .from(t)
       .where(eq(t.chatThreadId, owner.chatThreadId));
     signal.throwIfAborted();
-    const observed = await settleIncludingAbort(
-      listBrowserUseTabUrls(args, signal, window.primaryWindowId),
-    );
+    const captureSignal =
+      args.purpose === "retirement"
+        ? AbortSignal.any([
+            signal,
+            AbortSignal.timeout(RETIREMENT_CAPTURE_TIMEOUT_MS),
+          ])
+        : signal;
+    // Only remote capture/encryption is advisory. The database read above and
+    // the caller's atomic publication must still fail on local errors.
+    const prepared = await settleIncludingAbort(async () => {
+      const observed = await settleIncludingAbort(
+        listBrowserUseTabUrls(args, captureSignal, window.primaryWindowId),
+      );
+      captureSignal.throwIfAborted();
+      if (!observed.ok) {
+        throw observed.error instanceof BrowserUseProviderError
+          ? observed.error
+          : new BrowserUseProviderError(
+              502,
+              "BROWSER_USE_SHARED_OPERATION_FAILED",
+              "Managed Browser operation could not be confirmed",
+            );
+      }
+      const snapshot = observed.value;
+      // A closed native window cannot replace its last recoverable snapshot.
+      // A live window containing only blank pages still deliberately saves [].
+      if (!snapshot.windowExists) {
+        return null;
+      }
+      const capturedAt = nowDate();
+      const encryptedTabUrls = await encryptPersistentSecretValue(
+        JSON.stringify(snapshot.urls),
+        { userId: owner.userId },
+        captureSignal,
+      );
+      captureSignal.throwIfAborted();
+      return {
+        previousValue: previous?.encryptedTabUrls ?? null,
+        encryptedTabUrls,
+        capturedAt,
+      };
+    });
     signal.throwIfAborted();
-    if (!observed.ok) {
-      throw observed.error instanceof BrowserUseProviderError
-        ? observed.error
-        : new BrowserUseProviderError(
-            502,
-            "BROWSER_USE_SHARED_OPERATION_FAILED",
-            "Managed Browser operation could not be confirmed",
-          );
+    if (!prepared.ok) {
+      if (args.purpose === "retirement") {
+        // Expiry can proceed using only the last accepted snapshot.
+        return null;
+      }
+      throw prepared.error;
     }
-    const snapshot = observed.value;
-    // A closed native window cannot replace its last recoverable snapshot.
-    // A live window containing only blank pages still deliberately saves [].
-    if (!snapshot.windowExists) {
-      return null;
-    }
-    const capturedAt = nowDate();
-    const encryptedTabUrls = await encryptPersistentSecretValue(
-      JSON.stringify(snapshot.urls),
-      { userId: owner.userId },
-    );
-    signal.throwIfAborted();
-    return {
-      previousValue: previous?.encryptedTabUrls ?? null,
-      encryptedTabUrls,
-      capturedAt,
-    };
+    return prepared.value;
   },
 );
 
@@ -164,7 +187,11 @@ export const saveSharedSnapshot$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const capture = await set(captureSharedSnapshot$, args, signal);
+    const capture = await set(
+      captureSharedSnapshot$,
+      { ...args, purpose: "active" },
+      signal,
+    );
     signal.throwIfAborted();
     if (!capture) {
       return false;

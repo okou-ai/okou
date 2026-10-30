@@ -165,42 +165,6 @@ describe("shared Browser expiry through public reopen", () => {
     });
   });
 
-  it("preserves recovery after required native capture fails until normal reopen reconciles it", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const first = await open(a);
-      const sibling = await open(b);
-      const aPage = navigate(
-        f,
-        first.window.primaryWindowId,
-        "https://a.example.test/saved",
-      );
-      mockNow(START + 9 * MINUTE);
-      await renew(b);
-      mockNow(START + 11 * MINUTE);
-      f.provider.native.windowError = "Provider unavailable";
-      const blocked = await use(a);
-      expect(blocked.status).toBe(409);
-      expect(f.provider.native.targets.get(aPage.targetId)).toStrictEqual(
-        aPage,
-      );
-      expect(f.provider.sessionRequests).toHaveLength(1);
-      f.provider.native.windowError = undefined;
-      const recovered = await open(a);
-      expect(recovered.window.instanceId).toBe(first.window.instanceId);
-      expect(
-        pages(f, recovered.window.primaryWindowId).map((page) => {
-          return page.url;
-        }),
-      ).toStrictEqual(["https://a.example.test/saved"]);
-      expect(pages(f, sibling.window.primaryWindowId)).toHaveLength(1);
-      expect(f.provider.sessionRequests).toHaveLength(1);
-    });
-  });
-
   it.each(["failed", "accepted", "lost-response"] as const)(
     "waits for a confirmed provider stop after a %s stop request",
     async (response) => {

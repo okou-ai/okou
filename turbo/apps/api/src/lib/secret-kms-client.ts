@@ -32,6 +32,7 @@ export interface SecretKmsDecryptRequest {
 export interface SecretKmsClient {
   generateDataKey(
     request: SecretKmsGenerateDataKeyRequest,
+    signal?: AbortSignal,
   ): Promise<SecretKmsDataKey>;
   decrypt(request: SecretKmsDecryptRequest): Promise<Uint8Array>;
 }
@@ -56,6 +57,7 @@ const secretKmsClient = singleton((): SecretKmsClient => {
   return {
     async generateDataKey(
       request: SecretKmsGenerateDataKeyRequest,
+      signal?: AbortSignal,
     ): Promise<SecretKmsDataKey> {
       const response = await client.send(
         new GenerateDataKeyCommand({
@@ -63,6 +65,7 @@ const secretKmsClient = singleton((): SecretKmsClient => {
           KeySpec: "AES_256",
           EncryptionContext: { ...request.encryptionContext },
         }),
+        { abortSignal: signal },
       );
       if (!response.Plaintext) {
         throw new Error(
