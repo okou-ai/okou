@@ -41,6 +41,10 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
         mitm_jsonl_flush: None,
         connector_runtime_sync: None,
         guest_rpc: None,
+        content_bundle_cache: runner_storage::content_bundle_cache::ContentBundleCache::new(
+            HomePaths::with_root(dir.to_owned()).bundles_dir(),
+        )
+        .unwrap(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
         decoded_cache: crate::storage_cache::decoded::DecodedCache::new(HomePaths::with_root(
             dir.to_owned(),

@@ -40,3 +40,5 @@ pub mod storage_manifest;
 pub mod storage_resources;
 pub mod workflow_attachments;
 pub mod workflow_documents;
+
+pub mod content_bundle;

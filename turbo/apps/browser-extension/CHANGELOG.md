@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/okou-ai/okou/compare/browser-extension-v0.3.1...browser-extension-v0.4.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+
+### Bug Fixes
+
+* refresh runner platform api cli and browser extension release markers ([#44180](https://github.com/okou-ai/okou/issues/44180)) ([ca744df](https://github.com/okou-ai/okou/commit/ca744df83b1f51794edcb1b58f10634df2da7aed))
+
 ## [0.3.1](https://github.com/okou-ai/okou/compare/browser-extension-v0.3.0...browser-extension-v0.3.1) (2026-10-30)
 
 

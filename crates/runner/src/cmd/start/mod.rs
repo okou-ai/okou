@@ -765,6 +765,9 @@ async fn run_start_observed(
         mitm_jsonl_flush: Some(mitm.jsonl_flush_handle()),
         connector_runtime_sync,
         guest_rpc,
+        content_bundle_cache: runner_storage::content_bundle_cache::ContentBundleCache::new(
+            home.bundles_dir(),
+        )?,
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
         decoded_cache: crate::storage_cache::decoded::DecodedCache::new(home.clone()),
         background_fill,

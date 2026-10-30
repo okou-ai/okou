@@ -862,6 +862,28 @@ describe("PATCH /api/agents/:id", () => {
     }
   });
 
+  it("preserves UTF8 text encoding through metadata updates", async () => {
+    const owner = newOrgUser();
+    const agent = await createAgentAs(owner);
+    const updated = await accept(
+      agentsClient().updateMetadata({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+        body: { description: "Profile \ud800 and \ud83d\ude00" },
+      }),
+      [200],
+    );
+    expect(updated.body.description).toBe("Profile \ufffd and \ud83d\ude00");
+    const current = await accept(
+      agentsClient().get({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(current.body).toStrictEqual(updated.body);
+  });
+
   it("orders metadata edits using the application clock", async () => {
     const owner = newOrgUser();
     mockNow(new Date("2030-10-27T01:00:00.123Z"));

@@ -10,6 +10,7 @@ import { writeDb$ } from "../external/db";
 import type { WorkflowRow, WorkflowMember } from "./workflow-data.service";
 import {
   prepareWorkflowAttachments$,
+  publishWorkflowContentBundle$,
   type PreparedWorkflowAttachments,
 } from "./workflow-attachments.service";
 import {
@@ -51,19 +52,13 @@ function replacedWorkflowAttachments(
     : null;
 }
 
-export const updateWorkflow$ = command(
+const prepareWorkflowUpdateContent$ = command(
   async (
     { set },
-    args: UpdateWorkflowInput,
+    args: Pick<UpdateWorkflowInput, "workflow" | "body" | "updatedByUserId">,
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ) => {
     const { workflow, body } = args;
-    if (workflow.officialDefinitionName !== null) {
-      throw new Error("Official Workflow content and structure are read-only");
-    }
-    if (workflow.attachments === null && body.files === undefined) {
-      throw new Error("Workflow attachments have not been migrated");
-    }
     const prepared =
       body.files === undefined
         ? null
@@ -79,6 +74,51 @@ export const updateWorkflow$ = command(
             signal,
           );
     signal.throwIfAborted();
+    const attachments = prepared?.attachments ?? workflow.attachments;
+    if (attachments === null) {
+      throw new Error("Workflow attachments have not been migrated");
+    }
+    const contentBundle = await set(
+      publishWorkflowContentBundle$,
+      {
+        orgId: workflow.orgId,
+        workflowId: workflow.id,
+        name: body.name ?? workflow.name,
+        description:
+          body.description === undefined
+            ? workflow.description
+            : body.description,
+        instruction:
+          body.instruction === undefined
+            ? workflow.instruction
+            : body.instruction,
+        attachments,
+        ...(body.files === undefined ? {} : { files: body.files }),
+      },
+      signal,
+    );
+    return { prepared, contentBundle };
+  },
+);
+
+export const updateWorkflow$ = command(
+  async (
+    { set },
+    args: UpdateWorkflowInput,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const { workflow, body } = args;
+    if (workflow.officialDefinitionName !== null) {
+      throw new Error("Official Workflow content and structure are read-only");
+    }
+    if (workflow.attachments === null && body.files === undefined) {
+      throw new Error("Workflow attachments have not been migrated");
+    }
+    const { prepared, contentBundle } = await set(
+      prepareWorkflowUpdateContent$,
+      args,
+      signal,
+    );
     const db = set(writeDb$);
     const candidateId = prepared?.cleanupJobId ?? null;
     const candidate = db
@@ -99,6 +139,7 @@ export const updateWorkflow$ = command(
             instruction: body.instruction,
           }),
           ...(prepared !== null && { attachments: prepared.attachments }),
+          contentBundle,
           updatedBy: args.updatedByUserId,
           updatedAt: nowDate(),
         })

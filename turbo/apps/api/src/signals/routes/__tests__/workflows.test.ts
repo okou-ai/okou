@@ -1,3 +1,7 @@
+import {
+  contentBundleDigest,
+  readContentBundle,
+} from "@okouai/core/content-bundle";
 import { randomUUID } from "node:crypto";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -1004,7 +1008,7 @@ describe("workflows", () => {
     },
   );
 
-  it("preserves attachment metadata during a body-only edit when its package is unavailable", async () => {
+  it("rejects a body edit without its source attachments and supports explicit replacement", async () => {
     const actor = user();
     const agent = await createAgent(actor, { visibility: "private" });
     const destination = await createAgent(actor, { visibility: "private" });
@@ -1015,6 +1019,7 @@ describe("workflows", () => {
       instruction: "Keep the existing attachments",
       files: [{ path: "keep.txt", content: "retained" }],
     });
+    const retainedObjects = new Map(s3.objects);
     s3.objects.clear();
     s3.clearWrites();
     const client = setupApp({
@@ -1029,20 +1034,29 @@ describe("workflows", () => {
         body: { toAgentId: destination.agentId },
       }),
     ).rejects.toThrow("Workflow attachment source is unavailable");
-    const edited = await accept(
+    await expect(
       client.update({
         headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { instruction: "Updated instruction" },
       }),
+    ).rejects.toThrow("Missing S3 object");
+    expect(s3.writes).toHaveLength(0);
+    for (const [key, body] of retainedObjects) {
+      s3.objects.set(key, body);
+    }
+    const preserved = await accept(
+      client.get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
       [200],
     );
-    expect(edited.body).toMatchObject({
-      instruction: "Updated instruction",
-      files: [{ path: "keep.txt", size: 8 }],
-      fileContents: null,
-    });
-    expect(s3.writes).toHaveLength(0);
+    expect(preserved.body.instruction).toBe("Keep the existing attachments");
+    expect(preserved.body.fileContents).toStrictEqual([
+      { path: "keep.txt", content: "retained" },
+    ]);
+    s3.objects.clear();
     // An explicit replacement remains recoverable without guessing old content.
     await accept(
       client.update({
@@ -2467,14 +2481,19 @@ describe("workflows", () => {
       instruction: "first body",
       files,
     });
-    expect(s3.writes).toHaveLength(1);
-    const first = s3.writes[0]!;
+    expect(
+      s3.writes.filter((write) => {
+        return write.key.startsWith("workflow-attachments/");
+      }),
+    ).toHaveLength(1);
+    const first = s3.writes.find((write) => {
+      return write.key.startsWith("workflow-attachments/");
+    })!;
     expect(extractFilesFromTarGz(first.body)).toStrictEqual([
       { path: "alpha.txt", content: "alpha" },
       { path: "zeta.txt", content: "附件" },
     ]);
     s3.clearWrites();
-    context.mocks.s3.send.mockClear();
     const edited = await updateWorkflow(actor, workflow.body.id, {
       instruction: "second body",
     });
@@ -2486,15 +2505,55 @@ describe("workflows", () => {
         { path: "zeta.txt", size: 6 },
       ],
     });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    const complete = [...s3.writes].reverse().find((write) => {
+      return write.key.startsWith("bundles/v1/");
+    });
+    if (!complete) {
+      throw new Error("Expected complete Workflow package");
+    }
+    const filesInBundle = readContentBundle(complete.body, {
+      sha256: contentBundleDigest(complete.body),
+      archiveBytes: complete.body.length,
+    });
+    expect(
+      filesInBundle
+        .find((file) => {
+          return file.path === "SKILL.md";
+        })
+        ?.content.toString(),
+    ).toContain("second body");
+    expect(
+      filesInBundle
+        .filter((file) => {
+          return file.path !== "SKILL.md";
+        })
+        .map((file) => {
+          return { path: file.path, content: file.content.toString() };
+        }),
+    ).toStrictEqual([
+      { path: "alpha.txt", content: "alpha" },
+      { path: "zeta.txt", content: "附件" },
+    ]);
     await updateWorkflow(actor, workflow.body.id, {
       files: [...files].reverse(),
     });
-    expect(s3.writes).toHaveLength(0);
+    expect(
+      s3.writes.filter((write) => {
+        return write.key.startsWith("workflow-attachments/");
+      }),
+    ).toHaveLength(0);
     await updateWorkflow(actor, workflow.body.id, { files: [] });
     await updateWorkflow(actor, workflow.body.id, { files });
-    expect(s3.writes).toHaveLength(1);
-    expect(s3.writes[0]!.key).not.toBe(first.key);
+    expect(
+      s3.writes.filter((write) => {
+        return write.key.startsWith("workflow-attachments/");
+      }),
+    ).toHaveLength(1);
+    expect(
+      s3.writes.find((write) => {
+        return write.key.startsWith("workflow-attachments/");
+      })!.key,
+    ).not.toBe(first.key);
     const detail = await accept(
       detailClient().get({
         headers: authHeaders(actor),
@@ -2532,6 +2591,9 @@ describe("workflows", () => {
     expect(first.body.fileContents).toStrictEqual([
       { path: "duplicate.txt", content: "second duplicate" },
     ]);
+    const originalBundle = [...s3.writes].reverse().find((write) => {
+      return write.key.startsWith("bundles/v1/");
+    });
     s3.clearWrites();
     const previous = process.umask(0o077);
     onTestFinished(() => {
@@ -2541,7 +2603,11 @@ describe("workflows", () => {
       files: [...files].reverse(),
     });
     process.umask(previous);
-    expect(s3.writes).toHaveLength(0);
+    const repeatedBundle = [...s3.writes].reverse().find((write) => {
+      return write.key.startsWith("bundles/v1/");
+    });
+    expect(repeatedBundle?.key).toBe(originalBundle?.key);
+    expect(repeatedBundle?.body.equals(originalBundle!.body)).toBeTruthy();
     const second = await accept(
       detailClient().get({
         headers: authHeaders(actor),

@@ -57,7 +57,7 @@ pub fn apply_workflow_skill(home: &Path, mount: &Path, source: &Path) -> bool {
     copy_instruction_file_atomically(source, &target.join("SKILL.md"), io::copy).is_ok()
 }
 
-fn workflow_skill_relative_mount<'a>(home: &Path, mount: &'a Path) -> Option<&'a str> {
+pub(crate) fn workflow_skill_relative_mount<'a>(home: &Path, mount: &'a Path) -> Option<&'a str> {
     let relative = mount.strip_prefix(home).ok()?.to_str()?;
     let name = [".claude/skills/", ".codex/skills/", ".pi/agent/skills/"]
         .iter()

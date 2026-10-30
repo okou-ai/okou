@@ -272,6 +272,8 @@ impl JobProvider for LocalProvider {
             prompt: req.prompt,
             append_system_prompt: None,
             agent_instructions: None,
+            content_bundles: None,
+            prepared_bundles: Vec::new(),
             vars: req.vars,
             sandbox_token: String::new(),
             storage_manifest: None,
