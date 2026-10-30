@@ -1076,6 +1076,40 @@ def test_oversized_slash_paths_do_not_materialize_complete_segment_lists(monkeyp
     assert unrelated_result is None
 
 
+@pytest.mark.parametrize(
+    ("base", "prefix", "blocked"),
+    [
+        ("https://api.example.com/v2", "https://api.example.com/v%2532/files/", True),
+        (
+            "https://{tenant}.example.com/v2/{account}",
+            "https://acme.example.com/v%2532/team/files/",
+            True,
+        ),
+        ("https://api.example.com/v2", "https://other.example.com/v%2532/files/", False),
+        ("https://api.example.com:8443/v2", "https://api.example.com/v%2532/files/", False),
+        ("https://api.example.com/v2", "http://api.example.com/v%2532/files/", False),
+        ("https://api.example.com/v2", "https://api.example.com/other/files/", False),
+        ("https://api.example.com/v2", "https://api.example.com/other%2Ffiles/", True),
+    ],
+)
+def test_over_budget_interpretation_rejects_potential_authority(base, prefix, blocked):
+    firewalls = wrap_firewalls(
+        [firewall_api(base, [firewall_permission("read", "GET /files/{path+}")], auth={})],
+        name="example",
+    )
+    url = prefix + "a" * path_security.MAX_PATH_VALIDATION_CHARACTERS
+    result = _assert_indexed_matches_linear(
+        url, "GET", firewalls, {"example": network_policy(allow=["read"], unknown_policy="allow")}
+    )
+    if blocked:
+        assert isinstance(result, matching.FirewallBlock)
+        assert result.reason == "unsafe_path"
+        assert result.base == base
+        assert result.permissions == ()
+    else:
+        assert result is None
+
+
 def test_indexed_matching_handles_deep_static_base_trie():
     deep_base_path = _segment_path()
     firewalls = wrap_firewalls(

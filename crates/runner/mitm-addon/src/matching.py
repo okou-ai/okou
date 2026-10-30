@@ -44,6 +44,7 @@ from firewall_matching.patterns import (
     _split_path_segments,
 )
 from path_security import (
+    MAX_PATH_VALIDATION_CHARACTERS,
     canonical_path_percent_encoding,
     has_unsafe_path,
     request_path_interpretations,
@@ -2793,6 +2794,20 @@ def _match_request_interpretations(
         return original
     if not track_authorization_routes:
         return original
+    if original is None and len(url_parts.path) > MAX_PATH_VALIDATION_CHARACTERS:
+        # Budget exhaustion cannot establish that an encoded URL is unowned.
+        # This authority-only check supplies rejection context, never credentials.
+        for candidate in compiled_firewalls.linear_api_candidates():
+            if _match_compiled_base_authority(url_parts, candidate.api.base):
+                return FirewallBlock(
+                    candidate.api.base.raw,
+                    candidate.firewall.name,
+                    upper_method,
+                    url_parts.path,
+                    (),
+                    "unsafe_path",
+                )
+        return None
     interpretations = request_path_interpretations(url_parts.path)
     if interpretations.unsafe and isinstance(original, FirewallAllow):
         return FirewallBlock(

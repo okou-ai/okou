@@ -1207,6 +1207,13 @@ wire-protocol or persisted-state migration is introduced.
 
 ### Validation work limits
 
+Exhausting the interpretation budget cannot establish that a request is unowned.
+When an oversized path requires URI interpretation and has no raw owner, Python
+enforcement rejects it on a matching configured API authority. Reuse scheme,
+host-template and port matching without decoding or splitting the oversized path;
+this authority check supplies rejection context only, never credentials or routing.
+Other authorities and unowned requests that need no interpretation retain their scope.
+
 Path safety validation accepts at most 65,536 input characters and five percent
 decoding passes. Before whole-segment NFKC, each raw or decoded segment must have
 at most 30 consecutive non-starters after compatibility decomposition (NFKD).
