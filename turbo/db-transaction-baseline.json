@@ -27,11 +27,6 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0236",
-      "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
-      "owner": "startRunBuiltInAdmission$"
-    },
-    {
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"
