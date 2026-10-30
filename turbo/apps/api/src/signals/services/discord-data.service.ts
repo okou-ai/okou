@@ -441,39 +441,81 @@ export const disconnectDiscordBinding$ = command(
   },
 );
 
-export function discordEffectiveAgent(
-  input:
-    | { readonly orgId: string; readonly userId: string }
-    | Computed<{ readonly orgId: string; readonly userId: string }>,
+function discordDefaultAgentReadPlan(orgId: string) {
+  return {
+    columns: { defaultAgentId: orgMetadata.defaultAgentId },
+    from: orgMetadata,
+    where: eq(orgMetadata.orgId, orgId),
+  };
+}
+
+function discordAccessibleAgentReadPlan(
+  identity: { readonly orgId: string; readonly userId: string },
+  agentId: string,
+) {
+  return {
+    columns: {
+      id: agents.id,
+      name: agents.name,
+      displayName: agents.displayName,
+    },
+    from: agents,
+    where: and(
+      eq(agents.id, agentId),
+      eq(agents.orgId, identity.orgId),
+      or(eq(agents.visibility, "public"), eq(agents.owner, identity.userId)),
+    ),
+  };
+}
+
+function discordEffectiveAgent(
+  input: Computed<{ readonly orgId: string; readonly userId: string }>,
 ) {
   return computed(async (get) => {
-    const args = "read" in input ? get(input) : input;
+    const args = get(input);
     const db = get(db$);
+    const metadataPlan = discordDefaultAgentReadPlan(args.orgId);
     const [metadata] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId));
+      .select(metadataPlan.columns)
+      .from(metadataPlan.from)
+      .where(metadataPlan.where);
     const agentId = metadata?.defaultAgentId;
     if (!agentId) {
       return null;
     }
+    const agentPlan = discordAccessibleAgentReadPlan(args, agentId);
     const [agent] = await db
-      .select({
-        id: agents.id,
-        name: agents.name,
-        displayName: agents.displayName,
-      })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, agentId),
-          eq(agents.orgId, args.orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-        ),
-      );
+      .select(agentPlan.columns)
+      .from(agentPlan.from)
+      .where(agentPlan.where);
     return agent ?? null;
   });
 }
+
+/** Fresh read; each semantic caller retains its complete-read abort boundary. */
+export const readDiscordEffectiveAgent$ = command(
+  async (
+    { get },
+    args: { readonly orgId: string; readonly userId: string },
+  ) => {
+    const db = get(db$);
+    const metadataPlan = discordDefaultAgentReadPlan(args.orgId);
+    const [metadata] = await db
+      .select(metadataPlan.columns)
+      .from(metadataPlan.from)
+      .where(metadataPlan.where);
+    const agentId = metadata?.defaultAgentId;
+    if (!agentId) {
+      return null;
+    }
+    const agentPlan = discordAccessibleAgentReadPlan(args, agentId);
+    const [agent] = await db
+      .select(agentPlan.columns)
+      .from(agentPlan.from)
+      .where(agentPlan.where);
+    return agent ?? null;
+  },
+);
 
 function discordStatusAgentFields(
   agent: {
