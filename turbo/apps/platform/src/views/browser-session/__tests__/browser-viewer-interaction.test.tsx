@@ -6,6 +6,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
+  click,
   fill,
   queryAllByRoleFast,
   setupPage,
@@ -121,6 +122,98 @@ test.each([undefined, 0])(
   },
 );
 
+test.each(["first image", "input initialization"] as const)(
+  "Selecting a tab waits for its %s before accepting another browser action",
+  async (waitingFor) => {
+    const browser = await setupViewer();
+    const pending =
+      waitingFor === "first image"
+        ? browser.holdFrames("other-page-session")
+        : browser.holdNext("Runtime.enable");
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await act(async () => {
+      await pending.received;
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      await pending.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://other.example.com",
+    );
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeEnabled();
+  },
+);
+
+test("A created tab with a failed first image retries the image without creating another tab", async () => {
+  const browser = await setupViewer(0);
+  const image = browser.holdFrames("created-1-session");
+  const created = browser.holdNext("Runtime.callFunctionOn");
+  const newTab = screen.getByLabelText("New tab", { selector: "button" });
+  click(newTab);
+  await created.received;
+  await screen.findByLabelText("New tab", { selector: '[role="tab"]' });
+  expect(newTab).toBeDisabled();
+  await userEvent.click(newTab);
+
+  await act(async () => {
+    await created.release();
+  });
+  await image.received;
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(newTab).toBeDisabled();
+  await userEvent.click(newTab);
+
+  act(() => {
+    image.release("!");
+  });
+  await screen.findByText("Browser view unavailable");
+  const retry = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Retry live image";
+  });
+  if (!retry) {
+    throw new Error("Missing image recovery control");
+  }
+  await waitFor(() => {
+    expect(retry).toBeEnabled();
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(newTab).toBeDisabled();
+  click(retry);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(
+    screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(
+    queryAllByRoleFast("tab").map((tab) => {
+      return tab.getAttribute("aria-label");
+    }),
+  ).toStrictEqual(["Example", "New tab"]);
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+});
+
 test("Submitting an address navigates the selected remote page", async () => {
   const browser = await setupViewer(0);
   const address = screen.getByLabelText("Address");
@@ -131,6 +224,35 @@ test("Submitting an address navigates the selected remote page", async () => {
   });
   expect(browser.targets[0]?.url).toBe("http://example.test/path");
   expect(browser.targets[1]?.url).toBe("https://other.example.com");
+});
+
+test("An address submission waits for its navigation receipt across its own document change", async () => {
+  const browser = await setupViewer(0);
+  const navigation = browser.holdNext("Page.navigate");
+  const address = screen.getByLabelText("Address");
+  await fill(address, "first.example/path");
+  await userEvent.keyboard("{Enter}");
+  await navigation.received;
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("first.example", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  expect(address).toBeDisabled();
+
+  await act(async () => {
+    await navigation.release();
+  });
+  await waitFor(() => {
+    expect(address).toBeEnabled();
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await fill(address, "second.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://second.example/ready");
+  });
+  expect(browser.targets[0]?.url).toBe("http://second.example/ready");
 });
 
 test.each([
@@ -293,6 +415,42 @@ test("Closing a tab preserves address focus chosen while the close is pending", 
       return target.title;
     }),
   ).toStrictEqual(["Example"]);
+});
+
+test("A close receipt returns focus before the successor has a live image", async () => {
+  const browser = await setupViewer();
+  const image = browser.holdFrames("other-page-session");
+  const closed = browser.holdNext("Target.closeTarget");
+  await userEvent.click(screen.getByLabelText("Close Example"));
+  await closed.received;
+  await act(async () => {
+    await closed.release();
+  });
+  await image.received;
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveFocus();
+  });
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    queryAllByRoleFast("tab").map((tab) => {
+      return tab.getAttribute("aria-label");
+    }),
+  ).toStrictEqual(["Other"]);
+
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "https://other.example.com",
+  );
 });
 
 test("Shared tab controls support keyboard selection and address Escape", async () => {

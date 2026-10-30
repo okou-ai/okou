@@ -5,9 +5,10 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 import {
-  createBrowserViewerSignals,
-  type BrowserViewerSignals,
-} from "../browser-viewer/browser-viewer.ts";
+  createBrowserSignals,
+  type BrowserConnection,
+  type BrowserSignals,
+} from "../browser/browser.ts";
 import {
   command,
   computed,
@@ -51,7 +52,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
       readonly cdpUrl: string;
     } | null>
   >;
-  readonly viewer: BrowserViewerSignals;
+  readonly browser: BrowserSignals;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -333,18 +334,19 @@ export function createBrowserSessionSignals(
       : null;
   });
 
-  const browserConnection$ = computed(async (get) => {
-    const connection = await get(viewerConnection$);
-    return connection
-      ? {
-          cdpUrl: connection.cdpUrl,
-          ...(connection.windowId === null
-            ? {}
-            : { windowId: connection.windowId }),
-        }
-      : null;
-  });
-  const viewer = createBrowserViewerSignals(browserConnection$);
+  const browserConnection$ = computed(
+    async (get): Promise<BrowserConnection | null> => {
+      const connection = await get(viewerConnection$);
+      return connection
+        ? {
+            cdpUrl: connection.cdpUrl,
+            instanceId: connection.instanceId,
+            windowId: connection.windowId,
+          }
+        : null;
+    },
+  );
+  const browser = createBrowserSignals(browserConnection$);
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,
@@ -371,7 +373,7 @@ export function createBrowserSessionSignals(
     session$,
     panelSession$: session$,
     viewerConnection$,
-    viewer,
+    browser,
     ...startSignals,
     ...closeSignals,
     reload$,

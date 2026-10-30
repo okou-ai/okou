@@ -58,6 +58,7 @@ export function mockBrowserCdp(
   const detached: string[] = [];
   const captures: unknown[] = [];
   const heldReplies = new Map<string, (response: string) => void>();
+  const heldFrames = new Map<string, () => void>();
 
   function event(method: string, params: unknown, sessionId?: string) {
     socket.receive(cdpUrl, JSON.stringify({ method, params, sessionId }));
@@ -224,7 +225,13 @@ export function mockBrowserCdp(
         captures.push(request.params);
         if (options.streaming !== false) {
           queueMicrotask(() => {
-            frame("AAAA", request.sessionId);
+            const sessionId = request.sessionId ?? "example-page-session";
+            const held = heldFrames.get(sessionId);
+            if (held) {
+              held();
+            } else {
+              frame("AAAA", sessionId);
+            }
           });
         }
         return {};
@@ -320,6 +327,7 @@ export function mockBrowserCdp(
     if (request.id === undefined) {
       return null;
     }
+    // Native effects and notifications precede a held protocol receipt.
     const response = JSON.stringify({ id: request.id, ...respond(request) });
     const held = heldReplies.get(request.method);
     if (held) {
@@ -338,6 +346,18 @@ export function mockBrowserCdp(
     detached,
     captures,
     viewport,
+    connections: socket.connections,
+    holdFrames(sessionId: string) {
+      const requested = context.mocks.deferred<void>();
+      heldFrames.set(sessionId, requested.resolve);
+      return {
+        received: requested.promise,
+        release(data = "AAAA") {
+          heldFrames.delete(sessionId);
+          frame(data, sessionId);
+        },
+      };
+    },
     holdNext(method: string) {
       const response = context.mocks.deferred<string>();
       heldReplies.set(method, response.resolve);

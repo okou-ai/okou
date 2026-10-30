@@ -3,7 +3,13 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -332,6 +338,65 @@ test.each(["url", "instance", "window"] as const)(
   },
 );
 
+test.each([undefined, 0])(
+  "Revalidating window %s revokes old input and resumes without reconnecting",
+  async (windowId) => {
+    const session = browserSession(
+      windowId === undefined
+        ? {}
+        : { window: { instanceId: INSTANCE_ID, primaryWindowId: windowId } },
+    );
+    const cdpUrl = "wss://cdp.browser-use.com/revalidated";
+    const browser = mockBrowserCdp(context, cdpUrl);
+    const connectionStarted = context.mocks.deferred<void>();
+    const releaseConnection = context.mocks.deferred<void>();
+    let requests = 0;
+    mockBrowserSession(session);
+    context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+      return respond(200, { browser: session });
+    });
+    context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+      requests += 1;
+      if (requests > 1) {
+        if (!connectionStarted.settled()) {
+          connectionStarted.resolve();
+        }
+        await releaseConnection.promise;
+      }
+      return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    });
+    await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+    await expectStreamingViewer();
+    const viewer = screen.getByLabelText("Remote browser viewer");
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    const connections = browser.connections();
+    act(() => {
+      context.mocks.ably.trigger("browserSessionChanged", {
+        threadId: THREAD_ID,
+      });
+    });
+    await connectionStarted.promise;
+    await waitFor(() => {
+      expect(input).toBeDisabled();
+    });
+    expect(viewer).toBeInTheDocument();
+    const admitted = browser.input.length;
+    fireEvent.input(input, {
+      target: { value: "stale" },
+      data: "stale",
+      inputType: "insertText",
+    });
+    expect(browser.input).toHaveLength(admitted);
+    releaseConnection.resolve();
+    await expectStreamingViewer();
+    expect(screen.getByLabelText("Remote browser input")).toBe(input);
+    expect(browser.connections()).toBe(connections);
+    expect(requests).toBe(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  },
+);
+
 test("An inaccessible conversation has no browser page", async () => {
   mockBrowserSession(null);
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
@@ -648,9 +713,12 @@ test.each(["legacy", "instance", "window"] as const)(
     });
     await connectionStarted.promise;
     await waitFor(() => {
+      // Keep native DOM ownership until the actual CDP identity is confirmed,
+      // but never expose the previous browser or admit input while pending.
       expect(
-        screen.queryByLabelText("Remote browser input"),
+        screen.queryByRole("region", { name: "Remote browser viewer" }),
       ).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     });
     releaseConnection.resolve();
     await expectStreamingViewer();

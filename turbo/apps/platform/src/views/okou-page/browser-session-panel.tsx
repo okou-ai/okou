@@ -1,6 +1,6 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { BrowserViewer } from "../browser-viewer/browser-viewer.tsx";
+import { Browser } from "../browser/browser.tsx";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -169,16 +169,17 @@ function BrowserCdpViewer({
   readonly overlay: ReactNode;
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
-  // Keep the stream during lease refreshes, but never reuse an endpoint from a
-  // previous provider instance while its replacement connection is loading.
+  // Keep the DOM during same-identity revalidation. The graph revokes input
+  // immediately while pending and owns endpoint changes without a React remount.
+  // Conceal a known replacement while preserving the graph until its actual
+  // endpoint/window identity is confirmed. A provider URL alone is not that identity.
   const connecting =
-    connection.state === "loading" ||
-    (connection.state === "hasData" &&
-      connection.data !== null &&
-      (connection.data.liveUrl !== liveUrl ||
-        connection.data.instanceId !== (instanceId ?? null) ||
-        connection.data.windowId !== (windowId ?? null)));
-  if (connecting) {
+    connection.state === "hasData" &&
+    connection.data !== null &&
+    (connection.data.liveUrl !== liveUrl ||
+      connection.data.instanceId !== (instanceId ?? null) ||
+      connection.data.windowId !== (windowId ?? null));
+  if (connection.state === "loading") {
     return (
       <>
         <PanelActions actions={actions} />
@@ -197,20 +198,17 @@ function BrowserCdpViewer({
   return (
     <>
       {refined ? null : <PanelActions actions={actions} />}
+      {connecting && <LoadingBody />}
       <div
-        key={instanceId ?? liveUrl}
+        hidden={connecting}
         data-browser-session-cdp-viewer
-        className="relative isolate flex min-h-0 flex-1"
+        className={cn(
+          "relative isolate min-h-0 flex-1",
+          connecting ? "hidden" : "flex",
+        )}
       >
-        <BrowserViewer
-          signals={signals.viewer}
-          connectionKey={
-            (instanceId ?? liveUrl) +
-            ":" +
-            (windowId ?? "") +
-            ":" +
-            connection.data.cdpUrl
-          }
+        <Browser
+          signals={signals.browser}
           actions={refined ? actions : null}
           presence={overlay}
         />
