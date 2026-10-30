@@ -1,14 +1,118 @@
 import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
-import { Button, Popover, PopoverTrigger } from "@okouai/ui";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Popover,
+  PopoverTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Share2 } from "lucide-react";
+import { Check, Globe, Share2, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ShareMenuContent } from "./artifact-share-menu.tsx";
+
+export function MessageShareMenu({
+  copied,
+  onShare,
+}: {
+  readonly copied: boolean;
+  readonly onShare: (audience: SharedThreadAudience) => void;
+}) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return $.chat.actions.shareMessage;
+  });
+  const copiedLabel = t(($) => {
+    return $.artifacts.sharing.copied;
+  });
+  return (
+    <DropdownMenu>
+      <TooltipProvider delay={300}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    size={copied ? "xs" : "icon-xs"}
+                    iconSize="sm"
+                    className={
+                      copied
+                        ? "gap-1 px-1.5 text-muted-foreground"
+                        : "text-muted-foreground/60"
+                    }
+                    aria-label={copied ? copiedLabel : label}
+                    data-testid="chat-message-share"
+                  >
+                    {copied ? <Check /> : <Share2 />}
+                    {copied ? copiedLabel : null}
+                  </Button>
+                }
+              />
+            }
+          />
+          {!copied && <TooltipContent side="bottom">{label}</TooltipContent>}
+        </Tooltip>
+      </TooltipProvider>
+      <DropdownMenuContent align="start" className="w-64" aria-label={label}>
+        <DropdownMenuItem
+          onClick={() => {
+            onShare("organization");
+          }}
+        >
+          <Users className="text-muted-foreground" />
+          <span className="flex min-w-0 flex-col">
+            <span>
+              {t(($) => {
+                return $.artifacts.sharing.organization;
+              })}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {t(($) => {
+                return $.chat.sharing.organizationDescription;
+              })}
+            </span>
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            onShare("public");
+          }}
+        >
+          <Globe className="text-muted-foreground" />
+          <span className="flex min-w-0 flex-col">
+            <span>
+              {t(($) => {
+                return $.chat.sharing.everyone;
+              })}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {t(($) => {
+                return $.artifacts.sharing.publicOption;
+              })}
+            </span>
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+      <span role="status" className="sr-only">
+        {copied ? copiedLabel : ""}
+      </span>
+    </DropdownMenu>
+  );
+}
 
 export function SharedThreadAudiencePicker({
   audience,
@@ -62,11 +166,9 @@ export function SharedThreadAudiencePicker({
 
 export function SharedThreadShareMenu({
   session,
-  defaultOpen = false,
   showLabel = false,
 }: {
   readonly session: SharedThreadVisibilitySignals;
-  readonly defaultOpen?: boolean;
   readonly showLabel?: boolean;
 }) {
   const { t } = useTranslation();
@@ -80,7 +182,7 @@ export function SharedThreadShareMenu({
   const saveError = useGet(session.saveError$);
   const recipient = status.state === "hasData" && !status.data;
   return (
-    <Popover defaultOpen={defaultOpen}>
+    <Popover>
       <PopoverTrigger
         render={
           <Button

@@ -13,7 +13,7 @@ import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
@@ -1053,28 +1053,43 @@ test("Select an audience before creating a share and change it after creation", 
   expect(updates).toStrictEqual(["public"]);
 });
 
-test("A message share starts public and exposes its access controls", async () => {
+async function setupAudienceMessageShare(
+  failure: 404 | 409 | null = null,
+  clipboardFails = false,
+) {
   mockConversation();
-  const permissions = context.mocks.deferred<void>();
-  const requests: (SharedThreadAudience | undefined)[] = [];
-  context.mocks.browser.clipboardWriteText();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  if (clipboardFails) {
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+      new Error("Clipboard permission denied"),
+    );
+  }
+  const response = context.mocks.deferred<void>();
+  const requestReceived = context.mocks.deferred<{
+    eventIds: string[];
+    id: string | undefined;
+    audience: SharedThreadAudience;
+  }>();
   context.mocks.api(
     sharedThreadVisibilityContract.create,
-    ({ body, respond }) => {
-      requests.push(body.audience);
-      return respond(201, { id: body.id ?? SHARED_THREAD_ID });
-    },
-  );
-  context.mocks.api(
-    sharedThreadVisibilityContract.get,
-    async ({ params, respond }) => {
-      await permissions.promise;
-      return respond(200, {
-        id: params.id,
-        audience: "public",
-        revision: "b0000000-0000-4000-a000-000000000901",
-        organization: { id: "org_mock", name: "Acme" },
+    async ({ body, respond }) => {
+      requestReceived.resolve({
+        eventIds: [...body.eventIds],
+        id: body.id,
+        audience: body.audience,
       });
+      await response.promise;
+      if (failure === 404) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Not found" },
+        });
+      }
+      if (failure === 409) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Share already exists" },
+        });
+      }
+      return respond(201, { id: body.id ?? SHARED_THREAD_ID });
     },
   );
   await setupPage({
@@ -1087,18 +1102,133 @@ test("A message share starts public and exposes its access controls", async () =
   await waitFor(() => {
     expect(buttonsNamed("Share message")).toHaveLength(1);
   });
-  click(requiredButtonNamed("Share message"));
-  await screen.findByRole("textbox", { name: "Shared conversation link" });
-  expect(requests).toStrictEqual(["public"]);
-  await screen.findByRole("status", { name: "Loading permissions" });
-  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
-  expect(buttonsNamed("Copy link")).toHaveLength(0);
-  permissions.resolve();
-  await waitFor(() => {
-    expect(requiredRadioNamed("Anyone with the link")).toBeChecked();
+  return {
+    clipboard,
+    requestReceived,
+    response,
+    share: requiredButtonNamed("Share message"),
+  };
+}
+
+function messageShareItem(menu: HTMLElement, name: string) {
+  const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return candidate.textContent?.startsWith(name);
   });
-  expect(requiredButtonNamed("Copy link")).toBeEnabled();
-  expect(screen.queryByText("0 selected")).not.toBeInTheDocument();
+  if (!item) {
+    throw new Error(`Share option not found: ${name}`);
+  }
+  return item;
+}
+
+test.each([
+  { label: "Organization", audience: "organization" },
+  { label: "Everyone", audience: "public" },
+])(
+  "Choose $label and copy a message share without replacing the composer",
+  async ({ label, audience }) => {
+    const { clipboard, requestReceived, response, share } =
+      await setupAudienceMessageShare();
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    click(share);
+    const menu = await screen.findByRole("menu", { name: "Share message" });
+    expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(2);
+    expect(clipboard.writes).toStrictEqual([]);
+    click(messageShareItem(menu, label));
+    // The option click owns the browser gesture, before the HTTP response.
+    expect(clipboard.writes).toHaveLength(1);
+    const request = await requestReceived.promise;
+    expect(request).toMatchObject({
+      eventIds: [PROMPT_EVENT_ID, ANSWER_EVENT_ID],
+      audience,
+    });
+    expect(clipboard.writes).toStrictEqual([
+      `https://app.okou.ai/share/threads/${request.id}`,
+    ]);
+    expect(composer).toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Shared conversation link" }),
+    ).not.toBeInTheDocument();
+    response.resolve();
+    await waitFor(() => {
+      expect(buttonsNamed("Copied")).toHaveLength(1);
+    });
+    expect(
+      screen.getByRole("textbox", { name: "Message" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Shared conversation link" }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("Dismiss the audience menu without copying", async () => {
+  const { clipboard, share } = await setupAudienceMessageShare();
+  click(share);
+  await screen.findByRole("menu", { name: "Share message" });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(share).toHaveFocus();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+  expect(clipboard.writes).toStrictEqual([]);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
+});
+
+test("Choose a message audience from the keyboard and return focus to Share", async () => {
+  const { requestReceived, response, share } =
+    await setupAudienceMessageShare();
+  share.focus();
+  await userEvent.keyboard("{Enter}");
+  await screen.findByRole("menu", { name: "Share message" });
+  await userEvent.keyboard("{ArrowDown}{Enter}");
+  const request = await requestReceived.promise;
+  await waitFor(() => {
+    expect(share).toHaveFocus();
+  });
+  expect(request.audience).toBe("public");
+  response.resolve();
+  await waitFor(() => {
+    expect(buttonsNamed("Copied")).toHaveLength(1);
+  });
+});
+
+test.each([404, 409] as const)(
+  "A failed message share (%s) keeps the composer and does not confirm a copy",
+  async (failure) => {
+    const { response, share } = await setupAudienceMessageShare(failure);
+    click(share);
+    const menu = await screen.findByRole("menu", { name: "Share message" });
+    click(messageShareItem(menu, "Everyone"));
+    response.resolve();
+    await expect(
+      screen.findByText("The shared link could not be created."),
+    ).resolves.toBeInTheDocument();
+    expect(buttonsNamed("Copied")).toHaveLength(0);
+    expect(requiredButtonNamed("Share message")).toBeEnabled();
+    expect(
+      screen.getByRole("textbox", { name: "Message" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Shared conversation link" }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("A denied clipboard write does not confirm a message share", async () => {
+  const { response, share } = await setupAudienceMessageShare(null, true);
+  click(share);
+  const menu = await screen.findByRole("menu", { name: "Share message" });
+  click(messageShareItem(menu, "Organization"));
+  response.resolve();
+  await expect(
+    screen.findByText("Could not copy the link"),
+  ).resolves.toBeInTheDocument();
+  expect(buttonsNamed("Copied")).toHaveLength(0);
+  expect(requiredButtonNamed("Share message")).toBeEnabled();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
+  expect(
+    screen.queryByRole("textbox", { name: "Shared conversation link" }),
+  ).not.toBeInTheDocument();
 });
 
 test("A visibility share fails without publishing when its API is unavailable", async () => {

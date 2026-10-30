@@ -1,7 +1,9 @@
 import {
+  MessageShareMenu,
   SharedThreadAudiencePicker,
   SharedThreadShareMenu,
 } from "./shared-thread-share-menu.tsx";
+import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
@@ -3952,7 +3954,6 @@ function SharedThreadCreatedLink({
 }) {
   const { t } = useTranslation();
   const visibility = useGet(thread.sharing.visibility$);
-  const phase = useGet(thread.sharing.phase$);
   const close = useSet(thread.sharing.close$);
   const pageSignal = useGet(pageSignal$);
   return (
@@ -3967,11 +3968,7 @@ function SharedThreadCreatedLink({
       />
       <div className="flex shrink-0 items-center gap-2">
         {visibility ? (
-          <SharedThreadShareMenu
-            session={visibility}
-            defaultOpen={phase === "idle"}
-            showLabel
-          />
+          <SharedThreadShareMenu session={visibility} showLabel />
         ) : (
           <Button
             onClick={() => {
@@ -4035,7 +4032,7 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
   const [createLoadable, createSharedThread] = useLoadableSet(
     thread.sharing.create$,
   );
-  if (phase === "idle" && sharedThreadId === null) {
+  if (phase === "idle") {
     return withChatScrollLayout(<ChatThreadComposer thread={thread} />);
   }
 
@@ -8715,13 +8712,22 @@ function RelatedArtifactsDialog({
 
 function MessageShareAction({
   onShare,
+  copied,
 }: {
-  onShare: (revert: () => void) => void;
+  onShare: (audience: SharedThreadAudience, revert?: () => void) => void;
+  copied: boolean;
 }) {
   const { t } = useTranslation();
+  const visibilityEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility];
+  if (visibilityEnabled) {
+    return <MessageShareMenu copied={copied} onShare={onShare} />;
+  }
   return (
     <ShareLinkButton
-      onShare={onShare}
+      onShare={(revert) => {
+        onShare("public", revert);
+      }}
       render={({ onClick, ref }, { copied }) => {
         const copiedLabel = t(($) => {
           return $.chat.sharing.shareLinkCopied;
@@ -8786,6 +8792,7 @@ function PagedGroupPrimaryActions({
   thread,
   onCopy,
   onShare,
+  shareCopied,
   pdfAction,
   relatedArtifacts,
 }: {
@@ -8794,7 +8801,9 @@ function PagedGroupPrimaryActions({
   showRunUsage: boolean;
   thread: ChatPanelSignals;
   onCopy: () => Promise<boolean>;
-  onShare: ((revert: () => void) => void) | undefined;
+  onShare:
+    ((audience: SharedThreadAudience, revert?: () => void) => void) | undefined;
+  shareCopied: boolean;
   pdfAction?: ReactNode;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
@@ -8850,7 +8859,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
-      {onShare && <MessageShareAction onShare={onShare} />}
+      {onShare && <MessageShareAction onShare={onShare} copied={shareCopied} />}
       {pdfAction}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
@@ -8881,6 +8890,7 @@ function PagedGroupActions({
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
   const shareMessage = useSet(thread.sharing.shareMessage$);
+  const copiedMessageEventId = useGet(thread.sharing.copiedMessageEventId$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const switches = useGet(featureSwitch$);
   const pdfEnabled = switches[FeatureSwitchKey.ChatMessagePdf];
@@ -8915,10 +8925,10 @@ function PagedGroupActions({
   });
   const handleShare =
     shareEventIds.length > 0
-      ? (revert: () => void) => {
+      ? (audience: SharedThreadAudience, revert?: () => void) => {
           const share = async () => {
-            if (!(await shareMessage(shareEventIds, pageSignal))) {
-              revert();
+            if (!(await shareMessage(shareEventIds, audience, pageSignal))) {
+              revert?.();
             }
           };
           detach(share(), Reason.DomCallback, "share chat message");
@@ -8934,6 +8944,7 @@ function PagedGroupActions({
         thread={thread}
         onCopy={handleCopy}
         onShare={handleShare}
+        shareCopied={copiedMessageEventId === shareEventIds[0]}
         pdfAction={
           pdfEnabled &&
           hasContent &&
