@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.127"
+version = "0.1.128"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4046,7 +4046,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.241.8"
+version = "0.241.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4119,7 +4119,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.17.4"
+version = "0.18.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4253,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.12.4"
+version = "0.13.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4294,7 +4294,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4439,7 +4439,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.21.4"
+version = "0.21.5"
 dependencies = [
  "api-contracts",
  "async-trait",
