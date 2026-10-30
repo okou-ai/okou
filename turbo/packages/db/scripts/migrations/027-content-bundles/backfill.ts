@@ -9,7 +9,7 @@ import {
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
-import postgres, { type Sql } from "postgres";
+import postgres from "postgres";
 import {
   S3Client,
   GetObjectCommand,
@@ -184,27 +184,6 @@ async function readConfiguration(reviewed: Plan | null) {
   };
 }
 
-async function readSources(
-  db: Sql,
-  options: Options,
-  reviewed: Plan | null,
-): Promise<Source[]> {
-  const ids =
-    reviewed?.rows.map((row) => {
-      return row.id;
-    }) ?? null;
-  const { after, limit } = options;
-  return array(sourceSchema).parse(
-    options.kind === "agent"
-      ? await db`SELECT id, org_id AS "orgId", xmin::text, 'agent' AS kind, name, NULL::text AS description, instructions AS instruction,
-        NULL::jsonb AS attachments, instructions_bundle AS bundle FROM agents
-        WHERE (${after}::uuid IS NULL OR id > ${after}::uuid) AND (${ids}::uuid[] IS NULL OR id = ANY(${ids}::uuid[])) ORDER BY id LIMIT ${limit}`
-      : await db`SELECT id, org_id AS "orgId", xmin::text, 'workflow' AS kind, name, description, instruction, attachments, content_bundle AS bundle
-        FROM workflows WHERE official_definition_name IS NULL AND (${after}::uuid IS NULL OR id > ${after}::uuid)
-        AND (${ids}::uuid[] IS NULL OR id = ANY(${ids}::uuid[])) ORDER BY id LIMIT ${limit}`,
-  );
-}
-
 async function readAttachments(
   row: Source,
   client: S3Client,
@@ -248,21 +227,22 @@ async function prepareSource(
   bucket: string,
   signal: AbortSignal,
 ) {
-  if (row.kind === "agent" && row.instruction === null)
-    throw new BackfillError("MissingAgentInstructions", row.id);
-  const files: ContentBundleFile[] = [
-    {
-      path: row.kind === "agent" ? "instructions.md" : "SKILL.md",
-      content: Buffer.from(
-        row.kind === "agent"
-          ? (row.instruction ?? "")
-          : synthesizeWorkflowSkillMd(row),
-        "utf8",
-      ),
-    },
-  ];
-  if (row.kind === "workflow")
+  const files: ContentBundleFile[] = [];
+  if (row.kind === "agent") {
+    if (row.instruction === null) {
+      throw new BackfillError("MissingAgentInstructions", row.id);
+    }
+    files.push({
+      path: "instructions.md",
+      content: Buffer.from(row.instruction, "utf8"),
+    });
+  } else {
+    files.push({
+      path: "SKILL.md",
+      content: Buffer.from(synthesizeWorkflowSkillMd(row), "utf8"),
+    });
     files.push(...(await readAttachments(row, client, bucket, signal)));
+  }
   const prepared = await prepareContentBundle(files);
   readContentBundle(prepared.archive, prepared.descriptor);
   const receipt: Receipt = {
@@ -278,11 +258,9 @@ async function prepareSource(
   return { ...prepared, receipt };
 }
 
-async function publishSource(
-  db: Sql,
+async function uploadBundle(
   client: S3Client,
   bucket: string,
-  row: Source,
   prepared: Awaited<ReturnType<typeof prepareSource>>,
   signal: AbortSignal,
 ) {
@@ -296,12 +274,20 @@ async function publishSource(
     }),
     { abortSignal: signal },
   );
-  const bundle = db.json(prepared.descriptor);
-  const updated =
-    row.kind === "agent"
-      ? await db`UPDATE agents SET instructions_bundle = ${bundle} WHERE id = ${row.id} AND org_id = ${row.orgId} AND xmin::text = ${row.xmin} RETURNING id`
-      : await db`UPDATE workflows SET content_bundle = ${bundle} WHERE id = ${row.id} AND org_id = ${row.orgId} AND official_definition_name IS NULL AND xmin::text = ${row.xmin} RETURNING id`;
-  return updated.length === 1 ? "published" : "source-changed";
+}
+
+function pageSummary(
+  options: Options,
+  reviewed: Plan | null,
+  rows: readonly Source[],
+  results: readonly Result[],
+) {
+  return {
+    mode: options.migrate ? "apply" : "dry-run",
+    results,
+    nextAfter: rows.at(-1)?.id ?? null,
+    reviewed: reviewed?.rows.length ?? 0,
+  };
 }
 
 async function main() {
@@ -321,7 +307,20 @@ async function main() {
   const receipts: Receipt[] = [];
   const results: Result[] = [];
   try {
-    const rows = await readSources(db, options, reviewed);
+    const ids =
+      reviewed?.rows.map((row) => {
+        return row.id;
+      }) ?? null;
+    const { after, limit } = options;
+    const rows = array(sourceSchema).parse(
+      options.kind === "agent"
+        ? await db`SELECT id, org_id AS "orgId", xmin::text, 'agent' AS kind, name, NULL::text AS description, instructions AS instruction,
+          NULL::jsonb AS attachments, instructions_bundle AS bundle FROM agents
+          WHERE (${after}::uuid IS NULL OR id > ${after}::uuid) AND (${ids}::uuid[] IS NULL OR id = ANY(${ids}::uuid[])) ORDER BY id LIMIT ${limit}`
+        : await db`SELECT id, org_id AS "orgId", xmin::text, 'workflow' AS kind, name, description, instruction, attachments, content_bundle AS bundle
+          FROM workflows WHERE official_definition_name IS NULL AND (${after}::uuid IS NULL OR id > ${after}::uuid)
+          AND (${ids}::uuid[] IS NULL OR id = ANY(${ids}::uuid[])) ORDER BY id LIMIT ${limit}`,
+    );
     for (const expected of reviewed?.rows ?? []) {
       if (
         !rows.some((row) => {
@@ -350,16 +349,16 @@ async function main() {
       )
         throw new BackfillError("SourceContentChanged", row.id);
       receipts.push(prepared.receipt);
-      const status = options.migrate
-        ? await publishSource(
-            db,
-            client,
-            configuration.bucket,
-            row,
-            prepared,
-            signal,
-          )
-        : "planned";
+      let status = "planned";
+      if (options.migrate) {
+        await uploadBundle(client, configuration.bucket, prepared, signal);
+        const bundle = db.json(prepared.descriptor);
+        const updated =
+          row.kind === "agent"
+            ? await db`UPDATE agents SET instructions_bundle = ${bundle} WHERE id = ${row.id} AND org_id = ${row.orgId} AND xmin::text = ${row.xmin} RETURNING id`
+            : await db`UPDATE workflows SET content_bundle = ${bundle} WHERE id = ${row.id} AND org_id = ${row.orgId} AND official_definition_name IS NULL AND xmin::text = ${row.xmin} RETURNING id`;
+        status = updated.length === 1 ? "published" : "source-changed";
+      }
       results.push({ id: row.id, status });
     }
     await output.writeFile(
@@ -369,14 +368,7 @@ async function main() {
         2,
       ) + "\n",
     );
-    console.log(
-      JSON.stringify({
-        mode: options.migrate ? "apply" : "dry-run",
-        results,
-        nextAfter: rows.at(-1)?.id ?? null,
-        reviewed: reviewed?.rows.length ?? 0,
-      }),
-    );
+    console.log(JSON.stringify(pageSummary(options, reviewed, rows, results)));
   } finally {
     client.destroy();
     await Promise.all([output.close(), db.end()]);
