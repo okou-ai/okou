@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
@@ -980,11 +981,9 @@ async function resolveStorageManifestEntryPlans(args: {
 }): Promise<ResolvedStorageManifestEntryPlans> {
   const input = args.input;
   const [composePlans, additionalPlans, artifactInputs] = await Promise.all([
-    measureApiDispatchTiming(
-      input.timing,
-      "api_dispatch_prepare_storage_manifest_build_compose_entries",
-      "nested",
-      async () => {
+    (async (spanTiming: ApiDispatchTimingCollector | undefined) => {
+      const spanStartedAt = spanTiming ? performance.now() : undefined;
+      return await (async () => {
         return await Promise.all(
           input.composeVolumes.map((volume) => {
             return buildComposeStorageEntry({
@@ -996,13 +995,20 @@ async function resolveStorageManifestEntryPlans(args: {
             });
           }),
         );
-      },
-    ),
-    measureApiDispatchTiming(
-      input.timing,
-      "api_dispatch_prepare_storage_manifest_build_additional_entries",
-      "nested",
-      async () => {
+      })().finally(() => {
+        if (spanTiming && spanStartedAt !== undefined) {
+          spanTiming.recordDuration(
+            "api_dispatch_prepare_storage_manifest_build_compose_entries",
+            "nested",
+            performance.now() - spanStartedAt,
+            now(),
+          );
+        }
+      });
+    })(input.timing),
+    (async (spanTiming: ApiDispatchTimingCollector | undefined) => {
+      const spanStartedAt = spanTiming ? performance.now() : undefined;
+      return await (async () => {
         return await Promise.all(
           (input.additionalVolumes ?? []).map((volume, index) => {
             return buildAdditionalStorageEntry({
@@ -1018,13 +1024,20 @@ async function resolveStorageManifestEntryPlans(args: {
             });
           }),
         );
-      },
-    ),
-    measureApiDispatchTiming(
-      input.timing,
-      "api_dispatch_prepare_storage_manifest_build_artifact_entries",
-      "nested",
-      async () => {
+      })().finally(() => {
+        if (spanTiming && spanStartedAt !== undefined) {
+          spanTiming.recordDuration(
+            "api_dispatch_prepare_storage_manifest_build_additional_entries",
+            "nested",
+            performance.now() - spanStartedAt,
+            now(),
+          );
+        }
+      });
+    })(input.timing),
+    (async (spanTiming: ApiDispatchTimingCollector | undefined) => {
+      const spanStartedAt = spanTiming ? performance.now() : undefined;
+      return await (async () => {
         return await Promise.all(
           input.artifacts.map((artifact) => {
             return args.phaseTimings.artifact.measureResolve(() => {
@@ -1038,8 +1051,17 @@ async function resolveStorageManifestEntryPlans(args: {
             });
           }),
         );
-      },
-    ),
+      })().finally(() => {
+        if (spanTiming && spanStartedAt !== undefined) {
+          spanTiming.recordDuration(
+            "api_dispatch_prepare_storage_manifest_build_artifact_entries",
+            "nested",
+            performance.now() - spanStartedAt,
+            now(),
+          );
+        }
+      });
+    })(input.timing),
   ]);
 
   input.stats?.recordResolvedEntry(
