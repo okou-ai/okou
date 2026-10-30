@@ -1,5 +1,6 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import type { ReactNode } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { Check, Loader2, Pencil, Share2 } from "lucide-react";
@@ -414,19 +415,16 @@ function HostedSiteShareActions({
 
 function HostedSiteShareBody({
   session,
-  link,
-  loading,
   saving,
   saveFailed,
   onSave,
 }: {
   readonly session: HostedSiteShareSession;
-  readonly link: string | null;
-  readonly loading: boolean;
   readonly saving: boolean;
   readonly saveFailed: boolean;
   readonly onSave: () => void;
 }) {
+  const link = useLoadable(session.copyUrl$);
   // Stays subscribed while the editor is open, so Cancel and Save return to
   // settled actions instead of a loading frame.
   const details = useLoadable(session.details$);
@@ -444,7 +442,7 @@ function HostedSiteShareBody({
             saveFailed={saveFailed}
             onSave={onSave}
           />
-        ) : loading ? (
+        ) : link.state === "loading" ? (
           // Nothing can be copied or customized until the current address is
           // known, so the footer holds its place without offering either.
           <div aria-busy="true" className="mt-4 flex justify-end">
@@ -453,7 +451,7 @@ function HostedSiteShareBody({
         ) : (
           <HostedSiteShareActions
             session={session}
-            link={link}
+            link={link.state === "hasData" ? link.data : null}
             customizable={
               details.state === "hasData" &&
               details.data?.isActive === true &&
@@ -469,14 +467,20 @@ function HostedSiteShareBody({
   );
 }
 
-function HostedSiteShareSessionMenu({
+function HostedSiteSharePopover({
   session,
   ariaLabel,
   className,
   iconSize = 16,
-}: ShareButtonProps & { readonly session: HostedSiteShareSession }) {
+  saving,
+  children,
+}: ShareButtonProps & {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly children: ReactNode;
+}) {
   // The preview mounts this menu before its popover, so preload the current URL here.
-  const link = useLoadable(session.copyUrl$);
+  useLoadable(session.copyUrl$);
   const settings = useLoadable(session.hasSettings$);
   // Preload permissions alongside the current address before Share opens.
   useLoadable(session.visibility$);
@@ -488,7 +492,6 @@ function HostedSiteShareSessionMenu({
     useGet(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions];
   const setOpen = useSet(session.setOpen$);
   const show = useSet(session.show$);
-  const [saving, save] = useLoadableSet(session.save$);
   if (!signal) {
     return null;
   }
@@ -499,7 +502,7 @@ function HostedSiteShareSessionMenu({
         // Leaving the hover region must not discard a URL draft. Explicit
         // dismissal still cancels editing; an in-flight save keeps its owner.
         if (
-          saving.state === "loading" ||
+          saving ||
           (!nextOpen && editing && details.reason === "trigger-hover")
         ) {
           details.cancel();
@@ -527,15 +530,34 @@ function HostedSiteShareSessionMenu({
         <Share2 size={iconSize} />
       </PopoverTrigger>
 
+      {children}
+    </Popover>
+  );
+}
+
+function HostedSiteShareSessionMenu({
+  session,
+  ...props
+}: ShareButtonProps & { readonly session: HostedSiteShareSession }) {
+  const signal = useGet(session.signal$);
+  const [saving, save] = useLoadableSet(session.save$);
+  if (!signal) {
+    return null;
+  }
+  // Frame-only preload/open updates keep these body children and their save owner.
+  return (
+    <HostedSiteSharePopover
+      session={session}
+      saving={saving.state === "loading"}
+      {...props}
+    >
       <PopoverContent
         align="end"
-        aria-label={ariaLabel}
+        aria-label={props.ariaLabel}
         className="w-90 max-w-[calc(100vw-2rem)] p-0"
       >
         <HostedSiteShareBody
           session={session}
-          link={link.state === "hasData" ? link.data : null}
-          loading={link.state === "loading"}
           saving={saving.state === "loading"}
           saveFailed={saving.state === "hasError"}
           onSave={() => {
@@ -543,7 +565,7 @@ function HostedSiteShareSessionMenu({
           }}
         />
       </PopoverContent>
-    </Popover>
+    </HostedSiteSharePopover>
   );
 }
 
