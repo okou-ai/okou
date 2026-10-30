@@ -43,7 +43,7 @@ import {
   serializeBuiltinConnectorExternalCodeProviderState,
 } from "./connector-authorization-provider-state";
 import {
-  connectorActionResolver,
+  readConnectorResolver$,
   type ConnectorActionMethodResolution,
   type ConnectorActionResolver,
   type ResolvedConnectorActionMethod,
@@ -796,7 +796,7 @@ const createExternalCodeSession$ = command(
 
 export const startBuiltinConnectorExternalCodeSession$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -817,7 +817,7 @@ export const startBuiltinConnectorExternalCodeSession$ = command(
       return badRequestMessage(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver([args.connectorSlug]));
+    const resolver = await set(readConnectorResolver$, [args.connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug: args.connectorSlug,
@@ -973,7 +973,7 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
     if (!session) {
       return notFound("External-code authorization session not found");
     }
-    const resolver = await get(connectorActionResolver([args.connectorSlug]));
+    const resolver = await set(readConnectorResolver$, [args.connectorSlug]);
     signal.throwIfAborted();
     const resolvedMethod = await resolveStoredExternalCodeMethod({
       resolver,
