@@ -1155,6 +1155,7 @@ impl AgentBootstrapInputs {
                         )
                         .await?;
                     }
+                    super::storage::apply_content_bundles(sandbox, context, telemetry).await?;
                     RunnerResult::Ok(files.into_paths())
                 }))
                 .await;

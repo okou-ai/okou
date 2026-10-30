@@ -367,3 +367,6 @@ mod tests {
         assert!(mount.is_dir());
     }
 }
+
+mod content_bundle;
+pub use content_bundle::apply_content_bundle;

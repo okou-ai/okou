@@ -224,6 +224,8 @@ shared_home_dirs! {
     /// Layout: `<storages_dir>/<hash(vasStorageName)>/<hash(vasVersionId)>/archive.tar.gz`.
     /// Populated by the cache writer (#10808) and reaped by `gc_storage_cache`.
     pub fn storages_dir => "storages";
+    /// Immutable input archives addressed by their complete SHA-256.
+    pub fn bundles_dir => "bundles-v1";
     pub fn home_image_cache_dir => "home-image-cache";
 }
 

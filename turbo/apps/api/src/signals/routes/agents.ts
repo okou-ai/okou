@@ -1,3 +1,4 @@
+import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -301,6 +302,10 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
     instructions: sql`${sql.param(values.instructions, agents.instructions)}`
       .mapWith(agents.instructions)
       .as("instructions"),
+    instructionsBundle:
+      sql`${sql.param(values.instructionsBundle, agents.instructionsBundle)}`
+        .mapWith(nullableDriverValueDecoder(agents.instructionsBundle))
+        .as("instructions_bundle"),
     sound: sql`convert_from(${sql.param(sound)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.sound))
       .as("sound"),
@@ -361,6 +366,11 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     owner: auth.userId,
     name: agentId,
     instructions: "",
+    instructionsBundle: await set(
+      publishContentBundle$,
+      [{ path: "instructions.md", content: Buffer.alloc(0) }],
+      signal,
+    ),
     ...metadata,
     createdAt,
     updatedAt: createdAt,

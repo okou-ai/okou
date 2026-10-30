@@ -337,6 +337,10 @@ fn build_mock_run_config_with_runtime(
             mitm_jsonl_flush: None,
             connector_runtime_sync: None,
             guest_rpc: None,
+            content_bundle_cache: runner_storage::content_bundle_cache::ContentBundleCache::new(
+                home.bundles_dir(),
+            )
+            .unwrap(),
             fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
             decoded_cache: crate::storage_cache::decoded::DecodedCache::new(home.clone()),
             background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()
