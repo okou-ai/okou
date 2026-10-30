@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.37](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.36...codex-mock-v0.12.37) (2026-10-30)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify unwrapped codex output token limits ([#44234](https://github.com/okou-ai/okou/issues/44234)) ([deaa4ce](https://github.com/okou-ai/okou/commit/deaa4ced7f2f82b3fa081c275c88980b83f2db93))
+
 ## [0.12.36](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.35...codex-mock-v0.12.36) (2026-10-30)
 
 ## [0.12.35](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.34...codex-mock-v0.12.35) (2026-10-30)

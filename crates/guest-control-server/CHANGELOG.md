@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.59](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.58...guest-control-server-v0.24.59) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
 ## [0.24.58](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.57...guest-control-server-v0.24.58) (2026-10-30)
 
 ## [0.24.57](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.56...guest-control-server-v0.24.57) (2026-10-30)
