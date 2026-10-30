@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1079.5](https://github.com/okou-ai/okou/compare/app-v0.1079.4...app-v0.1079.5) (2026-10-30)
+
+
+### Bug Fixes
+
+* **app:** open halloween from campaign email links ([#44211](https://github.com/okou-ai/okou/issues/44211)) ([548c744](https://github.com/okou-ai/okou/commit/548c74447456731a9c69648ef1d7469f0ba838d7))
+
+
+### Performance Improvements
+
+* **browser:** use native extension window operations ([#44195](https://github.com/okou-ai/okou/issues/44195)) ([90925ae](https://github.com/okou-ai/okou/commit/90925ae2ce82dc5ab1457b09c0caf8df08651d19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.2
+    * @okouai/core bumped to 8.804.1
+
 ## [0.1079.4](https://github.com/okou-ai/okou/compare/app-v0.1079.3...app-v0.1079.4) (2026-10-30)
 
 

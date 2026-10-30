@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.241.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.2...runner-rs-v0.241.3) (2026-10-30)
+
+
+### Refactoring
+
+* **runner:** separate service signal test source ownership ([#44223](https://github.com/okou-ai/okou/issues/44223)) ([5b5a7bc](https://github.com/okou-ai/okou/commit/5b5a7bc56c35e44ce03a38b580854c7d4fd16595))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.241.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.1...runner-rs-v0.241.2) (2026-10-30)
 
 ### Release Dependencies
