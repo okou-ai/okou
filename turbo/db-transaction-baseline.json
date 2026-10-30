@@ -7,11 +7,6 @@
       "owner": "claimExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0097",
-      "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
-      "owner": "deleteChatThreadContent$"
-    },
-    {
       "id": "TX-0116",
       "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
       "owner": "deleteBuiltinConnectorLocalState$"
