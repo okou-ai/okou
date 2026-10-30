@@ -3,6 +3,8 @@ node_modules
 dist
 packages/sandbox-scripts/src/dist/bundled.ts
 pnpm-lock.yaml
+# release-please owns this file's JSON serialization when updating its version.
+apps/browser-extension/manifest.json
 coverage
 .claude
 CHANGELOG.md
