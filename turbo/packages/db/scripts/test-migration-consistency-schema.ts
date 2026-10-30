@@ -1107,6 +1107,17 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${usagePackPendingSnapshot}`,
   );
+  const builtinConnectorDeletion = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/delete-builtin-connector-local-state.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${builtinConnectorDeletion}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1393,6 +1404,16 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
 const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
+  {
+    schemaName: "public",
+    functionName: "delete_builtin_connector_local_state",
+    identityArguments: "p_input jsonb, p_clock timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "ed000b1509cf1ab0dedf32fab614c7b9",
+  },
   {
     schemaName: "public",
     functionName: "write_usage_pack_pending_snapshot",
