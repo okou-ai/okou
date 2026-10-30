@@ -1,15 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Okou Browser",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "minimum_chrome_version": "102",
   "description": "Organize source-window tabs and expose native browser capabilities over CDP.",
-  "permissions": ["webNavigation", "tabs"],
+  "permissions": [
+    "webNavigation",
+    "tabs"
+  ],
   "action": {
     "default_title": "Okou Browser"
   },
   "externally_connectable": {
-    "matches": ["http://*/*", "https://*/*"]
+    "matches": [
+      "http://*/*",
+      "https://*/*"
+    ]
   },
   "background": {
     "service_worker": "background.js",

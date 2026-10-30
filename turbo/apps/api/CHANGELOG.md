@@ -9,6 +9,20 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.31.3](https://github.com/okou-ai/okou/compare/api-v2.31.2...api-v2.31.3) (2026-10-30)
+
+
+### Refactoring
+
+* **api:** remove workflow deletion transaction ([#44268](https://github.com/okou-ai/okou/issues/44268)) ([6f4dbac](https://github.com/okou-ai/okou/commit/6f4dbac9a0e5839b656667f6cacf5bef4f2b31c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.13.7
+
 ## [2.31.2](https://github.com/okou-ai/okou/compare/api-v2.31.1...api-v2.31.2) (2026-10-30)
 
 

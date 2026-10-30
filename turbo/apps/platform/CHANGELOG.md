@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1079.9](https://github.com/okou-ai/okou/compare/app-v0.1079.8...app-v0.1079.9) (2026-10-30)
+
+
+### Bug Fixes
+
+* **app:** keep halloween actions visible on mobile ([#44264](https://github.com/okou-ai/okou/issues/44264)) ([5da2932](https://github.com/okou-ai/okou/commit/5da2932c61afb93ec20d94e0f822228d80cbadb9))
+
 ## [0.1079.8](https://github.com/okou-ai/okou/compare/app-v0.1079.7...app-v0.1079.8) (2026-10-30)
 
 
