@@ -40,7 +40,7 @@ import { getDiscordAppConfig } from "./discord-config";
 import {
   disconnectDiscordBinding$,
   discordDmBinding,
-  discordEffectiveAgent,
+  readDiscordEffectiveAgent$,
   discordSenderBindings,
   selectDiscordDmBinding$,
   type DiscordVerifiedBinding,
@@ -107,11 +107,11 @@ const discordChannelFailure$ = command(
 
 const discordConnectionStatus$ = command(
   async (
-    { get },
+    { set },
     binding: DiscordVerifiedBinding,
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
-    const agent = await get(discordEffectiveAgent(binding));
+    const agent = await set(readDiscordEffectiveAgent$, binding);
     signal.throwIfAborted();
     const agentStatus = agent
       ? `Workspace agent: ${discordAccountLabel(agent.displayName || agent.name)}.`

@@ -4,6 +4,7 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
+import type { BrowserConnection } from "../browser-viewer/viewer/types.ts";
 import {
   createBrowserViewerSignals,
   type BrowserViewerSignals,
@@ -49,6 +50,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
       readonly instanceId: string | null;
       readonly windowId: number | null;
       readonly cdpUrl: string;
+      readonly extension: BrowserConnection["extension"];
     } | null>
   >;
   readonly viewer: BrowserViewerSignals;
@@ -326,6 +328,7 @@ export function createBrowserSessionSignals(
     return response.status === 200
       ? {
           cdpUrl: response.body.cdpUrl,
+          extension: response.body.extension,
           liveUrl,
           instanceId: lifecycleSession?.window?.instanceId ?? null,
           windowId: lifecycleSession?.window?.primaryWindowId ?? null,
@@ -338,6 +341,7 @@ export function createBrowserSessionSignals(
     return connection
       ? {
           cdpUrl: connection.cdpUrl,
+          extension: connection.extension,
           ...(connection.windowId === null
             ? {}
             : { windowId: connection.windowId }),

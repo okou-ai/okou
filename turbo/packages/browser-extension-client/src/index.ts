@@ -11,6 +11,7 @@ export interface NativeTab {
   readonly pinned: boolean;
   readonly discarded: boolean;
   readonly url?: string;
+  readonly pendingUrl?: string;
   readonly title?: string;
   readonly openerTabId?: number;
 }
@@ -45,7 +46,7 @@ export interface Operations {
   listTabs: { args: { windowId: number }; result: readonly NativeTab[] };
   getTab: { args: { tabId: number }; result: NativeTab | null };
   createTab: {
-    args: { windowId: number; url: string; active?: boolean };
+    args: { windowId?: number; url: string; active?: boolean };
     result: NativeTab;
   };
   moveTabs: {
@@ -154,6 +155,8 @@ export class OkouBrowserClient {
   private workerTarget: Target | undefined;
   private workerChanged: (() => void) | undefined;
   private epoch: string | undefined;
+  private sequence: number | undefined;
+  private readonly bootstrapEvents: NativeEvent[] = [];
   private workerAlive = true;
   private closing: Promise<void> | undefined;
 
@@ -329,7 +332,15 @@ export class OkouBrowserClient {
     const hello = await this.call("hello", {});
     if (hello.value.protocol !== PROTOCOL_VERSION)
       throw new BrowserBridgeError("unavailable");
+    if (
+      !["windows", "tabs", "events"].every((capability) => {
+        return hello.value.capabilities.includes(capability);
+      })
+    )
+      throw new BrowserBridgeError("unavailable");
     this.epoch = hello.epoch;
+    this.sequence = hello.sequence;
+    for (const event of this.bootstrapEvents.splice(0)) this.acceptEvent(event);
     this.current();
   }
 
@@ -389,30 +400,59 @@ export class OkouBrowserClient {
     if (
       event.sessionId !== this.workerSession ||
       event.method !== "Runtime.bindingCalled" ||
-      event.params.name !== EVENT_BINDING ||
-      typeof event.params.payload !== "string"
+      event.params.name !== EVENT_BINDING
     )
       return;
+    if (typeof event.params.payload !== "string") {
+      void this.close();
+      return;
+    }
     try {
       const value = record(JSON.parse(event.params.payload));
       if (
-        value.epoch !== this.epoch ||
-        typeof value.sequence !== "number" ||
-        typeof value.kind !== "string"
-      )
+        typeof value.epoch !== "string" ||
+        !Number.isSafeInteger(value.sequence) ||
+        (value.sequence as number) < 0 ||
+        typeof value.kind !== "string" ||
+        !value.kind
+      ) {
+        void this.close();
         return;
-      // Reentrant subscriptions cannot extend an in-flight dispatch.
-      const observers = [...this.listeners];
-      for (const listener of observers) {
-        if (!this.listeners.has(listener)) continue;
-        try {
-          listener(value as unknown as NativeEvent);
-        } catch {
-          // A consumer observer cannot interrupt the owning transport.
-        }
+      }
+      const native = value as unknown as NativeEvent;
+      if (this.sequence === undefined) {
+        if (this.bootstrapEvents.length >= 256) void this.close();
+        else this.bootstrapEvents.push(native);
+      } else {
+        this.acceptEvent(native);
       }
     } catch {
-      // Other runtime bindings and malformed payloads confer no authority.
+      // A malformed event on our owned binding cannot retain inventory authority.
+      void this.close();
+    }
+  }
+
+  private acceptEvent(event: NativeEvent): void {
+    if (this.signal.aborted) return;
+    if (event.epoch !== this.epoch) {
+      void this.close();
+      return;
+    }
+    if (event.sequence <= this.sequence!) return;
+    if (event.sequence !== this.sequence! + 1) {
+      void this.close();
+      return;
+    }
+    this.sequence = event.sequence;
+    // Reentrant subscriptions cannot extend an in-flight dispatch.
+    const observers = [...this.listeners];
+    for (const listener of observers) {
+      if (!this.listeners.has(listener)) continue;
+      try {
+        listener(event);
+      } catch {
+        // A consumer observer cannot interrupt the owning transport.
+      }
     }
   }
 
@@ -452,18 +492,29 @@ export class OkouBrowserClient {
     if (method === "hello" && remote.type === "undefined")
       throw new BrowserBridgeError("unavailable");
     const value = record(remote.value);
-    if (value.ok === false) throw new BrowserBridgeError("native");
     if (this.epoch !== undefined && this.epoch !== value.epoch) {
       void this.close();
       throw new BrowserBridgeError("unavailable");
     }
     if (
-      value.ok !== true ||
+      (value.ok !== true && value.ok !== false) ||
       typeof value.epoch !== "string" ||
-      typeof value.startedSequence !== "number" ||
-      typeof value.sequence !== "number"
+      !Number.isSafeInteger(value.startedSequence) ||
+      !Number.isSafeInteger(value.sequence) ||
+      (value.startedSequence as number) < 0 ||
+      (value.sequence as number) < (value.startedSequence as number)
     )
       throw new BrowserBridgeError("protocol");
+    // A response cannot repair a missed event. Native binding notifications
+    // precede their operation response on the same ordered worker session.
+    if (
+      this.sequence !== undefined &&
+      (value.sequence as number) > this.sequence
+    ) {
+      void this.close();
+      throw new BrowserBridgeError("unavailable");
+    }
+    if (value.ok === false) throw new BrowserBridgeError("native");
     return value as unknown as Observation<Operations[M]["result"]>;
   }
 

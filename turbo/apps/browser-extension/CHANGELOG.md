@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/browser-extension-v0.4.2...browser-extension-v0.5.0) (2026-10-30)
+
+
+### Features
+
+* **browser:** adopt native window discovery in platform viewers ([#44303](https://github.com/okou-ai/okou/issues/44303)) ([e4461fe](https://github.com/okou-ai/okou/commit/e4461fe53d441879f54b30e449258c4d523b50ee))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.0
+
 ## [0.4.2](https://github.com/okou-ai/okou/compare/browser-extension-v0.4.1...browser-extension-v0.4.2) (2026-10-30)
 
 

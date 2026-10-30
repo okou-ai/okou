@@ -9,6 +9,21 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.31.5](https://github.com/okou-ai/okou/compare/api-v2.31.4...api-v2.31.5) (2026-10-30)
+
+
+### Refactoring
+
+* **api:** own discord default agent reads in command consumers ([#44315](https://github.com/okou-ai/okou/issues/44315)) ([63f395a](https://github.com/okou-ai/okou/commit/63f395a01cba167e49eec3f1b344a24c7b0262c0))
+* **api:** own fresh discord binding reads in the stable access command ([#44302](https://github.com/okou-ai/okou/issues/44302)) ([8beee6b](https://github.com/okou-ai/okou/commit/8beee6b2899f8d72aa157a2ba2e493d4367205fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.0
+
 ## [2.31.4](https://github.com/okou-ai/okou/compare/api-v2.31.3...api-v2.31.4) (2026-10-30)
 
 

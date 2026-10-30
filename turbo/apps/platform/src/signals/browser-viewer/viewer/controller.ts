@@ -7,6 +7,15 @@ import {
 } from "../../utils.ts";
 
 import { CdpClient, type CdpEvent, type SocketFactory } from "../cdp/client.ts";
+import type {
+  OkouBrowserClient,
+  NativeEvent,
+} from "@okouai/browser-extension-client";
+import {
+  connectNative,
+  changesMembership,
+  nativeFault,
+} from "../cdp/native.ts";
 
 import {
   CdpFault,
@@ -15,7 +24,7 @@ import {
   isRecord,
   validateConfiguration,
 } from "../cdp/errors.ts";
-import { TargetDirectory } from "../cdp/targets.ts";
+import { TargetDirectory, pageTarget } from "../cdp/targets.ts";
 import { openTab } from "../cdp/tabs.ts";
 import { InputSession } from "../input/session.ts";
 import type { InputTransition, InputStop } from "../input/lifecycle.ts";
@@ -34,6 +43,7 @@ import type {
   ViewerTransport,
   ViewerError,
   WindowSizeSync,
+  BrowserConnection,
 } from "./types.ts";
 import {
   captureSettings,
@@ -89,6 +99,8 @@ interface SelectionRetirement {
 
 interface ControllerOptions {
   url: string;
+  extension: BrowserConnection["extension"];
+  releaseTransport: () => void;
   windowId?: number;
   paused?: boolean;
   socketFactory?: SocketFactory;
@@ -110,6 +122,7 @@ export class ViewerController {
   private readonly retirements = new Map<string, Retirement>();
   private readonly imageRecovery: ImageRecoveryRuntime;
   private client: CdpClient | null = null;
+  private native: OkouBrowserClient | null = null;
   private frames: CdpClient | null = null;
   private directory: TargetDirectory | null = null;
   private discovery: TargetDiscovery | null = null;
@@ -117,6 +130,10 @@ export class ViewerController {
   private disposed = false;
   private connected = false;
   private chosenOnce = false;
+  private creating = false;
+  private createdTarget: string | null = null;
+  private tabError: ViewerError | null = null;
+  private disconnecting = false;
   private targetRevision = 0;
   private extensionRequest = 0;
   private display: DisplaySync | null = null;
@@ -191,7 +208,10 @@ export class ViewerController {
       !this.disposed &&
       !this.signal.aborted
     ) {
+      this.connected = false;
+      this.model.setConnected(false);
       this.fail(result.reason);
+      await this.closeTransport();
     }
   }
 
@@ -224,6 +244,9 @@ export class ViewerController {
       return;
     }
     this.chosenOnce = true;
+    if (this.createdTarget !== targetId) {
+      this.createdTarget = null;
+    }
     this.extensionRequest++;
     const controls = this.model.controls();
     const preview =
@@ -241,6 +264,9 @@ export class ViewerController {
     ) {
       return;
     }
+    if (!this.discovery?.current(targetId)) {
+      return;
+    }
     const selection: Selection = {
       intent: revision,
       targetId,
@@ -254,7 +280,6 @@ export class ViewerController {
       favicon: { wanted: true, waiting: false, ready: false },
     };
     this.selection = selection;
-    this.discovery?.watch(targetId);
     detach(
       (async () => {
         const [reply1] = await Promise.allSettled([this.attach(selection)]);
@@ -502,66 +527,46 @@ export class ViewerController {
   }
 
   createTab(): void {
-    const source = this.selection;
-    const owner = source?.input?.owner;
-    const revision = this.selectionRevision;
-    if (
-      !this.canMutateTab() ||
-      (source
-        ? !source.sessionId || !owner
-        : !this.model.controls().emptyUnscoped)
-    ) {
+    if (!this.canMutateTab() || !this.discovery?.ready) {
       return;
     }
+    const revision = ++this.extensionRequest;
     const client = this.client!;
     const directory = this.directory!;
     const current = () => {
       return (
-        this.connected &&
-        !this.disposed &&
-        this.selectionRevision === revision &&
-        (!source ||
-          (this.isCurrent(source) &&
-            source.input?.owner?.document === owner?.document))
+        this.connected && !this.disposed && this.extensionRequest === revision
       );
     };
     this.chosenOnce = true;
+    this.creating = true;
     this.mutateTab(
       { type: "create" },
       async () => {
         const targetId = await openTab(
           client,
           directory,
-          source?.sessionId
-            ? {
-                targetId: source.targetId,
-                sessionId: source.sessionId,
-              }
-            : null,
-          current,
+          { native: this.native!, windowId: this.options.windowId, current },
+          this.signal,
         );
         if (!current()) {
           return;
         }
         const observation = this.discovery!.beginCreation(targetId);
-        const targets = await directory.list();
+        const result = await client.request("Target.getTargetInfo", {
+          targetId,
+        });
         if (!current()) {
           return;
         }
-        if (
-          !targets.some((target) => {
-            return target.id === targetId;
-          })
-        ) {
+        const created = pageTarget(result.targetInfo);
+        if (!created || created.id !== targetId) {
           throw new CdpFault(
             "tab",
             "The new tab is no longer available in this scope.",
           );
         }
         this.targetRevision++;
-        const created = targets.find((target) => {
-          return target.id === targetId;
-        })!;
         const accepted = this.discovery!.created(created, observation);
         if (!current()) {
           return;
@@ -580,14 +585,8 @@ export class ViewerController {
         if (!current()) {
           return;
         }
+        this.createdTarget = targetId;
         this.select(targetId);
-        if (
-          !this.disposed &&
-          this.connected &&
-          this.model.getSnapshot().selectedTargetId === targetId
-        ) {
-          this.options.onTabCreated?.();
-        }
       },
       current,
     );
@@ -605,7 +604,7 @@ export class ViewerController {
       return;
     }
     const selected = snapshot.selectedTargetId === targetId;
-    const revision = this.selectionRevision;
+    const revision = this.extensionRequest;
     this.mutateTab({ type: "close", targetId }, async () => {
       await this.directory!.assertMember(targetId);
       if (this.disposed || !this.connected) {
@@ -644,7 +643,7 @@ export class ViewerController {
       if (this.model.getSnapshot().selectedTargetId === targetId) {
         this.loseSelection(null);
       }
-      if (selected && revision === this.selectionRevision) {
+      if (selected && revision === this.extensionRequest) {
         // Discovery can remove preceding tabs while closure is pending.
         const preceding = new Set(
           snapshot.targets.slice(0, index).map((target) => {
@@ -666,7 +665,11 @@ export class ViewerController {
 
   private canMutateTab(): boolean {
     return (
-      this.connected && !this.disposed && this.model.controls().canMutateTabs
+      this.connected &&
+      !this.disposed &&
+      this.native !== null &&
+      !this.native.signal.aborted &&
+      this.model.controls().canMutateTabs
     );
   }
 
@@ -677,6 +680,7 @@ export class ViewerController {
       return true;
     },
   ): void {
+    this.tabError = null;
     this.model.setTabAction(action);
     this.model.update({ error: null });
     detach(
@@ -684,7 +688,9 @@ export class ViewerController {
         using _completion1 = {
           [Symbol.dispose]: () => {
             if (!this.disposed) {
+              this.creating = false;
               this.model.setTabAction(null);
+              this.discovered();
             }
           },
         };
@@ -696,19 +702,21 @@ export class ViewerController {
         const error = reply3.reason;
 
         if (!this.disposed && this.connected && report()) {
-          this.model.update({
-            error: diagnostic(
-              error instanceof CdpFault &&
-                ["tab", "scope", "unsupported-capability"].includes(error.kind)
-                ? error
-                : new CdpFault(
-                    "tab",
-                    "The tab operation could not be completed. Check the browser before trying again.",
-                    undefined,
-                    requestDetails(error),
-                  ),
-            ),
-          });
+          const fault = diagnostic(
+            error instanceof CdpFault &&
+              ["tab", "scope", "unsupported-capability"].includes(error.kind)
+              ? error
+              : new CdpFault(
+                  "tab",
+                  "The tab operation could not be completed. Check the browser before trying again.",
+                  undefined,
+                  requestDetails(error),
+                ),
+          );
+          if (!this.model.controls().streaming) {
+            this.tabError = fault;
+          }
+          this.model.update({ error: fault });
         }
 
         return;
@@ -723,26 +731,27 @@ export class ViewerController {
       return;
     }
     this.disposed = true;
-    {
-      using _retirement1 = {
-        [Symbol.dispose]: () => {
-          // A publication may close us before its outer retirement has started.
-          for (const retirement of this.retirements.values()) {
-            retirement.start();
-          }
-          this.display?.close();
-          this.sink.dispose();
-          this.frames?.close();
-          this.client?.close();
-          this.ownedSessions.clear();
-          this.ownedFrameSessions.clear();
-          this.retirements.clear();
-          this.imageRecovery.close();
-        },
-      };
-
-      this.changeSelection({ type: "closed" }, "disposed");
+    this.changeSelection({ type: "closed" }, "disposed", {
+      drainControl: true,
+    });
+    for (const retirement of this.retirements.values()) {
+      retirement.start();
     }
+    this.display?.close();
+    this.sink.dispose();
+    this.retireTransport();
+  }
+
+  private async closeTransport(): Promise<void> {
+    this.disconnecting = true;
+    await this.native?.close();
+    this.frames?.close();
+    this.client?.close();
+    this.ownedSessions.clear();
+    this.ownedFrameSessions.clear();
+    this.retirements.clear();
+    this.imageRecovery.close();
+    this.options.releaseTransport();
   }
 
   private async connect(): Promise<void> {
@@ -759,7 +768,6 @@ export class ViewerController {
     );
     this.client = client;
     this.frames = client;
-    this.directory = new TargetDirectory(client, this.options.windowId);
     client.onEvent((event) => {
       return this.onEvent(event, client);
     });
@@ -795,12 +803,42 @@ export class ViewerController {
     if (this.disposed || this.signal.aborted) {
       return;
     }
+    this.native = await connectNative(client, this.options.extension.runtimeId);
+    if (this.disposed || this.signal.aborted) {
+      await this.native.close();
+      return;
+    }
+    this.directory = new TargetDirectory(
+      client,
+      this.options.windowId,
+      this.native,
+    );
+    this.native.onEvent((event) => {
+      return this.nativeEvent(event);
+    });
+    this.native.signal.addEventListener(
+      "abort",
+      () => {
+        if (!this.disposed && this.connected) {
+          this.disconnected(nativeFault(), client);
+        }
+      },
+      { once: true },
+    );
     await client.request("Target.setDiscoverTargets", { discover: true });
     if (this.disposed || this.signal.aborted) {
       return;
     }
+    if (this.native.signal.aborted) {
+      throw nativeFault();
+    }
     this.connected = true;
     this.model.setConnected(true);
+    this.startDisplay(client);
+    this.startDiscovery();
+  }
+
+  private startDisplay(client: CdpClient): void {
     let displayError: ViewerError | null = null;
     this.display = new DisplaySync(client, {
       signal: this.signal,
@@ -845,9 +883,20 @@ export class ViewerController {
     });
     this.display.setMode(this.displayMode);
     this.display.measure(this.displaySize);
-    this.discovery = new TargetDiscovery(this.directory, this.model, {
+  }
+
+  private startDiscovery(): void {
+    this.discovery = new TargetDiscovery(this.directory!, this.model, {
       signal: this.signal,
-      scoped: this.options.windowId !== undefined,
+      invalidated: () => {
+        const targetId = this.model.getSnapshot().selectedTargetId;
+        if (targetId) {
+          this.changeSelection(
+            { type: "select", targetId, paused: this.paused },
+            "target-replaced",
+          );
+        }
+      },
       changed: () => {
         return this.discovered();
       },
@@ -855,21 +904,28 @@ export class ViewerController {
         if (this.disposed || !this.connected) {
           return;
         }
+        this.connected = false;
+        this.model.setConnected(false);
         this.changeSelection({
           type: "discovery-failed",
           error: diagnostic(error),
         });
+        this.retireTransport();
       },
     });
     this.discovery.start();
   }
 
   private disconnected(fault: CdpFault, source: CdpClient): void {
-    if (this.disposed || this.signal.aborted) {
+    if (this.disposed || this.signal.aborted || this.disconnecting) {
       return;
     }
+    this.disconnecting = true;
     const established = this.connected;
-    const drainControl = source !== this.client;
+    const drainControl =
+      source !== this.client ||
+      fault.kind === "extension" ||
+      fault.kind === "scope";
     this.connected = false;
     this.changeSelection(
       { type: "disconnected", established, error: diagnostic(fault) },
@@ -877,37 +933,26 @@ export class ViewerController {
       { drainControl },
     );
     this.display?.close();
-    this.frames?.close();
-    this.ownedFrameSessions.clear();
-    const closeControl = () => {
-      this.client?.close();
-      this.ownedSessions.clear();
-      this.retirements.clear();
-      this.imageRecovery.close();
-    };
-    // Video loss revokes admission immediately, but a live control socket can
-    // still acknowledge its original pressed/composing cleanup. Never replay it.
-    if (drainControl && this.retirements.size) {
-      detach(
-        (async () => {
-          const [reply4] = await Promise.allSettled([
-            Promise.allSettled(
-              [...this.retirements.values()].map((value) => {
-                return value.complete;
-              }),
-            ),
-          ]);
-          if (reply4.status === "fulfilled") {
-            return closeControl();
-          }
-          return closeControl();
-        })(),
-        Reason.DomCallback,
-        "browser operation",
-      );
-    } else {
-      closeControl();
+    if (this.frames !== this.client || !drainControl) {
+      this.frames?.close();
     }
+    this.ownedFrameSessions.clear();
+    this.retireTransport();
+  }
+
+  private retireTransport(): void {
+    detach(
+      (async () => {
+        await Promise.allSettled(
+          [...this.retirements.values()].map((value) => {
+            return value.complete;
+          }),
+        );
+        await this.closeTransport();
+      })(),
+      Reason.DomCallback,
+      "browser connection retirement",
+    );
   }
 
   private refresh(): void {
@@ -918,7 +963,7 @@ export class ViewerController {
   }
 
   private discovered(): void {
-    if (this.disposed || !this.connected) {
+    if (this.disposed || !this.connected || !this.discovery?.ready) {
       return;
     }
     const targets = this.model.getSnapshot().targets;
@@ -937,6 +982,10 @@ export class ViewerController {
           ),
         ),
       );
+    } else if (selected && !this.selection && !this.paused && this.creating) {
+      // An owned native creation is allowed to finish before restoring input.
+    } else if (selected && !this.selection && !this.paused) {
+      this.select(selected);
     } else if (!selected && !this.chosenOnce && targets[0]) {
       this.select(targets[0].id);
     } else if (!selected) {
@@ -1261,6 +1310,15 @@ export class ViewerController {
         return;
       }
       this.refreshFavicon(selection);
+      if (this.tabError) {
+        const error = this.tabError;
+        this.tabError = null;
+        this.model.update({ error });
+      }
+      if (this.createdTarget === selection.targetId) {
+        this.createdTarget = null;
+        this.options.onTabCreated?.();
+      }
     }
   }
 
@@ -1378,7 +1436,7 @@ export class ViewerController {
       selection &&
       input &&
       (reason !== "disconnected" || drainControl) &&
-      !this.disposed
+      (!this.disposed || drainControl)
     ) {
       const deferred = createDeferredPromise<void>(this.signal);
       const cancelDeadline = scheduleTimeout(
@@ -1512,9 +1570,6 @@ export class ViewerController {
       };
 
       if (current()) {
-        this.discovery?.watch(null);
-      }
-      if (current()) {
         this.display?.setTarget(null);
       }
       if (current()) {
@@ -1624,6 +1679,24 @@ export class ViewerController {
     } else {
       this.targetEvent(event, client);
     }
+  }
+
+  private nativeEvent(event: NativeEvent): void {
+    if (this.disposed || !changesMembership(event, this.options.windowId)) {
+      return;
+    }
+    this.directory?.invalidate();
+    if (
+      event.kind === "window-removed" &&
+      event.windowId === this.options.windowId
+    ) {
+      this.disconnected(
+        new CdpFault("scope", "The assigned browser window closed."),
+        this.client!,
+      );
+      return;
+    }
+    this.discovery?.refresh();
   }
 
   private navigationEvent(event: CdpEvent, selected: Selection): void {
@@ -1752,6 +1825,7 @@ export class ViewerController {
       }
     } else if (
       client === this.client &&
+      event.sessionId === undefined &&
       [
         "Target.targetCreated",
         "Target.targetInfoChanged",

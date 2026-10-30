@@ -840,10 +840,20 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
     sent.unwrap();
     let output = client.pixels().unwrap();
     assert_eq!(output.len(), WIDTH * HEIGHT * 4);
-    for (index, pixel) in output.as_chunks::<4>().0.iter().enumerate() {
-        let rgb = color(index);
-        assert_eq!(*pixel, [rgb[0], rgb[1], rgb[2], 255]);
+    // Compare every independent RGBA value with one reusable expected row.
+    let mut expected_row = vec![0; WIDTH * 4];
+    for (y, row) in output.as_chunks::<{ WIDTH * 4 }>().0.iter().enumerate() {
+        let row_start = y * WIDTH;
+        for (x, pixel) in expected_row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let rgb = color(row_start + x);
+            *pixel = [rgb[0], rgb[1], rgb[2], 255];
+        }
+        assert!(
+            row == expected_row.as_slice(),
+            "decoded pixels differ in row {y}"
+        );
     }
+    drop(expected_row);
     let (current, peak) = client.memory_usage();
     assert!(current <= peak);
     assert!(peak <= 128 * 1024 * 1024);

@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.1079.10",
+  "version": "0.1080.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -29,6 +29,7 @@
     "@clerk/shared": "4.39.1",
     "@clerk/ui": "1.33.1",
     "@okouai/api-contracts": "workspace:*",
+    "@okouai/browser-extension-client": "workspace:*",
     "@okouai/connectors": "workspace:*",
     "@okouai/core": "workspace:*",
     "@okouai/mermaid-lite": "workspace:*",
