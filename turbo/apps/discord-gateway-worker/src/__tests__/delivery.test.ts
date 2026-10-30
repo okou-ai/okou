@@ -129,6 +129,8 @@ describe("Discord Gateway API delivery", () => {
       gateway.ready();
       gateway.message();
       const first = await relay.deliveries.next();
+      // Provider ingress precedes the Worker's response handling and halt.
+      await gateway.closed.promise;
       await expect
         .poll(() => {
           return relay.health();
