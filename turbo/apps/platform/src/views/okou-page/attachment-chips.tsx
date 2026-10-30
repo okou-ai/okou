@@ -1403,16 +1403,18 @@ function ArtifactPreviewDialogActions({
         </Button>
       )}
       {showShare && (
-        <ArtifactShareButton
-          artifactShareIdentity$={preview.artifactShareIdentity$}
-          surface="dialog"
-          shareUrl={shareUrl}
-          ariaLabel={t(($) => {
-            return $.artifacts.actions.share;
-          })}
-          iconSize={18}
-          url={preview.url}
-        />
+        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
+          <ArtifactShareButton
+            artifactShareIdentity$={preview.artifactShareIdentity$}
+            surface="dialog"
+            shareUrl={shareUrl}
+            ariaLabel={t(($) => {
+              return $.artifacts.actions.share;
+            })}
+            iconSize={18}
+            url={preview.url}
+          />
+        </span>
       )}
       <ArtifactDownloadMenu
         surface="dialog"
@@ -1426,14 +1428,17 @@ function ArtifactPreviewDialogActions({
         syncTarget={artifactDialogSyncTarget(artifact)}
         url={preview.url}
       />
-      <ArtifactDeleteButton
-        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-        surface="dialog"
-        iconSize={18}
-        onDeleted={() => {
-          closeDeletedPreview(rootSignal);
-        }}
-      />
+      {/* Async identity and permission checks must not move adjacent actions. */}
+      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
+        <ArtifactDeleteButton
+          artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+          surface="dialog"
+          iconSize={18}
+          onDeleted={() => {
+            closeDeletedPreview(rootSignal);
+          }}
+        />
+      </span>
       <ArtifactActionSeparator />
       {showSplitView && (
         <ArtifactDialogSplitViewButton onClick={openInSplitView} />

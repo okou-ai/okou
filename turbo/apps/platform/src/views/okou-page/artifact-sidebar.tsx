@@ -652,14 +652,16 @@ function ArtifactSidebarPreviewActions({
     <>
       {kind === "html" && <ArtifactOpenExternalAction url={url} />}
       {shareAvailable && (
-        <ArtifactShareButton
-          surface="sidebar"
-          shareUrl={shareUrl}
-          ariaLabel={t(($) => {
-            return $.artifacts.actions.shareArtifact;
-          })}
-          url={url}
-        />
+        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
+          <ArtifactShareButton
+            surface="sidebar"
+            shareUrl={shareUrl}
+            ariaLabel={t(($) => {
+              return $.artifacts.actions.shareArtifact;
+            })}
+            url={url}
+          />
+        </span>
       )}
       <ArtifactDownloadMenu
         key={`${url}:${filename}`}
@@ -671,7 +673,10 @@ function ArtifactSidebarPreviewActions({
         syncTarget={syncTarget}
         url={url}
       />
-      {deleteAction}
+      {/* Keep the slot even before the artifact's owner check has resolved. */}
+      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
+        {deleteAction}
+      </span>
       <ArtifactActionSeparator />
     </>
   );
