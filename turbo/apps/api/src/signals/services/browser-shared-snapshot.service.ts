@@ -89,6 +89,8 @@ export const captureSharedSnapshot$ = command(
     // Only remote capture/encryption is advisory. The database read above and
     // the caller's atomic publication must still fail on local errors.
     const prepared = await settleIncludingAbort(async () => {
+      // Order captures before native IO; a late reply is not a newer snapshot.
+      const capturedAt = nowDate();
       const observed = await settleIncludingAbort(
         listBrowserUseTabUrls(args, captureSignal, window.primaryWindowId),
       );
@@ -108,7 +110,6 @@ export const captureSharedSnapshot$ = command(
       if (!snapshot.windowExists) {
         return null;
       }
-      const capturedAt = nowDate();
       const encryptedTabUrls = await encryptPersistentSecretValue(
         JSON.stringify(snapshot.urls),
         { userId: owner.userId },

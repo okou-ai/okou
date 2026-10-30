@@ -1,10 +1,6 @@
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { connectors } from "@okouai/db/schema/connector";
-import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { ConnectorRuntimeMethod } from "./connector-catalog-runtime.service";
@@ -310,64 +306,6 @@ export function connectorOwnedVariableWrite(
           : { description: args.updatedDescription }),
         updatedAt: nowDate(),
       },
-    },
-  };
-}
-
-export function connectorCredentialStorageConnectionDeletionPlan(args: {
-  readonly connectorId: string;
-}) {
-  return {
-    secrets: {
-      from: secrets,
-      where: eq(secrets.connectorId, args.connectorId),
-    },
-    variables: {
-      from: variables,
-      where: eq(variables.connectorId, args.connectorId),
-    },
-    account: {
-      from: connectors,
-      where: eq(connectors.id, args.connectorId),
-      returning: { id: connectors.id },
-    },
-    deferSelections: sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector DEFERRED`,
-    enforceSelections: sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector IMMEDIATE`,
-  };
-}
-
-export function connectorCredentialStorageSelectionDeletionPlan(
-  deleted: readonly { readonly id: string }[],
-) {
-  return {
-    from: chatThreadConnectorSelections,
-    where: inArray(
-      chatThreadConnectorSelections.connectorId,
-      deleted.map((row) => {
-        return row.id;
-      }),
-    ),
-    returning: { connectorId: chatThreadConnectorSelections.connectorId },
-  };
-}
-
-export function connectorCredentialStorageCursorDeletionPlan(
-  deleted: readonly { readonly id: string }[],
-) {
-  return {
-    from: googleFormsAutomationCursors,
-    automationId: googleFormsAutomationCursors.automationId,
-    automations: {
-      columns: { id: workflowAutomations.id },
-      from: workflowAutomations,
-      where: and(
-        eq(workflowAutomations.eventType, "google-forms-response-submitted"),
-        sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
-          deleted.map((row) => {
-            return row.id;
-          }),
-        )}::text[])`,
-      ),
     },
   };
 }

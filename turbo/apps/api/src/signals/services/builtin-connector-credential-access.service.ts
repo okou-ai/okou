@@ -284,19 +284,6 @@ export function builtinConnectorCredentialVariableReadCondition(args: {
   return conditions.length === 0 ? isNull(variables.id) : or(...conditions);
 }
 
-export function builtinConnectorAccountDeletionReadPlan(connectorId: string) {
-  return {
-    columns: {
-      id: connectors.id,
-      authMethod: connectors.authMethod,
-      storageVersion: connectors.storageVersion,
-    },
-    from: connectors,
-    where: eq(connectors.id, connectorId),
-    limit: 1,
-  };
-}
-
 export function builtinConnectorTokenRevokeReadPlan(
   access: BuiltinConnectorCredentialAccess,
 ) {

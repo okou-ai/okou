@@ -126,15 +126,6 @@ export function discordMemberRole(
   });
 }
 
-function verifiedBindings(
-  where: SQL,
-): Computed<Promise<DiscordVerifiedBinding[]>> {
-  const where$ = computed(() => {
-    return Promise.resolve(where);
-  });
-  return createVerifiedBindings(where$);
-}
-
 function createVerifiedBindings(
   where$: Computed<Promise<SQL | null>>,
 ): Computed<Promise<DiscordVerifiedBinding[]>> {
@@ -201,27 +192,63 @@ export function createDiscordUserBinding(
   });
 }
 
-export function discordSenderBindings(
-  discordUserId: string | Computed<Promise<string | null>>,
-) {
-  if (typeof discordUserId !== "string") {
-    const where$ = computed(async (get) => {
-      const resolvedDiscordUserId = await get(discordUserId);
-      return resolvedDiscordUserId === null
-        ? null
-        : eq(discordOrgConnections.discordUserId, resolvedDiscordUserId);
-    });
-    return createVerifiedBindings(where$);
-  }
-  return verifiedBindings(
-    eq(discordOrgConnections.discordUserId, discordUserId),
-  );
+function discordSenderBindingWhere(discordUserId: string) {
+  return eq(discordOrgConnections.discordUserId, discordUserId);
 }
 
+function discordSenderBindings(
+  discordUserId$: Computed<Promise<string | null>>,
+) {
+  const where$ = computed(async (get) => {
+    const discordUserId = await get(discordUserId$);
+    return discordUserId === null
+      ? null
+      : discordSenderBindingWhere(discordUserId);
+  });
+  return createVerifiedBindings(where$);
+}
+
+/** Fresh action-time reads retain their callers' complete-read abort boundary. */
+export const readDiscordSenderBindings$ = command(
+  async ({ get }, discordUserId: string) => {
+    const where = discordSenderBindingWhere(discordUserId);
+    if (!getDiscordAppConfig()) {
+      return [];
+    }
+    const db = get(db$);
+    const readPlan = verifiedBindingReadPlan(where);
+    const rows = await db
+      .select(readPlan.columns)
+      .from(readPlan.from)
+      .innerJoin(readPlan.join, readPlan.joinCondition)
+      .where(readPlan.where);
+    const result: DiscordVerifiedBinding[] = [];
+    for (const row of rows) {
+      const membership = await settle(
+        get(clerk$).organizations.getOrganizationMembershipList({
+          organizationId: row.orgId,
+          userId: [row.userId],
+          limit: 1,
+        }),
+      );
+      if (!membership.ok) {
+        if (isClerkResourceNotFound(membership.error)) {
+          continue;
+        }
+        throw membership.error;
+      }
+      const binding = discordBindingFromMemberships(row, membership.value.data);
+      if (binding) {
+        result.push(binding);
+      }
+    }
+    return result;
+  },
+);
+
 /** Ingress treats missing app configuration as an outage, never as revocation. */
-export function discordIngressSenderBindings(discordUserId: string) {
-  const bindings$ = discordSenderBindings(discordUserId);
-  return computed(async (get) => {
+export const readDiscordIngressSenderBindings$ = command(
+  async ({ set }, discordUserId: string) => {
     if (!getDiscordAppConfig()) {
       throw new DiscordIngressFailure(
         "discord:config_unavailable",
@@ -230,9 +257,9 @@ export function discordIngressSenderBindings(discordUserId: string) {
         "Discord is temporarily unavailable",
       );
     }
-    return await get(bindings$);
-  });
-}
+    return await set(readDiscordSenderBindings$, discordUserId);
+  },
+);
 
 export type DiscordDmBindingResult =
   | { readonly kind: "connected"; readonly binding: DiscordVerifiedBinding }
@@ -242,12 +269,28 @@ export type DiscordDmBindingResult =
       readonly bindings: readonly DiscordVerifiedBinding[];
     };
 
-export function discordDmBinding(
-  input: string | Computed<Promise<string | null>>,
+function discordDmBindingFromChoice(
+  bindings: DiscordVerifiedBinding[],
+  choice: { readonly connectionId: string } | undefined,
+): DiscordDmBindingResult {
+  const selected = bindings.find((binding) => {
+    return binding.connectionId === choice?.connectionId;
+  });
+  if (selected) {
+    return { kind: "connected", binding: selected };
+  }
+  if (bindings.length === 1) {
+    return { kind: "connected", binding: bindings[0]! };
+  }
+  return { kind: "selection-required", bindings };
+}
+
+function discordDmBinding(
+  input: Computed<Promise<string | null>>,
 ): Computed<Promise<DiscordDmBindingResult>> {
   const bindings$ = discordSenderBindings(input);
   return computed(async (get): Promise<DiscordDmBindingResult> => {
-    const discordUserId = typeof input === "string" ? input : await get(input);
+    const discordUserId = await get(input);
     if (discordUserId === null) {
       return { kind: "not-connected" };
     }
@@ -259,18 +302,26 @@ export function discordDmBinding(
       .select()
       .from(discordUserDmPreferences)
       .where(eq(discordUserDmPreferences.discordUserId, discordUserId));
-    const selected = bindings.find((binding) => {
-      return binding.connectionId === choice?.connectionId;
-    });
-    if (selected) {
-      return { kind: "connected", binding: selected };
-    }
-    if (bindings.length === 1) {
-      return { kind: "connected", binding: bindings[0]! };
-    }
-    return { kind: "selection-required", bindings };
+    return discordDmBindingFromChoice(bindings, choice);
   });
 }
+
+export const readDiscordDmBinding$ = command(
+  async (
+    { get, set },
+    discordUserId: string,
+  ): Promise<DiscordDmBindingResult> => {
+    const bindings = await set(readDiscordSenderBindings$, discordUserId);
+    if (bindings.length === 0) {
+      return { kind: "not-connected" };
+    }
+    const [choice] = await get(db$)
+      .select()
+      .from(discordUserDmPreferences)
+      .where(eq(discordUserDmPreferences.discordUserId, discordUserId));
+    return discordDmBindingFromChoice(bindings, choice);
+  },
+);
 
 const commitDiscordDmSelection$ = command(
   async ({ set }, binding: DiscordVerifiedBinding, signal: AbortSignal) => {
@@ -321,7 +372,7 @@ const commitDiscordDmSelection$ = command(
 
 export const selectDiscordDmBinding$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly discordUserId: string;
       readonly connectionId: string;
@@ -329,7 +380,7 @@ export const selectDiscordDmBinding$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const bindings = await get(discordSenderBindings(args.discordUserId));
+    const bindings = await set(readDiscordSenderBindings$, args.discordUserId);
     signal.throwIfAborted();
     const binding = bindings.find((candidate) => {
       return (
@@ -441,39 +492,81 @@ export const disconnectDiscordBinding$ = command(
   },
 );
 
-export function discordEffectiveAgent(
-  input:
-    | { readonly orgId: string; readonly userId: string }
-    | Computed<{ readonly orgId: string; readonly userId: string }>,
+function discordDefaultAgentReadPlan(orgId: string) {
+  return {
+    columns: { defaultAgentId: orgMetadata.defaultAgentId },
+    from: orgMetadata,
+    where: eq(orgMetadata.orgId, orgId),
+  };
+}
+
+function discordAccessibleAgentReadPlan(
+  identity: { readonly orgId: string; readonly userId: string },
+  agentId: string,
+) {
+  return {
+    columns: {
+      id: agents.id,
+      name: agents.name,
+      displayName: agents.displayName,
+    },
+    from: agents,
+    where: and(
+      eq(agents.id, agentId),
+      eq(agents.orgId, identity.orgId),
+      or(eq(agents.visibility, "public"), eq(agents.owner, identity.userId)),
+    ),
+  };
+}
+
+function discordEffectiveAgent(
+  input: Computed<{ readonly orgId: string; readonly userId: string }>,
 ) {
   return computed(async (get) => {
-    const args = "read" in input ? get(input) : input;
+    const args = get(input);
     const db = get(db$);
+    const metadataPlan = discordDefaultAgentReadPlan(args.orgId);
     const [metadata] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId));
+      .select(metadataPlan.columns)
+      .from(metadataPlan.from)
+      .where(metadataPlan.where);
     const agentId = metadata?.defaultAgentId;
     if (!agentId) {
       return null;
     }
+    const agentPlan = discordAccessibleAgentReadPlan(args, agentId);
     const [agent] = await db
-      .select({
-        id: agents.id,
-        name: agents.name,
-        displayName: agents.displayName,
-      })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, agentId),
-          eq(agents.orgId, args.orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-        ),
-      );
+      .select(agentPlan.columns)
+      .from(agentPlan.from)
+      .where(agentPlan.where);
     return agent ?? null;
   });
 }
+
+/** Fresh read; each semantic caller retains its complete-read abort boundary. */
+export const readDiscordEffectiveAgent$ = command(
+  async (
+    { get },
+    args: { readonly orgId: string; readonly userId: string },
+  ) => {
+    const db = get(db$);
+    const metadataPlan = discordDefaultAgentReadPlan(args.orgId);
+    const [metadata] = await db
+      .select(metadataPlan.columns)
+      .from(metadataPlan.from)
+      .where(metadataPlan.where);
+    const agentId = metadata?.defaultAgentId;
+    if (!agentId) {
+      return null;
+    }
+    const agentPlan = discordAccessibleAgentReadPlan(args, agentId);
+    const [agent] = await db
+      .select(agentPlan.columns)
+      .from(agentPlan.from)
+      .where(agentPlan.where);
+    return agent ?? null;
+  },
+);
 
 function discordStatusAgentFields(
   agent: {

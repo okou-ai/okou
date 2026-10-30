@@ -63,14 +63,10 @@ pub enum BundleFormat {
     TarGzipV1,
 }
 #[derive(Debug)]
-pub struct PreparedBundleFile {
-    pub path: String,
-    pub content: Vec<u8>,
-}
-#[derive(Debug)]
 pub struct PreparedBundle {
     pub mount_path: Option<String>,
-    pub files: Vec<PreparedBundleFile>,
+    pub sha256: String,
+    pub archive: Vec<u8>,
 }
 
 /// Track managed bundle mounts for cleanup, never as Storage download inputs.

@@ -142,10 +142,3 @@ export function notionAutomationProjectionValues(
     ...(eventConfig === null ? {} : { eventConfig }),
   };
 }
-
-export function notionAutomationPendingEventsScope(automationId: string) {
-  return {
-    condition: eq(notionWorkflowPendingEvents.automationId, automationId),
-    reason: NOTION_ACCOUNT_CHANGED_SKIP_REASON,
-  };
-}

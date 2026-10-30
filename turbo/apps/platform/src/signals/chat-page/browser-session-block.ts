@@ -2,6 +2,7 @@ import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/validators/bro
 import { browserContract } from "@okouai/api-contracts/client/browser";
 import type { BrowserSession } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
+import type { BrowserConnection } from "../browser-viewer/viewer/types.ts";
 import {
   createBrowserViewerSignals,
   type BrowserViewerSignals,
@@ -43,10 +44,11 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly panelSession$: Computed<Promise<BrowserSession | null>>;
   readonly viewerConnection$: Computed<
     Promise<{
-      readonly liveUrl: string;
+      readonly liveUrl: string | null;
       readonly instanceId: string | null;
       readonly windowId: number | null;
       readonly cdpUrl: string;
+      readonly extension: BrowserConnection["extension"];
     } | null>
   >;
   readonly viewer: BrowserViewerSignals;
@@ -93,12 +95,6 @@ async function fetchBrowserSession(
     [200, 404],
   );
   return response.status === 200 ? response.body.browser : null;
-}
-
-function activeBrowserLiveUrl(session: BrowserSession | null): string | null {
-  return session?.status === "active" && session.liveUrl
-    ? session.liveUrl
-    : null;
 }
 
 function sameBrowserWindow(
@@ -266,7 +262,7 @@ function createBrowserSessionKeepAliveSignals(
           set(reload$);
           const reloadedSession = await get(session$);
           signal.throwIfAborted();
-          return activeBrowserLiveUrl(reloadedSession) === null;
+          return reloadedSession?.status !== "active";
         },
         LEASE_HEARTBEAT_INTERVAL_MS,
         signal,
@@ -311,8 +307,7 @@ export function createBrowserSessionSignals(
   // responses only refresh presentation and must not interrupt live input.
   const viewerConnection$ = computed(async (get) => {
     const lifecycleSession = await get(lifecycleSession$);
-    const liveUrl = activeBrowserLiveUrl(lifecycleSession);
-    if (!liveUrl) {
+    if (lifecycleSession?.status !== "active") {
       return null;
     }
     const response = await accept(
@@ -324,9 +319,10 @@ export function createBrowserSessionSignals(
     return response.status === 200
       ? {
           cdpUrl: response.body.cdpUrl,
-          liveUrl,
-          instanceId: lifecycleSession?.window?.instanceId ?? null,
-          windowId: lifecycleSession?.window?.primaryWindowId ?? null,
+          extension: response.body.extension,
+          liveUrl: lifecycleSession.liveUrl,
+          instanceId: lifecycleSession.window?.instanceId ?? null,
+          windowId: lifecycleSession.window?.primaryWindowId ?? null,
         }
       : null;
   });
@@ -336,6 +332,7 @@ export function createBrowserSessionSignals(
     return connection
       ? {
           cdpUrl: connection.cdpUrl,
+          extension: connection.extension,
           ...(connection.windowId === null
             ? {}
             : { windowId: connection.windowId }),

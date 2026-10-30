@@ -7,16 +7,6 @@
       "owner": "claimExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0116",
-      "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
-      "owner": "deleteBuiltinConnectorLocalState$"
-    },
-    {
-      "id": "TX-0130",
-      "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
-      "owner": "projectThread"
-    },
-    {
       "id": "TX-0170",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "bindHostedSiteDeployment$"
@@ -25,16 +15,6 @@
       "id": "TX-0171",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "deleteHostedSite$"
-    },
-    {
-      "id": "TX-0236",
-      "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
-      "owner": "startRunBuiltInAdmission$"
-    },
-    {
-      "id": "TX-0284",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
-      "owner": "writeUsagePackPendingSnapshots"
     },
     {
       "id": "TX-0314",

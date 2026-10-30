@@ -6489,6 +6489,20 @@ mod tests {
 
         assert_eq!(context.run_id, run_id);
         assert_eq!(context.prompt, "Inspect the fixture repository");
+        let bundles = context
+            .content_bundles
+            .as_ref()
+            .expect("current claims select immutable content bundles");
+        let instructions = bundles.instructions.as_ref().unwrap();
+        instructions.validate().unwrap();
+        assert_eq!(instructions.sha256, "a".repeat(64));
+        assert_eq!(instructions.archive_bytes, 128);
+        assert_eq!(bundles.skills.len(), 1);
+        let skill = &bundles.skills[0];
+        skill.reference().validate().unwrap();
+        assert_eq!(skill.sha256, "b".repeat(64));
+        assert_eq!(skill.archive_bytes, 256);
+        assert_eq!(skill.mount_path, "/home/user/.codex/skills/fixture-skill");
         assert_eq!(
             context.append_system_prompt.as_deref(),
             Some("Use the shared contract fixture")

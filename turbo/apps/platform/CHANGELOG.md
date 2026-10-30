@@ -12,6 +12,51 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1080.2](https://github.com/okou-ai/okou/compare/app-v0.1080.1...app-v0.1080.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* **platform:** allow native browser viewing without provider urls ([#44334](https://github.com/okou-ai/okou/issues/44334)) ([2f25522](https://github.com/okou-ai/okou/commit/2f25522e5c79a8faecd7a731a142ea140dffd63d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.1
+    * @okouai/core bumped to 8.805.2
+
+## [0.1080.1](https://github.com/okou-ai/okou/compare/app-v0.1080.0...app-v0.1080.1) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.0
+    * @okouai/core bumped to 8.805.1
+
+## [0.1080.0](https://github.com/okou-ai/okou/compare/app-v0.1079.10...app-v0.1080.0) (2026-10-30)
+
+
+### Features
+
+* **browser:** adopt native window discovery in platform viewers ([#44303](https://github.com/okou-ai/okou/issues/44303)) ([e4461fe](https://github.com/okou-ai/okou/commit/e4461fe53d441879f54b30e449258c4d523b50ee))
+
+
+### Performance Improvements
+
+* **app:** isolate hosted site share rendering ([#44297](https://github.com/okou-ai/okou/issues/44297)) ([399e461](https://github.com/okou-ai/okou/commit/399e4619471f3fd3dfc31aaabf55de366a495d0e))
+* isolate hosted site settings from url updates ([#44305](https://github.com/okou-ai/okou/issues/44305)) ([1954d56](https://github.com/okou-ai/okou/commit/1954d564c1774b6dca80ae2251dc8ece1b1186d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.0
+
 ## [0.1079.10](https://github.com/okou-ai/okou/compare/app-v0.1079.9...app-v0.1079.10) (2026-10-30)
 
 

@@ -28,7 +28,7 @@ export interface CdpEvent {
   sessionId?: string;
 }
 interface Pending {
-  readonly method: Method;
+  readonly method: string;
   readonly resolve: (result: unknown) => void;
   readonly reject: (error: CdpFault) => void;
   timer: (() => void) | undefined;
@@ -94,6 +94,19 @@ export class CdpClient {
     sessionId?: string,
     late?: (result: unknown) => void | Promise<void>,
   ): Promise<Result<M>> {
+    return (await this.requestRaw(
+      method,
+      params,
+      sessionId,
+      late,
+    )) as Result<M>;
+  }
+  async requestRaw(
+    method: string,
+    params: unknown,
+    sessionId?: string,
+    late?: (result: unknown) => void | Promise<void>,
+  ): Promise<unknown> {
     if (this.ended || this.socket.readyState !== 1) {
       throw new CdpFault(
         "connection",
@@ -111,12 +124,12 @@ export class CdpClient {
       throw error;
     }
     const id = this.nextId++;
-    const deferred = createDeferredPromise<Result<M>>(this.signal);
+    const deferred = createDeferredPromise<unknown>(this.signal);
     const entry: Pending = {
       method,
       resolve: (result) => {
         if (!deferred.settled()) {
-          deferred.resolve(result as Result<M>);
+          deferred.resolve(result);
         }
       },
       reject: (error) => {
@@ -225,7 +238,7 @@ export class CdpClient {
   };
   private async send(message: {
     id: number;
-    method: Method;
+    method: string;
     params?: unknown;
     sessionId?: string | undefined;
   }): Promise<boolean> {

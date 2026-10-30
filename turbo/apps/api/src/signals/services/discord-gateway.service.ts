@@ -34,7 +34,7 @@ import {
 } from "./discord-chat-ingress.service";
 import { getDiscordAppConfig } from "./discord-config";
 import {
-  discordDmBinding,
+  readDiscordDmBinding$,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import { sendDiscordAdmissionNotice$ } from "./discord-admission-notice.service";
@@ -81,7 +81,7 @@ interface DiscordMessageArgs {
 
 const handleDiscordMessage$ = command(
   async (
-    { get, set },
+    { set },
     args: DiscordMessageArgs,
     signal: AbortSignal,
   ): Promise<Response> => {
@@ -142,7 +142,7 @@ const handleDiscordMessage$ = command(
         return ignored("no-explicit-mention");
       }
     }
-    const result = await get(discordDmBinding(message.author.id));
+    const result = await set(readDiscordDmBinding$, message.author.id);
     signal.throwIfAborted();
     const selection: DiscordVerifiedBinding | null =
       result.kind === "connected" ? result.binding : null;

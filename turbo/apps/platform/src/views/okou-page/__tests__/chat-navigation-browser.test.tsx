@@ -9,6 +9,7 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -273,46 +274,75 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   });
 });
 
-test("The shared sidebar shows only its chat window and keeps it alive without input", async () => {
-  mockWideScreen();
-  const session: BrowserSession = {
-    ...liveBrowserSession(),
-    window: {
-      instanceId: "22222222-2222-4222-8222-222222222222",
-      primaryWindowId: 0,
-    },
-  };
-  mockBrowserApi(session);
-  const bodies: unknown[] = [];
-  const entered = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(
-    browserContract.leaseByThread,
-    async ({ params, body, respond }) => {
-      expect(params.threadId).toBe(session.threadId);
-      bodies.push(body);
-      entered.resolve();
-      await release.promise;
-      return respond(200, { browser: session });
-    },
-  );
-  await openConversation([]);
-  await expectConversationReady();
-  click(buttonByName("Open browser"));
-  const sidebar = liveBrowserSidebar();
-  await waitFor(() => {
+test.each(["https://viewer.example/live", null])(
+  "The shared sidebar with provider liveUrl=%s operates its chat window and keeps it alive without input",
+  async (liveUrl) => {
+    mockWideScreen();
+    const session: BrowserSession = {
+      ...liveBrowserSession(),
+      liveUrl,
+      window: {
+        instanceId: "22222222-2222-4222-8222-222222222222",
+        primaryWindowId: 0,
+      },
+    };
+    mockBrowserApi(session);
+    const bodies: unknown[] = [];
+    const entered = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const cancelled = context.mocks.deferred<void>();
+    context.mocks.api(
+      browserContract.leaseByThread,
+      async ({ params, body, request, respond }) => {
+        expect(params.threadId).toBe(session.threadId);
+        bodies.push(body);
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            cancelled.resolve();
+          },
+          { once: true },
+        );
+        entered.resolve();
+        await release.promise;
+        return respond(200, { browser: session });
+      },
+    );
+    await openConversation([]);
+    await expectConversationReady();
+    click(buttonByName("Open browser"));
+    const sidebar = liveBrowserSidebar();
+    await waitFor(() => {
+      expect(
+        within(sidebar).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+    await entered.promise;
+    expect(bodies).toStrictEqual([{}]);
     expect(
-      within(sidebar).getByLabelText("Remote browser input"),
-    ).toBeEnabled();
-  });
-  await entered.promise;
-  expect(bodies).toStrictEqual([{}]);
-  expect(
-    queryAllByRoleFast("tab", sidebar).map((tab) => {
-      return tab.getAttribute("aria-label");
-    }),
-  ).toStrictEqual(["Example"]);
-});
+      queryAllByRoleFast("tab", sidebar).map((tab) => {
+        return tab.getAttribute("aria-label");
+      }),
+    ).toStrictEqual(["Example"]);
+    await fill(within(sidebar).getByLabelText("Address"), "next.example/path");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(within(sidebar).getByLabelText("Address")).toHaveValue(
+        "http://next.example/path",
+      );
+    });
+    await waitFor(() => {
+      expect(
+        within(sidebar).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+    click(buttonByName("Close cloud browser", sidebar));
+    await cancelled.promise;
+    await waitFor(() => {
+      expect(sidebar).not.toBeInTheDocument();
+    });
+  },
+);
 
 test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
   const user = userEvent.setup({ delay: null });
