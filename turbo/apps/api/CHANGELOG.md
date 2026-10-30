@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.28.0](https://github.com/okou-ai/okou/compare/api-v2.27.0...api-v2.28.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+
+### Bug Fixes
+
+* refresh runner platform api cli and browser extension release markers ([#44180](https://github.com/okou-ai/okou/issues/44180)) ([ca744df](https://github.com/okou-ai/okou/commit/ca744df83b1f51794edcb1b58f10634df2da7aed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.0
+    * @okouai/core bumped to 8.803.0
+    * @okouai/db bumped to 2.13.0
+    * @okouai/pi-agent-runtime bumped to 1.51.29
+
 ## [2.27.0](https://github.com/okou-ai/okou/compare/api-v2.26.0...api-v2.27.0) (2026-10-30)
 
 

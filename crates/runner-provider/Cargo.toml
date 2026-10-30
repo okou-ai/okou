@@ -1,6 +1,6 @@
 [package]
 name = "runner-provider"
-version = "0.11.35"
+version = "0.12.0"
 edition.workspace = true
 description = "Runner API and local job-provider coordination"
 
