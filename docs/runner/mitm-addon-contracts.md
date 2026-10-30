@@ -1207,12 +1207,14 @@ wire-protocol or persisted-state migration is introduced.
 
 ### Validation work limits
 
-Exhausting the interpretation budget cannot establish that a request is unowned.
-When an oversized path requires URI interpretation and has no raw owner, Python
-enforcement rejects it on a matching configured API authority. Reuse scheme,
-host-template and port matching without decoding or splitting the oversized path;
-this authority check supplies rejection context only, never credentials or routing.
-Other authorities and unowned requests that need no interpretation retain their scope.
+Exhausting an interpretation budget cannot establish that a request is unowned.
+Both engines retain decode-pass exhaustion explicitly; Python also retains its
+character-budget exhaustion. If interpretation exhausts a budget and has no raw
+owner, reject on a matching configured API authority. Reuse scheme, host-template
+and port matching without further path decoding; this authority check supplies
+rejection context only, never credentials or routing. Other authorities and unowned
+requests that need no interpretation retain their scope. Budget exhaustion is distinct
+from a malformed segment whose bounded interpretations are complete.
 
 Path safety validation accepts at most 65,536 input characters and five percent
 decoding passes. Before whole-segment NFKC, each raw or decoded segment must have

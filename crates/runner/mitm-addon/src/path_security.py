@@ -69,12 +69,13 @@ def canonical_path_percent_encoding(path: str) -> str:
 class PathInterpretations(NamedTuple):
     paths: tuple[str, ...]
     unsafe: bool
+    budget_exhausted: bool = False
 
 
 def request_path_interpretations(path: str) -> PathInterpretations:
     """Retain bounded owner-discovery paths, marking unsafe authorization separately."""
     if len(path) > MAX_PATH_VALIDATION_CHARACTERS:
-        return PathInterpretations((path,), True)
+        return PathInterpretations((path,), True, True)
     paths = [path]
     current = path
     unsafe = False
@@ -98,7 +99,8 @@ def request_path_interpretations(path: str) -> PathInterpretations:
             return PathInterpretations(tuple(paths), unsafe)
         paths.append(decoded)
         current = decoded
-    return PathInterpretations(tuple(paths), unsafe or "%" in current)
+    budget_exhausted = "%" in current
+    return PathInterpretations(tuple(paths), unsafe or budget_exhausted, budget_exhausted)
 
 
 def _segment_has_unsafe_path(raw_segment: str) -> bool:

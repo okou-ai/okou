@@ -102,8 +102,16 @@ async def test_path_normalization_budget_blocks_before_unbounded_work(
     assert "Authorization" not in flow.request.headers
 
 
-async def test_oversized_encoded_base_rejects_before_connector_credentials(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v%2532/files/" + "a" * MAX_PATH_VALIDATION_CHARACTERS,
+        "/v%25252525252532/files/id",
+    ],
+    ids=["character-budget", "decode-budget"],
+)
+async def test_exhausted_path_budget_rejects_before_connector_credentials(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, path
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -118,7 +126,6 @@ async def test_oversized_encoded_base_rejects_before_connector_credentials(
             network_policy={"allow": ["read"], "deny": [], "unknownPolicy": "allow"},
         ),
     )
-    path = "/v%2532/files/" + "a" * MAX_PATH_VALIDATION_CHARACTERS
     flow = real_flow(with_response=False, client_ip="10.200.0.5", host="api.example.com", path=path)
     with mitm_ctx(registry_path=str(reg_path)), fake_firewall_headers() as auth_fetch:
         header_result = mitm_addon.requestheaders(flow)

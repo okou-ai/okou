@@ -760,6 +760,7 @@ export function canonicalFirewallPathPercentEncoding(path: string): string {
 export function firewallRequestPathInterpretations(path: string): {
   readonly paths: readonly string[];
   readonly unsafe: boolean;
+  readonly budgetExceeded: boolean;
 } {
   const paths = [path];
   let current = path;
@@ -768,7 +769,7 @@ export function firewallRequestPathInterpretations(path: string): {
     const canonical = canonicalFirewallPathPercentEncoding(current);
     if (canonical !== current && !paths.includes(canonical))
       paths.push(canonical);
-    if (!current.includes("%")) return { paths, unsafe };
+    if (!current.includes("%")) return { paths, unsafe, budgetExceeded: false };
     const decodedSegments: string[] = [];
     for (const segment of current.split("/")) {
       try {
@@ -781,11 +782,12 @@ export function firewallRequestPathInterpretations(path: string): {
     const decoded = decodedSegments.join("/");
     // Keep these opaque paths only to discover an owner before rejecting.
     unsafe ||= decoded.includes("?") || decoded.includes("#");
-    if (decoded === current) return { paths, unsafe };
+    if (decoded === current) return { paths, unsafe, budgetExceeded: false };
     paths.push(decoded);
     current = decoded;
   }
-  return { paths, unsafe: unsafe || current.includes("%") };
+  const budgetExceeded = current.includes("%");
+  return { paths, unsafe: unsafe || budgetExceeded, budgetExceeded };
 }
 
 function validateBaseUrlVariablePercentEncoding({

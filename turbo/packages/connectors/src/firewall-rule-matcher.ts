@@ -2679,6 +2679,74 @@ function sameFirewallAuthorization(
   return true;
 }
 
+function blockExhaustedPathBudget(
+  firewalls: readonly DecisionFirewall[],
+  url: string,
+  path: string,
+): Extract<FirewallRequestDecision, { readonly kind: "block" | "no_match" }> {
+  for (const firewall of firewalls) {
+    for (const api of firewall.apis) {
+      const bounds = rawUrlAuthorityBounds(api.rawBase);
+      if (bounds === null) continue;
+      const authorityBase = api.rawBase.slice(0, bounds.authorityEnd);
+      if (matchFirewallBaseUrlForDecision(url, authorityBase, "/") === null)
+        continue;
+      // Budget exhaustion supplies rejection context, never credentials.
+      return {
+        kind: "block",
+        firewallName: firewall.name,
+        base: stripTrailingSlash(api.rawBase),
+        relativePath: path,
+        reason: "unsafe_path",
+        permissions: [],
+      };
+    }
+  }
+  return { kind: "no_match" };
+}
+
+function rejectChangedAuthorization(
+  original: Extract<
+    FirewallRequestDecision,
+    { readonly kind: "allow" | "no_match" }
+  >,
+  originalRoutes: ReadonlySet<string>,
+  interpretedMatch: FirewallRequestInterpretation,
+  path: string,
+): Extract<
+  FirewallRequestDecision,
+  { readonly kind: "block" | "ambiguous" }
+> | null {
+  const interpreted = interpretedMatch.decision;
+  if (original.kind === "no_match") {
+    if (interpreted.kind === "no_match") return null;
+    if (interpreted.kind === "ambiguous") return { ...interpreted, path };
+    return {
+      kind: "block",
+      firewallName: interpreted.firewallName,
+      base: interpreted.base,
+      relativePath: path,
+      reason: "unsafe_path",
+      permissions: [],
+    };
+  }
+  if (
+    sameFirewallAuthorization(
+      { decision: original, authorizationRoutes: originalRoutes },
+      interpretedMatch,
+    )
+  )
+    return null;
+  return {
+    kind: "block",
+    firewallName: original.firewallName,
+    base: original.base,
+    relativePath: original.relativePath,
+    reason: "unsafe_path",
+    permissions: [],
+  };
+}
+
 export function matchFirewallRequestDecision(
   firewalls: unknown,
   method: string,
@@ -2711,7 +2779,10 @@ export function matchFirewallRequestDecision(
   if (!trackAuthorizationRoutes) return original;
   const interpretations = path.includes("%")
     ? firewallRequestPathInterpretations(path)
-    : { paths: [path], unsafe: false };
+    : { paths: [path], unsafe: false, budgetExceeded: false };
+  if (original.kind === "no_match" && interpretations.budgetExceeded) {
+    return blockExhaustedPathBudget(compiled, url, path);
+  }
   if (interpretations.unsafe && original.kind === "allow") {
     return {
       kind: "block",
@@ -2738,29 +2809,13 @@ export function matchFirewallRequestDecision(
       matchPath,
       true,
     );
-    const interpreted = interpretedMatch.decision;
-    if (original.kind === "no_match") {
-      if (interpreted.kind === "no_match") continue;
-      if (interpreted.kind === "ambiguous") return { ...interpreted, path };
-      return {
-        kind: "block",
-        firewallName: interpreted.firewallName,
-        base: interpreted.base,
-        relativePath: path,
-        reason: "unsafe_path",
-        permissions: [],
-      };
-    }
-    if (!sameFirewallAuthorization(originalMatch, interpretedMatch)) {
-      return {
-        kind: "block",
-        firewallName: original.firewallName,
-        base: original.base,
-        relativePath: original.relativePath,
-        reason: "unsafe_path",
-        permissions: [],
-      };
-    }
+    const rejected = rejectChangedAuthorization(
+      original,
+      originalMatch.authorizationRoutes,
+      interpretedMatch,
+      path,
+    );
+    if (rejected !== null) return rejected;
   }
   // Only the original selection may supply routing, raw captures or credentials.
   return original;

@@ -1017,6 +1017,231 @@
   ],
   "finalDecisionCases": [
     {
+      "name": "decode budget exhaustion rejects potential configured authority",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/v%25252525252532/files/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "decode budget rejection supports host and path parameters",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://{tenant}.example.com/v2/{account}",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://acme.example.com/v%25252525252532/team/files/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://{tenant}.example.com/v2/{account}",
+        "relativePath": "/v%25252525252532/team/files/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "decode budget keeps unrelated authorities outside connector scope",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://other.example.com/v%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
+      "name": "decode budget authority matching preserves nondefault ports",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com:8443/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
+      "name": "decode budget authority matching preserves schemes",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "http://api.example.com/v%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
+      "name": "decode budget exhaustion cannot prove an escaped path unowned",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {},
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/other%25252525252532/files/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/other%25252525252532/files/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
       "name": "nested encoded owner survives invalid UTF-8 in another path segment",
       "firewalls": [
         {
