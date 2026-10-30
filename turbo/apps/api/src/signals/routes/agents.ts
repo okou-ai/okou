@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
 import { and, eq, lt, or, sql } from "drizzle-orm";
-import { enum as zodEnum, int, object, string, uuid } from "zod";
+import { enum as zodEnum, int, object, string } from "zod";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
@@ -681,15 +681,15 @@ function encodedAgentMetadataBody(body: AgentUpdateBody) {
 
 const agentMetadataUpdateRow = object({
   existing: object({
-    id: uuid(),
+    id: string(),
     owner: string(),
     visibility: zodEnum(["public", "private"]),
-    defaultAgentId: uuid().nullable(),
+    defaultAgentId: string().nullable(),
     publicAgentCount: int(),
   }),
   agent: object({
-    agentId: uuid(),
-    defaultAgentId: uuid().nullable(),
+    agentId: string(),
+    defaultAgentId: string().nullable(),
     owner: string(),
     displayName: string().nullable(),
     description: string().nullable(),
