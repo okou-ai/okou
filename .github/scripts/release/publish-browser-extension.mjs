@@ -155,7 +155,7 @@ async function pruneExtensions(extensionId, version) {
       throw new Error("Browser Use returned ambiguous Okou Browser versions");
   }
   if (
-    !extensions.slice(0, 3).some((item) => {
+    !extensions.slice(0, 5).some((item) => {
       return item.id === extensionId && item.version === version;
     })
   ) {
@@ -163,7 +163,7 @@ async function pruneExtensions(extensionId, version) {
       "Published extension is not among the retained Browser Use versions",
     );
   }
-  for (const item of extensions.slice(3)) {
+  for (const item of extensions.slice(5)) {
     const response = await fetch(
       `${providerOrigin}/api/v4/extensions/${item.id}`,
       {
