@@ -120,16 +120,18 @@ export function ComplianceBadges({
     <ul className={className}>
       {items.map((item) => {
         return (
-          <li key={item.name}>
+          <li key={item.name} className={quiet ? "flex" : undefined}>
             <Item
               className={
                 quiet
-                  ? "inline-flex items-center gap-1 text-[11px] leading-4 text-gray-600"
+                  ? "inline-flex items-center gap-1 whitespace-nowrap text-[11px] leading-4 text-gray-600"
                   : "text-xs text-muted-foreground"
               }
             >
               <item.icon
-                className={quiet ? "size-2.5 text-gray-500" : "text-foreground"}
+                className={
+                  quiet ? "size-3 shrink-0 text-gray-500" : "text-foreground"
+                }
                 aria-hidden="true"
               />
               <span>{item.name}</span>
