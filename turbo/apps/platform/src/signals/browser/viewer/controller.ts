@@ -28,7 +28,8 @@ import {
 import { createTargetDirectory, type TargetDirectory } from "../cdp/targets.ts";
 import { CreatedTabFault, openTab } from "../cdp/tabs.ts";
 import { createInputSession } from "../input/session.ts";
-import { navigationAddress } from "../input/address.ts";
+import type { NativeInputHost } from "../input/port.ts";
+import { createNavigationData } from "../navigation/data.ts";
 import type { InputStop } from "../input/lifecycle.ts";
 import {
   positive,
@@ -36,13 +37,21 @@ import {
   type Viewport,
 } from "../display/geometry.ts";
 import { createDisplayViewport } from "../display/viewport.ts";
-import { createDisplaySync, type DisplayState } from "../display/sync.ts";
+import {
+  createDisplaySync,
+  type DisplayModeResult,
+  type DisplayState,
+} from "../display/sync.ts";
 import { captureBoundary } from "../display/capture-boundary.ts";
 import { createCanvasRenderer, type FrameSink } from "../render/canvas.ts";
 import type { ViewerSignals } from "./model.ts";
 import type { ViewerIntent } from "./lifecycle.ts";
 import type {
   BrowserConnection,
+  NavigationAction,
+  NavigationReceipt,
+  ViewerHistory,
+  ViewerNavigation,
   ViewerCaptureOptions,
   ViewerError,
   WindowSizeSync,
@@ -84,7 +93,6 @@ interface CaptureChange {
   readonly first: number;
   readonly last: number;
 }
-type Navigation = "back" | "forward" | "reload" | { url: string };
 function cancelled(): DOMException {
   return new DOMException("The browser operation was cancelled.", "AbortError");
 }
@@ -152,6 +160,7 @@ function createSelectedSession(
   host: {
     readonly sink: FrameSink;
     readonly directory: TargetDirectory;
+    readonly nativeHost: NativeInputHost;
     readonly settings$: Computed<CaptureSettings>;
     readonly failed$: Command<
       Promise<void>,
@@ -163,14 +172,20 @@ function createSelectedSession(
     >;
   },
 ) {
-  const { sink, directory, settings$, failed$, started$ } = host;
+  const { sink, directory, nativeHost, settings$, failed$, started$ } = host;
   const frameLease = createFrameLease(sink);
   const geometry = createDisplayViewport();
-  const input = createInputSession(
+  const navigation = createNavigationData(
     attached.client,
     attached.sessionId,
     current$,
+  );
+  const input = createInputSession(
+    attached,
+    current$,
     geometry,
+    nativeHost,
+    navigation,
   );
   const painted$ = state(false);
   const inputReady$ = state(false);
@@ -248,6 +263,7 @@ function createSelectedSession(
     current$,
     geometry,
     input,
+    navigation,
     stream,
     frameLease,
     painted$,
@@ -391,12 +407,14 @@ interface ControllerLinks {
     Promise<void>,
     [Command<Promise<void>, []>, AbortSignal]
   >;
-  readonly displayFailed$: Command<void, [CdpFault]>;
-  readonly displaySynchronized$: Command<void, []>;
+  readonly displaySettled$: Command<void, []>;
+  readonly displayRecovery$: Computed<ViewerError | null>;
   readonly displayGraph$: Computed<ReturnType<typeof createDisplaySync> | null>;
   readonly display$: Computed<DisplayState>;
   readonly input$: Computed<ReturnType<typeof createInputSession> | null>;
-  readonly navigation$: Computed<import("./types.ts").ViewerNavigation | null>;
+  readonly navigation$: Computed<ViewerNavigation | null>;
+  readonly history$: Computed<Promise<ViewerHistory | null>>;
+  readonly navigationScope$: Computed<object | null>;
   readonly cancelCapture$: Command<void, []>;
   readonly configureCapture$: Command<Promise<void>, [AbortSignal]>;
   readonly scheduleCapture$: Command<void, []>;
@@ -422,7 +440,10 @@ interface ControllerLinks {
   readonly cancelCreation$: Command<void, [object]>;
   readonly createTab$: Command<Promise<string>, [AbortSignal]>;
   readonly closeTab$: Command<Promise<void>, [string, AbortSignal]>;
-  readonly navigate$: Command<Promise<void>, [Navigation, AbortSignal]>;
+  readonly navigate$: Command<
+    Promise<NavigationReceipt>,
+    [NavigationAction, AbortSignal]
+  >;
   readonly retryStartingGraph$: Computed<{
     readonly selected: SelectedSession;
     readonly owner: object;
@@ -434,7 +455,7 @@ interface ControllerLinks {
     [ViewerCaptureOptions, AbortSignal]
   >;
   readonly changeWindowSizeSync$: Command<
-    Promise<void>,
+    Promise<DisplayModeResult>,
     [WindowSizeSync, AbortSignal]
   >;
   readonly measure$: Command<void, [DisplaySize | null]>;
@@ -469,7 +490,6 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
   const captureUpdated$ = state(-Infinity);
   const captureChange$ = state<CaptureChange | null>(null);
   const captureDeadline$ = state<(() => void) | null>(null);
-  const displayError$ = state<ViewerError | null>(null);
   const faviconPending$ = state<object | null>(null);
   const faviconAvailable$ = state(true);
   const targetRevision$ = state(0);
@@ -500,7 +520,6 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
     captureUpdated$,
     captureChange$,
     captureDeadline$,
-    displayError$,
     faviconPending$,
     faviconAvailable$,
     targetRevision$,
@@ -517,6 +536,7 @@ function createControllerState(
   connection: BrowserConnection,
   canvas: HTMLCanvasElement,
   authority$: Computed<boolean>,
+  nativeHost: NativeInputHost,
 ) {
   const atoms = createControllerAtoms(canvas);
   const {
@@ -584,6 +604,7 @@ function createControllerState(
     model,
     connection,
     authority$,
+    nativeHost,
     ...atoms,
     connected$,
     available$,
@@ -615,6 +636,7 @@ function createDiscoveryGraph(
     available$,
     wake$,
     directory$,
+    nativeHost,
   } = context;
   const discoveryFailed$ = command(
     ({ get, set }, error: unknown, signal: AbortSignal): void => {
@@ -669,6 +691,7 @@ function createDiscoveryGraph(
       } else if (!selected && !snapshot.targets.length) {
         set(model.transition$, { type: "target-lost", error: null });
       }
+      set(nativeHost.synchronize$);
       set(wake$);
     },
   );
@@ -705,6 +728,7 @@ function createCaptureRecoveryGraph(
     retirements$,
     readinessFailure$,
     wake$,
+    nativeHost,
   } = context;
   const captureFailed$ = command(
     async (
@@ -773,6 +797,7 @@ function createCaptureRecoveryGraph(
         targetId: owner.targetId,
         error: fault,
       });
+      set(nativeHost.synchronize$);
       set(wake$);
       const cleanups = await Promise.allSettled([
         set(selected.input.suspend$, selected.attached.client.signal),
@@ -829,6 +854,7 @@ function createSelectedSessionsGraph(
     available$,
     settings$,
     directory$,
+    nativeHost,
   } = context;
   const captureStarted$ = command(
     (
@@ -867,6 +893,7 @@ function createSelectedSessionsGraph(
     return createSelectedSession(attached, current$, {
       sink,
       directory,
+      nativeHost,
       settings$,
       failed$: get(links$).captureFailed$,
       started$: captureStarted$,
@@ -881,21 +908,14 @@ function createDisplayGraph(
 ): Pick<
   ControllerLinks,
   | "refreshCapture$"
-  | "displayFailed$"
-  | "displaySynchronized$"
+  | "displaySettled$"
+  | "displayRecovery$"
   | "displayGraph$"
   | "display$"
   | "input$"
-  | "navigation$"
 > {
-  const {
-    model,
-    connection,
-    clientState$,
-    displayError$,
-    connected$,
-    capturePending$,
-  } = context;
+  const { model, connection, clientState$, connected$, capturePending$ } =
+    context;
   const refreshCapture$ = command(
     async (
       { get, set },
@@ -910,22 +930,10 @@ function createDisplayGraph(
       set(get(links$).scheduleCapture$);
     },
   );
-  const displayFailed$ = command(({ get, set }, error: CdpFault) => {
-    if (!get(connected$)) {
-      return;
+  const displaySettled$ = command(({ get, set }) => {
+    if (get(connected$)) {
+      set(get(links$).scheduleCapture$);
     }
-    const fault = diagnostic(error);
-    set(displayError$, fault);
-    set(model.update$, { error: fault });
-    set(get(links$).scheduleCapture$);
-  });
-  const displaySynchronized$ = command(({ get, set }) => {
-    const error = get(displayError$);
-    if (error && get(model.snapshot$).error === error) {
-      set(model.update$, { error: null });
-    }
-    set(displayError$, null);
-    set(get(links$).scheduleCapture$);
   });
   const displayGraph$ = computed((get) => {
     const client = get(clientState$);
@@ -934,10 +942,14 @@ function createDisplayGraph(
           windowId: connection.windowId ?? null,
           capturePending$,
           refresh$: refreshCapture$,
-          failed$: displayFailed$,
-          synchronized$: displaySynchronized$,
+          settled$: displaySettled$,
         })
       : null;
+  });
+  const displayRecovery$ = computed((get): ViewerError | null => {
+    const display = get(displayGraph$);
+    const recovery = display && get(connected$) ? get(display.recovery$) : null;
+    return recovery ? diagnostic(recovery.result.error) : null;
   });
   const display$ = computed((get): DisplayState => {
     const display = get(displayGraph$);
@@ -957,22 +969,13 @@ function createDisplayGraph(
       ? selected.input
       : null;
   });
-  const navigation$ = computed((get) => {
-    const selected = get(get(links$).selectedSession$);
-    return selected && get(selected.current$)
-      ? (get(selected.input.navigation$) ??
-          get(model.snapshot$).navigation ??
-          null)
-      : null;
-  });
   return {
     refreshCapture$,
-    displayFailed$,
-    displaySynchronized$,
+    displaySettled$,
+    displayRecovery$,
     displayGraph$,
     display$,
     input$,
-    navigation$,
   };
 }
 
@@ -992,6 +995,7 @@ function createCaptureGraph(
     settings$,
     capturePending$,
     assertAvailable$,
+    nativeHost,
   } = context;
   const cancelCapture$ = command(({ get, set }) => {
     get(captureDeadline$)?.();
@@ -1011,6 +1015,7 @@ function createCaptureGraph(
       }
       const requested = get(settings$);
       set(selected.painted$, false);
+      set(nativeHost.synchronize$);
       await set(selected.stream.configure$, requested, signal);
       signal.throwIfAborted();
       if (
@@ -1198,6 +1203,7 @@ function createRetirementsGraph(
     captureStartedState$,
     creationOwner$,
     wake$,
+    nativeHost,
   } = context;
   const receipts = createRetirementReceiptsGraph(context);
   const retireCurrent$: Command<void, [InputStop, boolean]> = command(
@@ -1269,6 +1275,7 @@ function createRetirementsGraph(
         sink.reset();
       }
       set(model.transition$, { type: "stopped", retainFrame });
+      set(nativeHost.synchronize$);
       set(wake$);
     },
   );
@@ -1286,6 +1293,7 @@ function createReadinessGraph(
     available$,
     wake$,
     waitEvent$,
+    nativeHost,
   } = context;
   const streaming$ = command(({ get, set }, selected: SelectedSession) => {
     if (
@@ -1314,7 +1322,7 @@ function createReadinessGraph(
       }
       set(model.transition$, { type: "streaming" });
     }
-    set(model.update$, { navigation: get(selected.input.navigation$) });
+    set(nativeHost.synchronize$);
     set(wake$);
     detach(
       set(
@@ -1394,7 +1402,7 @@ function createAttachmentInitialization(
   links$: Computed<ControllerLinks>,
   assertCurrent$: Command<void, [SelectionOwner, AbortSignal]>,
 ) {
-  const { wake$ } = context;
+  const { wake$, nativeHost } = context;
   return command(
     async (
       { get, set },
@@ -1413,6 +1421,7 @@ function createAttachmentInitialization(
         throw inputResult.reason;
       }
       set(selected.inputReady$, true);
+      set(nativeHost.synchronize$);
       set(get(links$).streaming$, selected);
       if (captureResult.status === "rejected") {
         throw captureResult.reason;
@@ -1435,8 +1444,14 @@ function createAttachmentGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ): Pick<ControllerLinks, "attach$"> {
-  const { clientState$, framesState$, attachedState$, settings$, directory$ } =
-    context;
+  const {
+    clientState$,
+    framesState$,
+    attachedState$,
+    settings$,
+    directory$,
+    nativeHost,
+  } = context;
   const assertCurrent$ = createAttachmentAdmission(context);
   const initialize$ = createAttachmentInitialization(
     context,
@@ -1542,6 +1557,7 @@ function createAttachmentGraph(
         settings: get(settings$),
       };
       set(attachedState$, selection);
+      set(nativeHost.synchronize$);
       published = true;
       return set(initialize$, selection, signal);
     },
@@ -1752,25 +1768,6 @@ function createFaviconGraph(
   return { refreshFavicon$ };
 }
 
-function documentEventUrl(event: CdpEvent): string | null {
-  const params = event.params;
-  if (
-    event.method === "Page.frameNavigated" &&
-    isRecord(params.frame) &&
-    !params.frame.parentId &&
-    typeof params.frame.url === "string"
-  ) {
-    return params.frame.url;
-  }
-  if (
-    event.method === "Page.navigatedWithinDocument" &&
-    typeof params.url === "string"
-  ) {
-    return params.url;
-  }
-  return null;
-}
-
 function createSessionEvent(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
@@ -1779,24 +1776,12 @@ function createSessionEvent(
   return command(({ get, set }, event: CdpEvent, selected: SelectedSession) => {
     set(selected.geometry.event$, event.method);
     set(selected.input.event$, event);
+    set(model.reconcileAddress$, selected.navigation.scope);
     const inputError = get(selected.input.error$);
-    const navigation = get(selected.input.navigation$);
-    set(model.update$, {
-      ...(navigation ? { navigation } : {}),
-      ...(inputError ? { error: diagnostic(inputError) } : {}),
-    });
-    const params = event.params;
-    const documentUrl = documentEventUrl(event);
-    if (documentUrl !== null) {
-      const previous = get(model.navigation$);
-      set(model.update$, {
-        navigation: {
-          url: documentUrl,
-          canGoBack: previous?.canGoBack ?? false,
-          canGoForward: previous?.canGoForward ?? false,
-        },
-      });
+    if (inputError) {
+      set(model.update$, { error: diagnostic(inputError) });
     }
+    const params = event.params;
     if (
       event.method === "Page.frameStartedNavigating" &&
       typeof params.frameId === "string"
@@ -2659,48 +2644,52 @@ function createTabsGraph(
 function createNavigationGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
-): Pick<ControllerLinks, "navigate$"> {
-  const { model, assertAvailable$ } = context;
+): Pick<
+  ControllerLinks,
+  "navigate$" | "navigation$" | "history$" | "navigationScope$"
+> {
+  const { assertAvailable$ } = context;
+  const navigation$ = computed((get) => {
+    const selected = get(get(links$).selectedSession$);
+    return selected && get(selected.current$)
+      ? get(selected.navigation.navigation$)
+      : null;
+  });
+  const history$ = computed(async (get): Promise<ViewerHistory | null> => {
+    const selected = get(get(links$).selectedSession$);
+    return selected && get(selected.current$)
+      ? await get(selected.navigation.history$)
+      : null;
+  });
+  const navigationScope$ = computed((get) => {
+    const selected = get(get(links$).selectedSession$);
+    return selected && get(selected.current$)
+      ? selected.navigation.scope
+      : null;
+  });
   const navigate$ = command(
     async (
       { get, set },
-      navigation: Navigation,
+      navigation: NavigationAction,
       signal: AbortSignal,
-    ): Promise<void> => {
+    ): Promise<NavigationReceipt> => {
       set(assertAvailable$, signal);
       const input = get(get(links$).input$);
       if (!input) {
         throw new CdpFault("input", "Remote input is unavailable.");
       }
-      const previous = get(model.navigation$);
-      await set(input.navigate$, navigation, signal);
-      // Own-document replacement is not navigation cancellation. Publish the
-      // successful receipt without awaiting old-owner jobs or a later load event.
-      if (
-        typeof navigation !== "string" &&
-        get(model.navigation$) === previous
-      ) {
-        const url = navigationAddress(navigation.url);
-        if (url) {
-          set(model.update$, {
-            navigation: {
-              url,
-              canGoBack: !!previous?.url || !!previous?.canGoBack,
-              canGoForward: false,
-            },
-          });
-        }
-      }
+      return await set(input.navigate$, navigation, signal);
     },
   );
-  return { navigate$ };
+  return { navigate$, navigation$, history$, navigationScope$ };
 }
 
 function createImageRetryGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ): Pick<ControllerLinks, "retryStartingGraph$" | "retryImage$"> {
-  const { model, selectedOwner$, wake$, assertAvailable$ } = context;
+  const { model, selectedOwner$, wake$, assertAvailable$, nativeHost } =
+    context;
   const retryStartingGraph$ = computed((get) => {
     const selected = get(get(links$).selectedSession$);
     const image = get(model.imageRecovery$);
@@ -2749,6 +2738,7 @@ function createImageRetryGraph(
           }
           set(selected.failure$, null);
           set(selected.painted$, false);
+          set(nativeHost.synchronize$);
           set(model.transition$, {
             type: "image-retrying",
             owner: image.owner,
@@ -2835,19 +2825,19 @@ function createDisplaySettingsGraph(
       { get, set },
       mode: WindowSizeSync,
       signal: AbortSignal,
-    ): Promise<void> => {
+    ): Promise<DisplayModeResult> => {
       set(assertAvailable$, signal);
       set(model.setWindowSizeSync$, mode);
       const display = get(get(links$).displayGraph$);
       if (!display) {
         throw cancelled();
       }
-      set(display.setMode$, mode);
-      await set(display.waitForIdle$, signal);
-      signal.throwIfAborted();
+      const result = await set(display.changeMode$, mode, signal);
+      set(assertAvailable$, signal);
       if (get(model.windowSizeSync$) !== mode) {
         throw cancelled();
       }
+      return result;
     },
   );
   const measure$ = command(({ get, set }, size: DisplaySize | null) => {
@@ -3079,8 +3069,15 @@ export function createBrowserController(
   connection: BrowserConnection,
   canvas: HTMLCanvasElement,
   authority$: Computed<boolean>,
+  nativeHost: NativeInputHost,
 ) {
-  const context = createControllerState(model, connection, canvas, authority$);
+  const context = createControllerState(
+    model,
+    connection,
+    canvas,
+    authority$,
+    nativeHost,
+  );
   const links$: Computed<ControllerLinks> = computed(() => {
     return graph;
   });
@@ -3138,15 +3135,9 @@ export function createBrowserController(
     rejectFavicon$: graph.rejectFavicon$,
     input$: graph.input$,
     navigation$: graph.navigation$,
+    history$: graph.history$,
+    navigationScope$: graph.navigationScope$,
     display$: graph.display$,
-    goBack$: command(({ set }, signal: AbortSignal) => {
-      return set(graph.navigate$, "back", signal);
-    }),
-    goForward$: command(({ set }, signal: AbortSignal) => {
-      return set(graph.navigate$, "forward", signal);
-    }),
-    reloadPage$: command(({ set }, signal: AbortSignal) => {
-      return set(graph.navigate$, "reload", signal);
-    }),
+    displayRecovery$: graph.displayRecovery$,
   };
 }

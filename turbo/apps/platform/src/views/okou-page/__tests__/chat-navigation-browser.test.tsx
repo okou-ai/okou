@@ -2,7 +2,13 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
@@ -47,6 +53,7 @@ function liveBrowserSession(): BrowserSession {
 
 interface BrowserApiControl {
   readonly closeRequests: () => number;
+  readonly native: ReturnType<typeof mockBrowserCdp>;
 }
 
 function mockBrowserApi(
@@ -71,6 +78,7 @@ function mockBrowserApi(
   });
   context.mocks.api(browserContract.close, ({ respond }) => {
     closeRequestCount += 1;
+    currentSession = null;
     return respond(200, {});
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
@@ -84,7 +92,7 @@ function mockBrowserApi(
       : respond(200, { browser: currentSession });
   });
   const cdpUrl = "wss://cdp.browser-use.com/sidebar";
-  mockBrowserCdp(context, cdpUrl, {
+  const native = mockBrowserCdp(context, cdpUrl, {
     streaming: true,
     ...(initialSession?.window
       ? {
@@ -110,6 +118,7 @@ function mockBrowserApi(
   });
 
   return {
+    native,
     closeRequests: () => {
       return closeRequestCount;
     },
@@ -364,12 +373,46 @@ test("Start and close a browser from the thread sidebar", async () => {
     within(sidebar).findByDisplayValue("https://example.com"),
   ).resolves.toBeEnabled();
 
+  const retiredInput = within(sidebar).getByLabelText("Remote browser input");
   click(buttonByName("Close cloud browser", liveBrowserSidebar()));
   await waitFor(() => {
     expect(sidebar).not.toBeInTheDocument();
   });
   expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
   expect(browser.closeRequests()).toBe(1);
+
+  click(buttonByName("Open browser"));
+  const reopened = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  click(buttonByName("Start browser", reopened));
+  const input = await within(reopened).findByLabelText("Remote browser input");
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  fireEvent.input(retiredInput, {
+    target: { value: "retired surface" },
+    data: "retired surface",
+    inputType: "insertText",
+  });
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "reopened surface" },
+    data: "reopened surface",
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.native.input).toContainEqual({
+      method: "Input.insertText",
+      params: { text: "reopened surface" },
+      sessionId: "example-page-session",
+    });
+  });
+  expect(browser.native.input).not.toContainEqual({
+    method: "Input.insertText",
+    params: { text: "retired surface" },
+    sessionId: "example-page-session",
+  });
 });
 
 test("Open a stopped browser card and offer a new session", async () => {

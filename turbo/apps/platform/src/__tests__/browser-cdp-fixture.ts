@@ -59,6 +59,10 @@ export function mockBrowserCdp(
   const captures: unknown[] = [];
   const heldReplies = new Map<string, (response: string) => void>();
   const heldFrames = new Map<string, () => void>();
+  const nextResponses = new Map<
+    string,
+    (request: BrowserRequest) => BrowserResponse
+  >();
 
   function event(method: string, params: unknown, sessionId?: string) {
     socket.receive(cdpUrl, JSON.stringify({ method, params, sessionId }));
@@ -200,6 +204,22 @@ export function mockBrowserCdp(
     return {};
   }
 
+  function navigate(request: BrowserRequest, url: string) {
+    const target = targetForSession(request.sessionId);
+    target.url = url;
+    target.title = url === "about:blank" ? url : new URL(url).hostname;
+    event(
+      "Page.frameNavigated",
+      { frame: { id: "example-frame", loaderId: "navigated-loader", url } },
+      request.sessionId,
+    );
+    event("Target.targetInfoChanged", {
+      targetInfo: { ...target, type: "page" },
+    });
+    event("Page.loadEventFired", { timestamp: 2 }, request.sessionId);
+    return { frameId: "example-frame" };
+  }
+
   function pageResult(request: BrowserRequest): unknown {
     switch (request.method) {
       case "Page.createIsolatedWorld": {
@@ -207,19 +227,7 @@ export function mockBrowserCdp(
       }
       case "Page.navigate": {
         const { url } = object({ url: string() }).parse(request.params);
-        const target = targetForSession(request.sessionId);
-        target.url = url;
-        target.title = url === "about:blank" ? url : new URL(url).hostname;
-        event(
-          "Page.frameNavigated",
-          { frame: { id: "example-frame", loaderId: "navigated-loader", url } },
-          request.sessionId,
-        );
-        event("Target.targetInfoChanged", {
-          targetInfo: { ...target, type: "page" },
-        });
-        event("Page.loadEventFired", { timestamp: 2 }, request.sessionId);
-        return { frameId: "example-frame" };
+        return navigate(request, url);
       }
       case "Page.startScreencast": {
         captures.push(request.params);
@@ -287,6 +295,11 @@ export function mockBrowserCdp(
   }
 
   function respond(request: BrowserRequest): BrowserResponse {
+    const next = nextResponses.get(request.method);
+    if (next) {
+      nextResponses.delete(request.method);
+      return next(request);
+    }
     switch (request.method.split(".")[0]) {
       case "Target": {
         return { result: targetResult(request) };
@@ -347,6 +360,22 @@ export function mockBrowserCdp(
     captures,
     viewport,
     connections: socket.connections,
+    failNext(method: string, message: string, code = -32_000) {
+      nextResponses.set(method, () => {
+        return { error: { code, message } };
+      });
+    },
+    downloadNextNavigation() {
+      nextResponses.set("Page.navigate", () => {
+        // CDP accepts the download without replacing the current document.
+        return { result: { frameId: "example-frame", isDownload: true } };
+      });
+    },
+    redirectNextNavigation(url: string) {
+      nextResponses.set("Page.navigate", (request) => {
+        return { result: navigate(request, url) };
+      });
+    },
     holdFrames(sessionId: string) {
       const requested = context.mocks.deferred<void>();
       heldFrames.set(sessionId, requested.resolve);

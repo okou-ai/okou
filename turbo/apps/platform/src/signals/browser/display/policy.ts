@@ -2,7 +2,7 @@ import { positive, type DisplaySize } from "./geometry.ts";
 
 import type { WindowSizeSync } from "../viewer/types.ts";
 
-type Request = { readonly source: "manual" | "automatic" };
+type Request = { readonly source: "manual" | "automatic" | "mode" };
 interface Selection {
   readonly owner: object;
   readonly completed: boolean;
@@ -47,7 +47,7 @@ export type DisplayOutcome =
 export type DisplayEvent =
   | { readonly type: "suspend"; readonly value: boolean }
   | { readonly type: "select"; readonly owner: object | null }
-  | { readonly type: "mode"; readonly mode: WindowSizeSync }
+  | { readonly type: "mode" | "request-mode"; readonly mode: WindowSizeSync }
   | { readonly type: "measure"; readonly size: DisplaySize | null }
   | { readonly type: "manual" | "cancel-manual" | "begin" | "close" }
   | { readonly type: "prepared"; readonly intent: DisplayIntent }
@@ -121,7 +121,7 @@ export function decideDisplay(
   }
   const dpr = policy.initial.get(windowId);
   return intent.mode === "initial" &&
-    intent.source === "automatic" &&
+    intent.source !== "manual" &&
     dpr !== undefined
     ? { kind: "restore-density", dpr }
     : { kind: "fit", size: policy.local };
@@ -145,7 +145,8 @@ export function transitionDisplay(
     case "select": {
       return selectDisplay(policy, event);
     }
-    case "mode": {
+    case "mode":
+    case "request-mode": {
       return changeDisplayMode(policy, event);
     }
     case "measure": {
@@ -223,7 +224,7 @@ function cancelManualDisplay(policy: DisplayPolicy): DisplayPolicy {
   return {
     ...policy,
     pending:
-      policy.pending?.source === "automatic"
+      policy.pending && policy.pending.source !== "manual"
         ? policy.pending
         : automatic
           ? { source: "automatic" }
@@ -247,10 +248,16 @@ function suspendDisplay(
   const interruptedAutomatic =
     event.value &&
     policy.mode !== "off" &&
-    activeDisplayIntent(policy)?.source === "automatic";
+    activeDisplayIntent(policy) !== null &&
+    activeDisplayIntent(policy)?.source !== "manual";
+  // A suspended finite mode action is retired; any later repair is background work.
   const pending: Request | null =
-    policy.pending ??
-    (retryAutomatic || interruptedAutomatic ? { source: "automatic" } : null);
+    event.value && policy.pending?.source === "mode"
+      ? { source: "automatic" }
+      : (policy.pending ??
+        (retryAutomatic || interruptedAutomatic
+          ? { source: "automatic" }
+          : null));
   return {
     ...policy,
     suspended: event.value,
@@ -260,6 +267,14 @@ function suspendDisplay(
         ? { kind: "idle" }
         : policy.execution,
   };
+}
+
+function followsMeasurements(policy: DisplayPolicy): boolean {
+  return (
+    policy.mode === "live" ||
+    (policy.mode === "initial" &&
+      (!policy.local || !policy.selection?.completed))
+  );
 }
 
 function measureDisplay(
@@ -278,14 +293,14 @@ function measureDisplay(
   ) {
     return policy;
   }
-  const automatic =
-    policy.mode === "live" ||
-    (policy.mode === "initial" &&
-      (!policy.local || !policy.selection?.completed));
+  const automatic = followsMeasurements(policy);
   return {
     ...policy,
     local,
-    pending: policy.pending ?? (automatic ? { source: "automatic" } : null),
+    pending:
+      !local && policy.pending?.source === "mode"
+        ? { source: "automatic" }
+        : (policy.pending ?? (automatic ? { source: "automatic" } : null)),
   };
 }
 
@@ -353,7 +368,7 @@ function finishDisplay(
     pending:
       retain && intent.source === "manual"
         ? { source: "manual" }
-        : (policy.pending ?? (retain ? { source: "automatic" } : null)),
+        : (policy.pending ?? (retain ? { source: intent.source } : null)),
     execution: {
       kind:
         outcome.kind === "failed" &&
@@ -399,7 +414,7 @@ function completeDisplay(
 
 function changeDisplayMode(
   policy: DisplayPolicy,
-  event: Extract<DisplayEvent, { type: "mode" }>,
+  event: Extract<DisplayEvent, { type: "mode" | "request-mode" }>,
 ): DisplayPolicy {
   if (policy.mode === event.mode) {
     return policy;
@@ -411,7 +426,7 @@ function changeDisplayMode(
       policy.pending?.source === "manual"
         ? policy.pending
         : event.mode !== "off"
-          ? { source: "automatic" }
+          ? { source: event.type === "request-mode" ? "mode" : "automatic" }
           : null,
     execution:
       policy.execution.kind === "failed" ? { kind: "idle" } : policy.execution,

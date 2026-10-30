@@ -1,12 +1,15 @@
 import type { Command, Computed } from "ccstate";
 import { createBrowserRuntime } from "./runtime.ts";
 import type { ClipboardRecovery } from "./input/clipboard.ts";
-import type { DisplayState } from "./display/sync.ts";
+import type { BrowserNavigationAction } from "./navigation/action.ts";
+import type { DisplayModeResult, DisplayState } from "./display/sync.ts";
 import type { ImageRecovery } from "./viewer/image-recovery.ts";
 import type { layoutTabs } from "./viewer/tab-layout.ts";
 import type {
+  NavigationReceipt,
   ViewerCaptureOptions,
   ViewerError,
+  ViewerHistory,
   ViewerNavigation,
   ViewerStatus,
   ViewerTransport,
@@ -54,6 +57,8 @@ export interface BrowserSignals {
   readonly tabs$: Computed<readonly BrowserTab[]>;
   readonly selectedTabId$: Computed<string | null>;
   readonly navigation$: Computed<ViewerNavigation | null>;
+  readonly history$: Computed<Promise<ViewerHistory | null>>;
+  readonly navigationScope$: Computed<object | null>;
   readonly address$: Computed<string>;
   readonly presentation$: Computed<BrowserPresentation>;
   readonly imageRecovery$: Computed<ImageRecovery | null>;
@@ -62,18 +67,17 @@ export interface BrowserSignals {
   readonly transport$: Computed<ViewerTransport>;
   readonly windowSizeSync$: Computed<WindowSizeSync>;
   readonly display$: Computed<DisplayState>;
+  readonly displayRecovery$: Computed<ViewerError | null>;
   readonly clipboardRecovery$: Computed<ClipboardRecovery | null>;
   readonly tabLayout$: Computed<ReturnType<typeof layoutTabs>>;
-  readonly notification$: Computed<ViewerError | null>;
-  readonly dismissNotification$: Command<void, []>;
   readonly rejectFavicon$: Command<void, [targetId: string, url: string]>;
   readonly selectTab$: Command<Promise<void>, [string, AbortSignal]>;
   readonly createTab$: Command<Promise<string>, [AbortSignal]>;
   readonly closeTab$: Command<Promise<void>, [string, AbortSignal]>;
-  readonly goBack$: Command<Promise<void>, [AbortSignal]>;
-  readonly goForward$: Command<Promise<void>, [AbortSignal]>;
-  readonly reloadPage$: Command<Promise<void>, [AbortSignal]>;
-  readonly submitAddress$: Command<Promise<void>, [AbortSignal]>;
+  readonly navigate$: Command<
+    Promise<NavigationReceipt>,
+    [BrowserNavigationAction, AbortSignal]
+  >;
   readonly editAddress$: Command<void, [string]>;
   readonly resetAddress$: Command<void, []>;
   readonly focusAddress$: Command<void, []>;
@@ -89,7 +93,7 @@ export interface BrowserSignals {
     [ViewerTransport, AbortSignal]
   >;
   readonly changeWindowSizeSync$: Command<
-    Promise<void>,
+    Promise<DisplayModeResult>,
     [WindowSizeSync, AbortSignal]
   >;
   readonly syncDisplay$: Command<Promise<void>, [AbortSignal]>;
@@ -102,7 +106,7 @@ export interface BrowserSignals {
     readonly toolbar$: Ref<HTMLDivElement>;
     readonly tabs$: Ref<HTMLDivElement>;
     readonly address$: Ref<HTMLInputElement>;
-    readonly surface$: Computed<Command<void, [HTMLDivElement | null]>>;
+    readonly surface$: Ref<HTMLDivElement>;
   };
 }
 

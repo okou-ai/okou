@@ -28,7 +28,6 @@ interface Wheel extends PointerState {
 }
 type PreparationMethod =
   | "Page.getLayoutMetrics"
-  | "Page.getNavigationHistory"
   | "Page.createIsolatedWorld"
   | "Runtime.evaluate"
   | "Runtime.callFunctionOn";
@@ -235,18 +234,14 @@ function createQueueProtocol(
     );
   }
   const layoutRequest$ = requestFor("Page.getLayoutMetrics");
-  const historyRequest$ = requestFor("Page.getNavigationHistory");
   const layout$ = command(({ set }, job: InputJob) => {
     return set(layoutRequest$, job, undefined);
-  });
-  const history$ = command(({ set }, job: InputJob) => {
-    return set(historyRequest$, job, undefined);
   });
   const createWorld$ = requestFor("Page.createIsolatedWorld");
   const evaluate$ = requestFor("Runtime.evaluate");
   const callFunction$ = requestFor("Runtime.callFunctionOn");
 
-  return { write$, layout$, history$, createWorld$, evaluate$, callFunction$ };
+  return { write$, layout$, createWorld$, evaluate$, callFunction$ };
 }
 type QueueGraph = QueueOwnership &
   ReturnType<typeof createQueueProtocol> & {

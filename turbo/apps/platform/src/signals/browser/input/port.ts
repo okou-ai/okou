@@ -10,6 +10,11 @@ export type PointerDetails = Pick<
   "button" | "buttons" | "clickCount" | "modifiers" | "deltaX" | "deltaY"
 >;
 
+/** Preconstructed native DOM reconciliation, invoked by semantic fact writers. */
+export interface NativeInputHost {
+  readonly synchronize$: Command<void, []>;
+}
+
 /** Session graph capabilities; native bindings retain their original owner. */
 export interface NativeInputPort {
   readonly available$: Computed<boolean>;

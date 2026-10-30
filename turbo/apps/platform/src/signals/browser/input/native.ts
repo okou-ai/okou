@@ -6,7 +6,7 @@ import { createNativeClipboard, type ClipboardRecovery } from "./clipboard.ts";
 import type { InputOwner, InputTransition } from "./lifecycle.ts";
 import { imagePoint, localPoint } from "./geometry.ts";
 import type { Point } from "../display/geometry.ts";
-import type { NativeInputPort } from "./port.ts";
+import type { NativeInputHost, NativeInputPort } from "./port.ts";
 import { createInputIngress, type InputBinding } from "./ingress.ts";
 
 const buttons = ["left", "middle", "right", "back", "forward"] as const;
@@ -32,7 +32,7 @@ interface Admission {
   } | null;
   readonly owner: InputOwner | null;
 }
-export interface NativeInput {
+export interface NativeInput extends NativeInputHost {
   readonly bind$: Command<
     void,
     [
@@ -43,7 +43,6 @@ export interface NativeInput {
     ]
   >;
   readonly reset$: Command<void, [reason?: InputTransition]>;
-  readonly synchronize$: Command<void, []>;
   readonly place$: Command<void, [point: Point]>;
   readonly dispose$: Command<void, []>;
   readonly copyClipboard$: Command<Promise<void>, [signal: AbortSignal]>;
@@ -204,25 +203,6 @@ function createNativeCoordination(
     resetLocal$,
     resetting$,
   } = graph;
-  const synchronize$ = command(({ get, set }) => {
-    const previous = get(admission$);
-    const input = get(input$);
-    const transition = input ? get(input.transition$) : null;
-    const owner = input ? get(input.owner$) : null;
-    // Publish the fence before any release/blur listener can reenter.
-    set(admission$, { input, transition, owner });
-    set(clipboard.synchronize$);
-    if (!previous) {
-      return;
-    }
-    if (previous.input !== input) {
-      set(resetLocal$, "target-replaced");
-    } else if (previous.transition !== transition) {
-      set(resetLocal$, transition?.reason);
-    } else if (previous.owner !== owner) {
-      set(resetLocal$, "blur");
-    }
-  });
   const place$ = command(({ get }, point: Point) => {
     const elements = get(elements$);
     if (!elements) {
@@ -234,6 +214,31 @@ function createNativeCoordination(
     }
     elements.proxy.style.left = `${local.x}px`;
     elements.proxy.style.top = `${Math.max(0, local.y - 20)}px`;
+  });
+  const synchronize$ = command(({ get, set }) => {
+    const previous = get(admission$);
+    const input = get(input$);
+    const transition = input ? get(input.transition$) : null;
+    const owner = input ? get(input.owner$) : null;
+    // Publish the fence before any release/blur listener can reenter.
+    set(admission$, { input, transition, owner });
+    set(clipboard.synchronize$);
+    if (previous) {
+      if (previous.input !== input) {
+        set(resetLocal$, "target-replaced");
+      } else if (previous.transition !== transition) {
+        set(resetLocal$, transition?.reason);
+      } else if (previous.owner && owner && previous.owner !== owner) {
+        set(resetLocal$, "blur");
+      }
+    }
+    // Admission gating is not a focus transition. In particular, reopening a
+    // navigation gate must not synthesize blur or discard local proxy focus.
+    const current = get(input$);
+    const caret = current ? get(current.caret$) : null;
+    if (caret) {
+      set(place$, caret);
+    }
   });
   const cancel$ = command(({ get, set }) => {
     if (get(resetting$)) {

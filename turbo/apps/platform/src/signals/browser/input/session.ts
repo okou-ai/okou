@@ -3,11 +3,10 @@ import type { Protocol } from "devtools-protocol";
 import { detach, Reason, resetSignal } from "../../utils.ts";
 import type { CdpClient, CdpEvent } from "../cdp/client.ts";
 import { CdpFault, isRecord, requestDetails } from "../cdp/errors.ts";
-import type { ViewerNavigation } from "../viewer/types.ts";
-import {
-  createDisplayViewport,
-  type DisplayViewport,
-} from "../display/viewport.ts";
+import type { NavigationAction, NavigationReceipt } from "../viewer/types.ts";
+import type { DisplayViewport } from "../display/viewport.ts";
+import type { NavigationData } from "../navigation/data.ts";
+import type { NativeInputHost } from "./port.ts";
 import type { InputGeometry, Point } from "../display/geometry.ts";
 import { navigationAddress } from "./address.ts";
 import { createInputEffects } from "./effects.ts";
@@ -22,7 +21,6 @@ import { createSelectionReader, type SelectionResult } from "./selection.ts";
 
 type Mouse = Protocol.Input.DispatchMouseEventRequest;
 type Key = Protocol.Input.DispatchKeyEventRequest;
-type Navigation = "back" | "forward" | "reload" | { url: string };
 type PointerDetails = Pick<
   Mouse,
   "button" | "buttons" | "clickCount" | "modifiers" | "deltaX" | "deltaY"
@@ -65,19 +63,25 @@ const caretPosition = `(() => {
   return null;
 })()`;
 
+interface SessionConnection {
+  readonly client: CdpClient;
+  readonly sessionId: string;
+}
+
 function createSessionState(
-  client: CdpClient,
-  sessionId: string,
+  connection: SessionConnection,
   isCurrent$: Computed<boolean>,
   geometry: DisplayViewport,
+  nativeHost: NativeInputHost,
+  navigation: NavigationData,
 ) {
+  const { client, sessionId } = connection;
   const lifecycle = createInputLifecycle(sessionId);
   const effects = createInputEffects(client, sessionId);
   const lifetime$ = state<object | null>(null);
   const resetScope$ = resetSignal();
   const retiring$ = state(false);
   const navigationGate$ = state<object | null>(null);
-  const internalNavigation$ = state<ViewerNavigation | null>(null);
   const internalError$ = state<CdpFault | null>(null);
   const internalCaret$ = state<Point | null>(null);
   const internalTransition$ = state<{
@@ -88,9 +92,6 @@ function createSessionState(
   const frameId$ = state<string | null>(null);
   const contextId$ = state<number | null>(null);
   const preeditSupported$ = state(true);
-  const historyJob$ = state<InputJob | null>(null);
-  const historyReading$ = state(false);
-  const historyVersion$ = state(0);
   const caretJob$ = state<InputJob | null>(null);
   const caretReading$ = state(false);
   const caretVersion$ = state(0);
@@ -108,9 +109,6 @@ function createSessionState(
   });
   const owner$ = computed((get) => {
     return get(accepting$) ? get(lifecycle.owner$) : null;
-  });
-  const navigation$ = computed((get) => {
-    return get(internalNavigation$);
   });
   const error$ = computed((get) => {
     return get(internalError$);
@@ -130,13 +128,14 @@ function createSessionState(
     sessionId,
     isCurrent$,
     geometry,
+    nativeHost,
+    navigation,
     lifecycle,
     effects,
     lifetime$,
     resetScope$,
     retiring$,
     navigationGate$,
-    internalNavigation$,
     internalError$,
     internalCaret$,
     internalTransition$,
@@ -144,16 +143,12 @@ function createSessionState(
     frameId$,
     contextId$,
     preeditSupported$,
-    historyJob$,
-    historyReading$,
-    historyVersion$,
     caretJob$,
     caretReading$,
     caretVersion$,
     available$,
     accepting$,
     owner$,
-    navigation$,
     error$,
     caret$,
     transition$,
@@ -166,7 +161,6 @@ type SessionBase = ReturnType<typeof createSessionState> & {
 };
 type SessionObservations = SessionBase &
   ReturnType<typeof createSessionInvalidation> &
-  ReturnType<typeof createHistoryObservation> &
   ReturnType<typeof createCaretObservation>;
 type SessionActions = SessionObservations &
   ReturnType<typeof createSessionTransitions>;
@@ -178,18 +172,23 @@ function createSessionInvalidation(graph: SessionBase) {
     clipboardVersion$,
     effects,
     internalCaret$,
+    nativeHost,
   } = graph;
   const invalidateClipboard$ = command(({ set }) => {
     set(clipboardVersion$, (value) => {
       return value + 1;
     });
+    set(nativeHost.synchronize$);
   });
-  const invalidateCaret$ = command(({ set }) => {
+  const invalidateCaret$ = command(({ set }, notify = true) => {
     set(caretVersion$, (value) => {
       return value + 1;
     });
     set(caretJob$, null);
     set(internalCaret$, null);
+    if (notify) {
+      set(nativeHost.synchronize$);
+    }
   });
   const cancelComposition$ = command(({ set }) => {
     set(effects.notify$, {
@@ -198,78 +197,6 @@ function createSessionInvalidation(graph: SessionBase) {
     });
   });
   return { invalidateClipboard$, invalidateCaret$, cancelComposition$ };
-}
-
-function createHistoryObservation(graph: SessionBase) {
-  const {
-    available$,
-    historyJob$,
-    historyReading$,
-    historyVersion$,
-    internalNavigation$,
-    isCurrent$,
-    lifecycle,
-    queue,
-    retiring$,
-  } = graph;
-  const drainHistory$ = command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(historyReading$)) {
-      return;
-    }
-    set(historyReading$, true);
-    using _history = {
-      [Symbol.dispose]: () => {
-        set(historyReading$, false);
-      },
-    };
-    while (get(historyJob$) && get(available$)) {
-      const job = get(historyJob$)!;
-      const version = get(historyVersion$);
-      set(historyJob$, null);
-      if (!get(isCurrent$) || !set(lifecycle.owns$, job.owner)) {
-        continue;
-      }
-      const [result] = await Promise.allSettled([set(queue.history$, job)]);
-      signal.throwIfAborted();
-      if (
-        result.status !== "fulfilled" ||
-        version !== get(historyVersion$) ||
-        !get(isCurrent$) ||
-        !set(lifecycle.owns$, job.owner)
-      ) {
-        continue;
-      }
-      const history = result.value;
-      const entry = history.entries[history.currentIndex];
-      set(
-        internalNavigation$,
-        entry
-          ? Object.freeze({
-              url: entry.url,
-              canGoBack: history.currentIndex > 0,
-              canGoForward: history.currentIndex < history.entries.length - 1,
-            })
-          : null,
-      );
-    }
-  });
-  const updateHistory$ = command(({ get, set }) => {
-    if (!get(available$) || get(retiring$)) {
-      return;
-    }
-    set(historyVersion$, (value) => {
-      return value + 1;
-    });
-    set(historyJob$, set(queue.capture$, get(lifecycle.owner$)));
-    if (!get(historyReading$)) {
-      detach(
-        set(drainHistory$, graph.client.signal),
-        Reason.DomCallback,
-        "browser navigation observation",
-      );
-    }
-  });
-  return { drainHistory$, updateHistory$ };
 }
 
 function createCaretObservation(
@@ -347,6 +274,7 @@ function createCaretObservation(
         result.value
       ) {
         set(internalCaret$, result.value);
+        set(graph.nativeHost.synchronize$);
       }
     }
   });
@@ -373,16 +301,12 @@ function createSessionTransitions(graph: SessionObservations) {
     clipboardVersion$,
     effects,
     geometry,
-    historyJob$,
-    historyReading$,
-    historyVersion$,
+    nativeHost,
     internalError$,
     internalTransition$,
     invalidateCaret$,
     lifecycle,
     queue,
-    retiring$,
-    updateHistory$,
   } = graph;
   const transitionInput$: Command<InputOwner | null, [InputTransition]> =
     command(({ get, set }, reason: InputTransition) => {
@@ -391,11 +315,6 @@ function createSessionTransitions(graph: SessionObservations) {
         return null;
       }
       const successor = get(lifecycle.owner$);
-      const refreshHistory = get(historyReading$) || get(historyJob$) !== null;
-      set(historyVersion$, (value) => {
-        return value + 1;
-      });
-      set(historyJob$, null);
       // A blur invalidates in-flight copies but retains the already recovered text.
       set(clipboardVersion$, (value) => {
         return value + 1;
@@ -403,7 +322,7 @@ function createSessionTransitions(graph: SessionObservations) {
       if (reason !== "blur" && reason !== "failed") {
         set(geometry.invalidate$);
       }
-      set(invalidateCaret$);
+      set(invalidateCaret$, false);
       set(queue.clear$);
       if (cleanup.composition) {
         set(cancelComposition$);
@@ -429,13 +348,7 @@ function createSessionTransitions(graph: SessionObservations) {
         id: (get(internalTransition$)?.id ?? 0) + 1,
         reason,
       });
-      if (
-        (reason === "blur" || reason === "failed") &&
-        refreshHistory &&
-        !get(retiring$)
-      ) {
-        set(updateHistory$);
-      }
+      set(nativeHost.synchronize$);
       return set(lifecycle.owns$, successor) ? successor : null;
     });
 
@@ -462,7 +375,8 @@ function createSessionCleanup(graph: SessionActions) {
   const {
     available$,
     effects,
-    internalNavigation$,
+    navigation,
+    nativeHost,
     lifetime$,
     navigationGate$,
     queue,
@@ -504,9 +418,10 @@ function createSessionCleanup(graph: SessionActions) {
     }
     set(lifetime$, null);
     set(transitionInput$, reason);
-    set(internalNavigation$, null);
+    set(navigation.dispose$);
     set(navigationGate$, null);
     set(resetScope$);
+    set(nativeHost.synchronize$);
   });
   const retireCleanup$ = command(
     async (
@@ -556,11 +471,10 @@ function createSessionReadiness(
     available$,
     client,
     dispose$,
-    drainHistory$,
     frameId$,
     geometry,
-    historyJob$,
-    historyVersion$,
+    navigation,
+    nativeHost,
     lifecycle,
     lifetime$,
     queue,
@@ -582,6 +496,8 @@ function createSessionReadiness(
       const scope = set(resetScope$, signal);
       const lifetime = Object.freeze({});
       set(lifetime$, lifetime);
+      set(navigation.start$, scope);
+      set(nativeHost.synchronize$);
       scope.addEventListener(
         "abort",
         () => {
@@ -591,8 +507,20 @@ function createSessionReadiness(
       );
       const revision = get(geometry.revision$);
       const [tree, metrics] = await Promise.all([
-        client.request("Page.getFrameTree", undefined, sessionId),
-        client.request("Page.getLayoutMetrics", undefined, sessionId),
+        client.request(
+          "Page.getFrameTree",
+          undefined,
+          sessionId,
+          undefined,
+          scope,
+        ),
+        client.request(
+          "Page.getLayoutMetrics",
+          undefined,
+          sessionId,
+          undefined,
+          scope,
+        ),
       ]);
       signal.throwIfAborted();
       scope.throwIfAborted();
@@ -600,19 +528,17 @@ function createSessionReadiness(
         return;
       }
       set(frameId$, tree.frameTree.frame.id);
+      set(navigation.observe$, tree.frameTree.frame);
       set(geometry.read$, metrics, revision);
-      await client.request("Runtime.enable", undefined, sessionId);
+      await client.request(
+        "Runtime.enable",
+        undefined,
+        sessionId,
+        undefined,
+        scope,
+      );
       signal.throwIfAborted();
       scope.throwIfAborted();
-      if (get(available$)) {
-        set(historyVersion$, (value) => {
-          return value + 1;
-        });
-        set(historyJob$, set(queue.capture$, get(lifecycle.owner$)));
-        await set(drainHistory$, scope);
-        signal.throwIfAborted();
-        scope.throwIfAborted();
-      }
     },
   );
   const focus$ = command(
@@ -690,16 +616,16 @@ function createSessionEvents(graph: SessionActions) {
     available$,
     contextId$,
     frameId$,
-    internalNavigation$,
+    navigation,
     invalidateClipboard$,
     sessionId,
     transitionInput$,
-    updateHistory$,
   } = graph;
   const event$ = command(({ get, set }, event: CdpEvent) => {
     if (!get(available$) || event.sessionId !== sessionId) {
       return;
     }
+    set(navigation.event$, event);
     const { method, params } = event;
     if (
       [
@@ -735,16 +661,6 @@ function createSessionEvents(graph: SessionActions) {
             ? "same-document"
             : "document-lost",
       );
-      set(internalNavigation$, null);
-    }
-    if (
-      method === "Page.loadEventFired" ||
-      (mainFrameEvent &&
-        ["Page.frameStoppedLoading", "Page.navigatedWithinDocument"].includes(
-          method,
-        ))
-    ) {
-      set(updateHistory$);
     }
   });
 
@@ -783,13 +699,11 @@ function createSessionPointer(graph: SessionObservations) {
     accepting$,
     geometry,
     internalError$,
-    internalNavigation$,
     invalidateCaret$,
     invalidateClipboard$,
     lifecycle,
     queue,
     refreshCaret$,
-    updateHistory$,
   } = graph;
   const pointerRun$ = command(
     async ({ get, set }, job: InputJob, signal: AbortSignal) => {
@@ -841,9 +755,6 @@ function createSessionPointer(graph: SessionObservations) {
       );
       if (type === "mouseReleased" && details.button) {
         set(refreshCaret$, job);
-        if (!get(internalNavigation$)) {
-          set(updateHistory$);
-        }
       }
     },
   );
@@ -1115,10 +1026,10 @@ function createNavigationAdmission(graph: SessionActions) {
         !get(available$) ||
         get(lifetime$) !== lifetime
       ) {
-        throw new Error("Navigation cancelled");
+        throw new DOMException("Navigation cancelled", "AbortError");
       }
       if (owner && !set(lifecycle.owns$, owner)) {
-        throw new Error("Navigation cancelled");
+        throw new DOMException("Navigation cancelled", "AbortError");
       }
     },
   );
@@ -1129,8 +1040,9 @@ function createSessionNavigation(graph: SessionActions) {
   const {
     accepting$,
     effects,
-    internalError$,
     lifetime$,
+    navigation,
+    nativeHost,
     navigationGate$,
     queue,
     transitionInput$,
@@ -1138,9 +1050,9 @@ function createSessionNavigation(graph: SessionActions) {
   const navigate$ = command(
     async (
       { get, set },
-      action: Navigation,
+      action: NavigationAction,
       signal: AbortSignal,
-    ): Promise<void> => {
+    ): Promise<NavigationReceipt> => {
       signal.throwIfAborted();
       if (!get(accepting$)) {
         throw new CdpFault("input", "Input is unavailable.");
@@ -1148,27 +1060,27 @@ function createSessionNavigation(graph: SessionActions) {
       const url =
         typeof action === "string" ? "" : navigationAddress(action.url);
       if (typeof action !== "string" && !url) {
-        const error = new CdpFault(
+        throw new CdpFault(
           "input",
           "Enter a page address, such as example.com or about:blank.",
         );
-        set(internalError$, error);
-        throw error;
       }
       const lifetime = get(lifetime$);
       if (!lifetime) {
-        throw new Error("Navigation cancelled");
+        throw new DOMException("Navigation cancelled", "AbortError");
       }
       const owner = set(transitionInput$, "navigation-started");
       if (!owner) {
-        throw new Error("Navigation cancelled");
+        throw new DOMException("Navigation cancelled", "AbortError");
       }
       const gate = {};
       set(navigationGate$, gate);
+      set(nativeHost.synchronize$);
       using _navigation = {
         [Symbol.dispose]: () => {
           if (get(navigationGate$) === gate) {
             set(navigationGate$, null);
+            set(nativeHost.synchronize$);
           }
         },
       };
@@ -1184,13 +1096,13 @@ function createSessionNavigation(graph: SessionActions) {
           params: undefined,
         });
       } else if (action === "back" || action === "forward") {
-        const history = await set(queue.history$, set(queue.capture$, owner));
+        const history = await set(navigation.readHistory$, signal);
         signal.throwIfAborted();
         set(checkNavigation$, gate, lifetime, owner);
         const entry =
           history.entries[history.currentIndex + (action === "back" ? -1 : 1)];
         if (!entry) {
-          return;
+          return { kind: "unavailable" };
         }
         operation = set(effects.request$, {
           method: "Page.navigateToHistoryEntry",
@@ -1210,6 +1122,21 @@ function createSessionNavigation(graph: SessionActions) {
       if (isRecord(result) && result.errorText) {
         throw new CdpFault("input", "The remote page could not be navigated.");
       }
+      if (typeof action === "string") {
+        return { kind: "ack" };
+      }
+      if (!isRecord(result) || typeof result.frameId !== "string") {
+        throw new CdpFault("protocol", "The navigation receipt is invalid.");
+      }
+      const identity = {
+        frameId: result.frameId,
+        ...(typeof result.loaderId === "string"
+          ? { loaderId: result.loaderId }
+          : {}),
+      };
+      return result.isDownload === true
+        ? { kind: "download", ...identity }
+        : { kind: "ack", ...identity };
     },
   );
 
@@ -1218,12 +1145,20 @@ function createSessionNavigation(graph: SessionActions) {
 
 /** A stable, store-isolated input graph for one native CDP session. */
 export function createInputSession(
-  client: CdpClient,
-  sessionId: string,
+  connection: SessionConnection,
   isCurrent$: Computed<boolean>,
-  geometry: DisplayViewport = createDisplayViewport(),
+  geometry: DisplayViewport,
+  nativeHost: NativeInputHost,
+  navigation: NavigationData,
 ) {
-  const values = createSessionState(client, sessionId, isCurrent$, geometry);
+  const { client, sessionId } = connection;
+  const values = createSessionState(
+    connection,
+    isCurrent$,
+    geometry,
+    nativeHost,
+    navigation,
+  );
   const failed$ = command(({ set }, error?: unknown) => {
     set(transitions.failed$, error);
   });
@@ -1248,7 +1183,6 @@ export function createInputSession(
   const observations = {
     ...base,
     ...createSessionInvalidation(base),
-    ...createHistoryObservation(base),
   };
   const observed = {
     ...observations,
@@ -1263,7 +1197,6 @@ export function createInputSession(
     geometry,
     available$: values.available$,
     owner$: values.owner$,
-    navigation$: values.navigation$,
     error$: values.error$,
     caret$: values.caret$,
     transition$: values.transition$,

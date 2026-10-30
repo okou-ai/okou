@@ -38,14 +38,37 @@ export interface ViewerSnapshot {
   readonly targets: readonly ViewerTarget[];
   readonly selectedTargetId: string | null;
   readonly error: ViewerError | null;
-  readonly navigation?: ViewerNavigation | null;
 }
 
+/** The last confirmed main-frame document, never a navigation ACK. */
 export interface ViewerNavigation {
   readonly url: string;
+  readonly frameId: string;
+  readonly loaderId: string;
+}
+
+/** Optional authoritative history read; pending/failure belongs to its loadable. */
+export interface ViewerHistory {
+  readonly url: string | null;
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
 }
+
+export type NavigationAction =
+  "back" | "forward" | "reload" | { readonly url: string };
+
+export type NavigationReceipt =
+  | {
+      readonly kind: "ack";
+      readonly frameId?: string;
+      readonly loaderId?: string;
+    }
+  | {
+      readonly kind: "download";
+      readonly frameId: string;
+      readonly loaderId?: string;
+    }
+  | { readonly kind: "unavailable" };
 
 export type ViewerCaptureFormat = "webp" | "jpeg" | "png";
 

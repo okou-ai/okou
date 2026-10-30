@@ -10,6 +10,7 @@ import type {
   ViewerCaptureOptions,
   ViewerError,
   ViewerNavigation,
+  NavigationReceipt,
   ViewerSnapshot,
   ViewerTransport,
   WindowSizeSync,
@@ -49,13 +50,45 @@ export type ViewerIntentTransition = Extract<
 >;
 type SnapshotTransition = Exclude<ViewerTransition, ImageEvent>;
 
+export interface AddressSubmission {
+  readonly selection: object;
+  readonly scope: object;
+  readonly version: object;
+  readonly value: string;
+  readonly baseline: ViewerNavigation | null;
+}
+interface AddressDraft {
+  readonly owner: object;
+  readonly version: object;
+  readonly value: string;
+  readonly editing: boolean;
+  readonly baseline: ViewerNavigation | null;
+  readonly submission?: {
+    readonly token: AddressSubmission;
+    readonly receipt: NavigationReceipt | null;
+  };
+}
+
+function confirmsSubmission(
+  document: ViewerNavigation | null,
+  submission: AddressSubmission,
+  receipt: NavigationReceipt,
+): boolean {
+  return (
+    !!document &&
+    document !== submission.baseline &&
+    receipt.kind === "ack" &&
+    (receipt.frameId === undefined || document.frameId === receipt.frameId) &&
+    (receipt.loaderId === undefined || document.loaderId === receipt.loaderId)
+  );
+}
+
 function initialSnapshot(): ViewerSnapshot {
   return {
     status: "connecting",
     targets: [],
     selectedTargetId: null,
     error: null,
-    navigation: null,
   };
 }
 function createModelAtoms() {
@@ -69,13 +102,8 @@ function createModelAtoms() {
   const faviconState$ = state<
     ReadonlyMap<string, { readonly url: string; readonly failed: boolean }>
   >(new Map());
-  const draftState$ = state<{
-    readonly owner: object;
-    readonly value: string;
-    readonly editing: boolean;
-  } | null>(null);
+  const draftState$ = state<AddressDraft | null>(null);
   const spaceState$ = state<TabSpace | null>(null);
-  const notificationState$ = state<ViewerError | null>(null);
   const captureState$ = state<ViewerCaptureOptions>({ format: "webp" });
   const transportState$ = state<ViewerTransport>("shared");
   const modeState$ = state<WindowSizeSync>("live");
@@ -90,7 +118,6 @@ function createModelAtoms() {
     faviconState$,
     draftState$,
     spaceState$,
-    notificationState$,
     captureState$,
     transportState$,
     modeState$,
@@ -100,7 +127,8 @@ type ModelAtoms = ReturnType<typeof createModelAtoms>;
 
 function createModelValues(
   atoms: ModelAtoms,
-  navigationSource$?: Computed<ViewerNavigation | null>,
+  navigationSource$: Computed<ViewerNavigation | null>,
+  navigationScopeSource$: Computed<object | null>,
 ) {
   const {
     snapshotState$,
@@ -111,7 +139,6 @@ function createModelValues(
     captureState$,
     transportState$,
     modeState$,
-    notificationState$,
     faviconState$,
     draftState$,
     spaceState$,
@@ -140,9 +167,6 @@ function createModelValues(
   const windowSizeSync$ = computed((get) => {
     return get(modeState$);
   });
-  const notification$ = computed((get) => {
-    return get(notificationState$);
-  });
   const tabs$ = computed((get) => {
     return get(snapshot$).targets.map((tab) => {
       const icon = get(faviconState$).get(tab.id);
@@ -156,20 +180,29 @@ function createModelValues(
     return get(snapshot$).selectedTargetId;
   });
   const navigation$ = computed((get): ViewerNavigation | null => {
-    return (
-      (navigationSource$ ? get(navigationSource$) : null) ??
-      get(snapshot$).navigation ??
-      null
-    );
+    return get(navigationSource$);
+  });
+  const navigationScope$ = computed((get) => {
+    return get(navigationScopeSource$);
   });
   const address$ = computed((get) => {
     const draft = get(draftState$);
-    const remote = get(navigation$)?.url ?? "";
-    return draft?.owner === get(intent$).selection
-      ? draft.value
-      : remote === "about:blank"
-        ? ""
-        : remote;
+    const document = get(navigation$);
+    const remote = document?.url ?? "";
+    if (draft?.owner === get(intent$).selection) {
+      const submitted = draft.submission;
+      const confirmed =
+        submitted?.receipt &&
+        submitted.token.scope === get(navigationScope$) &&
+        confirmsSubmission(document, submitted.token, submitted.receipt);
+      if (
+        draft.editing ||
+        (submitted ? !confirmed : draft.baseline === document)
+      ) {
+        return draft.value;
+      }
+    }
+    return remote === "about:blank" ? "" : remote;
   });
   const tabLayout$ = computed((get) => {
     return layoutTabs(get(tabs$), get(selectedTabId$), true, get(spaceState$));
@@ -183,10 +216,10 @@ function createModelValues(
     capture$,
     transport$,
     windowSizeSync$,
-    notification$,
     tabs$,
     selectedTabId$,
     navigation$,
+    navigationScope$,
     address$,
     tabLayout$,
   };
@@ -253,27 +286,10 @@ function createModelPresentation(atoms: ModelAtoms, values: ModelValues) {
 }
 
 function createModelPublication(atoms: ModelAtoms) {
-  const {
-    snapshotState$,
-    draftState$,
-    notificationState$,
-    inventoryInternal$,
-    faviconState$,
-  } = atoms;
+  const { snapshotState$, inventoryInternal$, faviconState$ } = atoms;
   const update$ = command(({ get, set }, patch: Partial<ViewerSnapshot>) => {
     const previous = get(snapshotState$);
     const next = { ...previous, ...patch };
-    const draft = get(draftState$);
-    if (
-      previous.navigation?.url !== next.navigation?.url &&
-      draft &&
-      !draft.editing
-    ) {
-      set(draftState$, null);
-    }
-    if (patch.error !== undefined) {
-      set(notificationState$, next.status === "streaming" ? patch.error : null);
-    }
     set(snapshotState$, next);
   });
   const inventoryUpdate$ = command(({ get, set }, event: InventoryEvent) => {
@@ -372,7 +388,6 @@ function createSnapshotTransitions(
           selectedTargetId: event.targetId,
           status: event.paused ? "paused" : "connecting",
           error: null,
-          navigation: null,
         });
         break;
       }
@@ -386,7 +401,6 @@ function createSnapshotTransitions(
           selectedTargetId: null,
           status: "unavailable",
           error: event.error,
-          navigation: null,
         });
         break;
       }
@@ -403,13 +417,12 @@ function createSnapshotTransitions(
               : get(imageState$)
                 ? "error"
                 : "connecting",
-            navigation: null,
           });
         }
         break;
       }
       case "failed": {
-        set(update$, { status: "error", error: event.error, navigation: null });
+        set(update$, { status: "error", error: event.error });
         break;
       }
       case "disconnected": {
@@ -417,14 +430,7 @@ function createSnapshotTransitions(
         set(update$, {
           status: event.established ? "disconnected" : "error",
           error: event.error,
-          navigation: null,
         });
-        break;
-      }
-      case "stopped": {
-        if (!event.retainFrame) {
-          set(update$, { navigation: null });
-        }
         break;
       }
       case "closed": {
@@ -481,22 +487,26 @@ function createModelTransitions(
 
 function createAddressActions(atoms: ModelAtoms, values: ModelValues) {
   const { draftState$, intentState$ } = atoms;
-  const { address$ } = values;
+  const { address$, navigation$, navigationScope$ } = values;
   const resetAddress$ = command(({ set }) => {
     set(draftState$, null);
   });
   const editAddress$ = command(({ get, set }, value: string) => {
     set(draftState$, {
       owner: get(intentState$).selection,
+      version: {},
       value,
       editing: true,
+      baseline: get(navigation$),
     });
   });
   const focusAddress$ = command(({ get, set }) => {
     set(draftState$, {
       owner: get(intentState$).selection,
+      version: {},
       value: get(address$),
       editing: true,
+      baseline: get(navigation$),
     });
   });
   const blurAddress$ = command(({ get, set }) => {
@@ -505,23 +515,71 @@ function createAddressActions(atoms: ModelAtoms, values: ModelValues) {
       set(draftState$, { ...draft, editing: false });
     }
   });
+  const prepareAddress$ = command(
+    ({ get, set }, scope: object): AddressSubmission => {
+      const token: AddressSubmission = Object.freeze({
+        selection: get(intentState$).selection,
+        scope,
+        version: {},
+        value: get(address$),
+        baseline: get(navigation$),
+      });
+      set(draftState$, {
+        owner: token.selection,
+        version: token.version,
+        value: token.value,
+        baseline: token.baseline,
+        editing: false,
+        submission: { token, receipt: null },
+      });
+      return token;
+    },
+  );
   const acceptAddress$ = command(
-    ({ get, set }, selection: object, submitted: string) => {
+    ({ get, set }, token: AddressSubmission, receipt: NavigationReceipt) => {
       const draft = get(draftState$);
       if (
-        get(intentState$).selection === selection &&
-        (!draft || draft.value === submitted)
+        !draft ||
+        draft.version !== token.version ||
+        get(intentState$).selection !== token.selection ||
+        get(navigationScope$) !== token.scope
+      ) {
+        return;
+      }
+      if (
+        receipt.kind === "download" ||
+        receipt.kind === "unavailable" ||
+        confirmsSubmission(get(navigation$), token, receipt)
       ) {
         set(draftState$, null);
+      } else {
+        set(draftState$, { ...draft, submission: { token, receipt } });
       }
     },
   );
+  const reconcileAddress$ = command(({ get, set }, scope: object) => {
+    const draft = get(draftState$);
+    const submission = draft?.submission;
+    if (
+      draft &&
+      submission?.receipt &&
+      submission.token.scope === scope &&
+      get(navigationScope$) === scope &&
+      draft.owner === get(intentState$).selection &&
+      draft.version === submission.token.version &&
+      confirmsSubmission(get(navigation$), submission.token, submission.receipt)
+    ) {
+      set(draftState$, null);
+    }
+  });
   return {
     resetAddress$,
     editAddress$,
     focusAddress$,
     blurAddress$,
+    prepareAddress$,
     acceptAddress$,
+    reconcileAddress$,
   };
 }
 
@@ -559,7 +617,6 @@ function createFaviconActions(atoms: ModelAtoms) {
 function createConfigurationActions(atoms: ModelAtoms) {
   const {
     spaceState$,
-    notificationState$,
     connectedState$,
     scopedState$,
     captureState$,
@@ -569,9 +626,6 @@ function createConfigurationActions(atoms: ModelAtoms) {
   return {
     resizeTabs$: command(({ set }, space: TabSpace) => {
       set(spaceState$, space);
-    }),
-    dismissNotification$: command(({ set }) => {
-      set(notificationState$, null);
     }),
     setConnected$: command(({ set }, connected: boolean) => {
       set(connectedState$, connected);
@@ -593,10 +647,15 @@ function createConfigurationActions(atoms: ModelAtoms) {
 
 /** Internal graph; only the explicit BrowserSignals projection reaches views. */
 export function createViewerSignals(
-  navigationSource$?: Computed<ViewerNavigation | null>,
+  navigationSource$: Computed<ViewerNavigation | null>,
+  navigationScopeSource$: Computed<object | null>,
 ) {
   const atoms = createModelAtoms();
-  const values = createModelValues(atoms, navigationSource$);
+  const values = createModelValues(
+    atoms,
+    navigationSource$,
+    navigationScopeSource$,
+  );
   const presentation = createModelPresentation(atoms, values);
   const publication = createModelPublication(atoms);
   const transitions = createModelTransitions(atoms, publication);

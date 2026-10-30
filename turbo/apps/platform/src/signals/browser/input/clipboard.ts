@@ -152,7 +152,13 @@ type ClipboardObservation = ReturnType<typeof createClipboardObservation>;
 
 /** Trusted activation starts local writing before the ordered remote read. */
 function createClipboardTransfer(observation: ClipboardObservation) {
-  const { attempt$, internalRecovery$, currentAttempt$, failed$ } = observation;
+  const {
+    attempt$,
+    internalRecovery$,
+    currentAttempt$,
+    failed$,
+    synchronize$,
+  } = observation;
   const writeData$ = command(
     async (
       { get, set },
@@ -205,6 +211,9 @@ function createClipboardTransfer(observation: ClipboardObservation) {
           transition: get(binding.target.transition$),
         });
       }
+      // The trusted copy gesture adopts its admission epoch before native
+      // reconciliation can retire stale clipboard state.
+      set(synchronize$);
       const [reply] = await Promise.allSettled([selection]);
       if (signal.aborted) {
         return;

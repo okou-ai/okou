@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -36,6 +36,8 @@ import {
 } from "@okouai/ui";
 import type { BrowserSignals } from "../../signals/browser/browser.ts";
 import { CdpFault } from "../../signals/browser/cdp/errors.ts";
+import { NavigationFault } from "../../signals/browser/navigation/action.ts";
+import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
 import type {
   ViewerCaptureOptions,
@@ -323,7 +325,7 @@ function WindowSettingsMenu({
   readonly signals: BrowserSignals;
   readonly pending: boolean;
   readonly syncing: boolean;
-  readonly onChange: (value: WindowSizeSync) => Promise<void>;
+  readonly onChange: (value: WindowSizeSync) => Promise<DisplayModeResult>;
   readonly onSync: () => Promise<void>;
 }) {
   const { t } = useTranslation();
@@ -435,7 +437,8 @@ function TransportSettingsMenu({
 
 function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
   const { t } = useTranslation();
-  const navigation = useGet(signals.navigation$);
+  const history = useLoadable(signals.history$);
+  const scope = useGet(signals.navigationScope$);
   const address = useGet(signals.address$);
   const controls = useGet(signals.controls$);
   const pageSignal = useGet(pageSignal$);
@@ -444,31 +447,16 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
   const edit = useSet(signals.editAddress$);
   const blur = useSet(signals.blurAddress$);
   const reset = useSet(signals.resetAddress$);
-  const [backOperation, goBack] = useLoadableSet(signals.goBack$);
-  const [forwardOperation, goForward] = useLoadableSet(signals.goForward$);
-  const [reloadOperation, reloadPage] = useLoadableSet(signals.reloadPage$);
-  const [submitOperation, submitAddress] = useLoadableSet(
-    signals.submitAddress$,
-  );
-  const navigating = [
-    backOperation,
-    forwardOperation,
-    reloadOperation,
-    submitOperation,
-  ].some((operation) => {
-    return operation.state === "loading";
-  });
-  const failed = [
-    backOperation,
-    forwardOperation,
-    reloadOperation,
-    submitOperation,
-  ].some((operation) => {
-    return (
-      operation.state === "hasError" &&
-      isBrowserOperationFailure(operation.error)
-    );
-  });
+  const [operation, navigate] = useLoadableSet(signals.navigate$);
+  const navigating = operation.state === "loading";
+  const entries = history.state === "hasData" ? history.data : null;
+  const failed =
+    (history.state === "hasError" &&
+      isBrowserOperationFailure(history.error)) ||
+    (operation.state === "hasError" &&
+      isBrowserOperationFailure(operation.error) &&
+      (!(operation.error instanceof NavigationFault) ||
+        operation.error.scope === scope));
   return (
     <>
       <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
@@ -478,9 +466,9 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
           aria-label={t(($) => {
             return $.browserViewer.back;
           })}
-          disabled={!controls.streaming || !navigation?.canGoBack || navigating}
+          disabled={!controls.streaming || !entries?.canGoBack || navigating}
           onClick={() => {
-            detach(goBack(pageSignal), Reason.DomCallback);
+            detach(navigate("back", pageSignal), Reason.DomCallback);
           }}
         >
           <ArrowLeft size={16} />
@@ -491,11 +479,9 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
           aria-label={t(($) => {
             return $.browserViewer.forward;
           })}
-          disabled={
-            !controls.streaming || !navigation?.canGoForward || navigating
-          }
+          disabled={!controls.streaming || !entries?.canGoForward || navigating}
           onClick={() => {
-            detach(goForward(pageSignal), Reason.DomCallback);
+            detach(navigate("forward", pageSignal), Reason.DomCallback);
           }}
         >
           <ArrowRight size={16} />
@@ -508,7 +494,7 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
           })}
           disabled={!controls.streaming || navigating}
           onClick={() => {
-            detach(reloadPage(pageSignal), Reason.DomCallback);
+            detach(navigate("reload", pageSignal), Reason.DomCallback);
           }}
         >
           <RotateCw size={15} />
@@ -524,8 +510,8 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
           })}
           className="h-8 min-w-0 flex-1"
           value={address}
-          disabled={!controls.streaming || submitOperation.state === "loading"}
-          aria-busy={submitOperation.state === "loading"}
+          disabled={!controls.streaming || navigating}
+          aria-busy={navigating}
           onFocus={() => {
             return focus();
           }}
@@ -545,7 +531,10 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
             if (event.key === "Enter") {
               event.preventDefault();
               if (!navigating) {
-                detach(submitAddress(pageSignal), Reason.DomCallback);
+                detach(
+                  navigate("submit-address", pageSignal),
+                  Reason.DomCallback,
+                );
               }
             } else if (event.key === "Escape") {
               event.preventDefault();
@@ -769,6 +758,7 @@ function BrowserStatus({
   const { t } = useTranslation();
   const controls = useGet(signals.controls$);
   const presentation = useGet(signals.presentation$);
+  const displayRecovery = useGet(signals.displayRecovery$);
   const imageRecovery = useGet(signals.imageRecovery$);
   const pageSignal = useGet(pageSignal$);
   const [retryOperation, retryImage] = useLoadableSet(signals.retryImage$);
@@ -777,6 +767,7 @@ function BrowserStatus({
     retryOperation.state === "loading" ||
     reconnectOperation.state === "loading";
   const failed =
+    displayRecovery !== null ||
     (retryOperation.state === "hasError" &&
       isBrowserOperationFailure(retryOperation.error)) ||
     (reconnectOperation.state === "hasError" &&
@@ -963,7 +954,7 @@ export function Browser({
   const pageSignal = useGet(pageSignal$);
   const imageRecovery = useGet(signals.imageRecovery$);
   const rootRef = useSet(useGet(signals.refs.root$));
-  const surfaceRef = useSet(useGet(signals.refs.surface$));
+  const surfaceRef = useSet(signals.refs.surface$);
   const canvasRef = useSet(signals.refs.canvas$);
   const inputRef = useSet(signals.refs.input$);
   const [selectOperation, selectTab] = useLoadableSet(signals.selectTab$);

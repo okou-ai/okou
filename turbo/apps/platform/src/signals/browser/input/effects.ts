@@ -76,7 +76,18 @@ function createEffectReceipts(graph: EffectState) {
       ) {
         set(imeUnsupported$, true);
       } else {
-        set(failed$, true);
+        const rejectedNavigation =
+          (operation.method === "Page.navigate" ||
+            operation.method === "Page.reload" ||
+            operation.method === "Page.navigateToHistoryEntry") &&
+          result.reason instanceof CdpFault &&
+          result.reason.code !== undefined;
+        // A native navigation error response settles that command, not the
+        // document's outcome. Input failures and unknown native outcomes still
+        // leave original cleanup unconfirmed; no failed receipt is reset.
+        if (!rejectedNavigation) {
+          set(failed$, true);
+        }
       }
       return result.status === "fulfilled"
         ? { ok: true, result: result.value }

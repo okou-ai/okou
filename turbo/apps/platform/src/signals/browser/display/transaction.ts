@@ -49,7 +49,8 @@ export interface ExecutionPolicy {
 
 export type DisplayResult =
   | Extract<DisplayOutcome, { readonly kind: "completed" }>
-  | { readonly kind: "deferred" | "retired" }
+  | { readonly kind: "deferred" }
+  | { readonly kind: "retired" }
   | { readonly kind: "failed"; readonly error: CdpFault };
 
 export interface DisplayCompletion {

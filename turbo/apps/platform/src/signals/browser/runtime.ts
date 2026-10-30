@@ -14,12 +14,17 @@ import type { DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus } from "./focus.ts";
 import { navigationAddress } from "./input/address.ts";
 import { createNativeInput } from "./input/native.ts";
+import {
+  NavigationFault,
+  type BrowserNavigationAction,
+} from "./navigation/action.ts";
 import { observeTabStrip } from "./tab-strip.ts";
 import { createBrowserController } from "./viewer/controller.ts";
 import { createViewerSignals } from "./viewer/model.ts";
 import type { TabSpace } from "./viewer/tab-layout.ts";
 import type {
   BrowserConnection,
+  NavigationReceipt,
   ViewerCaptureOptions,
   ViewerTransport,
   WindowSizeSync,
@@ -34,7 +39,7 @@ interface BrowserNodes {
   readonly toolbar: Mounted<HTMLDivElement>;
   readonly tabs: Mounted<HTMLDivElement>;
   readonly address: Mounted<HTMLInputElement>;
-  readonly surface: HTMLDivElement;
+  readonly surface: Mounted<HTMLDivElement>;
 }
 interface BrowserIdentity {
   readonly connection: BrowserConnection;
@@ -168,14 +173,17 @@ function createRuntimeState(
     const lease = get(installed$);
     return lease ? get(lease.controller.navigation$) : null;
   });
-  const model = createViewerSignals(remoteNavigation$);
+  const remoteNavigationScope$ = computed((get) => {
+    const lease = get(installed$);
+    return lease ? get(lease.controller.navigationScope$) : null;
+  });
+  const model = createViewerSignals(remoteNavigation$, remoteNavigationScope$);
   const confirmedRequest$ = state<
     Promise<BrowserConnection | null> | undefined
   >(undefined);
   const liveConnection$ = state<BrowserConnection | null>(null);
   const generation$ = state(0);
   const observer$ = state<object | null>(null);
-  const surfaceNode$ = state<HTMLDivElement | null>(null);
   const inViewport$ = state(true);
   const documentHidden$ = state(document.hidden);
   const resetNativeOwner$ = resetSignal();
@@ -199,7 +207,6 @@ function createRuntimeState(
     liveConnection$,
     generation$,
     observer$,
-    surfaceNode$,
     installed$,
     inViewport$,
     documentHidden$,
@@ -211,10 +218,8 @@ function createRuntimeState(
 }
 type RuntimeState = ReturnType<typeof createRuntimeState>;
 
-function createMountedNodeGraph(
-  released$: Command<void, [object]>,
-  surfaceNode$: RuntimeState["surfaceNode$"],
-) {
+function createMountedNodeGraph(released$: Command<void, [object]>) {
+  const surface = createNodeRef<HTMLDivElement>(released$);
   const canvas = createNodeRef<HTMLCanvasElement>(released$);
   const inputNode = createNodeRef<HTMLTextAreaElement>(released$);
   const toolbar = createNodeRef<HTMLDivElement>(released$);
@@ -226,20 +231,20 @@ function createMountedNodeGraph(
     const toolbarNode = get(toolbar.mounted$);
     const tabsNode = get(tabs.mounted$);
     const addressNode = get(address.mounted$);
-    const surface = get(surfaceNode$);
+    const surfaceNode = get(surface.mounted$);
     return canvasNode &&
       proxy &&
       toolbarNode &&
       tabsNode &&
       addressNode &&
-      surface
+      surfaceNode
       ? {
           canvas: canvasNode,
           input: proxy,
           toolbar: toolbarNode,
           tabs: tabsNode,
           address: addressNode,
-          surface,
+          surface: surfaceNode,
         }
       : null;
   });
@@ -251,7 +256,16 @@ function createMountedNodeGraph(
       ? { toolbar: toolbarNode, tabs: tabsNode, address: addressNode }
       : null;
   });
-  return { canvas, inputNode, toolbar, tabs, address, nodes$, toolbarNodes$ };
+  return {
+    surface,
+    canvas,
+    inputNode,
+    toolbar,
+    tabs,
+    address,
+    nodes$,
+    toolbarNodes$,
+  };
 }
 
 /** DOM incarnation and immutable connection identity determine the child graph. */
@@ -260,7 +274,6 @@ function createDOMGraph(context: RuntimeState) {
     model,
     installed$,
     resetNativeOwner$,
-    surfaceNode$,
     liveConnection$,
     generation$,
     authority$,
@@ -280,6 +293,7 @@ function createDOMGraph(context: RuntimeState) {
     const nodes = lease.identity.nodes;
     if (
       [
+        nodes.surface,
         nodes.canvas,
         nodes.input,
         nodes.toolbar,
@@ -292,8 +306,16 @@ function createDOMGraph(context: RuntimeState) {
       set(retireLease$, lease);
     }
   });
-  const { canvas, inputNode, toolbar, tabs, address, nodes$, toolbarNodes$ } =
-    createMountedNodeGraph(released$, surfaceNode$);
+  const {
+    surface,
+    canvas,
+    inputNode,
+    toolbar,
+    tabs,
+    address,
+    nodes$,
+    toolbarNodes$,
+  } = createMountedNodeGraph(released$);
   const focus = createToolbarFocus(toolbarNodes$);
   const identity$ = computed((get): BrowserIdentity | null => {
     const connection = get(liveConnection$);
@@ -302,6 +324,11 @@ function createDOMGraph(context: RuntimeState) {
       ? { connection, nodes, generation: get(generation$) }
       : null;
   });
+  const selectedInput$ = computed((get) => {
+    const lease = get(installed$);
+    return lease ? get(lease.controller.input$) : null;
+  });
+  const native = createNativeInput(selectedInput$, focus.release$);
   const controllerGraph$ = computed((get) => {
     const identity = get(identity$);
     return identity
@@ -312,15 +339,11 @@ function createDOMGraph(context: RuntimeState) {
             identity.connection,
             identity.nodes.canvas.node,
             authority$,
+            native,
           ),
         }
       : null;
   });
-  const selectedInput$ = computed((get) => {
-    const lease = get(installed$);
-    return lease ? get(lease.controller.input$) : null;
-  });
-  const native = createNativeInput(selectedInput$, focus.release$);
   const requireController$ = command(
     ({ get }, signal: AbortSignal): NativeLease => {
       signal.throwIfAborted();
@@ -337,6 +360,7 @@ function createDOMGraph(context: RuntimeState) {
   );
   return {
     retireLease$,
+    surface,
     canvas,
     inputNode,
     toolbar,
@@ -443,7 +467,7 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
           set(documentHidden$, document.hidden);
           set(
             native.bind$,
-            nodes.surface,
+            nodes.surface.node,
             nodes.canvas.node,
             nodes.input.node,
             owner,
@@ -676,34 +700,6 @@ function createConnectionObservers(
   return { root$ };
 }
 
-/** Finite commit bridge for input owner/IME/clipboard/caret, never frame receipts. */
-function createSurfaceRef(context: RuntimeState, graph: RuntimeGraph) {
-  const { surfaceNode$ } = context;
-  const { selectedInput$, native } = graph;
-  const surface$ = computed((get) => {
-    const input = get(selectedInput$);
-    if (input) {
-      get(input.owner$);
-      get(input.transition$);
-      get(input.clipboardEpoch$);
-    }
-    const caret = input ? get(input.caret$) : null;
-    return command(({ get, set }, node: HTMLDivElement | null) => {
-      if (!node) {
-        return;
-      }
-      if (get(surfaceNode$) !== node) {
-        set(surfaceNode$, node);
-      }
-      set(native.synchronize$);
-      if (caret && get(selectedInput$) === input) {
-        set(native.place$, caret);
-      }
-    });
-  });
-  return surface$;
-}
-
 function createTabActions(graph: RuntimeGraph) {
   const { requireController$, focus } = graph;
   const selectTab$ = command(
@@ -744,30 +740,52 @@ function createTabActions(graph: RuntimeGraph) {
 function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   const { model } = context;
   const { requireController$ } = graph;
-  const goBack$ = command(async ({ set }, signal: AbortSignal) => {
-    const lease = set(requireController$, signal);
-    await set(lease.controller.goBack$, signal);
-  });
-  const goForward$ = command(async ({ set }, signal: AbortSignal) => {
-    const lease = set(requireController$, signal);
-    await set(lease.controller.goForward$, signal);
-  });
-  const reloadPage$ = command(async ({ set }, signal: AbortSignal) => {
-    const lease = set(requireController$, signal);
-    await set(lease.controller.reloadPage$, signal);
-  });
-  const submitAddress$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const lease = set(requireController$, signal);
-    const submitted = get(model.address$);
-    const selection = get(model.intent$).selection;
-    const url = navigationAddress(submitted);
-    if (!url) {
-      throw new CdpFault("input", "Enter a valid page address.");
-    }
-    await set(lease.controller.navigate$, { url }, signal);
-    set(model.acceptAddress$, selection, submitted);
-  });
-  return { goBack$, goForward$, reloadPage$, submitAddress$ };
+  const execute$ = command(
+    async (
+      { get, set },
+      lease: NativeLease,
+      action: BrowserNavigationAction,
+      signal: AbortSignal,
+    ): Promise<NavigationReceipt> => {
+      if (action !== "submit-address") {
+        return await set(lease.controller.navigate$, action, signal);
+      }
+      const scope = get(lease.controller.navigationScope$);
+      if (!scope) {
+        throw cancelled();
+      }
+      const submission = set(model.prepareAddress$, scope);
+      const url = navigationAddress(submission.value);
+      if (!url) {
+        throw new CdpFault("input", "Enter a valid page address.");
+      }
+      const receipt = await set(lease.controller.navigate$, { url }, signal);
+      set(model.acceptAddress$, submission, receipt);
+      return receipt;
+    },
+  );
+  const navigate$ = command(
+    async (
+      { get, set },
+      action: BrowserNavigationAction,
+      signal: AbortSignal,
+    ): Promise<NavigationReceipt> => {
+      const lease = set(requireController$, signal);
+      const scope = get(lease.controller.navigationScope$);
+      const [result] = await Promise.allSettled([
+        set(execute$, lease, action, signal),
+      ]);
+      signal.throwIfAborted();
+      if (result.status === "rejected") {
+        if (isAbortError(result.reason)) {
+          throw result.reason;
+        }
+        throw new NavigationFault(scope, result.reason);
+      }
+      return result.value;
+    },
+  );
+  return { navigate$ };
 }
 
 function createConfigurationActions(
@@ -816,7 +834,7 @@ function createConfigurationActions(
   const changeWindowSizeSync$ = command(
     async ({ set }, mode: WindowSizeSync, signal: AbortSignal) => {
       const lease = set(requireController$, signal);
-      await set(lease.controller.changeWindowSizeSync$, mode, signal);
+      return await set(lease.controller.changeWindowSizeSync$, mode, signal);
     },
   );
   const syncDisplay$ = command(async ({ set }, signal: AbortSignal) => {
@@ -876,7 +894,33 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
     const lease = get(installed$);
     return get(authority$) && lease ? get(lease.controller.navigation$) : null;
   });
-  return { display$, controls$, presentation$, navigation$ };
+  const history$ = computed(async (get) => {
+    const lease = get(installed$);
+    return get(authority$) && lease
+      ? await get(lease.controller.history$)
+      : null;
+  });
+  const navigationScope$ = computed((get) => {
+    const lease = get(installed$);
+    return get(authority$) && lease
+      ? get(lease.controller.navigationScope$)
+      : null;
+  });
+  const displayRecovery$ = computed((get) => {
+    const lease = get(installed$);
+    return get(authority$) && lease
+      ? get(lease.controller.displayRecovery$)
+      : null;
+  });
+  return {
+    display$,
+    controls$,
+    presentation$,
+    navigation$,
+    history$,
+    navigationScope$,
+    displayRecovery$,
+  };
 }
 
 /** Compose private graphs in the existing App Store; expose only the public API. */
@@ -887,7 +931,7 @@ export function createBrowserRuntime(
   const graph = createDOMGraph(context);
   const lifecycle = createNativeLifecycle(context, graph);
   const observers = createConnectionObservers(context, graph, lifecycle);
-  const surface$ = createSurfaceRef(context, graph);
+  const surface$ = graph.surface.ref$;
   const tabActions = createTabActions(graph);
   const navigationActions = createNavigationActions(context, graph);
   const configurationActions = createConfigurationActions(
@@ -907,8 +951,6 @@ export function createBrowserRuntime(
     windowSizeSync$: model.windowSizeSync$,
     clipboardRecovery$: graph.native.recovery$,
     tabLayout$: model.tabLayout$,
-    notification$: model.notification$,
-    dismissNotification$: model.dismissNotification$,
     rejectFavicon$: model.rejectFavicon$,
     editAddress$: model.editAddress$,
     resetAddress$: model.resetAddress$,
