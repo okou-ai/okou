@@ -444,7 +444,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Connect WeChat by QR code and chat with Okou in direct messages.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabledOrgIdHashes: [...STAFF_ORG_ID_HASHES, "3043664c"],
   },
   [FeatureSwitchKey.WhatsappFileUpload]: {
     maintainer: "yuma@okou.ai",
