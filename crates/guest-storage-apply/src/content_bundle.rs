@@ -1,72 +1,70 @@
-//! Install verified run-private package files without trusting writable Guest cache state.
+//! Verify and install a complete private archive without trusting writable Guest cache state.
 use crate::cleanup_directory::CleanupDirectory;
-use guest_contracts::content_bundle::{BundleApplication, MAX_METADATA_BYTES};
-use std::{collections::HashSet, fs, io, os::unix::fs::PermissionsExt, path::Path};
+use guest_contracts::content_bundle::{BundleApplication, BundleArchiveSource, MAX_METADATA_BYTES};
+use std::{
+    collections::HashSet,
+    fs, io,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    path::Path,
+};
+
+fn invalid() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "Invalid content bundle application",
+    )
+}
 
 pub fn apply_content_bundle(home: &Path, runtime: &Path, metadata: &[u8]) -> bool {
-    apply(home, runtime, metadata).is_ok()
+    match apply(home, runtime, metadata) {
+        Ok(()) => true,
+        Err(error) => {
+            guest_telemetry::log_error!(
+                crate::LOG_TAG,
+                "Content bundle application failed: {error}"
+            );
+            false
+        }
+    }
 }
 fn apply(home: &Path, runtime: &Path, metadata: &[u8]) -> io::Result<()> {
-    let invalid = || {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid content bundle application",
-        )
-    };
     if metadata.len() > MAX_METADATA_BYTES {
         return Err(invalid());
     }
     let input: BundleApplication = serde_json::from_slice(metadata).map_err(|_| invalid())?;
-    let safe_source = |source: &str| -> io::Result<()> {
-        let path = Path::new(source);
-        if path.parent() != Some(runtime)
-            || !path
-                .file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with("bundle-"))
-            || !fs::symlink_metadata(path)?.file_type().is_file()
-        {
-            return Err(invalid());
-        }
-        Ok(())
+    let archive = match &input {
+        BundleApplication::Instructions { archive, .. }
+        | BundleApplication::Skill { archive, .. } => archive,
     };
+    let staging = runtime.join("bundle-staging");
+    match fs::remove_dir_all(&staging) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    fs::create_dir(&staging)?;
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o700))?;
+    let paths = unpack_archive(runtime, archive, &staging)?;
     match input {
-        BundleApplication::Instructions { framework, source } => {
-            safe_source(&source)?;
-            if !crate::instructions::apply_agent_instructions(home, &framework, Path::new(&source))
-            {
+        BundleApplication::Instructions { framework, archive } => {
+            if paths.len() != 1 || !paths.contains("instructions.md") {
                 return Err(invalid());
             }
-            fs::remove_file(source)
+            let source = staging.join("instructions.md");
+            if !crate::instructions::apply_agent_instructions(home, &framework, &source) {
+                return Err(invalid());
+            }
+            fs::remove_dir_all(staging)?;
+            fs::remove_file(archive.source)
         }
-        BundleApplication::Skill { mount, files } => {
+        BundleApplication::Skill { mount, archive } => {
             let Some(relative) =
                 crate::instructions::workflow_skill_relative_mount(home, Path::new(&mount))
             else {
                 return Err(invalid());
             };
-            if files.is_empty() || files.len() > 501 || !files.iter().any(|f| f.path == "SKILL.md")
-            {
+            if !paths.contains("SKILL.md") {
                 return Err(invalid());
-            }
-            let mut paths = HashSet::new();
-            let mut total = 0u64;
-            for file in &files {
-                safe_source(&file.source)?;
-                if file.path.is_empty()
-                    || file.path.encode_utf16().count() > 256
-                    || file.path.contains(['\\', '\0'])
-                    || file
-                        .path
-                        .split('/')
-                        .any(|p| p.is_empty() || p == "." || p == "..")
-                    || !paths.insert(file.path.clone())
-                {
-                    return Err(invalid());
-                }
-                total = total.saturating_add(fs::metadata(&file.source)?.len());
-                if total > 32 * 1024 * 1024 {
-                    return Err(invalid());
-                }
             }
             // All package paths are validated before touching a managed destination.
             let target = home.join(relative);
@@ -88,22 +86,6 @@ fn apply(home: &Path, runtime: &Path, metadata: &[u8]) -> io::Result<()> {
                 }
             }
             let pinned = CleanupDirectory::open(parent)?;
-            let staging = runtime.join("bundle-skill-staging");
-            match fs::remove_dir_all(&staging) {
-                Ok(()) => {}
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e),
-            }
-            fs::create_dir(&staging)?;
-            fs::set_permissions(&staging, fs::Permissions::from_mode(0o700))?;
-            for file in &files {
-                let destination = staging.join(&file.path);
-                if let Some(parent) = destination.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::copy(&file.source, &destination)?;
-                fs::set_permissions(&destination, fs::Permissions::from_mode(0o600))?;
-            }
             let target = pinned
                 .proc_path()
                 .join(target.file_name().ok_or_else(invalid)?);
@@ -116,10 +98,78 @@ fn apply(home: &Path, runtime: &Path, metadata: &[u8]) -> io::Result<()> {
                 Err(e) => return Err(e),
             }
             fs::rename(staging, target)?;
-            for file in files {
-                fs::remove_file(file.source)?;
-            }
-            Ok(())
+            fs::remove_file(archive.source)
         }
     }
+}
+
+fn unpack_archive(
+    runtime: &Path,
+    archive: &BundleArchiveSource,
+    staging: &Path,
+) -> io::Result<HashSet<String>> {
+    let path = Path::new(&archive.source);
+    if path.parent() != Some(runtime)
+        || !path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("bundle-"))
+        || archive.archive_bytes == 0
+        || archive.archive_bytes > 32 * 1024 * 1024
+    {
+        return Err(invalid());
+    }
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() || file.metadata()?.len() != archive.archive_bytes {
+        return Err(invalid());
+    }
+    let source = crate::source::verify_archive(
+        crate::source::ArchiveSource::local(file, Some(archive.archive_bytes)),
+        &archive.sha256,
+        Some(archive.archive_bytes),
+    )
+    .map_err(|error| io::Error::other(error.to_string()))?;
+    let mut paths = HashSet::<String>::new();
+    let mut total = 0u64;
+    crate::archive::extract_tar_gz_checked(
+        source,
+        staging,
+        34 * 1024 * 1024,
+        |path, kind, size| {
+            if !kind.is_file() || paths.len() >= 501 {
+                return Err(invalid());
+            }
+            let path = path.to_str().ok_or_else(invalid)?;
+            if path.is_empty()
+                || path.encode_utf16().count() > 256
+                || path.contains(['\\', '\0'])
+                || path
+                    .split('/')
+                    .any(|p| p.is_empty() || p == "." || p == "..")
+                || paths.contains(path)
+                || paths.iter().any(|existing| {
+                    path.strip_prefix(existing.as_str())
+                        .is_some_and(|suffix| suffix.starts_with('/'))
+                        || existing
+                            .strip_prefix(path)
+                            .is_some_and(|suffix| suffix.starts_with('/'))
+                })
+            {
+                return Err(invalid());
+            }
+            total = total.saturating_add(size);
+            if total > 32 * 1024 * 1024 {
+                return Err(invalid());
+            }
+            paths.insert(path.into());
+            Ok(())
+        },
+    )
+    .map_err(|error| io::Error::other(error.to_string()))?;
+    for path in &paths {
+        fs::set_permissions(staging.join(path), fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(paths)
 }

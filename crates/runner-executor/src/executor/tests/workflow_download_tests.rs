@@ -238,15 +238,14 @@ async fn prepared_bundle_claim_uses_hash_cache_and_applies_before_agent_spawn() 
             .private_write_files_calls()
             .iter()
             .flat_map(|call| &call.files)
-            .any(|file| file.content == "---\nname: example\n---\n\n正文\n".as_bytes())
+            .any(|file| file.content == archive)
     );
     assert!(
         overrides
             .private_write_files_calls()
             .iter()
             .flat_map(|call| &call.files)
-            .any(|file| file.content
-                == "\u{feff}  原始 instructions\r\n[AGENT_PROFILE]\n  ".as_bytes())
+            .any(|file| file.content == instructions)
     );
     assert!(
         overrides
@@ -262,49 +261,45 @@ async fn prepared_bundle_claim_uses_hash_cache_and_applies_before_agent_spawn() 
 }
 
 #[tokio::test]
-async fn prepared_bundle_claim_rejects_mixed_protocols_and_invalid_instruction_packages() {
-    for mixed in [true, false] {
-        let directory = tempfile::tempdir().unwrap();
-        let config = test_executor_config(directory.path()).await;
-        let archive = include_bytes!("../../../tests/fixtures/content-bundle-v1.tar.gz");
-        let hash = "d1467f9f02022e04ad66f2e983158c80ea58a152e8eec1ea7d07b0f51d3b3c67";
-        tokio::fs::create_dir_all(config.home.bundles_dir())
-            .await
-            .unwrap();
-        tokio::fs::write(
-            config.home.bundles_dir().join(format!("{hash}.tar.gz")),
-            archive,
-        )
+async fn prepared_bundle_claim_rejects_mixed_protocols_before_sandbox_creation() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = test_executor_config(directory.path()).await;
+    let archive = include_bytes!("../../../tests/fixtures/content-bundle-v1.tar.gz");
+    let hash = "d1467f9f02022e04ad66f2e983158c80ea58a152e8eec1ea7d07b0f51d3b3c67";
+    tokio::fs::create_dir_all(config.home.bundles_dir())
         .await
         .unwrap();
-        let mut context = minimal_context();
-        context.content_bundles = Some(serde_json::from_value(serde_json::json!({
+    tokio::fs::write(
+        config.home.bundles_dir().join(format!("{hash}.tar.gz")),
+        archive,
+    )
+    .await
+    .unwrap();
+    let mut context = minimal_context();
+    context.content_bundles = Some(serde_json::from_value(serde_json::json!({
             "format": "tar-gzip-v1",
             "instructions": {"sha256":hash,"archiveBytes":archive.len(),"downloadUrl":"https://unreachable.invalid/cached"},
             "skills": [],
         })).unwrap());
-        if mixed {
-            context.agent_instructions = Some("legacy body".into());
-        }
-        let overrides = Arc::new(MockSandboxOverrides::new());
-        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
-        let (outcome, _) = execute_job(
-            &factory,
-            context,
-            NewSandboxDispatch {
-                id: SandboxId::new_v4(),
-                reuse_result: SandboxReuseResult::NoReuseKey,
-            },
-            &config,
-            &default_params(),
-            CancellationToken::new(),
-        )
-        .await;
-        assert_ne!(outcome.exit_code(), 0);
-        assert!(outcome.sandbox.is_none());
-        assert!(overrides.private_write_files_calls().is_empty());
-        assert!(overrides.start_agent_process_calls().is_empty());
-    }
+    context.agent_instructions = Some("legacy body".into());
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let (outcome, _) = execute_job(
+        &factory,
+        context,
+        NewSandboxDispatch {
+            id: SandboxId::new_v4(),
+            reuse_result: SandboxReuseResult::NoReuseKey,
+        },
+        &config,
+        &default_params(),
+        CancellationToken::new(),
+    )
+    .await;
+    assert_ne!(outcome.exit_code(), 0);
+    assert!(outcome.sandbox.is_none());
+    assert!(overrides.private_write_files_calls().is_empty());
+    assert!(overrides.start_agent_process_calls().is_empty());
 }
 
 #[tokio::test]
