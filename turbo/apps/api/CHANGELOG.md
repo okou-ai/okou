@@ -9,6 +9,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.32.1](https://github.com/okou-ai/okou/compare/api-v2.32.0...api-v2.32.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **api:** order browser captures before native io ([#44336](https://github.com/okou-ai/okou/issues/44336)) ([21624c7](https://github.com/okou-ai/okou/commit/21624c7b5b6fea897f4b69d7432b08d9a242abfa))
+* **platform:** allow native browser viewing without provider urls ([#44334](https://github.com/okou-ai/okou/issues/44334)) ([2f25522](https://github.com/okou-ai/okou/commit/2f25522e5c79a8faecd7a731a142ea140dffd63d))
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
+
+### Refactoring
+
+* **api:** localize discord sender and dm binding reads ([#44338](https://github.com/okou-ai/okou/issues/44338)) ([baecf91](https://github.com/okou-ai/okou/commit/baecf91235cc7317a87b1e1a097b5c8939217994))
+* **api:** replace run admission transaction with atomic sql ([#44323](https://github.com/okou-ai/okou/issues/44323)) ([92d9d8a](https://github.com/okou-ai/okou/commit/92d9d8a0560866bd5d781d0d9bf66d5d273c486b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.25.1
+    * @okouai/core bumped to 8.805.2
+    * @okouai/db bumped to 2.13.10
+    * @okouai/pi-agent-runtime bumped to 1.51.36
+
 ## [2.32.0](https://github.com/okou-ai/okou/compare/api-v2.31.5...api-v2.32.0) (2026-10-30)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.0...runner-executor-v0.18.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* reuse storage archive delivery for content bundles ([#44340](https://github.com/okou-ai/okou/issues/44340)) ([24073bf](https://github.com/okou-ai/okou/commit/24073bf2f0df9edce9625b89fa0a06af356e92ec))
+
 ## [0.18.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.17.4...runner-executor-v0.18.0) (2026-10-30)
 
 
