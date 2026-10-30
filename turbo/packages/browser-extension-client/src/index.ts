@@ -400,10 +400,13 @@ export class OkouBrowserClient {
     if (
       event.sessionId !== this.workerSession ||
       event.method !== "Runtime.bindingCalled" ||
-      event.params.name !== EVENT_BINDING ||
-      typeof event.params.payload !== "string"
+      event.params.name !== EVENT_BINDING
     )
       return;
+    if (typeof event.params.payload !== "string") {
+      void this.close();
+      return;
+    }
     try {
       const value = record(JSON.parse(event.params.payload));
       if (
@@ -489,13 +492,12 @@ export class OkouBrowserClient {
     if (method === "hello" && remote.type === "undefined")
       throw new BrowserBridgeError("unavailable");
     const value = record(remote.value);
-    if (value.ok === false) throw new BrowserBridgeError("native");
     if (this.epoch !== undefined && this.epoch !== value.epoch) {
       void this.close();
       throw new BrowserBridgeError("unavailable");
     }
     if (
-      value.ok !== true ||
+      (value.ok !== true && value.ok !== false) ||
       typeof value.epoch !== "string" ||
       !Number.isSafeInteger(value.startedSequence) ||
       !Number.isSafeInteger(value.sequence) ||
@@ -512,6 +514,7 @@ export class OkouBrowserClient {
       void this.close();
       throw new BrowserBridgeError("unavailable");
     }
+    if (value.ok === false) throw new BrowserBridgeError("native");
     return value as unknown as Observation<Operations[M]["result"]>;
   }
 

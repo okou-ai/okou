@@ -244,7 +244,9 @@ test("events overtaking the hello response establish a contiguous fresh baseline
     const connecting = OkouBrowserClient.connect({
       runtimeId: f.runtimeId,
       transport: {
-        onEvent: (listener) => {return f.wire.onEvent(listener)},
+        onEvent: (listener) => {
+          return f.wire.onEvent(listener);
+        },
         async request(method, params, sessionId) {
           const value = await f.wire.request(method, params, sessionId);
           if (
@@ -267,15 +269,17 @@ test("events overtaking the hello response establish a contiguous fresh baseline
     release.resolve();
     client = await connecting;
     const events = [];
-    client.onEvent((event) => {return events.push(event)});
+    client.onEvent((event) => {
+      return events.push(event);
+    });
     const created = (await client.call("createTab", { url: "about:blank" }))
       .value;
     expect(created.id).toBeGreaterThan(0);
     expect(client.signal.aborted).toBe(false);
     expect(
-      events.some(
-        (event) => {return event.kind === "tab-created" && event.tabId === created.id},
-      ),
+      events.some((event) => {
+        return event.kind === "tab-created" && event.tabId === created.id;
+      }),
     ).toBe(true);
   } finally {
     release.resolve();
@@ -293,13 +297,17 @@ test("native tab observations retain an uncommitted navigation destination", asy
     entered.resolve();
   });
   try {
-    await new Promise((resolve) => {return pending.listen(0, "127.0.0.1", resolve)});
+    await new Promise((resolve) => {
+      return pending.listen(0, "127.0.0.1", resolve);
+    });
     const client = await f.client();
     const created = (await client.call("createTab", { url: "about:blank" }))
       .value;
     const destination = `http://127.0.0.1:${pending.address().port}/pending`;
     await f.worker.evaluate(
-      ({ tabId, url }) => {return chrome.tabs.update(tabId, { url })},
+      ({ tabId, url }) => {
+        return chrome.tabs.update(tabId, { url });
+      },
       { tabId: created.id, url: destination },
     );
     await entered.promise;
@@ -309,7 +317,9 @@ test("native tab observations retain an uncommitted navigation destination", asy
   } finally {
     held?.end("<!doctype html><title>Completed</title>");
     pending.closeAllConnections();
-    await new Promise((resolve) => {return pending.close(resolve)});
+    await new Promise((resolve) => {
+      return pending.close(resolve);
+    });
     await f.close();
   }
 });
@@ -330,8 +340,8 @@ test("a missing binding event retires only its client without mutation replay", 
             ownedWorker = value.sessionId;
           return value;
         },
-        onEvent: (listener) =>
-          {return f.wire.onEvent((event) => {
+        onEvent: (listener) => {
+          return f.wire.onEvent((event) => {
             if (
               drop &&
               event.method === "Runtime.bindingCalled" &&
@@ -341,7 +351,8 @@ test("a missing binding event retires only its client without mutation replay", 
               return;
             }
             listener(event);
-          })},
+          });
+        },
       },
     });
     drop = true;
@@ -349,8 +360,43 @@ test("a missing binding event retires only its client without mutation replay", 
       await chrome.tabs.create({ url: "about:blank" });
       await chrome.tabs.create({ url: "about:blank" });
     });
-    await expect.poll(() => {return client.signal.aborted}).toBe(true);
+    await expect
+      .poll(() => {
+        return client.signal.aborted;
+      })
+      .toBe(true);
     expect((await sibling.call("hello", {})).value.protocol).toBe(1);
+  } finally {
+    await client?.close();
+    await f.close();
+  }
+});
+
+test("a failed native response cannot conceal a missing event sequence", async () => {
+  const f = await fixture();
+  let client;
+  try {
+    let corrupt = false;
+    client = await OkouBrowserClient.connect({
+      runtimeId: f.runtimeId,
+      transport: {
+        onEvent: (listener) => {
+          return f.wire.onEvent(listener);
+        },
+        async request(method, params, sessionId) {
+          const result = await f.wire.request(method, params, sessionId);
+          if (corrupt && method === "Runtime.evaluate") {
+            result.result.value.sequence += 1000000;
+          }
+          return result;
+        },
+      },
+    });
+    corrupt = true;
+    await expect(
+      client.call("closeWindow", { windowId: 1073741824 }),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+    expect(client.signal.aborted).toBe(true);
   } finally {
     await client?.close();
     await f.close();
