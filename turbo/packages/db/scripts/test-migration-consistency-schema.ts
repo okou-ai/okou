@@ -1085,6 +1085,17 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${runBuiltInAdmission}`,
   );
+  const chatEventSearchProjection = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/publish-chat-event-search-projection.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${chatEventSearchProjection}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1436,6 +1447,17 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "c0151c83c8e52d965b9764bc702adf35",
+  },
+  {
+    schemaName: "public",
+    functionName: "publish_chat_event_search_projection",
+    identityArguments:
+      "p_messages jsonb, p_revoked_event_ids uuid[], p_watermark_thread_id uuid, p_watermark_seq_id bigint",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "50a2fe216ae85095eb34b877a41d9093",
   },
 ];
 

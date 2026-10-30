@@ -2941,6 +2941,13 @@
       "when": 1793359349592,
       "tag": "1498_atomic_run_builtin_admission",
       "breakpoints": true
+    },
+    {
+      "idx": 1499,
+      "version": "7",
+      "when": 1793375625566,
+      "tag": "1499_atomic_chat_event_search_projection",
+      "breakpoints": true
     }
   ]
 }
