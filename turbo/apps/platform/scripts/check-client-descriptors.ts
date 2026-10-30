@@ -1,5 +1,7 @@
 import type { Plugin } from "vite";
 
+import { clientDescriptorManifest } from "../../../packages/api-contracts/src/client/manifest.ts";
+
 const API_CONTRACTS_SOURCE =
   /\/(?:packages\/api-contracts|node_modules\/@okouai\/api-contracts)\/src\//u;
 
@@ -14,20 +16,26 @@ function apiContractsModulePath(moduleId: string): string | undefined {
 /**
  * Check emitted production chunks, not source text or minified schema names.
  *
- * Only the full agents route module is forbidden: other routes may legitimately
- * use the shared agents validators and Zod. The generated descriptor itself is
- * literal metadata with type-only references, so it has no runtime imports.
- * Worker builds share the exclusion without requiring an unused descriptor.
+ * Full HTTP contract modules are forbidden; independent validators and Zod
+ * remain valid runtime dependencies. Each generated descriptor contains literal
+ * metadata with type-only references and therefore has no runtime imports.
+ * Worker builds share the exclusion without requiring unused descriptors.
  */
 export function clientDescriptorsPlugin({
-  requireAgentsDescriptor = true,
-}: { requireAgentsDescriptor?: boolean } = {}): Plugin {
+  requireDescriptor = true,
+}: { requireDescriptor?: boolean } = {}): Plugin {
+  const contractModules = new Set<string>(
+    clientDescriptorManifest.map(({ module }) => {
+      return module;
+    }),
+  );
   return {
     apply: "build",
     enforce: "post",
     name: "platform-client-descriptors",
     generateBundle(_options, bundle) {
       const descriptors = new Set<string>();
+      const fullContracts = new Set<string>();
       let chunkCount = 0;
       for (const output of Object.values(bundle)) {
         if (output.type !== "chunk") {
@@ -41,24 +49,29 @@ export function clientDescriptorsPlugin({
         }
         for (const moduleId of output.moduleIds) {
           const modulePath = apiContractsModulePath(moduleId);
-          if (modulePath === "contracts/agents.ts") {
-            this.error(
-              `${output.fileName}: full agents contract reached the production bundle: ${moduleId}. Import the schema-free client descriptor instead.`,
-            );
+          const contract = /^contracts\/(.+)\.ts$/u.exec(modulePath ?? "");
+          if (contract && contractModules.has(contract[1])) {
+            fullContracts.add(moduleId);
           }
-          if (modulePath === "client/agents.ts") {
+          const descriptor = /^client\/(.+)\.ts$/u.exec(modulePath ?? "");
+          if (descriptor && contractModules.has(descriptor[1])) {
             descriptors.add(moduleId);
           }
         }
+      }
+      if (fullContracts.size > 0) {
+        this.error(
+          `Full HTTP contract reached the production bundle:\n${[...fullContracts].sort().join("\n")}\nImport schema-free client descriptors or independent validators instead.`,
+        );
       }
       if (chunkCount === 0) {
         this.error(
           "Client descriptor guard requires emitted JavaScript chunks",
         );
       }
-      if (requireAgentsDescriptor && descriptors.size === 0) {
+      if (requireDescriptor && descriptors.size === 0) {
         this.error(
-          "Generated agents client descriptor is missing from the production bundle graph",
+          "Generated client descriptor is missing from the production bundle graph",
         );
       }
       for (const descriptorId of descriptors) {

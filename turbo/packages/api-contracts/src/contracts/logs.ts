@@ -16,6 +16,9 @@ import {
   timestampQueryNumberSchema,
 } from "./base";
 import { apiErrorSchema } from "./errors";
+import { triggerSourceSchema } from "../validators/logs";
+
+export { triggerSourceSchema } from "../validators/logs";
 
 /**
  * Cursor-based pagination schema with total pages
@@ -49,28 +52,6 @@ const logStatusSchema = zEnum([
   "failed",
   "timeout",
   "cancelled",
-]);
-
-/**
- * Trigger source enum — how the run was initiated
- */
-export const triggerSourceSchema = zEnum([
-  "web",
-  "slack",
-  "discord",
-  "wechat",
-  "teams",
-  "feishu",
-  "lark",
-  "email",
-  "telegram",
-  "agentphone",
-  "github",
-  "test",
-  "agent",
-  "webhook",
-  "automation-schedule",
-  "automation-event",
 ]);
 
 export type TriggerSource = zInfer<typeof triggerSourceSchema>;

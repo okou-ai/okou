@@ -1,10 +1,10 @@
 import { command, computed, state } from "ccstate";
-import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { logsByIdContract } from "@okouai/api-contracts/client/logs";
+import { runAgentEventsContract } from "@okouai/api-contracts/client/run-routes";
 import type {
   InitClientArgs,
   InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

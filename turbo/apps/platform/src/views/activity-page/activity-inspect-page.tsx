@@ -12,7 +12,7 @@ import {
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
+import { triggerSourceSchema } from "@okouai/api-contracts/validators/logs";
 import type {
   LogStatus,
   TriggerSource,

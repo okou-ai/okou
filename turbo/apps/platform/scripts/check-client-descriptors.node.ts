@@ -69,17 +69,24 @@ await test("production descriptors allow type-only contracts and independent val
   await assert.doesNotReject(fixture.build);
 });
 
-await test("production chunks reject the full agents contract, including lazy imports", async (context) => {
+await test("production chunks reject full HTTP contracts across modules, including lazy imports", async (context) => {
   const fixture = await createFixture(context);
-  for (const contractImport of [
-    `import { agents } from "./${FULL_CONTRACT}"; globalThis.fullContract = agents;`,
-    `globalThis.loadContract = () => import("./${FULL_CONTRACT}");`,
-  ]) {
-    await fixture.write("main.ts", `${MAIN_SOURCE}\n${contractImport}`);
-    await assert.rejects(
-      fixture.build,
-      /full agents contract reached the production bundle/u,
+  for (const module of ["agents", "billing", "chat-threads", "workflows"]) {
+    const contractPath = `${CONTRACT_SOURCE}/contracts/${module}.ts`;
+    await fixture.write(
+      contractPath,
+      "export const contract = { method: 'GET', path: '/api/example' };",
     );
+    for (const contractImport of [
+      `import { contract } from "./${contractPath}"; globalThis.fullContract = contract;`,
+      `globalThis.loadContract = () => import("./${contractPath}");`,
+    ]) {
+      await fixture.write("main.ts", `${MAIN_SOURCE}\n${contractImport}`);
+      await assert.rejects(
+        fixture.build,
+        /Full HTTP contract reached the production bundle/u,
+      );
+    }
   }
 });
 

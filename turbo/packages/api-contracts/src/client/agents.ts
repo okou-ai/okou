@@ -2,34 +2,37 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:client
 
 import type {
-  agentsMainContract as OriginalAgentsMainContract,
-  agentsByIdContract as OriginalAgentsByIdContract,
   agentInstructionsContract as OriginalAgentInstructionsContract,
+  agentsByIdContract as OriginalAgentsByIdContract,
+  agentsMainContract as OriginalAgentsMainContract,
 } from "../contracts/agents";
 import type { ClientDescriptor } from "./types";
 
-export const agentsMainContract: ClientDescriptor<
-  typeof OriginalAgentsMainContract
+export const agentInstructionsContract: ClientDescriptor<
+  typeof OriginalAgentInstructionsContract
 > = {
-  create: {
-    method: "POST",
-    path: "/api/agents",
+  get: {
+    method: "GET",
+    path: "/api/agents/:id/instructions",
     statuses: {
-      201: true,
+      200: true,
       400: true,
       401: true,
       403: true,
-      409: true,
-      422: true,
+      404: true,
     },
   },
-  list: {
-    method: "GET",
-    path: "/api/agents",
+  update: {
+    method: "PUT",
+    path: "/api/agents/:id/instructions",
     statuses: {
       200: true,
+      400: true,
       401: true,
       403: true,
+      404: true,
+      409: true,
+      422: true,
     },
   },
 };
@@ -87,31 +90,28 @@ export const agentsByIdContract: ClientDescriptor<
   },
 };
 
-export const agentInstructionsContract: ClientDescriptor<
-  typeof OriginalAgentInstructionsContract
+export const agentsMainContract: ClientDescriptor<
+  typeof OriginalAgentsMainContract
 > = {
-  get: {
-    method: "GET",
-    path: "/api/agents/:id/instructions",
+  create: {
+    method: "POST",
+    path: "/api/agents",
     statuses: {
-      200: true,
+      201: true,
       400: true,
       401: true,
       403: true,
-      404: true,
-    },
-  },
-  update: {
-    method: "PUT",
-    path: "/api/agents/:id/instructions",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
       409: true,
       422: true,
+    },
+  },
+  list: {
+    method: "GET",
+    path: "/api/agents",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
     },
   },
 };

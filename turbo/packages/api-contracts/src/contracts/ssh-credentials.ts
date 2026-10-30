@@ -1,11 +1,7 @@
 import {
   array,
-  discriminatedUnion,
-  int,
-  literal,
   object,
   string,
-  union,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -14,58 +10,25 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
-export const SSH_DISPLAY_NAME_MAX_LENGTH = 128;
-export const SSH_USERNAME_MAX_LENGTH = 255;
-export const SSH_PRIVATE_KEY_MAX_LENGTH = 65_536;
-export const SSH_PASSPHRASE_MAX_LENGTH = 4_096;
-export const SSH_PASSWORD_MAX_LENGTH = 4_096;
+import {
+  createSshCredentialRequestSchema,
+  updateSshCredentialRequestSchema,
+  revisionSchema,
+  type sshAuthenticationSchema,
+  type sshCredentialSelectionSchema,
+} from "../validators/ssh-credentials";
+export {
+  SSH_DISPLAY_NAME_MAX_LENGTH,
+  SSH_USERNAME_MAX_LENGTH,
+  SSH_PRIVATE_KEY_MAX_LENGTH,
+  SSH_PASSPHRASE_MAX_LENGTH,
+  SSH_PASSWORD_MAX_LENGTH,
+  sshAuthenticationSchema,
+  createSshCredentialRequestSchema,
+  updateSshCredentialRequestSchema,
+  sshCredentialSelectionSchema,
+} from "../validators/ssh-credentials";
 
-export const sshAuthenticationSchema = discriminatedUnion("method", [
-  object({
-    method: literal("private_key"),
-    privateKey: string().min(1).max(SSH_PRIVATE_KEY_MAX_LENGTH),
-    passphrase: string()
-      .min(1)
-      .max(SSH_PASSPHRASE_MAX_LENGTH)
-      .nullable()
-      .default(null),
-  }).strict(),
-  object({
-    method: literal("password"),
-    password: string().min(1).max(SSH_PASSWORD_MAX_LENGTH),
-  }).strict(),
-]);
-const nameSchema = string().trim().min(1).max(SSH_DISPLAY_NAME_MAX_LENGTH);
-const usernameSchema = string().trim().min(1).max(SSH_USERNAME_MAX_LENGTH);
-const revisionSchema = int().positive().max(2_147_483_647);
-
-export const createSshCredentialRequestSchema = object({
-  name: nameSchema,
-  username: usernameSchema,
-  authentication: sshAuthenticationSchema,
-}).strict();
-export const updateSshCredentialRequestSchema = object({
-  expectedRevision: revisionSchema,
-  name: nameSchema.optional(),
-  username: usernameSchema.optional(),
-  authentication: sshAuthenticationSchema.optional(),
-})
-  .strict()
-  .refine(
-    (value) => {
-      return (
-        value.name !== undefined ||
-        value.username !== undefined ||
-        value.authentication !== undefined
-      );
-    },
-    { message: "At least one SSH credential field must be updated" },
-  );
-
-export const sshCredentialSelectionSchema = union([
-  object({ id: uuid() }).strict(),
-  object({ create: createSshCredentialRequestSchema }).strict(),
-]);
 export const sshCredentialResponseSchema = object({
   id: uuid(),
   name: string(),

@@ -1,5 +1,5 @@
 import { ArtifactBanner } from "@okouai/ui/components/ui/artifact-banner";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import {
   PreserveScrollAnchor,
   Button,

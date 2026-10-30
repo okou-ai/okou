@@ -1,9 +1,7 @@
 import { uuid } from "zod";
 import { command, computed, type Command, type Computed } from "ccstate";
-import {
-  personalSubscriptionsContract,
-  type ResetPersonalModelProviderSubscriptionUsageResponse,
-} from "@okouai/api-contracts/contracts/personal-model-providers";
+import { personalSubscriptionsContract } from "@okouai/api-contracts/client/personal-model-providers";
+import type { ResetPersonalModelProviderSubscriptionUsageResponse } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 
 import { accept } from "../../lib/accept.ts";

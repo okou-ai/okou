@@ -10,6 +10,7 @@ import {
   enum as zEnum,
 } from "zod";
 
+import { artifactIdPathParamsSchema } from "../validators/artifact-catalog";
 import { authHeadersSchema, initContract } from "./base";
 import {
   chatThreadArtifactGoogleDriveSyncSchema,
@@ -284,14 +285,6 @@ const artifactSummarySchema = object({
   updatedAt: string(),
 });
 
-/**
- * Keyset pagination over `(created_at DESC, id DESC)`. Updates never reorder
- * the list, so a cursor stays stable for the whole scroll session.
- */
-const artifactIdPathParamsSchema = object({
-  artifactId: string().uuid(),
-});
-
 const artifactCatalogListQuerySchema = object({
   limit: coerce.number().int().positive().max(200).optional(),
   cursor: string().optional(),
@@ -497,7 +490,7 @@ export type ArtifactCatalogContract = {
 // explicit request and response slots to downstream API and app typechecks.
 export const artifactCatalogContract: ArtifactCatalogContract =
   artifactCatalogRuntimeContract;
-/** Invalidation only: catalog entries remain authoritative over HTTP. */
-export function chatArtifactCatalogChangedEvent(threadId: string): string {
-  return `chatArtifactCatalogChanged:${threadId}`;
-}
+export {
+  artifactIdPathParamsSchema,
+  chatArtifactCatalogChangedEvent,
+} from "../validators/artifact-catalog";

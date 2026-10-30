@@ -1,21 +1,12 @@
-import {
-  object,
-  strictObject,
-  string,
-  enum as zEnum,
-  type infer as zInfer,
-} from "zod";
-
+import { object, strictObject, string, type infer as zInfer } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { orgOpenrouterPresetSchema } from "../validators/org-openrouter-preset";
+export {
+  ORG_OPENROUTER_PRESETS,
+  orgOpenrouterPresetSchema,
+} from "../validators/org-openrouter-preset";
 
-export const ORG_OPENROUTER_PRESETS = [
-  "@preset/okou-1-0",
-  "@preset/okou-1-0-dsf",
-  "@preset/okou-experimental",
-] as const;
-
-export const orgOpenrouterPresetSchema = zEnum(ORG_OPENROUTER_PRESETS);
 export type OrgOpenrouterPreset = zInfer<typeof orgOpenrouterPresetSchema>;
 
 // Existing operator-configured values remain readable, even outside the UI allowlist.

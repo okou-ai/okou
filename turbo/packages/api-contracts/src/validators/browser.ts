@@ -1,0 +1,1 @@
+export const BROWSER_IDLE_LEASE_MINUTES = 10;

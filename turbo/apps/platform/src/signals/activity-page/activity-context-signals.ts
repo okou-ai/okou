@@ -1,8 +1,6 @@
 import { computed } from "ccstate";
-import {
-  runContextContract,
-  type RunContextResponse,
-} from "@okouai/api-contracts/contracts/run-routes";
+import { runContextContract } from "@okouai/api-contracts/client/run-routes";
+import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import { apiClient$ } from "../api-client.ts";
 import { currentRunId$ } from "./activity-signals.ts";
 import { accept } from "../../lib/accept.ts";

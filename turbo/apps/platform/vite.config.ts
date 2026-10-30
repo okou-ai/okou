@@ -87,7 +87,7 @@ export default defineConfig(({ command }) => ({
       return [
         workerDomGlobalsPlugin(),
         singleWorkerJavaScriptBundlePlugin(),
-        clientDescriptorsPlugin({ requireAgentsDescriptor: false }),
+        clientDescriptorsPlugin({ requireDescriptor: false }),
       ];
     },
   },

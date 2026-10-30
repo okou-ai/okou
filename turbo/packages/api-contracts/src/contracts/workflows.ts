@@ -22,6 +22,8 @@ import {
 
 import { workflowImportSourceSchema } from "./workflow-import-source";
 
+export { GMAIL_LABEL_NOT_FOUND_ERROR_CODE } from "../validators/workflows";
+
 export {
   workflowImportSourceSchema,
   type WorkflowImportSource,
@@ -202,8 +204,6 @@ export const gmailNewMessageEventConfigSchema = object({
 export type GmailNewMessageEventConfig = zInfer<
   typeof gmailNewMessageEventConfigSchema
 >;
-
-export const GMAIL_LABEL_NOT_FOUND_ERROR_CODE = "GMAIL_LABEL_NOT_FOUND";
 
 export const gmailLabelAppliedEventConfigSchema = object({
   provider: literal("gmail"),

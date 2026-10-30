@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
+import { welcomeChatThreadsContract } from "@okouai/api-contracts/client/welcome-chat-threads";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { catchUpChatThreadEventSource$ } from "../../chat-page/chat-thread-event-sourcing.ts";

@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { billingCheckoutContract } from "@okouai/api-contracts/contracts/billing";
+import { billingCheckoutContract } from "@okouai/api-contracts/client/billing";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { waitLoopUntil } from "../utils.ts";

@@ -1,10 +1,10 @@
 import { command, computed, state } from "ccstate";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrantsBatchRequest,
-  type UserPermissionGrantExpiresIn,
+import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
+import type {
+  ApplyUserPermissionGrantsBatchRequest,
+  UserPermissionGrantExpiresIn,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { agentById } from "../agent.ts";

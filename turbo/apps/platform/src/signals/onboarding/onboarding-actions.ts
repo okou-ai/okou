@@ -1,8 +1,8 @@
-import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
-import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/client/billing";
+import { onboardingCompleteContract } from "@okouai/api-contracts/client/onboarding";
+import { orgContract } from "@okouai/api-contracts/client/org-routes";
+import { runModelsMainContract } from "@okouai/api-contracts/client/run-models";
+import { userModelPreferenceContract } from "@okouai/api-contracts/client/user-model-preference";
 import { command, computed } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { resolvePlatformEnvironment } from "../../lib/platform-host.ts";

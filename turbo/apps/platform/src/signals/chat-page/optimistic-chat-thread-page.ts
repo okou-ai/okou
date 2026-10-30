@@ -1,11 +1,11 @@
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
-import {
-  chatThreadsContract,
-  type GenerationTemplateRequest,
-  type ResolvedAttachFile,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
+import { chatThreadsContract } from "@okouai/api-contracts/client/chat-threads";
+import type {
+  GenerationTemplateRequest,
+  ResolvedAttachFile,
+  UserMessageDocument,
+  UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";

@@ -2,6 +2,12 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["scripts/check-db-transactions.mts"],
   "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/benchmark-client-contracts/vitest.config.ts",
+        "scripts/benchmark-client-contracts/evaluate.d.mts"
+      ]
+    },
     "apps/cli": {
       "entry": [
         "src/**/__tests__/**/*.{test,spec}.ts",

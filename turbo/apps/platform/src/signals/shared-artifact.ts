@@ -1,9 +1,7 @@
 import { command, computed } from "ccstate";
 import { createElement } from "react";
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
+import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
 import { uuid } from "zod";
 import { accept } from "../lib/accept.ts";
 import { i18n } from "../i18n/index.ts";

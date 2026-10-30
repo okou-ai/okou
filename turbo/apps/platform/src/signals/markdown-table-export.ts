@@ -1,15 +1,13 @@
 import { command, computed, state } from "ccstate";
 import type { Element } from "hast";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import {
-  artifactReferencesContract,
-  artifactReferencePath,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogDetail,
-  type PublicConnectorCatalogAuthMethodDetail,
+import { uploadsContract } from "@okouai/api-contracts/client/uploads";
+import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
+import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
+import { connectorCatalogContract } from "@okouai/api-contracts/client/connector-catalog";
+import type {
+  PublicConnectorCatalogDetail,
+  PublicConnectorCatalogAuthMethodDetail,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { GoogleDriveUploadMode } from "@okouai/core/google-workspace-conversion";
 import { toast } from "@okouai/ui/components/ui/sonner";

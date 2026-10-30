@@ -5,10 +5,8 @@ import { Textarea, cn, surfaceVariants } from "@okouai/ui";
 import { STARTING_PROMPT_MAX_LENGTH } from "../../signals/onboarding/onboarding-output-format.ts";
 import { OnboardingOutputFormats } from "./onboarding-output-formats.tsx";
 import { Loader2 } from "lucide-react";
-import {
-  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
-  type OnboardingRecommendationStatus,
-} from "@okouai/api-contracts/contracts/onboarding";
+import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/validators/onboarding";
+import type { OnboardingRecommendationStatus } from "@okouai/api-contracts/contracts/onboarding";
 import {
   ONBOARDING_INDUSTRY_IDS,
   type OnboardingIndustry,

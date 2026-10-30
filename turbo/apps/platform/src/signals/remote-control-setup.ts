@@ -6,11 +6,9 @@ import {
 } from "./remote-network-location.ts";
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  SSH_DISPLAY_NAME_MAX_LENGTH,
-  type SshConnectionMode,
-} from "@okouai/api-contracts/contracts/ssh-connections";
-import { VNC_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/contracts/vnc-credentials";
+import { SSH_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/validators/ssh-credentials";
+import type { SshConnectionMode } from "@okouai/api-contracts/contracts/ssh-connections";
+import { VNC_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/validators/vnc-credentials";
 import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import {

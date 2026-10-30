@@ -4,14 +4,14 @@ import { authHeadersSchema, initContract } from "./base";
 import {
   persistedAttachmentSchema,
   userMessageInputDocumentSchema,
-  composerDraftSchema,
 } from "./chat-threads";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { apiErrorSchema } from "./errors";
+import { agentDraftResponseSchema } from "../validators/agent-draft";
+
+export { agentDraftResponseSchema } from "../validators/agent-draft";
 
 const c = initContract();
-
-export const agentDraftResponseSchema = composerDraftSchema;
 
 export const agentDraftRequestSchema = object({
   draftUserMessage: userMessageInputDocumentSchema.nullable(),

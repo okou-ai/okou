@@ -1,4 +1,5 @@
 import {
+  mkdir,
   mkdtemp,
   readFile,
   rm,
@@ -9,28 +10,26 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  agentInstructionsContract as sourceAgentInstructionsContract,
-  agentsByIdContract as sourceAgentsByIdContract,
-  agentsMainContract as sourceAgentsMainContract,
-} from "../../contracts/agents";
 import type { AppRouter } from "../../contracts/trpc-contract";
 import {
-  agentInstructionsContract,
-  agentsByIdContract,
-  agentsMainContract,
-} from "../agents";
-import {
+  discoverClientContractModules,
   generateClientDescriptors,
   renderAgentsClientDescriptors,
+  renderClientDescriptorManifest,
+  renderClientDescriptorModule,
+  renderClientDescriptorTestingRegistry,
 } from "../generate";
+import { clientDescriptorManifest } from "../manifest";
+import { clientDescriptorContracts } from "../testing";
 
 let directory: string;
 
 beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), "agents-client-descriptors-"));
+  directory = await mkdtemp(join(tmpdir(), "http-client-descriptors-"));
+  await writeFile(join(directory, "package.json"), '{"type":"module"}\n');
 });
 
 afterEach(async () => {
@@ -59,80 +58,167 @@ function projectRoutes(source: AppRouter) {
   );
 }
 
-describe("agents client descriptor generation", () => {
-  it.each([
-    {
-      name: "agentsMainContract",
-      descriptor: agentsMainContract,
-      source: sourceAgentsMainContract,
-    },
-    {
-      name: "agentsByIdContract",
-      descriptor: agentsByIdContract,
-      source: sourceAgentsByIdContract,
-    },
-    {
-      name: "agentInstructionsContract",
-      descriptor: agentInstructionsContract,
-      source: sourceAgentInstructionsContract,
-    },
-  ])(
-    "projects every route in $name from the source contract",
-    ({ descriptor, source }) => {
-      expect(descriptor).toEqual(projectRoutes(source));
-    },
+function runtimeImports(source: string): string[] {
+  const parsed = ts.createSourceFile(
+    "descriptor.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
   );
+  return parsed.statements.flatMap((statement) => {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      statement.importClause?.isTypeOnly
+    ) {
+      return [];
+    }
+    return [statement.moduleSpecifier.getText(parsed)];
+  });
+}
 
-  it("renders deterministic source matching the checked-in descriptors", async () => {
-    const rendered = renderAgentsClientDescriptors();
-    expect(renderAgentsClientDescriptors()).toBe(rendered);
+describe("HTTP client descriptor generation", () => {
+  it("projects every registered router from its canonical source", async () => {
+    const modules = await discoverClientContractModules();
+    expect(clientDescriptorManifest).toEqual(
+      modules.map(({ module, contracts }) => {
+        return {
+          module,
+          contracts: contracts.map(({ name }) => {
+            return name;
+          }),
+        };
+      }),
+    );
+    expect(clientDescriptorContracts).toHaveLength(
+      modules.reduce((count, module) => {
+        return count + module.contracts.length;
+      }, 0),
+    );
+    for (const [descriptor, source] of clientDescriptorContracts) {
+      expect(descriptor).toEqual(projectRoutes(source));
+    }
+  });
+
+  it("discovers structurally typed and aliased router exports", async () => {
+    await writeFile(
+      join(directory, "wrapped.ts"),
+      [
+        'const runtime = { read: { method: "GET", path: "/wrapped", responses: { 200: {} } } };',
+        "function wrap<T>(value: T): T { return value; }",
+        "export const wrapped = wrap(runtime);",
+        "const aliased = runtime;",
+        "export { aliased as published };",
+      ].join("\n"),
+    );
+    const modules = await discoverClientContractModules({
+      sourceDirectory: directory,
+    });
+    expect(
+      modules.map(({ module, contracts }) => {
+        return {
+          module,
+          names: contracts.map(({ name }) => {
+            return name;
+          }),
+        };
+      }),
+    ).toEqual([{ module: "wrapped", names: ["published", "wrapped"] }]);
+  });
+
+  it("renders deterministic schema-free production modules and a test registry", async () => {
+    const modules = await discoverClientContractModules();
+    for (const module of modules) {
+      const expected = renderClientDescriptorModule(module);
+      expect(renderClientDescriptorModule(module)).toBe(expected);
+      expect(
+        await readFile(
+          new URL(`../${module.module}.ts`, import.meta.url),
+          "utf8",
+        ),
+      ).toBe(expected);
+      expect(runtimeImports(expected)).toEqual([]);
+    }
+    expect(
+      await readFile(new URL("../manifest.ts", import.meta.url), "utf8"),
+    ).toBe(renderClientDescriptorManifest(modules));
+    expect(runtimeImports(renderClientDescriptorManifest(modules))).toEqual([]);
+    expect(
+      await readFile(new URL("../testing.ts", import.meta.url), "utf8"),
+    ).toBe(renderClientDescriptorTestingRegistry(modules));
     expect(
       await readFile(new URL("../agents.ts", import.meta.url), "utf8"),
-    ).toBe(rendered);
+    ).toBe(renderAgentsClientDescriptors());
 
-    const outputPath = join(directory, "agents.ts");
-    await generateClientDescriptors({ outputPath });
-    expect(await readFile(outputPath, "utf8")).toBe(rendered);
+    await generateClientDescriptors({ outputDirectory: directory });
+    await generateClientDescriptors({
+      check: true,
+      outputDirectory: directory,
+    });
   });
 
-  it("checks fresh output without rewriting it", async () => {
-    const outputPath = join(directory, "agents.ts");
-    await generateClientDescriptors({ outputPath });
-    await utimes(outputPath, 0, 0);
-    const original = await stat(outputPath);
+  it("checks all fresh outputs without rewriting them", async () => {
+    await generateClientDescriptors({ outputDirectory: directory });
+    const paths = [
+      "agents.ts",
+      "artifact-catalog.ts",
+      "shared-threads.ts",
+      "manifest.ts",
+      "testing.ts",
+    ];
+    for (const name of paths) {
+      await utimes(join(directory, name), 0, 0);
+    }
 
-    await generateClientDescriptors({ check: true, outputPath });
-
-    expect(await readFile(outputPath, "utf8")).toBe(
-      renderAgentsClientDescriptors(),
-    );
-    expect((await stat(outputPath)).mtimeMs).toBe(original.mtimeMs);
-  });
-
-  it("reports stale or missing output without changing files", async () => {
-    const outputPath = join(directory, "agents.ts");
-    await expect(
-      generateClientDescriptors({ check: true, outputPath }),
-    ).rejects.toThrow("out of date");
-    await expect(readFile(outputPath, "utf8")).rejects.toMatchObject({
-      code: "ENOENT",
+    await generateClientDescriptors({
+      check: true,
+      outputDirectory: directory,
     });
 
-    const stale = "// Previous generated output\n";
-    await writeFile(outputPath, stale);
-    await utimes(outputPath, 0, 0);
-    const original = await stat(outputPath);
+    for (const name of paths) {
+      expect((await stat(join(directory, name))).mtimeMs).toBe(0);
+    }
+  });
 
-    await expect(
-      generateClientDescriptors({ check: true, outputPath }),
-    ).rejects.toThrow("out of date");
-    expect(await readFile(outputPath, "utf8")).toBe(stale);
-    expect((await stat(outputPath)).mtimeMs).toBe(original.mtimeMs);
-
-    await generateClientDescriptors({ outputPath });
-    await generateClientDescriptors({ check: true, outputPath });
-    expect(await readFile(outputPath, "utf8")).toBe(
-      renderAgentsClientDescriptors(),
+  it("reports missing, stale, and obsolete outputs without changing them", async () => {
+    const sourceDirectory = join(directory, "contracts");
+    const outputDirectory = join(directory, "client");
+    await mkdir(sourceDirectory);
+    await writeFile(
+      join(sourceDirectory, "first.ts"),
+      'export const routes = { get: { method: "GET", path: "/first", responses: { 200: {} } } };\n',
     );
+    const options = { sourceDirectory, outputDirectory };
+    await expect(
+      generateClientDescriptors({ ...options, check: true }),
+    ).rejects.toThrow("out of date");
+    await expect(
+      readFile(join(outputDirectory, "first.ts"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await generateClientDescriptors(options);
+    const stale = "// Previous generated output\n";
+    const stalePath = join(outputDirectory, "first.ts");
+    await writeFile(stalePath, stale);
+    await utimes(stalePath, 0, 0);
+    await expect(
+      generateClientDescriptors({ ...options, check: true }),
+    ).rejects.toThrow("first.ts");
+    expect(await readFile(stalePath, "utf8")).toBe(stale);
+    expect((await stat(stalePath)).mtimeMs).toBe(0);
+
+    await generateClientDescriptors(options);
+    const obsoletePath = join(outputDirectory, "obsolete.ts");
+    const obsolete = await readFile(stalePath, "utf8");
+    await writeFile(obsoletePath, obsolete);
+    await expect(
+      generateClientDescriptors({ ...options, check: true }),
+    ).rejects.toThrow("obsolete.ts");
+    expect(await readFile(obsoletePath, "utf8")).toBe(obsolete);
+
+    await generateClientDescriptors(options);
+    await generateClientDescriptors({ ...options, check: true });
+    await expect(readFile(obsoletePath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });

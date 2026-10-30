@@ -2,9 +2,9 @@ import { fetchResource } from "../lib/resource-fetch.ts";
 import {
   chatThreadsContract,
   chatThreadEventsContract,
-  chatThreadSnapshotArchiveSchema,
-  type ChatThreadEvent,
-} from "@okouai/api-contracts/contracts/chat-threads";
+} from "@okouai/api-contracts/client/chat-threads";
+import { chatThreadSnapshotArchiveSchema } from "@okouai/api-contracts/validators/chat-threads";
+import type { ChatThreadEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   chatEventRowSchema,
   type ChatEventRow,
@@ -12,10 +12,10 @@ import {
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type {
-  AppRouter,
+  ClientRouter,
   InitClientArgs,
   InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
 import type { IDBPDatabase } from "idb";
 
 import {
@@ -50,7 +50,7 @@ import type {
 import { CHAT_THREAD_EVENT_LOG_SNAPSHOT_REBASE_THRESHOLD } from "./event-log-policy.ts";
 import type { SharedDatabaseWorkerMessage } from "./protocol.ts";
 import { SharedDatabaseHttpError } from "./http-error.ts";
-type SharedDatabaseContractClient<TContract extends AppRouter> =
+type SharedDatabaseContractClient<TContract extends ClientRouter> =
   InitClientReturn<TContract, InitClientArgs>;
 
 const CHAT_EVENT_ROWS_PAGE_LIMIT = 50;

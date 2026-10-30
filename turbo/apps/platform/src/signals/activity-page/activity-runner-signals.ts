@@ -1,5 +1,5 @@
 import { computed } from "ccstate";
-import { runRunnerContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runRunnerContract } from "@okouai/api-contracts/client/run-routes";
 import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import { apiClient$ } from "../api-client.ts";
 import { currentRunId$, activityDetail$ } from "./activity-signals.ts";

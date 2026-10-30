@@ -1,8 +1,6 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
-  type OnboardingRecommendationConnectorSlug,
-} from "@okouai/api-contracts/contracts/onboarding";
+import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/validators/onboarding";
+import type { OnboardingRecommendationConnectorSlug } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**

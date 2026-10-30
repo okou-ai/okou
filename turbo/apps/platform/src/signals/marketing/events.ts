@@ -1,12 +1,10 @@
 import { command } from "ccstate";
-import {
-  marketingEventsContract,
-  type MarketingEventRequest,
-} from "@okouai/api-contracts/contracts/marketing-events";
+import { marketingEventsContract } from "@okouai/api-contracts/client/marketing-events";
+import type { MarketingEventRequest } from "@okouai/api-contracts/contracts/marketing-events";
 import {
   initClient,
   trpcRestFetchApi,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/transport";
 import {
   recordClientTelemetry,
   startClientTelemetryMeasurement,

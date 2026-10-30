@@ -1,10 +1,10 @@
 import { command, computed, state } from "ccstate";
-import {
-  usageRecordContract,
-  type UsageRecordRange,
-  type UsageRecordResponse,
+import { usageRecordContract } from "@okouai/api-contracts/client/usage-record";
+import type {
+  UsageRecordRange,
+  UsageRecordResponse,
 } from "@okouai/api-contracts/contracts/usage-record";
-import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import { usageMembersContract } from "@okouai/api-contracts/client/usage";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { resetSignal } from "../../utils.ts";

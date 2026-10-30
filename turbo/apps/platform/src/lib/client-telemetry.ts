@@ -1,5 +1,5 @@
 import { Axiom } from "@axiomhq/js";
-import type { HttpMethod } from "@okouai/api-contracts/contracts/trpc-contract";
+import type { HttpMethod } from "@okouai/api-contracts/client/types";
 
 import { logger } from "../signals/log.ts";
 import { onRejection } from "../signals/utils.ts";

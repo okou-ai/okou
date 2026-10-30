@@ -110,12 +110,21 @@ type ResponseBody<T> = T extends { readonly body: infer Body }
   ? SchemaOutput<Body>
   : SchemaOutput<T>;
 
+// Object spreads can expose numeric response keys as string literals.
+type ResponseStatus<TKey> = TKey extends number
+  ? TKey
+  : TKey extends `${infer Status extends number}`
+    ? Status
+    : never;
+
 type ResponseUnion<TResponses extends ResponseMap> = {
-  readonly [Status in keyof TResponses & number]: {
-    readonly status: Status;
-    readonly body: ResponseBody<TResponses[Status]>;
-  };
-}[keyof TResponses & number];
+  readonly [Status in keyof TResponses]: Status extends number | `${number}`
+    ? {
+        readonly status: ResponseStatus<Status>;
+        readonly body: ResponseBody<TResponses[Status]>;
+      }
+    : never;
+}[keyof TResponses];
 
 type AddRequestPart<
   TKey extends string,
@@ -317,8 +326,11 @@ export function validateResponse<
   return { ...response, body };
 }
 
-type RouteFromSpec<TSpec extends AppRouteSpec> = TSpec &
-  AppRoute<RouteTypeSlots<TSpec>>;
+// Rebuild phantom slots for route spreads without adding AppRoute's broad
+// response index signature to the concrete source response map.
+type RouteFromSpec<TSpec extends AppRouteSpec> = Omit<TSpec, "__types"> & {
+  readonly __types?: RouteTypeSlots<TSpec>;
+};
 
 type RouterFromSpec<TSpec extends Record<string, AppRouteSpec>> = {
   readonly [Key in keyof TSpec]: RouteFromSpec<TSpec[Key]>;

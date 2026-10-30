@@ -11,19 +11,19 @@ import {
   isChatRunTerminalEventType,
   revokedChatEventIds,
 } from "@okouai/api-contracts/contracts/chat-events";
-import {
-  chatThreadArtifactsContract,
-  resolveChatEventRecommendedFollowups,
-  type ChatRunOptionsRequest,
-  type ChatThreadArtifactRun,
-  type ChatThreadDraft,
-  type FeedbackNotePart,
-  type GenerationTemplateRequest,
-  type ChatEvent as PersistedChatEvent,
-  type ResolvedAttachFile,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessagePart,
+import { chatThreadArtifactsContract } from "@okouai/api-contracts/client/chat-threads";
+import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
+import type {
+  ChatRunOptionsRequest,
+  ChatThreadArtifactRun,
+  ChatThreadDraft,
+  FeedbackNotePart,
+  GenerationTemplateRequest,
+  ChatEvent as PersistedChatEvent,
+  ResolvedAttachFile,
+  UserMessageDocument,
+  UserMessageInputDocument,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {

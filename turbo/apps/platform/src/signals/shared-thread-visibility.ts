@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  sharedThreadVisibilityContract,
-  type SharedThreadAudience,
-} from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import { sharedThreadVisibilityContract } from "@okouai/api-contracts/client/shared-thread-visibility";
+import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";

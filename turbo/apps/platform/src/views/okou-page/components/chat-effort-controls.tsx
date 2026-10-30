@@ -1,7 +1,7 @@
 import { Field } from "@base-ui/react/field";
 import {
-  type ReasoningEffort,
   withModelReasoningEffort,
+  type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui";

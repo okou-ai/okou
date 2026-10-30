@@ -1,10 +1,8 @@
 import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import {
-  artifactCatalogContract,
-  type ArtifactSummary,
-} from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
+import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 
 import { accept } from "../../lib/accept.ts";

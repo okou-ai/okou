@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
+import { orgInviteContract } from "@okouai/api-contracts/client/org-member-routes";
 import { inviteOrgMemberRequestSchema } from "@okouai/api-contracts/contracts/org-members";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

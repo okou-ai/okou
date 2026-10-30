@@ -1,14 +1,12 @@
 import { command, computed, state, type Computed } from "ccstate";
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogDiscoveryResponse,
-  type PublicConnectorCatalogConnectItem,
+import { connectorCatalogContract } from "@okouai/api-contracts/client/connector-catalog";
+import type {
+  PublicConnectorCatalogDiscoveryResponse,
+  PublicConnectorCatalogConnectItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import {
-  builtinConnectorAccountFacts,
-  connectorAccountsContract,
-  type ConnectorAccountConnection,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { builtinConnectorAccountFacts } from "@okouai/api-contracts/validators/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   reloadUserConnectedConnectors$,

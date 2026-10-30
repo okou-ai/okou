@@ -1,9 +1,9 @@
 import { command, computed, state, type Computed } from "ccstate";
-import {
-  activitySummaryResponseSchema,
-  chatThreadActivitySummaryContract,
-  type ActivitySummaryResponse,
-  type ThinkingMessage,
+import { activitySummaryResponseSchema } from "@okouai/api-contracts/validators/chat-thread-activity-summary";
+import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/client/chat-thread-activity-summary";
+import type {
+  ActivitySummaryResponse,
+  ThinkingMessage,
 } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { accept } from "../../lib/accept.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";

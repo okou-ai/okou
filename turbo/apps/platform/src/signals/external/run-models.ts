@@ -1,5 +1,5 @@
 import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { runModelsMainContract } from "@okouai/api-contracts/client/run-models";
 import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { command, computed, state } from "ccstate";
 import { accept } from "../../lib/accept.ts";

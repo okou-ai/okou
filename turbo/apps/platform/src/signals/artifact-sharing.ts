@@ -1,13 +1,11 @@
 import { command, computed, state, type Computed, type State } from "ccstate";
-import {
-  artifactReferencesContract,
-  parseArtifactReference,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  artifactSharesContract,
-  artifactShareTargetSchema,
-  type ArtifactShareStatus,
-  type ArtifactShareTarget,
+import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
+import { artifactSharesContract } from "@okouai/api-contracts/client/artifact-shares";
+import { artifactShareTargetSchema } from "@okouai/api-contracts/validators/artifact-shares";
+import type {
+  ArtifactShareStatus,
+  ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";

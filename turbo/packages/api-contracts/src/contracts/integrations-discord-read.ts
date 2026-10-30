@@ -11,18 +11,11 @@ import {
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { discordSnowflakeSchema } from "../validators/integrations-discord-read";
+
+export { discordSnowflakeSchema } from "../validators/integrations-discord-read";
 
 const c = initContract();
-
-/** Discord snowflakes must never pass through a JavaScript number. */
-export const discordSnowflakeSchema = string()
-  .regex(/^[1-9]\d{0,19}$/, "Expected a Discord snowflake ID")
-  .refine(
-    (value) => {
-      return value.length < 20 || value <= "18446744073709551615";
-    },
-    { message: "Discord snowflake ID exceeds the unsigned 64-bit range" },
-  );
 
 export const discordNativeErrorSchema = apiErrorSchema.extend({
   error: apiErrorSchema.shape.error.extend({

@@ -43,11 +43,11 @@ import {
   LoadErrorRow,
   surfaceVariants,
 } from "@okouai/ui";
-import {
-  CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
-  type CloudflareAccessConfig,
-  type CloudflareAccessImpactPreview,
-  type ScopedCloudflareAccessConfig,
+import { CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH } from "@okouai/api-contracts/validators/cloudflare-access";
+import type {
+  CloudflareAccessConfig,
+  CloudflareAccessImpactPreview,
+  ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   acknowledgeCloudflareAccessConversion$,

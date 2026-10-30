@@ -1,13 +1,15 @@
 import { command, computed, state, type Command } from "ccstate";
-import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/validators/artifact-catalog";
 import {
   chatThreadByIdContract,
   chatThreadDraftContract,
-  chatThreadDraftSchema,
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
-  type PersistedAttachment,
-  type UserMessageInputDocument,
+} from "@okouai/api-contracts/client/chat-threads";
+import { composerDraftSchema as chatThreadDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
+import type {
+  PersistedAttachment,
+  UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { accept } from "../../lib/accept.ts";

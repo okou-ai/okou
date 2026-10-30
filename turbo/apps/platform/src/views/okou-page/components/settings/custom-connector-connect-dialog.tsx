@@ -2,9 +2,11 @@ import type { FormEvent } from "react";
 
 import {
   isIntegrationManagedCustomConnector,
-  type CustomConnectorValueInput,
-  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/validators/custom-connectors";
+import type {
+  CustomConnectorValueInput,
+  CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   Button,

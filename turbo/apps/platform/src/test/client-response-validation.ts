@@ -1,46 +1,33 @@
-import {
-  agentInstructionsContract,
-  agentsByIdContract,
-  agentsMainContract,
-} from "@okouai/api-contracts/client/agents";
+import { clientDescriptorContracts } from "@okouai/api-contracts/client/testing";
 import type {
   ApiFetcherResponse,
   ClientRoute,
-  ClientRouter,
 } from "@okouai/api-contracts/client/types";
-import {
-  agentInstructionsContract as sourceAgentInstructionsContract,
-  agentsByIdContract as sourceAgentsByIdContract,
-  agentsMainContract as sourceAgentsMainContract,
-} from "@okouai/api-contracts/contracts/agents";
 import {
   validateResponse,
   type AppRoute,
-  type AppRouter,
 } from "@okouai/api-contracts/contracts/trpc-contract";
 
-const descriptorContracts: readonly (readonly [ClientRouter, AppRouter])[] = [
-  [agentsMainContract, sourceAgentsMainContract],
-  [agentsByIdContract, sourceAgentsByIdContract],
-  [agentInstructionsContract, sourceAgentInstructionsContract],
-];
+const sourceRoutes: ReadonlyMap<ClientRoute, AppRoute> = new Map(
+  clientDescriptorContracts.flatMap(([descriptor, contract]) => {
+    return Object.entries(descriptor).map(([name, route]) => {
+      return [route, contract[name]] as const;
+    });
+  }),
+);
 
 function sourceRoute(route: ClientRoute): Pick<AppRoute, "responses"> {
   if ("responses" in route) {
     return route;
   }
 
-  for (const [descriptor, contract] of descriptorContracts) {
-    for (const [name, candidate] of Object.entries(descriptor)) {
-      if (candidate === route && Object.hasOwn(contract, name)) {
-        return contract[name];
-      }
-    }
+  const source = sourceRoutes.get(route);
+  if (!source) {
+    throw new Error(
+      `Response validator missing for ${route.method} ${route.path}`,
+    );
   }
-
-  throw new Error(
-    `Response validator missing for ${route.method} ${route.path}`,
-  );
+  return source;
 }
 
 export function validateClientResponse<TResponse extends ApiFetcherResponse>(

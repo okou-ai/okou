@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import {
   runContextContract,
   runNetworkLogsContract,
-} from "@okouai/api-contracts/contracts/run-routes";
+} from "@okouai/api-contracts/client/run-routes";
 import { apiClient$ } from "../api-client.ts";
 import { logger } from "../log.ts";
 import { accept } from "../../lib/accept.ts";

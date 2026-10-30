@@ -3,24 +3,26 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   isIntegrationManagedCustomConnector,
-  type CreateCustomConnectorBody,
-  type CustomConnectorValueInput,
-  type UpdateCustomConnectorBody,
-  customConnectorByIdContract,
-  customConnectorOAuth2Contract,
-  customConnectorValuesContract,
-  customConnectorsContract,
   customConnectorListResponseSchema,
   customConnectorResponseSchema,
   setCustomConnectorValuesResponseSchema,
   startCustomConnectorOAuth2ResponseSchema,
-  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/validators/custom-connectors";
+import type {
+  CreateCustomConnectorBody,
+  CustomConnectorValueInput,
+  UpdateCustomConnectorBody,
+  CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrants,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
+  customConnectorByIdContract,
+  customConnectorOAuth2Contract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/client/custom-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/client/agent-custom-connectors";
+import type { AgentCustomConnectorGrants } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { IN_VITEST } from "../../../env.ts";
 import { i18n } from "../../../i18n/index.ts";

@@ -1,8 +1,8 @@
 import { fetchResource } from "../../lib/resource-fetch.ts";
-import {
-  annotatedImageFilename,
-  type ImageAnnotation,
-  type ImageAnnotationMark,
+import { annotatedImageFilename } from "@okouai/api-contracts/validators/chat-threads";
+import type {
+  ImageAnnotation,
+  ImageAnnotationMark,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   annotationTextBox,

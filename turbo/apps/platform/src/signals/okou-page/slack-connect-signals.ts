@@ -1,9 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { searchParams$ } from "../route.ts";
-import {
-  slackConnectContract,
-  type SlackConnectLinkStatus,
-} from "@okouai/api-contracts/contracts/slack-connect";
+import { slackConnectContract } from "@okouai/api-contracts/client/slack-connect";
+import type { SlackConnectLinkStatus } from "@okouai/api-contracts/contracts/slack-connect";
 import { apiClient$ } from "../api-client.ts";
 import { appendCapturedPreviewBypassToUrl } from "../../lib/preview-bypass-cookie.ts";
 import { accept } from "../../lib/accept.ts";

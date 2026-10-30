@@ -1,8 +1,6 @@
 import { command, computed, state, type Computed } from "ccstate";
-import {
-  chatThreadUsageContract,
-  type ChatEventUsagePayload,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadUsageContract } from "@okouai/api-contracts/client/chat-threads";
+import type { ChatEventUsagePayload } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import type { ChatEventGroup } from "./chat-event.ts";

@@ -14,13 +14,14 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
+export { BROWSER_IDLE_LEASE_MINUTES } from "../validators/browser";
+
 const c = initContract();
 
 // Okou always asks Browser Use for its longest provider lifetime and manages
 // reclamation itself through the idle lease below, so a hard provider timeout
 // can never cut a browser short while somebody is still using it.
 export const BROWSER_PROVIDER_TIMEOUT_MINUTES = 240;
-export const BROWSER_IDLE_LEASE_MINUTES = 10;
 export const BROWSER_SCREEN_WIDTH = 1440;
 export const BROWSER_INITIAL_SCREEN_HEIGHT = 900;
 export const BROWSER_MIN_SCREEN_HEIGHT = 320;

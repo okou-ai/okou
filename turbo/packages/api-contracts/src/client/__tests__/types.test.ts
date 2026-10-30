@@ -1,8 +1,9 @@
-import { describe, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { literal, number, object, string, type input } from "zod";
 import {
   initClient as initContractClient,
   initContract,
+  type ServerInferResponses,
 } from "../../contracts/trpc-contract";
 import { initClient } from "../transport";
 import type {
@@ -136,6 +137,93 @@ describe("client descriptor inference", () => {
     expectTypeOf<
       Awaited<ReturnType<typeof descriptorClient.noInput>>["body"]
     >().toEqualTypeOf<undefined>();
+  });
+
+  it("preserves numeric and numeric-string statuses from shared response spreads", () => {
+    const errors = {
+      400: object({ error: literal("bad-request") }),
+      "401": object({ error: literal("unauthorized") }),
+    } as const;
+    const source = c.router({
+      read: {
+        method: "GET",
+        path: "/shared-responses",
+        responses: { 200: object({ ok: literal(true) }), ...errors },
+      },
+    });
+    const projected: ClientDescriptor<typeof source> = {
+      read: {
+        method: "GET",
+        path: "/shared-responses",
+        statuses: { 200: true, 400: true, 401: true },
+      },
+    };
+    const client = initClient(projected, config);
+    expect(Object.keys(projected.read.statuses)).toEqual(
+      Object.keys(source.read.responses),
+    );
+    expect(client.read).toBeTypeOf("function");
+    type Response = Awaited<ReturnType<typeof client.read>>;
+    expectTypeOf<Response["status"]>().toEqualTypeOf<200 | 400 | 401>();
+    expectTypeOf<Extract<Response, { status: 400 }>["body"]>().toEqualTypeOf<{
+      error: "bad-request";
+    }>();
+    expectTypeOf<Extract<Response, { status: 401 }>["body"]>().toEqualTypeOf<{
+      error: "unauthorized";
+    }>();
+    expectTypeOf<
+      ServerInferResponses<typeof source.read>["status"]
+    >().toEqualTypeOf<200 | 400 | 401>();
+    expectTypeOf<typeof projected.read.statuses>().toEqualTypeOf<
+      Readonly<Record<200 | 400 | 401, true>>
+    >();
+  });
+
+  it("recomputes request and response slots after spreading an existing route", () => {
+    const source = c.router({
+      read: {
+        method: "GET",
+        path: "/original",
+        responses: { 200: object({ ok: literal(true) }) },
+      },
+    });
+    const extended = c.router({
+      read: {
+        ...source.read,
+        path: "/extended",
+        query: object({ scope: string() }),
+        responses: {
+          ...source.read.responses,
+          404: object({ error: literal("not-found") }),
+        },
+      },
+    });
+    const projected: ClientDescriptor<typeof extended> = {
+      read: {
+        method: "GET",
+        path: "/extended",
+        statuses: { 200: true, 404: true },
+      },
+    };
+    const client = initClient(projected, config);
+    expect(Object.keys(projected.read.statuses)).toEqual(
+      Object.keys(extended.read.responses),
+    );
+    expect(client.read).toBeTypeOf("function");
+    type Response = Awaited<ReturnType<typeof client.read>>;
+    expectTypeOf<Response["status"]>().toEqualTypeOf<200 | 404>();
+    expectTypeOf<Extract<Response, { status: 404 }>["body"]>().toEqualTypeOf<{
+      error: "not-found";
+    }>();
+    expectTypeOf<Parameters<typeof client.read>[0]["query"]>().toEqualTypeOf<{
+      scope: string;
+    }>();
+    expectTypeOf<
+      ServerInferResponses<typeof extended.read>["status"]
+    >().toEqualTypeOf<200 | 404>();
+    expectTypeOf<typeof projected.read.statuses>().toEqualTypeOf<
+      Readonly<Record<200 | 404, true>>
+    >();
   });
 
   it("requires every declared status in the projected runtime metadata", () => {
