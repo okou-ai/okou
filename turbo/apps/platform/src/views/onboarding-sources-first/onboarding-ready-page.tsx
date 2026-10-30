@@ -2,8 +2,6 @@ import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Textarea, cn, surfaceVariants } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { STARTING_PROMPT_MAX_LENGTH } from "../../signals/onboarding/onboarding-output-format.ts";
 import { OnboardingOutputFormats } from "./onboarding-output-formats.tsx";
 import { Loader2 } from "lucide-react";
@@ -79,10 +77,6 @@ function StartingPromptPanel({
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
   const setPromptInput = useSet(setStartingPromptInput$);
-  const features = useLastLoadable(featureSwitch$);
-  const showFormats =
-    features.state === "hasData" &&
-    features.data[FeatureSwitchKey.OnboardingOutputFormats];
   return (
     <div
       className={cn(
@@ -128,8 +122,7 @@ function StartingPromptPanel({
             id="onboarding-starting-prompt"
             ref={setPromptInput}
             className={cn(
-              "mt-3 min-h-[120px] max-sm:min-h-48 max-sm:resize-none max-sm:text-base",
-              showFormats && "field-sizing-content max-h-60",
+              "mt-3 field-sizing-content min-h-[120px] max-h-60 max-sm:min-h-48 max-sm:resize-none max-sm:text-base",
               ONBOARDING_TEXTAREA_CLASS,
             )}
             maxLength={STARTING_PROMPT_MAX_LENGTH}
@@ -139,13 +132,11 @@ function StartingPromptPanel({
               onChange(event.target.value);
             }}
           />
-          {showFormats ? (
-            <OnboardingOutputFormats
-              text={text}
-              promptKey={promptKey}
-              disabled={busy}
-            />
-          ) : null}
+          <OnboardingOutputFormats
+            text={text}
+            promptKey={promptKey}
+            disabled={busy}
+          />
         </>
       )}
     </div>

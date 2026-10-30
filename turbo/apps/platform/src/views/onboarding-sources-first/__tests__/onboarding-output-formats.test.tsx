@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -28,7 +27,6 @@ const REPORT =
 
 async function openReady(
   pageContext: TestContext = context,
-  enabled = true,
 ): Promise<HTMLTextAreaElement> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
@@ -38,7 +36,6 @@ async function openReady(
     context: pageContext,
     path: ROUTES.onboardingReady,
     locale: "en-US",
-    featureSwitches: { [FeatureSwitchKey.OnboardingOutputFormats]: enabled },
   });
   const input = await screen.findByRole("textbox", {
     name: "Your starting prompt",
@@ -198,13 +195,4 @@ test("a reload preserves the complete editable prompt and its format selection",
   await waitFor(() => {
     expect(restored).toHaveValue(`${TASK}\n\n${REPORT}`);
   });
-});
-
-test("the original first task remains usable when format selection is disabled", async () => {
-  const input = await openReady(context, false);
-  expect(input.value.length).toBeGreaterThan(0);
-  expect(button("Start with Okou")).toBeEnabled();
-  expect(
-    screen.queryByRole("region", { name: "Choose a format" }),
-  ).not.toBeInTheDocument();
 });
