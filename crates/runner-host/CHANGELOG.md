@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.4](https://github.com/okou-ai/okou/compare/runner-host-v0.10.3...runner-host-v0.10.4) (2026-10-30)
+
+
+### Refactoring
+
+* **runner-host:** separate lock test source ownership ([#44314](https://github.com/okou-ai/okou/issues/44314)) ([f55ee85](https://github.com/okou-ai/okou/commit/f55ee85ef306cbd1a461902583d9d76e73fc2ff2))
+* **runner-host:** separate procfs test source ownership ([#44301](https://github.com/okou-ai/okou/issues/44301)) ([e1be9c9](https://github.com/okou-ai/okou/commit/e1be9c9a4323f6dda94b5137a41376967dc6b5e5))
+
 ## [0.10.3](https://github.com/okou-ai/okou/compare/runner-host-v0.10.2...runner-host-v0.10.3) (2026-10-30)
 
 
