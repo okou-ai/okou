@@ -28,7 +28,7 @@ import {
 } from "./discord-chat-ingress.service";
 import {
   readDiscordEffectiveAgent$,
-  discordIngressSenderBindings,
+  readDiscordIngressSenderBindings$,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import { sendDiscordIngressNotice$ } from "./internal-discord-chat-run-callback.service";
@@ -104,7 +104,7 @@ interface DiscordAdmissionContext {
 
 const resolveDiscordAdmissionSource$ = command(
   async (
-    { get, set },
+    { set },
     args: DiscordIngressClaim,
     ingress: DiscordIngress,
     message: DiscordMessageCreate,
@@ -113,7 +113,7 @@ const resolveDiscordAdmissionSource$ = command(
     set(writeDb$);
     const binding =
       args.admittedBinding ??
-      (await get(discordIngressSenderBindings(message.author.id))).find(
+      (await set(readDiscordIngressSenderBindings$, message.author.id)).find(
         (candidate) => {
           return candidate.connectionId === ingress.connectionId;
         },

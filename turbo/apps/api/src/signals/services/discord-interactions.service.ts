@@ -39,9 +39,9 @@ import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { getDiscordAppConfig } from "./discord-config";
 import {
   disconnectDiscordBinding$,
-  discordDmBinding,
+  readDiscordDmBinding$,
   readDiscordEffectiveAgent$,
-  discordSenderBindings,
+  readDiscordSenderBindings$,
   selectDiscordDmBinding$,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
@@ -71,8 +71,8 @@ type AccountInteraction =
   DiscordCommandInteraction | DiscordComponentInteraction;
 
 const currentDiscordBinding$ = command(
-  async ({ get }, actor: DiscordInteractionActor, signal: AbortSignal) => {
-    const binding = await get(discordDmBinding(actor.discordUserId));
+  async ({ set }, actor: DiscordInteractionActor, signal: AbortSignal) => {
+    const binding = await set(readDiscordDmBinding$, actor.discordUserId);
     signal.throwIfAborted();
     return binding;
   },
@@ -124,7 +124,7 @@ const discordConnectionStatus$ = command(
 
 const discordOrgPicker$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;
@@ -133,7 +133,10 @@ const discordOrgPicker$ = command(
     },
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
-    const bindings = await get(discordSenderBindings(args.actor.discordUserId));
+    const bindings = await set(
+      readDiscordSenderBindings$,
+      args.actor.discordUserId,
+    );
     signal.throwIfAborted();
     if (bindings.length === 0) {
       return discordConnectMessage(args.actor.guildId);
@@ -182,7 +185,7 @@ const discordOrgPicker$ = command(
           : STALE_CONTROL,
       );
     }
-    const current = await get(discordDmBinding(args.actor.discordUserId));
+    const current = await set(readDiscordDmBinding$, args.actor.discordUserId);
     signal.throwIfAborted();
     const options = [...bindings]
       .sort((left, right) => {
