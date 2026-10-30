@@ -1077,6 +1077,14 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${chatThreadDeletion}`,
   );
+  const runBuiltInAdmission = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/start-run-built-in-admission.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${runBuiltInAdmission}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1417,6 +1425,17 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "6c1bccc08d6ef1bfd6f65c4042f82575",
+  },
+  {
+    schemaName: "public",
+    functionName: "start_run_built_in_admission",
+    identityArguments:
+      "p_run_id uuid, p_now timestamp without time zone, p_max_in_flight integer, p_max_started integer, p_ttl_ms integer",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "c0151c83c8e52d965b9764bc702adf35",
   },
 ];
 
