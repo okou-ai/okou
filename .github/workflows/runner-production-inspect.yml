@@ -1,0 +1,53 @@
+name: Inspect production Runner owners and bundle cache
+
+env:
+  npm_config_audit: "false"
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Optional UTC start for cache events (YYYY-MM-DDTHH:MM:SSZ; at most 24 hours ago)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Connect through the existing production SSH transport
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          operation-timeout-seconds: "120"
+      - name: Read process and service state and allowlisted bundle cache events
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          AWS_METAL_RUNNER_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          INSPECT_SINCE: ${{ inputs.since }}
+        shell: bash
+        run: |
+          args=(fleet)
+          if [[ -n "$INSPECT_SINCE" ]]; then args+=("$INSPECT_SINCE"); fi
+          python3 ops/runner-production-inspect/collect.py "${args[@]}" > "$RUNNER_TEMP/runner-production-inspection.json"
+      - name: Retain sanitized inspection evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: runner-production-inspection-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runner-production-inspection.json
+          if-no-files-found: error
+          retention-days: 7
