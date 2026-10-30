@@ -627,7 +627,7 @@ function dcrSelection(
 }
 
 const dcrClientInformationSchema = object({
-  client_id: string().min(1).max(255),
+  client_id: string().min(1),
   client_secret: string().min(1).optional(),
   client_id_issued_at: number().finite().nonnegative().optional(),
   client_secret_expires_at: number().finite().nonnegative().optional(),
@@ -740,19 +740,24 @@ async function registerDcrClient(
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthDcrRegistrationInput> {
   const supportedMethods = supportedTokenAuthMethods(args.metadata);
-  const publicClientOnly =
-    supportedMethods.includes("none") &&
-    !supportedMethods.includes("client_secret_basic") &&
-    !supportedMethods.includes("client_secret_post");
+  const requestedTokenAuthMethod = (
+    ["client_secret_basic", "client_secret_post", "none"] as const
+  ).find((method) => {
+    return supportedMethods.includes(method);
+  });
   const client = await automaticOAuthRemote(
     "dynamic client registration",
     signal,
     async () => {
       const registered = await registerClient(args.issuer, {
         metadata: args.metadata,
-        clientMetadata: publicClientOnly
-          ? { ...args.clientMetadata, token_endpoint_auth_method: "none" }
-          : args.clientMetadata,
+        clientMetadata:
+          requestedTokenAuthMethod === undefined
+            ? args.clientMetadata
+            : {
+                ...args.clientMetadata,
+                token_endpoint_auth_method: requestedTokenAuthMethod,
+              },
         scope: args.scope,
         fetchFn: fetchWithSignal(signal),
       });

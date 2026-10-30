@@ -528,9 +528,17 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
       mockEnv("APP_URL", "https://app.okou.ai");
       const resource = "https://automatic-mcp.example.test";
+      const initialDcrClientId = `automatic-dcr-client-${"x".repeat(1024)}`;
+      const replacementDcrClientId = `replacement-dcr-client-${"y".repeat(1024)}`;
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
+        dcrClientId: initialDcrClientId,
         dcrTokenEndpointAuthMethod,
+        tokenEndpointAuthMethodsSupported:
+          dcrTokenEndpointAuthMethod === "none"
+            ? ["none"]
+            : ["none", dcrTokenEndpointAuthMethod],
+        dcrDefaultTokenEndpointAuthMethod: "none",
         resource,
         initialExpiresIn: 3600,
         authorizationCodeScopes: ["read", "read", "read admin offline_access"],
@@ -647,6 +655,11 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         });
       };
       const registrationCount = provider.registrationBodies.length;
+      if (registration === "dcr") {
+        expect(provider.registrationBodies[0]?.token_endpoint_auth_method).toBe(
+          dcrTokenEndpointAuthMethod,
+        );
+      }
       provider.advertiseAuthorizationServers([
         provider.issuer,
         "https://alternate-issuer.example.test",
@@ -730,7 +743,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         endpoint: provider.endpoint,
         resource,
         issuer: "https://alternate-issuer.example.test",
-        dcrClientId: "replacement-dcr-client",
+        dcrClientId: replacementDcrClientId,
         dcrClientSecret: "replacement-dcr-secret",
         initialExpiresIn: 3600,
       });
@@ -763,7 +776,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         expect(replacementProvider.registrationBodies).toHaveLength(1);
         expect(
           new URL(changedAuthorizationUrl).searchParams.get("client_id"),
-        ).toBe("replacement-dcr-client");
+        ).toBe(replacementDcrClientId);
       } else {
         changedAuthorizationUrl = changedAuthority.body.authorizationUrl;
       }
@@ -787,7 +800,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         "refresh_token",
       );
       expect(replacementProvider.tokenAuthorizationHeaders).not.toContain(
-        `Basic ${Buffer.from("automatic-dcr-client:automatic-dcr-secret").toString("base64")}`,
+        `Basic ${Buffer.from(`${initialDcrClientId}:automatic-dcr-secret`).toString("base64")}`,
       );
       expect(
         replacementProvider.tokenBodies.map((body) => {

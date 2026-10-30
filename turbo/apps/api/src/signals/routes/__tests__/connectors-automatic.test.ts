@@ -565,13 +565,31 @@ describe("builtin MCP automatic authentication", () => {
       name: "public and confidential basic",
       method: "client_secret_basic",
       advertised: ["none", "client_secret_basic"],
-      requested: undefined,
+      requested: "client_secret_basic",
     },
     {
       name: "public and confidential post",
       method: "client_secret_post",
       advertised: ["none", "client_secret_post"],
-      requested: undefined,
+      requested: "client_secret_post",
+    },
+    {
+      name: "all implemented methods in reverse preference order",
+      method: "client_secret_basic",
+      advertised: ["none", "client_secret_post", "client_secret_basic"],
+      requested: "client_secret_basic",
+    },
+    {
+      name: "provider-selected public authentication",
+      method: "none",
+      advertised: ["client_secret_basic", "none"],
+      requested: "client_secret_basic",
+    },
+    {
+      name: "provider-selected confidential post authentication",
+      method: "client_secret_post",
+      advertised: ["client_secret_basic", "client_secret_post"],
+      requested: "client_secret_basic",
     },
     {
       name: "unspecified authentication",
@@ -580,13 +598,15 @@ describe("builtin MCP automatic authentication", () => {
       requested: undefined,
     },
   ] as const)(
-    "connects and reuses a $name DCR client with issuer binding",
+    "connects and reuses a $name DCR client with a long opaque ID and issuer binding",
     async ({ method, advertised, requested }) => {
       const f = fixture();
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "dcr",
+        dcrClientId: `automatic-dcr-client-${"x".repeat(1024)}`,
         dcrTokenEndpointAuthMethod: method,
         tokenEndpointAuthMethodsSupported: advertised,
+        ...(advertised ? { dcrDefaultTokenEndpointAuthMethod: "none" } : {}),
       });
       const rejected = await beginOAuth(f);
       expect(
