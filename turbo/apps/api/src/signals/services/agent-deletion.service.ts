@@ -101,20 +101,25 @@ function agentDeletionDatabaseError(error: unknown): Error {
     "constraint" in error.cause
   ) {
     switch (error.cause.constraint) {
-      case "agent_deletion_lost_run":
+      case "agent_deletion_lost_run": {
         return new Error("Conversation deletion lost a locked run");
-      case "agent_deletion_missing_blob":
+      }
+      case "agent_deletion_missing_blob": {
         return new Error(
           "Conversation history reference accounting failed: missing blob references",
         );
-      case "agent_deletion_insufficient_blob":
+      }
+      case "agent_deletion_insufficient_blob": {
         return new Error(
           "Conversation history reference accounting failed: missing or insufficient blob references",
         );
-      case "agent_deletion_attachment_owner":
+      }
+      case "agent_deletion_attachment_owner": {
         return new Error("Workflow attachment package has a foreign owner");
-      case "agent_deletion_invalid_visibility":
+      }
+      case "agent_deletion_invalid_visibility": {
         return new Error("Invalid Agent visibility during deletion");
+      }
     }
   }
   // Preserve safe SQLSTATE diagnostics and the outer 55P03 -> 409 mapping.
