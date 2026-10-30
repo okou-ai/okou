@@ -2734,7 +2734,7 @@ function matchFirewallPathPrefixForMalformedBaseDecision(
  * - `{name*}` matches the rest of the path (zero or more segments). Must be last.
  *
  * Returns extracted parameters on match, or null on mismatch.
- * `{name:digits}` accepts one or more ASCII digits without decoding or numeric
+ * `{{name:digits}}` accepts one or more ASCII digits without decoding or numeric
  * coercion. It has the same specificity rank as an unconstrained parameter.
  */
 export function matchFirewallPath(

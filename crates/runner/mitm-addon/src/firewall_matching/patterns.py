@@ -60,6 +60,11 @@ def _segment_outer_literal_scope(seg: str) -> tuple[str, str]:
 
 def _parse_segment(seg: str) -> ParsedSegment:
     """Parse a single host or path segment into an immutable result."""
+    if seg.startswith("{{") and seg.endswith("}}") and ":" in seg:
+        name, _, constraint = seg[2:-2].partition(":")
+        if not name or constraint != "digits" or any(char in name for char in "{}+*"):
+            return SegmentError(f'invalid parameter constraint in segment "{seg}"')
+        return SegmentParam("", name, "", "", "digits")
     open_count = seg.count("{")
     close_count = seg.count("}")
 
@@ -111,14 +116,6 @@ def _parse_segment(seg: str) -> ParsedSegment:
     if len(name) == 0:
         return SegmentError(f'empty parameter name in segment "{seg}" — {_SEGMENT_ERROR_HINT}')
 
-    if ":" in name:
-        param_name, _, constraint = name.partition(":")
-        if not param_name or constraint != "digits":
-            return SegmentError(f'invalid parameter constraint in segment "{seg}"')
-        if prefix or suffix or greedy or param_name.endswith(("+", "*")):
-            return SegmentError(f'constrained parameter must occupy one non-greedy segment "{seg}"')
-        return SegmentParam(prefix, param_name, suffix, greedy, "digits")
-
     return SegmentParam(prefix, name, suffix, greedy)
 
 
@@ -130,8 +127,8 @@ def parse_segment(seg: str) -> dict:
     rejected forms must land in both languages and the shared contract fixture
     at once:
     turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json.
-    Parameter names are non-empty segment text. A colon reserves the constraint
-    suffix: only a whole, non-greedy {name:digits} rule-path segment is supported.
+    One-brace parameter names remain opaque, including colons. The distinct
+    {{name:digits}} envelope supports whole, non-greedy rule-path constraints.
     Callers validate the surrounding URL/rule syntax before parsing.
 
     Returns one of:
@@ -305,7 +302,7 @@ def match_path(path: str, pattern: str) -> dict | None:
 
     - Literal segments must match exactly.
     - {name} matches a single non-empty path segment.
-    - {name:digits} matches a single non-empty ASCII decimal segment.
+    - {{name:digits}} matches a single non-empty ASCII decimal segment.
     - prefix{name}suffix matches a segment that starts with `prefix` and
       ends with `suffix`, capturing the non-empty middle into `name`.
     - {name+} matches the rest of the path (one or more segments). Must be last.

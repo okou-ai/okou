@@ -148,11 +148,9 @@ def _extract_raw_hostname(netloc: str) -> _RawAuthorityHost | None:
 
 
 def _format_param_segment(parsed: SegmentParam) -> str:
-    constraint = f":{parsed.constraint}" if parsed.constraint else ""
-    return (
-        f"{parsed.prefix.lower()}{{{parsed.name}{constraint}{parsed.greedy}}}"
-        f"{parsed.suffix.lower()}"
-    )
+    if parsed.constraint:
+        return "{{" + parsed.name + ":" + parsed.constraint + "}}"
+    return f"{parsed.prefix.lower()}{{{parsed.name}{parsed.greedy}}}{parsed.suffix.lower()}"
 
 
 def _is_parameterized_ipv4_host(segments: list[ParsedSegment]) -> bool:

@@ -1,63 +1,68 @@
 {
   "awsRuleValidationCases": [
     {
-      "name": "valid digits rule GET /stories/{id:digits}",
-      "rule": "GET /stories/{id:digits}",
+      "name": "legacy colon-name rule remains valid",
+      "rule": "PUT /api/documents/{documentName:path}",
       "valid": true
     },
     {
-      "name": "valid digits rule GET /spaces/{space_id:digits}/stories/{id:digits}/versions",
-      "rule": "GET /spaces/{space_id:digits}/stories/{id:digits}/versions",
+      "name": "valid digits rule GET /stories/{{id:digits}}",
+      "rule": "GET /stories/{{id:digits}}",
       "valid": true
     },
     {
-      "name": "reject constrained rule {id:digit}",
-      "rule": "GET /stories/{id:digit}",
+      "name": "valid digits rule GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions",
+      "rule": "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions",
+      "valid": true
+    },
+    {
+      "name": "reject constrained rule {{id:digit}}",
+      "rule": "GET /stories/{{id:digit}}",
       "valid": false
     },
     {
-      "name": "reject constrained rule {id:}",
-      "rule": "GET /stories/{id:}",
+      "name": "reject constrained rule {{id:}}",
+      "rule": "GET /stories/{{id:}}",
       "valid": false
     },
     {
-      "name": "reject constrained rule {:digits}",
-      "rule": "GET /stories/{:digits}",
+      "name": "reject constrained rule {{:digits}}",
+      "rule": "GET /stories/{{:digits}}",
       "valid": false
     },
     {
-      "name": "reject constrained rule {id:digits:digits}",
-      "rule": "GET /stories/{id:digits:digits}",
+      "name": "reject constrained rule {{id:digits:digits}}",
+      "rule": "GET /stories/{{id:digits:digits}}",
       "valid": false
     },
     {
-      "name": "reject constrained rule {id:digits+}",
-      "rule": "GET /stories/{id:digits+}",
+      "name": "reject constrained rule {{id:digits+}}",
+      "rule": "GET /stories/{{id:digits+}}",
       "valid": false
     },
     {
-      "name": "reject constrained rule {id+:digits}",
-      "rule": "GET /stories/{id+:digits}",
+      "name": "reject constrained rule {{id+:digits}}",
+      "rule": "GET /stories/{{id+:digits}}",
       "valid": false
     },
     {
-      "name": "reject constrained rule {id:digits*}",
-      "rule": "GET /stories/{id:digits*}",
+      "name": "reject constrained rule {{id:digits*}}",
+      "rule": "GET /stories/{{id:digits*}}",
       "valid": false
     },
     {
-      "name": "reject constrained rule prefix{id:digits}",
-      "rule": "GET /stories/prefix{id:digits}",
+      "name": "reject constrained rule prefix{{id:digits}}",
+      "rule": "GET /stories/prefix{{id:digits}}",
       "valid": false
     },
     {
-      "name": "reject constrained rule {id:digits}.json",
-      "rule": "GET /stories/{id:digits}.json",
+      "name": "reject constrained rule {{id:digits}}.json",
+      "rule": "GET /stories/{{id:digits}}.json",
       "valid": false
     },
     {
       "name": "constrained duplicate name",
-      "rule": "GET /stories/{id:digits}/{id}",
+      "rule": "GET /stories/{{id:digits}}/{id}",
       "valid": false
     },
     {
@@ -143,8 +148,19 @@
   ],
   "segmentParseCases": [
     {
+      "name": "legacy colon name remains opaque",
+      "segment": "{documentName:path}",
+      "expected": {
+        "kind": "param",
+        "prefix": "",
+        "name": "documentName:path",
+        "suffix": "",
+        "greedy": ""
+      }
+    },
+    {
       "name": "digits constraint",
-      "segment": "{id:digits}",
+      "segment": "{{id:digits}}",
       "expected": {
         "kind": "param",
         "prefix": "",
@@ -155,75 +171,75 @@
       }
     },
     {
-      "name": "reject constraint {id:digit}",
-      "segment": "{id:digit}",
+      "name": "reject constraint {{id:digit}}",
+      "segment": "{{id:digit}}",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "invalid parameter constraint"
+        "reasonIncludes": "parameter constraint"
       }
     },
     {
-      "name": "reject constraint {id:}",
-      "segment": "{id:}",
+      "name": "reject constraint {{id:}}",
+      "segment": "{{id:}}",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "invalid parameter constraint"
+        "reasonIncludes": "parameter constraint"
       }
     },
     {
-      "name": "reject constraint {:digits}",
-      "segment": "{:digits}",
+      "name": "reject constraint {{:digits}}",
+      "segment": "{{:digits}}",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "invalid parameter constraint"
+        "reasonIncludes": "parameter constraint"
       }
     },
     {
-      "name": "reject constraint {id:digits:digits}",
-      "segment": "{id:digits:digits}",
+      "name": "reject constraint {{id:digits:digits}}",
+      "segment": "{{id:digits:digits}}",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "invalid parameter constraint"
+        "reasonIncludes": "parameter constraint"
       }
     },
     {
-      "name": "reject constraint {id:digits+}",
-      "segment": "{id:digits+}",
+      "name": "reject constraint {{id:digits+}}",
+      "segment": "{{id:digits+}}",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "constrained parameter"
+        "reasonIncludes": "parameter constraint"
       }
     },
     {
-      "name": "reject constraint {id+:digits}",
-      "segment": "{id+:digits}",
+      "name": "reject constraint {{id+:digits}}",
+      "segment": "{{id+:digits}}",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "constrained parameter"
+        "reasonIncludes": "parameter constraint"
       }
     },
     {
-      "name": "reject constraint {id:digits*}",
-      "segment": "{id:digits*}",
+      "name": "reject constraint {{id:digits*}}",
+      "segment": "{{id:digits*}}",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "constrained parameter"
+        "reasonIncludes": "parameter constraint"
       }
     },
     {
-      "name": "reject constraint prefix{id:digits}",
-      "segment": "prefix{id:digits}",
+      "name": "reject constraint prefix{{id:digits}}",
+      "segment": "prefix{{id:digits}}",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "constrained parameter"
+        "reasonIncludes": "literal-separated parameters"
       }
     },
     {
-      "name": "reject constraint {id:digits}.json",
-      "segment": "{id:digits}.json",
+      "name": "reject constraint {{id:digits}}.json",
+      "segment": "{{id:digits}}.json",
       "expected": {
         "kind": "error",
-        "reasonIncludes": "constrained parameter"
+        "reasonIncludes": "literal-separated parameters"
       }
     },
     {
@@ -471,9 +487,20 @@
   ],
   "pathMatchCases": [
     {
+      "name": "legacy colon-name path remains unconstrained",
+      "pattern": "/api/documents/{documentName:path}",
+      "path": "/api/documents/annual-report",
+      "expected": {
+        "kind": "match",
+        "params": {
+          "documentName:path": "annual-report"
+        }
+      }
+    },
+    {
       "name": "digits path \"0\"",
       "path": "/stories/0/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "match",
         "params": {
@@ -484,7 +511,7 @@
     {
       "name": "digits path \"00123\"",
       "path": "/stories/00123/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "match",
         "params": {
@@ -495,7 +522,7 @@
     {
       "name": "digits path \"123456789012345678901234567890\"",
       "path": "/stories/123456789012345678901234567890/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "match",
         "params": {
@@ -506,7 +533,7 @@
     {
       "name": "digits path \"published\"",
       "path": "/stories/published/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -514,7 +541,7 @@
     {
       "name": "digits path \"published_index\"",
       "path": "/stories/published_index/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -522,7 +549,7 @@
     {
       "name": "digits path \"draft\"",
       "path": "/stories/draft/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -530,7 +557,7 @@
     {
       "name": "digits path \"-1\"",
       "path": "/stories/-1/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -538,7 +565,7 @@
     {
       "name": "digits path \"+1\"",
       "path": "/stories/+1/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -546,7 +573,7 @@
     {
       "name": "digits path \"1.0\"",
       "path": "/stories/1.0/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -554,7 +581,7 @@
     {
       "name": "digits path \"1e2\"",
       "path": "/stories/1e2/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -562,7 +589,7 @@
     {
       "name": "digits path \"١٢\"",
       "path": "/stories/١٢/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -570,7 +597,7 @@
     {
       "name": "digits path \"１２\"",
       "path": "/stories/１２/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -578,7 +605,7 @@
     {
       "name": "digits path \"%31\"",
       "path": "/stories/%31/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -586,7 +613,7 @@
     {
       "name": "digits path \"42\\n\"",
       "path": "/stories/42\n/versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -594,7 +621,7 @@
     {
       "name": "digits path \"\"",
       "path": "/stories//versions",
-      "pattern": "/stories/{id:digits}/versions",
+      "pattern": "/stories/{{id:digits}}/versions",
       "expected": {
         "kind": "no-match"
       }
@@ -811,7 +838,7 @@
     {
       "name": "reject constrained host",
       "host": "42.example.com",
-      "pattern": "{sub:digits}.example.com",
+      "pattern": "{{sub:digits}}.example.com",
       "expected": {
         "kind": "no-match"
       }
@@ -946,7 +973,7 @@
     {
       "name": "reject constrained base path",
       "path": "/42/stories",
-      "pattern": "/{id:digits}",
+      "pattern": "/{{id:digits}}",
       "expected": {
         "kind": "no-match"
       }
@@ -1306,6 +1333,49 @@
   ],
   "finalDecisionCases": [
     {
+      "name": "legacy colon-name permission stays executable",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "manage",
+                  "rules": ["PUT /api/documents/{documentName:path}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["manage"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "https://api.example.com/api/documents/annual-report"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com",
+        "relativePath": "/api/documents/annual-report",
+        "permission": "manage",
+        "rule": "PUT /api/documents/{documentName:path}"
+      }
+    },
+    {
       "name": "numeric route still enforces denied permission",
       "firewalls": [
         {
@@ -1321,7 +1391,7 @@
               "permissions": [
                 {
                   "name": "read",
-                  "rules": ["GET /stories/{id:digits}/versions"]
+                  "rules": ["GET /stories/{{id:digits}}/versions"]
                 }
               ]
             }
@@ -1364,7 +1434,7 @@
               "permissions": [
                 {
                   "name": "read",
-                  "rules": ["GET /stories/{id:digit}/versions"]
+                  "rules": ["GET /stories/{{id:digit}}/versions"]
                 }
               ]
             }
@@ -1398,7 +1468,7 @@
           "name": "example",
           "apis": [
             {
-              "base": "https://api.example.com/{id:digits}",
+              "base": "https://api.example.com/{{id:digits}}",
               "auth": {
                 "headers": {
                   "Authorization": "Bearer token"
@@ -1428,7 +1498,7 @@
       "expected": {
         "kind": "block",
         "firewallName": "example",
-        "base": "https://api.example.com/{id:digits}",
+        "base": "https://api.example.com/{{id:digits}}",
         "relativePath": "/versions",
         "reason": "malformed_firewall_config",
         "permissions": []
@@ -1441,7 +1511,7 @@
           "name": "example",
           "apis": [
             {
-              "base": "https://{id:digits}.example.com",
+              "base": "https://{{id:digits}}.example.com",
               "auth": {
                 "headers": {
                   "Authorization": "Bearer token"
@@ -1489,7 +1559,7 @@
                 {
                   "name": "read",
                   "rules": [
-                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                    "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
                   ]
                 }
               ]
@@ -1514,7 +1584,7 @@
         "base": "https://api.example.com/v1",
         "relativePath": "/spaces/42/stories/123/versions",
         "permission": "read",
-        "rule": "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+        "rule": "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
       }
     },
     {
@@ -1534,7 +1604,7 @@
                 {
                   "name": "read",
                   "rules": [
-                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                    "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
                   ]
                 }
               ]
@@ -1579,7 +1649,7 @@
                 {
                   "name": "read",
                   "rules": [
-                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                    "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
                   ]
                 }
               ]
@@ -1624,7 +1694,7 @@
                 {
                   "name": "read",
                   "rules": [
-                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                    "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
                   ]
                 }
               ]
@@ -1669,7 +1739,7 @@
                 {
                   "name": "read",
                   "rules": [
-                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                    "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
                   ]
                 }
               ]
@@ -1714,7 +1784,7 @@
                 {
                   "name": "read",
                   "rules": [
-                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                    "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
                   ]
                 }
               ]
@@ -1759,7 +1829,7 @@
                 {
                   "name": "read",
                   "rules": [
-                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                    "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
                   ]
                 }
               ]
@@ -1804,7 +1874,7 @@
                 {
                   "name": "read",
                   "rules": [
-                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                    "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
                   ]
                 },
                 {
@@ -1833,7 +1903,7 @@
         "base": "https://api.example.com/v1",
         "relativePath": "/spaces/42/stories/123/versions",
         "permission": "read",
-        "rule": "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+        "rule": "GET /spaces/{{space_id:digits}}/stories/{{id:digits}}/versions"
       }
     },
     {
