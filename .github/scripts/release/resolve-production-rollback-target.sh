@@ -112,6 +112,7 @@ readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600
 # #44189 prepared immutable content publishers and the hash-addressed Runner reader.
 # Rollback starts Runner before API, so both artifacts must retain that preparation.
 readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb2ae
+readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
@@ -839,6 +840,17 @@ if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_
   fail "Rollback target predates immutable content bundle publication: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
 fi
 
+# Reference-only claims require the corrected archive reader. Keep the API
+# publisher floor independent: an older publisher can still serve this Runner.
+content_bundle_archive_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CONTENT_BUNDLE_ARCHIVE_READER_PATH" | sed -n '1p')
+if [[ ! "$content_bundle_archive_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged content bundle archive reader on main."
+fi
+if ! git merge-base --is-ancestor "$content_bundle_archive_reader_commit" origin/main; then
+  fail "Content bundle archive reader rollback floor is not on main."
+fi
+
 # Retained decoded-v1 entries can outlive the wider writer. Read main's floor
 # before provider access, then check the independently selected Runner below.
 if ! decoded_storage_capacity_reader_commit=$(git show "origin/main:${DECODED_STORAGE_CAPACITY_READER_PATH}"); then
@@ -988,6 +1000,10 @@ fi
 
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates hash-addressed content bundles: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$content_bundle_archive_reader_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates bounded content bundle archive delivery: ${content_bundle_archive_reader_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$WORKFLOW_DOWNLOAD_READER_COMMIT" "$runner_tag_commit"; then
