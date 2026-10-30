@@ -2483,3 +2483,55 @@ test.each(["private", "organization", "public"] as const)(
     );
   },
 );
+
+test("table exports resolve owned files without enabling artifact deletion", async () => {
+  const { members, session } = fixture();
+  const target = await file(
+    "Table.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  const artifactId = await onlyCatalogArtifactId();
+  const params = {
+    reference: artifactReferencePath(target.id, "Table.xlsx").slice(
+      "/artifacts/".length,
+    ),
+  };
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: {
+        switches: {
+          [FeatureSwitchKey.ArtifactDeletion]: false,
+          [FeatureSwitchKey.MarkdownTableExport]: true,
+        },
+      },
+    }),
+    [200],
+  );
+  const resolved = await accept(
+    api()(artifactReferencesContract).ownerArtifact({ headers, params }),
+    [200],
+  );
+  expect(resolved.body).toStrictEqual({ artifactId });
+  await accept(
+    api()(artifactCatalogContract).delete({
+      headers,
+      params: { artifactId },
+    }),
+    [403],
+  );
+  const recipient = `user_${randomUUID()}`;
+  members.add(recipient);
+  session(recipient);
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: { switches: { [FeatureSwitchKey.MarkdownTableExport]: true } },
+    }),
+    [200],
+  );
+  await accept(
+    api()(artifactReferencesContract).ownerArtifact({ headers, params }),
+    [404],
+  );
+});
