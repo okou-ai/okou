@@ -15,9 +15,9 @@ use guest_agent::metrics;
 use guest_agent::paths;
 use guest_agent::reuse_preparation;
 use guest_agent::run_context::GuestRuntime;
+use guest_agent::session_history_identity;
 use guest_agent::session_metadata;
 use guest_agent::telemetry::{Telemetry, UploadMode};
-use guest_agent::{codex_session_cleanup, session_history_identity};
 
 use guest_contracts::diagnostics::{
     AGENT_EXECUTION_TIMEOUT_EXIT_CODE, CliTerminationReason, EventDeliveryDiagnostic, FailureClass,
@@ -187,30 +187,6 @@ fn helper_exit_code_from_args() -> Option<i32> {
                 Err(error) => {
                     eprintln!("{error}");
                     error.exit_code()
-                }
-            })
-        }
-        "cleanup-codex-session" => {
-            let Some(session_id) = args.next().and_then(|value| value.into_string().ok()) else {
-                return Some(1);
-            };
-            let Some(fallback_relative_path) =
-                args.next().and_then(|value| value.into_string().ok())
-            else {
-                return Some(1);
-            };
-            if args.next().is_some() {
-                return Some(1);
-            }
-            let request = guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest {
-                session_id,
-                fallback_relative_path,
-            };
-            Some(match codex_session_cleanup::run(&request) {
-                Ok(exit_code) => exit_code,
-                Err(error) => {
-                    eprintln!("{error}");
-                    1
                 }
             })
         }

@@ -187,21 +187,6 @@ pub struct SessionHistoryIdentityVerifyRequest<'a> {
     pub wait_timeout: Duration,
 }
 
-/// Fixed-purpose reused-Codex session cleanup request.
-///
-/// The host selects the executable, process role, label, output bounds, and
-/// one-shot lifecycle. Callers can supply only validated cleanup inputs.
-pub struct CodexSessionCleanupRequest<'a> {
-    /// Canonical lowercase hyphenated Codex thread identifier.
-    pub session_id: &'a str,
-    /// Canonical logical rollout path relative to the fixed Codex home.
-    pub fallback_relative_path: &'a str,
-    /// Positive guest-side process timeout in milliseconds.
-    pub timeout_ms: u32,
-    /// Total host-side request deadline.
-    pub wait_timeout: Duration,
-}
-
 /// Request parameters for a streaming exec operation helper.
 pub struct ExecStreamRequest<'a> {
     /// Positive guest-side process timeout in milliseconds.

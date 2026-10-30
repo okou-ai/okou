@@ -393,7 +393,7 @@ check_required_executable "/usr/bin/sed" "sed"
 check_required_file_contains "/usr/share/zoneinfo/Asia/Calcutta" "TZif" \
   "legacy IANA timezone link"
 
-# Storage manifest cleanup and Codex session cleanup helpers.
+# Filesystem and text-processing utilities.
 check_required_executable "/usr/bin/rm" "rm"
 check_required_executable "/usr/bin/find" "find"
 check_required_executable "/usr/bin/awk" "awk"
