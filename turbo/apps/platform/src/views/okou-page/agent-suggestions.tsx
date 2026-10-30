@@ -286,11 +286,8 @@ function SuggestionFeedbackNotice() {
             });
   return (
     <div className="mt-4 rounded-xl border border-border bg-card p-3">
-      <div className="flex items-start gap-2">
-        <Check
-          aria-hidden
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-        />
+      <div className="flex items-center gap-2">
+        <Check aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         <p
           role="status"
           className="flex-1 text-sm leading-5 text-muted-foreground"
