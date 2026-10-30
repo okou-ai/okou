@@ -7,11 +7,6 @@
       "owner": "claimExpiredInactiveBrowser$"
     },
     {
-      "id": "TX-0116",
-      "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
-      "owner": "deleteBuiltinConnectorLocalState$"
-    },
-    {
       "id": "TX-0170",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "bindHostedSiteDeployment$"

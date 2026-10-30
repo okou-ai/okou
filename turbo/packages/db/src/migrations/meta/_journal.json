@@ -2955,6 +2955,13 @@
       "when": 1793392088046,
       "tag": "1500_write_usage_pack_pending_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 1501,
+      "version": "7",
+      "when": 1793398192619,
+      "tag": "1501_delete_builtin_connector_local_state",
+      "breakpoints": true
     }
   ]
 }
