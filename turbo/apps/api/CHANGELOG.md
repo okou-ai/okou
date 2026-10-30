@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.30.1](https://github.com/okou-ai/okou/compare/api-v2.30.0...api-v2.30.1) (2026-10-30)
+
+
+### Refactoring
+
+* **api:** localize runner reuse preference capture ownership ([#44212](https://github.com/okou-ai/okou/issues/44212)) ([c349eda](https://github.com/okou-ai/okou/commit/c349edab2cd37730da11610704b13d7b8ac55a7a))
+* **api:** remove builtin connector selection transaction ([#44221](https://github.com/okou-ai/okou/issues/44221)) ([738c3fa](https://github.com/okou-ai/okou/commit/738c3fa6a3b11bca957ce6f59791be62b3cdc1b3))
+
+
+### Performance Improvements
+
+* **browser:** use native extension window operations ([#44195](https://github.com/okou-ai/okou/issues/44195)) ([90925ae](https://github.com/okou-ai/okou/commit/90925ae2ce82dc5ab1457b09c0caf8df08651d19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.2
+    * @okouai/core bumped to 8.804.1
+    * @okouai/db bumped to 2.13.3
+    * @okouai/pi-agent-runtime bumped to 1.51.32
+
 ## [2.30.0](https://github.com/okou-ai/okou/compare/api-v2.29.0...api-v2.30.0) (2026-10-30)
 
 
