@@ -84,9 +84,15 @@ def request_path_interpretations(path: str) -> PathInterpretations:
             paths.append(canonical)
         if "%" not in current:
             return PathInterpretations(tuple(paths), unsafe)
-        decoded = _percent_decode_segment(current)
-        if decoded is None:
-            return PathInterpretations(tuple(paths), True)
+        decoded_segments: list[str] = []
+        for segment in current.split("/"):
+            decoded_segment = _percent_decode_segment(segment)
+            if decoded_segment is None:
+                unsafe = True
+                decoded_segments.append(segment)
+            else:
+                decoded_segments.append(decoded_segment)
+        decoded = "/".join(decoded_segments)
         unsafe |= "?" in decoded or "#" in decoded
         if decoded == current:
             return PathInterpretations(tuple(paths), unsafe)

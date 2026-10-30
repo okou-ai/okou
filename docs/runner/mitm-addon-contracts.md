@@ -1176,6 +1176,11 @@ An unsafe interpretation must not authorize the request or erase a discovered
 owner into ordinary network fallback. Unowned paths and different authorities
 remain outside connector credential selection.
 
+Decode segments independently for owner discovery. A malformed escape or invalid
+UTF-8 segment stays opaque and marks the entire interpretation unsafe; it cannot
+erase a valid encoded API prefix in another segment. Do not replace invalid bytes
+or use these rejected candidates for authorization or forwarding.
+
 An unchanged selected allowance is insufficient when a newly applicable denied or
 asked alias is hidden by another granted rule. Compare the actual matching routes,
 including API identity, permission and original rule text, after method and selector

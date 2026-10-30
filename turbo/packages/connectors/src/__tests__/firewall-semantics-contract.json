@@ -1017,6 +1017,133 @@
   ],
   "finalDecisionCases": [
     {
+      "name": "nested encoded owner survives invalid UTF-8 in another path segment",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%2532/registries/id%FF"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/v%2532/registries/id%FF",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "nested encoded owner survives malformed escapes in another path segment",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%2532/registries/id%ZZ"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/v%2532/registries/id%ZZ",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "malformed unowned path segments do not invent a connector owner",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/other/registries/id%ZZ"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
       "name": "encoded owner is discovered before rejecting a decoded query delimiter",
       "firewalls": [
         {

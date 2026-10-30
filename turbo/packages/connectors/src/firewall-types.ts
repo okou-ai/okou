@@ -769,12 +769,16 @@ export function firewallRequestPathInterpretations(path: string): {
     if (canonical !== current && !paths.includes(canonical))
       paths.push(canonical);
     if (!current.includes("%")) return { paths, unsafe };
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(current);
-    } catch {
-      return { paths, unsafe: true };
+    const decodedSegments: string[] = [];
+    for (const segment of current.split("/")) {
+      try {
+        decodedSegments.push(decodeURIComponent(segment));
+      } catch {
+        unsafe = true;
+        decodedSegments.push(segment);
+      }
     }
+    const decoded = decodedSegments.join("/");
     // Keep these opaque paths only to discover an owner before rejecting.
     unsafe ||= decoded.includes("?") || decoded.includes("#");
     if (decoded === current) return { paths, unsafe };

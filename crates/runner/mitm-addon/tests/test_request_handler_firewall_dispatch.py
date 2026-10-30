@@ -40,6 +40,8 @@ _MAX_CONNECTOR_INTENT_BYTES = 64
         "/v%32/registries/id%23ignored",
         "/v%2532/registries/id%3Fignored",
         "/v%2532/registries/id%23ignored",
+        "/v%2532/registries/id%FF",
+        "/v%2532/registries/id%ZZ",
     ],
 )
 async def test_encoded_routes_are_denied_before_connector_credentials(
