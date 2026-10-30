@@ -9,6 +9,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.33.0](https://github.com/okou-ai/okou/compare/api-v2.32.1...api-v2.33.0) (2026-10-30)
+
+
+### Features
+
+* reactivate hash-addressed content claims ([#44342](https://github.com/okou-ai/okou/issues/44342)) ([c5f93ab](https://github.com/okou-ai/okou/commit/c5f93ab5220486a764f9316a4496288e5bf72991))
+
+
+### Refactoring
+
+* **api:** localize built-in grant-start catalog reads ([#44356](https://github.com/okou-ai/okou/issues/44356)) ([b84618c](https://github.com/okou-ai/okou/commit/b84618c44c50645086eb26e32dcde0ca096ff02d))
+* **api:** localize code-grant catalog resolver reads ([#44352](https://github.com/okou-ai/okou/issues/44352)) ([2908dd3](https://github.com/okou-ai/okou/commit/2908dd37b3753f6ca308670b6205e43aa6c4d5f8))
+* **api:** localize github catalog reads ([#44362](https://github.com/okou-ai/okou/issues/44362)) ([8ad6543](https://github.com/okou-ai/okou/commit/8ad6543e805a5bc37f7ba7457bcb5b00564a1d2c))
+* **api:** retire builtin connector deletion transaction ([#44360](https://github.com/okou-ai/okou/issues/44360)) ([95bb3f0](https://github.com/okou-ai/okou/commit/95bb3f04f203f12d9ff86e5483e723d9f448d5b8))
+* **api:** retire chat search projection transaction ([#44347](https://github.com/okou-ai/okou/issues/44347)) ([d41b996](https://github.com/okou-ai/okou/commit/d41b99699f5f22ab863f19f4abb653a49103c639))
+* **api:** retire pending snapshot transaction ([#44359](https://github.com/okou-ai/okou/issues/44359)) ([a43d0e1](https://github.com/okou-ai/okou/commit/a43d0e1fa2305df09ef1dd2c82428a8e5c7788db))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.0
+    * @okouai/core bumped to 8.805.3
+    * @okouai/db bumped to 2.13.11
+    * @okouai/pi-agent-runtime bumped to 1.51.37
+
 ## [2.32.1](https://github.com/okou-ai/okou/compare/api-v2.32.0...api-v2.32.1) (2026-10-30)
 
 
