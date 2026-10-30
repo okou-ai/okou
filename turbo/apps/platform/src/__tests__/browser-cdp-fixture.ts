@@ -1,6 +1,12 @@
 import { array, number, object, string, unknown } from "zod";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 
+export const TEST_BROWSER_EXTENSION = Object.freeze({
+  id: "11111111-1111-4111-8111-111111111111",
+  runtimeId: "abcdefghijklmnopabcdefghijklmnop",
+  version: "0.3.0",
+});
+
 interface BrowserTarget {
   readonly targetId: string;
   title: string;

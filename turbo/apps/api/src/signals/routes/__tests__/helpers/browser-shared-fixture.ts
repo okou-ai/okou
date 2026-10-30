@@ -15,6 +15,7 @@ import { requireOrgId, okouTokenFromClaim } from "./chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { publicChatActor } from "./public-chat-actor";
 import { createNativeWindowProvider } from "./browser-native-window";
+import { TEST_BROWSER_EXTENSION } from "../../../../__tests__/browser-extension";
 
 export const START = Date.parse("2026-10-25T14:00:00.000Z");
 export const MINUTE = 60_000;
@@ -71,6 +72,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
             finishedAt: null,
             liveUrl: "https://live.browser-use.com/owned-fixture",
             cdpUrl: native.url,
+            extensions: [TEST_BROWSER_EXTENSION],
           },
           { status: 201 },
         );
@@ -124,6 +126,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
           finishedAt: active ? null : new Date(START).toISOString(),
           liveUrl: active ? "https://live.browser-use.com/owned-fixture" : null,
           cdpUrl: active ? native.url : null,
+          extensions: [TEST_BROWSER_EXTENSION],
         });
       }),
       http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {

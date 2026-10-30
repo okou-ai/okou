@@ -631,7 +631,7 @@ describe("shared Browser public consumers", () => {
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
       let first = true;
-      f.provider.native.beforeWindowReply = async () => {
+      f.provider.native.beforeNativeWindowReply = async () => {
         if (first) {
           first = false;
           entered.resolve();

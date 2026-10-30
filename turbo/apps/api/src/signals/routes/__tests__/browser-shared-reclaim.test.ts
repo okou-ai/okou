@@ -304,11 +304,10 @@ describe("shared Browser expiry through public reopen", () => {
       mockNow(START + 9 * MINUTE);
       await renew(b);
       mockNow(START + 11 * MINUTE);
-      f.provider.native.beforeWindowReply = (targetId) => {
-        if (
-          targetId === second.targetId &&
-          !f.provider.native.targets.has(page.targetId)
-        ) {
+      f.provider.native.beforeCloseWindowReply = (windowId) => {
+        if (windowId === first.window.primaryWindowId) {
+          f.provider.native.targets.delete(page.targetId);
+          f.provider.native.closed.push(page.targetId);
           f.provider.native.closeSucceeds = false;
         }
       };
@@ -325,7 +324,7 @@ describe("shared Browser expiry through public reopen", () => {
         }),
         [200],
       );
-      f.provider.native.beforeWindowReply = undefined;
+      f.provider.native.beforeCloseWindowReply = undefined;
       f.provider.native.closeSucceeds = true;
       const reopened = await open(a);
       expect(reopened.window.instanceId).toBe(first.window.instanceId);
@@ -377,11 +376,10 @@ describe("shared Browser expiry through public reopen", () => {
           return;
         }),
       );
-      f.provider.native.beforeWindowReply = (targetId) => {
-        if (
-          targetId === second.targetId &&
-          !f.provider.native.targets.has(page.targetId)
-        ) {
+      f.provider.native.beforeCloseWindowReply = (windowId) => {
+        if (windowId === first.window.primaryWindowId) {
+          f.provider.native.targets.delete(page.targetId);
+          f.provider.native.closed.push(page.targetId);
           f.provider.native.closeSucceeds = false;
         }
       };
@@ -409,7 +407,7 @@ describe("shared Browser expiry through public reopen", () => {
         throw loser.error;
       }
       expect(loser.value.status).toBe(409);
-      f.provider.native.beforeWindowReply = undefined;
+      f.provider.native.beforeCloseWindowReply = undefined;
       f.provider.native.closeSucceeds = true;
       const reopened = await open(a);
       expect(
