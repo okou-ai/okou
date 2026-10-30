@@ -7,8 +7,13 @@ use guest_contracts::session_history_identity::SessionHistorySourceRef;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+mod record;
+
 const MAX_NATIVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_PI_ENTRIES: usize = 16_384;
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests;
 
 fn pi_sources(session_id: &str) -> Result<Vec<PathBuf>, AgentError> {
     let root =
@@ -115,28 +120,20 @@ pub(crate) fn retained_session_is_usable(
     let mut matched = false;
     let mut has_context = false;
     for line in text.lines() {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        let Ok(value) = record::parse(line) else {
             return Ok(false);
         };
         has_context |= native_context_record(framework, &value);
         let id = match framework {
-            Framework::ClaudeCode => value.get("sessionId").and_then(serde_json::Value::as_str),
-            Framework::Codex
-                if value.get("type").and_then(serde_json::Value::as_str)
-                    == Some("session_meta") =>
-            {
-                value
-                    .get("payload")
-                    .and_then(|payload| payload.get("id"))
-                    .and_then(serde_json::Value::as_str)
+            Framework::ClaudeCode => value.session_id.as_deref(),
+            Framework::Codex if value.kind.as_deref() == Some("session_meta") => {
+                value.payload.id.as_deref()
             }
-            Framework::Pi
-                if value.get("type").and_then(serde_json::Value::as_str) == Some("session") =>
-            {
-                if value.get("version").and_then(serde_json::Value::as_u64) != Some(3) {
+            Framework::Pi if value.kind.as_deref() == Some("session") => {
+                if value.version != Some(3) {
                     return Ok(false);
                 }
-                value.get("id").and_then(serde_json::Value::as_str)
+                value.id.as_deref()
             }
             _ => None,
         };
@@ -156,57 +153,36 @@ pub(crate) fn retained_session_is_usable(
     Ok(matched && has_context)
 }
 
-fn nonempty_content(value: Option<&serde_json::Value>) -> bool {
-    match value {
-        Some(serde_json::Value::String(text)) => !text.trim().is_empty(),
-        Some(serde_json::Value::Array(items)) => !items.is_empty(),
-        _ => false,
-    }
-}
-
 /// A matching identity header alone is not resumed conversation context.
-fn native_context_record(framework: Framework, value: &serde_json::Value) -> bool {
-    let kind = value.get("type").and_then(serde_json::Value::as_str);
+fn native_context_record(framework: Framework, value: &record::Record) -> bool {
+    let kind = value.kind.as_deref();
     match framework {
         Framework::ClaudeCode => {
-            (matches!(kind, Some("user" | "assistant"))
-                && nonempty_content(value.pointer("/message/content")))
-                || (kind == Some("summary") && nonempty_content(value.get("summary")))
+            (matches!(kind, Some("user" | "assistant")) && value.message.content)
+                || (kind == Some("summary") && value.summary)
         }
         Framework::Pi => {
             (kind == Some("message")
                 && matches!(
-                    value
-                        .pointer("/message/role")
-                        .and_then(serde_json::Value::as_str),
+                    value.message.role.as_deref(),
                     Some("user" | "assistant" | "toolResult")
                 )
-                && nonempty_content(value.pointer("/message/content")))
-                || (matches!(kind, Some("compaction" | "branch_summary"))
-                    && nonempty_content(value.get("summary")))
+                && value.message.content)
+                || (matches!(kind, Some("compaction" | "branch_summary")) && value.summary)
         }
         Framework::Codex => match kind {
             Some("response_item") => {
-                (matches!(
-                    value
-                        .pointer("/payload/role")
-                        .and_then(serde_json::Value::as_str),
-                    Some("user" | "assistant")
-                ) && nonempty_content(value.pointer("/payload/content")))
-                    || nonempty_content(value.pointer("/payload/arguments"))
-                    || nonempty_content(value.pointer("/payload/output"))
+                (matches!(value.payload.role.as_deref(), Some("user" | "assistant"))
+                    && value.payload.content)
+                    || value.payload.arguments
+                    || value.payload.output
             }
-            Some("compacted") => {
-                nonempty_content(value.pointer("/payload/message"))
-                    || nonempty_content(value.pointer("/payload/replacement_history"))
-            }
+            Some("compacted") => value.payload.message || value.payload.replacement_history,
             Some("event_msg") => {
                 matches!(
-                    value
-                        .pointer("/payload/type")
-                        .and_then(serde_json::Value::as_str),
+                    value.payload.kind.as_deref(),
                     Some("user_message" | "agent_message")
-                ) && nonempty_content(value.pointer("/payload/message"))
+                ) && value.payload.message
             }
             _ => false,
         },

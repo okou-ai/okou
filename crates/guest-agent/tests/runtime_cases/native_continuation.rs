@@ -111,6 +111,9 @@ async fn claude_resumes_only_matching_history_and_recovers_later_misses() -> Tes
     for case in [
         "first",
         "resumed",
+        "dense",
+        "corrupt-tail",
+        "conflicting-tail",
         "missing",
         "foreign",
         "header-only",
@@ -120,7 +123,10 @@ async fn claude_resumes_only_matching_history_and_recovers_later_misses() -> Tes
         let id = uuid::Uuid::new_v4().to_string();
         let history = home.path().join(".claude/projects/-home-user-workspace");
         std::fs::create_dir_all(&history)?;
-        if matches!(case, "resumed" | "foreign" | "header-only") {
+        if matches!(
+            case,
+            "resumed" | "dense" | "corrupt-tail" | "conflicting-tail" | "foreign" | "header-only"
+        ) {
             std::fs::write(
                 history.join(format!("{id}.jsonl")),
                 format!(
@@ -129,7 +135,10 @@ async fn claude_resumes_only_matching_history_and_recovers_later_misses() -> Tes
                 ),
             )?;
         }
-        if case == "resumed" {
+        if matches!(
+            case,
+            "resumed" | "dense" | "corrupt-tail" | "conflicting-tail"
+        ) {
             let mut history_file = std::fs::OpenOptions::new()
                 .append(true)
                 .open(history.join(format!("{id}.jsonl")))?;
@@ -139,6 +148,16 @@ async fn claude_resumes_only_matching_history_and_recovers_later_misses() -> Tes
                 "{}",
                 json!({"type":"user","sessionId":id,"message":{"role":"user","content":"Earlier context"}})
             )?;
+            match case {
+                "dense" => writeln!(
+                    history_file,
+                    "{{\"unused\":[{}{{\"x\":0}}]}}",
+                    "{\"x\":0},".repeat(1024)
+                )?,
+                "corrupt-tail" => writeln!(history_file, "{{\"unused\":[0,]}}")?,
+                "conflicting-tail" => writeln!(history_file, "{{\"sessionId\":\"foreign\"}}")?,
+                _ => {}
+            }
         }
         let argv = home.path().join("argv");
         let binary = home.path().join("claude");
@@ -164,13 +183,13 @@ async fn claude_resumes_only_matching_history_and_recovers_later_misses() -> Tes
         let args = std::fs::read_to_string(argv)?;
         assert_eq!(
             args.lines().any(|arg| arg == "--resume"),
-            case == "resumed",
+            matches!(case, "resumed" | "dense"),
             "{case}"
         );
         let appended = std::fs::read_to_string(run.paths.claude_append_system_prompt_file())?;
         assert_eq!(
             appended.contains(RECOVERY),
-            !matches!(case, "first" | "resumed"),
+            !matches!(case, "first" | "resumed" | "dense"),
             "{case}"
         );
         assert!(appended.starts_with(BASE_PROMPT));
@@ -401,6 +420,7 @@ async fn pi_keeps_matching_history_and_quarantines_corrupt_history_before_fresh_
         "resumed",
         "missing",
         "corrupt",
+        "wrong-version",
         "header-only",
         "duplicate",
         "framework-switch",
@@ -410,13 +430,19 @@ async fn pi_keeps_matching_history_and_quarantines_corrupt_history_before_fresh_
         let path = root.join(format!("2026-10-14T00-00-00_{id}.jsonl"));
         let duplicate = root.join(format!("2026-10-14T00-00-01_{id}.jsonl"));
         let mut files = PiFiles(vec![path.clone(), duplicate.clone()]);
-        if matches!(case, "resumed" | "corrupt" | "duplicate" | "header-only") {
+        if matches!(
+            case,
+            "resumed" | "corrupt" | "wrong-version" | "duplicate" | "header-only"
+        ) {
             let mut history = if case == "corrupt" {
                 "not JSON".into()
             } else {
-                format!("{}\n", json!({"type":"session","version":3,"id":id}))
+                format!(
+                    "{}\n",
+                    json!({"type":"session","version":if case == "wrong-version" { 4 } else { 3 },"id":id})
+                )
             };
-            if matches!(case, "resumed" | "duplicate") {
+            if matches!(case, "resumed" | "duplicate" | "wrong-version") {
                 history.push_str(&format!("{}\n", json!({"type":"message","id":"00000001","parentId":null,"message":{"role":"user","content":"Earlier context"}})));
             }
             std::fs::write(&path, &history)?;
