@@ -1408,7 +1408,8 @@
       "handBack": "Devolver",
       "handBackMessage": "Terminei no navegador. Pode continuar.",
       "memberInControl": "Você está no controle",
-      "takeOver": "Assumir"
+      "takeOver": "Assumir",
+      "takeOverMessage": "Assumi o controle do navegador. Não use até eu devolver."
     },
     "reclaimHint_one": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minuto de inatividade.",
     "reclaimHint_many": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",

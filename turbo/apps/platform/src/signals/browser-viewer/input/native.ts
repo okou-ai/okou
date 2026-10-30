@@ -19,6 +19,18 @@ function modifiers(event: MouseEvent | KeyboardEvent): number {
   );
 }
 
+/** Keys an input method or dead-key sequence owns; the viewer never sends them. */
+export function isCompositionKey(event: KeyboardEvent): boolean {
+  return (
+    event.isComposing ||
+    event.keyCode === 229 ||
+    ["Dead", "Process", "Unidentified"].includes(event.key)
+  );
+}
+
+/** The key that releases focus from the page to the viewer's own controls. */
+export const FOCUS_RELEASE_KEY = "F8";
+
 /** DOM listeners belong to this surface only; the textarea stays uncontrolled. */
 export class NativeInput {
   private readonly composition = new NativeComposition();
@@ -454,16 +466,11 @@ export class NativeInput {
   };
 
   private readonly keyDown = (event: KeyboardEvent) => {
-    if (
-      this.composition.composing ||
-      event.isComposing ||
-      event.keyCode === 229 ||
-      ["Dead", "Process", "Unidentified"].includes(event.key)
-    ) {
+    if (this.composition.composing || isCompositionKey(event)) {
       return;
     }
     event.stopPropagation();
-    if (event.key === "F8") {
+    if (event.key === FOCUS_RELEASE_KEY) {
       event.preventDefault();
       this.cancel();
       this.host.releaseFocus();

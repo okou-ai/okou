@@ -1384,7 +1384,8 @@
       "handBack": "交还",
       "handBackMessage": "我在浏览器里操作完了，请继续。",
       "memberInControl": "你正在操作",
-      "takeOver": "接管"
+      "takeOver": "接管",
+      "takeOverMessage": "我先接管浏览器，在我交还之前请不要操作它。"
     },
     "reclaimHint_one": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
     "reclaimHint_other": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",

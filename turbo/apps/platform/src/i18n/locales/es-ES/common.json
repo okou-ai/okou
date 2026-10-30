@@ -1408,7 +1408,8 @@
       "handBack": "Devolver el control",
       "handBackMessage": "He terminado en el navegador. Continúa, por favor.",
       "memberInControl": "Tienes el control",
-      "takeOver": "Tomar el control"
+      "takeOver": "Tomar el control",
+      "takeOverMessage": "He tomado el control del navegador. No lo uses hasta que te lo devuelva."
     },
     "reclaimHint_one": "{{assistantName}} mantiene este navegador mientras este panel está abierto y lo recupera tras {{formattedCount}} minuto de reposo.",
     "reclaimHint_many": "{{assistantName}} mantiene este navegador mientras este panel está abierto y lo recupera tras {{formattedCount}} minutos de reposo.",

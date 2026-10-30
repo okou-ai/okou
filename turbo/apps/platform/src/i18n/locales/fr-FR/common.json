@@ -1408,7 +1408,8 @@
       "handBack": "Rendre la main",
       "handBackMessage": "J’ai terminé dans le navigateur. Tu peux continuer.",
       "memberInControl": "Vous avez la main",
-      "takeOver": "Prendre la main"
+      "takeOver": "Prendre la main",
+      "takeOverMessage": "J’ai pris la main sur le navigateur. Ne l’utilise pas avant que je te le rende."
     },
     "reclaimHint_one": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minute d'inactivité.",
     "reclaimHint_many": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",

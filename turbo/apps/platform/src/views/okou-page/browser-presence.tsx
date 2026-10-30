@@ -1,6 +1,6 @@
 import { Hand, UserRound } from "lucide-react";
 import { Button } from "@okouai/ui";
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 
@@ -20,7 +20,8 @@ export function BrowserPresence({
   const presence = thread.browserPresence;
   const controller = useGet(presence.controller$);
   const [takeOverOperation, takeOver] = useLoadableSet(presence.takeOver$);
-  const handBack = useSet(presence.handBack$);
+  const [handBackOperation, handBack] = useLoadableSet(presence.handBack$);
+  const takeOverSent = useLoadable(presence.takeOverSent$);
   const pageSignal = useGet(pageSignal$);
 
   if (controller === "agent") {
@@ -48,7 +49,12 @@ export function BrowserPresence({
             disabled={takeOverOperation.state === "loading"}
             onClick={() => {
               detach(
-                takeOver(pageSignal),
+                takeOver(
+                  t(($) => {
+                    return $.browserSession.presence.takeOverMessage;
+                  }),
+                  pageSignal,
+                ),
                 Reason.DomCallback,
                 "take over the cloud browser",
               );
@@ -81,11 +87,20 @@ export function BrowserPresence({
         <Button
           type="button"
           size="xs"
+          disabled={
+            takeOverSent.state === "loading" ||
+            handBackOperation.state === "loading"
+          }
           onClick={() => {
-            handBack(
-              t(($) => {
-                return $.browserSession.presence.handBackMessage;
-              }),
+            detach(
+              handBack(
+                t(($) => {
+                  return $.browserSession.presence.handBackMessage;
+                }),
+                pageSignal,
+              ),
+              Reason.DomCallback,
+              "hand the cloud browser back",
             );
           }}
           className="shrink-0 rounded-full text-[13px]"
