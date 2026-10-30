@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/okou-ai/okou/compare/browser-extension-v0.4.0...browser-extension-v0.4.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ci:** retain three uploaded browser extension versions ([#44205](https://github.com/okou-ai/okou/issues/44205)) ([2acd568](https://github.com/okou-ai/okou/commit/2acd5689a77431782d404d64d264a96ad62a0fb1))
+
 ## [0.4.0](https://github.com/okou-ai/okou/compare/browser-extension-v0.3.1...browser-extension-v0.4.0) (2026-10-30)
 
 

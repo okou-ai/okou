@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.804.0](https://github.com/okou-ai/okou/compare/core-v8.803.1...core-v8.804.0) (2026-10-30)
+
+
+### Features
+
+* release halloween quiz to all users ([#44208](https://github.com/okou-ai/okou/issues/44208)) ([5b89b78](https://github.com/okou-ai/okou/commit/5b89b784990936be1d6a050aa0b3ed2789e69ad9))
+
 ## [8.803.1](https://github.com/okou-ai/okou/compare/core-v8.803.0...core-v8.803.1) (2026-10-30)
 
 

@@ -9,6 +9,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.30.0](https://github.com/okou-ai/okou/compare/api-v2.29.0...api-v2.30.0) (2026-10-30)
+
+
+### Features
+
+* release halloween quiz to all users ([#44208](https://github.com/okou-ai/okou/issues/44208)) ([5b89b78](https://github.com/okou-ai/okou/commit/5b89b784990936be1d6a050aa0b3ed2789e69ad9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.804.0
+    * @okouai/db bumped to 2.13.2
+    * @okouai/pi-agent-runtime bumped to 1.51.31
+
 ## [2.29.0](https://github.com/okou-ai/okou/compare/api-v2.28.0...api-v2.29.0) (2026-10-30)
 
 
