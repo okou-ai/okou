@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { http, HttpResponse } from "msw";
 import {
   computerUseSessionHostsContract as contract,
   computerUseHostsContract,
@@ -13,6 +14,8 @@ import {
 } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
+import { server } from "../../../mocks/server";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { computerUseRoutes } from "../computer-use";
 
 const context = testContext();
@@ -552,7 +555,8 @@ describe("Native Computer Use session authentication", () => {
       mockNow(registeredAt);
       const api = await app();
       const client = api(contract);
-      authenticate(identity());
+      const actor = identity();
+      authenticate(actor);
       const registered = (
         await accept(client.register({ headers, body: runtimeBody }), [200])
       ).body;
@@ -582,6 +586,8 @@ describe("Native Computer Use session authentication", () => {
       });
       if (revocation === "session") {
         context.mocks.clerk.sessions.getSession.mockResolvedValue({
+          id: actor.sessionId,
+          userId: actor.userId,
           status: "revoked",
         });
       } else {
@@ -825,6 +831,79 @@ describe("Native Computer Use session authentication", () => {
         [200],
       );
       expect(observed.body.status).toBe("running");
+    },
+  );
+
+  it.each(["session", "membership"])(
+    "cancels a stalled Clerk %s read and recovers the same connection",
+    async (stage) => {
+      const initialTime = Date.parse("2026-10-08T02:00:00Z");
+      mockNow(initialTime);
+      const api = await app();
+      const client = api(contract);
+      const actor = identity();
+      authenticate(actor);
+      const host = (
+        await accept(client.register({ headers, body: runtimeBody }), [200])
+      ).body;
+      mockNow(initialTime + 31_000);
+      const received = createDeferredPromise<void>(context.signal);
+      const cancelled = createDeferredPromise<void>(context.signal);
+      const path =
+        stage === "session"
+          ? `sessions/${actor.sessionId}`
+          : `organizations/${actor.orgId}/memberships`;
+      server.use(
+        http.get(
+          `https://api.clerk.com/v1/${path}`,
+          async ({ request }) => {
+            const disconnected = createDeferredPromise<void>(context.signal);
+            const observeDisconnect = () => {
+              if (!disconnected.settled()) {
+                disconnected.resolve();
+              }
+            };
+            request.signal.addEventListener("abort", observeDisconnect, {
+              once: true,
+            });
+            if (request.signal.aborted) {
+              observeDisconnect();
+            }
+            received.resolve();
+            const observed = await settleIncludingAbort(disconnected.promise);
+            request.signal.removeEventListener("abort", observeDisconnect);
+            if (!observed.ok) {
+              throw observed.error;
+            }
+            cancelled.resolve();
+            return HttpResponse.json({ errors: [] }, { status: 503 });
+          },
+          { once: true },
+        ),
+      );
+      const request = client.next({
+        headers,
+        params: { hostId: host.hostId },
+        body: {
+          connectionGeneration: host.connectionGeneration,
+          supportedCapabilities: runtimeBody.supportedCapabilities,
+        },
+      });
+      await received.promise;
+      await accept(request, [503]);
+      await cancelled.promise;
+      const recovered = await accept(
+        client.next({
+          headers,
+          params: { hostId: host.hostId },
+          body: {
+            connectionGeneration: host.connectionGeneration,
+            supportedCapabilities: runtimeBody.supportedCapabilities,
+          },
+        }),
+        [200],
+      );
+      expect(recovered.body.status).toBe("idle");
     },
   );
 
