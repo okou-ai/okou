@@ -1169,6 +1169,14 @@ or a decoded-only owner selection is rejected with `unsafe_path`. Original denia
 are never promoted to decoded allowances. Decoding cannot introduce a query or fragment
 boundary, and query escapes are not path input.
 
+URI and IRI spellings of valid UTF-8 scalar values share the same literal identity.
+Normalize escaped scalar values consistently in configured literal paths and request
+interpretations, including values beside ASCII reserved escapes. Reserved ASCII
+escapes remain data; invalid UTF-8 is never replaced with a character or accepted by
+normalization. Process valid scalar values independently so malformed bytes cannot
+hide a valid literal prefix. Keep original path, API and rule text for forwarding
+and decision provenance.
+
 When decoding introduces a query or fragment delimiter, retain the bounded
 interpretations solely to discover an encoded API owner before rejecting the request.
 Treat those candidates as opaque path text, never as a replacement URL or query.

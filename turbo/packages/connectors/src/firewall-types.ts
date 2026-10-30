@@ -748,12 +748,22 @@ export function hasUnsafeFirewallPath(path: string): boolean {
   });
 }
 
-/** RFC URI normalization; reserved escapes remain path data, never structure. */
+/** URI/IRI normalization; ASCII reserved escapes remain data, never structure. */
 export function canonicalFirewallPathPercentEncoding(path: string): string {
-  return path.replace(/%[\da-f]{2}/gi, (escape) => {
+  const canonical = path.replace(/%[\da-f]{2}/gi, (escape) => {
     const char = String.fromCharCode(Number.parseInt(escape.slice(1), 16));
     return /^[A-Za-z0-9._~-]$/.test(char) ? char : escape.toUpperCase();
   });
+  return canonical.replace(
+    /(?:%C[2-9A-F]|%D[0-9A-F])%[89AB][0-9A-F]|%E[0-9A-F](?:%[89AB][0-9A-F]){2}|%F[0-4](?:%[89AB][0-9A-F]){3}/gi,
+    (encoded) => {
+      try {
+        return decodeURIComponent(encoded);
+      } catch {
+        return encoded;
+      }
+    },
+  );
 }
 
 /** Bounded owner-discovery paths; unsafe candidates must never authorize a request. */

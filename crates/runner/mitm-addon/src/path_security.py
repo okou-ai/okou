@@ -18,6 +18,12 @@ _MAX_CONSECUTIVE_NONSTARTERS = 30
 # Python string processing without first scanning and allocating encoded bytes.
 MAX_PATH_VALIDATION_CHARACTERS = 64 * 1024
 _PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
+_UTF8_PERCENT_CODE_POINT = re.compile(
+    r"(?:%C[2-9A-F]|%D[0-9A-F])%[89AB][0-9A-F]"
+    r"|%E[0-9A-F](?:%[89AB][0-9A-F]){2}"
+    r"|%F[0-4](?:%[89AB][0-9A-F]){3}",
+    re.IGNORECASE,
+)
 _URI_UNRESERVED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-")
 
 
@@ -56,14 +62,21 @@ def has_unsafe_url_path(url: str) -> bool:
 
 
 def canonical_path_percent_encoding(path: str) -> str:
-    """Normalize URI spelling without turning reserved escapes into structure."""
+    """Normalize URI/IRI literals without turning reserved escapes into structure."""
 
     def replace_escape(match: re.Match[str]) -> str:
         escape = match.group()
         char = chr(int(escape[1:], 16))
         return char if char in _URI_UNRESERVED else escape.upper()
 
-    return _PERCENT_ESCAPE.sub(replace_escape, path)
+    def replace_utf8(match: re.Match[str]) -> str:
+        encoded = match.group()
+        try:
+            return bytes.fromhex(encoded.replace("%", "")).decode("utf-8")
+        except UnicodeError:
+            return encoded
+
+    return _UTF8_PERCENT_CODE_POINT.sub(replace_utf8, _PERCENT_ESCAPE.sub(replace_escape, path))
 
 
 class PathInterpretations(NamedTuple):

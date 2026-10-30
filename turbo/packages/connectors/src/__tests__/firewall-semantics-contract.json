@@ -1017,6 +1017,324 @@
   ],
   "finalDecisionCases": [
     {
+      "name": "raw Unicode scalar widths cannot hide an escaped UTF-8 literal declaration",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": [
+                    "GET /files/caf%C3%A9%E7%AE%A1%E7%90%86%E5%91%98%F0%9F%98%80"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/café管理员😀"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/café管理员😀",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "mixed Unicode and unreserved escapes preserve UTF-8 literal ownership",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%E7%AE%A1a%E7%90%86"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/管%61理"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/管%61理",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "UTF-8 normalization retains reserved ASCII escape structure",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "restricted",
+                  "rules": ["GET /files/%E7%AE%A1%2Fsecret"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": ["restricted"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/管%2Fsecret"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/管%2Fsecret",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unambiguous escaped UTF-8 literal retains its original rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/%E7%AE%A1"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%E7%AE%A1"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%E7%AE%A1",
+        "permission": "read",
+        "rule": "GET /files/%E7%AE%A1"
+      }
+    },
+    {
+      "name": "Unicode alias of an escaped UTF-8 API base cannot gain credentials",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2/%E7%AE%A1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/管/files/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2/%E7%AE%A1",
+        "relativePath": "/v2/管/files/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unambiguous escaped UTF-8 API base retains its original identity",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2/%E7%AE%A1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/%E7%AE%A1/files/id"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2/%E7%AE%A1",
+        "relativePath": "/files/id",
+        "permission": "read",
+        "rule": "GET /files/{id}"
+      }
+    },
+    {
+      "name": "valid UTF-8 prefix remains discoverable before an invalid byte",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2/管{tenant}",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/%E7%AE%A1%FF/files/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2/管{tenant}",
+        "relativePath": "/v2/%E7%AE%A1%FF/files/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
       "name": "decode budget exhaustion rejects potential configured authority",
       "firewalls": [
         {

@@ -42,6 +42,7 @@ _MAX_CONNECTOR_INTENT_BYTES = 64
         "/v%2532/registries/id%23ignored",
         "/v%2532/registries/id%FF",
         "/v%2532/registries/id%ZZ",
+        "/v2/files/管理员",
     ],
 )
 async def test_encoded_routes_are_denied_before_connector_credentials(
@@ -65,6 +66,10 @@ async def test_encoded_routes_are_denied_before_connector_credentials(
                     {"name": "files-a-restricted", "rules": ["GET /files/%61"]},
                     {"name": "files-mixed", "rules": ["GET /files/a{id}x"]},
                     {"name": "files-prefix-restricted", "rules": ["GET /files/%61{id}"]},
+                    {
+                        "name": "files-unicode-restricted",
+                        "rules": ["GET /files/%E7%AE%A1%E7%90%86%E5%91%98"],
+                    },
                 ],
             },
             network_policy={
@@ -74,6 +79,7 @@ async def test_encoded_routes_are_denied_before_connector_credentials(
                     "files-restricted",
                     "files-a-restricted",
                     "files-prefix-restricted",
+                    "files-unicode-restricted",
                 ],
                 "ask": [],
                 "unknownPolicy": "deny",
