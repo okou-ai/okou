@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1079.7](https://github.com/okou-ai/okou/compare/app-v0.1079.6...app-v0.1079.7) (2026-10-30)
+
+
+### Refactoring
+
+* **platform:** bind browser input retirement deadline to its viewer ([#44252](https://github.com/okou-ai/okou/issues/44252)) ([46bf773](https://github.com/okou-ai/okou/commit/46bf773259a31f0696118ed2ef81ec65efe24dc0))
+
 ## [0.1079.6](https://github.com/okou-ai/okou/compare/app-v0.1079.5...app-v0.1079.6) (2026-10-30)
 
 
