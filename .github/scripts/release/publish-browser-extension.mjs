@@ -4,6 +4,10 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+  compareExtensionVersions,
+  listOkouBrowserExtensions,
+} from "./browser-extension-registry.mjs";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const repository = required("GITHUB_REPOSITORY");
@@ -138,6 +142,47 @@ function matches(receipt, expected) {
   );
 }
 
+async function pruneExtensions(extensionId, version) {
+  const extensions = await listOkouBrowserExtensions(
+    providerOrigin,
+    required("OKOU_BROWSER_USE_API_KEY"),
+  );
+  extensions.sort((left, right) => compareExtensionVersions(right, left));
+  for (let index = 1; index < extensions.length; index++) {
+    if (
+      compareExtensionVersions(extensions[index - 1], extensions[index]) === 0
+    )
+      throw new Error("Browser Use returned ambiguous Okou Browser versions");
+  }
+  if (
+    !extensions.slice(0, 3).some((item) => {
+      return item.id === extensionId && item.version === version;
+    })
+  ) {
+    throw new Error(
+      "Published extension is not among the retained Browser Use versions",
+    );
+  }
+  for (const item of extensions.slice(3)) {
+    const response = await fetch(
+      `${providerOrigin}/api/v4/extensions/${item.id}`,
+      {
+        method: "DELETE",
+        headers: {
+          "X-Browser-Use-API-Key": required("OKOU_BROWSER_USE_API_KEY"),
+        },
+        redirect: "error",
+        signal: AbortSignal.timeout(45_000),
+      },
+    );
+    // Another cleanup may already have removed this exact provider reference.
+    if (response.status !== 204 && response.status !== 404)
+      throw new Error(
+        `Browser Use extension cleanup failed (${response.status})`,
+      );
+  }
+}
+
 async function publish() {
   required("GH_TOKEN");
   required("OKOU_BROWSER_USE_API_KEY");
@@ -265,6 +310,8 @@ async function publish() {
       extensionId,
     });
   }
+  // A completed receipt also resumes interrupted cleanup without another upload.
+  await pruneExtensions(extensionId, version);
   return extensionId;
 }
 

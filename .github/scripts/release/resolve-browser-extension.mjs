@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 /** Deployment-only resolution. Inputs/credentials are env-only; stdout is one UUID. */
+import {
+  BrowserExtensionRegistryError as ExtensionResolutionError,
+  compareExtensionVersions,
+  listOkouBrowserExtensions,
+} from "./browser-extension-registry.mjs";
+
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-class ExtensionResolutionError extends Error {}
 
 function providerOrigin() {
   const url = new URL(
@@ -19,19 +24,6 @@ function providerOrigin() {
     throw new ExtensionResolutionError("Invalid Browser Use API origin");
   }
   return url.origin;
-}
-
-function versionParts(version) {
-  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version))
-    throw new ExtensionResolutionError(
-      "Invalid Okou Browser extension version",
-    );
-  const parts = version.split(".").map(Number);
-  if (!parts.every(Number.isSafeInteger))
-    throw new ExtensionResolutionError(
-      "Invalid Okou Browser extension version",
-    );
-  return parts;
 }
 
 async function resolveExtension() {
@@ -52,64 +44,17 @@ async function resolveExtension() {
   const key = process.env.OKOU_BROWSER_USE_API_KEY;
   if (!key)
     throw new ExtensionResolutionError("OKOU_BROWSER_USE_API_KEY is required");
-  const origin = providerOrigin();
-  const signal = AbortSignal.timeout(45_000);
-  const pageSize = 100;
-  let total;
-  let received = 0;
+  const extensions = await listOkouBrowserExtensions(providerOrigin(), key);
   let latest;
   let ambiguous = false;
-  for (let pageNumber = 1; ; pageNumber++) {
-    const url = new URL("/api/v4/extensions", origin);
-    url.searchParams.set("pageSize", String(pageSize));
-    url.searchParams.set("pageNumber", String(pageNumber));
-    const response = await fetch(url, {
-      headers: { "X-Browser-Use-API-Key": key },
-      signal,
-      redirect: "error",
-    });
-    if (!response.ok)
-      throw new ExtensionResolutionError(
-        `Browser Use extension lookup failed (${response.status})`,
-      );
-    const page = await response.json();
-    if (
-      !page ||
-      !Array.isArray(page.items) ||
-      !Number.isSafeInteger(page.totalItems) ||
-      page.totalItems < 0 ||
-      page.pageNumber !== pageNumber ||
-      page.pageSize !== pageSize ||
-      (total !== undefined && page.totalItems !== total) ||
-      page.items.length !== Math.min(pageSize, page.totalItems - received)
-    ) {
-      throw new ExtensionResolutionError(
-        "Browser Use returned inconsistent extension pagination",
-      );
+  for (const item of extensions) {
+    const difference = latest ? compareExtensionVersions(item, latest) : 1;
+    if (difference > 0) {
+      latest = item;
+      ambiguous = false;
+    } else if (difference === 0) {
+      ambiguous = true;
     }
-    total = page.totalItems;
-    received += page.items.length;
-    for (const item of page.items) {
-      if (item?.name !== "Okou Browser") continue;
-      if (typeof item.id !== "string" || !uuid.test(item.id))
-        throw new ExtensionResolutionError(
-          "Browser Use returned an invalid Okou Browser extension ID",
-        );
-      const parts = versionParts(item.version);
-      const difference = latest
-        ? parts.findIndex((part, index) => part !== latest.parts[index])
-        : -1;
-      if (
-        !latest ||
-        (difference !== -1 && parts[difference] > latest.parts[difference])
-      ) {
-        latest = { id: item.id, parts };
-        ambiguous = false;
-      } else if (difference === -1 && item.id !== latest.id) {
-        ambiguous = true;
-      }
-    }
-    if (received === total) break;
   }
   if (!latest)
     throw new ExtensionResolutionError(
