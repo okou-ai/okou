@@ -2,11 +2,6 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0047",
-      "file": "turbo/apps/api/src/signals/services/agent-deletion.service.ts",
-      "owner": "deleteAgentRows$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
