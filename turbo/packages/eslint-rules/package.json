@@ -19,6 +19,10 @@
     "./zod": {
       "import": "./src/zod/index.ts",
       "types": "./src/zod/index.ts"
+    },
+    "./client-contracts": {
+      "import": "./src/client-contracts/index.ts",
+      "types": "./src/client-contracts/index.ts"
     }
   },
   "scripts": {

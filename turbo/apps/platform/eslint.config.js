@@ -1,4 +1,6 @@
 import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { clientContractsPlugin } from "@okouai/eslint-rules/client-contracts";
+import { clientContractImportManifest } from "@okouai/api-contracts/client/imports";
 import { createHash } from "node:crypto";
 import { globSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -21,6 +23,8 @@ const eslintCacheInputPaths = globSync(
     "../../packages/eslint-rules/package.json",
     "../../packages/eslint-rules/src/ccstate/**/*.ts",
     "../../packages/eslint-rules/src/zod/**/*.ts",
+    "../../packages/eslint-rules/src/client-contracts/**/*.ts",
+    "../../packages/api-contracts/src/client/imports.ts",
   ],
   {
     cwd: import.meta.dirname,
@@ -28,6 +32,7 @@ const eslintCacheInputPaths = globSync(
       "../../packages/eslint-config/**/*.node.js",
       "../../packages/eslint-rules/src/ccstate/__tests__/**",
       "../../packages/eslint-rules/src/zod/__tests__/**",
+      "../../packages/eslint-rules/src/client-contracts/__tests__/**",
     ],
   },
 ).sort();
@@ -63,6 +68,29 @@ const runtimeImportRestrictions = Object.freeze([
 export default [
   ...baseConfig,
   namedZodImportsConfig,
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/**/__tests__/**",
+      "src/**/__benches__/**",
+      "src/mocks/**",
+      "src/test/**",
+      "src/**/*.{test,spec,bench}.{ts,tsx}",
+    ],
+    plugins: { "client-contracts": clientContractsPlugin },
+    rules: {
+      "client-contracts/prefer-client-descriptors": [
+        "error",
+        {
+          modules: clientContractImportManifest,
+          contractsDirectory: resolve(
+            import.meta.dirname,
+            "../../packages/api-contracts/src/contracts",
+          ),
+        },
+      ],
+    },
+  },
   {
     ...pluginReact.configs.flat.recommended,
     settings: {

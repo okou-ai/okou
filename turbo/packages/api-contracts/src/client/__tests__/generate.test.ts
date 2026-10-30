@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -18,10 +19,13 @@ import {
   discoverClientContractModules,
   generateClientDescriptors,
   renderAgentsClientDescriptors,
+  renderClientContractImportManifest,
   renderClientDescriptorManifest,
   renderClientDescriptorModule,
   renderClientDescriptorTestingRegistry,
 } from "../generate";
+import { discoverClientContractImportModules } from "../import-metadata";
+import { clientContractImportManifest } from "../imports";
 import { clientDescriptorManifest } from "../manifest";
 import { clientDescriptorContracts } from "../testing";
 
@@ -138,6 +142,21 @@ describe("HTTP client descriptor generation", () => {
       ).toBe(expected);
       expect(runtimeImports(expected)).toEqual([]);
     }
+    const importModules = await discoverClientContractImportModules({
+      modules,
+      sourceDirectory: fileURLToPath(
+        new URL("../../contracts/", import.meta.url),
+      ),
+    });
+    expect(clientContractImportManifest).toEqual(importModules);
+    const importManifest = renderClientContractImportManifest(importModules);
+    expect(renderClientContractImportManifest(importModules)).toBe(
+      importManifest,
+    );
+    expect(
+      await readFile(new URL("../imports.ts", import.meta.url), "utf8"),
+    ).toBe(importManifest);
+    expect(runtimeImports(importManifest)).toEqual([]);
     expect(
       await readFile(new URL("../manifest.ts", import.meta.url), "utf8"),
     ).toBe(renderClientDescriptorManifest(modules));
@@ -164,6 +183,7 @@ describe("HTTP client descriptor generation", () => {
       "shared-threads.ts",
       "manifest.ts",
       "testing.ts",
+      "imports.ts",
     ];
     for (const name of paths) {
       await utimes(join(directory, name), 0, 0);
@@ -205,6 +225,24 @@ describe("HTTP client descriptor generation", () => {
     ).rejects.toThrow("first.ts");
     expect(await readFile(stalePath, "utf8")).toBe(stale);
     expect((await stat(stalePath)).mtimeMs).toBe(0);
+
+    await generateClientDescriptors(options);
+    const metadataPath = join(outputDirectory, "imports.ts");
+    const metadata = await readFile(metadataPath, "utf8");
+    await rm(metadataPath);
+    await expect(
+      generateClientDescriptors({ ...options, check: true }),
+    ).rejects.toThrow("imports.ts");
+    await expect(readFile(metadataPath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await generateClientDescriptors(options);
+    expect(await readFile(metadataPath, "utf8")).toBe(metadata);
+    await writeFile(metadataPath, stale);
+    await expect(
+      generateClientDescriptors({ ...options, check: true }),
+    ).rejects.toThrow("imports.ts");
+    expect(await readFile(metadataPath, "utf8")).toBe(stale);
 
     await generateClientDescriptors(options);
     const obsoletePath = join(outputDirectory, "obsolete.ts");

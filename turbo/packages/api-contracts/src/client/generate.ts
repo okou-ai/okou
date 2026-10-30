@@ -10,6 +10,10 @@ import {
   agentsMainContract,
 } from "../contracts/agents";
 import type { AppRoute, AppRouter } from "../contracts/trpc-contract";
+import {
+  discoverClientContractImportModules,
+  type ClientContractImportModule,
+} from "./import-metadata";
 
 const contractsDirectory = fileURLToPath(
   new URL("../contracts/", import.meta.url),
@@ -280,6 +284,60 @@ export function renderClientDescriptorManifest(
   ].join("\n");
 }
 
+export function renderClientContractImportManifest(
+  modules: readonly ClientContractImportModule[],
+): string {
+  if (modules.length === 0) {
+    return [
+      ...generatedHeader,
+      "export const clientContractImportManifest = [] as const;",
+      "",
+    ].join("\n");
+  }
+  return [
+    ...generatedHeader,
+    "export const clientContractImportManifest = [",
+    ...modules.flatMap(({ module, contracts, bindings }) => {
+      const single = `    contracts: [${contracts
+        .map((name) => {
+          return JSON.stringify(name);
+        })
+        .join(", ")}],`;
+      return [
+        "  {",
+        `    module: ${JSON.stringify(module)},`,
+        ...(single.length <= 80
+          ? [single]
+          : [
+              "    contracts: [",
+              ...contracts.map((name) => {
+                return `      ${JSON.stringify(name)},`;
+              }),
+              "    ],",
+            ]),
+        ...(bindings.length === 0
+          ? ["    bindings: [],"]
+          : [
+              "    bindings: [",
+              ...bindings.flatMap(({ name, source, imported }) => {
+                return [
+                  "      {",
+                  `        name: ${JSON.stringify(name)},`,
+                  `        source: ${JSON.stringify(source)},`,
+                  `        imported: ${JSON.stringify(imported)},`,
+                  "      },",
+                ];
+              }),
+              "    ],",
+            ]),
+        "  },",
+      ];
+    }),
+    "] as const;",
+    "",
+  ].join("\n");
+}
+
 export function renderClientDescriptorTestingRegistry(
   modules: readonly ClientContractModule[],
 ): string {
@@ -397,6 +455,15 @@ export async function generateClientDescriptors({
         [
           join(outputDirectory, "testing.ts"),
           renderClientDescriptorTestingRegistry(modules),
+        ],
+        [
+          join(outputDirectory, "imports.ts"),
+          renderClientContractImportManifest(
+            await discoverClientContractImportModules({
+              modules,
+              sourceDirectory,
+            }),
+          ),
         ],
       ];
   const stale: string[] = [];
