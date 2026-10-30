@@ -595,9 +595,6 @@ create_ext4() {
   # block layout for identical content, making the rootfs reproducible.
   local fs_uuid="${INPUT_HASH:0:8}-${INPUT_HASH:8:4}-${INPUT_HASH:12:4}-${INPUT_HASH:16:4}-${INPUT_HASH:20:12}"
 
-  # mktemp -d creates 0700; ext4 root inode must be 0755 for non-root access.
-  sudo chmod 755 "$ROOTFS_DIR"
-
   # Create ext4 image populated directly from directory (no loopback mount needed)
   truncate -s "$image_bytes" "$TMP_TEMPLATE_PATH"
   mkfs.ext4 -F -q -U "$fs_uuid" -d "$ROOTFS_DIR" "$TMP_TEMPLATE_PATH"
@@ -613,6 +610,8 @@ check_dependencies
 debootstrap_build
 install_packages
 install_runtimes
+# mktemp -d creates 0700; the root must be traversable by the sandbox user.
+sudo chmod 755 "$ROOTFS_DIR"
 verify_chromium_pdf
 
 # Remove build-time host resolver state before producing the reusable rootfs
