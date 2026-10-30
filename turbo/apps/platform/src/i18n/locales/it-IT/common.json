@@ -4531,6 +4531,37 @@
         },
         "title": "Fai lavorare i tuoi strumenti quotidiani"
       },
+      "outputFormats": {
+        "clear": "Cancella selezione",
+        "options": {
+          "image": {
+            "instruction": "Presenta i risultati come un’immagine di sintesi chiara.",
+            "label": "Immagine"
+          },
+          "people": {
+            "instruction": "Usa questa attività come contesto per creare un elenco di persone pertinenti, con ruoli, motivi della selezione e link a profili professionali pubblici. Se il collegamento con l’attività non è chiaro, fai una domanda mirata prima di cercare.",
+            "label": "Elenco di persone"
+          },
+          "presentation": {
+            "instruction": "Presenta i risultati in una presentazione concisa con risultati principali, raccomandazioni e prossimi passi.",
+            "label": "Presentazione"
+          },
+          "report": {
+            "instruction": "Presenta i risultati in un report strutturato con risultati principali, raccomandazioni e prossimi passi.",
+            "label": "Report"
+          },
+          "research": {
+            "instruction": "Presenta i risultati in una sintesi della ricerca con fonti e domande aperte. Distingui i fatti documentati dalle raccomandazioni.",
+            "label": "Sintesi della ricerca"
+          },
+          "website": {
+            "instruction": "Presenta i risultati in una pagina web condivisibile con sezioni e punti chiave chiari.",
+            "label": "Sito web"
+          }
+        },
+        "title": "Scegli un formato",
+        "tooLong": "Accorcia il testo dell’attività per scegliere un altro formato."
+      },
       "prompt": {
         "connectorsDescription": "Collega i tuoi strumenti per aiutare Okou a capire il tuo lavoro e svolgere le attività in base alle tue esigenze. Puoi farlo anche più tardi.",
         "connectorsTitle": "Collega i tuoi strumenti di lavoro",

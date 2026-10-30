@@ -2,6 +2,8 @@ import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Textarea, cn, surfaceVariants } from "@okouai/ui";
+import { STARTING_PROMPT_MAX_LENGTH } from "../../signals/onboarding/onboarding-output-format.ts";
+import { OnboardingOutputFormats } from "./onboarding-output-formats.tsx";
 import { Loader2 } from "lucide-react";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
@@ -19,7 +21,8 @@ import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding
 import { runOnboardingRequest$ } from "../../signals/onboarding/onboarding-actions.ts";
 import { onboardingRecommendation$ } from "../../signals/onboarding/onboarding-recommendation.ts";
 import {
-  updateSourcesFirstDraft$,
+  editStartingPrompt$,
+  setStartingPromptInput$,
   type SourcesFirstDraft,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -33,7 +36,6 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 
-const STARTING_PROMPT_MAX_LENGTH = 1000;
 const CELEBRATION_URL =
   "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_640.png";
 const CELEBRATION_2X_URL =
@@ -59,6 +61,8 @@ function StartingPromptPanel({
   outcomeDetail,
   sourceLabel,
   text,
+  promptKey,
+  busy,
   onChange,
 }: {
   readonly isLoading: boolean;
@@ -66,10 +70,13 @@ function StartingPromptPanel({
   readonly outcomeDetail: string | null;
   readonly sourceLabel: string | null;
   readonly text: string;
+  readonly promptKey: string;
+  readonly busy: boolean;
   readonly onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
+  const setPromptInput = useSet(setStartingPromptInput$);
   return (
     <div
       className={cn(
@@ -113,13 +120,22 @@ function StartingPromptPanel({
           </label>
           <Textarea
             id="onboarding-starting-prompt"
-            className={`mt-3 min-h-[120px] max-sm:min-h-48 max-sm:resize-none max-sm:text-base ${ONBOARDING_TEXTAREA_CLASS}`}
+            ref={setPromptInput}
+            className={cn(
+              "mt-3 field-sizing-content min-h-[120px] max-h-60 max-sm:min-h-48 max-sm:resize-none max-sm:text-base",
+              ONBOARDING_TEXTAREA_CLASS,
+            )}
             maxLength={STARTING_PROMPT_MAX_LENGTH}
             spellCheck={false}
             value={text}
             onChange={(event) => {
               onChange(event.target.value);
             }}
+          />
+          <OnboardingOutputFormats
+            text={text}
+            promptKey={promptKey}
+            disabled={busy}
           />
         </>
       )}
@@ -171,7 +187,7 @@ export function OnboardingReadyPage() {
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
   const flow = useSourcesFirstFlow("ready");
-  const updateDraft = useSet(updateSourcesFirstDraft$);
+  const editPrompt = useSet(editStartingPrompt$);
   const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
   const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
   const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
@@ -258,11 +274,10 @@ export function OnboardingReadyPage() {
           outcomeDetail={outcomeDetail}
           sourceLabel={sourceLabel}
           text={text}
+          promptKey={promptKey}
+          busy={runLoadable.state === "loading"}
           onChange={(value) => {
-            updateDraft({
-              startingPromptKey: promptKey,
-              startingPromptDraft: value,
-            });
+            editPrompt(text, value, promptKey);
             capturePromptEdited(value.length);
           }}
         />

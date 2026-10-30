@@ -4475,6 +4475,37 @@
         },
         "title": "Put your everyday tools to work"
       },
+      "outputFormats": {
+        "clear": "Clear selection",
+        "options": {
+          "image": {
+            "instruction": "Present the findings as a clear visual summary image.",
+            "label": "Image"
+          },
+          "people": {
+            "instruction": "Use this task as context to produce a shortlist of relevant people, with their roles, reasons for inclusion, and public professional profile links. If their relevance to the task is unclear, ask a focused question before searching.",
+            "label": "People shortlist"
+          },
+          "presentation": {
+            "instruction": "Present the findings as a concise presentation with key results, recommendations, and next steps.",
+            "label": "Presentation"
+          },
+          "report": {
+            "instruction": "Present the findings as a structured report with key results, recommendations, and next steps.",
+            "label": "Report"
+          },
+          "research": {
+            "instruction": "Present the findings as a research brief with supporting sources and open questions. Distinguish sourced facts from recommendations.",
+            "label": "Research brief"
+          },
+          "website": {
+            "instruction": "Present the findings as a shareable webpage with clear sections and takeaways.",
+            "label": "Website"
+          }
+        },
+        "title": "Choose a format",
+        "tooLong": "Shorten your task to choose another format."
+      },
       "prompt": {
         "connectorsDescription": "Connect your tools so Okou can understand your work and tailor how it completes tasks for you. You can also connect later.",
         "connectorsTitle": "Connect your work tools",

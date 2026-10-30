@@ -4462,6 +4462,37 @@
         },
         "title": "Manfaatkan alat kerja sehari-hari Anda"
       },
+      "outputFormats": {
+        "clear": "Hapus pilihan",
+        "options": {
+          "image": {
+            "instruction": "Sajikan temuan sebagai gambar ringkasan visual yang jelas.",
+            "label": "Gambar"
+          },
+          "people": {
+            "instruction": "Gunakan tugas ini sebagai konteks untuk menyusun daftar orang yang relevan, lengkap dengan peran, alasan pemilihan, dan tautan profil profesional publik. Jika kaitannya dengan tugas belum jelas, ajukan pertanyaan yang terarah sebelum mencari.",
+            "label": "Daftar kandidat"
+          },
+          "presentation": {
+            "instruction": "Sajikan temuan sebagai presentasi singkat berisi hasil utama, rekomendasi, dan langkah berikutnya.",
+            "label": "Presentasi"
+          },
+          "report": {
+            "instruction": "Sajikan temuan sebagai laporan terstruktur berisi hasil utama, rekomendasi, dan langkah berikutnya.",
+            "label": "Laporan"
+          },
+          "research": {
+            "instruction": "Sajikan temuan sebagai ringkasan riset dengan sumber pendukung dan pertanyaan terbuka. Bedakan fakta bersumber dari rekomendasi.",
+            "label": "Ringkasan riset"
+          },
+          "website": {
+            "instruction": "Sajikan temuan sebagai halaman web yang dapat dibagikan dengan bagian dan poin utama yang jelas.",
+            "label": "Situs web"
+          }
+        },
+        "title": "Pilih format",
+        "tooLong": "Persingkat tugas untuk memilih format lain."
+      },
       "prompt": {
         "connectorsDescription": "Hubungkan alat kerja Anda agar Okou memahami konteks pekerjaan dan menyelesaikan tugas sesuai kebutuhan Anda. Anda juga bisa menghubungkannya nanti.",
         "connectorsTitle": "Hubungkan alat kerja Anda",

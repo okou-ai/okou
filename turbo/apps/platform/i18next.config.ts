@@ -45,6 +45,7 @@ export default defineConfig({
       "onboarding.sourcesFirst.industries.*",
       "onboarding.sourcesFirst.startingPrompt.*",
       "onboarding.sourcesFirst.outcomes.*",
+      "onboarding.sourcesFirst.outputFormats.*",
       // Paid tool rows select copy by the shared tool catalog at runtime.
       "settings.paidTools.tools.*",
       // Halloween content is loaded as an on-demand feature namespace, and
