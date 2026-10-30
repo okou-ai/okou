@@ -18,6 +18,7 @@ import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/ch
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { serializeError } from "@okouai/core/log-utils";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -31,6 +32,7 @@ import { and, eq } from "drizzle-orm";
 import { object, string, type infer as zInfer } from "zod";
 
 import { logger } from "../../lib/log";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
@@ -1782,17 +1784,40 @@ const runCompletedChatCallbackSideEffects$ = command(
       pushStep,
     ]);
     signal.throwIfAborted();
-    const errors = results.flatMap((result) => {
+    const operations = [
+      ["save_summary", results[0]],
+      ["followups", results[1]],
+      ["push", results[2]],
+    ] as const;
+    const failures = operations.flatMap(([operation, result]) => {
       if (result.status === "fulfilled") {
         return [];
       }
       throwIfAbort(result.reason);
-      return [result.reason];
+      const sqlState = safeSqlStateCode(result.reason);
+      return [
+        {
+          operation,
+          reason: sqlState
+            ? "database_error"
+            : result.reason instanceof TypeError
+              ? "type_error"
+              : result.reason instanceof SyntaxError
+                ? "syntax_error"
+                : result.reason instanceof Error
+                  ? "error"
+                  : "non_error",
+          ...(sqlState === undefined ? {} : { sqlState }),
+        },
+      ];
     });
-    if (errors.length > 0) {
+    if (failures.length > 0) {
+      // Keep only finite diagnostics: child errors can contain prompts, provider
+      // responses, SQL and parameters. `cause` survives Error serialization.
       throw new AggregateError(
-        errors,
+        failures,
         "Completed chat callback side effects failed",
+        { cause: { failures } },
       );
     }
   },
@@ -1900,7 +1925,10 @@ async function runTerminalChatCallbackSideEffects(args: {
     log.warn("Failed to process terminal chat callback side effects", {
       runId: args.runId,
       status: args.status,
-      error,
+      error:
+        args.status === "completed" && error instanceof AggregateError
+          ? serializeError(error)
+          : error,
     });
   });
 }
