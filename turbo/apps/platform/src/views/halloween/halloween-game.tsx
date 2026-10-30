@@ -24,11 +24,11 @@ import { halloweenTypography as typography } from "./halloween-typography.ts";
 function Progress({ round }: { readonly round: HalloweenRound }) {
   const copy = useHalloweenCopy();
   return (
-    <aside className="order-first flex flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-surface border border-[#a9c1df33] px-4 py-3 md:order-last md:flex-col md:items-stretch md:gap-5 md:rounded-none md:border-0 md:border-l md:py-0 md:pl-6 md:pr-0">
-      <h2 className={cn("text-[#c2cddd]", typography.labelClassName)}>
+    <aside className="order-first flex flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-surface border border-[#a9c1df1c] bg-[#091725b3] px-4 py-3 md:order-last md:flex-col md:items-stretch md:gap-4 md:py-5">
+      <h2 className={cn("text-[#d5deea] md:px-2", typography.labelClassName)}>
         {copy.climb}
       </h2>
-      <ol className="hidden flex-col-reverse gap-1.5 md:flex">
+      <ol className="relative isolate hidden flex-col-reverse gap-1 before:absolute before:inset-y-6 before:left-[23px] before:-z-10 before:w-px before:bg-[#a9c1df24] md:flex">
         {copy.levels.map((level, index) => {
           const done = index < round.correct;
           const current = !done && index + 1 === round.questionNumber;
@@ -37,37 +37,36 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
               key={level}
               aria-current={current ? "step" : undefined}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-[#adbbce]",
-                current && "border-[#e8c68d80] bg-[#e8c68d0d] text-[#ebcf9d]",
-                done && "text-[#c9b28a]",
+                "flex min-h-12 items-center gap-3 rounded-xl border border-transparent px-2 py-2 text-[#a7b7cc]",
+                current && "border-[#e8c68d33] bg-[#e8c68d0a] text-[#f0d7ae]",
+                done && "text-[#c4cfdc]",
               )}
             >
               <span
+                aria-hidden
                 className={cn(
                   typography.labelClassName,
-                  "min-w-[17px] shrink-0 text-xs font-normal tabular-nums text-[#94a6be]",
-                  (current || done) && "text-current",
+                  "flex size-7 shrink-0 items-center justify-center rounded-full border border-[#a9c1df33] bg-[#132238] text-xs font-normal tabular-nums text-[#a7b7cc]",
+                  current &&
+                    "border-[#e8c68d] bg-[#e8c68d] font-medium text-[#30291e]",
+                  done && "border-[#e8c68d40] bg-[#1d2a37] text-[#dfc394]",
                 )}
               >
-                {String(index + 1).padStart(2, "0")}
+                {done ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  String(index + 1).padStart(2, "0")
+                )}
               </span>
               <span
                 className={cn(
                   typography.labelClassName,
+                  "min-w-0",
                   !current && "font-normal",
                 )}
               >
                 {level}
               </span>
-              {done && (
-                <Check aria-hidden className="ml-auto size-3 shrink-0" />
-              )}
-              {current && (
-                <span
-                  aria-hidden
-                  className="ml-auto size-1.5 shrink-0 rounded-full bg-current"
-                />
-              )}
             </li>
           );
         })}
@@ -75,18 +74,16 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
       <p
         className={cn(
           typography.labelClassName,
-          "flex items-center justify-between gap-3 font-normal text-[#b8c6d8] md:border-t md:border-[#a9c1df26] md:pt-4",
+          "flex items-baseline justify-between gap-3 font-normal text-[#a7b7cc] md:border-t md:border-[#a9c1df1c] md:px-2 md:pt-4",
         )}
       >
         <span>{copy.correctAnswers}</span>
-        <strong
-          className={cn(
-            "shrink-0 tabular-nums text-[#ece6db]",
-            typography.labelClassName,
-          )}
-        >
-          {round.correct} / 5
-        </strong>
+        <span className="flex shrink-0 items-baseline gap-1.5 tabular-nums">
+          <strong className="text-lg font-medium leading-6 text-[#f0e7d8]">
+            {round.correct}
+          </strong>
+          <span className="text-xs text-[#a7b7cc]">/ 5</span>
+        </span>
       </p>
     </aside>
   );
