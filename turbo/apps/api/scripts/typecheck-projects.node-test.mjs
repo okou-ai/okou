@@ -79,7 +79,7 @@ function fixture(t) {
     write(root, file, 'import "./production-bootstrap";\n');
   }
   for (const file of [
-    "src/worker-runtime.d.ts",
+    "src/worker-sdk.d.ts",
     "src/__tests__/worker-lifecycle.test.ts",
     "src/worker-unsupported-pg-native.ts",
     "src/worker-unsupported-react-email.ts",

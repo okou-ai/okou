@@ -14,11 +14,13 @@
   },
   "include": [
     "src/worker.ts",
+    "src/worker-runtime.ts",
+    "src/worker-roles/*.ts",
     "src/__tests__/worker-lifecycle.test.ts",
-    "src/worker-runtime.d.ts",
+    "src/worker-sdk.d.ts",
     "src/worker-unsupported-*.ts"
   ],
-  "exclude": ["node_modules", "dist", "dist-worker"],
+  "exclude": ["node_modules", "dist", "dist-worker", "dist-worker-roles"],
   "references": [
     { "path": "./tsconfig.gateways.json" },
     { "path": "./tsconfig.foundation.json" },

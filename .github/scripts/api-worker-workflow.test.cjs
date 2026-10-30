@@ -141,6 +141,10 @@ test("API job keeps auxiliary Worker steps non-blocking after Vercel deployment"
     stepNamed(contractName),
     /pnpm --dir turbo\/apps\/api test:worker-build/,
   );
+  assert.match(
+    stepNamed(contractName),
+    /pnpm --dir turbo\/apps\/api build:worker-roles/,
+  );
   const executionOwners = Object.entries(turboJobs).flatMap(([name, job]) =>
     steps(job)
       .filter((step) =>
@@ -454,6 +458,66 @@ test("both Worker steps run only for same-repository PRs and main pushes", () =>
     const data = context();
     data.steps["api-worker-checks"].outcome = outcome;
     assert.equal(evaluate(deployCondition, data), false, outcome);
+  }
+});
+
+test("nine-worker experiment skips only auxiliary PR Worker deployment", () => {
+  const enabled = (source, indent, data) => {
+    const condition = field(source, "if", indent);
+    return (
+      render(
+        condition.trimStart().startsWith("${{")
+          ? condition
+          : `\${{ ${condition} }}`,
+        data,
+      ) === "true"
+    );
+  };
+  for (const [event, headRef, workerEnabled] of [
+    ["pull_request", "perf/api-nine-worker-split", false],
+    ["pull_request", "feature/api-worker", true],
+    ["pull_request", "perf/api-nine-worker-split-followup", true],
+    ["push", "", true],
+  ]) {
+    const data = {
+      ...context(event),
+      cancelled: () => false,
+      startsWith: (value, prefix) => value.startsWith(prefix),
+    };
+    data.github.head_ref = headRef;
+    data.github.event.head_commit = { message: "feat: update API" };
+    data.needs.prepare.outputs["api-changed"] = "true";
+    data.needs["detect-release"].outputs.skip = "false";
+    Object.assign(data.needs["detect-turbo-ts-checks"].outputs, {
+      "turbo-ts-checks-needed": "true",
+      "ios-only": "false",
+    });
+    const label = `${event}/${headRef}`;
+    assert.equal(
+      enabled(stepNamed(workerName), 8, data),
+      workerEnabled,
+      `${label}/Worker deploy`,
+    );
+    assert.equal(
+      enabled(stepNamed(contractName), 8, data),
+      true,
+      `${label}/Worker build and contracts`,
+    );
+    for (const name of ["deploy-api", "deploy-app"]) {
+      assert.equal(enabled(turboJobs[name], 4, data), true, `${label}/${name}`);
+    }
+    // Main reuses protected merge-queue code checks; PR checks stay required.
+    for (const name of ["test-api", "lint-type-api"]) {
+      assert.equal(
+        enabled(turboJobs[name], 4, data),
+        event !== "push",
+        `${label}/${name}`,
+      );
+    }
+  }
+  // Vercel deployment and health retain the default successful-job step gate.
+  for (const name of ["Deploy API to Vercel", "Check API health"]) {
+    assert.doesNotMatch(stepNamed(name), /^        if:/m, name);
   }
 });
 

@@ -1,0 +1,740 @@
+import { createHash } from "node:crypto";
+
+import { httpInstrumentationMiddleware } from "@hono/otel";
+import { DISCORD_OAUTH_CALLBACK_PATH } from "./lib/discord-oauth-telemetry";
+import { isTelegramAuthTelemetryUrl } from "./lib/telegram-auth-telemetry";
+import * as Sentry from "@sentry/node";
+import {
+  CLIENT_FORCE_UPGRADE_STATUS,
+  CLIENT_REQUEST_ID_HEADER,
+  CLIENT_SESSION_ID_HEADER,
+  CLIENT_TYPE_APP,
+  CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
+import { serializeError } from "@okouai/core/log-utils";
+import type { Command } from "ccstate";
+// oxlint-disable-next-line no-restricted-imports -- app factory owns the Hono instance
+import { Hono, type Context, type Next } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { bodyLimit } from "hono/body-limit";
+import { matchedRoutes, routePath } from "hono/route";
+
+import { corsMiddleware } from "./lib/cors";
+import { env } from "./lib/env";
+import {
+  iosMinimumSupportedVersion,
+  iosUpgradeRequired,
+  isSupportedIosClientVersion,
+} from "./lib/ios-client-compatibility";
+import { flushLogs, logger } from "./lib/log";
+import {
+  cookieHeaderValue,
+  previewAutomationBypassSecret,
+  requestHasPreviewAutomationBypassHeaderOrCookie,
+  VERCEL_PROTECTION_BYPASS_HEADER,
+} from "./lib/preview-automation-bypass";
+import { currentRequestRuntime } from "./lib/request-runtime";
+import { monotonicNow, now } from "./lib/time";
+import { isSupportedWebClientVersion } from "./lib/web-client-compatibility";
+import {
+  observeWaitUntilLifecycle,
+  waitUntil,
+  type WaitUntilLifecycleResult,
+} from "./signals/context/wait-until";
+import { honoSignalHandler } from "./signals/context/route";
+import {
+  flushAxiom,
+  getDatasetName,
+  ingestToAxiom,
+} from "./signals/external/axiom";
+import type { RouteEntry } from "./signals/route-entry";
+import {
+  isAbortError,
+  normalizeThrown,
+  safeSync,
+  safeUrlParse,
+  settleIncludingAbort,
+} from "./signals/utils";
+
+const L = logger("App");
+
+const AUTH_PATHS = ["/sign-in", "/sign-up"] as const;
+const PREVIEW_AUTOMATION_BYPASS_ERROR = "Preview automation bypass required";
+const BYPASS_FINGERPRINT_LENGTH = 12;
+const UNHANDLED_REQUEST_ERROR_TYPE = "unhandled_request_error" as const;
+const REQUEST_LOG_DATASET = "request-log";
+const ERROR_CHAIN_MAX_DEPTH = 32;
+const ERROR_SUMMARY_MAX_LENGTH = 240;
+const ERROR_SUMMARY_SOURCE_MAX_LENGTH = 4096;
+
+interface UnhandledRequestErrorLogFields {
+  readonly type: typeof UNHANDLED_REQUEST_ERROR_TYPE;
+  readonly errorSummary: string;
+  readonly method: string;
+  readonly route?: string;
+  readonly errorCode?: string;
+  readonly error: Record<string, unknown>;
+}
+
+interface ClientHeaderLogFields {
+  readonly x_client_version?: string;
+  readonly x_client_type?: string;
+  readonly x_client_session_id?: string;
+  readonly x_client_request_id?: string;
+}
+
+interface AxiomRequestLogEvent
+  extends ClientHeaderLogFields, Record<string, unknown> {
+  readonly _time: string;
+  readonly method: string;
+  readonly status: number;
+  readonly host: string;
+  readonly path_template: string;
+  readonly request_time_ms: number;
+  readonly body_bytes_sent?: number;
+  readonly remote_addr?: string;
+  readonly user_agent?: string;
+}
+
+type ErrorWithCode = Error & { readonly code?: unknown };
+
+function shouldCaptureError(error: unknown): boolean {
+  return !(error instanceof HTTPException) || error.status >= 500;
+}
+
+function captureError(error: unknown): void {
+  if (shouldCaptureError(error)) {
+    Sentry.captureException(error);
+  }
+}
+
+function redirectToApp(context: Context): Response {
+  const incoming = new URL(context.req.url);
+  const target = new URL(
+    `${incoming.pathname}${incoming.search}`,
+    env("APP_URL"),
+  );
+  return context.redirect(target.toString());
+}
+
+function readErrorValue(read: () => unknown): unknown {
+  const result = safeSync(read);
+  return "ok" in result ? result.ok : undefined;
+}
+
+function summarySource(value: string): string | undefined {
+  const source = value.slice(0, ERROR_SUMMARY_SOURCE_MAX_LENGTH).trim();
+  return source || undefined;
+}
+
+function readNonErrorMessage(error: unknown): string {
+  if (error !== null && typeof error === "object") {
+    const message = readErrorValue(() => {
+      return (error as { readonly message?: unknown }).message;
+    });
+    if (typeof message === "string") {
+      const source = summarySource(message);
+      if (source) {
+        return source;
+      }
+    }
+  }
+  const value = readErrorValue(() => {
+    return String(error);
+  });
+  if (typeof value === "string") {
+    const source = summarySource(value);
+    if (source) {
+      return source;
+    }
+  }
+  return "unknown error";
+}
+
+function errorCause(error: Error): Error | undefined {
+  const cause = readErrorValue(() => {
+    return error.cause;
+  });
+  return cause instanceof Error ? cause : undefined;
+}
+
+function errorMessage(error: Error): string | undefined {
+  const message = readErrorValue(() => {
+    return error.message;
+  });
+  return typeof message === "string" ? message : undefined;
+}
+
+function errorName(error: Error): string | undefined {
+  const name = readErrorValue(() => {
+    return error.name;
+  });
+  return typeof name === "string" ? name : undefined;
+}
+
+function errorCode(error: Error): unknown {
+  return readErrorValue(() => {
+    return (error as ErrorWithCode).code;
+  });
+}
+
+function errorChain(error: Error): readonly Error[] {
+  const chain: Error[] = [];
+  const seen = new Set<Error>();
+  let current: Error | undefined = error;
+  while (
+    current &&
+    !seen.has(current) &&
+    chain.length < ERROR_CHAIN_MAX_DEPTH
+  ) {
+    chain.push(current);
+    seen.add(current);
+    current = errorCause(current);
+  }
+  return chain;
+}
+
+function sourceErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return readNonErrorMessage(error);
+  }
+  const chain = errorChain(error);
+  for (let index = chain.length - 1; index >= 0; index -= 1) {
+    const current = chain[index];
+    const message = current ? errorMessage(current) : undefined;
+    if (message) {
+      const source = summarySource(message);
+      if (source) {
+        return source;
+      }
+    }
+  }
+  const name = errorName(error);
+  return name ? (summarySource(name) ?? "unknown error") : "unknown error";
+}
+
+function truncateSummary(summary: string): string {
+  if (summary.length <= ERROR_SUMMARY_MAX_LENGTH) {
+    return summary;
+  }
+  return `${summary.slice(0, ERROR_SUMMARY_MAX_LENGTH - 3)}...`;
+}
+
+function replaceControlCharacters(value: string): string {
+  let result = "";
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    result += code <= 31 || code === 127 ? " " : char;
+  }
+  return result;
+}
+
+function sanitizeErrorSummary(error: unknown): string {
+  const source = sourceErrorMessage(error);
+  if (/^response validation failed:/i.test(source)) {
+    return "response validation failed";
+  }
+
+  const summary = replaceControlCharacters(source)
+    .replace(/\bhttps?:\/\/[^\s]+/gi, "[url]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email]")
+    .replace(
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi,
+      "[id]",
+    )
+    .replace(
+      /\b(?:user|org)_(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9][A-Za-z0-9_-]{9,}\b/g,
+      "[id]",
+    )
+    .replace(
+      /\bAuthorization\b\s*[:=]\s*["']?(?:Bearer|Basic|Digest|Token)\s+[^,\s"']+/gi,
+      "Authorization=[redacted]",
+    )
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]")
+    .replace(
+      /\b(api[_\s-]?key|access[_\s-]?token|refresh[_\s-]?token|id[_\s-]?token|client[_\s-]?secret|authorization|password|secret|token)\b\s*[:=]\s*["']?[^,\s"']+/gi,
+      "$1=[redacted]",
+    )
+    .replace(/\b[0-9a-f]{16,}\b/gi, "[hash]")
+    .replace(/\b\d{8,}\b/g, "[number]")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return truncateSummary(summary || "unknown error");
+}
+
+function structuredErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+  for (const current of errorChain(error)) {
+    const code = errorCode(current);
+    if (typeof code === "number" && Number.isFinite(code)) {
+      return String(code);
+    }
+    if (typeof code === "string") {
+      const normalized = code.trim();
+      if (/^[A-Za-z0-9_.:-]{1,80}$/.test(normalized)) {
+        return normalized;
+      }
+    }
+  }
+  return undefined;
+}
+
+function isTemplateRoute(path: string): boolean {
+  return path !== "*" && path !== "/*";
+}
+
+// `matchedRoutes` lists every registration matching the path, including ones
+// that never ran: `/api/chat-threads/events` also matches the later
+// `/api/chat-threads/:id`. Report the route that answered, as the OTel span
+// does; when a middleware answered first (e.g. the client force-upgrade
+// gate), report the first match, which is the handler Hono would have run.
+function requestRouteTemplate(context: Context): string | undefined {
+  const result = safeSync(() => {
+    return { answered: routePath(context), matched: matchedRoutes(context) };
+  });
+  if (!("ok" in result)) {
+    return undefined;
+  }
+  const { answered, matched } = result.ok;
+  if (isTemplateRoute(answered)) {
+    return answered;
+  }
+  return matched.find((route) => {
+    return isTemplateRoute(route.path);
+  })?.path;
+}
+
+function presentHeaderValue(value: string | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function requestHeader(context: Context, name: string): string | undefined {
+  return presentHeaderValue(context.req.raw.headers.get(name));
+}
+
+function requestHasPreviewAutomationBypass(
+  context: Context,
+  secret: string,
+): boolean {
+  if (
+    requestHasPreviewAutomationBypassHeaderOrCookie(context.req.raw, secret)
+  ) {
+    return true;
+  }
+  const url = safeUrlParse(context.req.url);
+  return url?.searchParams.get(VERCEL_PROTECTION_BYPASS_HEADER) === secret;
+}
+
+function isCorsPreflightRequest(context: Context): boolean {
+  return (
+    context.req.method === "OPTIONS" &&
+    Boolean(requestHeader(context, "origin")) &&
+    Boolean(requestHeader(context, "access-control-request-method"))
+  );
+}
+
+// External server-to-server webhook callers cannot present the Vercel bypass
+// secret, so the preview automation guard must let their paths through even on
+// protected preview/staging deployments. This covers every third-party and
+// runner webhook (Stripe/Clerk/GitHub/... and `/api/webhooks/agent/*`). Each of
+// these endpoints authenticates its own requests (webhook signatures, runner
+// auth tokens), so exempting them from the preview guard does not widen access.
+// Browser-driven OAuth callbacks are intentionally excluded: they carry the
+// bypass cookie and stay behind the guard.
+function isPreviewAutomationBypassExemptPath(context: Context): boolean {
+  return context.req.path.startsWith("/api/webhooks/");
+}
+
+function bypassFingerprint(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return createHash("sha256")
+    .update(value)
+    .digest("hex")
+    .slice(0, BYPASS_FINGERPRINT_LENGTH);
+}
+
+function previewAutomationBypassDebug(context: Context, secret: string) {
+  const url = safeUrlParse(context.req.url);
+  return {
+    expected: bypassFingerprint(secret),
+    header: bypassFingerprint(
+      requestHeader(context, VERCEL_PROTECTION_BYPASS_HEADER),
+    ),
+    query: bypassFingerprint(
+      url?.searchParams.get(VERCEL_PROTECTION_BYPASS_HEADER) ?? undefined,
+    ),
+    cookie: bypassFingerprint(
+      cookieHeaderValue(
+        requestHeader(context, "cookie"),
+        VERCEL_PROTECTION_BYPASS_HEADER,
+      ),
+    ),
+    cookieHeaderPresent: Boolean(requestHeader(context, "cookie")),
+  };
+}
+
+async function previewAutomationBypassMiddleware(
+  context: Context,
+  next: Next,
+): Promise<Response | void> {
+  const secret = previewAutomationBypassSecret();
+  if (
+    !secret ||
+    isCorsPreflightRequest(context) ||
+    isPreviewAutomationBypassExemptPath(context) ||
+    requestHasPreviewAutomationBypass(context, secret)
+  ) {
+    await next();
+    return;
+  }
+
+  return context.json(
+    {
+      error: PREVIEW_AUTOMATION_BYPASS_ERROR,
+      debug: previewAutomationBypassDebug(context, secret),
+    },
+    403,
+  );
+}
+
+function clientHeaderLogFields(context: Context): ClientHeaderLogFields {
+  const clientVersion = requestHeader(context, CLIENT_VERSION_HEADER);
+  const clientType = requestHeader(context, CLIENT_TYPE_HEADER);
+  const clientSessionId = requestHeader(context, CLIENT_SESSION_ID_HEADER);
+  const clientRequestId = requestHeader(context, CLIENT_REQUEST_ID_HEADER);
+
+  return {
+    ...(clientVersion ? { x_client_version: clientVersion } : {}),
+    ...(clientType ? { x_client_type: clientType } : {}),
+    ...(clientSessionId ? { x_client_session_id: clientSessionId } : {}),
+    ...(clientRequestId ? { x_client_request_id: clientRequestId } : {}),
+  };
+}
+
+async function clientCompatibilityMiddleware(
+  context: Context,
+  next: Next,
+): Promise<Response | void> {
+  const clientType = requestHeader(context, CLIENT_TYPE_HEADER);
+  const clientVersion = requestHeader(context, CLIENT_VERSION_HEADER);
+  if (
+    clientType === CLIENT_TYPE_APP &&
+    clientVersion &&
+    !isSupportedWebClientVersion(clientVersion)
+  ) {
+    return context.json(
+      { error: "Client update required" },
+      CLIENT_FORCE_UPGRADE_STATUS,
+      {
+        "Cache-Control": "no-store",
+      },
+    );
+  }
+
+  if (clientType === CLIENT_TYPE_IOS && clientVersion) {
+    const minimumSupportedVersion = iosMinimumSupportedVersion();
+    if (
+      minimumSupportedVersion !== null &&
+      !isSupportedIosClientVersion(clientVersion)
+    ) {
+      return context.json(
+        iosUpgradeRequired(minimumSupportedVersion),
+        CLIENT_FORCE_UPGRADE_STATUS,
+        {
+          "Cache-Control": "no-store",
+        },
+      );
+    }
+  }
+
+  await next();
+}
+
+function requestPathname(context: Context): string {
+  const url = safeUrlParse(context.req.url);
+  return url?.pathname ?? context.req.path;
+}
+
+function requestHost(context: Context): string {
+  const headerHost = requestHeader(context, "host");
+  if (headerHost) {
+    return headerHost;
+  }
+  return safeUrlParse(context.req.url)?.host ?? "";
+}
+
+function firstForwardedAddress(value: string | undefined): string | undefined {
+  return presentHeaderValue(value?.split(",")[0] ?? null);
+}
+
+function requestRemoteAddress(context: Context): string | undefined {
+  return (
+    firstForwardedAddress(requestHeader(context, "x-forwarded-for")) ??
+    requestHeader(context, "x-real-ip") ??
+    requestHeader(context, "cf-connecting-ip")
+  );
+}
+
+function responseBodyBytes(response: Response): number | undefined {
+  const raw = response.headers.get("content-length");
+  if (!raw) {
+    return undefined;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function axiomRequestLogEvent(
+  context: Context,
+  startedAt: number,
+): AxiomRequestLogEvent {
+  const response = context.res;
+  const bodyBytes = responseBodyBytes(response);
+  const remoteAddress = requestRemoteAddress(context);
+  const userAgent = requestHeader(context, "user-agent");
+
+  return {
+    _time: new Date(startedAt).toISOString(),
+    method: context.req.method,
+    status: response.status,
+    host: requestHost(context),
+    path_template: requestRouteTemplate(context) ?? requestPathname(context),
+    request_time_ms: Math.max(0, now() - startedAt),
+    ...(bodyBytes !== undefined ? { body_bytes_sent: bodyBytes } : {}),
+    ...(remoteAddress ? { remote_addr: remoteAddress } : {}),
+    ...(userAgent ? { user_agent: userAgent } : {}),
+    ...clientHeaderLogFields(context),
+  };
+}
+
+function scheduleAxiomRequestLog(context: Context, startedAt: number): void {
+  const ingested = safeSync(() => {
+    return ingestToAxiom(getDatasetName(REQUEST_LOG_DATASET), [
+      axiomRequestLogEvent(context, startedAt),
+    ]);
+  });
+  if (!("ok" in ingested) || !ingested.ok) {
+    return;
+  }
+
+  const flushed = safeSync(() => {
+    return flushAxiom({ client: "telemetry" });
+  });
+  if ("ok" in flushed) {
+    waitUntil(Promise.resolve(flushed.ok));
+  }
+}
+
+interface RequestLifecycleTiming {
+  readonly startedAt: number;
+  readonly startedMonotonicAt: number;
+  requestTimeMs: number;
+  foregroundTimeMs: number;
+  handlerFailed: boolean;
+}
+
+async function recordAxiomRequestLifecycle(
+  context: Context,
+  timing: RequestLifecycleTiming,
+  { taskCount, failureCount }: WaitUntilLifecycleResult,
+): Promise<void> {
+  const lifecycleTimeMs = Math.max(
+    0,
+    monotonicNow() - timing.startedMonotonicAt,
+  );
+  const ingested = safeSync(() => {
+    // Keep lifecycle events out of request-log so existing request RED queries
+    // continue to count exactly one event per request.
+    return ingestToAxiom(getDatasetName("web-logs"), [
+      {
+        ...axiomRequestLogEvent(context, timing.startedAt),
+        type: "request_lifecycle",
+        request_time_ms: timing.requestTimeMs,
+        lifecycle_time_ms: lifecycleTimeMs,
+        background_time_ms: Math.max(
+          0,
+          lifecycleTimeMs - timing.foregroundTimeMs,
+        ),
+        wait_until_task_count: taskCount,
+        wait_until_failure_count: failureCount,
+        lifecycle_error:
+          context.res.status >= 500 || timing.handlerFailed || failureCount > 0,
+      },
+    ]);
+  });
+  if (!("ok" in ingested) || !ingested.ok) {
+    return;
+  }
+  const flushed = safeSync(() => {
+    return flushAxiom({ client: "telemetry" });
+  });
+  if ("ok" in flushed) {
+    await flushed.ok;
+  }
+}
+
+function unhandledRequestErrorLogFields(
+  error: unknown,
+  context: Context,
+): UnhandledRequestErrorLogFields {
+  const route = requestRouteTemplate(context);
+  const errorCode = structuredErrorCode(error);
+  return {
+    type: UNHANDLED_REQUEST_ERROR_TYPE,
+    errorSummary: sanitizeErrorSummary(error),
+    method: context.req.method,
+    ...(route ? { route } : {}),
+    ...(errorCode ? { errorCode } : {}),
+    ...clientHeaderLogFields(context),
+    error: serializeError(error),
+  };
+}
+
+function handleError(error: unknown, context: Context): Response {
+  if (isAbortError(error)) {
+    return context.json({ error: "Internal server error" }, 500);
+  }
+
+  captureError(error);
+
+  if (error instanceof HTTPException) {
+    return error.getResponse();
+  }
+
+  const fields = unhandledRequestErrorLogFields(error, context);
+  L.error(`Unhandled request error: ${fields.errorSummary}`, fields);
+  return context.json({ error: "Internal server error" }, 500);
+}
+
+interface CreateAppWithRoutesOptions {
+  readonly signal: AbortSignal;
+  readonly routes: readonly RouteEntry[];
+  readonly initializeServices$: Command<void, []>;
+}
+
+export function createAppWithRoutes({
+  routes,
+  signal,
+  initializeServices$,
+}: CreateAppWithRoutesOptions): Hono {
+  const app = new Hono();
+  app.onError(handleError);
+
+  app.use("*", (_context, next) => {
+    return normalizeThrown(next);
+  });
+
+  // OpenTelemetry: each request gets a SERVER span named after its matched
+  // route template (e.g. `GET /api/chat-threads/:threadId`). Child spans
+  // (db queries, outbound fetches) parent to it via standard context
+  // propagation; correlate them to a route by their `trace_id`, not by
+  // copying `http.route` onto each child span.
+  const instrumentHttpRequest = httpInstrumentationMiddleware({
+    serviceName: "vm0-api",
+    captureRequestHeaders: [],
+    captureResponseHeaders: [],
+  });
+  // @hono/otel captures url.full before handlers run. Discord carries provider
+  // code/state and Telegram carries identity/proof, including on invalid input.
+  // Exclude BEFORE span creation; their path/status Axiom logs remain below.
+  app.use("*", (context, next) => {
+    const runtime = currentRequestRuntime();
+    if (runtime) {
+      return next().finally(() => {
+        runtime.observeHttp(
+          context.req.method,
+          requestRouteTemplate(context) ?? "unmatched",
+          context.res.status,
+        );
+      });
+    }
+    return context.req.path.replace(/\/$/u, "") ===
+      DISCORD_OAUTH_CALLBACK_PATH || isTelegramAuthTelemetryUrl(context.req.url)
+      ? next()
+      : instrumentHttpRequest(context, next);
+  });
+
+  app.use("*", async (c, next) => {
+    const timing: RequestLifecycleTiming = {
+      startedAt: now(),
+      startedMonotonicAt: monotonicNow(),
+      requestTimeMs: 0,
+      foregroundTimeMs: 0,
+      handlerFailed: false,
+    };
+    await observeWaitUntilLifecycle(
+      async () => {
+        const result = await settleIncludingAbort(next);
+        // Like existing request RED, this marks handler return, not the end
+        // of a streamed response body or its delivery to the client.
+        timing.requestTimeMs = Math.max(0, now() - timing.startedAt);
+        timing.foregroundTimeMs = Math.max(
+          0,
+          monotonicNow() - timing.startedMonotonicAt,
+        );
+        timing.handlerFailed = !result.ok;
+        if (!result.ok) {
+          throw result.error;
+        }
+        scheduleAxiomRequestLog(c, timing.startedAt);
+      },
+      (result) => {
+        return recordAxiomRequestLifecycle(c, timing, result);
+      },
+    );
+  });
+
+  // Browser cross-origin requests (e.g. https://app.okou.ai -> api.okou.ai). Must
+  // wrap access checks as well as route handlers so preview denials remain
+  // readable and OPTIONS preflight short-circuits before authentication.
+  app.use("*", corsMiddleware);
+  app.use("*", previewAutomationBypassMiddleware);
+  app.use("/mcp", bodyLimit({ maxSize: 64 * 1024 }));
+
+  // Native Worker logs are exported by the platform. Node and Workers without
+  // an export destination retain the buffered SDK transport.
+  app.use("*", async (c, next) => {
+    await next();
+    if (!currentRequestRuntime()?.nativeTelemetry) {
+      waitUntil(flushLogs());
+    }
+  });
+
+  app.use("*", clientCompatibilityMiddleware);
+
+  for (const path of AUTH_PATHS) {
+    app.get(path, redirectToApp);
+    app.get(`${path}/*`, redirectToApp);
+  }
+
+  // A route is registered at the path its contract declares. Registration
+  // uniqueness is asserted against the production route table in
+  // `__tests__/route-registration.test.ts`, not here — test apps deliberately
+  // compose overlapping route slices.
+  for (const entry of routes) {
+    const { route } = entry;
+    const routeHandler = honoSignalHandler(entry.handler, route, signal, {
+      initializeServices$,
+
+      requestBodyPolicy: entry.requestBodyPolicy,
+      responseTransforms: entry.responseTransforms,
+      observeJsonResponse: entry.observeJsonResponse,
+      streamJsonResponse: entry.streamJsonResponse,
+    });
+    app.on(route.method, route.path, routeHandler);
+  }
+
+  app.notFound((context) => {
+    return context.json({ error: "Not found" }, 404);
+  });
+
+  return app;
+}

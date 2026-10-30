@@ -12,6 +12,7 @@
 node_modules/
 dist/
 dist-worker/
+dist-worker-roles/
 .wrangler/
 
 # env
