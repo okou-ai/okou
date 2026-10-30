@@ -994,6 +994,7 @@ export async function prepareMcpAutomaticOAuthAuthorization(
     readonly dcrStore: McpAutomaticOAuthDcrPreparationStore;
     readonly endpoint: string;
     readonly additionalScopes?: readonly string[];
+    readonly authorizationPrompt?: string | null;
     readonly redirectUri: string;
     readonly state: string;
     readonly cimdClientId: string;
@@ -1048,6 +1049,14 @@ export async function prepareMcpAutomaticOAuthAuthorization(
       });
     },
   );
+  if (args.authorizationPrompt === null) {
+    authorization.authorizationUrl.searchParams.delete("prompt");
+  } else if (args.authorizationPrompt !== undefined) {
+    authorization.authorizationUrl.searchParams.set(
+      "prompt",
+      args.authorizationPrompt,
+    );
+  }
   const contextBase = {
     issuer: authority.issuer,
     resource: authority.resource,
