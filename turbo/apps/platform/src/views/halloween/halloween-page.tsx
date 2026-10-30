@@ -28,14 +28,14 @@ function StartScreen() {
   const [operation, start] = useLoadableSet(startHalloween$);
   const open = phase === "open";
   return (
-    <main className="relative z-10 flex min-h-0 flex-1 flex-col text-center md:items-center md:justify-center md:px-6 md:py-20 md:pb-24">
-      <DialogBody className="flex flex-col px-5 py-6 md:contents">
-        <div className="my-auto shrink-0 md:contents">
+    <main className="relative z-10 flex min-h-0 flex-1 flex-col text-center lg:items-center lg:justify-center lg:px-6 lg:py-20 lg:pb-24">
+      <DialogBody className="flex flex-col px-5 py-6 lg:contents">
+        <div className="my-auto shrink-0 lg:contents">
           <h1
             className={cn(
-              "mb-6 max-w-[900px] text-balance text-[#f6f3ed] md:mb-9",
+              "mb-6 max-w-[900px] text-balance text-[#f6f3ed] lg:mb-9",
               typography.titleClassName,
-              "text-[28px] leading-9 md:text-[40px] md:leading-[48px]",
+              "text-[28px] leading-9 lg:text-[40px] lg:leading-[48px]",
             )}
           >
             {open ? (
@@ -51,7 +51,7 @@ function StartScreen() {
           </h1>
           {open ? (
             <p
-              className={cn("text-[#96a5b9] md:mb-8", typography.bodyClassName)}
+              className={cn("text-[#96a5b9] lg:mb-8", typography.bodyClassName)}
             >
               {copy.intro}
               <br />
@@ -75,10 +75,10 @@ function StartScreen() {
           )}
         </div>
       </DialogBody>
-      <div className="shrink-0 border-t border-[#c0d1e512] bg-[#091426] px-5 py-4 md:contents">
+      <div className="shrink-0 border-t border-[#c0d1e512] bg-[#091426] px-5 py-4 lg:contents">
         {open ? (
           <Button
-            className={cn(goldButton, "w-full min-w-[184px] md:w-auto")}
+            className={cn(goldButton, "w-full min-w-[184px] lg:w-auto")}
             pending={operation.state === "loading"}
             onClick={() => {
               detach(start(signal), Reason.DomCallback);
@@ -89,7 +89,7 @@ function StartScreen() {
           </Button>
         ) : (
           <DialogClose
-            render={<Button className={cn(goldButton, "w-full md:w-auto")} />}
+            render={<Button className={cn(goldButton, "w-full lg:w-auto")} />}
           >
             {copy.back}
             <ArrowRight className="size-4" />
@@ -98,7 +98,7 @@ function StartScreen() {
         {open && (
           <p
             className={cn(
-              "mx-auto mt-3 max-w-[420px] text-[#8292a9] md:mt-6",
+              "mx-auto mt-3 max-w-[420px] text-[#8292a9] lg:mt-6",
               typography.labelClassName,
             )}
           >
@@ -123,7 +123,7 @@ export function HalloweenPage() {
   return (
     <div
       className={cn(
-        "relative isolate flex min-h-0 w-full flex-1 flex-col overflow-hidden text-[#f6f3ed] antialiased md:min-h-full",
+        "relative isolate flex min-h-0 w-full flex-1 flex-col overflow-hidden text-[#f6f3ed] antialiased lg:min-h-full",
         typography.bodyClassName,
         screen === "result"
           ? "bg-[radial-gradient(ellipse_at_50%_25%,#172c48,#091426_58%,#060d19)]"

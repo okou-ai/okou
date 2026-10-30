@@ -12,7 +12,7 @@ import { HalloweenBubbles, HalloweenEntry } from "./halloween-home.tsx";
 import { HalloweenPage } from "./halloween-page.tsx";
 
 export function HalloweenHomeActivity() {
-  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const copy = useHalloweenCopy();
   const open = useGet(halloweenModalOpen$);
   const screen = useGet(halloweenScreen$);
@@ -39,7 +39,7 @@ export function HalloweenHomeActivity() {
         mode={isDesktop ? "windowed" : "fullscreen"}
         scrollable={isDesktop}
         surface="transparent"
-        contentClassName="flex flex-col gap-0 p-0 md:block"
+        contentClassName="flex flex-col gap-0 p-0 lg:block"
         overlayClassName="backdrop-blur-sm"
         showCloseButton={false}
         aria-describedby={undefined}
