@@ -13,6 +13,7 @@ import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { rootSignal$ } from "../root-signal.ts";
+import { createSuggestionDeckMotion } from "./agent-suggestion-motion.ts";
 
 type FeedbackKind =
   "already_done" | "not_planned" | "less_like_this" | "dismissed";
@@ -162,6 +163,7 @@ function createSuggestionSession() {
     index$: state(0),
     confirmation$: state<FeedbackConfirmation | null>(null),
     reasonOpen$: state(false),
+    motion: createSuggestionDeckMotion(),
   };
 }
 
@@ -179,6 +181,9 @@ export const visibleAgentSuggestions$ = computed((get) => {
 export const agentSuggestionIndex$ = computed((get) => {
   return get(get(session$).index$);
 });
+export const agentSuggestionMotion$ = computed((get) => {
+  return get(session$).motion;
+});
 export const suggestionFeedbackConfirmation$ = computed((get) => {
   return get(get(session$).confirmation$);
 });
@@ -193,9 +198,18 @@ export const enterAgentSuggestions$ = command(
     return snapshot;
   },
 );
-export const showAgentSuggestion$ = command(({ get, set }, index: number) => {
-  set(get(session$).index$, index);
-});
+export const showAgentSuggestion$ = command(
+  (
+    { get, set },
+    index: number,
+    item: Suggestion,
+    direction: "next" | "previous",
+  ) => {
+    const session = get(session$);
+    set(session.motion.begin$, item, direction);
+    set(session.index$, index);
+  },
+);
 export const closeSuggestionFeedback$ = command(({ get, set }) => {
   const session = get(session$);
   set(session.confirmation$, null);
@@ -222,6 +236,7 @@ export const submitAgentSuggestionFeedback$ = command(
       return;
     }
     const id = crypto.randomUUID();
+    set(session.motion.begin$, item, "consume");
     set(entry.hidden$, true);
     set(session.confirmation$, {
       entry,
@@ -256,6 +271,7 @@ export const undoSuggestionFeedback$ = command(
     if (get(session.confirmation$)?.id !== last.id) {
       return;
     }
+    set(session.motion.clear$);
     set(last.entry.hidden$, false);
     set(
       session.index$,

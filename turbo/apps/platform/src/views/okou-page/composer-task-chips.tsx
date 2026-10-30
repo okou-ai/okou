@@ -4,6 +4,7 @@ import { ArrowRight, Image, MessageSquare } from "lucide-react";
 import { Button, Tabs, TabsContent } from "@okouai/ui";
 import {
   agentSuggestionsEnabled$,
+  agentSuggestionMotion$,
   visibleAgentSuggestions$,
   suggestionFeedbackConfirmation$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
@@ -720,10 +721,12 @@ export function ComposerTaskChips({
   // whenever the pool turns out empty; a refresh keeps the last resolved pool.
   const items = useLastLoadable(visibleAgentSuggestions$);
   const feedback = useGet(suggestionFeedbackConfirmation$);
+  const motion = useGet(agentSuggestionMotion$);
+  const departing = useGet(motion.departing$);
   const showSuggestions =
     suggestionsEnabled &&
     items.state === "hasData" &&
-    (items.data.length > 0 || feedback !== null);
+    (items.data.length > 0 || feedback !== null || departing !== null);
   const current = useGet(signals.taskChips.task$);
   const selected =
     (current === "suggestions" && !showSuggestions) ||

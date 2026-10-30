@@ -13,11 +13,15 @@ import {
   CircleMinus,
   SlidersHorizontal,
 } from "lucide-react";
-import type { SuggestionOption } from "@okouai/api-contracts/contracts/suggestions";
+import type {
+  Suggestion,
+  SuggestionOption,
+} from "@okouai/api-contracts/contracts/suggestions";
 import { Button, Textarea } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
+  agentSuggestionMotion$,
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
   showAgentSuggestion$,
@@ -45,16 +49,18 @@ const SUGGESTION_ACTION =
   "min-h-11 shrink-0 gap-1 whitespace-nowrap px-0.5 text-xs font-normal @min-[521px]/suggestion:min-h-9 @min-[521px]/suggestion:gap-2 @min-[521px]/suggestion:px-2";
 
 function AgentSuggestionHeader({
+  item,
   index,
   total,
 }: {
+  readonly item: Suggestion;
   readonly index: number;
   readonly total: number;
 }) {
   const { t } = useTranslation();
   const show = useSet(showAgentSuggestion$);
   return (
-    <div className="flex h-7 items-center justify-between gap-3">
+    <div className="absolute inset-x-5 top-4 z-30 flex h-7 items-center justify-between gap-3">
       <p aria-live="polite" className="text-xs text-muted-foreground">
         {t(
           ($) => {
@@ -76,7 +82,7 @@ function AgentSuggestionHeader({
             return $.chat.agentSuggestions.previous;
           })}
           onClick={() => {
-            show((index + total - 1) % total);
+            show((index + total - 1) % total, item, "previous");
           }}
         >
           <ChevronLeft />
@@ -93,7 +99,7 @@ function AgentSuggestionHeader({
             return $.chat.agentSuggestions.next;
           })}
           onClick={() => {
-            show((index + 1) % total);
+            show((index + 1) % total, item, "next");
           }}
         >
           <ChevronRight />
@@ -447,96 +453,132 @@ export function SuggestionSaveErrors() {
     : null;
 }
 
-export function AgentSuggestions() {
+function AgentSuggestionCard({ item }: { readonly item: Suggestion }) {
   const { t } = useTranslation();
-  const result = useLastLoadable(visibleAgentSuggestions$);
   const start = useSet(startAgentSuggestion$);
   const prepare = useSet(prepareAgentSuggestion$);
   const submitFeedback = useSet(submitAgentSuggestionFeedback$);
   const preparedId = useGet(preparedAgentSuggestionId$);
   const signal = useGet(pageSignal$);
+  return (
+    <article className="@container/suggestion relative flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card px-5 pb-4 pt-14">
+      <div className="flex flex-col gap-2">
+        <h3 className="text-base font-medium leading-6 text-foreground">
+          {item.title}
+        </h3>
+        <p className="line-clamp-4 text-sm leading-5 text-muted-foreground">
+          {item.rationale}
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 pt-1">
+        <p className="text-xs text-muted-foreground">
+          {t(($) => {
+            return $.chat.agentSuggestions.useSuggestion;
+          })}
+        </p>
+        {item.options.map((option) => {
+          return (
+            <AgentSuggestionOption
+              key={option.id}
+              option={option}
+              onClick={() => {
+                detach(start(item, option.id, signal), Reason.DomCallback);
+              }}
+            />
+          );
+        })}
+        <CustomDirectionOption
+          selected={preparedId === item.id}
+          onClick={() => {
+            detach(prepare(item, signal), Reason.DomCallback);
+          }}
+        />
+        <AgentSuggestionActions
+          onDismiss={() => {
+            detach(
+              submitFeedback(item, "dismissed", signal),
+              Reason.DomCallback,
+            );
+          }}
+          onSelect={(kind) => {
+            detach(submitFeedback(item, kind, signal), Reason.DomCallback);
+          }}
+        />
+      </div>
+    </article>
+  );
+}
+
+export function AgentSuggestions() {
+  const { t } = useTranslation();
+  const result = useLastLoadable(visibleAgentSuggestions$);
   const requested = useGet(agentSuggestionIndex$);
-  if (result.state !== "hasData" || result.data.length === 0) {
-    return <SuggestionFeedbackNotice />;
-  }
-  const items = result.data;
-  const index = Math.min(requested, items.length - 1);
+  const motion = useGet(agentSuggestionMotion$);
+  const departing = useGet(motion.departing$);
+  const deckRef = useSet(motion.deckRef$);
+  const arrivalRef = useSet(motion.arrivalRef$);
+  const items = result.state === "hasData" ? result.data : [];
+  const index = Math.min(requested, Math.max(0, items.length - 1));
   const item = items[index];
   const behind = Math.min(items.length - 1, 2);
+  // The async visible pool briefly retains its previous value. Begin the
+  // handoff only once the destination is committed, not on that stale frame.
+  const leaving =
+    departing && departing.item.id !== item?.id ? departing : null;
+  if (!item && !leaving) {
+    return <SuggestionFeedbackNotice />;
+  }
 
   return (
     <>
       <section
+        ref={deckRef}
         aria-label={t(($) => {
           return $.chat.agentSuggestions.label;
         })}
-        className={cn("relative", behind > 0 && "pb-3")}
+        className="relative isolate min-w-0 overflow-clip"
       >
-        {behind >= 2 && (
-          <div aria-hidden className={cn(DECK_EDGE, "inset-x-6 bottom-0")} />
+        {item && (
+          <AgentSuggestionHeader
+            item={item}
+            index={index}
+            total={items.length}
+          />
         )}
-        {behind >= 1 && (
-          <div aria-hidden className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")} />
-        )}
-        <div className="@container/suggestion relative min-w-0">
-          <article className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4">
-            <AgentSuggestionHeader index={index} total={items.length} />
+        <div
+          key={item?.id ?? "empty"}
+          ref={arrivalRef}
+          className={cn(
+            "relative",
+            behind > 0 && "pb-3",
+            leaving?.direction === "previous" ? "z-20" : "z-10",
+          )}
+        >
+          {behind >= 2 && (
+            <div aria-hidden className={cn(DECK_EDGE, "inset-x-6 bottom-0")} />
+          )}
+          {behind >= 1 && (
             <div
-              key={item.id}
-              className="flex flex-col gap-3 motion-safe:animate-composer-panel-in"
-            >
-              <div className="flex flex-col gap-2">
-                <h3 className="text-base font-medium leading-6 text-foreground">
-                  {item.title}
-                </h3>
-                <p className="line-clamp-4 text-sm leading-5 text-muted-foreground">
-                  {item.rationale}
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 pt-1">
-                <p className="text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.chat.agentSuggestions.useSuggestion;
-                  })}
-                </p>
-                {item.options.map((option) => {
-                  return (
-                    <AgentSuggestionOption
-                      key={option.id}
-                      option={option}
-                      onClick={() => {
-                        detach(
-                          start(item, option.id, signal),
-                          Reason.DomCallback,
-                        );
-                      }}
-                    />
-                  );
-                })}
-                <CustomDirectionOption
-                  selected={preparedId === item.id}
-                  onClick={() => {
-                    detach(prepare(item, signal), Reason.DomCallback);
-                  }}
-                />
-                <AgentSuggestionActions
-                  onDismiss={() => {
-                    detach(
-                      submitFeedback(item, "dismissed", signal),
-                      Reason.DomCallback,
-                    );
-                  }}
-                  onSelect={(kind) => {
-                    detach(
-                      submitFeedback(item, kind, signal),
-                      Reason.DomCallback,
-                    );
-                  }}
-                />
-              </div>
-            </div>
-          </article>
+              aria-hidden
+              className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")}
+            />
+          )}
+          {item && <AgentSuggestionCard item={item} />}
         </div>
+        {leaving && (
+          <div
+            key={leaving.item.id}
+            data-departing-card
+            aria-hidden
+            inert
+            className={cn(
+              "pointer-events-none absolute inset-x-0 top-0",
+              leaving.direction === "previous" ? "z-10" : "z-20",
+            )}
+          >
+            <AgentSuggestionCard item={leaving.item} />
+          </div>
+        )}
       </section>
       <SuggestionFeedbackNotice />
     </>

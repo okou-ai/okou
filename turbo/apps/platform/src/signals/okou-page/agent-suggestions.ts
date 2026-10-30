@@ -13,7 +13,10 @@ import {
 } from "../chat-page/create-chat-thread.ts";
 import { ensureAgentDraft$ } from "./agent-draft.ts";
 import { resetSignal } from "../utils.ts";
-import { agentSuggestionEntries$ } from "./agent-suggestion-session.ts";
+import {
+  agentSuggestionEntries$,
+  agentSuggestionMotion$,
+} from "./agent-suggestion-session.ts";
 import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
 import {
@@ -276,6 +279,7 @@ export const startAgentSuggestion$ = command(
     const agentId = get(agentChatComposerSignals$).agentId;
     const signal = get(rootSignal$);
     set(resetPreparation$);
+    set(get(agentSuggestionMotion$).begin$, item, "consume");
     set(entry.hidden$, true);
     // The loaded card owns this visit's choice and draft. Recording the choice
     // cannot replace it with a later server version or hold the card in place.
