@@ -95,14 +95,6 @@ export const featureSwitches$ = computed(async (get) => {
   );
   applySwitches(combined, getEmailEnabledFeatureStates(identity.email));
   applySwitches(combined, result.body.switches);
-  // An older API does not have folder routes. Its missing key must not opt
-  // staff into a frontend-only default during rollout or a supported rollback.
-  if (
-    result.body.effectiveSwitches?.[FeatureSwitchKey.ChatThreadFolders] ===
-    undefined
-  ) {
-    combined[FeatureSwitchKey.ChatThreadFolders] = false;
-  }
   // Reapply audience restrictions after both server and stored overrides.
   return {
     owner,
@@ -115,11 +107,7 @@ export const featureSwitch$ = computed((get) => {
   const owner = get(remoteUiOwner$);
   return owner && owner === get(authenticatedSessionKey$)
     ? switches
-    : {
-        ...switches,
-        [FeatureSwitchKey.RemoteControlGuidedSetup]: false,
-        [FeatureSwitchKey.ChatThreadFolders]: false,
-      };
+    : { ...switches, [FeatureSwitchKey.RemoteControlGuidedSetup]: false };
 });
 
 export const applyFeatureSwitches$ = command(

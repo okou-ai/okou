@@ -2084,27 +2084,6 @@
       "sourcePartsHeading_one": "{{description}}에서 {{count}}개 부분 인용",
       "sourcePartsHeading_other": "{{description}}에서 {{count}}개 부분 인용"
     },
-    "folders": {
-      "actions": "{{name}} 작업",
-      "chats": "채팅",
-      "create": "폴더 만들기",
-      "delete": "폴더 삭제",
-      "deleteDescription": "“{{name}}”을(를) 삭제할까요? 폴더만 삭제되며 대화는 유지됩니다.",
-      "description": "이 에이전트의 개인 채팅을 폴더로 정리합니다.",
-      "down": "폴더 아래로 이동",
-      "empty": "아직 대화가 없습니다",
-      "failed": "변경 사항을 저장하지 못했습니다. 다시 시도해 주세요.",
-      "move": "이동…",
-      "name": "폴더 이름",
-      "refresh": "폴더 새로고침",
-      "rename": "폴더 이름 변경",
-      "running": "실행 중인 채팅",
-      "save": "저장",
-      "title": "폴더",
-      "unfiled": "미분류",
-      "unread": "읽지 않은 채팅",
-      "up": "폴더 위로 이동"
-    },
     "forward": {
       "action": "전달",
       "agents": "에이전트",

@@ -2125,27 +2125,6 @@
       "sourcePartsHeading_many": "{{count}} parties citées depuis {{description}}",
       "sourcePartsHeading_other": "{{count}} parties citées depuis {{description}}"
     },
-    "folders": {
-      "actions": "Actions pour {{name}}",
-      "chats": "Chats",
-      "create": "Créer un dossier",
-      "delete": "Supprimer le dossier",
-      "deleteDescription": "Supprimer « {{name}} » ? Seul le dossier sera supprimé. Vos conversations seront conservées.",
-      "description": "Les dossiers organisent vos conversations personnelles avec cet Agent.",
-      "down": "Descendre le dossier",
-      "empty": "Aucune conversation",
-      "failed": "Impossible d’enregistrer les modifications. Réessayez.",
-      "move": "Déplacer vers…",
-      "name": "Nom du dossier",
-      "refresh": "Actualiser les dossiers",
-      "rename": "Renommer le dossier",
-      "running": "Chats en cours",
-      "save": "Enregistrer",
-      "title": "Dossiers",
-      "unfiled": "Sans dossier",
-      "unread": "Chats non lus",
-      "up": "Monter le dossier"
-    },
     "forward": {
       "action": "Transférer",
       "agents": "Agents",

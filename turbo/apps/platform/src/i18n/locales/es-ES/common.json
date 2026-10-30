@@ -2125,27 +2125,6 @@
       "sourcePartsHeading_many": "{{count}} partes citadas de {{description}}",
       "sourcePartsHeading_other": "{{count}} partes citadas de {{description}}"
     },
-    "folders": {
-      "actions": "Acciones de {{name}}",
-      "chats": "Chats",
-      "create": "Crear carpeta",
-      "delete": "Eliminar carpeta",
-      "deleteDescription": "¿Eliminar «{{name}}»? Solo se elimina la carpeta. Tus conversaciones se conservarán.",
-      "description": "Las carpetas organizan tus chats personales dentro de este Agente.",
-      "down": "Bajar carpeta",
-      "empty": "Aún no hay chats",
-      "failed": "No se pudieron guardar los cambios. Inténtalo de nuevo.",
-      "move": "Mover a…",
-      "name": "Nombre de la carpeta",
-      "refresh": "Actualizar carpetas",
-      "rename": "Renombrar carpeta",
-      "running": "Chats en curso",
-      "save": "Guardar",
-      "title": "Carpetas",
-      "unfiled": "Sin carpeta",
-      "unread": "Chats sin leer",
-      "up": "Subir carpeta"
-    },
     "forward": {
       "action": "Reenviar",
       "agents": "Agentes",

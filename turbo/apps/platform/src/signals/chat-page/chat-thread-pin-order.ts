@@ -1,4 +1,3 @@
-import { chatFoldersEnabled$ } from "./chat-folders.ts";
 import { command, computed } from "ccstate";
 import { chatThreadPinOrderContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { moveChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
@@ -20,10 +19,7 @@ export const pinnedThreadReorderEnabled$ = computed((get) => {
     get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true &&
     get(chatThreadOnlyArchived$);
   return (
-    !get(chatFoldersEnabled$) &&
-    !get(chatThreadOnlyUnread$) &&
-    !archivedOnly &&
-    !get(chatThreadOnlyMuted$)
+    !get(chatThreadOnlyUnread$) && !archivedOnly && !get(chatThreadOnlyMuted$)
   );
 });
 

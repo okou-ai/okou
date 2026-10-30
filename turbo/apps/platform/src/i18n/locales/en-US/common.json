@@ -2091,27 +2091,6 @@
       "sourcePartsHeading_one": "Quoted {{count}} part from {{description}}",
       "sourcePartsHeading_other": "Quoted {{count}} parts from {{description}}"
     },
-    "folders": {
-      "actions": "Actions for {{name}}",
-      "chats": "Chats",
-      "create": "Create a folder",
-      "delete": "Delete folder",
-      "deleteDescription": "Delete “{{name}}”? Only the folder is deleted. Your conversations will be kept.",
-      "description": "Folders organize your chats within this Agent.",
-      "down": "Move folder down",
-      "empty": "No chats yet",
-      "failed": "Could not save your changes. Try again.",
-      "move": "Move to…",
-      "name": "Folder name",
-      "refresh": "Refresh folders",
-      "rename": "Rename folder",
-      "running": "Running chats",
-      "save": "Save",
-      "title": "Folders",
-      "unfiled": "Unfiled",
-      "unread": "Unread chats",
-      "up": "Move folder up"
-    },
     "forward": {
       "action": "Forward",
       "agents": "Agents",

@@ -3,11 +3,6 @@
 ## [8.801.0](https://github.com/okou-ai/okou/compare/core-v8.800.7...core-v8.801.0) (2026-10-30)
 
 
-### Features
-
-* add staff-only personal chat folders ([#44100](https://github.com/okou-ai/okou/issues/44100)) ([c8cfe6e](https://github.com/okou-ai/okou/commit/c8cfe6e97b1aaa3513e48ec120234e39e9a5079c))
-
-
 ### Dependencies
 
 * The following workspace dependencies were updated

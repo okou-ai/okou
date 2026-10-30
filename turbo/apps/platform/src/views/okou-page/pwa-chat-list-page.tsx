@@ -1,8 +1,3 @@
-import {
-  ChatFolderCreateButton,
-  VirtualizedChatFolderRows,
-} from "./sidebar-chat-folders.tsx";
-import { currentChatFolders$ } from "../../signals/chat-page/chat-folders.ts";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { MessageSquare, Search, SquarePen } from "lucide-react";
@@ -90,7 +85,6 @@ function PwaChatListHeader() {
         >
           <SquarePen aria-hidden="true" />
         </Button>
-        <ChatFolderCreateButton touch />
         <ChatThreadsListMenu showMarkAllRead touch />
       </div>
     </header>
@@ -198,7 +192,6 @@ function PwaChatThreads({
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const { t } = useTranslation();
-  const folders = useLoadable(currentChatFolders$);
   const count = useGet(listSignals.count$);
   const rowCount = useGet(listSignals.rowCount$);
   const window = useGet(listSignals.window$);
@@ -206,7 +199,7 @@ function PwaChatThreads({
     listSignals.hasHiddenArchivedThreads$,
   );
 
-  if (count === 0 && !window.folderRows) {
+  if (count === 0) {
     return (
       <PwaChatListEmpty hasHiddenArchivedThreads={hasHiddenArchivedThreads} />
     );
@@ -221,64 +214,40 @@ function PwaChatThreads({
         return $.chat.sidebar.chatThreads;
       })}
     >
-      {window.folderRows && folders.state === "hasData" && folders.data ? (
-        <VirtualizedChatFolderRows
-          folders={folders.data}
-          rows={window.folderRows}
-          startIndex={window.startIndex}
-          rowCount={rowCount}
-          showAllChats={window.showAllChatsRow}
-          showAllChatsRow={<ShowAllChatsButton />}
-          searchOpen={false}
-          rowHeight={PWA_CHAT_THREAD_ROW_HEIGHT}
-          touch
-          renderThread={(row, index) => {
-            return (
+      <div
+        className="relative w-full"
+        style={{ height: rowCount * PWA_CHAT_THREAD_ROW_HEIGHT }}
+      >
+        {window.items.map((signals, offset) => {
+          const index = window.startIndex + offset;
+          return (
+            <div
+              key={signals.threadId}
+              className="absolute left-0 top-0 w-full pb-1"
+              style={{
+                transform: `translateY(${index * PWA_CHAT_THREAD_ROW_HEIGHT}px)`,
+              }}
+            >
               <ChatThreadItem
-                signals={row.item}
+                signals={signals}
                 rowIndex={index}
                 shortcutNumber={undefined}
                 touch
               />
-            );
-          }}
-        />
-      ) : (
-        <div
-          className="relative w-full"
-          style={{ height: rowCount * PWA_CHAT_THREAD_ROW_HEIGHT }}
-        >
-          {window.items.map((signals, offset) => {
-            const index = window.startIndex + offset;
-            return (
-              <div
-                key={signals.threadId}
-                className="absolute left-0 top-0 w-full pb-1"
-                style={{
-                  transform: `translateY(${index * PWA_CHAT_THREAD_ROW_HEIGHT}px)`,
-                }}
-              >
-                <ChatThreadItem
-                  signals={signals}
-                  rowIndex={index}
-                  shortcutNumber={undefined}
-                  touch
-                />
-              </div>
-            );
-          })}
-          {window.showAllChatsRow ? (
-            <div
-              className="absolute left-0 top-0 flex h-14 w-full items-center"
-              style={{
-                transform: `translateY(${(rowCount - 1) * PWA_CHAT_THREAD_ROW_HEIGHT}px)`,
-              }}
-            >
-              <ShowAllChatsButton />
             </div>
-          ) : null}
-        </div>
-      )}
+          );
+        })}
+        {window.showAllChatsRow ? (
+          <div
+            className="absolute left-0 top-0 flex h-14 w-full items-center"
+            style={{
+              transform: `translateY(${(rowCount - 1) * PWA_CHAT_THREAD_ROW_HEIGHT}px)`,
+            }}
+          >
+            <ShowAllChatsButton />
+          </div>
+        ) : null}
+      </div>
     </OverlayScrollArea>
   );
 }

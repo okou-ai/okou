@@ -2125,27 +2125,6 @@
       "sourcePartsHeading_many": "{{count}} partes citadas de {{description}}",
       "sourcePartsHeading_other": "{{count}} partes citadas de {{description}}"
     },
-    "folders": {
-      "actions": "Ações de {{name}}",
-      "chats": "Conversas",
-      "create": "Criar pasta",
-      "delete": "Excluir pasta",
-      "deleteDescription": "Excluir “{{name}}”? Apenas a pasta será excluída. Suas conversas serão mantidas.",
-      "description": "As pastas organizam suas conversas neste Agente.",
-      "down": "Mover pasta para baixo",
-      "empty": "Nenhuma conversa ainda",
-      "failed": "Não foi possível salvar as alterações. Tente novamente.",
-      "move": "Mover para…",
-      "name": "Nome da pasta",
-      "refresh": "Atualizar pastas",
-      "rename": "Renomear pasta",
-      "running": "Conversas em andamento",
-      "save": "Salvar",
-      "title": "Pastas",
-      "unfiled": "Sem pasta",
-      "unread": "Conversas não lidas",
-      "up": "Mover pasta para cima"
-    },
     "forward": {
       "action": "Encaminhar",
       "agents": "Agentes",

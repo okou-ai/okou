@@ -14,7 +14,6 @@ Older releases are archived by month:
 
 ### Features
 
-* add staff-only personal chat folders ([#44100](https://github.com/okou-ai/okou/issues/44100)) ([c8cfe6e](https://github.com/okou-ai/okou/commit/c8cfe6e97b1aaa3513e48ec120234e39e9a5079c))
 * **connectors:** support declared scopes for automatic mcp oauth ([#44072](https://github.com/okou-ai/okou/issues/44072)) ([f8d5751](https://github.com/okou-ai/okou/commit/f8d5751ed41e5ab85d33d7ec1f9c0add42bc3bfe))
 
 
