@@ -1006,16 +1006,35 @@ async fn prepare_for_cache_scrubs_private_state_when_current_runtime_was_never_c
 #[tokio::test]
 async fn terminal_history_proof_survives_real_cleanup_and_verifies_only_current_live_bytes()
 -> TestResult {
-    assert_terminal_history_proof_survives_cleanup(false).await
+    assert_terminal_history_proof_survives_cleanup(TerminalHistorySource::Current).await
 }
 
 #[tokio::test]
-async fn terminal_history_proof_uses_retained_identity_when_current_runtime_was_never_created()
--> TestResult {
-    assert_terminal_history_proof_survives_cleanup(true).await
+async fn terminal_history_proof_uses_retained_identity_without_current_finalization() -> TestResult
+{
+    for source in [
+        TerminalHistorySource::RetainedWithCurrentRuntime,
+        TerminalHistorySource::RetainedWithoutCurrentRuntime,
+    ] {
+        assert_terminal_history_proof_survives_cleanup(source).await?;
+    }
+    Ok(())
 }
 
-async fn assert_terminal_history_proof_survives_cleanup(use_retained_runtime: bool) -> TestResult {
+enum TerminalHistorySource {
+    Current,
+    RetainedWithCurrentRuntime,
+    RetainedWithoutCurrentRuntime,
+}
+
+async fn assert_terminal_history_proof_survives_cleanup(
+    source: TerminalHistorySource,
+) -> TestResult {
+    let (use_retained_runtime, create_current_runtime) = match source {
+        TerminalHistorySource::Current => (false, true),
+        TerminalHistorySource::RetainedWithCurrentRuntime => (true, true),
+        TerminalHistorySource::RetainedWithoutCurrentRuntime => (true, false),
+    };
     // Host/CI containers may not have the fixed Guest home. Keep the shared
     // parent and remove only this test's isolated child via TempDir ownership.
     std::fs::create_dir_all("/home/user")?;
@@ -1026,6 +1045,10 @@ async fn assert_terminal_history_proof_survives_cleanup(use_retained_runtime: bo
     let config_dir = home.path().join("claude");
     let (identity, history_path) =
         write_claude_history(&config_dir, "session-proof", b"actual history")?;
+    if create_current_runtime {
+        std::fs::create_dir_all(&current)?;
+        std::fs::write(current.join("prompt-private"), b"private input")?;
+    }
     let identity_runtime = if use_retained_runtime {
         &retained
     } else {
@@ -1035,10 +1058,8 @@ async fn assert_terminal_history_proof_survives_cleanup(use_retained_runtime: bo
         guest_contracts::runtime_paths::final_session_history_identity_file(identity_runtime),
         identity.to_json_vec()?,
     )?;
-    if use_retained_runtime {
+    if !create_current_runtime {
         assert!(!current.exists());
-    } else {
-        std::fs::write(current.join("prompt-private"), b"private input")?;
     }
     let codex_home = home.path().join("codex");
     std::fs::create_dir_all(&codex_home)?;
