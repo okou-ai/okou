@@ -162,7 +162,7 @@ async fn codex_app_server_classifies_supported_structured_errors()
         if case.expected_reason == Some(FailureReason::OutputTokenLimit) {
             assert_eq!(
                 diagnostic.message,
-                "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens"
+                "Incomplete response returned, reason: max_output_tokens"
             );
             let log = std::fs::read_to_string(runtime.paths.agent_log_file())?;
             let events = log

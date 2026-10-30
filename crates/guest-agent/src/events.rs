@@ -904,7 +904,7 @@ mod tests {
 
     #[test]
     fn codex_output_limit_preserves_structured_causes_and_native_text() {
-        let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+        let message = "Incomplete response returned, reason: max_output_tokens";
         for (fields, reason) in [
             (json!({}), FailureReason::OutputTokenLimit),
             (
@@ -1045,7 +1045,7 @@ mod tests {
 
     #[test]
     fn codex_output_limit_does_not_classify_normal_output_or_similar_errors() {
-        let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+        let message = "Incomplete response returned, reason: max_output_tokens";
         for event in [
             json!({"type": "warning", "message": message}),
             json!({"type": "turn.completed", "turn": {"status": "completed", "error": {"message": message}}}),
@@ -1056,6 +1056,11 @@ mod tests {
         }
         for message in [
             "stream disconnected before completion",
+            "Incomplete response returned, reason: unknown",
+            "Incomplete response returned, reason: content_filter",
+            "Incomplete response returned, reason: max_output_tokens_extra",
+            "Incomplete response returned, reason: max_output_tokens (server error)",
+            "Tool output: Incomplete response returned, reason: max_output_tokens",
             "stream disconnected before completion: Incomplete response returned, reason: unknown",
             "stream disconnected before completion: Incomplete response returned, reason: content_filter",
             "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens_extra",
