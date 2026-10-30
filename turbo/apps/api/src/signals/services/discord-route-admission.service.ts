@@ -27,7 +27,7 @@ import {
   type DiscordChatThreadRouteBinding,
 } from "./discord-chat-ingress.service";
 import {
-  discordEffectiveAgent,
+  readDiscordEffectiveAgent$,
   discordIngressSenderBindings,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
@@ -237,7 +237,7 @@ type DiscordRouteKey = Pick<
 
 const createDiscordAdmissionRoute$ = command(
   async (
-    { get, set },
+    { set },
     context: DiscordAdmissionContext,
     routeKey: DiscordRouteKey,
     preferences: {
@@ -248,7 +248,8 @@ const createDiscordAdmissionRoute$ = command(
     set(writeDb$);
     const { binding } = context.source;
     const { effectiveAgent } = preferences;
-    const agent = effectiveAgent ?? (await get(discordEffectiveAgent(binding)));
+    const agent =
+      effectiveAgent ?? (await set(readDiscordEffectiveAgent$, binding));
     signal.throwIfAborted();
     if (!agent) {
       await set(terminalAgentUnavailable$, context, signal);
@@ -282,7 +283,7 @@ const createDiscordAdmissionRoute$ = command(
 
 const resolveCanonicalDiscordRoute$ = command(
   async (
-    { get, set },
+    { set },
     context: DiscordAdmissionContext,
     signal: AbortSignal,
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
@@ -348,7 +349,9 @@ const resolveCanonicalDiscordRoute$ = command(
     }
     signal.throwIfAborted();
     const effectiveAgent =
-      isDm && !assignedRoute ? await get(discordEffectiveAgent(binding)) : null;
+      isDm && !assignedRoute
+        ? await set(readDiscordEffectiveAgent$, binding)
+        : null;
     signal.throwIfAborted();
     if (isDm && !assignedRoute && !effectiveAgent) {
       await set(terminalAgentUnavailable$, context, signal);
