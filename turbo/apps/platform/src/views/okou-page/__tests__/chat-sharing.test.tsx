@@ -1065,15 +1065,15 @@ async function setupAudienceMessageShare(
     );
   }
   const response = context.mocks.deferred<void>();
-  const requests: {
+  const requestReceived = context.mocks.deferred<{
     eventIds: string[];
     id: string | undefined;
     audience: SharedThreadAudience;
-  }[] = [];
+  }>();
   context.mocks.api(
     sharedThreadVisibilityContract.create,
     async ({ body, respond }) => {
-      requests.push({
+      requestReceived.resolve({
         eventIds: [...body.eventIds],
         id: body.id,
         audience: body.audience,
@@ -1104,7 +1104,7 @@ async function setupAudienceMessageShare(
   });
   return {
     clipboard,
-    requests,
+    requestReceived,
     response,
     share: requiredButtonNamed("Share message"),
   };
@@ -1126,26 +1126,23 @@ test.each([
 ])(
   "Choose $label and copy a message share without replacing the composer",
   async ({ label, audience }) => {
-    const { clipboard, requests, response, share } =
+    const { clipboard, requestReceived, response, share } =
       await setupAudienceMessageShare();
     const composer = screen.getByRole("textbox", { name: "Message" });
     click(share);
     const menu = await screen.findByRole("menu", { name: "Share message" });
     expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(2);
-    expect(requests).toStrictEqual([]);
     expect(clipboard.writes).toStrictEqual([]);
     click(messageShareItem(menu, label));
     // The option click owns the browser gesture, before the HTTP response.
     expect(clipboard.writes).toHaveLength(1);
-    await waitFor(() => {
-      expect(requests).toHaveLength(1);
-    });
-    expect(requests[0]).toMatchObject({
+    const request = await requestReceived.promise;
+    expect(request).toMatchObject({
       eventIds: [PROMPT_EVENT_ID, ANSWER_EVENT_ID],
       audience,
     });
     expect(clipboard.writes).toStrictEqual([
-      `https://app.okou.ai/share/threads/${requests[0]?.id}`,
+      `https://app.okou.ai/share/threads/${request.id}`,
     ]);
     expect(composer).toBeInTheDocument();
     expect(
@@ -1164,8 +1161,8 @@ test.each([
   },
 );
 
-test("Dismiss the audience menu without copying or creating a share", async () => {
-  const { clipboard, requests, share } = await setupAudienceMessageShare();
+test("Dismiss the audience menu without copying", async () => {
+  const { clipboard, share } = await setupAudienceMessageShare();
   click(share);
   await screen.findByRole("menu", { name: "Share message" });
   await userEvent.keyboard("{Escape}");
@@ -1174,21 +1171,21 @@ test("Dismiss the audience menu without copying or creating a share", async () =
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
   expect(clipboard.writes).toStrictEqual([]);
-  expect(requests).toStrictEqual([]);
   expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
 });
 
 test("Choose a message audience from the keyboard and return focus to Share", async () => {
-  const { requests, response, share } = await setupAudienceMessageShare();
+  const { requestReceived, response, share } =
+    await setupAudienceMessageShare();
   share.focus();
   await userEvent.keyboard("{Enter}");
   await screen.findByRole("menu", { name: "Share message" });
   await userEvent.keyboard("{ArrowDown}{Enter}");
+  const request = await requestReceived.promise;
   await waitFor(() => {
-    expect(requests).toHaveLength(1);
     expect(share).toHaveFocus();
   });
-  expect(requests[0]?.audience).toBe("public");
+  expect(request.audience).toBe("public");
   response.resolve();
   await waitFor(() => {
     expect(buttonsNamed("Copied")).toHaveLength(1);

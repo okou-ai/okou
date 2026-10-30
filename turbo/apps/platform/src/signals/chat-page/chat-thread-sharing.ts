@@ -187,7 +187,8 @@ function createMessageSharingSignals(
       audience: SharedThreadAudience,
       signal: AbortSignal,
     ): Promise<boolean> => {
-      if (assistantEventIds.length === 0) {
+      const firstEventId = assistantEventIds[0];
+      if (firstEventId === undefined) {
         return false;
       }
       const confirmationSignal = set(resetCopied$, signal);
@@ -242,7 +243,7 @@ function createMessageSharingSignals(
       // Message shares finish at their action button; only multi-selection
       // shares enter the page-level created phase and replace the composer.
       if (visibilityEnabled && copySucceeded && !confirmationSignal.aborted) {
-        set(copiedMessageEventId$, assistantEventIds[0] ?? null);
+        set(copiedMessageEventId$, firstEventId);
         await delay(2000, { signal: confirmationSignal });
         signal.throwIfAborted();
         set(copiedMessageEventId$, null);
