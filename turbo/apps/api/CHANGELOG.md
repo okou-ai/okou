@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.27.0](https://github.com/okou-ai/okou/compare/api-v2.26.0...api-v2.27.0) (2026-10-30)
+
+
+### Features
+
+* **browser:** own extension source and release delivery ([#44106](https://github.com/okou-ai/okou/issues/44106)) ([a45e176](https://github.com/okou-ai/okou/commit/a45e176ab11bba983668681f929cf9d2d58b5e9e))
+
+
+### Bug Fixes
+
+* bound computer-use auth reads and preserve heartbeat diagnostics ([#44157](https://github.com/okou-ai/okou/issues/44157)) ([77f4d3b](https://github.com/okou-ai/okou/commit/77f4d3b67081731ec70886ed63715f9a012e2db8))
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.1
+    * @okouai/core bumped to 8.802.0
+    * @okouai/db bumped to 2.12.1
+    * @okouai/pi-agent-runtime bumped to 1.51.28
+
 ## [2.26.0](https://github.com/okou-ai/okou/compare/api-v2.25.4...api-v2.26.0) (2026-10-30)
 
 
