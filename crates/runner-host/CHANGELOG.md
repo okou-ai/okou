@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.6](https://github.com/okou-ai/okou/compare/runner-host-v0.10.5...runner-host-v0.10.6) (2026-10-30)
+
+
+### Refactoring
+
+* **runner-host:** separate dirname test source ownership ([#44357](https://github.com/okou-ai/okou/issues/44357)) ([c6483c2](https://github.com/okou-ai/okou/commit/c6483c2f715f333f87dca123422308b12ba486ae))
+* **runner-host:** separate paths test source ownership ([#44335](https://github.com/okou-ai/okou/issues/44335)) ([62e4452](https://github.com/okou-ai/okou/commit/62e44520960011fef215716b41fc87ac8d56be01))
+
 ## [0.10.5](https://github.com/okou-ai/okou/compare/runner-host-v0.10.4...runner-host-v0.10.5) (2026-10-30)
 
 ## [0.10.4](https://github.com/okou-ai/okou/compare/runner-host-v0.10.3...runner-host-v0.10.4) (2026-10-30)
