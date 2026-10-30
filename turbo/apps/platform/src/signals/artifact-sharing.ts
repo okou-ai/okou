@@ -10,6 +10,8 @@ import {
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "./external/feature-switch.ts";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
@@ -191,10 +193,13 @@ function createArtifactShareSession(source: ShareSource) {
   });
   const audience = createAudienceSignals(details$, reload$);
   const change$ = throttleCommand(
-    command(async ({ set }, choice: Audience, signal: AbortSignal) => {
+    command(async ({ get, set }, choice: Audience, signal: AbortSignal) => {
       set(linkCopy.clear$);
       const updated = await set(audience.change$, choice, signal);
-      if (updated) {
+      if (
+        updated &&
+        get(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions]
+      ) {
         await set(copy$, signal);
       }
     }),

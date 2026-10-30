@@ -174,6 +174,7 @@ async function setupHostedSite(
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
+      [FeatureSwitchKey.ArtifactQuickActions]: true,
     },
   });
   await screen.findByText("Open website");

@@ -1,5 +1,7 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { Check, Loader2, Pencil, Share2 } from "lucide-react";
 import {
   Button,
@@ -482,6 +484,8 @@ function HostedSiteShareSessionMenu({
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
   const editing = useGet(session.editing$);
+  const quickActions =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions];
   const setOpen = useSet(session.setOpen$);
   const show = useSet(session.show$);
   const [saving, save] = useLoadableSet(session.save$);
@@ -512,7 +516,9 @@ function HostedSiteShareSessionMenu({
       }}
     >
       <PopoverTrigger
-        openOnHover={!(settings.state === "hasData" && !settings.data)}
+        openOnHover={
+          quickActions && !(settings.state === "hasData" && !settings.data)
+        }
         delay={100}
         closeDelay={150}
         aria-label={ariaLabel}

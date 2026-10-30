@@ -30,7 +30,7 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite({ sidebar = false } = {}) {
+async function openSite({ sidebar = false, quickActions = true } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -58,6 +58,7 @@ async function openSite({ sidebar = false } = {}) {
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
+      [FeatureSwitchKey.ArtifactQuickActions]: quickActions,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -118,62 +119,97 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
   });
 });
 
-test("published sites automatically copy the saved address after customizing the URL", async () => {
-  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
-    return respond(200, site);
-  });
-  context.mocks.api(hostContract.siteUrlAvailability, ({ respond }) => {
-    return respond(200, { available: true });
-  });
-  context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
-    expect(body.expectedPublicSlug).toBe(site.publicSlug);
-    return respond(200, {
-      ...site,
-      publicSlug: body.publicSlug,
-      url: `https://${body.publicSlug}.okou.app`,
+test.each([false, true])(
+  "website URL saves honor quick actions (enabled: %s)",
+  async (quickActions) => {
+    const user = userEvent.setup();
+    context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+      return respond(200, site);
     });
-  });
-  await openSite();
-  await openShare();
-  await expectPermission("Anyone with the link");
-  await expect(
-    screen.findByRole("switch", { name: "Show Okou banner" }),
-  ).resolves.toBeChecked();
-  await waitFor(() => {
-    expect(queryButtonByName("Customize URL")).toBeDefined();
-  });
-  click(getButtonByName("Customize URL"));
-  const input = await screen.findByLabelText("Website URL");
-  expect(getButtonByName("Save")).toBeDisabled();
-  await fill(input, "launch-report");
-  await screen.findByText("Available");
-  expect(
-    screen.getByText(
-      "The old URL will stop working. Update any links you have shared.",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    fireEvent.keyDown(input, {
-      key: "Enter",
-      isComposing: false,
-      keyCode: 229,
-    }),
-  ).toBeFalsy();
-  expect(input).toHaveValue("launch-report");
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  click(getButtonByName("Save"));
-  await screen.findByText("Website URL updated");
-  expect(getButtonByName("Customize URL")).toHaveFocus();
-  await waitFor(() => {
+    context.mocks.api(hostContract.siteUrlAvailability, ({ respond }) => {
+      return respond(200, { available: true });
+    });
+    context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
+      expect(body.expectedPublicSlug).toBe(site.publicSlug);
+      return respond(200, {
+        ...site,
+        publicSlug: body.publicSlug,
+        url: `https://${body.publicSlug}.okou.app`,
+      });
+    });
+    await openSite({ quickActions });
+    const share = getButtonByName("Share");
+    const download = getButtonByName("Download options");
+    await user.hover(share);
+    await user.hover(download);
+    if (quickActions) {
+      await screen.findByRole("menu");
+    } else {
+      await screen.findByText("Download options");
+    }
+    await waitFor(() => {
+      expect(share).toHaveAttribute("aria-expanded", "false");
+      expect(download).toHaveAttribute("aria-expanded", String(quickActions));
+    });
+    if (!quickActions) {
+      click(download);
+    }
+    await screen.findByRole("menu");
+    await user.keyboard("{Escape}");
+    await openShare();
+    await expectPermission("Anyone with the link");
+    await expect(
+      screen.findByRole("switch", { name: "Show Okou banner" }),
+    ).resolves.toBeChecked();
+    await waitFor(() => {
+      expect(queryButtonByName("Customize URL")).toBeDefined();
+    });
+    click(getButtonByName("Customize URL"));
+    const input = await screen.findByLabelText("Website URL");
+    expect(getButtonByName("Save")).toBeDisabled();
+    await fill(input, "launch-report");
+    await screen.findByText("Available");
     expect(
-      screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
-    ).toHaveAttribute("src", "https://launch-report.okou.app/");
-  });
-  await waitFor(() => {
-    expect(queryButtonByName("Copied")).toBeDefined();
-  });
-  expect(clipboard.writes).toStrictEqual(["https://launch-report.okou.app"]);
-});
+      screen.getByText(
+        "The old URL will stop working. Update any links you have shared.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      fireEvent.keyDown(input, {
+        key: "Enter",
+        isComposing: false,
+        keyCode: 229,
+      }),
+    ).toBeFalsy();
+    expect(input).toHaveValue("launch-report");
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    click(getButtonByName("Save"));
+    await screen.findByText("Website URL updated");
+    expect(getButtonByName("Customize URL")).toHaveFocus();
+    await waitFor(() => {
+      expect(
+        screen
+          .getByTestId("artifact-dialog-site-frame")
+          .querySelector("iframe"),
+      ).toHaveAttribute("src", "https://launch-report.okou.app/");
+    });
+    await waitFor(() => {
+      expect(
+        queryButtonByName(quickActions ? "Copied" : "Copy link"),
+      ).toBeDefined();
+    });
+    expect(clipboard.writes).toStrictEqual(
+      quickActions ? ["https://launch-report.okou.app"] : [],
+    );
+    if (!quickActions) {
+      click(getButtonByName("Copy link"));
+    }
+    await waitFor(() => {
+      expect(queryButtonByName("Copied")).toBeDefined();
+    });
+    expect(clipboard.writes).toStrictEqual(["https://launch-report.okou.app"]);
+  },
+);
 
 test("invalid and occupied addresses cannot be saved and cancel discards the draft", async () => {
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
@@ -503,9 +539,14 @@ async function expectPermission(name: string) {
   });
 }
 
-test.each([false, true])(
-  "owners change website visibility in the preview (sidebar: %s)",
-  async (sidebar) => {
+test.each([
+  { sidebar: false, quickActions: false },
+  { sidebar: true, quickActions: false },
+  { sidebar: false, quickActions: true },
+  { sidebar: true, quickActions: true },
+])(
+  "owners change website visibility (sidebar: $sidebar, quick actions: $quickActions)",
+  async ({ sidebar, quickActions }) => {
     mockSiteAlias();
     let status: SiteVisibilityStatus = {
       siteId,
@@ -541,7 +582,7 @@ test.each([false, true])(
         return respond(200, status);
       },
     );
-    await openSite({ sidebar });
+    await openSite({ sidebar, quickActions });
     await openShare(sidebar ? "Share artifact" : "Share");
     await expectPermission("Only me");
     const menu = await screen.findByRole("dialog", {
@@ -574,17 +615,19 @@ test.each([false, true])(
           name === "Anyone with the link" ? site.url : temporary,
         );
       });
-      expect(getButtonByName("Copied", menu)).toBeEnabled();
+      expect(
+        getButtonByName(quickActions ? "Copied" : "Copy link", menu),
+      ).toBeEnabled();
     }
     expect(clipboard.writes).toStrictEqual(
-      Array.from({ length: 4 }, () => {
+      Array.from({ length: quickActions ? 4 : 1 }, () => {
         return site.url;
       }),
     );
-    click(getButtonByName("Copied", menu));
+    click(getButtonByName(quickActions ? "Copied" : "Copy link", menu));
     await waitFor(() => {
       expect(clipboard.writes).toStrictEqual(
-        Array.from({ length: 5 }, () => {
+        Array.from({ length: quickActions ? 5 : 2 }, () => {
           return site.url;
         }),
       );

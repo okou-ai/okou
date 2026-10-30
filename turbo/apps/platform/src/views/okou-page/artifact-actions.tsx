@@ -147,10 +147,12 @@ export function ArtifactActionSeparator() {
 
 export function ArtifactActionTooltip({
   children,
+  disabled = false,
   label,
   side = "bottom",
 }: {
   children: ReactElement;
+  disabled?: boolean;
   label: string;
   side?: "top" | "right" | "bottom" | "left";
 }) {
@@ -161,7 +163,7 @@ export function ArtifactActionTooltip({
   );
   return (
     <TooltipProvider delay={200}>
-      <Tooltip>
+      <Tooltip disabled={disabled}>
         <TooltipTrigger render={trigger} />
         <TooltipContent side={side}>
           <p className="text-xs">{label}</p>
@@ -761,33 +763,37 @@ export function ArtifactDownloadMenu({
   const originalDriveAction = useGoogleDriveMenuAction(syncTarget, surface);
   const downloadPending = downloadLoadable.state === "loading";
   const downloadName = artifactDownloadFilename(artifactKind, filename, url);
+  const quickActions =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions];
   return (
-    <DropdownMenu modal={false}>
-      <DropdownMenuTrigger
-        openOnHover
-        delay={100}
-        closeDelay={150}
-        aria-label={label}
-        aria-busy={downloadPending ? "true" : undefined}
-        disabled={downloadPending}
-        render={
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            className={cn(
-              "data-popup-open:bg-state-hover data-popup-open:text-foreground disabled:pointer-events-none disabled:opacity-70",
-              className,
-            )}
-          />
-        }
-      >
-        {downloadPending ? (
-          <Loader2 size={iconSize} className="animate-spin" />
-        ) : (
-          <Download size={iconSize} />
-        )}
-      </DropdownMenuTrigger>
+    <DropdownMenu modal={!quickActions}>
+      <ArtifactActionTooltip label={label} disabled={quickActions}>
+        <DropdownMenuTrigger
+          openOnHover={quickActions}
+          delay={100}
+          closeDelay={150}
+          aria-label={label}
+          aria-busy={downloadPending ? "true" : undefined}
+          disabled={downloadPending}
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              className={cn(
+                "data-popup-open:bg-state-hover data-popup-open:text-foreground disabled:pointer-events-none disabled:opacity-70",
+                className,
+              )}
+            />
+          }
+        >
+          {downloadPending ? (
+            <Loader2 size={iconSize} className="animate-spin" />
+          ) : (
+            <Download size={iconSize} />
+          )}
+        </DropdownMenuTrigger>
+      </ArtifactActionTooltip>
       <DropdownMenuContent align={align} sideOffset={6} className="w-56">
         <DropdownMenuItem
           onClick={() => {

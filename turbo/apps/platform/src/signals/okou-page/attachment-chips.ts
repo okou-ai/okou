@@ -34,6 +34,9 @@ import type {
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 
 export const lightboxShareMenuOpen$ = computed((get) => {
+  if (!get(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions]) {
+    return false;
+  }
   const artifact = get(getArtifactShareScope("dialog").session$);
   const website = get(getHostedSiteShareScope("dialog").session$);
   return !!(
