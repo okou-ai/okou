@@ -4272,6 +4272,7 @@ dependencies = [
  "raw-http-test-support",
  "reqwest",
  "runner-host",
+ "runner-network",
  "runner-types",
  "sandbox",
  "serde",
