@@ -64,6 +64,11 @@ export interface ViewerCaptureOptions {
 /** Internal connection configuration; product controls live in Platform signals. */
 export interface BrowserConnection {
   readonly cdpUrl: string;
+  readonly extension: {
+    readonly id: string;
+    readonly runtimeId: string;
+    readonly version: string;
+  };
   readonly windowId?: number;
 }
 export type ViewerTransport = "shared" | "split";

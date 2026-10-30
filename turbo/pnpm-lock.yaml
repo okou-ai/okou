@@ -732,6 +732,9 @@ importers:
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../../packages/api-contracts
+      '@okouai/browser-extension-client':
+        specifier: workspace:*
+        version: link:../../packages/browser-extension-client
       '@okouai/connectors':
         specifier: workspace:*
         version: link:../../packages/connectors

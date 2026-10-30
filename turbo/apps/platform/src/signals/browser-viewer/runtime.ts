@@ -25,19 +25,31 @@ export class BrowserRuntime {
 
   constructor(
     root: HTMLElement,
-    model: ViewerModel,
-    connection: BrowserConnection,
+    host: {
+      readonly model: ViewerModel;
+      readonly connection: BrowserConnection;
+    },
     options: {
       readonly transport: ViewerTransport;
       readonly capture: ViewerCaptureOptions;
       readonly mode: WindowSizeSync;
       readonly clipboardChanged: (value: ClipboardRecovery | null) => void;
       readonly resized: (space: TabSpace) => void;
+      readonly releaseTransport: () => void;
     },
     signal: AbortSignal,
+    transportSignal: AbortSignal,
   ) {
     signal.throwIfAborted();
-    const { transport, capture, mode, clipboardChanged, resized } = options;
+    const { model, connection } = host;
+    const {
+      transport,
+      capture,
+      mode,
+      clipboardChanged,
+      resized,
+      releaseTransport,
+    } = options;
     let acquired = false;
     using _acquisition = {
       [Symbol.dispose]: () => {
@@ -77,6 +89,8 @@ export class BrowserRuntime {
       renderer,
       {
         url: connection.cdpUrl,
+        extension: connection.extension,
+        releaseTransport,
         ...(connection.windowId === undefined
           ? {}
           : { windowId: connection.windowId }),
@@ -100,7 +114,7 @@ export class BrowserRuntime {
           return this.focus.closed(id);
         },
       },
-      signal,
+      transportSignal,
     );
     this.cleanups.push(() => {
       return this.controller.close();
@@ -176,6 +190,7 @@ export class BrowserRuntime {
     });
 
     const focus = new MutationObserver(() => {
+      this.focus.restoreAfterCreate();
       this.focus.restoreAfterClose();
       this.focus.restoreLayout();
     });

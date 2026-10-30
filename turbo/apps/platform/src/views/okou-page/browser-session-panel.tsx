@@ -209,7 +209,13 @@ function BrowserCdpViewer({
             ":" +
             (windowId ?? "") +
             ":" +
-            connection.data.cdpUrl
+            connection.data.cdpUrl +
+            ":" +
+            connection.data.extension.id +
+            ":" +
+            connection.data.extension.runtimeId +
+            ":" +
+            connection.data.extension.version
           }
           actions={refined ? actions : null}
           presence={overlay}
