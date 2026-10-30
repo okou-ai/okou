@@ -129,7 +129,9 @@ test("claims identities and reads current content later, including Workflows add
     }),
     [200],
   );
-  const expectedArchive = s3.writes.at(-1)!.body;
+  const expectedArchive = [...s3.writes].reverse().find((write) => {
+    return write.key.startsWith("workflow-attachments/");
+  })!.body;
   const downloaded = await runs.downloadWorkflow(
     run.runId,
     workflow.id,

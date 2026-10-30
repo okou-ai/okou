@@ -2885,6 +2885,13 @@
       "when": 1793326405452,
       "tag": "1490_drop_chat_thread_folders",
       "breakpoints": true
+    },
+    {
+      "idx": 1491,
+      "version": "7",
+      "when": 1793330139802,
+      "tag": "1491_charming_naoko",
+      "breakpoints": true
     }
   ]
 }
