@@ -142,7 +142,6 @@ describe("chat event snapshot read endpoints", () => {
     const projected = rows.body.rows.map((row) => {
       return chatEventFromRow(row);
     });
-    expect(projected).toHaveLength(rows.body.rows.length);
     expect(rows.body.rows).toStrictEqual(
       fromStart.body.rows.filter((row) => {
         return row.seqId > firstSeqId;
