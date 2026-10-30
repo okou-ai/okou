@@ -484,6 +484,13 @@ export type SendPhoneMessageResponse = zInfer<
   typeof sendPhoneMessageResponseSchema
 >;
 
+const sendPhoneReactionBodySchema = object({
+  messageId: string().trim().min(1).max(255),
+  reaction: string().trim().min(1).max(64),
+});
+
+export type SendPhoneReactionBody = zInfer<typeof sendPhoneReactionBodySchema>;
+
 export const integrationsPhoneMessageContract = c.router({
   sendMessage: {
     method: "POST",
@@ -499,6 +506,27 @@ export const integrationsPhoneMessageContract = c.router({
       502: apiErrorSchema,
     },
     summary: "Send a phone message",
+  },
+  sendReaction: {
+    method: "POST",
+    path: "/api/integrations/phone/reaction",
+    headers: authHeadersSchema,
+    body: sendPhoneReactionBodySchema,
+    responses: {
+      200: object({
+        ok: literal(true),
+        reactionId: string(),
+        messageId: string(),
+        reaction: string(),
+        channel: literal("imessage"),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary: "React to an iMessage visible to the caller",
   },
 });
 

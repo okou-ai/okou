@@ -1,7 +1,7 @@
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
 import { command, computed } from "ccstate";
 import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
@@ -15,6 +15,7 @@ import {
   getAgentPhoneConversationParticipants,
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
+  sendAgentPhoneReaction,
 } from "../external/agentphone-client";
 import {
   agentPhoneChannelForLinkedHandle,
@@ -158,6 +159,152 @@ const phoneWriteAuth = {
   missingOrganizationStatus: 401,
   requiredCapability: "phone:write",
 } as const;
+
+const reactionBody$ = bodyResultOf(
+  integrationsPhoneMessageContract.sendReaction,
+);
+
+const reactionTarget$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const body = await get(reactionBody$);
+  if (!body.ok) {
+    return undefined;
+  }
+  const db = get(db$);
+  const groupVisibility = db
+    .select({ messageId: agentphoneMessageVisibility.messageId })
+    .from(agentphoneMessageVisibility)
+    .where(
+      and(
+        eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+        eq(agentphoneMessageVisibility.orgId, auth.orgId),
+        eq(agentphoneMessageVisibility.userId, auth.userId),
+      ),
+    );
+  const [message] = await db
+    .select({
+      messageId: agentphoneMessages.agentphoneMessageId,
+      channel: agentphoneMessages.channel,
+      groupId: agentphoneMessages.groupId,
+      conversationId: agentphoneMessages.conversationId,
+      phoneHandle: agentphoneUserLinks.phoneHandle,
+    })
+    .from(agentphoneMessages)
+    .innerJoin(
+      agentphoneUserLinks,
+      and(
+        eq(agentphoneUserLinks.orgId, auth.orgId),
+        eq(agentphoneUserLinks.userId, auth.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(agentphoneMessages.agentphoneMessageId, body.data.messageId),
+        or(
+          and(
+            isNull(agentphoneMessages.groupId),
+            eq(agentphoneMessages.agentphoneUserLinkId, agentphoneUserLinks.id),
+          ),
+          and(isNotNull(agentphoneMessages.groupId), exists(groupVisibility)),
+        ),
+      ),
+    )
+    .limit(1);
+  return message;
+});
+
+const sendReaction$ = command(async ({ get }, signal: AbortSignal) => {
+  const body = await get(reactionBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const target = await get(reactionTarget$);
+  signal.throwIfAborted();
+  const notFound = () => {
+    return routeError(
+      404,
+      "Message not found for this account, or your connected phone is no longer a group member",
+      "NOT_FOUND",
+    );
+  };
+  if (!target) {
+    return notFound();
+  }
+  if (target.channel !== "imessage") {
+    return routeError(
+      400,
+      "Emoji reactions require an iMessage; SMS and MMS do not support reactions",
+      "UNSUPPORTED_CHANNEL",
+    );
+  }
+  if (target.groupId) {
+    if (!target.conversationId) {
+      return notFound();
+    }
+    const roster = await settle(
+      getAgentPhoneConversationParticipants(
+        { conversationId: target.conversationId },
+        signal,
+      ),
+      signal,
+    );
+    if (!roster.ok) {
+      if (isAgentPhoneApiError(roster.error) && roster.error.status === 404) {
+        return notFound();
+      }
+      const response = agentPhoneRouteError(roster.error);
+      if (response) {
+        return response;
+      }
+      throw roster.error;
+    }
+    if (
+      !roster.value.some((handle) => {
+        return (
+          normalizeAgentPhoneHandle(handle, "imessage") ===
+          normalizeAgentPhoneHandle(target.phoneHandle, "imessage")
+        );
+      })
+    ) {
+      return notFound();
+    }
+  }
+  const result = await settle(
+    sendAgentPhoneReaction(
+      { messageId: target.messageId, reaction: body.data.reaction },
+      signal,
+    ),
+    signal,
+  );
+  if (!result.ok) {
+    if (isAgentPhoneApiError(result.error) && result.error.status === 404) {
+      return notFound();
+    }
+    const response = agentPhoneRouteError(result.error);
+    if (response) {
+      return response;
+    }
+    if (result.error instanceof TypeError) {
+      return routeError(
+        502,
+        "Phone reaction outcome is unknown. Do not retry automatically",
+        "AGENTPHONE_OUTCOME_UNKNOWN",
+      );
+    }
+    throw result.error;
+  }
+  return {
+    status: 200 as const,
+    body: {
+      ok: true as const,
+      reactionId: result.value.id,
+      messageId: result.value.message_id,
+      reaction: result.value.reaction_type,
+      channel: result.value.channel,
+    },
+  };
+});
 
 const groupMessageBody$ = bodyResultOf(
   integrationsAgentPhoneContract.groupMessage,
@@ -318,5 +465,9 @@ export const integrationsPhoneMessageRoutes: readonly RouteEntry[] = [
   {
     route: integrationsAgentPhoneContract.groupMessage,
     handler: authRoute(phoneWriteAuth, sendGroupMessage$),
+  },
+  {
+    route: integrationsPhoneMessageContract.sendReaction,
+    handler: authRoute(phoneWriteAuth, sendReaction$),
   },
 ];

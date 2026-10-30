@@ -317,6 +317,33 @@ export function createAgentPhoneBddApi(context: TestContext) {
       return harvestConnectBody(capture);
     },
 
+    captureAgentPhoneReactions() {
+      const reactions: { messageId: string; reaction: string | undefined }[] =
+        [];
+      server.use(
+        http.post(
+          `${AGENTPHONE_API_BASE_URL}/v1/messages/:messageId/reactions`,
+          async ({ request, params }) => {
+            const body: unknown = await request.json();
+            const record = isRecord(body) ? body : {};
+            const reaction = {
+              messageId:
+                typeof params.messageId === "string" ? params.messageId : "",
+              reaction: stringField(record, "reaction"),
+            };
+            reactions.push(reaction);
+            return HttpResponse.json({
+              id: `rxn_${randomUUID()}`,
+              message_id: reaction.messageId,
+              reaction_type: reaction.reaction,
+              channel: "imessage",
+            });
+          },
+        ),
+      );
+      return reactions;
+    },
+
     captureAgentPhoneSends(): AgentPhoneSendCapture {
       const messages: AgentPhoneProviderSend[] = [];
       const typing: string[] = [];
