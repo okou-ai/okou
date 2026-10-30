@@ -484,6 +484,30 @@ describe("with a measurable thread viewport", () => {
 
   it("restore the reading position during keyboard thread navigation", async () => {
     const { targetText, user, viewportHeight } = preparedScenario;
+    const misplacedMessages = new Set<string>();
+    const observer = new MutationObserver(() => {
+      for (const [threadId, otherMessage] of [
+        [KEYBOARD_PREVIOUS_THREAD_ID, targetText],
+        [KEYBOARD_CURRENT_THREAD_ID, "Previous message 1"],
+      ] as const) {
+        const section = document.querySelector(
+          `[data-chat-thread-container-id="${threadId}"]`,
+        );
+        if (section?.textContent?.includes(otherMessage)) {
+          misplacedMessages.add(otherMessage);
+        }
+      }
+    });
+    observer.observe(document.body, {
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["data-chat-thread-container-id"],
+      subtree: true,
+    });
+    context.signal.addEventListener("abort", () => {
+      observer.disconnect();
+    });
     threadSection(KEYBOARD_CURRENT_THREAD_ID).focus();
     expect(threadSection(KEYBOARD_CURRENT_THREAD_ID)).toHaveFocus();
     await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
@@ -509,6 +533,7 @@ describe("with a measurable thread viewport", () => {
 
     await expectReadingPosition(returnedGeometry, targetText);
     expect(returnedGeometry.atBottom()).toBeFalsy();
+    expect([...misplacedMessages]).toStrictEqual([]);
   });
 });
 

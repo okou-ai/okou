@@ -2935,7 +2935,11 @@ function ChatThreadPane({
   pane: Exclude<ChatThreadPaneState, null>;
 }) {
   return pane.kind === "thread" ? (
-    <ChatThread isMain={isMain} thread={pane.thread} />
+    <ChatThread
+      key={pane.thread.threadId}
+      isMain={isMain}
+      thread={pane.thread}
+    />
   ) : (
     <MissingChatThread threadId={pane.threadId} />
   );
