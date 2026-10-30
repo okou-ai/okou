@@ -1035,6 +1035,16 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${discordOwnership}`,
   );
+  // Drizzle does not model routines. Install the independently maintained
+  // current definition, then validate its exact body on both schema shapes.
+  const agentMetadata = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/update-agent-metadata.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${agentMetadata}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1307,6 +1317,9 @@ type PermanentTrigger = {
 
 type PermanentFunction = {
   readonly bodyHash: string;
+  readonly volatility: string;
+  readonly securityDefiner: boolean;
+  readonly parallel: string;
   readonly functionName: string;
   readonly identityArguments: string;
   readonly kind: string;
@@ -1317,7 +1330,19 @@ type PermanentFunction = {
 // pgcrypto and vector functions are deliberately absent from the function list.
 const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
-const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [];
+const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
+  {
+    schemaName: "public",
+    functionName: "update_agent_metadata",
+    identityArguments:
+      "p_org_id text, p_agent_id uuid, p_member_id text, p_is_admin boolean, p_identity_changes boolean, p_visibility text, p_public_limit integer, p_body bytea, p_now timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "80d63df57c2cf7e352b6f691c40d30f8",
+  },
+];
 
 function assertPermanentInventory(args: {
   readonly actual: readonly string[];
@@ -1382,6 +1407,9 @@ async function validatePermanentTriggerAndFunctionInventory(
         pg_catalog.pg_get_function_identity_arguments(catalog_function."oid")
           AS "identityArguments",
         catalog_function."prokind"::text AS "kind",
+        catalog_function."provolatile"::text AS "volatility",
+        catalog_function."prosecdef" AS "securityDefiner",
+        catalog_function."proparallel"::text AS "parallel",
         pg_catalog.md5(catalog_function."prosrc") AS "bodyHash"
       FROM pg_catalog."pg_proc" AS catalog_function
       INNER JOIN pg_catalog."pg_namespace" AS namespace
@@ -1406,7 +1434,7 @@ async function validatePermanentTriggerAndFunctionInventory(
       return `${trigger.schemaName}.${trigger.tableName}.${trigger.triggerName} [${trigger.definition}]`;
     };
     const functionKey = (catalogFunction: PermanentFunction): string => {
-      return `${catalogFunction.schemaName}.${catalogFunction.functionName}(${catalogFunction.identityArguments}) [${catalogFunction.kind}] [body md5=${catalogFunction.bodyHash}]`;
+      return `${catalogFunction.schemaName}.${catalogFunction.functionName}(${catalogFunction.identityArguments}) [${catalogFunction.kind}] [body md5=${catalogFunction.bodyHash}] [volatility=${catalogFunction.volatility};definer=${catalogFunction.securityDefiner};parallel=${catalogFunction.parallel}]`;
     };
 
     assertPermanentInventory({
@@ -2984,6 +3012,7 @@ async function main(): Promise<void> {
     const dbUrl2 = createTestDbUrl(TEST_DB_2);
     await runMigrations(dbUrl2);
     console.log("   ✅ Fresh migrations applied successfully\n");
+    await validatePermanentTriggerAndFunctionInventory(dbUrl2);
     await validatePermanentBuiltInModelKeyState(dbUrl2);
     await validatePermanentDiscordFoundation(dbUrl2);
     await validatePermanentDiscordChat(dbUrl2);
