@@ -95,6 +95,43 @@ preparation, complete this drain, then activate the change. Waiting after a
 combined release does not establish that the preparation and drain preceded
 activation.
 
+### Browser Extension, API, and Frontend
+
+The browser extension participates in the same release-please production
+workflow as the API and App. It is not an independently ordered rollout that
+requires a separate implementation PR. The dependency chain in
+[release-please.yml](../.github/workflows/release-please.yml) is:
+
+1. `publish-browser-extension` builds the immutable `release_target`, verifies
+   the version/source/checksum and uploads the extension to Browser Use.
+2. `promote-api-production` depends on extension publication and consumes that
+   job's confirmed upload ID as `OKOU_BROWSER_USE_EXTENSION_ID`. An extension
+   release also requests API deployment, even without a separate API version.
+3. `promote-app-worker-production`, which serves the frontend, depends on
+   successful API production promotion. Its new assets therefore follow the
+   extension/API release lifecycle.
+
+When there is no new extension release, its publication job is skipped and
+the API environment resolver selects the required existing Okou Browser upload.
+There is no repository Variables token/update stage. Upload UUID, installed
+Chrome runtime ID, and extension version are different identities; consumers
+use the API's actual installed metadata.
+
+Validate extension APIs against the provider's upload policy before relying on
+them. [Browser Use extension limits](https://docs.browser-use.com/cloud/browser/extensions#limits)
+prohibit the `debugger` manifest permission, including extensions that only
+intend to call `chrome.debugger.getTargets()` without attaching a debugger.
+Successful local Chromium execution does not establish cloud deployability.
+
+Extension upload makes an artifact available for newly created Browsers; it
+does not hot-replace the extension in an already running Browser. Evaluate
+that lifetime separately when a GA consumer changes its required capabilities.
+For a feature still behind a non-GA switch, follow
+[the switch compatibility rule](fallback.md#2-features-behind-a-feature-switch-need-no-fallback):
+do not invent old-data migrations, old-extension readers, or an extra PR/release
+solely because these jobs execute in sequence. The ordered extension/API and
+frontend changes can ship together, with the required capability used directly.
+
 ### Runner, Guest, and CLI Artifacts
 
 Runner embeds its Guest binaries and the Okou CLI package in one deployment
