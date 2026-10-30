@@ -1,6 +1,7 @@
 /** Local toolbar policy and DOM work belong to one viewer, never its input wire. */
 export class ToolbarFocus {
   private createOrigin: Element | null = null;
+  private restoreCreated = false;
   private closingTarget: string | null = null;
   private restoreClosed = false;
   private toolbarFocus: HTMLElement | null = null;
@@ -13,6 +14,7 @@ export class ToolbarFocus {
 
   reset(): void {
     this.createOrigin = null;
+    this.restoreCreated = false;
     this.closingTarget = null;
     this.restoreClosed = false;
     this.toolbarFocus = null;
@@ -20,9 +22,19 @@ export class ToolbarFocus {
 
   beginCreate(): void {
     this.createOrigin = document.activeElement;
+    this.restoreCreated = false;
   }
 
   created(): void {
+    this.restoreCreated = true;
+    this.restoreAfterCreate();
+  }
+
+  restoreAfterCreate(): void {
+    if (!this.restoreCreated || this.address.disabled) {
+      return;
+    }
+    this.restoreCreated = false;
     // A disabled initiating button may leave body focused. Later controls win.
     if (
       document.activeElement === this.createOrigin ||
@@ -98,7 +110,15 @@ export class ToolbarFocus {
     };
     document.addEventListener("focusin", focused);
     document.addEventListener("pointerdown", pointed);
+    const enabled = new MutationObserver(() => {
+      this.restoreAfterCreate();
+    });
+    enabled.observe(this.address, {
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
     return () => {
+      enabled.disconnect();
       document.removeEventListener("focusin", focused);
       document.removeEventListener("pointerdown", pointed);
     };

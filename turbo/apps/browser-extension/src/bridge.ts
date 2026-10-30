@@ -23,6 +23,7 @@ function tab(value: chrome.tabs.Tab): NativeTab {
     pinned: value.pinned,
     discarded: value.discarded,
     ...(value.url !== undefined ? { url: value.url } : {}),
+    ...(value.pendingUrl !== undefined ? { pendingUrl: value.pendingUrl } : {}),
     ...(value.title !== undefined ? { title: value.title } : {}),
     ...(value.openerTabId !== undefined
       ? { openerTabId: value.openerTabId }

@@ -1,4 +1,4 @@
-import { callAsync, onRef } from "../utils.ts";
+import { callAsync, onRef, resetSignal } from "../utils.ts";
 import { command, type Computed } from "ccstate";
 import { BrowserRuntime } from "./runtime.ts";
 import { createViewerSignals, type ViewerModel } from "./viewer/model.ts";
@@ -70,12 +70,15 @@ export function createBrowserViewerSignals(
         },
       };
       set(model.transition$, { type: "reset" });
+      // Control transport outlives DOM admission only while its original input
+      // releases drain. Each mount owns a separate, explicitly cancelled signal.
+      const transportLifetime$ = resetSignal();
+      const transportSignal = set(transportLifetime$);
       const [acquired] = await Promise.allSettled([
         callAsync(() => {
           return new BrowserRuntime(
             root,
-            native,
-            connection,
+            { model: native, connection },
             {
               transport: get(model.transport$),
               capture: get(model.capture$),
@@ -86,13 +89,18 @@ export function createBrowserViewerSignals(
               resized: (space) => {
                 return set(model.resizeTabs$, space);
               },
+              releaseTransport: () => {
+                set(transportLifetime$);
+              },
             },
             signal,
+            transportSignal,
           );
         }),
       ]);
       signal.throwIfAborted();
       if (acquired.status === "rejected") {
+        set(transportLifetime$);
         set(model.transition$, {
           type: "failed",
           error: diagnostic(acquired.reason),

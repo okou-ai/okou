@@ -1,14 +1,12 @@
 import { CdpFault } from "../cdp/errors.ts";
 import type { ViewerTarget } from "./types.ts";
 
-const inventoryFreshnessMs = 20_000;
 // Retained UTF-16 text plus an allowance for each entry's bookkeeping. This is
 // resource accounting, not a heap measurement or a browser target-count limit.
 const inventoryBudgetBytes = 16 * 1024 * 1024;
 
 interface Membership {
   readonly order: number;
-  readonly startedAt: number;
   readonly member: boolean;
 }
 
@@ -17,13 +15,11 @@ interface InventoryEntry {
   readonly target: ViewerTarget | null;
   readonly metadataOrder: number;
   readonly membership: Membership | null;
-  readonly expiresAt: number;
 }
 
 export interface InventoryRound {
   readonly order: number;
   readonly epoch: number;
-  readonly startedAt: number;
   readonly changed: ReadonlySet<string>;
   readonly changedBytes: number;
 }
@@ -33,7 +29,6 @@ export interface TargetObservation {
   readonly generation: number;
   readonly epoch: number;
   readonly order: number;
-  readonly startedAt: number;
 }
 
 export interface TargetInventory {
@@ -42,12 +37,10 @@ export interface TargetInventory {
   readonly entries: ReadonlyMap<string, InventoryEntry>;
   readonly round: InventoryRound | null;
   readonly ready: boolean;
-  readonly startedAt: number | null;
 }
 
 export type InventoryEvent =
-  | { readonly type: "reset" | "order" | "invalidate-round" }
-  | { readonly type: "begin-round"; readonly now: number }
+  | { readonly type: "reset" | "order" | "invalidate-round" | "begin-round" }
   | {
       readonly type: "listed";
       readonly round: InventoryRound;
@@ -57,13 +50,11 @@ export type InventoryEvent =
   | {
       readonly type: "metadata";
       readonly target: ViewerTarget;
-      readonly now: number;
     }
-  | { readonly type: "retired" | "closed"; readonly id: string }
+  | { readonly type: "retired"; readonly id: string }
   | {
       readonly type: "begin-creation";
       readonly id: string;
-      readonly now: number;
     }
   | {
       readonly type: "membership";
@@ -83,7 +74,6 @@ export function initialInventory(): TargetInventory {
     entries: new Map(),
     round: null,
     ready: false,
-    startedAt: null,
   };
 }
 
@@ -117,17 +107,6 @@ export function inventoryTargets(
       return entry.target && entry.membership?.member ? [entry.target] : [];
     }),
   );
-}
-
-export function inventoryExpiry(state: TargetInventory): number | null {
-  if (state.startedAt === null) {
-    return null;
-  }
-  let expiry = state.startedAt + inventoryFreshnessMs;
-  for (const entry of state.entries.values()) {
-    expiry = Math.min(expiry, entry.expiresAt);
-  }
-  return expiry;
 }
 
 function journal(state: TargetInventory, id: string): InventoryRound | null {
@@ -181,7 +160,6 @@ export function transitionInventory(
         round: {
           order,
           epoch: state.epoch,
-          startedAt: event.now,
           changed: new Set(),
           changedBytes: 0,
         },
@@ -193,15 +171,14 @@ export function transitionInventory(
     case "begin-creation": {
       return beginCreation(state, event);
     }
-    case "retired":
-    case "closed": {
+    case "retired": {
       const entries = new Map(state.entries);
       entries.delete(event.id);
       return {
         ...state,
         sequence: order,
         entries,
-        round: event.type === "closed" ? null : journal(state, event.id),
+        round: journal(state, event.id),
       };
     }
     case "listed": {
@@ -214,7 +191,6 @@ export function transitionInventory(
             sequence: order,
             round: null,
             ready: true,
-            startedAt: event.round.startedAt,
           }
         : state;
     }
@@ -237,7 +213,6 @@ function updateInventoryMetadata(
     target: event.target,
     metadataOrder: order,
     membership: previous?.membership ?? null,
-    expiresAt: previous?.expiresAt ?? event.now + inventoryFreshnessMs,
   });
   bounded(entries);
   return {
@@ -262,7 +237,6 @@ function beginCreation(
     target: null,
     metadataOrder: 0,
     membership: null,
-    expiresAt: event.now + inventoryFreshnessMs,
   });
   bounded(entries);
   return {
@@ -303,8 +277,6 @@ function listInventory(
           : target,
       metadataOrder: Math.max(previous?.metadataOrder ?? 0, event.round.order),
       membership: previous?.membership ?? null,
-      expiresAt:
-        previous?.expiresAt ?? event.round.startedAt + inventoryFreshnessMs,
     });
   }
   bounded(entries);
@@ -342,13 +314,9 @@ function updateInventoryMembership(
     membership: current
       ? {
           order: observation.order,
-          startedAt: observation.startedAt,
           member: event.type === "created" || event.member,
         }
       : previous.membership,
-    expiresAt: current
-      ? observation.startedAt + inventoryFreshnessMs
-      : previous.expiresAt,
   });
   if (event.type === "created") {
     bounded(entries);

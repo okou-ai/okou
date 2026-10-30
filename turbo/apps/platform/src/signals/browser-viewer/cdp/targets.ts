@@ -1,6 +1,8 @@
 import type { ViewerTarget } from "../viewer/types.ts";
 import { CdpClient } from "./client.ts";
 import { CdpFault, isRecord, requestDetails } from "./errors.ts";
+import type { OkouBrowserClient } from "@okouai/browser-extension-client";
+import { nativeFault } from "./native.ts";
 
 export function pageTarget(info: unknown): ViewerTarget | null {
   if (!isRecord(info) || info.type !== "page" || info.subtype === "prerender") {
@@ -22,10 +24,33 @@ export function pageTarget(info: unknown): ViewerTarget | null {
 }
 
 export class TargetDirectory {
+  private revision = 0;
   constructor(
     private readonly client: CdpClient,
     private readonly windowId: number | undefined,
+    private readonly native: OkouBrowserClient,
   ) {}
+
+  invalidate(): void {
+    this.revision++;
+  }
+
+  async assertWindow(): Promise<void> {
+    if (this.native.signal.aborted) {
+      throw nativeFault();
+    }
+    if (this.windowId !== undefined) {
+      const observation = await this.native.call("getWindow", {
+        windowId: this.windowId,
+      });
+      if (observation.value?.id !== this.windowId) {
+        throw new CdpFault(
+          "scope",
+          "The assigned browser window is unavailable.",
+        );
+      }
+    }
+  }
 
   async assertMember(targetId: string): Promise<void> {
     if (!(await this.contains(targetId))) {
@@ -37,10 +62,23 @@ export class TargetDirectory {
   }
 
   async contains(targetId: string): Promise<boolean> {
+    if (this.native.signal.aborted) {
+      throw nativeFault();
+    }
     if (this.windowId === undefined) {
       return true;
     }
+    const revision = this.revision;
     const result: unknown = await this.lookup(targetId);
+    if (this.native.signal.aborted) {
+      throw nativeFault();
+    }
+    if (revision !== this.revision) {
+      throw new CdpFault(
+        "scope",
+        "Window membership changed during verification.",
+      );
+    }
     if (!isRecord(result) || !Number.isSafeInteger(result.windowId)) {
       throw new CdpFault(
         "scope",
@@ -66,41 +104,6 @@ export class TargetDirectory {
       }
     }
     return Object.freeze(pages);
-  }
-
-  async list(): Promise<readonly ViewerTarget[]> {
-    const pages = await this.read();
-    if (this.windowId === undefined) {
-      return Object.freeze(pages);
-    }
-
-    const members: ViewerTarget[] = [];
-    // Avoid an unbounded fan-out into the transport's request map.
-    for (let offset = 0; offset < pages.length; offset += 4) {
-      const results = await Promise.all(
-        pages.slice(offset, offset + 4).map(async (page) => {
-          const [membership] = await Promise.allSettled([
-            this.contains(page.id),
-          ]);
-          if (membership.status === "fulfilled") {
-            return membership.value ? page : null;
-          }
-          if (
-            membership.reason instanceof CdpFault &&
-            membership.reason.kind === "scope"
-          ) {
-            return null;
-          }
-          throw membership.reason;
-        }),
-      );
-      for (const page of results) {
-        if (page) {
-          members.push(page);
-        }
-      }
-    }
-    return Object.freeze(members);
   }
 
   private async lookup(targetId: string): Promise<unknown> {

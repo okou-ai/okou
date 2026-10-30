@@ -290,9 +290,9 @@ function createViewerPresentation({
         empty ||
         (!!unavailableImage && snapshot.status !== "paused"),
       ...imageControls(image, snapshot.status, get(internalConnected$)),
-      showEmptyCreate: emptyUnscoped && interactive,
+      showEmptyCreate: empty && interactive,
       canMutateTabs,
-      canCreate: canMutateTabs && (streaming || emptyUnscoped),
+      canCreate: canMutateTabs && (streaming || empty),
       tabsDisabled: snapshot.status === "disconnected",
       canSyncDisplay:
         streaming && get(display$).ready && !get(display$).pending,

@@ -1,55 +1,33 @@
-import { scheduleTimeout, setLoop, detach, Reason } from "../../utils.ts";
-
+import { scheduleTimeout, detach, Reason } from "../../utils.ts";
 import { CdpFault, isRecord } from "../cdp/errors.ts";
 import { pageTarget, type TargetDirectory } from "../cdp/targets.ts";
-
 import type { CdpEvent } from "../cdp/client.ts";
 import type { ViewerModel } from "./model.ts";
 import type { ViewerTarget } from "./types.ts";
 import {
   currentObservation,
   currentRound,
-  inventoryExpiry,
   type InventoryEvent,
-  type InventoryRound,
   type TargetObservation,
 } from "./target-inventory.ts";
 
-const selectedIntervalMs = 2000;
-const selectedFreshnessMs = 12_000;
-const inventoryIntervalMs = 10_000;
-const inventoryRoundMs = 10_000;
-
-interface Scan {
-  readonly round: InventoryRound;
-  deadline: (() => void) | undefined;
-}
-
-interface Selected {
-  readonly targetId: string;
-  readonly order: number;
-  deadline: (() => void) | undefined;
-  verifiedAt: number;
-  pending: boolean;
-}
-
 interface DiscoveryOptions {
   readonly signal: AbortSignal;
-  readonly scoped: boolean;
   readonly changed: () => void;
+  readonly invalidated: () => void;
   readonly failed: (error: unknown) => void;
 }
 
-/** Connection-owned IO; the model alone owns target facts and their projection. */
+/** One cold snapshot, owning target events, and bounded native invalidations. */
 export class TargetDiscovery {
   private readonly dirty = new Set<string>();
-  private scan: Scan | null = null;
-  private inventoryDeadline: (() => void) | undefined;
-  private selected: Selected | null = null;
   private fullWanted = false;
   private running = false;
   private closed = false;
+  private initialized = false;
+  private validating = true;
   private epoch: number | null = null;
+  private deadline: (() => void) | undefined;
 
   constructor(
     private readonly directory: TargetDirectory,
@@ -63,52 +41,17 @@ export class TargetDiscovery {
 
   start(): void {
     this.epoch = this.model.inventory({ type: "reset" }).epoch;
-    if (this.options.scoped) {
-      setLoop(
-        () => {
-          this.reconcile();
-          return !this.active();
-        },
-        inventoryIntervalMs,
-        this.options.signal,
-        { testIntervalMs: inventoryIntervalMs },
-      );
-      setLoop(
-        () => {
-          this.checkSelected();
-          return !this.active();
-        },
-        selectedIntervalMs,
-        this.options.signal,
-        { testIntervalMs: selectedIntervalMs },
-      );
-    } else {
-      this.reconcile();
-    }
+    this.refresh();
   }
 
-  watch(targetId: string | null): void {
-    this.selected?.deadline?.();
-    this.selected = null;
-    if (targetId && this.options.scoped) {
-      const selected: Selected = {
-        targetId,
-        order: this.state().sequence,
-        pending: false,
-        deadline: undefined,
-        verifiedAt: performance.now(),
-      };
-      this.selected = selected;
-      this.expireSelected(selected);
-    }
+  get ready(): boolean {
+    return this.active() && this.state().ready && !this.validating;
   }
 
   current(targetId: string): boolean {
     return (
-      this.active() &&
-      (!this.options.scoped ||
-        (this.selected?.targetId === targetId &&
-          performance.now() - this.selected.verifiedAt < selectedFreshnessMs))
+      this.ready &&
+      this.state().entries.get(targetId)?.membership?.member === true
     );
   }
 
@@ -117,36 +60,51 @@ export class TargetDiscovery {
       return;
     }
     this.model.inventory({ type: "invalidate-round" });
-    this.scan?.deadline?.();
-    this.reconcile();
+    if (!this.validating) {
+      this.validating = true;
+      this.options.invalidated();
+    }
+    if (!this.active()) {
+      return;
+    }
+    // Repeated events do not extend the deadline for regaining authority.
+    this.deadline ??= scheduleTimeout(
+      () => {
+        this.fail(
+          new CdpFault(
+            "scope",
+            "Window inventory could not be verified in time.",
+          ),
+        );
+      },
+      10_000,
+      this.options.signal,
+    );
+    this.fullWanted = true;
+    this.pump();
   }
 
   removed(targetId: string): void {
     if (!this.active()) {
       return;
     }
-    this.scan?.deadline?.();
     this.dirty.delete(targetId);
-    this.commit({ type: "closed", id: targetId });
-    this.reconcile();
+    this.commit({ type: "retired", id: targetId });
   }
 
   beginCreation(targetId: string): TargetObservation {
     if (!this.active()) {
       throw new CdpFault("tab", "The tab action is no longer current.");
     }
-    const startedAt = performance.now();
     const state = this.model.inventory({
       type: "begin-creation",
       id: targetId,
-      now: startedAt,
     });
     return {
       id: targetId,
       epoch: state.epoch,
       generation: state.entries.get(targetId)!.generation,
       order: state.sequence,
-      startedAt,
     };
   }
 
@@ -156,15 +114,11 @@ export class TargetDiscovery {
     }
     this.dirty.delete(target.id);
     this.commit({ type: "created", target, observation });
-    if (this.scan && !currentRound(this.state(), this.scan.round)) {
-      this.scan.deadline?.();
-      if (this.running) {
-        this.fullWanted = true;
-      }
+    if (this.validating) {
+      this.fullWanted = true;
+      this.pump();
     }
-    return this.model.getSnapshot().targets.some((value) => {
-      return value.id === target.id;
-    });
+    return this.state().entries.get(target.id)?.membership?.member === true;
   }
 
   event(event: CdpEvent): void {
@@ -178,34 +132,25 @@ export class TargetDiscovery {
         : isRecord(info)
           ? info.targetId
           : undefined;
-    if (
-      typeof id !== "string" ||
-      !id ||
-      (event.method !== "Target.targetDestroyed" &&
-        (!isRecord(info) || typeof info.type !== "string"))
-    ) {
-      this.reconcile();
+    if (typeof id !== "string" || !id) {
       return;
     }
     const target =
       event.method === "Target.targetDestroyed" ? null : pageTarget(info);
     const present = this.state().entries.has(id);
     if (!target) {
-      if (
-        !present &&
-        (event.method !== "Target.targetDestroyed" || !this.state().round)
-      ) {
+      // Journal even an unknown destruction during the cold snapshot.
+      if (!present && !this.state().round) {
         return;
       }
       this.dirty.delete(id);
-      this.commit({ type: "retired", id }, present);
+      this.commit({ type: "retired", id });
     } else {
-      this.commit({ type: "metadata", target, now: performance.now() });
-      this.dirty.add(id);
-      if (!this.state().ready) {
-        this.fullWanted = true;
+      this.commit({ type: "metadata", target });
+      if (!present) {
+        this.dirty.add(id);
+        this.pump();
       }
-      this.pump();
     }
   }
 
@@ -214,12 +159,8 @@ export class TargetDiscovery {
       return;
     }
     this.closed = true;
-    this.selected?.deadline?.();
-    this.scan?.deadline?.();
-    this.inventoryDeadline?.();
+    this.deadline?.();
     this.dirty.clear();
-    this.selected = null;
-    this.fullWanted = false;
     if (this.state().epoch === this.epoch) {
       this.model.inventory({ type: "reset" });
     }
@@ -233,24 +174,14 @@ export class TargetDiscovery {
     );
   }
 
-  private commit(event: InventoryEvent, notify = true): void {
-    const targets = this.model.getSnapshot().targets;
-    const ready = this.state().ready;
+  private commit(event: InventoryEvent): void {
     this.model.inventory(event);
-    this.expireInventory();
-    if (
-      notify &&
-      (targets !== this.model.getSnapshot().targets ||
-        (!ready && this.state().ready))
-    ) {
-      this.publish();
+    if (this.ready) {
+      this.options.changed();
     }
   }
 
   private observe(id: string): TargetObservation | null {
-    if (!this.active()) {
-      return null;
-    }
     const state = this.model.inventory({ type: "order" });
     const entry = state.entries.get(id);
     return entry
@@ -259,354 +190,127 @@ export class TargetDiscovery {
           epoch: state.epoch,
           generation: entry.generation,
           order: state.sequence,
-          startedAt: performance.now(),
         }
       : null;
-  }
-
-  private reconcile(): void {
-    if (!this.active()) {
-      return;
-    }
-    this.fullWanted = true;
-    this.pump();
   }
 
   private pump(): void {
     if (!this.active() || this.running) {
       return;
     }
-    detach(
-      (async () => {
-        const [reply1] = await Promise.allSettled([this.drain()]);
-        if (reply1.status === "fulfilled") {
-          return reply1.value;
-        }
-        const error = reply1.reason;
-        return this.fail(error);
-      })(),
-      Reason.DomCallback,
-      "browser operation",
-    );
+    this.running = true;
+    detach(this.drain(), Reason.DomCallback, "browser inventory");
   }
 
   private async drain(): Promise<void> {
-    this.running = true;
-    const [completion1] = await Promise.allSettled([
-      (async (): Promise<void> => {
+    const [result] = await Promise.allSettled([
+      (async () => {
         while (this.active() && (this.fullWanted || this.dirty.size)) {
           if (this.fullWanted) {
             this.fullWanted = false;
             await this.readFull();
           } else {
-            await this.readDirty();
+            const ids = [...this.dirty].slice(0, 4);
+            for (const id of ids) {
+              this.dirty.delete(id);
+            }
+            await Promise.all(
+              ids.map((id) => {
+                return this.readMembership(id, () => {
+                  return this.active() && !this.validating;
+                });
+              }),
+            );
           }
         }
       })(),
     ]);
-
     this.running = false;
-
-    if (completion1.status === "rejected") {
-      throw completion1.reason;
+    if (result.status === "rejected") {
+      this.fail(result.reason);
     }
-    return completion1.value;
   }
 
   private async readFull(): Promise<void> {
-    const state = this.model.inventory({
+    const round = this.model.inventory({
       type: "begin-round",
-      now: performance.now(),
-    });
-    const scan: Scan = { round: state.round!, deadline: undefined };
-    this.scan = scan;
+    }).round!;
     const current = () => {
-      return this.active() && currentRound(this.state(), scan.round);
+      return this.active() && currentRound(this.state(), round);
     };
-    scan.deadline = scheduleTimeout(
-      () => {
-        if (current()) {
-          this.fail(
-            new CdpFault(
-              "scope",
-              "Window inventory could not be verified in time.",
-            ),
-          );
-        }
-      },
-      inventoryRoundMs,
-      this.options.signal,
-    );
-    const [completion2] = await Promise.allSettled([
-      (async (): Promise<void> => {
-        const [operation2] = await Promise.allSettled([
-          (async (): Promise<void> => {
-            const pages = await this.directory.read();
-            if (!current()) {
-              return;
-            }
-            this.commit({ type: "listed", round: scan.round, targets: pages });
-            if (!current()) {
-              return;
-            }
-            for (let offset = 0; offset < pages.length; offset += 4) {
-              await Promise.all(
-                pages.slice(offset, offset + 4).map(async (target) => {
-                  const observation = this.observe(target.id);
-                  if (!observation) {
-                    return;
-                  }
-                  await this.readMembership(observation, current);
-                }),
-              );
-              if (!current()) {
-                return;
-              }
-            }
-            this.commit({ type: "complete-round", round: scan.round });
-          })(),
-        ]);
-        if (operation2.status === "fulfilled") {
-          return operation2.value;
-        }
-        const error: unknown = operation2.reason;
-
-        if (current()) {
-          this.fail(error);
-        }
-      })(),
-    ]);
-
-    scan.deadline?.();
-    if (this.scan === scan) {
-      this.scan = null;
-    }
-
-    if (completion2.status === "rejected") {
-      throw completion2.reason;
-    }
-    return completion2.value;
-  }
-
-  private expireInventory(): void {
-    if (!this.active() || !this.options.scoped) {
-      return;
-    }
-    this.inventoryDeadline?.();
-    const expiresAt = inventoryExpiry(this.state());
-    if (expiresAt === null) {
-      return;
-    }
-    const remaining = expiresAt - performance.now();
-    const deadline = scheduleTimeout(
-      () => {
-        if (this.active() && this.inventoryDeadline === deadline) {
-          this.fail(
-            new CdpFault(
-              "scope",
-              "Window inventory could not be verified in time.",
-            ),
-          );
-        }
-      },
-      Math.max(0, remaining),
-      this.options.signal,
-    );
-    this.inventoryDeadline = deadline;
-  }
-
-  private async readDirty(): Promise<void> {
-    const batch: string[] = [];
-    for (const id of this.dirty) {
-      batch.push(id);
-      this.dirty.delete(id);
-      if (batch.length === 4) {
-        break;
-      }
-    }
-    await Promise.all(
-      batch.map(async (id) => {
-        const observation = this.observe(id);
-        if (!observation) {
+    const [result] = await Promise.allSettled([
+      (async () => {
+        await this.directory.assertWindow();
+        if (!current()) {
           return;
         }
-        await this.readMembership(observation, () => {
-          return this.active();
+        if (!this.initialized) {
+          const targets = await this.directory.read();
+          if (!current()) {
+            return;
+          }
+          this.commit({ type: "listed", round, targets });
+          this.initialized = true;
+        }
+        const selected = this.model.getSnapshot().selectedTargetId;
+        const ids = [...this.state().entries.keys()].sort((a, b) => {
+          return Number(b === selected) - Number(a === selected);
         });
-      }),
-    );
+        for (let offset = 0; offset < ids.length; offset += 4) {
+          await Promise.all(
+            ids.slice(offset, offset + 4).map((id) => {
+              return this.readMembership(id, current);
+            }),
+          );
+          if (!current()) {
+            return;
+          }
+        }
+        if (!current()) {
+          return;
+        }
+        this.model.inventory({ type: "complete-round", round });
+        this.validating = false;
+        this.deadline?.();
+        this.deadline = undefined;
+        this.options.changed();
+      })(),
+    ]);
+    if (result.status === "rejected" && current()) {
+      throw result.reason;
+    }
   }
 
   private async readMembership(
-    observation: TargetObservation,
+    id: string,
     current: () => boolean,
   ): Promise<void> {
-    const accepts = () => {
-      return (
-        current() &&
-        currentObservation(this.state(), observation) &&
-        // A new selection performs its own fresh activation/attachment checks.
-        !(
-          this.selected?.targetId === observation.id &&
-          observation.order <= this.selected.order
-        )
-      );
-    };
-    const [result] = await Promise.allSettled([
-      this.directory.contains(observation.id),
-    ]);
-    let member = result.status === "fulfilled" && result.value;
-    if (result.status === "rejected") {
-      const error: unknown = result.reason;
-
-      if (!accepts()) {
-        return;
-      }
-      if (
-        !(error instanceof CdpFault) ||
-        error.kind !== "scope" ||
-        this.model.getSnapshot().selectedTargetId === observation.id
-      ) {
-        this.fail(error);
-        return;
-      }
-      // Unknown background membership revokes only that page's admission.
-      member = false;
-    }
-    if (accepts()) {
-      this.commit({ type: "membership", observation, member });
-    }
-  }
-
-  private checkSelected(): void {
-    const selected = this.selected;
-    if (!this.active() || !selected || selected.pending) {
+    const observation = this.observe(id);
+    if (!observation) {
       return;
     }
-    if (!this.current(selected.targetId)) {
-      this.staleSelected();
+    const [result] = await Promise.allSettled([this.directory.contains(id)]);
+    if (!current() || !currentObservation(this.state(), observation)) {
       return;
     }
-    selected.pending = true;
-    detach(
-      (async () => {
-        const [reply2] = await Promise.allSettled([
-          this.readSelected(selected),
-        ]);
-        if (reply2.status === "fulfilled") {
-          return reply2.value;
-        }
-        const error = reply2.reason;
-
-        if (this.active() && this.selected === selected) {
-          this.fail(error);
-        }
-
-        return;
-      })(),
-      Reason.DomCallback,
-      "browser operation",
-    );
-  }
-
-  private async readSelected(selected: Selected): Promise<void> {
-    const observation = this.observe(selected.targetId);
-    const [completion3] = await Promise.allSettled([
-      (async (): Promise<void> => {
-        const [operation3] = await Promise.allSettled([
-          (async (): Promise<void> => {
-            if (!observation) {
-              return;
-            }
-            const member = await this.directory.contains(selected.targetId);
-            if (!this.active() || this.selected !== selected) {
-              return;
-            }
-            if (!this.current(selected.targetId)) {
-              this.staleSelected();
-              return;
-            }
-            this.commit({ type: "membership", observation, member });
-            if (this.selected !== selected) {
-              return;
-            }
-            const entry = this.state().entries.get(selected.targetId);
-            if (
-              entry?.generation === observation.generation &&
-              entry.membership?.member
-            ) {
-              selected.verifiedAt = Math.max(
-                selected.verifiedAt,
-                entry.membership.startedAt,
-              );
-              selected.deadline?.();
-              this.expireSelected(selected);
-            }
-          })(),
-        ]);
-        if (operation3.status === "fulfilled") {
-          return operation3.value;
-        }
-        const error: unknown = operation3.reason;
-
-        if (
-          observation &&
-          this.active() &&
-          this.selected === selected &&
-          currentObservation(this.state(), observation)
-        ) {
-          this.fail(error);
-        }
-      })(),
-    ]);
-
-    selected.pending = false;
-
-    if (completion3.status === "rejected") {
-      throw completion3.reason;
+    if (
+      result.status === "rejected" &&
+      (!(result.reason instanceof CdpFault) || result.reason.kind !== "scope")
+    ) {
+      throw result.reason;
     }
-    return completion3.value;
-  }
-
-  private expireSelected(selected: Selected): void {
-    selected.deadline = scheduleTimeout(
-      () => {
-        if (this.active() && this.selected === selected) {
-          this.staleSelected();
-        }
-      },
-      Math.max(
-        0,
-        selected.verifiedAt + selectedFreshnessMs - performance.now(),
-      ),
-      this.options.signal,
-    );
-  }
-
-  private staleSelected(): void {
-    this.fail(
-      new CdpFault(
-        "scope",
-        "Selected window membership could not be verified in time.",
-      ),
-    );
-  }
-
-  private publish(): void {
-    if (this.active() && this.state().ready) {
-      this.options.changed();
-    }
+    this.commit({
+      type: "membership",
+      observation,
+      member: result.status === "fulfilled" && result.value,
+    });
   }
 
   private fail(error: unknown): void {
     if (!this.active()) {
       return;
     }
-    this.scan?.deadline?.();
-    this.inventoryDeadline?.();
-    this.fullWanted = false;
-    this.dirty.clear();
-    this.epoch = this.model.inventory({ type: "reset" }).epoch;
+    this.close();
     this.options.failed(error);
   }
 }
