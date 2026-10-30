@@ -1384,7 +1384,8 @@
       "handBack": "Serahkan kembali",
       "handBackMessage": "Saya sudah selesai di browser. Silakan lanjutkan.",
       "memberInControl": "Anda yang mengendalikan",
-      "takeOver": "Ambil alih"
+      "takeOver": "Ambil alih",
+      "takeOverMessage": "Saya mengambil alih browser. Jangan gunakan sampai saya menyerahkannya kembali."
     },
     "reclaimHint_one": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
     "reclaimHint_other": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",

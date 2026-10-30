@@ -1386,7 +1386,8 @@
       "handBack": "Zurückgeben",
       "handBackMessage": "Ich bin im Browser fertig. Bitte mach weiter.",
       "memberInControl": "Du hast die Kontrolle",
-      "takeOver": "Übernehmen"
+      "takeOver": "Übernehmen",
+      "takeOverMessage": "Ich habe den Browser übernommen. Bitte nutze ihn nicht, bis ich ihn zurückgebe."
     },
     "reclaimHint_one": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minute Inaktivität zurück.",
     "reclaimHint_other": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minuten Inaktivität zurück.",

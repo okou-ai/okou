@@ -1384,7 +1384,8 @@
       "handBack": "操作を戻す",
       "handBackMessage": "ブラウザでの操作が終わりました。続けてください。",
       "memberInControl": "あなたが操作中",
-      "takeOver": "操作を代わる"
+      "takeOver": "操作を代わる",
+      "takeOverMessage": "ブラウザの操作を引き継ぎました。お返しするまで使わないでください。"
     },
     "reclaimHint_one": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
     "reclaimHint_other": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",

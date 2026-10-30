@@ -1408,7 +1408,8 @@
       "handBack": "Restituisci",
       "handBackMessage": "Ho finito nel browser. Continua pure.",
       "memberInControl": "Hai il controllo",
-      "takeOver": "Prendi il controllo"
+      "takeOver": "Prendi il controllo",
+      "takeOverMessage": "Ho preso il controllo del browser. Non usarlo finché non te lo restituisco."
     },
     "reclaimHint_one": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuto di inattività.",
     "reclaimHint_many": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",

@@ -412,7 +412,7 @@ test("Open a stopped browser card and offer a new session", async () => {
   expect(buttonByName("Start browser", sidebar)).toBeEnabled();
 });
 
-test("Take over the cloud browser from a working run and hand it back through the composer", async () => {
+test("Take over the cloud browser without stopping the working run and hand it back", async () => {
   mockWideScreen();
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -464,11 +464,19 @@ test("Take over the cloud browser from a working run and hand it back through th
       createdAt: "2026-09-01T12:00:04.000Z",
     },
   ];
+  const steeredMessages: string[] = [];
+  const interruptedRunIds: string[] = [];
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
     chatEvents,
     activeRunIds: [runId],
+    onQueuedEventAppend: ({ content }) => {
+      steeredMessages.push(content ?? "");
+    },
+    onInterruptEventAppend: ({ interruptsRunId }) => {
+      interruptedRunIds.push(interruptsRunId);
+    },
   });
   await setupPage({
     context,
@@ -494,6 +502,10 @@ test("Take over the cloud browser from a working run and hand it back through th
   await expect(
     within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
+  // The working Run is told rather than stopped.
+  expect(steeredMessages).toStrictEqual([
+    "I've taken over the browser. Don't use it until I hand it back.",
+  ]);
 
   // An earlier Run's final output, budget declaration and usage can arrive late.
   act(() => {
@@ -545,12 +557,17 @@ test("Take over the cloud browser from a working run and hand it back through th
   expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 
   click(buttonByName("Hand back", viewer));
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "I'm done in the browser. Please continue.",
-    );
-  });
-  expect(within(sidebar).queryByText("You're in control")).toBeNull();
+  await expect(
+    within(viewer).findByText(/is working$/u),
+  ).resolves.toBeInTheDocument();
+  expect(steeredMessages).toStrictEqual([
+    "I've taken over the browser. Don't use it until I hand it back.",
+    "I'm done in the browser. Please continue.",
+  ]);
+  expect(interruptedRunIds).toStrictEqual([]);
+  expect(
+    screen.getByRole("textbox", { name: "Message" }),
+  ).not.toHaveTextContent("I'm done in the browser. Please continue.");
   click(buttonByName("Close cloud browser", viewer));
   await waitFor(() => {
     expect(sidebar).not.toBeInTheDocument();

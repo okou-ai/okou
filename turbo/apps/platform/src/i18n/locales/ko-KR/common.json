@@ -1384,7 +1384,8 @@
       "handBack": "다시 맡기기",
       "handBackMessage": "브라우저 작업을 마쳤어요. 계속해 주세요.",
       "memberInControl": "직접 조작 중",
-      "takeOver": "직접 조작"
+      "takeOver": "직접 조작",
+      "takeOverMessage": "브라우저를 직접 조작할게요. 다시 넘겨드릴 때까지 사용하지 말아 주세요."
     },
     "reclaimHint_one": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
     "reclaimHint_other": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",

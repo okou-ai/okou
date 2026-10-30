@@ -3924,9 +3924,10 @@ export function createChatPanelSignals(
     ),
     relations,
     browserPresence: createBrowserPresenceSignals({
+      agentId,
       latestRunId$: messages.latestRunId$,
       liveRunId$: messages.liveRunId$,
-      composer,
+      sendEvent$: chatEvents.sendEvent$,
     }),
     ...threadOwned,
     sidebar: messages.sidebar,

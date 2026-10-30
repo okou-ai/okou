@@ -1386,7 +1386,8 @@
       "handBack": "Hand back",
       "handBackMessage": "I'm done in the browser. Please continue.",
       "memberInControl": "You're in control",
-      "takeOver": "Take over"
+      "takeOver": "Take over",
+      "takeOverMessage": "I've taken over the browser. Don't use it until I hand it back."
     },
     "reclaimHint_one": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minute.",
     "reclaimHint_other": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minutes.",
