@@ -6,6 +6,7 @@ import {
   browserSessionScreenshots,
 } from "@okouai/db/schema/browser-session";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -26,11 +27,19 @@ const retireBrowserScreenshot$ = command(
   ): Promise<boolean> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    const unreferenced = notExists(
-      db
-        .select({ id: browserSessionScreenshots.chatThreadId })
-        .from(browserSessionScreenshots)
-        .where(eq(browserSessionScreenshots.objectKey, item.objectKey)),
+    const unreferenced = and(
+      notExists(
+        db
+          .select({ id: browserSessionScreenshots.chatThreadId })
+          .from(browserSessionScreenshots)
+          .where(eq(browserSessionScreenshots.objectKey, item.objectKey)),
+      ),
+      notExists(
+        db
+          .select({ id: browserChatSessions.chatThreadId })
+          .from(browserChatSessions)
+          .where(eq(browserChatSessions.screenshotObjectKey, item.objectKey)),
+      ),
     );
     let bucket: string;
     let file: typeof runUploadedFiles.$inferSelect | undefined;
@@ -123,16 +132,29 @@ export const cleanupBrowserScreenshots$ = command(
       .select()
       .from(browserSessionScreenshotDeletions)
       .where(
-        notExists(
-          db
-            .select({ id: browserSessionScreenshots.chatThreadId })
-            .from(browserSessionScreenshots)
-            .where(
-              eq(
-                browserSessionScreenshots.objectKey,
-                browserSessionScreenshotDeletions.objectKey,
+        and(
+          notExists(
+            db
+              .select({ id: browserSessionScreenshots.chatThreadId })
+              .from(browserSessionScreenshots)
+              .where(
+                eq(
+                  browserSessionScreenshots.objectKey,
+                  browserSessionScreenshotDeletions.objectKey,
+                ),
               ),
-            ),
+          ),
+          notExists(
+            db
+              .select({ id: browserChatSessions.chatThreadId })
+              .from(browserChatSessions)
+              .where(
+                eq(
+                  browserChatSessions.screenshotObjectKey,
+                  browserSessionScreenshotDeletions.objectKey,
+                ),
+              ),
+          ),
         ),
       )
       .orderBy(

@@ -62,7 +62,11 @@ export const browserOwnerProfiles = pgTable(
   },
 );
 
-/** Page membership comes from Chrome after source-window consolidation. */
+/**
+ * Empty physical relation retained for outgoing GA chat deletion/cron SQL.
+ * Current API state uses browser_chat_sessions. Remove in #42932 after
+ * serving and rollback consumers of the old statements have drained.
+ */
 export const browserOwnerWindows = pgTable(
   "browser_owner_windows",
   {

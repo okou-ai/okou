@@ -2962,6 +2962,20 @@
       "when": 1793398192619,
       "tag": "1501_delete_builtin_connector_local_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1502,
+      "version": "7",
+      "when": 1793421320347,
+      "tag": "1502_browser_chat_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1503,
+      "version": "7",
+      "when": 1793421342501,
+      "tag": "1503_discard_preacceptance_shared_browser_state",
+      "breakpoints": true
     }
   ]
 }

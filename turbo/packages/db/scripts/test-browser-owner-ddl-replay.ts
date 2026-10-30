@@ -7,7 +7,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { array, boolean, number, object, string } from "zod";
-import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 
 const packageDirectory = fileURLToPath(new URL("../", import.meta.url));
 const migrationCli = fileURLToPath(new URL("./migrate.ts", import.meta.url));
@@ -67,6 +66,36 @@ export async function validateBrowserOwnerDdlReplay(databaseUrl: string) {
   const client = new Client({ connectionString: testUrl.href });
   let databaseCreated = false;
   let roleCreated = false;
+  let referenceSchema: unknown;
+
+  // This replay precedes the chat-table cutover. Compare its historical DDL
+  // across committed prefixes; final-schema invariants run independently.
+  async function verifyHistoricalSchema() {
+    const relations = await client.query(`SELECT relname FROM pg_class
+      WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'
+        AND relname IN ('browser_owner_profiles', 'browser_owner_windows')
+      ORDER BY relname`);
+    assert.deepEqual(relations.rows, [
+      { relname: "browser_owner_profiles" },
+      { relname: "browser_owner_windows" },
+    ]);
+    const schema = await client.query(`
+      SELECT 'constraint' AS kind, c.relname AS owner, k.conname AS name,
+        pg_get_constraintdef(k.oid) AS definition
+      FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
+      WHERE c.relnamespace = 'public'::regnamespace
+        AND c.relname IN ('browser_owner_profiles', 'browser_owner_windows')
+      UNION ALL
+      SELECT 'index', tablename, indexname, indexdef FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND tablename IN ('browser_owner_profiles', 'browser_owner_windows')
+      ORDER BY kind, owner, name`);
+    if (referenceSchema === undefined) {
+      referenceSchema = schema.rows;
+    } else {
+      assert.deepEqual(schema.rows, referenceSchema);
+    }
+  }
 
   async function migrate(url = testUrl.href, success = true) {
     const result = await new Promise<{
@@ -129,7 +158,7 @@ export async function validateBrowserOwnerDdlReplay(databaseUrl: string) {
         created_at: String(normalizationWhen),
       },
     ]);
-    await validatePermanentBrowserOwnerStorage(testUrl.href);
+    await verifyHistoricalSchema();
   }
 
   try {
@@ -190,8 +219,7 @@ export async function validateBrowserOwnerDdlReplay(databaseUrl: string) {
       ).rows[0].count,
       0,
     );
-    // These writes require the committed tables and all permanent constraints.
-    await validatePermanentBrowserOwnerStorage(testUrl.href);
+    await verifyHistoricalSchema();
     await client.query(
       `GRANT INSERT ON drizzle.__drizzle_migrations TO "${role}"`,
     );

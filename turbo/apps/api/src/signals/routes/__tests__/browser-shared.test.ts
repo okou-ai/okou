@@ -217,7 +217,7 @@ describe("shared Browser public consumers", () => {
     },
   );
 
-  it("adopts legacy chat URLs after shared cutover", async () => {
+  it("starts a fresh chat Browser when shared ownership is first enabled", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const f = await fixture(false);
     await f.owned.run(async () => {
@@ -251,144 +251,109 @@ describe("shared Browser public consumers", () => {
         .map((page) => {
           return page.url;
         });
-      expect(urls).toStrictEqual(["https://a.example.test/legacy-saved"]);
+      expect(urls).toStrictEqual(["about:blank"]);
     });
   });
 
-  it.each(["legacy", "shared"] as const)(
-    "rejects a legacy URL capture finishing after %s replacement",
-    async (replacement) => {
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
-      const f = await fixture(false);
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const c = await f.start();
-        mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-        await use(a);
-        for (const page of f.provider.native.targets.values()) {
-          page.url = "https://a.example.test/older";
-        }
-        // Reclamation must preserve URLs even if the requesting Browser's
-        // subsequent provider start fails. Both requests independently own A's
-        // capture; only the first request is held at external KMS.
-        let rejectSessionStarts = true;
-        server.use(
-          http.post(`${PROVIDER_URL}/browsers`, () => {
-            if (rejectSessionStarts) {
-              return HttpResponse.json(
-                { detail: "Provider temporarily unavailable" },
-                { status: 503 },
-              );
-            }
-            return;
-          }),
-        );
-        const kms = holdSecretKms(1, context.signal);
-        const earlier = settleIncludingAbort(
-          client().use({ headers: runHeaders(b), body: {} }),
-        );
-        const replaced = await settleIncludingAbort(async () => {
-          await Promise.race([
-            kms.entered,
-            earlier.then((result) => {
-              if (!result.ok) {
-                throw result.error;
-              }
-              throw new Error(
-                "Expected the legacy capture to reach encryption",
-              );
-            }),
-          ]);
-          for (const page of f.provider.native.targets.values()) {
-            page.url = "https://a.example.test/newer";
-          }
-          const failedStart = await client().use({
-            headers: runHeaders(c),
-            body: {},
-          });
-          expect(failedStart).toMatchObject({
-            status: 502,
-            body: { error: { code: "BROWSER_USE_ERROR" } },
-          });
-          await flushWaitUntilForTest();
-          f.provider.native.targets.clear();
-          if (replacement === "shared") {
-            f.owned.ownsFeatureSwitches();
-            await updateFeatureSwitchesForUser(context, f.featureActor, {
-              [FeatureSwitchKey.BrowserSharedOwner]: true,
-            });
-          }
-          rejectSessionStarts = false;
-          const current = await use(a);
-          if (replacement === "shared") {
-            await accept(
-              client().close({
-                headers,
-                params: { threadId: a.threadId },
-                body: {},
-              }),
-              [200],
+  it("rejects a legacy URL capture finishing after its instance is replaced", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
+    const f = await fixture(false);
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const c = await f.start();
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      await use(a);
+      for (const page of f.provider.native.targets.values()) {
+        page.url = "https://a.example.test/older";
+      }
+      // Reclamation must preserve URLs even if the requesting Browser's
+      // subsequent provider start fails. Both requests independently own A's
+      // capture; only the first request is held at external KMS.
+      let rejectSessionStarts = true;
+      server.use(
+        http.post(`${PROVIDER_URL}/browsers`, () => {
+          if (rejectSessionStarts) {
+            return HttpResponse.json(
+              { detail: "Provider temporarily unavailable" },
+              { status: 503 },
             );
           }
-          return current.browser.window;
+          return;
+        }),
+      );
+      const kms = holdSecretKms(1, context.signal);
+      const earlier = settleIncludingAbort(
+        client().use({ headers: runHeaders(b), body: {} }),
+      );
+      const replaced = await settleIncludingAbort(async () => {
+        await Promise.race([
+          kms.entered,
+          earlier.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error("Expected the legacy capture to reach encryption");
+          }),
+        ]);
+        for (const page of f.provider.native.targets.values()) {
+          page.url = "https://a.example.test/newer";
+        }
+        const failedStart = await client().use({
+          headers: runHeaders(c),
+          body: {},
         });
-        rejectSessionStarts = true;
-        kms.release();
-        const completed = await earlier;
-        if (!replaced.ok) {
-          throw replaced.error;
-        }
-        if (!completed.ok) {
-          throw completed.error;
-        }
-        expect(completed.value).toMatchObject({
+        expect(failedStart).toMatchObject({
           status: 502,
           body: { error: { code: "BROWSER_USE_ERROR" } },
         });
-        if (replacement === "shared") {
-          const window = replaced.value;
-          if (!window) {
-            throw new Error("Expected the replacement shared window");
-          }
-          f.provider.native.targets.clear();
-        } else {
-          const [providerSessionId] = f.provider.sessionIds;
-          if (!providerSessionId) {
-            throw new Error("Expected the replacement legacy instance");
-          }
-          server.use(
-            http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
-              return HttpResponse.json({
-                id: providerSessionId,
-                status: "stopped",
-                startedAt: new Date(START).toISOString(),
-                timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
-                finishedAt: new Date(START + 12 * MINUTE).toISOString(),
-                liveUrl: null,
-                cdpUrl: null,
-              });
-            }),
-          );
-          f.provider.native.targets.clear();
-        }
+        await flushWaitUntilForTest();
+        f.provider.native.targets.clear();
         rejectSessionStarts = false;
-        const reopened = await use(a);
-        const urls = [...f.provider.native.targets.values()].map((page) => {
-          return page.url;
-        });
-        expect(urls).toContain("https://a.example.test/newer");
-        expect(urls).not.toContain("https://a.example.test/older");
-        if (replacement === "shared") {
-          // A replacement Chrome may reuse window zero; instance identity fences it.
-          expect(reopened.browser.window?.instanceId).not.toBe(
-            replaced.value?.instanceId,
-          );
-        }
+        await use(a);
       });
-    },
-  );
+      rejectSessionStarts = true;
+      kms.release();
+      const completed = await earlier;
+      if (!replaced.ok) {
+        throw replaced.error;
+      }
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      expect(completed.value).toMatchObject({
+        status: 502,
+        body: { error: { code: "BROWSER_USE_ERROR" } },
+      });
+
+      const [providerSessionId] = f.provider.sessionIds;
+      if (!providerSessionId) {
+        throw new Error("Expected the replacement legacy instance");
+      }
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
+          return HttpResponse.json({
+            id: providerSessionId,
+            status: "stopped",
+            startedAt: new Date(START).toISOString(),
+            timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+            finishedAt: new Date(START + 12 * MINUTE).toISOString(),
+            liveUrl: null,
+            cdpUrl: null,
+          });
+        }),
+      );
+      f.provider.native.targets.clear();
+      rejectSessionStarts = false;
+      await use(a);
+      const urls = [...f.provider.native.targets.values()].map((page) => {
+        return page.url;
+      });
+      expect(urls).toContain("https://a.example.test/newer");
+      expect(urls).not.toContain("https://a.example.test/older");
+    });
+  });
 
   it("recovers a missing provider instance and preserves provider failures as failures", async () => {
     const f = await fixture();
@@ -657,6 +622,59 @@ describe("shared Browser public consumers", () => {
       );
       expect(sleepingSibling.body.browser.status).toBe("suspended");
       expect(sleepingSibling.body.browser.window).toBeUndefined();
+    });
+  });
+
+  it("retains chat metadata and preview while another chat replaces the owner instance", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await use(a);
+      const named = await accept(
+        client().create({
+          headers: runHeaders(b),
+          body: { name: "Travel research", proxyCountryCode: null },
+        }),
+        [201],
+      );
+      for (const page of f.provider.native.targets.values()) {
+        if (page.windowId === named.body.browser.window?.primaryWindowId) {
+          page.url = "https://travel.example.test/saved";
+        }
+      }
+      await accept(
+        client().close({ headers, params: { threadId: b.threadId }, body: {} }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const preview = await view(b);
+      expect(preview.screenshotUrl).not.toBeNull();
+      mockNow(START + 11 * MINUTE);
+      const restarted = await use(a);
+      expect(restarted.browser.window?.instanceId).not.toBe(
+        first.browser.window?.instanceId,
+      );
+      const dormant = await view(b);
+      expect(dormant).toMatchObject({
+        status: "suspended",
+        name: "Travel research",
+        createdAt: named.body.browser.createdAt,
+        screenshotUrl: preview.screenshotUrl,
+      });
+      const restored = await use(b);
+      expect(restored.browser.name).toBe("Travel research");
+      expect(restored.browser.createdAt).toBe(named.body.browser.createdAt);
+      expect(
+        [...f.provider.native.targets.values()]
+          .filter((page) => {
+            return page.windowId === restored.browser.window?.primaryWindowId;
+          })
+          .map((page) => {
+            return page.url;
+          }),
+      ).toStrictEqual(["https://travel.example.test/saved"]);
     });
   });
 
