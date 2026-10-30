@@ -485,15 +485,48 @@ describe("with a measurable thread viewport", () => {
   it("restore the reading position during keyboard thread navigation", async () => {
     const { targetText, user, viewportHeight } = preparedScenario;
     const misplacedMessages = new Set<string>();
-    const observer = new MutationObserver(() => {
-      for (const [threadId, otherMessage] of [
-        [KEYBOARD_PREVIOUS_THREAD_ID, targetText],
-        [KEYBOARD_CURRENT_THREAD_ID, "Previous message 1"],
-      ] as const) {
-        const section = document.querySelector(
-          `[data-chat-thread-container-id="${threadId}"]`,
+    const unexpectedMessagesByThread = new Map([
+      [KEYBOARD_PREVIOUS_THREAD_ID, targetText],
+      [KEYBOARD_CURRENT_THREAD_ID, "Previous message 1"],
+    ]);
+    const threadSelector = "[data-chat-thread-container-id]";
+    const observer = new MutationObserver((records) => {
+      const affectedSections = new Set<HTMLElement>();
+      for (const record of records) {
+        const target =
+          record.target instanceof Element
+            ? record.target
+            : record.target.parentElement;
+        const section = target?.closest<HTMLElement>(threadSelector);
+        if (section) {
+          affectedSections.add(section);
+        }
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) {
+            continue;
+          }
+          const addedSection = node.closest<HTMLElement>(threadSelector);
+          if (addedSection) {
+            affectedSections.add(addedSection);
+          }
+          for (const addedSection of node.querySelectorAll<HTMLElement>(
+            threadSelector,
+          )) {
+            affectedSections.add(addedSection);
+          }
+        }
+      }
+      for (const section of affectedSections) {
+        if (!section.isConnected) {
+          continue;
+        }
+        const otherMessage = unexpectedMessagesByThread.get(
+          section.dataset.chatThreadContainerId!,
         );
-        if (section?.textContent?.includes(otherMessage)) {
+        if (
+          otherMessage !== undefined &&
+          section.textContent?.includes(otherMessage)
+        ) {
           misplacedMessages.add(otherMessage);
         }
       }
