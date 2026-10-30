@@ -631,7 +631,7 @@ describe("shared Browser public consumers", () => {
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
       let first = true;
-      f.provider.native.beforeWindowReply = async () => {
+      f.provider.native.beforeNativeWindowReply = async () => {
         if (first) {
           first = false;
           entered.resolve();
@@ -888,136 +888,146 @@ describe("shared Browser capture publication and admission", () => {
     },
   );
 
-  it("keeps the restored winner when overlapping public opens create multi-page candidates", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const first = await use(a);
-      const sibling = await use(b);
-      const window = first.browser.window;
-      if (!window) {
-        throw new Error("Expected A's original window");
-      }
-      for (const target of f.provider.native.targets.values()) {
-        if (target.windowId === window.primaryWindowId) {
-          target.url = "https://a.example.test/first";
+  it.each([true, false])(
+    "keeps the restored winner when native loser cleanup succeeds=%s",
+    async (cleanupSucceeds) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        installBrowserWindowContentCommands(f.provider.native);
+        const a = await f.start();
+        const b = await f.start();
+        const first = await use(a);
+        const sibling = await use(b);
+        const window = first.browser.window;
+        if (!window) {
+          throw new Error("Expected A's original window");
         }
-      }
-      const secondPage = randomUUID();
-      f.provider.native.targets.set(secondPage, {
-        targetId: secondPage,
-        windowId: window.primaryWindowId,
-        url: "https://a.example.test/second",
-      });
-      await accept(
-        client().close({ headers, params: { threadId: a.threadId }, body: {} }),
-        [200],
-      );
-      for (const [id, target] of f.provider.native.targets) {
-        if (target.windowId === window.primaryWindowId) {
-          f.provider.native.targets.delete(id);
+        for (const target of f.provider.native.targets.values()) {
+          if (target.windowId === window.primaryWindowId) {
+            target.url = "https://a.example.test/first";
+          }
         }
-      }
-      const firstCandidate = createDeferredPromise<void>(context.signal);
-      const both = createDeferredPromise<void>(context.signal);
-      const nativeArrivals: number[] = [];
-      f.provider.native.beforeCreateReply = async (target) => {
-        nativeArrivals.push(target.windowId);
-        if (nativeArrivals.length === 1) {
-          firstCandidate.resolve();
+        const secondPage = randomUUID();
+        f.provider.native.targets.set(secondPage, {
+          targetId: secondPage,
+          windowId: window.primaryWindowId,
+          url: "https://a.example.test/second",
+        });
+        await accept(
+          client().close({
+            headers,
+            params: { threadId: a.threadId },
+            body: {},
+          }),
+          [200],
+        );
+        for (const [id, target] of f.provider.native.targets) {
+          if (target.windowId === window.primaryWindowId) {
+            f.provider.native.targets.delete(id);
+          }
         }
-        if (nativeArrivals.length === 2) {
+        f.provider.native.closeSucceeds = cleanupSucceeds;
+        const firstCandidate = createDeferredPromise<void>(context.signal);
+        const both = createDeferredPromise<void>(context.signal);
+        const nativeArrivals: number[] = [];
+        f.provider.native.beforeCreateReply = async (target) => {
+          nativeArrivals.push(target.windowId);
+          if (nativeArrivals.length === 1) {
+            firstCandidate.resolve();
+          }
+          if (nativeArrivals.length === 2) {
+            both.resolve();
+          }
+          await both.promise;
+        };
+        function startOpen() {
+          return settleIncludingAbort(
+            client().use({ headers: runHeaders(a), body: {} }),
+          );
+        }
+        const opened = startOpen();
+        const requests = [opened];
+        function completedEarly(request: ReturnType<typeof startOpen>) {
+          return request.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error(
+              `Admission completed before both native candidates: ${JSON.stringify({ status: result.value.status, body: result.value.body, nativeArrivals })}`,
+            );
+          });
+        }
+        const coordinated = await settleIncludingAbort(async () => {
+          // Retirement may legitimately reject another open before creation.
+          // Compete only once the first candidate exists, before publication.
+          await Promise.race([firstCandidate.promise, completedEarly(opened)]);
+          const admitted = startOpen();
+          requests.push(admitted);
+          await Promise.race([
+            both.promise,
+            completedEarly(opened),
+            completedEarly(admitted),
+          ]);
+        });
+        if (!both.settled()) {
           both.resolve();
         }
-        await both.promise;
-      };
-      function startOpen() {
-        return settleIncludingAbort(
-          client().use({ headers: runHeaders(a), body: {} }),
-        );
-      }
-      const opened = startOpen();
-      const requests = [opened];
-      function completedEarly(request: ReturnType<typeof startOpen>) {
-        return request.then((result) => {
+        const completed = await Promise.all(requests);
+        if (!coordinated.ok) {
+          throw coordinated.error;
+        }
+        const results = completed.map((result) => {
           if (!result.ok) {
             throw result.error;
           }
-          throw new Error(
-            `Admission completed before both native candidates: ${JSON.stringify({ status: result.value.status, body: result.value.body, nativeArrivals })}`,
-          );
+          return result.value;
         });
-      }
-      const coordinated = await settleIncludingAbort(async () => {
-        // Retirement may legitimately reject another open before creation.
-        // Compete only once the first candidate exists, before publication.
-        await Promise.race([firstCandidate.promise, completedEarly(opened)]);
-        const admitted = startOpen();
-        requests.push(admitted);
-        await Promise.race([
-          both.promise,
-          completedEarly(opened),
-          completedEarly(admitted),
+        const [successful, conflict] = results.sort((left, right) => {
+          return left.status - right.status;
+        });
+        expect(results).toHaveLength(2);
+        expect(successful?.status).toBe(200);
+        expect(conflict).toMatchObject({
+          status: 409,
+          body: { error: { code: "BROWSER_RECLAIMING" } },
+        });
+        const winner = await view(a);
+        expect(winner.window).toStrictEqual(successful?.body.browser.window);
+        const pages = [...f.provider.native.targets.values()];
+        expect(
+          pages
+            .filter((page) => {
+              return page.windowId === winner.window?.primaryWindowId;
+            })
+            .map((page) => {
+              return page.url;
+            })
+            .sort(),
+        ).toStrictEqual([
+          "https://a.example.test/first",
+          "https://a.example.test/second",
         ]);
+        expect(
+          new Set(
+            pages.map((page) => {
+              return page.windowId;
+            }),
+          ),
+        ).toStrictEqual(
+          new Set([
+            ...(cleanupSucceeds
+              ? [winner.window?.primaryWindowId]
+              : nativeArrivals),
+            sibling.browser.window?.primaryWindowId,
+          ]),
+        );
+        const siblingAfter = await view(b);
+        expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
+        expect(siblingAfter.idleExpiresAt).toBe(sibling.browser.idleExpiresAt);
+        expect(f.provider.sessionRequests).toHaveLength(1);
       });
-      if (!both.settled()) {
-        both.resolve();
-      }
-      const completed = await Promise.all(requests);
-      if (!coordinated.ok) {
-        throw coordinated.error;
-      }
-      const results = completed.map((result) => {
-        if (!result.ok) {
-          throw result.error;
-        }
-        return result.value;
-      });
-      const [successful, conflict] = results.sort((left, right) => {
-        return left.status - right.status;
-      });
-      expect(results).toHaveLength(2);
-      expect(successful?.status).toBe(200);
-      expect(conflict).toMatchObject({
-        status: 409,
-        body: { error: { code: "BROWSER_RECLAIMING" } },
-      });
-      const winner = await view(a);
-      expect(winner.window).toStrictEqual(successful?.body.browser.window);
-      const pages = [...f.provider.native.targets.values()];
-      expect(
-        pages
-          .filter((page) => {
-            return page.windowId === winner.window?.primaryWindowId;
-          })
-          .map((page) => {
-            return page.url;
-          })
-          .sort(),
-      ).toStrictEqual([
-        "https://a.example.test/first",
-        "https://a.example.test/second",
-      ]);
-      expect(
-        new Set(
-          pages.map((page) => {
-            return page.windowId;
-          }),
-        ),
-      ).toStrictEqual(
-        new Set([
-          winner.window?.primaryWindowId,
-          sibling.browser.window?.primaryWindowId,
-        ]),
-      );
-      const siblingAfter = await view(b);
-      expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
-      expect(siblingAfter.idleExpiresAt).toBe(sibling.browser.idleExpiresAt);
-      expect(f.provider.sessionRequests).toHaveLength(1);
-    });
-  });
+    },
+  );
 
   it.each(["sequential", "older-last", "older-first"] as const)(
     "preserves the newer same-window preview with %s completion",

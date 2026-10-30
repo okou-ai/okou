@@ -1,5 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -421,6 +422,7 @@ describe("shared-window native Browser input", () => {
               timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
               finishedAt: null,
               cdpUrl: f.provider.native.url,
+              extensions: [TEST_BROWSER_EXTENSION],
               liveUrl: "https://live.browser-use.com/owned-fixture",
             });
           },
@@ -494,6 +496,7 @@ describe("shared-window native Browser input", () => {
                   timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
                   finishedAt: null,
                   cdpUrl: f.provider.native.url,
+                  extensions: [TEST_BROWSER_EXTENSION],
                   liveUrl: "https://live.browser-use.com/owned-fixture",
                 });
               },

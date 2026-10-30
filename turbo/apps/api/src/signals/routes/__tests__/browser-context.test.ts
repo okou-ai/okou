@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { strictObject, string } from "zod";
 
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -40,6 +41,7 @@ describe("Browser run and viewer authorization", () => {
         status,
         liveUrl: active ? `https://live.browser-use.com/?wss=${id}` : null,
         cdpUrl: active ? `https://${id}.cdp.browser-use.com/` : null,
+        extensions: [TEST_BROWSER_EXTENSION],
         timeoutAt: new Date(STARTED_AT + 240 * MINUTE_MS).toISOString(),
         startedAt: new Date(STARTED_AT).toISOString(),
         finishedAt: active ? null : new Date(STARTED_AT).toISOString(),

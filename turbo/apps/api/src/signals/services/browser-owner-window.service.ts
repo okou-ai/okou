@@ -21,19 +21,19 @@ import {
 } from "./browser-owner.service";
 import {
   BrowserUseProviderError,
-  closeBrowserUseWindow,
+  tryCloseBrowserUseWindow,
   initialBrowserUseWindow,
   resizeBrowserUseSession,
   restoreBrowserUseWindowTabUrls,
   createBrowserUseWindow,
   type BrowserUseWindowCandidate,
+  type BrowserUseNativeConnection,
 } from "./browser-use.service";
 
 const CLEANUP_TIMEOUT_MS = 15_000;
 const unavailable = { outcome: "unavailable" } as const;
-interface WindowCandidateCleanup {
+interface WindowCandidateCleanup extends BrowserUseNativeConnection {
   readonly instanceId: string;
-  readonly cdpUrl: string;
   candidate?: BrowserUseWindowCandidate;
   publicationUncertain: boolean;
 }
@@ -67,18 +67,17 @@ const cleanupWindowCandidate$ = command(
     if (references.length > 0) {
       return;
     }
-    await closeBrowserUseWindow(
-      args.cdpUrl,
+    await tryCloseBrowserUseWindow(
+      args,
       args.candidate.primaryWindowId,
       signal,
     );
   },
 );
 
-interface BrowserOwnerWindowInput {
+interface BrowserOwnerWindowInput extends BrowserUseNativeConnection {
   readonly owner: BrowserPublicAuthority;
   readonly instanceId: string;
-  readonly cdpUrl: string;
   readonly initial: boolean;
 }
 
@@ -104,7 +103,7 @@ async function prepareBrowserOwnerWindow(
   });
   signal.throwIfAborted();
   const urls = array(string().max(8192)).max(50).parse(JSON.parse(decoded));
-  await restoreBrowserUseWindowTabUrls(input.cdpUrl, candidate, urls, signal);
+  await restoreBrowserUseWindowTabUrls(input, candidate, urls, signal);
   signal.throwIfAborted();
 }
 
@@ -147,6 +146,7 @@ export const createBrowserOwnerWindow$ = command(
     const cleanup: WindowCandidateCleanup = {
       instanceId: input.instanceId,
       cdpUrl: input.cdpUrl,
+      extension: input.extension,
       publicationUncertain: false,
     };
     const creationWork = (async () => {
@@ -193,7 +193,9 @@ export const createBrowserOwnerWindow$ = command(
       result.value.window?.primaryWindowId ===
         cleanup.candidate?.primaryWindowId;
     if (!accepted) {
-      const cleaned = await settleIncludingAbort(
+      // This cleanup owns its deadline; even expiry cannot replace admission's
+      // result. An unreferenced residual window is reclaimed at Browser stop.
+      await settleIncludingAbort(
         set(
           cleanupWindowCandidate$,
           cleanup,
@@ -201,13 +203,6 @@ export const createBrowserOwnerWindow$ = command(
         ),
       );
       signal.throwIfAborted();
-      if (!cleaned.ok) {
-        throw new BrowserUseProviderError(
-          502,
-          "BROWSER_USE_WINDOW_CLEANUP_FAILED",
-          "Managed Browser window cleanup could not be confirmed",
-        );
-      }
     }
     signal.throwIfAborted();
     if (!result.ok) {

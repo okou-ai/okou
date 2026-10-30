@@ -7,6 +7,7 @@ import {
   BROWSER_PROVIDER_TIMEOUT_MINUTES,
   BROWSER_SCREEN_WIDTH,
   type BrowserSession,
+  type BrowserViewerConnection,
   type BrowserSuspensionReason,
   type BrowserWindowContext,
 } from "@okouai/api-contracts/contracts/browser";
@@ -67,6 +68,7 @@ import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { settle, settleIncludingAbort } from "../utils";
 import {
   BrowserUseProviderError,
+  browserUseNativeConnection,
   captureBrowserUseScreenshot,
   createBrowserUseProfile,
   createBrowserUseSession,
@@ -592,7 +594,7 @@ const saveBrowserTabSnapshot$ = command(
           return;
         }
         const { urls } = await listBrowserUseTabUrls(
-          provider.cdpUrl,
+          browserUseNativeConnection(provider),
           AbortSignal.any([
             signal,
             AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
@@ -3059,7 +3061,7 @@ export const getBrowserViewerConnection$ = command(
     { set },
     access: BrowserSessionAccess,
     signal: AbortSignal,
-  ): Promise<BrowserServiceResult<{ readonly cdpUrl: string }>> => {
+  ): Promise<BrowserServiceResult<BrowserViewerConnection>> => {
     const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
@@ -3104,7 +3106,13 @@ export const getBrowserViewerConnection$ = command(
     signal.throwIfAborted();
     return connection.kind === "error"
       ? connection
-      : { kind: "ok", value: { cdpUrl: connection.value } };
+      : {
+          kind: "ok",
+          value: {
+            cdpUrl: connection.value,
+            extension: browserUseNativeConnection(provider.value).extension,
+          },
+        };
   },
 );
 
