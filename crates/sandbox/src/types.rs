@@ -121,20 +121,6 @@ pub struct SessionHistoryIdentityVerifyRequest<'a> {
     pub timeout: Duration,
 }
 
-/// Request for the fixed reused-Codex session cleanup helper.
-///
-/// The provider selects the executable, subcommand, process identity,
-/// containment, output bounds, and transport lifecycle. Callers supply only
-/// the canonical session identity and fallback logical rollout path.
-pub struct CodexSessionCleanupRequest<'a> {
-    /// Canonical lowercase hyphenated Codex thread identifier.
-    pub session_id: &'a str,
-    /// Canonical logical rollout path relative to the fixed Codex home.
-    pub fallback_relative_path: &'a str,
-    /// Guest-side helper timeout.
-    pub timeout: Duration,
-}
-
 /// Timezone behavior for a fixed guest-state restore operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GuestStateRestoreTimezone<'a> {
@@ -185,16 +171,6 @@ impl StorageManifestRequest<'_> {
 }
 
 impl SessionHistoryIdentityVerifyRequest<'_> {
-    /// Return the timeout as milliseconds, saturating at `u32::MAX`.
-    ///
-    /// Non-zero sub-millisecond durations round up to 1ms so callers do not
-    /// accidentally turn a bounded operation into a zero-timeout request.
-    pub fn timeout_ms(&self) -> u32 {
-        duration_ms(self.timeout)
-    }
-}
-
-impl CodexSessionCleanupRequest<'_> {
     /// Return the timeout as milliseconds, saturating at `u32::MAX`.
     ///
     /// Non-zero sub-millisecond durations round up to 1ms so callers do not
