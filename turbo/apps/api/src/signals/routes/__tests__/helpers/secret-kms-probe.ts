@@ -30,6 +30,7 @@ export function useSecretKmsProbe(
   overrideGenerateDataKey?: (
     request: SecretKmsGenerateDataKeyRequest,
     callNumber: number,
+    signal?: AbortSignal,
   ) => Promise<SecretKmsDataKey> | undefined,
   overrideDecrypt?: (
     request: SecretKmsDecryptRequest,
@@ -42,11 +43,13 @@ export function useSecretKmsProbe(
   const client: SecretKmsClient = {
     generateDataKey(
       request: SecretKmsGenerateDataKeyRequest,
+      signal?: AbortSignal,
     ): Promise<SecretKmsDataKey> {
       generateDataKeyCalls += 1;
       const overridden = overrideGenerateDataKey?.(
         request,
         generateDataKeyCalls,
+        signal,
       );
       return overridden ?? Promise.resolve(generateDataKeyOutput(request));
     },

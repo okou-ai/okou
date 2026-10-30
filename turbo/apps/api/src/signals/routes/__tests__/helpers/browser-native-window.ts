@@ -30,6 +30,7 @@ export function createNativeWindowProvider(context: TestContext) {
     readonly closed: string[];
     readonly windowIds: number[];
     readonly windowErrors: Map<string, string>;
+    readonly nativeWindowErrors: Map<number, string>;
     readonly commands: {
       readonly method: string;
       readonly params: Readonly<Record<string, unknown>>;
@@ -62,6 +63,7 @@ export function createNativeWindowProvider(context: TestContext) {
     closed: [],
     windowIds: [],
     windowErrors: new Map(),
+    nativeWindowErrors: new Map(),
     commands: [],
     bridgeAvailable: true,
     emptySnapshot: false,
@@ -120,8 +122,11 @@ export function createNativeWindowProvider(context: TestContext) {
       case "listWindows": {
         await state.beforeNativeWindowReply?.(Number(request.windowId));
         context.signal.throwIfAborted();
-        if (state.windowError) {
-          return new Error(state.windowError);
+        const error =
+          state.nativeWindowErrors.get(Number(request.windowId)) ??
+          state.windowError;
+        if (error) {
+          return new Error(error);
         }
         if (
           request.populate &&
