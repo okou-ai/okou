@@ -137,7 +137,8 @@ const persistedDraftSchema = persistedDraftIdentitySchema.extend({
   provider: onboardingSubscriptionProviderSchema.nullable(),
   startingPromptDraft: string().max(STARTING_PROMPT_MAX_LENGTH),
   startingPromptKey: string(),
-  // Older clients persist the same complete prompt without selection metadata.
+  // Selection metadata is optional in version-2 drafts; the complete prompt
+  // remains authoritative when no format has been recorded.
   startingPromptOutput: startingPromptOutputSchema.nullable().default(null),
   recommendationJobId: uuid().nullable(),
   recommendationStartedAt: number().finite().nonnegative().nullable(),
@@ -180,12 +181,7 @@ function restoredDraft(
     provider: saved.provider,
     startingPromptDraft: saved.startingPromptDraft,
     startingPromptKey: saved.startingPromptKey,
-    startingPromptOutput:
-      saved.startingPromptOutput &&
-      saved.startingPromptOutput.start < saved.startingPromptOutput.end &&
-      saved.startingPromptOutput.end <= saved.startingPromptDraft.length
-        ? saved.startingPromptOutput
-        : null,
+    startingPromptOutput: saved.startingPromptOutput,
     recommendationJobId: saved.recommendationJobId,
     recommendationStartedAt: saved.recommendationStartedAt,
   };
