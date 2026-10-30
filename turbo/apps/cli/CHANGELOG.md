@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.10.7](https://github.com/okou-ai/okou/compare/cli-v10.10.6...cli-v10.10.7) (2026-10-30)
+
+
+### Bug Fixes
+
+* refresh runner platform api cli and browser extension release markers ([#44180](https://github.com/okou-ai/okou/issues/44180)) ([ca744df](https://github.com/okou-ai/okou/commit/ca744df83b1f51794edcb1b58f10634df2da7aed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.23.0
+    * @okouai/core bumped to 8.803.0
+    * @okouai/pi-agent-runtime bumped to 1.51.29
+
 ## [10.10.6](https://github.com/okou-ai/okou/compare/cli-v10.10.5...cli-v10.10.6) (2026-10-30)
 
 

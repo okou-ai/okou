@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.803.0](https://github.com/okou-ai/okou/compare/core-v8.802.0...core-v8.803.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.0
+
 ## [8.802.0](https://github.com/okou-ai/okou/compare/core-v8.801.0...core-v8.802.0) (2026-10-30)
 
 
