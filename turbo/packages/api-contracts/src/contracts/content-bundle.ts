@@ -27,7 +27,7 @@ const contentBundleDownloadSchema = contentBundleSchema
   })
   .strict();
 
-/** Prepared reader only: the API activates this section in a later release. */
+/** Immutable content selected and authorized by the successful claim. */
 export const claimedContentBundlesSchema = object({
   format: literal("tar-gzip-v1"),
   instructions: contentBundleDownloadSchema.optional(),

@@ -11,6 +11,8 @@ import {
   mockSlackConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
 
 const context = testContext();
 const {
@@ -51,6 +53,7 @@ describe("shared context statement projections through normal sends", () => {
     "preserves %s rowsets in first and continuation sends",
     async (mode) => {
       const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      const s3 = installWorkflowVolumeS3Fixture(context);
       const hasAgentRows = mode === "all";
       await misc.upsertPersonalModelProvider(
         actor,
@@ -63,7 +66,7 @@ describe("shared context statement projections through normal sends", () => {
       );
       await api.updateUserModelPreference(actor, MODEL);
       let customId: string | undefined;
-      let workflowId: string | undefined;
+      let workflowName: string | undefined;
       if (hasAgentRows) {
         mockSlackConnectorOAuth();
         const slack = await connectors.startOauth(
@@ -107,7 +110,7 @@ describe("shared context statement projections through normal sends", () => {
         if (workflow.status !== 201) {
           throw new Error("Expected workflow publication");
         }
-        workflowId = workflow.body.id;
+        workflowName = workflow.body.name;
         const response = await accept(
           setupApp({ context, routes: userPermissionGrantsRoutes })(
             userPermissionGrantsContract,
@@ -159,21 +162,18 @@ describe("shared context statement projections through normal sends", () => {
         } else {
           expect(targets).toStrictEqual([]);
         }
-        const skills = claimed.claim.storageManifest?.workflowSkills ?? [];
-        if (workflowId) {
-          expect(skills).toContainEqual(
-            expect.objectContaining({
-              workflowId,
-            }),
-          );
+        const skills = claimed.claim.contentBundles.skills;
+        if (workflowName) {
+          const skill = skills.find((item) => {
+            return item.mountPath.endsWith(`/${workflowName}`);
+          });
+          if (!skill) {
+            throw new Error("Expected the selected Workflow bundle");
+          }
           expect(
-            (
-              await api.downloadWorkflow(
-                run.runId,
-                workflowId,
-                claimed.claim.sandboxToken,
-              )
-            ).skillMd,
+            readClaimedContentBundle(s3.objects, skill)
+              .get("SKILL.md")
+              ?.toString(),
           ).toContain("Preserve this selected workflow.");
         } else {
           expect(skills).toStrictEqual([]);

@@ -7,6 +7,22 @@
     "FIXTURE_REGION": "test-region"
   },
   "sandboxToken": "fixture-sandbox-token-not-real",
+  "contentBundles": {
+    "format": "tar-gzip-v1",
+    "instructions": {
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "archiveBytes": 128,
+      "downloadUrl": "https://storage.fixture.invalid/bundles/v1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz"
+    },
+    "skills": [
+      {
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "archiveBytes": 256,
+        "downloadUrl": "https://storage.fixture.invalid/bundles/v1/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.tar.gz",
+        "mountPath": "/home/user/.codex/skills/fixture-skill"
+      }
+    ]
+  },
   "storageManifest": {
     "storageMounts": [
       {

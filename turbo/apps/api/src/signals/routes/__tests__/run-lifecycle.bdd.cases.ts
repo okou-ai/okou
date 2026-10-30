@@ -114,6 +114,8 @@ import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -1731,7 +1733,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           NATIVE_RUNNER_ROUTE,
         );
         const prompt = "storage manifest dimensions should not leak prompt";
-        // An Agent workflow is the run's read-only organization Storage mount.
+        // An Agent Workflow is distributed as an immutable read-only bundle.
         const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
         const workflow = await createMiscRoutesApi(context).createWorkflow(
           actor,
@@ -1751,9 +1753,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const mounts =
           expectCanonicalStorageManifest(claim.storageManifest)
             ?.storageMounts ?? [];
-        expect(claim.storageManifest?.workflowSkills).toContainEqual(
+        expect(claim.contentBundles.skills).toContainEqual(
           expect.objectContaining({
-            workflowId: workflow.body.id,
+            sha256: expect.any(String),
+            archiveBytes: expect.any(Number),
+            downloadUrl: expect.any(String),
             mountPath: `/home/user/.claude/skills/${workflowName}`,
           }),
         );
@@ -5143,12 +5147,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           sourceUserId: actor.userId,
         });
 
-        const mountPaths =
-          expectCanonicalStorageManifest(
-            claim.storageManifest,
-          )?.workflowSkills?.map((storage) => {
-            return storage.mountPath;
-          }) ?? [];
+        const mountPaths = claim.contentBundles.skills.map((skill) => {
+          return skill.mountPath;
+        });
         for (const workflowName of workflowNames) {
           expect(mountPaths).toContain(
             `/home/user/.codex/skills/${workflowName}`,
@@ -11311,10 +11312,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           inlineFirewallApis(claim.firewalls, customConnectorName),
         ).toHaveLength(1);
         expect(
-          expectCanonicalStorageManifest(
-            claim.storageManifest,
-          )?.workflowSkills?.map((storage) => {
-            return storage.mountPath;
+          claim.contentBundles.skills.map((skill) => {
+            return skill.mountPath;
           }),
         ).toContain(`/home/user/.claude/skills/${workflowName}`);
 
@@ -11894,6 +11893,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!actor.orgId) {
           throw new Error("Expected a workflow run actor with an organization");
         }
+        const s3 = installWorkflowVolumeS3Fixture(context);
 
         const agent = await bdd.createAgent(actor, {
           displayName: "BDD workflow priority agent",
@@ -11904,11 +11904,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId: agent.agentId,
           name: workflowName,
           visibility: "public",
+          instruction: "Visible public Workflow body.",
         });
-        const privateWorkflowId = await workflows.createWorkflow(actor, {
+        const privateInstruction =
+          "Selected caller-owned private Workflow body.";
+        await workflows.createWorkflow(actor, {
           agentId: agent.agentId,
           name: workflowName,
           visibility: "private",
+          instruction: privateInstruction,
         });
         const otherActor = bdd.user({
           orgId: actor.orgId,
@@ -11918,6 +11922,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId: agent.agentId,
           name: workflowName,
           visibility: "private",
+          instruction: "Another caller's private Workflow body.",
         });
 
         const run = await api.createThreadRun(actor, {
@@ -11926,17 +11931,22 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(run.runId);
-        const workflowMounts =
-          expectCanonicalStorageManifest(
-            claim.storageManifest,
-          )?.workflowSkills?.filter((storage) => {
-            return (
-              storage.mountPath === `/home/user/.claude/skills/${workflowName}`
-            );
-          }) ?? [];
+        const workflowMounts = claim.contentBundles.skills.filter((skill) => {
+          return (
+            skill.mountPath === `/home/user/.claude/skills/${workflowName}`
+          );
+        });
 
         expect(workflowMounts).toHaveLength(1);
-        expect(workflowMounts[0]?.workflowId).toBe(privateWorkflowId);
+        const selected = workflowMounts[0];
+        if (!selected) {
+          throw new Error("Expected the caller's private Workflow bundle");
+        }
+        expect(
+          readClaimedContentBundle(s3.objects, selected)
+            .get("SKILL.md")
+            ?.toString(),
+        ).toContain(privateInstruction);
 
         await api.requestCancelRun(actor, run.runId, [200]);
       });
@@ -11999,10 +12009,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const claim = await api.claimRunnerJob(run.runId);
         expect(claim.cliAgentType).toBe("claude-code");
         expect(
-          expectCanonicalStorageManifest(
-            claim.storageManifest,
-          )?.workflowSkills?.map((storage) => {
-            return storage.mountPath;
+          claim.contentBundles.skills.map((skill) => {
+            return skill.mountPath;
           }),
         ).toContain(`/home/user/.claude/skills/${workflowName}`);
 
