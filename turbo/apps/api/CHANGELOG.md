@@ -9,6 +9,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.29.0](https://github.com/okou-ai/okou/compare/api-v2.28.0...api-v2.29.0) (2026-10-30)
+
+
+### Features
+
+* **connectors:** support declared automatic oauth prompts ([#44202](https://github.com/okou-ai/okou/issues/44202)) ([3063efe](https://github.com/okou-ai/okou/commit/3063efe6cf29cf22b8bdc4ac39feff7d4ae856b9))
+
+
+### Refactoring
+
+* **api:** localize admission commit capture ownership ([#44177](https://github.com/okou-ai/okou/issues/44177)) ([e025482](https://github.com/okou-ai/okou/commit/e02548264985bd94a023fcc5d6525ea9c31d3900))
+* **api:** remove tx-0012 from agent metadata updates ([#44201](https://github.com/okou-ai/okou/issues/44201)) ([a2ce78e](https://github.com/okou-ai/okou/commit/a2ce78e6d3a43ae08b39f4a4df4ef49bfb6eb583))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.1
+    * @okouai/connectors bumped to 3.20.0
+    * @okouai/core bumped to 8.803.1
+    * @okouai/db bumped to 2.13.1
+    * @okouai/pi-agent-runtime bumped to 1.51.30
+
 ## [2.28.0](https://github.com/okou-ai/okou/compare/api-v2.27.0...api-v2.28.0) (2026-10-30)
 
 
