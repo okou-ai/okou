@@ -7,13 +7,7 @@ import { pgTextDecoder } from "../../lib/db-structured-result";
 
 import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { settle } from "../utils";
-import {
-  createClerkReadContext,
-  isClerkResourceNotFound,
-  clerk$,
-  type ClerkClient,
-} from "../external/clerk";
+import { verifyClerkComputerUseSession } from "../external/clerk";
 
 export interface ComputerUseSessionIdentity {
   readonly userId: string;
@@ -40,56 +34,12 @@ export function computerUseHostAuthorityCondition(
   );
 }
 
-export async function verifyComputerUseSession(
-  clerk: ClerkClient,
-  identity: ComputerUseSessionIdentity,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const context = createClerkReadContext();
-  const sessionRead = await settle(
-    clerk.sessions.getSession(identity.sessionId, context, signal),
-    signal,
-  );
-  if (!sessionRead.ok) {
-    if (isClerkResourceNotFound(sessionRead.error)) {
-      return false;
-    }
-    throw sessionRead.error;
-  }
-  const session = sessionRead.value;
-  if (
-    session.id !== identity.sessionId ||
-    session.userId !== identity.userId ||
-    session.status !== "active"
-  ) {
-    return false;
-  }
-  const membershipRead = await settle(
-    clerk.organizations.getOrganizationMembershipList(
-      { organizationId: identity.orgId, userId: [identity.userId], limit: 1 },
-      context,
-      signal,
-    ),
-    signal,
-  );
-  if (!membershipRead.ok) {
-    if (isClerkResourceNotFound(membershipRead.error)) {
-      return false;
-    }
-    throw membershipRead.error;
-  }
-  return membershipRead.value.data.some((membership) => {
-    return membership.publicUserData?.userId === identity.userId;
-  });
-}
-
 export const resolveComputerUseHost$ = command(
   async (
     { get, set },
     authority: ComputerUseHostAuthority,
     signal: AbortSignal,
   ) => {
-    const clerk = get(clerk$);
     const condition = computerUseHostAuthorityCondition(authority);
     const [host] = await get(db$)
       .select({
@@ -110,7 +60,7 @@ export const resolveComputerUseHost$ = command(
     ) {
       return host;
     }
-    if (!(await verifyComputerUseSession(clerk, authority, signal))) {
+    if (!(await verifyClerkComputerUseSession(authority, signal))) {
       const [stopped] = await set(writeDb$)
         .update(computerUseHosts)
         .set({ status: "offline", updatedAt: now })
