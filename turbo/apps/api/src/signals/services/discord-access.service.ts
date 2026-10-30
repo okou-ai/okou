@@ -1,4 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
+import { now } from "../../lib/time";
 import { joinAll } from "../utils";
 import { getDiscordAppConfig } from "./discord-config";
 import {
@@ -223,14 +224,19 @@ export function discordPromptAccess(
       return null;
     }
     const timing = timing$ ? get(timing$) : undefined;
-    const current = await measureApiDispatchTiming(
-      timing,
-      "api_dispatch_discord_prompt_binding",
-      "nested",
-      () => {
-        return get(binding$);
-      },
-    );
+    const startedAt = timing ? performance.now() : undefined;
+    const current = await (async () => {
+      return await get(binding$);
+    })().finally(() => {
+      if (startedAt !== undefined) {
+        timing?.recordDuration(
+          "api_dispatch_discord_prompt_binding",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      }
+    });
     return current
       ? await loadDiscordPromptAccess(input, current, timing)
       : null;
