@@ -35,6 +35,7 @@ export function mockBrowserCdp(
     readonly targets?: readonly BrowserTarget[];
     readonly unavailableTargets?: readonly string[];
     readonly extensionAvailable?: boolean;
+    readonly extensionRuntimeId?: string;
   } = {},
 ) {
   context.mocks.browser.canvasRendering();
@@ -241,7 +242,7 @@ export function mockBrowserCdp(
                 {
                   type: "service_worker",
                   targetId: "okou-worker",
-                  url: `chrome-extension://${TEST_BROWSER_EXTENSION.runtimeId}/background.js`,
+                  url: `chrome-extension://${options.extensionRuntimeId ?? TEST_BROWSER_EXTENSION.runtimeId}/background.js`,
                 },
                 { type: "tab", targetId: "browser-tab", url: "about:blank" },
               ]
