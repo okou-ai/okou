@@ -36,6 +36,11 @@ export default defineConfig({
       junit: "junit.xml",
     },
 
-    projects: ["packages/*", "apps/*"],
+    projects: [
+      "packages/*",
+      "apps/*",
+      // Native Chromium scenarios run through the package-owned Playwright command.
+      "!apps/browser-extension",
+    ],
   },
 });

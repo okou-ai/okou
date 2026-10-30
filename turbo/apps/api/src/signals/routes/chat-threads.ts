@@ -1,4 +1,3 @@
-import { chatFolderRoutes } from "./chat-folders";
 import { chatThreadEventRows } from "../services/chat-event-row-read.service";
 import { chatThreadUsageRoutes } from "./chat-threads-usage";
 import { chatRelationsRoutes } from "./chat-relations";
@@ -362,7 +361,6 @@ const searchChatInner$ = computed(async (get) => {
 });
 
 export const chatThreadRoutes: readonly RouteEntry[] = [
-  ...chatFolderRoutes,
   ...chatRelationsRoutes,
   {
     route: chatThreadsContract.indicators,

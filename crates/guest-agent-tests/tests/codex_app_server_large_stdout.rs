@@ -71,15 +71,10 @@ async fn codex_app_server_delivers_notification_above_former_stdout_limit()
     assert!(saw_command && saw_completion);
     drop(log);
 
-    let requests = server
-        .wait_for_quiet(Duration::from_millis(50), Duration::from_secs(5))
-        .await?;
+    let requests = server.requests()?;
     let mut delivered_command = false;
     let mut delivered_completion = false;
     for request in requests {
-        let common::RecordedHttpEvent::Request(request) = request else {
-            continue;
-        };
         if request.path != "/api/webhooks/agent/events" {
             continue;
         }

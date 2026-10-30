@@ -2017,6 +2017,8 @@
       "recovery": {
         "accessProgramDescription": "稍後再試，仍可在這段聊天中繼續。",
         "accessProgramTitle": "Codex 暫時無法存取",
+        "accountVerificationDescription": "你的 Claude 帳號目前無法接收回覆。請前往 Anthropic 驗證入口查看下一步操作。",
+        "accountVerificationTitle": "Claude 帳號需要驗證",
         "autonomyLimitDescription": "連續自動執行的次數已達上限。確認後可以繼續。",
         "autonomyLimitTitle": "已達自動執行上限",
         "capacityDescription": "可以稍等片刻再試，或換個模型繼續。",
@@ -2083,27 +2085,6 @@
       "sourcePartHeading": "引用自{{description}}",
       "sourcePartsHeading_one": "從{{description}}引用了 {{count}} 段內容",
       "sourcePartsHeading_other": "從{{description}}引用了 {{count}} 段內容"
-    },
-    "folders": {
-      "actions": "{{name}} 的操作",
-      "chats": "對話",
-      "create": "建立資料夾",
-      "delete": "刪除資料夾",
-      "deleteDescription": "刪除「{{name}}」？僅刪除資料夾，所有對話都會保留。",
-      "description": "資料夾用於整理目前 Agent 下的個人對話。",
-      "down": "下移資料夾",
-      "empty": "暫無對話",
-      "failed": "無法儲存變更，請重試。",
-      "move": "移動到…",
-      "name": "資料夾名稱",
-      "refresh": "重新整理資料夾",
-      "rename": "重新命名資料夾",
-      "running": "執行中的對話",
-      "save": "儲存",
-      "title": "資料夾",
-      "unfiled": "未分類",
-      "unread": "未讀對話",
-      "up": "上移資料夾"
     },
     "forward": {
       "action": "轉發",
@@ -4461,6 +4442,37 @@
           }
         },
         "title": "讓常用工具幫你完成工作"
+      },
+      "outputFormats": {
+        "clear": "清除選擇",
+        "options": {
+          "image": {
+            "instruction": "將結果整理為一張清晰的視覺化摘要圖片。",
+            "label": "圖片"
+          },
+          "people": {
+            "instruction": "結合此任務，整理相關人員的候選名單，說明其角色、入選理由，並附上公開職業資料連結。若人員與任務的關聯不明確，先提出一個具體問題再開始尋找。",
+            "label": "人員名單"
+          },
+          "presentation": {
+            "instruction": "將結果整理為一份精簡簡報，包含關鍵結果、建議和後續步驟。",
+            "label": "簡報"
+          },
+          "report": {
+            "instruction": "將結果整理為一份結構清晰的報告，包含關鍵結果、建議和後續步驟。",
+            "label": "報告"
+          },
+          "research": {
+            "instruction": "將結果整理為一份研究摘要，附上支持結論的來源和待解決的問題。區分有來源支持的事實與建議。",
+            "label": "研究摘要"
+          },
+          "website": {
+            "instruction": "將結果整理為一個可分享的網頁，結構清晰並凸顯重點。",
+            "label": "網站"
+          }
+        },
+        "title": "選擇產出形式",
+        "tooLong": "請縮短任務內容，以選擇其他產出形式。"
       },
       "prompt": {
         "connectorsDescription": "連接這些工具，讓 Okou 更了解你的工作情境，更有針對性地幫你完成任務。也可以稍後再連接。",

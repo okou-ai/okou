@@ -269,6 +269,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   invalid_api_key: "provider-settings",
   invalid_credentials: "provider-settings",
   terms_acceptance_required: "terms-acceptance-required",
+  account_verification_required: null,
   context_window_exceeded: "new-chat-required",
   input_too_large: "input-too-large",
   provider_image_too_large: "input-too-large",

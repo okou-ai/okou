@@ -6,8 +6,9 @@
     "boo": "Buuuuh!",
     "brand": "Okou",
     "campaign": "Gruseliges Halloween",
-    "climb": "Der Aufstieg",
+    "climb": "Ihr Fortschritt",
     "correct": "Richtig",
+    "correctAnswers": "Richtige Antworten",
     "error": "Wir konnten das Quiz nicht laden. Bitte versuchen Sie es erneut.",
     "footerAfter": "für Details zur Teilnahmeberechtigung und Prämie.",
     "footerBefore": "Siehe Aktivität",
@@ -15,7 +16,6 @@
     "hint": "Vier richtige Antworten. Ein süßes Finale.",
     "intro": "Ein kleines Quiz. Ein paar Überraschungen.",
     "language": "Deutsch",
-    "leave": "Quiz verlassen",
     "lost": "Du wurdest betrogen!",
     "lostRewardEmphasis": "Du hast trotzdem noch die Chance auf 7 Tage zum Testen!",
     "lostRewardRest": "Entdecke weiter mit Okou. Vielleicht wartet eine Halloween-Überraschung auf dich.",
@@ -23,7 +23,6 @@
     "lostTaskTitle": "Jetzt bist du dran: Stell Okou auf die Probe",
     "next": "Nächste Frage",
     "nudgeLabel": "Spielen Sie das Halloween-Quiz",
-    "questionProgress": "Frage {{current}} von {{total}}",
     "redeem": "Einlösen",
     "redeemEmailBody": "Hallo Okou-Team,\n\nich habe das Halloween-Quiz bestanden und möchte meine 7-tägige Okou Pro-Testversion einlösen.\n\nE-Mail-Adresse meines Okou-Kontos: [Deine Konto-E-Mail-Adresse]\n\nVielen Dank!",
     "redeemEmailSubject": "Halloween-Belohnung einlösen",
@@ -554,7 +553,7 @@
       "title": "Aktivitätsverfügbarkeit"
     },
     "play": {
-      "text": "Spielen Sie von Ihrem angemeldeten Okou-Konto aus, ohne dass Aufgaben erforderlich sind. Jede Runde wird direkt in diesem Konto gespeichert und besteht aus vier zufällig ausgewählten Fragen, die sich in dieser Runde nicht wiederholen, gefolgt von „Gefällt Ihnen Okou?“ – jede Antwort auf die letzte Frage ist richtig. Eine falsche Antwort beendet die Runde. Durch Schließen oder Aktualisieren des Quiz bleiben Ihr aktueller Fortschritt oder Ihr aktuelles Ergebnis erhalten. Wählen Sie „Quiz verlassen“, um eine noch nicht abgeschlossene Runde abzubrechen, oder „Erneut spielen“, nachdem ein Ergebnis erzielt wurde, um eine neue Runde zu beginnen.",
+      "text": "Spielen Sie von Ihrem angemeldeten Okou-Konto aus, ohne dass Aufgaben erforderlich sind. Jede Runde wird direkt in diesem Konto gespeichert und besteht aus vier zufällig ausgewählten Fragen, die sich in dieser Runde nicht wiederholen, gefolgt von „Gefällt Ihnen Okou?“ – jede Antwort auf die letzte Frage ist richtig. Eine falsche Antwort beendet die Runde. Durch Schließen oder Aktualisieren des Quiz bleiben Ihr aktueller Fortschritt oder Ihr aktuelles Ergebnis erhalten. Wählen Sie nach einem Ergebnis „Erneut spielen“, um eine neue Runde zu beginnen.",
       "title": "Wie man spielt"
     },
     "reward": {

@@ -6,8 +6,9 @@
     "boo": "Boo!",
     "brand": "Okou",
     "campaign": "Spooky Halloween",
-    "climb": "THE CLIMB",
+    "climb": "Your progress",
     "correct": "Correct",
+    "correctAnswers": "Correct answers",
     "error": "We couldn’t load the quiz. Please try again.",
     "footerAfter": " for eligibility and reward details.",
     "footerBefore": "See activity ",
@@ -15,7 +16,6 @@
     "hint": "Four right answers. One sweet finale.",
     "intro": "A little quiz. A few surprises.",
     "language": "English",
-    "leave": "Leave quiz",
     "lost": "You got tricked!",
     "lostRewardEmphasis": "But you still have a chance to win a 7-day trial!",
     "lostRewardRest": "Keep exploring with Okou. It might give you a Halloween surprise.",
@@ -23,7 +23,6 @@
     "lostTaskTitle": "Your turn to put Okou to the test",
     "next": "Next question",
     "nudgeLabel": "Play the Halloween quiz",
-    "questionProgress": "Question {{current}} of {{total}}",
     "redeem": "Redeem",
     "redeemEmailBody": "Hi Okou team,\n\nI passed the Halloween quiz and would like to redeem my 7-day Okou Pro trial.\n\nOkou account email: [Your account email]\n\nThank you!",
     "redeemEmailSubject": "Halloween reward redemption",
@@ -35,7 +34,7 @@
     "roundProgress": "Round {{current}} · {{title}}",
     "rules": "Activity rules",
     "rulesBrand": "Okou · Halloween",
-    "rulesHeading": "Spooky Halloween — Activity Rules",
+    "rulesHeading": "Spooky Halloween — Activity rules",
     "rulesSub": "A little mischief. A few simple rules.",
     "soundOff": "Sound off",
     "soundOn": "Sound on",
@@ -51,11 +50,11 @@
     "wonSub": "Okou knew you had it in you."
   },
   "levels": {
-    "five": "OKOU LIKES YOU.",
-    "four": "HALLOWEEN LEGEND",
-    "one": "ROOKIE",
-    "three": "TRICK MASTER",
-    "two": "RISING STAR"
+    "five": "Okou likes you",
+    "four": "Halloween legend",
+    "one": "Rookie",
+    "three": "Trick master",
+    "two": "Rising star"
   },
   "nudges": {
     "one": "Take a little\nspooky break?",
@@ -554,7 +553,7 @@
       "title": "Activity availability"
     },
     "play": {
-      "text": "Play from your signed-in Okou account, with no tasks required. Each round is saved directly to that account and has four randomly selected questions, with no repeats in that round, followed by ‘Do you like Okou?’—every answer to the last question is correct. One wrong answer ends the round. Closing or refreshing the quiz keeps your current progress or result. Choose ‘Leave quiz’ to abandon an unfinished round, or ‘Play again’ after a result to start a new one.",
+      "text": "Play from your signed-in Okou account, with no tasks required. Each round is saved directly to that account and has four randomly selected questions, with no repeats in that round, followed by ‘Do you like Okou?’—every answer to the last question is correct. One wrong answer ends the round. Closing or refreshing the quiz keeps your current progress or result. Choose ‘Play again’ after a result to start a new round.",
       "title": "How to play"
     },
     "reward": {

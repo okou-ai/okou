@@ -121,50 +121,51 @@ function selectChatListFilter(sidebar: HTMLElement, filter: "Unread"): void {
 }
 
 test("Restore the mobile chat-list scroll position after reopening the sidebar", async () => {
-  const threadCount = 64;
+  const threadCount = 32;
   context.mocks.browser.matchMedia(false);
   mockThreads(threadCount);
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
   }, threadCount);
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: "/agents" });
+  const agentCard = await screen.findByText("Nova");
+  expect(agentCard).toBeInTheDocument();
   click(screen.getByLabelText("Open menu"));
-  const drawer = screen.getByLabelText("Sidebar", {
-    selector: '[role="dialog"]',
-  });
-  await within(drawer).findByText("History 1");
-  const viewport = within(drawer).getByTestId("sidebar-scroll-area");
-  fireEvent.scroll(viewport, { target: { scrollTop: 50 * ROW_HEIGHT } });
-  await within(drawer).findByText("History 51");
+  const drawer = screen.getByRole("dialog", { name: "Sidebar" });
+  const viewport = await within(drawer).findByTestId("sidebar-scroll-area");
+  await within(viewport).findByText("History 1");
+  fireEvent.scroll(viewport, { target: { scrollTop: 16 * ROW_HEIGHT } });
+  await within(viewport).findByText("History 17");
 
   click(within(drawer).getByLabelText("Collapse sidebar"));
   await waitFor(() => {
-    expect(drawer).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
   });
   click(screen.getByLabelText("Open menu"));
-  const reopened = screen.getByLabelText("Sidebar", {
-    selector: '[role="dialog"]',
-  });
-  await within(reopened).findByText("History 51");
-  expect(within(reopened).getByTestId("sidebar-scroll-area").scrollTop).toBe(
-    50 * ROW_HEIGHT,
+  const reopened = screen.getByRole("dialog", { name: "Sidebar" });
+  const reopenedViewport = await within(reopened).findByTestId(
+    "sidebar-scroll-area",
   );
-  expect(within(reopened).queryByText("History 1")).not.toBeInTheDocument();
+  await within(reopenedViewport).findByText("History 17");
+  expect(reopenedViewport.scrollTop).toBe(16 * ROW_HEIGHT);
+  expect(
+    within(reopenedViewport).queryByText("History 1"),
+  ).not.toBeInTheDocument();
 });
 
 test("Keep the chat viewport keyboard-focusable only while a conversation is open", async () => {
-  const threadCount = 64;
+  const threadCount = 32;
   mockThreads(threadCount);
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
   }, threadCount);
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
   const sidebar = await screen.findByTestId("chat-list-column");
-  await within(sidebar).findByText("History 1");
-  const viewport = within(sidebar).getByTestId("sidebar-scroll-area");
+  const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
+  const first = await within(viewport).findByText("History 1");
   expect(viewport).toHaveAttribute("tabindex", "-1");
 
-  click(within(sidebar).getByText("History 1"));
+  click(first);
   await waitFor(() => {
     expect(viewport).toHaveAttribute("tabindex", "0");
   });
@@ -172,14 +173,14 @@ test("Keep the chat viewport keyboard-focusable only while a conversation is ope
   expect(viewport).toHaveFocus();
   // The next conversation lies outside the scrolled window. Keyboard
   // navigation must bring it back into view without losing the viewport.
-  fireEvent.scroll(viewport, { target: { scrollTop: 40 * ROW_HEIGHT } });
-  await within(sidebar).findByText("History 41");
+  fireEvent.scroll(viewport, { target: { scrollTop: 16 * ROW_HEIGHT } });
+  await within(viewport).findByText("History 17");
   fireEvent.keyDown(viewport, {
     key: "ArrowDown",
     ctrlKey: true,
     shiftKey: true,
   });
-  const next = await within(sidebar).findByText("History 2");
+  const next = await within(viewport).findByText("History 2");
   await waitFor(() => {
     expect(next.closest("a")).toHaveAttribute("aria-current", "page");
     expect(viewport.scrollTop).toBe(ROW_HEIGHT);

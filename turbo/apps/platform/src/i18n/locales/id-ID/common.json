@@ -2017,6 +2017,8 @@
       "recovery": {
         "accessProgramDescription": "Coba lagi sebentar lagi. Chat ini bisa tetap terbuka.",
         "accessProgramTitle": "Akses Codex sementara tidak tersedia",
+        "accountVerificationDescription": "Akun Claude Anda saat ini tidak dapat menerima balasan. Periksa langkah berikutnya di Portal Verifikasi Anthropic.",
+        "accountVerificationTitle": "Verifikasi akun Claude diperlukan",
         "autonomyLimitDescription": "Batas proses otomatis berturut-turut telah tercapai. Konfirmasi untuk melanjutkan.",
         "autonomyLimitTitle": "Batas proses otomatis tercapai",
         "capacityDescription": "Coba lagi sebentar, atau pilih model lain agar pekerjaan tetap berjalan.",
@@ -2083,27 +2085,6 @@
       "sourcePartHeading": "Dikutip dari {{description}}",
       "sourcePartsHeading_one": "{{count}} bagian dikutip dari {{description}}",
       "sourcePartsHeading_other": "{{count}} bagian dikutip dari {{description}}"
-    },
-    "folders": {
-      "actions": "Tindakan untuk {{name}}",
-      "chats": "Chat",
-      "create": "Buat folder",
-      "delete": "Hapus folder",
-      "deleteDescription": "Hapus “{{name}}”? Hanya folder yang dihapus. Percakapan Anda tetap tersimpan.",
-      "description": "Folder mengatur chat pribadi Anda dalam Agen ini.",
-      "down": "Pindahkan folder ke bawah",
-      "empty": "Belum ada percakapan",
-      "failed": "Perubahan tidak dapat disimpan. Coba lagi.",
-      "move": "Pindahkan ke…",
-      "name": "Nama folder",
-      "refresh": "Muat ulang folder",
-      "rename": "Ubah nama folder",
-      "running": "Chat sedang berjalan",
-      "save": "Simpan",
-      "title": "Folder",
-      "unfiled": "Tanpa folder",
-      "unread": "Chat belum dibaca",
-      "up": "Pindahkan folder ke atas"
     },
     "forward": {
       "action": "Teruskan",
@@ -4461,6 +4442,37 @@
           }
         },
         "title": "Manfaatkan alat kerja sehari-hari Anda"
+      },
+      "outputFormats": {
+        "clear": "Hapus pilihan",
+        "options": {
+          "image": {
+            "instruction": "Sajikan temuan sebagai gambar ringkasan visual yang jelas.",
+            "label": "Gambar"
+          },
+          "people": {
+            "instruction": "Gunakan tugas ini sebagai konteks untuk menyusun daftar orang yang relevan, lengkap dengan peran, alasan pemilihan, dan tautan profil profesional publik. Jika kaitannya dengan tugas belum jelas, ajukan pertanyaan yang terarah sebelum mencari.",
+            "label": "Daftar kandidat"
+          },
+          "presentation": {
+            "instruction": "Sajikan temuan sebagai presentasi singkat berisi hasil utama, rekomendasi, dan langkah berikutnya.",
+            "label": "Presentasi"
+          },
+          "report": {
+            "instruction": "Sajikan temuan sebagai laporan terstruktur berisi hasil utama, rekomendasi, dan langkah berikutnya.",
+            "label": "Laporan"
+          },
+          "research": {
+            "instruction": "Sajikan temuan sebagai ringkasan riset dengan sumber pendukung dan pertanyaan terbuka. Bedakan fakta bersumber dari rekomendasi.",
+            "label": "Ringkasan riset"
+          },
+          "website": {
+            "instruction": "Sajikan temuan sebagai halaman web yang dapat dibagikan dengan bagian dan poin utama yang jelas.",
+            "label": "Situs web"
+          }
+        },
+        "title": "Pilih format",
+        "tooLong": "Persingkat tugas untuk memilih format lain."
       },
       "prompt": {
         "connectorsDescription": "Hubungkan alat kerja Anda agar Okou memahami konteks pekerjaan dan menyelesaikan tugas sesuai kebutuhan Anda. Anda juga bisa menghubungkannya nanti.",

@@ -2882,8 +2882,15 @@
     {
       "idx": 1490,
       "version": "7",
-      "when": 1793311296473,
-      "tag": "1490_chat_thread_atomic_deletion",
+      "when": 1793326405452,
+      "tag": "1490_drop_chat_thread_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 1491,
+      "version": "7",
+      "when": 1793331699971,
+      "tag": "1491_chat_thread_atomic_deletion",
       "breakpoints": true
     }
   ]

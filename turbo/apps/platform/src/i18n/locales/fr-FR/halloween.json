@@ -6,8 +6,9 @@
     "boo": "Bouh !",
     "brand": "Okou",
     "campaign": "Halloween effrayant",
-    "climb": "La montée",
+    "climb": "Votre progression",
     "correct": "Correct",
+    "correctAnswers": "Bonnes réponses",
     "error": "Nous n'avons pas pu charger le quiz. Veuillez réessayer.",
     "footerAfter": "pour plus de détails sur l’éligibilité et les récompenses.",
     "footerBefore": "Voir l'activité",
@@ -15,7 +16,6 @@
     "hint": "Quatre bonnes réponses. Une douce finale.",
     "intro": "Un petit quiz. Quelques surprises.",
     "language": "Français",
-    "leave": "Quitter le quiz",
     "lost": "Vous avez été trompé !",
     "lostRewardEmphasis": "Vous avez encore une chance de gagner un essai de 7 jours !",
     "lostRewardRest": "Continuez à explorer avec Okou. Une surprise d’Halloween vous attend peut-être.",
@@ -23,7 +23,6 @@
     "lostTaskTitle": "À votre tour de mettre Okou à l’épreuve",
     "next": "Question suivante",
     "nudgeLabel": "Jouez au quiz d'Halloween",
-    "questionProgress": "Question {{current}} sur {{total}}",
     "redeem": "Échanger",
     "redeemEmailBody": "Bonjour l’équipe Okou,\n\nJ’ai réussi le quiz Halloween et je souhaite obtenir mon essai de 7 jours d’Okou Pro.\n\nAdresse e-mail de mon compte Okou : [Votre adresse e-mail de compte]\n\nMerci !",
     "redeemEmailSubject": "Demande de récompense Halloween",
@@ -554,7 +553,7 @@
       "title": "Disponibilité des activités"
     },
     "play": {
-      "text": "Jouez à partir de votre compte Okou connecté, sans aucune tâche requise. Chaque tour est enregistré directement sur ce compte et comporte quatre questions sélectionnées au hasard, sans répétition dans ce tour, suivies de « Aimez-vous Okou ? » – chaque réponse à la dernière question est correcte. Une mauvaise réponse met fin au tour. La fermeture ou l'actualisation du quiz conserve votre progression ou votre résultat actuel. Choisissez « Quitter le quiz » pour abandonner un tour inachevé, ou « Rejouer » après un résultat pour en commencer un nouveau.",
+      "text": "Jouez à partir de votre compte Okou connecté, sans aucune tâche requise. Chaque tour est enregistré directement sur ce compte et comporte quatre questions sélectionnées au hasard, sans répétition dans ce tour, suivies de « Aimez-vous Okou ? » – chaque réponse à la dernière question est correcte. Une mauvaise réponse met fin au tour. La fermeture ou l'actualisation du quiz conserve votre progression ou votre résultat actuel. Choisissez « Rejouer » après un résultat pour commencer un nouveau tour.",
       "title": "Comment jouer"
     },
     "reward": {

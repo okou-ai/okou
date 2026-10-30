@@ -6,8 +6,9 @@
     "boo": "¡Abucheo!",
     "brand": "Okou",
     "campaign": "Halloween espeluznante",
-    "climb": "la subida",
+    "climb": "Tu progreso",
     "correct": "Correcto",
+    "correctAnswers": "Respuestas correctas",
     "error": "No pudimos cargar el cuestionario. Por favor inténtalo de nuevo.",
     "footerAfter": "para conocer los detalles de elegibilidad y recompensas.",
     "footerBefore": "Ver actividad",
@@ -15,7 +16,6 @@
     "hint": "Cuatro respuestas correctas. Un dulce final.",
     "intro": "Un pequeño cuestionario. Unas cuantas sorpresas.",
     "language": "Español",
-    "leave": "Dejar cuestionario",
     "lost": "¡Te engañaron!",
     "lostRewardEmphasis": "¡Todavía tienes la oportunidad de ganar una prueba de 7 días!",
     "lostRewardRest": "Sigue explorando con Okou. Puede que te dé una sorpresa de Halloween.",
@@ -23,7 +23,6 @@
     "lostTaskTitle": "Ahora te toca poner a prueba a Okou",
     "next": "Siguiente pregunta",
     "nudgeLabel": "Juega el cuestionario de Halloween",
-    "questionProgress": "Pregunta {{current}} de {{total}}",
     "redeem": "Canjear",
     "redeemEmailBody": "Hola, equipo de Okou:\n\nHe superado el cuestionario de Halloween y me gustaría canjear mi prueba de 7 días de Okou Pro.\n\nCorreo de mi cuenta de Okou: [Tu correo de cuenta]\n\n¡Gracias!",
     "redeemEmailSubject": "Canjear la recompensa de Halloween",
@@ -52,10 +51,10 @@
   },
   "levels": {
     "five": "A Okou le gustas",
-    "four": "leyenda de halloween",
-    "one": "novato",
+    "four": "Leyenda de Halloween",
+    "one": "Novato",
     "three": "Maestro del truco",
-    "two": "estrella en ascenso"
+    "two": "Estrella en ascenso"
   },
   "nudges": {
     "one": "¿Tomarte un pequeño\nespeluznante descanso?",
@@ -554,7 +553,7 @@
       "title": "Disponibilidad de actividad"
     },
     "play": {
-      "text": "Juega desde tu cuenta Okou que hayas iniciado sesión, sin necesidad de realizar ninguna tarea. Cada ronda se guarda directamente en esa cuenta y tiene cuatro preguntas seleccionadas al azar, sin repeticiones en esa ronda, seguidas de \"¿Te gusta Okou?\": cada respuesta a la última pregunta es correcta. Una respuesta incorrecta termina la ronda. Cerrar o actualizar el cuestionario mantiene su progreso o resultado actual. Elija \"Salir del cuestionario\" para abandonar una ronda sin terminar, o \"Jugar de nuevo\" después de un resultado para comenzar una nueva.",
+      "text": "Juega desde tu cuenta Okou que hayas iniciado sesión, sin necesidad de realizar ninguna tarea. Cada ronda se guarda directamente en esa cuenta y tiene cuatro preguntas seleccionadas al azar, sin repeticiones en esa ronda, seguidas de \"¿Te gusta Okou?\": cada respuesta a la última pregunta es correcta. Una respuesta incorrecta termina la ronda. Cerrar o actualizar el cuestionario mantiene su progreso o resultado actual. Elija \"Jugar de nuevo\" después de un resultado para comenzar una nueva ronda.",
       "title": "como jugar"
     },
     "reward": {

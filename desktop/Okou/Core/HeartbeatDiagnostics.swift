@@ -28,7 +28,10 @@ struct HeartbeatDiagnostics {
 
   private var episode: Episode?
 
-  mutating func failed(error: Error, requests: [APIRequestDiagnostic], retryDelay: Double) {
+  mutating func failed(
+    error: Error, requests: [APIRequestDiagnostic], retryDelay: Double,
+    operation: APIRequestTraceSnapshot? = nil
+  ) {
     var current = episode ?? Episode()
     current.attempts += 1
     var failure: [String: Any] = [
@@ -37,6 +40,7 @@ struct HeartbeatDiagnostics {
       "requests": requests.map(\.context),
     ]
     if let code = (error as? URLError)?.code.rawValue { failure["urlErrorCode"] = code }
+    if let operation { failure["operation"] = operation.operationContext }
     if current.attempts == 1 { current.firstFailure = failure }
     current.recentFailures.append(failure)
     current.recentFailures = Array(current.recentFailures.suffix(10))
@@ -48,12 +52,14 @@ struct HeartbeatDiagnostics {
   }
 
   mutating func finish(
-    outcome: Outcome, requests: [APIRequestDiagnostic] = [], terminalStatus: Int? = nil
+    outcome: Outcome, requests: [APIRequestDiagnostic] = [], terminalStatus: Int? = nil,
+    operation: APIRequestTraceSnapshot? = nil
   ) {
     guard let current = episode else { return }
     episode = nil
     var context = current.context
     context["finalRequests"] = requests.map(\.context)
+    if let operation { context["finalOperation"] = operation.operationContext }
     if let terminalStatus { context["terminalStatus"] = terminalStatus }
     DesktopTelemetry.captureHeartbeatEpisode(id: current.id, outcome: outcome, context: context)
   }

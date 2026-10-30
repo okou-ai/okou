@@ -1,6 +1,6 @@
 {
   "name": "@okouai/host-worker",
-  "version": "1.9.13",
+  "version": "1.9.15",
   "private": true,
   "type": "module",
   "scripts": {

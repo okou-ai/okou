@@ -298,14 +298,15 @@ public actor HostRuntime {
         let response = try await request(
           connection.heartbeat, connection: connection, body: await body(), timeout: 10,
           generation: current, trace: trace)
-        let requests = await trace.snapshot()
+        let operation = await trace.snapshot()
         guard running, generation == current else { return }
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {
           throw DesktopFailure("network_error", "Heartbeat failed (HTTP \(response.status))")
         }
         let heartbeat = try response.decode(ComputerUseHostHeartbeat.self)
-        heartbeatDiagnostics.finish(outcome: .recovered, requests: requests)
+        heartbeatDiagnostics.finish(
+          outcome: .recovered, requests: operation.requests, operation: operation)
         state.lastHeartbeat = Date()
         if acceptingCommands { state.status = "online" }
         state.lastError = nil
@@ -318,13 +319,13 @@ public actor HostRuntime {
         }
         await publish()
       } catch is CancellationError { return } catch {
-        let requests = await trace.snapshot()
+        let operation = await trace.snapshot()
         guard running, generation == current else { return }
         if await rejectAuthentication(error) { return }
         attempt += 1
         wait = delay(attempt)
         heartbeatDiagnostics.failed(
-          error: error, requests: requests, retryDelay: wait)
+          error: error, requests: operation.requests, retryDelay: wait, operation: operation)
         await recover(error, attempt: attempt)
       }
     }

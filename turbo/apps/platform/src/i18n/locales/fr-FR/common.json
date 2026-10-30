@@ -2055,6 +2055,8 @@
       "recovery": {
         "accessProgramDescription": "Réessayez dans quelques instants. Vous pouvez laisser cette conversation ouverte.",
         "accessProgramTitle": "L’accès à Codex est temporairement indisponible",
+        "accountVerificationDescription": "Votre compte Claude ne peut pas recevoir de réponses pour le moment. Consultez le portail de vérification Anthropic pour connaître la prochaine étape.",
+        "accountVerificationTitle": "Vérification du compte Claude requise",
         "autonomyLimitDescription": "La limite des exécutions automatiques consécutives a été atteinte. Confirmez pour continuer.",
         "autonomyLimitTitle": "Limite des exécutions automatiques atteinte",
         "capacityDescription": "Réessayez dans un instant ou choisissez un autre modèle pour continuer.",
@@ -2124,27 +2126,6 @@
       "sourcePartsHeading_one": "{{count}} partie citée depuis {{description}}",
       "sourcePartsHeading_many": "{{count}} parties citées depuis {{description}}",
       "sourcePartsHeading_other": "{{count}} parties citées depuis {{description}}"
-    },
-    "folders": {
-      "actions": "Actions pour {{name}}",
-      "chats": "Chats",
-      "create": "Créer un dossier",
-      "delete": "Supprimer le dossier",
-      "deleteDescription": "Supprimer « {{name}} » ? Seul le dossier sera supprimé. Vos conversations seront conservées.",
-      "description": "Les dossiers organisent vos conversations personnelles avec cet Agent.",
-      "down": "Descendre le dossier",
-      "empty": "Aucune conversation",
-      "failed": "Impossible d’enregistrer les modifications. Réessayez.",
-      "move": "Déplacer vers…",
-      "name": "Nom du dossier",
-      "refresh": "Actualiser les dossiers",
-      "rename": "Renommer le dossier",
-      "running": "Chats en cours",
-      "save": "Enregistrer",
-      "title": "Dossiers",
-      "unfiled": "Sans dossier",
-      "unread": "Chats non lus",
-      "up": "Monter le dossier"
     },
     "forward": {
       "action": "Transférer",
@@ -4530,6 +4511,37 @@
           }
         },
         "title": "Faites travailler vos outils du quotidien"
+      },
+      "outputFormats": {
+        "clear": "Effacer la sélection",
+        "options": {
+          "image": {
+            "instruction": "Présente les résultats sous la forme d’une image de synthèse claire.",
+            "label": "Image"
+          },
+          "people": {
+            "instruction": "À partir de cette tâche, établis une sélection de personnes pertinentes avec leurs rôles, les raisons de leur sélection et des liens vers leurs profils professionnels publics. Si leur lien avec la tâche n’est pas clair, pose une question précise avant de chercher.",
+            "label": "Sélection de personnes"
+          },
+          "presentation": {
+            "instruction": "Présente les résultats dans une présentation concise avec les conclusions clés, les recommandations et les prochaines étapes.",
+            "label": "Présentation"
+          },
+          "report": {
+            "instruction": "Présente les résultats dans un rapport structuré avec les conclusions clés, les recommandations et les prochaines étapes.",
+            "label": "Rapport"
+          },
+          "research": {
+            "instruction": "Présente les résultats dans une note de recherche avec les sources et les questions ouvertes. Distingue les faits étayés des recommandations.",
+            "label": "Note de recherche"
+          },
+          "website": {
+            "instruction": "Présente les résultats sur une page web partageable avec des sections et des points clés clairs.",
+            "label": "Site web"
+          }
+        },
+        "title": "Choisir un format",
+        "tooLong": "Raccourcissez la tâche pour choisir un autre format."
       },
       "prompt": {
         "connectorsDescription": "Connectez vos outils pour qu’Okou comprenne votre travail et réalise les tâches en fonction de vos besoins. Vous pouvez aussi le faire plus tard.",

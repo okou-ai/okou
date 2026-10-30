@@ -2017,6 +2017,8 @@
       "recovery": {
         "accessProgramDescription": "잠시 후 다시 시도하세요. 이 채팅은 그대로 열어 둘 수 있습니다.",
         "accessProgramTitle": "Codex 액세스를 일시적으로 사용할 수 없습니다",
+        "accountVerificationDescription": "현재 Claude 계정에서 응답을 받을 수 없습니다. Anthropic Verification Portal에서 다음 단계를 확인하세요.",
+        "accountVerificationTitle": "Claude 계정 인증이 필요합니다",
         "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
         "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
         "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 작업을 계속하세요.",
@@ -2083,27 +2085,6 @@
       "sourcePartHeading": "{{description}}에서 인용",
       "sourcePartsHeading_one": "{{description}}에서 {{count}}개 부분 인용",
       "sourcePartsHeading_other": "{{description}}에서 {{count}}개 부분 인용"
-    },
-    "folders": {
-      "actions": "{{name}} 작업",
-      "chats": "채팅",
-      "create": "폴더 만들기",
-      "delete": "폴더 삭제",
-      "deleteDescription": "“{{name}}”을(를) 삭제할까요? 폴더만 삭제되며 대화는 유지됩니다.",
-      "description": "이 에이전트의 개인 채팅을 폴더로 정리합니다.",
-      "down": "폴더 아래로 이동",
-      "empty": "아직 대화가 없습니다",
-      "failed": "변경 사항을 저장하지 못했습니다. 다시 시도해 주세요.",
-      "move": "이동…",
-      "name": "폴더 이름",
-      "refresh": "폴더 새로고침",
-      "rename": "폴더 이름 변경",
-      "running": "실행 중인 채팅",
-      "save": "저장",
-      "title": "폴더",
-      "unfiled": "미분류",
-      "unread": "읽지 않은 채팅",
-      "up": "폴더 위로 이동"
     },
     "forward": {
       "action": "전달",
@@ -4461,6 +4442,37 @@
           }
         },
         "title": "자주 쓰는 도구로 일을 시작하세요"
+      },
+      "outputFormats": {
+        "clear": "선택 해제",
+        "options": {
+          "image": {
+            "instruction": "결과를 명확한 시각적 요약 이미지로 정리해 주세요.",
+            "label": "이미지"
+          },
+          "people": {
+            "instruction": "이 작업과 관련된 인물 후보 목록을 작성하고 역할, 선정 이유, 공개 직업 프로필 링크를 포함해 주세요. 작업과의 관련성이 불분명하면 검색 전에 구체적인 질문을 해 주세요.",
+            "label": "인물 후보 목록"
+          },
+          "presentation": {
+            "instruction": "주요 결과, 제안, 다음 단계를 포함한 간결한 프레젠테이션으로 정리해 주세요.",
+            "label": "프레젠테이션"
+          },
+          "report": {
+            "instruction": "주요 결과, 제안, 다음 단계를 포함한 체계적인 보고서로 정리해 주세요.",
+            "label": "보고서"
+          },
+          "research": {
+            "instruction": "근거 자료와 미해결 질문을 포함한 조사 요약을 작성해 주세요. 출처가 있는 사실과 제안을 구분해 주세요.",
+            "label": "조사 요약"
+          },
+          "website": {
+            "instruction": "결과를 공유 가능한 웹페이지로 정리하고 섹션과 핵심 내용을 명확히 해 주세요.",
+            "label": "웹사이트"
+          }
+        },
+        "title": "결과물 형식 선택",
+        "tooLong": "다른 형식을 선택하려면 작업 내용을 줄여 주세요."
       },
       "prompt": {
         "connectorsDescription": "업무 도구를 연결하면 Okou가 업무 맥락을 이해하고 상황에 맞게 작업을 수행할 수 있어요. 나중에 연결해도 됩니다.",

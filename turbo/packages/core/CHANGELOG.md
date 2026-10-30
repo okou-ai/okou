@@ -1,5 +1,28 @@
 # Changelog
 
+## [8.802.0](https://github.com/okou-ai/okou/compare/core-v8.801.0...core-v8.802.0) (2026-10-30)
+
+
+### Features
+
+* **app:** release the unified chat workspace to everyone ([#44168](https://github.com/okou-ai/okou/issues/44168)) ([e59858c](https://github.com/okou-ai/okou/commit/e59858ca253958200c6560224a32eb8e846bec13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.1
+
+## [8.801.0](https://github.com/okou-ai/okou/compare/core-v8.800.7...core-v8.801.0) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.0
+
 ## [8.800.7](https://github.com/okou-ai/okou/compare/core-v8.800.6...core-v8.800.7) (2026-10-29)
 
 

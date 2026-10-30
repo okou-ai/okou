@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { computed, type Computed } from "ccstate";
 import { isValidVersionPrefix } from "@okouai/core/version-id";
 import { storageVersions } from "@okouai/db/schema/storage";
@@ -8,7 +9,6 @@ import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import { measureApiDispatchTiming } from "./api-dispatch-timing.service";
 import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
 import {
   createResolvedExecutionStorageObjects,
@@ -91,15 +91,21 @@ export function createStorageSignals(
       get(selectedStorageMetadata$),
       get(executionStorageObjects$),
     ]);
-    const mounts = await measureApiDispatchTiming(
-      selected.plan.requested.input.timing,
-      "api_dispatch_prepare_storage_manifest_generate_compose_urls",
-      "nested",
-      () => {
-        return get(storage.objects.preparedMounts$);
-      },
-      { storage_manifest_signing_owner: "execution_storage" },
-    );
+    const spanTiming = selected.plan.requested.input.timing;
+    const spanStartedAt = spanTiming ? performance.now() : undefined;
+    const mounts = await (async () => {
+      return await get(storage.objects.preparedMounts$);
+    })().finally(() => {
+      if (spanTiming && spanStartedAt !== undefined) {
+        spanTiming.recordDuration(
+          "api_dispatch_prepare_storage_manifest_generate_compose_urls",
+          "nested",
+          performance.now() - spanStartedAt,
+          now(),
+          { storage_manifest_signing_owner: "execution_storage" },
+        );
+      }
+    });
     const byPath = new Map(
       mounts.map((mount) => {
         return [mount.mountPath, mount];
@@ -433,63 +439,69 @@ function createStoragePlanSignals(
   const { capturedStorageIndex$ } = index;
   const plan$ = computed(async (get): Promise<AgentRunStoragePlan> => {
     const { selection, storageIndex } = await get(capturedStorageIndex$);
-    return await measureApiDispatchTiming(
-      selection.args.timing,
-      "api_dispatch_prepare_storage_manifest_resolve_plan",
-      "nested",
-      async () => {
-        if (selection.kind === "captured") {
-          return {
-            requested: await resolveValidatedPersistedStorageMounts({
-              mounts: selection.args.mounts,
-              timing: selection.args.timing,
-              stats: selection.args.stats,
-              bucket: selection.bucket,
-              storageIndex,
-              branch: "captured",
-            }),
-            missingArtifacts: [],
-          };
-        }
-        const missingArtifacts = selection.request.input.artifacts.filter(
-          (artifact) => {
-            const entry = storageIndex.get(
-              storageIndexKey(
-                selection.args.runtimeOrgId,
-                selection.args.userId,
-                artifact.name,
-              ),
-            );
-            return !entry || entry.headVersionId === null;
-          },
-        );
-        const missingNames = new Set(
-          missingArtifacts.map((artifact) => {
-            return artifact.name;
-          }),
-        );
-        const requested = await resolveStorageEntries(
-          {
-            ...selection.request.input,
-            artifacts: selection.request.input.artifacts.filter((artifact) => {
-              return !missingNames.has(artifact.name);
-            }),
-            storageIndex,
-          },
-          "requested",
-        );
+    const spanTiming = selection.args.timing;
+    const spanStartedAt = spanTiming ? performance.now() : undefined;
+    return await (async () => {
+      if (selection.kind === "captured") {
         return {
-          requested: {
-            ...requested,
-            input: {
-              ...requested.input,
-              artifacts: selection.request.input.artifacts,
-            },
-          },
-          missingArtifacts,
+          requested: await resolveValidatedPersistedStorageMounts({
+            mounts: selection.args.mounts,
+            timing: selection.args.timing,
+            stats: selection.args.stats,
+            bucket: selection.bucket,
+            storageIndex,
+            branch: "captured",
+          }),
+          missingArtifacts: [],
         };
-      },
-    );
+      }
+      const missingArtifacts = selection.request.input.artifacts.filter(
+        (artifact) => {
+          const entry = storageIndex.get(
+            storageIndexKey(
+              selection.args.runtimeOrgId,
+              selection.args.userId,
+              artifact.name,
+            ),
+          );
+          return !entry || entry.headVersionId === null;
+        },
+      );
+      const missingNames = new Set(
+        missingArtifacts.map((artifact) => {
+          return artifact.name;
+        }),
+      );
+      const requested = await resolveStorageEntries(
+        {
+          ...selection.request.input,
+          artifacts: selection.request.input.artifacts.filter((artifact) => {
+            return !missingNames.has(artifact.name);
+          }),
+          storageIndex,
+        },
+        "requested",
+      );
+      return {
+        requested: {
+          ...requested,
+          input: {
+            ...requested.input,
+            artifacts: selection.request.input.artifacts,
+          },
+        },
+        missingArtifacts,
+      };
+    })().finally(() => {
+      if (spanTiming && spanStartedAt !== undefined) {
+        spanTiming.recordDuration(
+          "api_dispatch_prepare_storage_manifest_resolve_plan",
+          "nested",
+          performance.now() - spanStartedAt,
+          now(),
+        );
+      }
+    });
   });
   return { plan$ };
 }

@@ -1,0 +1,11 @@
+{
+  "extends": "@okouai/typescript-config/base.json",
+  "compilerOptions": {
+    "types": ["chrome", "node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src/**/*.ts", "vite.config.ts"]
+}

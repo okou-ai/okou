@@ -721,6 +721,51 @@ fn cli_failure_reason_classifies_claude_terms_acceptance_required() {
 }
 
 #[test]
+fn cli_failure_reason_classifies_only_claude_terminal_account_verification() {
+    let message = "API Error: Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://example.invalid/verification?token=private-verification-token";
+    for (framework, source, expected) in [
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            Some(FailureReason::AccountVerificationRequired),
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            None,
+        ),
+        (AgentFramework::Codex, FailureDetailSource::CodexJsonl, None),
+        (AgentFramework::Pi, FailureDetailSource::PiResult, None),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            expected,
+            "framework={framework:?}, source={source:?}",
+        );
+    }
+}
+
+#[test]
+fn cli_failure_reason_keeps_ambiguous_account_verification_unclassified() {
+    for message in [
+        "Your account can't receive replies from Claude right now.",
+        "API Error: Your account can't receive replies from Claude right now.",
+        "API Error: Visit the Anthropic Verification Portal: https://example.invalid/verification",
+        "Tool output: API Error: Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://example.invalid/verification",
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+                message,
+            ),
+            None,
+            "message={message}",
+        );
+    }
+}
+
+#[test]
 fn cli_failure_reason_classifies_claude_terms_acceptance_wording_variant() {
     let reason = classify_cli_failure_reason(
         AgentFramework::ClaudeCode,
@@ -2233,6 +2278,71 @@ fn cli_failure_reason_classifies_claude_weekly_limit() {
     );
 
     assert_eq!(reason, Some(FailureReason::UsageLimit));
+}
+
+#[test]
+fn cli_failure_reason_classifies_claude_five_hour_limit_results() {
+    for message in [
+        "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)",
+        "You've hit your five-hour limit · resets 1:50am (Asia/Shanghai)",
+    ] {
+        let failure_message = cli_failure_message(
+            1,
+            &[],
+            Some(&cli_diagnostic(message, FailureDetailSource::ClaudeResult)),
+        );
+        let diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            AgentFramework::ClaudeCode,
+            PromptMetadata::from_prompt("plain prompt"),
+        )
+        .with_cli_exit_code(1)
+        .with_cli_observed_exit(CliObservedExitDiagnostic::from_exit_code(1))
+        .with_failure_detail_source(failure_message.source);
+
+        let classified = with_cli_failure_reason(diagnostic.clone(), &failure_message);
+
+        assert_eq!(failure_message.message, message);
+        assert_eq!(
+            classified,
+            diagnostic.with_failure_reason(FailureReason::UsageLimit),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn cli_failure_reason_keeps_unowned_five_hour_limit_text_unclassified() {
+    let message = "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)";
+    for (framework, source, message) in [
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            message,
+        ),
+        (
+            AgentFramework::Codex,
+            FailureDetailSource::CodexJsonl,
+            message,
+        ),
+        (AgentFramework::Pi, FailureDetailSource::PiResult, message),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "Tool output: You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)",
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "You've hit your 5-hour limit while loading a local file.",
+        ),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            None,
+            "framework={framework:?}, source={source:?}, message={message}"
+        );
+    }
 }
 
 #[test]

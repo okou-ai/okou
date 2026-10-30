@@ -25,7 +25,7 @@ for action in ['github/codeql-action/init@', 'github/codeql-action/analyze@']:
         'the required CodeQL job must initialize and execute its scanner'
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
-           'test-other']
+           'test-other', 'test-browser-extension']
 artifacts = ['deploy-app']
 
 def context(ios=True, ts=False, event='pull_request', release=False):

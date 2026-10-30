@@ -268,29 +268,6 @@ export const nextHalloween$ = command(
   },
 );
 
-export const leaveHalloween$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    set(resetHalloweenAction$);
-    const round = get(roundState$);
-    if (round?.outcome === "playing") {
-      await accept(
-        get(apiClient$)(halloweenContract).leave({
-          body: {
-            id: round.id,
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-      signal.throwIfAborted();
-    }
-    set(screenState$, "start");
-    set(roundState$, null);
-    await set(refreshHalloweenPhase$, signal);
-  },
-);
-
 export const replayHalloween$ = command(
   async ({ set }, signal: AbortSignal) => {
     await set(requestHalloweenRound$, true, signal);

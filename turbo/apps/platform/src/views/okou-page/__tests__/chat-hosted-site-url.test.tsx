@@ -176,16 +176,12 @@ async function setupHostedSite(
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
-  const link = await waitFor(() => {
-    const link = queryAllByRoleFast("link").find((element) => {
-      return element.textContent === "Open website";
-    });
-    if (!link) {
-      throw new Error("Expected the hosted website message link");
-    }
-    return link;
+  await screen.findByText("Open website");
+  const link = queryAllByRoleFast("link").find((element) => {
+    return element.textContent === "Open website";
   });
-  click(link);
+  expect(link).toBeDefined();
+  click(link!);
   return await screen.findByTestId(
     sidebar ? "artifact-sidebar" : "attachment-lightbox",
   );
@@ -238,32 +234,19 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
 }
 
 test.each([false, true])(
-  "consecutive URL renames retain the catalog title and update its link (sidebar=%s)",
+  "consecutive site renames preserve the title, link and Share copy address (sidebar=%s)",
   async (sidebar) => {
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
     expect(title).toHaveTextContent(siteTitle);
-    const shareMenu = await openHostedSiteShare(preview, sidebar);
-    for (const slug of ["renamed-site", "final-site"]) {
-      await renameHostedSite(shareMenu, slug);
-      await waitFor(() => {
-        expect(title).toHaveTextContent(siteTitle);
-        expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
-      });
-    }
-  },
-);
-
-test.each([false, true])(
-  "Share copies each address after consecutive site renames (sidebar=%s)",
-  async (sidebar) => {
-    const preview = await setupHostedSite(sidebar);
     const shareMenu = await openHostedSiteShare(preview, sidebar);
     const clipboard = context.mocks.browser.clipboardWriteText();
     for (const slug of ["renamed-site", "final-site"]) {
       await renameHostedSite(shareMenu, slug);
       click(buttonNamed("Copy link", shareMenu));
       await waitFor(() => {
+        expect(title).toHaveTextContent(siteTitle);
+        expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
         expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
       });
     }

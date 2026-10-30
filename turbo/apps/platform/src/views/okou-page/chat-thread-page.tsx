@@ -5598,6 +5598,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.termsTitle;
     });
   },
+  account_verification_required: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.accountVerificationTitle;
+    });
+  },
   context_window_exceeded: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.contextWindowTitle;
@@ -5763,6 +5768,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   invalid_api_key: FAILURE_DESCRIPTIONS.providerConnection,
   invalid_credentials: FAILURE_DESCRIPTIONS.providerConnection,
   terms_acceptance_required: FAILURE_DESCRIPTIONS.terms,
+  account_verification_required: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.accountVerificationDescription;
+    });
+  },
   context_window_exceeded: FAILURE_DESCRIPTIONS.newChat,
   input_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
   provider_image_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
@@ -5816,6 +5826,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "invalid_credentials" ||
     reason === "reconnect_required" ||
     reason === "terms_acceptance_required" ||
+    reason === "account_verification_required" ||
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
     reason === "provider_image_too_large" ||
@@ -5830,6 +5841,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
 function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
   return (
     reason !== "insufficient_credits" &&
+    reason !== "account_verification_required" &&
     reason !== "input_too_large" &&
     reason !== "provider_bad_request" &&
     reason !== "provider_image_too_large"

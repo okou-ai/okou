@@ -12,6 +12,59 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1079.0](https://github.com/okou-ai/okou/compare/app-v0.1078.1...app-v0.1079.0) (2026-10-30)
+
+
+### Features
+
+* **app:** release the unified chat workspace to everyone ([#44168](https://github.com/okou-ai/okou/issues/44168)) ([e59858c](https://github.com/okou-ai/okou/commit/e59858ca253958200c6560224a32eb8e846bec13))
+
+
+### Bug Fixes
+
+* **app:** refine halloween progress and surrounding controls ([#44138](https://github.com/okou-ai/okou/issues/44138)) ([3f7e168](https://github.com/okou-ai/okou/commit/3f7e16882e3b5f870158a1e7ffbfb58a62108193))
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+* **platform:** add multilingual fallback to serif text ([#44169](https://github.com/okou-ai/okou/issues/44169)) ([c46f447](https://github.com/okou-ai/okou/commit/c46f447cd1c40230b4addb9ce1a7db63217a09e6))
+* **platform:** keep the default workspace mark at one proportion ([#44167](https://github.com/okou-ai/okou/issues/44167)) ([2eb4333](https://github.com/okou-ai/okou/commit/2eb433329bdf14bc3f545197f90cded7a256c792))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.1
+    * @okouai/core bumped to 8.802.0
+
+## [0.1078.1](https://github.com/okou-ai/okou/compare/app-v0.1078.0...app-v0.1078.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **app:** brighten the halloween ghost entry ([#44154](https://github.com/okou-ai/okou/issues/44154)) ([b3a2e0f](https://github.com/okou-ai/okou/commit/b3a2e0f0fce2eb536483f8746200c15353968f6a))
+
+## [0.1078.0](https://github.com/okou-ai/okou/compare/app-v0.1077.6...app-v0.1078.0) (2026-10-30)
+
+
+### Refactoring
+
+* **app:** own the cloud browser viewer in platform ([#44085](https://github.com/okou-ai/okou/issues/44085)) ([ff15f20](https://github.com/okou-ai/okou/commit/ff15f203474a78d1456d6a889b1ab2ebbd197ec8))
+
+
+### Performance Improvements
+
+* **app:** avoid redundant saved site url recomputations ([#44094](https://github.com/okou-ai/okou/issues/44094)) ([4e49bab](https://github.com/okou-ai/okou/commit/4e49babfbb45e5d469d2602d432575d2fd1aeca6))
+* **app:** avoid reprojecting complete chat windows on scroll ([#44083](https://github.com/okou-ai/okou/issues/44083)) ([2df48f2](https://github.com/okou-ai/okou/commit/2df48f2173bdd7c27118cb8183b338e4d738f39f))
+* **app:** wait for initial events before loading chat resources ([#44089](https://github.com/okou-ai/okou/issues/44089)) ([dd2f50c](https://github.com/okou-ai/okou/commit/dd2f50cc2d22c2fa1f693924b8e2ef221555b98b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.0
+    * @okouai/connectors bumped to 3.19.0
+    * @okouai/core bumped to 8.801.0
+
 ## [0.1077.6](https://github.com/okou-ai/okou/compare/app-v0.1077.5...app-v0.1077.6) (2026-10-29)
 
 

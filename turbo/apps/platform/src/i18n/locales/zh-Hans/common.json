@@ -2017,6 +2017,8 @@
       "recovery": {
         "accessProgramDescription": "稍后再试，仍可在这段聊天中继续。",
         "accessProgramTitle": "Codex 暂时无法访问",
+        "accountVerificationDescription": "你的 Claude 账号目前无法接收回复。请前往 Anthropic 验证门户查看下一步操作。",
+        "accountVerificationTitle": "Claude 账号需要验证",
         "autonomyLimitDescription": "连续自动运行的次数已达上限。确认后可以继续。",
         "autonomyLimitTitle": "已达自动运行上限",
         "capacityDescription": "可以稍等片刻再试，或换个模型继续。",
@@ -2083,27 +2085,6 @@
       "sourcePartHeading": "引用自{{description}}",
       "sourcePartsHeading_one": "从{{description}}引用了 {{count}} 段内容",
       "sourcePartsHeading_other": "从{{description}}引用了 {{count}} 段内容"
-    },
-    "folders": {
-      "actions": "{{name}} 的操作",
-      "chats": "对话",
-      "create": "创建文件夹",
-      "delete": "删除文件夹",
-      "deleteDescription": "删除“{{name}}”？仅删除文件夹，所有对话都会保留。",
-      "description": "文件夹用于整理当前 Agent 下的个人对话。",
-      "down": "下移文件夹",
-      "empty": "暂无对话",
-      "failed": "未能保存更改，请重试。",
-      "move": "移动到…",
-      "name": "文件夹名称",
-      "refresh": "刷新文件夹",
-      "rename": "重命名文件夹",
-      "running": "运行中的对话",
-      "save": "保存",
-      "title": "文件夹",
-      "unfiled": "未分类",
-      "unread": "未读对话",
-      "up": "上移文件夹"
     },
     "forward": {
       "action": "转发",
@@ -4461,6 +4442,37 @@
           }
         },
         "title": "让常用工具帮你完成工作"
+      },
+      "outputFormats": {
+        "clear": "清除选择",
+        "options": {
+          "image": {
+            "instruction": "将结果整理为一张清晰的可视化总结图片。",
+            "label": "图片"
+          },
+          "people": {
+            "instruction": "结合此任务，整理相关人员的候选名单，说明其角色、入选理由，并附上公开职业资料链接。如果人员与任务的关联不明确，先提出一个具体问题再开始查找。",
+            "label": "人员名单"
+          },
+          "presentation": {
+            "instruction": "将结果整理为一份简洁的演示文稿，包含关键结果、建议和后续步骤。",
+            "label": "演示文稿"
+          },
+          "report": {
+            "instruction": "将结果整理为一份结构清晰的报告，包含关键结果、建议和后续步骤。",
+            "label": "报告"
+          },
+          "research": {
+            "instruction": "将结果整理为一份研究简报，附上支持结论的来源和待解决的问题。区分有来源支持的事实与建议。",
+            "label": "研究简报"
+          },
+          "website": {
+            "instruction": "将结果整理为一个可分享的网页，结构清晰，并突出要点。",
+            "label": "网站"
+          }
+        },
+        "title": "选择产出形式",
+        "tooLong": "请缩短任务内容，以选择其他产出形式。"
       },
       "prompt": {
         "connectorsDescription": "连接这些工具，让 Okou 更了解你的工作场景，更有针对性地帮你完成任务。也可以稍后再连接。",

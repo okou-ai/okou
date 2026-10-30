@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.53](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.52...runner-supervisor-v0.20.53) (2026-10-30)
+
+
+### Bug Fixes
+
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+
 ## [0.20.52](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.51...runner-supervisor-v0.20.52) (2026-10-29)
 
 ## [0.20.51](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.50...runner-supervisor-v0.20.51) (2026-10-29)

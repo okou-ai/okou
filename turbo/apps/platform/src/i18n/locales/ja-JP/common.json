@@ -2017,6 +2017,8 @@
       "recovery": {
         "accessProgramDescription": "少し時間をおいて再試行してください。このチャットは開いたままにできます。",
         "accessProgramTitle": "Codex へのアクセスは一時的に利用できません",
+        "accountVerificationDescription": "現在、Claude アカウントで返信を受け取れません。Anthropic Verification Portal で次の手順を確認してください。",
+        "accountVerificationTitle": "Claude アカウントの確認が必要です",
         "autonomyLimitDescription": "連続自動実行の上限に達しました。続行するには確認が必要です。",
         "autonomyLimitTitle": "自動実行の上限に達しました",
         "capacityDescription": "少し待ってから再試行するか、別のモデルで続けてください。",
@@ -2083,27 +2085,6 @@
       "sourcePartHeading": "{{description}}から引用",
       "sourcePartsHeading_one": "{{description}}から {{count}} 件を引用",
       "sourcePartsHeading_other": "{{description}}から {{count}} 件を引用"
-    },
-    "folders": {
-      "actions": "{{name}} の操作",
-      "chats": "チャット",
-      "create": "フォルダーを作成",
-      "delete": "フォルダーを削除",
-      "deleteDescription": "「{{name}}」を削除しますか？フォルダーのみが削除され、会話は保持されます。",
-      "description": "このエージェント内の自分のチャットを整理します。",
-      "down": "フォルダーを下へ移動",
-      "empty": "会話はまだありません",
-      "failed": "変更を保存できませんでした。もう一度お試しください。",
-      "move": "移動先…",
-      "name": "フォルダー名",
-      "refresh": "フォルダーを更新",
-      "rename": "フォルダー名を変更",
-      "running": "実行中のチャット",
-      "save": "保存",
-      "title": "フォルダー",
-      "unfiled": "未分類",
-      "unread": "未読のチャット",
-      "up": "フォルダーを上へ移動"
     },
     "forward": {
       "action": "転送",
@@ -4461,6 +4442,37 @@
           }
         },
         "title": "いつものツールを仕事の力に"
+      },
+      "outputFormats": {
+        "clear": "選択を解除",
+        "options": {
+          "image": {
+            "instruction": "結果をわかりやすい要約画像にまとめてください。",
+            "label": "画像"
+          },
+          "people": {
+            "instruction": "このタスクを踏まえて関連する人物の候補リストを作成し、役割、選定理由、公開されている職業プロフィールへのリンクを含めてください。タスクとの関連が不明な場合は、検索前に具体的な質問をしてください。",
+            "label": "候補者リスト"
+          },
+          "presentation": {
+            "instruction": "結果を簡潔なプレゼンテーションにまとめ、主な結果、提案、次のステップを含めてください。",
+            "label": "プレゼンテーション"
+          },
+          "report": {
+            "instruction": "結果を構造化されたレポートにまとめ、主な結果、提案、次のステップを含めてください。",
+            "label": "レポート"
+          },
+          "research": {
+            "instruction": "結果を調査概要にまとめ、根拠となる情報源と未解決の問いを含めてください。出典のある事実と提案を区別してください。",
+            "label": "調査概要"
+          },
+          "website": {
+            "instruction": "結果を共有できるウェブページにまとめ、構成と要点を明確にしてください。",
+            "label": "ウェブサイト"
+          }
+        },
+        "title": "出力形式を選択",
+        "tooLong": "別の形式を選ぶには、タスクを短くしてください。"
       },
       "prompt": {
         "connectorsDescription": "ツールを接続すると、Okou が仕事の状況を理解し、あなたに合った方法でタスクを進められます。後から接続することもできます。",

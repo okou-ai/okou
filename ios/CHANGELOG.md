@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.22.5](https://github.com/okou-ai/okou/compare/ios-v0.22.4...ios-v0.22.5) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ios:** accept failure retries during background sync ([#44098](https://github.com/okou-ai/okou/issues/44098)) ([288ae5e](https://github.com/okou-ai/okou/commit/288ae5e20e91801a65da15c1932ba11c865347c6))
+* **ios:** load permission cards once per page visit ([#44097](https://github.com/okou-ai/okou/issues/44097)) ([3550b67](https://github.com/okou-ai/okou/commit/3550b6747ead35bba28b6fca88f92f0cea4955f8))
+* **ios:** remove reintroduced chinese translations ([#44096](https://github.com/okou-ai/okou/issues/44096)) ([fff2ea2](https://github.com/okou-ai/okou/commit/fff2ea2653475988ad477934e98c448f8eacd44e))
+* **ios:** restore measured history and retire sent editors immediately ([#44099](https://github.com/okou-ai/okou/issues/44099)) ([480b450](https://github.com/okou-ai/okou/commit/480b4508066af35be06e034b3edde3bde42e1c9b))
+
 ## [0.22.4](https://github.com/okou-ai/okou/compare/ios-v0.22.3...ios-v0.22.4) (2026-10-29)
 
 

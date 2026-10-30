@@ -2,6 +2,7 @@ import { computed, type Computed } from "ccstate";
 
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import {
+  ClerkAPIResponseError,
   isClerkAPIResponseError,
   TokenVerificationError,
   TokenVerificationErrorReason,
@@ -9,9 +10,15 @@ import {
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
 import { array, number, object, string, union, url } from "zod";
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
-import { safeJsonParse, settle } from "../utils";
+import {
+  safeJsonParse,
+  settle,
+  settleIncludingAbort,
+  startUntrackedBestEffortCleanup,
+} from "../utils";
 
 export interface ClerkOAuthIdentity {
   readonly userId: string;
@@ -349,7 +356,9 @@ const CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS = 1000;
 export interface ClerkReadUnavailable {
   readonly providerStatus: number | null;
   readonly failureClass:
-    "transient_read_exhausted" | "transport_read_exhausted";
+    | "transient_read_exhausted"
+    | "transport_read_exhausted"
+    | "deadline_exceeded";
 }
 
 class ClerkReadUnavailableError extends Error implements ClerkReadUnavailable {
@@ -358,14 +367,149 @@ class ClerkReadUnavailableError extends Error implements ClerkReadUnavailable {
   constructor(
     readonly providerStatus: number | null,
     cause: unknown,
+    failureClass?: ClerkReadUnavailable["failureClass"],
   ) {
     super("Clerk read is temporarily unavailable", { cause });
     this.name = "ClerkReadUnavailableError";
     this.failureClass =
-      providerStatus === null
+      failureClass ??
+      (providerStatus === null
         ? "transport_read_exhausted"
-        : "transient_read_exhausted";
+        : "transient_read_exhausted");
   }
+}
+
+const computerUseSessionSchema = object({
+  id: string(),
+  user_id: string(),
+  status: string(),
+});
+const computerUseMembershipsSchema = object({
+  data: array(
+    object({
+      public_user_data: object({ user_id: string() }).nullish(),
+    }),
+  ),
+});
+
+async function readComputerUseAuthorityResource(
+  path: string,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const fetched = await settle(
+    accept(
+      fetch(`https://api.clerk.com/v1/${path}`, {
+        headers: {
+          Authorization: `Bearer ${env("CLERK_SECRET_KEY")}`,
+          // Match the response version of the pinned backend SDK.
+          "Clerk-API-Version": "2026-05-12",
+        },
+        signal,
+      }),
+      [200, 404, 429],
+    ),
+    signal,
+  );
+  if (!fetched.ok) {
+    if (fetched.error instanceof HttpStatusError) {
+      const response = fetched.error.response;
+      if (response.body) {
+        startUntrackedBestEffortCleanup(response.body.cancel());
+      }
+      // Use the existing retry policy without retaining the provider's body.
+      if (response.status >= 500 && response.status <= 599) {
+        throw new ClerkAPIResponseError("Clerk authority read failed", {
+          status: response.status,
+          data: [],
+        });
+      }
+    }
+    throw fetched.error;
+  }
+  const response = fetched.value;
+  if (response.status !== 200) {
+    if (response.body) {
+      startUntrackedBestEffortCleanup(response.body.cancel());
+    }
+    if (response.status === 404) {
+      return undefined;
+    }
+    throw new ClerkRateLimitError(
+      "Clerk authority read is rate limited",
+      Number(response.headers.get("Retry-After")),
+    );
+  }
+  return await response.json();
+}
+
+/** The SDK cannot cancel reads; these two authority reads share a real HTTP deadline. */
+export async function verifyClerkComputerUseSession(
+  identity: {
+    readonly userId: string;
+    readonly orgId: string;
+    readonly sessionId: string;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  // Claims and stop have a five-second client budget. Leave room for DB and transport.
+  const deadline = AbortSignal.timeout(3000);
+  const readSignal = AbortSignal.any([signal, deadline]);
+  const context = createClerkReadContext();
+  const result = await settleIncludingAbort(async () => {
+    const sessionBody = await retryClerkRead(
+      () => {
+        return readComputerUseAuthorityResource(
+          `sessions/${encodeURIComponent(identity.sessionId)}`,
+          readSignal,
+        );
+      },
+      context,
+      readSignal,
+    );
+    if (sessionBody === undefined) {
+      return false;
+    }
+    const session = computerUseSessionSchema.parse(sessionBody);
+    if (
+      session.id !== identity.sessionId ||
+      session.user_id !== identity.userId ||
+      session.status !== "active"
+    ) {
+      return false;
+    }
+    const query = new URLSearchParams({ user_id: identity.userId, limit: "1" });
+    const membershipsBody = await retryClerkRead(
+      () => {
+        return readComputerUseAuthorityResource(
+          `organizations/${encodeURIComponent(identity.orgId)}/memberships?${query}`,
+          readSignal,
+        );
+      },
+      context,
+      readSignal,
+    );
+    if (membershipsBody === undefined) {
+      return false;
+    }
+    return computerUseMembershipsSchema
+      .parse(membershipsBody)
+      .data.some((member) => {
+        return member.public_user_data?.user_id === identity.userId;
+      });
+  });
+  // Caller cancellation remains cancellation; only our owned deadline becomes 503.
+  signal.throwIfAborted();
+  if (deadline.aborted) {
+    throw new ClerkReadUnavailableError(
+      null,
+      deadline.reason,
+      "deadline_exceeded",
+    );
+  }
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
 }
 
 export interface ClerkReadContext {
@@ -469,6 +613,13 @@ interface ClerkReadRetry {
 }
 
 function clerkReadRetry(error: unknown): ClerkReadRetry | null {
+  // Cancellable REST reads expose the same native failure that the SDK wraps below.
+  if (error instanceof TypeError && error.message === "fetch failed") {
+    return {
+      delayMs: CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS,
+      providerStatus: null,
+    };
+  }
   if (!isClerkAPIResponseError(error)) {
     return null;
   }

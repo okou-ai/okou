@@ -2024,6 +2024,8 @@
       "recovery": {
         "accessProgramDescription": "Try again in a little while. You can keep this chat open.",
         "accessProgramTitle": "Codex access is temporarily unavailable",
+        "accountVerificationDescription": "Your Claude account can't receive replies right now. Check the Anthropic Verification Portal for the next step.",
+        "accountVerificationTitle": "Claude account verification required",
         "autonomyLimitDescription": "The limit for consecutive automatic runs has been reached. Confirm to continue.",
         "autonomyLimitTitle": "Automatic run limit reached",
         "capacityDescription": "Try again in a moment, or choose another model to keep working.",
@@ -2090,27 +2092,6 @@
       "sourcePartHeading": "Quoted from {{description}}",
       "sourcePartsHeading_one": "Quoted {{count}} part from {{description}}",
       "sourcePartsHeading_other": "Quoted {{count}} parts from {{description}}"
-    },
-    "folders": {
-      "actions": "Actions for {{name}}",
-      "chats": "Chats",
-      "create": "Create a folder",
-      "delete": "Delete folder",
-      "deleteDescription": "Delete “{{name}}”? Only the folder is deleted. Your conversations will be kept.",
-      "description": "Folders organize your chats within this Agent.",
-      "down": "Move folder down",
-      "empty": "No chats yet",
-      "failed": "Could not save your changes. Try again.",
-      "move": "Move to…",
-      "name": "Folder name",
-      "refresh": "Refresh folders",
-      "rename": "Rename folder",
-      "running": "Running chats",
-      "save": "Save",
-      "title": "Folders",
-      "unfiled": "Unfiled",
-      "unread": "Unread chats",
-      "up": "Move folder up"
     },
     "forward": {
       "action": "Forward",
@@ -4474,6 +4455,37 @@
           }
         },
         "title": "Put your everyday tools to work"
+      },
+      "outputFormats": {
+        "clear": "Clear selection",
+        "options": {
+          "image": {
+            "instruction": "Present the findings as a clear visual summary image.",
+            "label": "Image"
+          },
+          "people": {
+            "instruction": "Use this task as context to produce a shortlist of relevant people, with their roles, reasons for inclusion, and public professional profile links. If their relevance to the task is unclear, ask a focused question before searching.",
+            "label": "People shortlist"
+          },
+          "presentation": {
+            "instruction": "Present the findings as a concise presentation with key results, recommendations, and next steps.",
+            "label": "Presentation"
+          },
+          "report": {
+            "instruction": "Present the findings as a structured report with key results, recommendations, and next steps.",
+            "label": "Report"
+          },
+          "research": {
+            "instruction": "Present the findings as a research brief with supporting sources and open questions. Distinguish sourced facts from recommendations.",
+            "label": "Research brief"
+          },
+          "website": {
+            "instruction": "Present the findings as a shareable webpage with clear sections and takeaways.",
+            "label": "Website"
+          }
+        },
+        "title": "Choose a format",
+        "tooLong": "Shorten your task to choose another format."
       },
       "prompt": {
         "connectorsDescription": "Connect your tools so Okou can understand your work and tailor how it completes tasks for you. You can also connect later.",

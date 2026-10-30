@@ -6,7 +6,7 @@ import { halloweenStageMotion$ } from "../../signals/halloween/halloween-motion.
 export function HalloweenGhost() {
   return (
     <svg viewBox="0 0 120 130" className="h-full w-full" aria-hidden="true">
-      <g fill="#F8F7F3" stroke="#E7E4DD" strokeWidth="2">
+      <g fill="#FFFFFF" stroke="#C6C3BD" strokeWidth="2">
         <ellipse cx="13" cy="76" rx="8" ry="6" />
         <ellipse cx="107" cy="76" rx="8" ry="6" />
         <path
@@ -18,7 +18,7 @@ export function HalloweenGhost() {
         <ellipse cx="47" cy="58" rx="5.5" ry="7.5" />
         <ellipse cx="73" cy="58" rx="5.5" ry="7.5" />
       </g>
-      <g fill="#F0DAD1">
+      <g fill="#F7BB99">
         <ellipse cx="35" cy="73" rx="6" ry="3.6" />
         <ellipse cx="85" cy="73" rx="6" ry="3.6" />
       </g>

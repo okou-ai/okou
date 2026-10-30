@@ -198,7 +198,6 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
   let viewportHeight = VIEWPORT_HEIGHT;
   let nextContentTop = 0;
   const contentTopByEventId = new Map<string, number>();
-  const measuredEventByAnchor = new WeakMap<HTMLElement, string>();
 
   const anchors = (): HTMLElement[] => {
     return Array.from(
@@ -240,9 +239,6 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
         contentTopByEventId.set(eventId, nextContentTop);
         nextContentTop += ANCHOR_STEP;
       }
-      if (measuredEventByAnchor.get(anchor) === eventId) {
-        continue;
-      }
       Object.defineProperty(anchor, "getBoundingClientRect", {
         configurable: true,
         value: (): DOMRect => {
@@ -258,7 +254,6 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
           );
         },
       });
-      measuredEventByAnchor.set(anchor, eventId);
     }
   }
 

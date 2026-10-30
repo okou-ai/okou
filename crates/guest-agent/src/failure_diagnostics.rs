@@ -27,6 +27,7 @@ const MAX_LOGGED_CLI_STDERR_LINES: usize = 20;
 const MAX_LOGGED_CLI_STDERR_LINE_BYTES: usize = 4096;
 /// Lowercased marker the Pi model boundary writes before an observed status.
 const PI_PROVIDER_HTTP_MARKER: &str = "provider http ";
+const CLAUDE_ACCOUNT_VERIFICATION_REQUIRED_MESSAGE: &str = "Your Claude account can't receive replies right now. Check the Anthropic Verification Portal for the next step.";
 const CODEX_SAFETY_POLICY_REFUSAL_MESSAGE: &str = concat!(
     "This content was flagged for possible cybersecurity risk. ",
     "If this seems wrong, try rephrasing your request. ",
@@ -129,7 +130,13 @@ pub fn cli_nonzero_failure_for_config(
     }
 
     CliNonzeroFailure {
-        message: failure_message.message,
+        // The provider appends a personalized verification link. Keep it out of
+        // failure artifacts and downstream terminal records.
+        message: if diagnostic.failure_reason == Some(FailureReason::AccountVerificationRequired) {
+            CLAUDE_ACCOUNT_VERIFICATION_REQUIRED_MESSAGE.to_string()
+        } else {
+            failure_message.message
+        },
         diagnostic,
     }
 }
@@ -344,6 +351,15 @@ fn classify_cli_failure_reason(
     let normalized = failure_message.to_ascii_lowercase();
     if framework == AgentFramework::ClaudeCode
         && source == FailureDetailSource::ClaudeResult
+        && normalized.trim_start().starts_with(concat!(
+            "api error: your account can't receive replies from claude right now. ",
+            "you can find the next step in the anthropic verification portal:",
+        ))
+    {
+        return Some(FailureReason::AccountVerificationRequired);
+    }
+    if framework == AgentFramework::ClaudeCode
+        && source == FailureDetailSource::ClaudeResult
         && normalized.trim() == "credit balance is too low"
     {
         return Some(FailureReason::ProviderInsufficientCredits);
@@ -460,7 +476,7 @@ fn classify_cli_failure_reason(
     }
     // Subscription/usage limits are an expected quota state for both Codex
     // (ChatGPT plan "usage limit" or API billing "quota exceeded") and Claude
-    // Code (Max plan "session limit" / "weekly limit" /
+    // Code (Max plan five-hour / "session limit" / "weekly limit" /
     // monthly spend limit), so classify them regardless of framework where
     // the wording is shared. This lets the runner log these expected outcomes
     // at info instead of error.
@@ -471,7 +487,14 @@ fn classify_cli_failure_reason(
         || normalized.contains("weekly limit")
         || (matches!(framework, AgentFramework::ClaudeCode)
             && (is_claude_subscription_access_disabled_error(&normalized)
-                || is_claude_monthly_spend_limit_error(source, &normalized)))
+                || is_claude_monthly_spend_limit_error(source, &normalized)
+                || (source == FailureDetailSource::ClaudeResult
+                    && [
+                        "you've hit your 5-hour limit · resets ",
+                        "you've hit your five-hour limit · resets ",
+                    ]
+                    .iter()
+                    .any(|prefix| normalized.trim_start().starts_with(prefix)))))
     {
         return Some(FailureReason::UsageLimit);
     }

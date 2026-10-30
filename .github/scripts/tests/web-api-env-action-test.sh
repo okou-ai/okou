@@ -4,7 +4,7 @@ set +x
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ACTION="${REPO_ROOT}/.github/actions/web-api-env/action.yml"
-BROWSER_EXTENSION_IDS="11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222"
+BROWSER_EXTENSION_ID="11111111-1111-4111-8111-111111111111"
 EXPECTED_BUILD_COMMIT_SHA="$(git -C "$REPO_ROOT" rev-parse --verify HEAD)"
 TEMP_DIRS=()
 GITHUB_APP_VAR_SUFFIXES=(
@@ -300,7 +300,7 @@ run_action() {
 
   repo_vars_json='{"GH_OAUTH_CLIENT_ID":"github-gh-client-id","SLACK_OAUTH_CLIENT_ID":"github-slack-client-id","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-var","FINICITY_PARTNER_ID":"github-finicity-partner-id","LINK_STRIPE_PUBLISHABLE_KEY":"pk_live_github_link_fixture","POSTHOG_KEY":"github-posthog-key","POSTHOG_HOST":"https://posthog.github.test","ATOM_URL":"https://atom.github.test","STRIPE_OAUTH_CLIENT_ID":"ca_test_connect_client","STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID":"bpc_test_concurrency","MICROSOFT_TEAMS_BOT_APP_ID":"github-teams-bot-app-id","MICROSOFT_TEAMS_APP_TENANT_ID":"github-teams-app-tenant-id","OKOU_PRICE_PRO":"price_test_pro","OKOU_PRICE_TEAM":"price_test_team","OKOU_PRICE_USAGE_PACK_PLAN_PRO":"price_test_usage_pack_plan_pro","OKOU_PRICE_USAGE_PACK_PLAN_TEAM":"price_test_usage_pack_plan_team","OKOU_PRICE_USAGE_PACK_20":"price_test_usage_pack_20","OKOU_PRICE_USAGE_PACK_50":"price_test_usage_pack_50","OKOU_PRICE_USAGE_PACK_100":"price_test_usage_pack_100","OKOU_PRICE_USAGE_PACK_200":"price_test_usage_pack_200","ATOM_GRANT_PRICE":"price_test_atom_grant","OKOU_PRICE_CUSTOM_CREDITS":"price_test_custom_credits","OKOU_PRICE_CUSTOM_CREDIT_UNIT":"price_test_custom_credit_unit","OKOU_PRICE_CONCURRENCY":"price_test_concurrency","GMAIL_PUBSUB_TOPIC_NAME":"projects/github/topics/gmail","GMAIL_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/gmail","GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"gmail-push@github.test","GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME":"projects/github/topics/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"workspace-events-push@github.test"}'
   repo_vars_json="$(jq -c '. + {OKOU_PUBLIC_ARTIFACTS_BASE_URL: "https://cdn.okou.test", OKOU_PUBLIC_HOST_DOMAIN: "okou.app", OKOU_HOST_SCHEME: "https", OKOU_ONE_TIME_CAMPAIGN: "test-campaign"}' <<< "$repo_vars_json")"
-  repo_vars_json="$(jq -c --arg ids "$BROWSER_EXTENSION_IDS" '. + {OKOU_BROWSER_USE_EXTENSION_IDS: $ids}' <<< "$repo_vars_json")"
+  repo_vars_json="$(jq -c --arg id "$BROWSER_EXTENSION_ID" '. + {OKOU_BROWSER_USE_EXTENSION_ID: $id}' <<< "$repo_vars_json")"
   repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_DATA_ROUTER_URL":"https://data.okou.ai/mcp","OKOU_DATA_TOKEN":"github-data-router-token","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","STEAM_WEB_API_KEY":"github-steam-web-api-key","LINK_OAUTH_CLIENT_ID":"github-link-client-id","LINK_OAUTH_CLIENT_SECRET":"github-link-client-secret","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret"}'
   repo_vars_json="$(jq -c '. + {APNS_KEY_ID: "TESTKEY001", APNS_TEAM_ID: "TESTTEAM01"}' <<< "$repo_vars_json")"
   repo_secrets_json="$(jq -c '. + {
@@ -620,7 +620,7 @@ assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-te
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_APP_TENANT_ID "github-teams-app-tenant-id"
 assert_env_value "$success_env_file" GOOGLE_ADS_DEVELOPER_TOKEN "github-google-ads-secret"
 assert_env_value "$success_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
-assert_env_value "$success_env_file" OKOU_BROWSER_USE_EXTENSION_IDS "$BROWSER_EXTENSION_IDS"
+assert_env_value "$success_env_file" OKOU_BROWSER_USE_EXTENSION_ID "$BROWSER_EXTENSION_ID"
 assert_env_value "$success_env_file" STEAM_WEB_API_KEY "github-steam-web-api-key"
 assert_env_value "$success_env_file" LINK_OAUTH_CLIENT_ID "doppler-link-client-id"
 assert_env_value "$success_env_file" LINK_OAUTH_CLIENT_SECRET "doppler-link-client-secret"
@@ -739,7 +739,7 @@ assert_env_value "$production_web_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMM
 assert_env_absent_value "$production_web_env_file" "ATOM_URL="
 assert_env_key_absent "$production_web_env_file" OKOU_MACHINE_SECRET_KEY
 assert_env_absent_value "$production_web_env_file" "OKOU_BROWSER_USE_API_KEY="
-assert_env_key_absent "$production_web_env_file" OKOU_BROWSER_USE_EXTENSION_IDS
+assert_env_key_absent "$production_web_env_file" OKOU_BROWSER_USE_EXTENSION_ID
 assert_env_absent_value "$production_web_env_file" "github-cloudflare-browser-rendering-token"
 assert_env_absent_value "$production_web_env_file" "github-artifact-preview-waf-secret"
 
@@ -788,7 +788,7 @@ assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID "github-t
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-teams-bot-app-password"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_APP_TENANT_ID "github-teams-app-tenant-id"
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
-assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_EXTENSION_IDS "$BROWSER_EXTENSION_IDS"
+assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_EXTENSION_ID "$BROWSER_EXTENSION_ID"
 assert_env_absent_value "$production_api_env_file" "ONBOARDING_URL="
 assert_env_value "$production_api_env_file" STRIPE_WEBHOOK_SECRET "github-stripe-billing-webhook-secret"
 assert_env_value "$production_api_env_file" STRIPE_AUTOMATION_WEBHOOK_SECRET "github-stripe-automation-webhook-secret"

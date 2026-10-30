@@ -242,6 +242,11 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     title: "Claude terms need acceptance",
     action: "Open Claude",
   },
+  account_verification_required: {
+    title: "Claude account verification required",
+    description:
+      "Your Claude account can't receive replies right now. Check the Anthropic Verification Portal for the next step.",
+  },
   context_window_exceeded: {
     title: "This chat is too long",
     action: "New chat",
