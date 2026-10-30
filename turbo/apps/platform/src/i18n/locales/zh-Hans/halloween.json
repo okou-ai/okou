@@ -6,8 +6,9 @@
     "boo": "呜！",
     "brand": "Okou",
     "campaign": "Spooky Halloween",
-    "climb": "攀登之路",
+    "climb": "闯关进度",
     "correct": "答对了",
+    "correctAnswers": "答对题数",
     "error": "暂时无法加载答题，请重试。",
     "footerAfter": "，了解参与资格和奖励详情。",
     "footerBefore": "查看活动",
@@ -15,7 +16,6 @@
     "hint": "答对四题，迎来甜蜜终章。",
     "intro": "一个小测验，几分小惊喜。",
     "language": "简体中文",
-    "leave": "退出答题",
     "lost": "你被耍了！",
     "lostRewardEmphasis": "不过，你仍有机会获得 7 天试用！",
     "lostRewardRest": "继续和 Okou 一起探索，它或许会给你一个万圣节惊喜。",
@@ -23,7 +23,6 @@
     "lostTaskTitle": "现在轮到你考考 Okou",
     "next": "下一题",
     "nudgeLabel": "参加万圣节问答",
-    "questionProgress": "第 {{current}} 题，共 {{total}} 题",
     "redeem": "兑换",
     "redeemEmailBody": "Okou 团队，你们好：\n\n我已通过万圣节问答，希望领取 7 天 Okou Pro 试用奖励。\n\nOkou 账号邮箱：[请填写你的账号邮箱]\n\n谢谢！",
     "redeemEmailSubject": "万圣节奖励兑换申请",
@@ -51,7 +50,7 @@
     "wonSub": "它就知道你可以。"
   },
   "levels": {
-    "five": "OKOU 喜欢你。",
+    "five": "Okou 喜欢你",
     "four": "万圣传奇",
     "one": "新手",
     "three": "捣蛋高手",
@@ -554,7 +553,7 @@
       "title": "活动开放条件"
     },
     "play": {
-      "text": "登录 Okou 账号即可参与，无需完成其他任务。每轮进度会直接保存到当前账号：先随机回答四道不重复的问题，最后回答“你喜欢 Okou 吗？”——最后一题的所有选项都算正确。任意一题答错，本轮即结束。关闭或刷新页面会保留当前进度或结果；选择“退出答题”会放弃未完成的一轮，看到结果后选择“再玩一次”则会开始新一轮。",
+      "text": "登录 Okou 账号即可参与，无需完成其他任务。每轮进度会直接保存到当前账号：先随机回答四道不重复的问题，最后回答“你喜欢 Okou 吗？”——最后一题的所有选项都算正确。任意一题答错，本轮即结束。关闭或刷新页面会保留当前进度或结果；看到结果后选择“再玩一次”会开始新一轮。",
       "title": "玩法说明"
     },
     "reward": {
