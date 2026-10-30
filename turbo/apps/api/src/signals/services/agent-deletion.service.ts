@@ -1,47 +1,39 @@
+import { Buffer } from "node:buffer";
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
-import { blobs } from "@okouai/db/schema/blob";
-import {
-  deleteRunHistoriesSql,
-  deletedRunHistorySchema,
-} from "@okouai/db/operations/run-history-deletion";
+import { agentDeletionError } from "@okouai/core/agent-protection";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  officialWorkflowAutomationIdentities,
-  workflows,
-} from "@okouai/db/schema/workflow";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
+import {
+  array,
+  discriminatedUnion,
+  enum as zEnum,
+  literal,
+  number,
+  object,
+  string,
+  unknown as zUnknown,
+} from "zod";
 
 import { db$, writeDb$ } from "../external/db";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import {
-  agentDeletionAdmissionPlan,
-  agentDeletionIdentityCondition,
-  agentDeletionAutomationCondition,
-  agentDeletionWorkflowCondition,
-  agentDeletionWorkflowIdentityCondition,
-  agentDeletionThreadSequencesSql,
-  agentDeletionCascadeSql,
-  type DeleteAgentArgs,
-} from "./agent-deletion-queries";
+import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { conflict } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { isLockNotAvailable } from "../../lib/pg-errors";
 import { settle } from "../utils";
-import { agentPublicationFenceDeletionSql } from "./agent-lifecycle.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
-  deletedRunHistoryReferences,
-  conversationReferenceBatches,
-  conversationBlobLockCondition,
-  conversationBlobReleaseValues,
   conversationDeletionDatabaseError,
   logCommittedConversationDeletion,
 } from "./conversation-history-deletion.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
-import { backgroundJobs } from "@okouai/db/schema/background-job";
-import { workflowAttachmentCleanupValues } from "./workflow-attachment-cleanup.service";
+
+interface DeleteAgentArgs {
+  readonly agentId: string;
+  readonly orgId: string;
+  readonly member: { readonly userId: string; readonly role: string };
+}
 
 const log = logger("api:agent-deletion");
 const THREAD_DELETION_READ_PAGE_SIZE = 500;
@@ -56,179 +48,131 @@ export const agentExistsInOrg$ = command(
     const [row] = await get(db$)
       .select({ id: agents.id })
       .from(agents)
-      .where(agentDeletionIdentityCondition(args))
+      .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)))
       .limit(1);
     signal.throwIfAborted();
     return Boolean(row);
   },
 );
 
-const DELETE_AGENT_LOCK_TIMEOUT = "100ms";
-const agentWatchColumns = Object.freeze({
-  orgId: workflowAutomations.orgId,
-  ownerUserId: workflowAutomations.ownerUserId,
-  eventType: workflowAutomations.eventType,
-  eventConfig: workflowAutomations.eventConfig,
-  eventConnectorId: workflowAutomations.eventConnectorId,
-});
+const deletionResultSchema = discriminatedUnion("kind", [
+  object({ kind: literal("missing") }),
+  object({ kind: literal("ownership-conflict") }),
+  object({ kind: literal("active-run") }),
+  object({ kind: literal("default-agent") }),
+  object({
+    kind: literal("permission-denied"),
+    owner: string(),
+    visibility: zEnum(["public", "private"]),
+  }),
+  object({
+    kind: literal("deleted"),
+    automations: array(
+      object({
+        orgId: string(),
+        ownerUserId: string(),
+        eventType: string().nullable(),
+        eventConfig: zUnknown(),
+        eventConnectorId: string().nullable(),
+      }),
+    ),
+    conversationDeletion: object({
+      deletedRuns: number().int().nonnegative(),
+      releasedReferences: number().int().nonnegative(),
+      releasedHashes: number().int().nonnegative(),
+    }),
+  }),
+]);
+const deletionRowSchema = object({ result: deletionResultSchema });
 
-function* workflowAttachmentRetirementInputs(
-  removedWorkflows: readonly Pick<
-    typeof workflows.$inferSelect,
-    "id" | "ownerUserId" | "attachments"
-  >[],
-  orgId: string,
-) {
-  for (const workflow of removedWorkflows) {
-    if (workflow.attachments?.kind === "bundle") {
-      yield {
-        orgId,
-        userId: workflow.ownerUserId,
-        workflowId: workflow.id,
-        objectKey: workflow.attachments.objectKey,
-      };
+/** A PostgreSQL text owner cannot equal a NUL or unpaired-surrogate JS ID. */
+function comparableMemberId(userId: string): string | null {
+  return userId.includes("\0") ||
+    Buffer.from(userId, "utf8").toString("utf8") !== userId
+    ? null
+    : userId;
+}
+
+function agentDeletionDatabaseError(error: unknown): Error {
+  if (
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause
+  ) {
+    switch (error.cause.constraint) {
+      case "agent_deletion_lost_run": {
+        return new Error("Conversation deletion lost a locked run");
+      }
+      case "agent_deletion_missing_blob": {
+        return new Error(
+          "Conversation history reference accounting failed: missing blob references",
+        );
+      }
+      case "agent_deletion_insufficient_blob": {
+        return new Error(
+          "Conversation history reference accounting failed: missing or insufficient blob references",
+        );
+      }
+      case "agent_deletion_attachment_owner": {
+        return new Error("Workflow attachment package has a foreign owner");
+      }
+      case "agent_deletion_invalid_visibility": {
+        return new Error("Invalid Agent visibility during deletion");
+      }
     }
   }
+  // Preserve safe SQLSTATE diagnostics and the outer 55P03 -> 409 mapping.
+  // The single statement must not expose SQL or bound values from any stage.
+  return conversationDeletionDatabaseError(error);
 }
 
 const deleteAgentRows$ = command(
   async ({ set }, args: DeleteAgentArgs, signal: AbortSignal) => {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0047; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
-      );
-      signal.throwIfAborted();
-      const admission = agentDeletionAdmissionPlan(args);
-      let step = admission.next();
-      while (!step.done) {
-        const statement = step.value;
-        const rows = parseRawRows(
-          statement.rowSchema,
-          await tx.execute(statement.sql),
-        );
-        signal.throwIfAborted();
-        step = admission.next(rows);
-      }
-      const lifecycle = step.value;
-      if (lifecycle.kind !== "ready") {
-        return lifecycle;
-      }
-      // Direct append owns sequence before its thread FK check. Take sequences
-      // before the Agent cascade under the existing lock timeout.
-      await tx.execute(agentDeletionThreadSequencesSql(args.agentId));
-      signal.throwIfAborted();
-      const automations = await tx
-        .select(agentWatchColumns)
-        .from(workflowAutomations)
-        .where(agentDeletionAutomationCondition(args));
-      signal.throwIfAborted();
-      const historyDeletionQuery = deleteRunHistoriesSql(lifecycle.runIds);
-      const historyDeletionSchema = deletedRunHistorySchema;
-      const deletion = await settle(
-        (async () => {
-          return parseRawRows(
-            historyDeletionSchema,
-            await tx.execute(historyDeletionQuery),
-          );
-        })(),
-      );
-      signal.throwIfAborted();
-      if (!deletion.ok) {
-        throw conversationDeletionDatabaseError(deletion.error);
-      }
-      const deleted = deletion.value;
-      if (deleted.length !== lifecycle.runIds.length) {
-        throw new Error("Conversation deletion lost a locked run");
-      }
-      const removed = deletedRunHistoryReferences(deleted);
-      for (const statement of agentPublicationFenceDeletionSql(args.agentId)) {
-        await tx.execute(statement);
-        signal.throwIfAborted();
-      }
-      // The Workflow cascade owns these identities. Retire them before the
-      // Automation FK can SET NULL an active identity and violate its state check.
-      await tx
-        .delete(officialWorkflowAutomationIdentities)
-        .where(agentDeletionWorkflowIdentityCondition(args));
-      signal.throwIfAborted();
-      // Keep the earlier watch snapshot and include every explicitly removed
-      // target before deleting its Workflow parent.
-      const removedAutomations = await tx
-        .delete(workflowAutomations)
-        .where(agentDeletionAutomationCondition(args))
-        .returning(agentWatchColumns);
-      signal.throwIfAborted();
-      // DELETE RETURNING consumes the actual winning descriptor after any
-      // concurrent Workflow update. A preceding SELECT would miss a late edit.
-      const removedWorkflows = await tx
-        .delete(workflows)
-        .where(agentDeletionWorkflowCondition(args))
-        .returning({
-          id: workflows.id,
-          ownerUserId: workflows.ownerUserId,
-          attachments: workflows.attachments,
-        });
-      for (const input of workflowAttachmentRetirementInputs(
-        removedWorkflows,
-        args.orgId,
-      )) {
-        await tx
-          .insert(backgroundJobs)
-          .values(workflowAttachmentCleanupValues(input));
-      }
-      await tx.execute(agentDeletionCascadeSql(args));
-      signal.throwIfAborted();
-      // The cascade drains already-owned Workflow rows. Sweep their late fence
-      // initialization after the cascade, preserving generation-before-token order.
-      for (const statement of agentPublicationFenceDeletionSql(args.agentId)) {
-        await tx.execute(statement);
-        signal.throwIfAborted();
-      }
-      // Blob locks and reference release remain LAST, after all parent mutations.
-      const release = conversationReferenceBatches(removed);
-      for (const batch of release.batches) {
-        const locked = await settle(
-          tx
-            .select({ hash: blobs.hash })
-            .from(blobs)
-            .where(conversationBlobLockCondition(batch))
-            .orderBy(asc(blobs.hash))
-            .for("update", { noWait: true }),
-        );
-        signal.throwIfAborted();
-        if (!locked.ok) {
-          throw conversationDeletionDatabaseError(locked.error);
-        }
-        if (locked.value.length !== batch.length) {
-          throw new Error(
-            "Conversation history reference accounting failed: missing blob references",
-          );
-        }
-        const releaseValues = conversationBlobReleaseValues(batch);
-        const released = await settle(
-          tx
-            .update(blobs)
-            .set(releaseValues.values)
-            .from(releaseValues.from)
-            .where(releaseValues.where),
-        );
-        signal.throwIfAborted();
-        if (!released.ok) {
-          throw conversationDeletionDatabaseError(released.error);
-        }
-        if (released.value.rowCount !== batch.length) {
-          throw new Error(
-            "Conversation history reference accounting failed: missing or insufficient blob references",
-          );
-        }
-      }
+    const db = set(writeDb$);
+    const query = sql`SELECT public.delete_agent_rows(
+      ${args.agentId}::uuid, ${args.orgId},
+      ${comparableMemberId(args.member.userId)}, ${args.member.role === "admin"}
+    ) AS result`;
+    const rowSchema = deletionRowSchema;
+    const deletion = await settle(
+      (async () => {
+        return parseRawRows(rowSchema, await db.execute(query));
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!deletion.ok) {
+      throw agentDeletionDatabaseError(deletion.error);
+    }
+    const [row] = deletion.value;
+    if (!row) {
+      throw new Error("Agent deletion returned no outcome");
+    }
+    const result = row.result;
+    if (result.kind === "default-agent") {
       return {
-        kind: "deleted" as const,
-        automations: [...automations, ...removedAutomations],
-        conversationDeletion: release.receipt,
+        kind: "forbidden" as const,
+        response: {
+          status: 400 as const,
+          body: { error: agentDeletionError(true) },
+        },
       };
-    });
+    }
+    if (result.kind === "permission-denied") {
+      const response = requireAgentPermission(
+        result.owner,
+        args.member,
+        "delete agent",
+        { visibility: result.visibility },
+      );
+      if (!response) {
+        throw new Error(
+          "Agent deletion permission outcome contradicts its owner",
+        );
+      }
+      return { kind: "forbidden" as const, response };
+    }
+    return result;
   },
 );
 
