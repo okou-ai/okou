@@ -36,6 +36,7 @@ const segmentExpectedSchema = discriminatedUnion("kind", [
     name: string(),
     suffix: string(),
     greedy: union([literal(""), literal("+"), literal("*")]),
+    constraint: literal("digits").optional(),
   }),
   object({
     kind: literal("error"),

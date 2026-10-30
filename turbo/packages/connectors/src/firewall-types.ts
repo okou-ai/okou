@@ -2761,6 +2761,15 @@ function validateHostParams(
       continue;
     }
     const { name, greedy, prefix, suffix } = parsed;
+    if (parsed.constraint !== undefined) {
+      throw new Error(
+        errMsg(
+          base,
+          svc,
+          "parameter constraints are only allowed in rule paths",
+        ),
+      );
+    }
     if (paramNames.has(name)) {
       throw new Error(
         errMsg(base, svc, `duplicate parameter name "{${name}}" in host`),
@@ -2808,6 +2817,15 @@ function validatePathParams(
     }
     if (parsed.kind === "literal") continue;
     const { name, greedy } = parsed;
+    if (parsed.constraint !== undefined) {
+      throw new Error(
+        errMsg(
+          base,
+          svc,
+          "parameter constraints are only allowed in rule paths",
+        ),
+      );
+    }
     if (greedy) {
       throw new Error(
         errMsg(

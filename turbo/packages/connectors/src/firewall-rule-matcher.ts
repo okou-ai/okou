@@ -336,6 +336,8 @@ function parseStrictMatchSegment(
 ): MatchableSegment | null {
   const parsed = parseSegment(segment);
   if (parsed.kind === "error") return null;
+  // This parser is used for base hosts and path prefixes, not rule paths.
+  if (parsed.kind === "param" && parsed.constraint !== undefined) return null;
   if (
     parsed.kind === "param" &&
     parsed.greedy !== "" &&
@@ -692,6 +694,7 @@ function awsQuerySelectorSignature(rule: DecisionRule): string | null {
           prefix: parsed.prefix,
           suffix: parsed.suffix,
           greedy: parsed.greedy,
+          constraint: parsed.constraint,
         };
   });
   if (
@@ -2731,6 +2734,8 @@ function matchFirewallPathPrefixForMalformedBaseDecision(
  * - `{name*}` matches the rest of the path (zero or more segments). Must be last.
  *
  * Returns extracted parameters on match, or null on mismatch.
+ * `{name:digits}` accepts one or more ASCII digits without decoding or numeric
+ * coercion. It has the same specificity rank as an unconstrained parameter.
  */
 export function matchFirewallPath(
   path: string,
@@ -2776,6 +2781,7 @@ export function matchFirewallPath(
     }
     if (pi >= pathSegs.length) return null;
     const runtime = pathSegs[pi]!;
+    if (parsed.constraint === "digits" && /[^0-9]/.test(runtime)) return null;
     if (prefix === "" && suffix === "") {
       if (runtime === "") return null;
       params[name] = runtime;

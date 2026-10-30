@@ -20,6 +20,7 @@ class SegmentParam(NamedTuple):
     name: str
     suffix: str
     greedy: str
+    constraint: str = ""
 
 
 class SegmentError(NamedTuple):
@@ -110,6 +111,14 @@ def _parse_segment(seg: str) -> ParsedSegment:
     if len(name) == 0:
         return SegmentError(f'empty parameter name in segment "{seg}" — {_SEGMENT_ERROR_HINT}')
 
+    if ":" in name:
+        param_name, _, constraint = name.partition(":")
+        if not param_name or constraint != "digits":
+            return SegmentError(f'invalid parameter constraint in segment "{seg}"')
+        if prefix or suffix or greedy or param_name.endswith(("+", "*")):
+            return SegmentError(f'constrained parameter must occupy one non-greedy segment "{seg}"')
+        return SegmentParam(prefix, param_name, suffix, greedy, "digits")
+
     return SegmentParam(prefix, name, suffix, greedy)
 
 
@@ -121,26 +130,30 @@ def parse_segment(seg: str) -> dict:
     rejected forms must land in both languages and the shared contract fixture
     at once:
     turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json.
-    Parameter names are opaque non-empty segment text; callers validate the
-    surrounding URL/rule syntax before parsing.
+    Parameter names are non-empty segment text. A colon reserves the constraint
+    suffix: only a whole, non-greedy {name:digits} rule-path segment is supported.
+    Callers validate the surrounding URL/rule syntax before parsing.
 
     Returns one of:
       {"kind": "literal", "value": seg}
       {"kind": "param", "prefix": str, "name": str, "suffix": str,
-       "greedy": "" | "+" | "*"}
+       "greedy": "" | "+" | "*", "constraint"?: "digits"}
       {"kind": "error", "reason": str}
     """
     parsed = _parse_segment(seg)
     if isinstance(parsed, SegmentLiteral):
         return {"kind": "literal", "value": parsed.value}
     if isinstance(parsed, SegmentParam):
-        return {
+        result = {
             "kind": "param",
             "prefix": parsed.prefix,
             "name": parsed.name,
             "suffix": parsed.suffix,
             "greedy": parsed.greedy,
         }
+        if parsed.constraint:
+            result["constraint"] = parsed.constraint
+        return result
     return {"kind": "error", "reason": parsed.reason}
 
 
@@ -185,7 +198,9 @@ def match_host(host: str, pattern: str) -> dict | None:
       Non-empty captures preserve the input case supplied to match_host().
     """
     pattern_segs = _compile_segments(tuple(reversed(pattern.split("."))))
-    if pattern_segs is None:
+    if pattern_segs is None or any(
+        isinstance(segment, SegmentParam) and segment.constraint for segment in pattern_segs
+    ):
         return None
     return _match_compiled_host(host, pattern_segs)
 
@@ -201,7 +216,9 @@ def match_path_prefix(path_segs: list[str], pattern_segs: list[str]) -> tuple[di
     Returns (params, consumed_count) on match, None on no match.
     """
     compiled_pattern = _compile_segments(pattern_segs)
-    if compiled_pattern is None:
+    if compiled_pattern is None or any(
+        isinstance(segment, SegmentParam) and segment.constraint for segment in compiled_pattern
+    ):
         return None
     return _match_compiled_path_prefix(path_segs, compiled_pattern)
 
@@ -288,6 +305,7 @@ def match_path(path: str, pattern: str) -> dict | None:
 
     - Literal segments must match exactly.
     - {name} matches a single non-empty path segment.
+    - {name:digits} matches a single non-empty ASCII decimal segment.
     - prefix{name}suffix matches a segment that starts with `prefix` and
       ends with `suffix`, capturing the non-empty middle into `name`.
     - {name+} matches the rest of the path (one or more segments). Must be last.
@@ -347,6 +365,7 @@ def _match_compiled_path_traversal(
     pattern_segs: tuple[ParsedSegment, ...],
     *,
     capture_params: bool = True,
+    match_constraints: bool = True,
 ) -> tuple[dict[str, str] | None, int] | None:
     params: dict[str, str] | None = {} if capture_params else None
     pi = 0
@@ -390,6 +409,12 @@ def _match_compiled_path_traversal(
             return None
 
         runtime = path_segs[pi]
+        if (
+            match_constraints
+            and parsed.constraint == "digits"
+            and not (runtime.isascii() and runtime.isdigit())
+        ):
+            return None
         if parsed.prefix == "" and parsed.suffix == "":
             if runtime == "":
                 return None
@@ -453,7 +478,8 @@ def _match_compiled_path_prefix(
     path_segs: list[str],
     pattern_segs: tuple[ParsedSegment, ...],
 ) -> tuple[dict[str, str], int] | None:
-    result = _match_compiled_path_traversal(path_segs, pattern_segs)
+    # Base ownership must remain conservative even for malformed constrained bases.
+    result = _match_compiled_path_traversal(path_segs, pattern_segs, match_constraints=False)
     if result is None:
         return None
 

@@ -148,7 +148,11 @@ def _extract_raw_hostname(netloc: str) -> _RawAuthorityHost | None:
 
 
 def _format_param_segment(parsed: SegmentParam) -> str:
-    return f"{parsed.prefix.lower()}{{{parsed.name}{parsed.greedy}}}{parsed.suffix.lower()}"
+    constraint = f":{parsed.constraint}" if parsed.constraint else ""
+    return (
+        f"{parsed.prefix.lower()}{{{parsed.name}{constraint}{parsed.greedy}}}"
+        f"{parsed.suffix.lower()}"
+    )
 
 
 def _is_parameterized_ipv4_host(segments: list[ParsedSegment]) -> bool:
@@ -376,6 +380,8 @@ def _compile_base_segments_for_match(
                 )
             )
         else:
+            if isinstance(parsed_segment, SegmentParam) and parsed_segment.constraint:
+                has_malformed_segment = True
             parsed.append(parsed_segment)
     return tuple(parsed), has_malformed_segment
 
@@ -398,7 +404,7 @@ def _compiled_base_params_are_valid(base: _CompiledBase) -> bool:
         if isinstance(segment, SegmentError):
             return False
 
-        if segment.name in param_names:
+        if segment.constraint or segment.name in param_names:
             return False
         param_names.add(segment.name)
 
@@ -416,7 +422,7 @@ def _compiled_base_params_are_valid(base: _CompiledBase) -> bool:
         if isinstance(segment, SegmentError):
             return False
 
-        if segment.greedy:
+        if segment.constraint or segment.greedy:
             return False
         if segment.name in param_names:
             return False

@@ -14,7 +14,10 @@
  *   - `{name}suffix`            parameter + literal suffix.
  *   - `prefix{name}`            literal prefix + parameter.
  *   - `prefix{name}suffix`      literal prefix + parameter + literal suffix.
- *   - Parameter names are opaque non-empty segment text and may carry a
+ *   - `{name:digits}`           whole rule-path segment of ASCII digits.
+ *     Constraints are not supported in base URLs or mixed/greedy segments.
+ *     A colon reserves the constraint suffix; unknown constraints are errors.
+ *   - Unconstrained parameter names are opaque non-empty text without colons and may carry a
  *     trailing `+` or `*` for greedy matching;
  *     greedy is only valid in positions the caller allows (leftmost host
  *     segment, or last rule-path segment). Greedy names must NOT appear in
@@ -43,6 +46,7 @@ type SegmentParseResult =
       name: string;
       suffix: string;
       greedy: "" | "+" | "*";
+      constraint?: "digits";
     }
   | { kind: "error"; reason: string };
 
@@ -118,7 +122,41 @@ export function parseSegment(seg: string): SegmentParseResult {
     };
   }
 
-  return { kind: "param", prefix, name, suffix, greedy };
+  const parsed = { kind: "param", prefix, name, suffix, greedy } as const;
+  return name.includes(":") ? parseConstrainedSegment(parsed, seg) : parsed;
+}
+
+function parseConstrainedSegment(
+  parsed: Extract<SegmentParseResult, { kind: "param" }>,
+  seg: string,
+): SegmentParseResult {
+  const { name, prefix, suffix, greedy } = parsed;
+  const parts = name.split(":");
+  if (parts.length !== 2 || parts[0] === "" || parts[1] !== "digits") {
+    return {
+      kind: "error",
+      reason: `invalid parameter constraint in segment "${seg}"`,
+    };
+  }
+  if (
+    prefix !== "" ||
+    suffix !== "" ||
+    greedy !== "" ||
+    /[+*]$/.test(parts[0]!)
+  ) {
+    return {
+      kind: "error",
+      reason: `constrained parameter must occupy one non-greedy segment "${seg}"`,
+    };
+  }
+  return {
+    kind: "param",
+    prefix,
+    name: parts[0]!,
+    suffix,
+    greedy,
+    constraint: "digits",
+  };
 }
 
 export function splitPathSegments(path: string): string[] {

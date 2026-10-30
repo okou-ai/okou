@@ -999,7 +999,7 @@ def _aws_path_segment_identity(
     if isinstance(segment, SegmentLiteral):
         return ("literal", segment.value)
     if isinstance(segment, SegmentParam):
-        return ("param", segment.prefix, segment.suffix, segment.greedy)
+        return ("param", segment.prefix, segment.suffix, segment.greedy, segment.constraint)
     return ("error", segment.reason)
 
 

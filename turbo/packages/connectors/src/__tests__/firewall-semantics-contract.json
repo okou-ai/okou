@@ -1,6 +1,66 @@
 {
   "awsRuleValidationCases": [
     {
+      "name": "valid digits rule GET /stories/{id:digits}",
+      "rule": "GET /stories/{id:digits}",
+      "valid": true
+    },
+    {
+      "name": "valid digits rule GET /spaces/{space_id:digits}/stories/{id:digits}/versions",
+      "rule": "GET /spaces/{space_id:digits}/stories/{id:digits}/versions",
+      "valid": true
+    },
+    {
+      "name": "reject constrained rule {id:digit}",
+      "rule": "GET /stories/{id:digit}",
+      "valid": false
+    },
+    {
+      "name": "reject constrained rule {id:}",
+      "rule": "GET /stories/{id:}",
+      "valid": false
+    },
+    {
+      "name": "reject constrained rule {:digits}",
+      "rule": "GET /stories/{:digits}",
+      "valid": false
+    },
+    {
+      "name": "reject constrained rule {id:digits:digits}",
+      "rule": "GET /stories/{id:digits:digits}",
+      "valid": false
+    },
+    {
+      "name": "reject constrained rule {id:digits+}",
+      "rule": "GET /stories/{id:digits+}",
+      "valid": false
+    },
+    {
+      "name": "reject constrained rule {id+:digits}",
+      "rule": "GET /stories/{id+:digits}",
+      "valid": false
+    },
+    {
+      "name": "reject constrained rule {id:digits*}",
+      "rule": "GET /stories/{id:digits*}",
+      "valid": false
+    },
+    {
+      "name": "reject constrained rule prefix{id:digits}",
+      "rule": "GET /stories/prefix{id:digits}",
+      "valid": false
+    },
+    {
+      "name": "reject constrained rule {id:digits}.json",
+      "rule": "GET /stories/{id:digits}.json",
+      "valid": false
+    },
+    {
+      "name": "constrained duplicate name",
+      "rule": "GET /stories/{id:digits}/{id}",
+      "valid": false
+    },
+    {
       "name": "ordinary rule remains valid",
       "rule": "GET /items/{id}",
       "valid": true
@@ -82,6 +142,90 @@
     }
   ],
   "segmentParseCases": [
+    {
+      "name": "digits constraint",
+      "segment": "{id:digits}",
+      "expected": {
+        "kind": "param",
+        "prefix": "",
+        "name": "id",
+        "suffix": "",
+        "greedy": "",
+        "constraint": "digits"
+      }
+    },
+    {
+      "name": "reject constraint {id:digit}",
+      "segment": "{id:digit}",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "invalid parameter constraint"
+      }
+    },
+    {
+      "name": "reject constraint {id:}",
+      "segment": "{id:}",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "invalid parameter constraint"
+      }
+    },
+    {
+      "name": "reject constraint {:digits}",
+      "segment": "{:digits}",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "invalid parameter constraint"
+      }
+    },
+    {
+      "name": "reject constraint {id:digits:digits}",
+      "segment": "{id:digits:digits}",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "invalid parameter constraint"
+      }
+    },
+    {
+      "name": "reject constraint {id:digits+}",
+      "segment": "{id:digits+}",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "constrained parameter"
+      }
+    },
+    {
+      "name": "reject constraint {id+:digits}",
+      "segment": "{id+:digits}",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "constrained parameter"
+      }
+    },
+    {
+      "name": "reject constraint {id:digits*}",
+      "segment": "{id:digits*}",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "constrained parameter"
+      }
+    },
+    {
+      "name": "reject constraint prefix{id:digits}",
+      "segment": "prefix{id:digits}",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "constrained parameter"
+      }
+    },
+    {
+      "name": "reject constraint {id:digits}.json",
+      "segment": "{id:digits}.json",
+      "expected": {
+        "kind": "error",
+        "reasonIncludes": "constrained parameter"
+      }
+    },
     {
       "name": "empty segment is a literal",
       "segment": "",
@@ -327,6 +471,135 @@
   ],
   "pathMatchCases": [
     {
+      "name": "digits path \"0\"",
+      "path": "/stories/0/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "match",
+        "params": {
+          "id": "0"
+        }
+      }
+    },
+    {
+      "name": "digits path \"00123\"",
+      "path": "/stories/00123/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "match",
+        "params": {
+          "id": "00123"
+        }
+      }
+    },
+    {
+      "name": "digits path \"123456789012345678901234567890\"",
+      "path": "/stories/123456789012345678901234567890/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "match",
+        "params": {
+          "id": "123456789012345678901234567890"
+        }
+      }
+    },
+    {
+      "name": "digits path \"published\"",
+      "path": "/stories/published/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"published_index\"",
+      "path": "/stories/published_index/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"draft\"",
+      "path": "/stories/draft/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"-1\"",
+      "path": "/stories/-1/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"+1\"",
+      "path": "/stories/+1/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"1.0\"",
+      "path": "/stories/1.0/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"1e2\"",
+      "path": "/stories/1e2/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"١٢\"",
+      "path": "/stories/١٢/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"１２\"",
+      "path": "/stories/１２/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"%31\"",
+      "path": "/stories/%31/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"42\\n\"",
+      "path": "/stories/42\n/versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "digits path \"\"",
+      "path": "/stories//versions",
+      "pattern": "/stories/{id:digits}/versions",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
       "name": "exact literal path",
       "path": "/api/v1/users",
       "pattern": "/api/v1/users",
@@ -536,6 +809,14 @@
   ],
   "hostMatchCases": [
     {
+      "name": "reject constrained host",
+      "host": "42.example.com",
+      "pattern": "{sub:digits}.example.com",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
       "name": "literal host matches case-insensitively",
       "host": "API.GitHub.COM",
       "pattern": "api.github.com",
@@ -662,6 +943,14 @@
     }
   ],
   "pathPrefixMatchCases": [
+    {
+      "name": "reject constrained base path",
+      "path": "/42/stories",
+      "pattern": "/{id:digits}",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
     {
       "name": "root prefix returns full path",
       "path": "/v2/demo",
@@ -1016,6 +1305,537 @@
     }
   ],
   "finalDecisionCases": [
+    {
+      "name": "numeric route still enforces denied permission",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /stories/{id:digits}/versions"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": [],
+          "deny": ["read"],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/stories/123/versions"
+      },
+      "expected": {
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/stories/123/versions",
+        "kind": "block",
+        "reason": "permission_denied",
+        "permissions": ["read"]
+      }
+    },
+    {
+      "name": "unknown constraint cannot become an unconstrained permission",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /stories/{id:digit}/versions"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/stories/published/versions"
+      },
+      "expected": {
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/stories/published/versions",
+        "kind": "block",
+        "reason": "malformed_firewall_config",
+        "permissions": []
+      }
+    },
+    {
+      "name": "malformed constrained base path retains conservative ownership",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/{id:digits}",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /versions"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/draft/versions"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/{id:digits}",
+        "relativePath": "/versions",
+        "reason": "malformed_firewall_config",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unsupported constrained host is not a URL authority match",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://{id:digits}.example.com",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": ["GET /versions"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://draft.example.com/versions"
+      },
+      "expected": {
+        "kind": "no_match"
+      }
+    },
+    {
+      "name": "constrained permission 123",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": [
+                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/spaces/42/stories/123/versions"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/spaces/42/stories/123/versions",
+        "permission": "read",
+        "rule": "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+      }
+    },
+    {
+      "name": "constrained permission published",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": [
+                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/spaces/42/stories/published/versions"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/spaces/42/stories/published/versions",
+        "reason": "unknown_endpoint",
+        "permissions": []
+      }
+    },
+    {
+      "name": "constrained permission draft",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": [
+                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/spaces/42/stories/draft/versions"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/spaces/42/stories/draft/versions",
+        "reason": "unknown_endpoint",
+        "permissions": []
+      }
+    },
+    {
+      "name": "constrained permission published_index",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": [
+                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/spaces/42/stories/published_index/versions"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/spaces/42/stories/published_index/versions",
+        "reason": "unknown_endpoint",
+        "permissions": []
+      }
+    },
+    {
+      "name": "constrained permission %31",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": [
+                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/spaces/42/stories/%31/versions"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/spaces/42/stories/%31/versions",
+        "reason": "unknown_endpoint",
+        "permissions": []
+      }
+    },
+    {
+      "name": "constrained permission ١٢",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": [
+                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/spaces/42/stories/١٢/versions"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/spaces/42/stories/١٢/versions",
+        "reason": "unknown_endpoint",
+        "permissions": []
+      }
+    },
+    {
+      "name": "constrained permission -1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": [
+                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/spaces/42/stories/-1/versions"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/spaces/42/stories/-1/versions",
+        "reason": "unknown_endpoint",
+        "permissions": []
+      }
+    },
+    {
+      "name": "constrained and broad permissions preserve existing allow-on-tie behavior",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v1",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer token"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "read",
+                  "rules": [
+                    "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+                  ]
+                },
+                {
+                  "name": "broad",
+                  "rules": ["GET /spaces/{space_id}/stories/{id}/versions"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read"],
+          "deny": ["broad"],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/spaces/42/stories/123/versions"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v1",
+        "relativePath": "/spaces/42/stories/123/versions",
+        "permission": "read",
+        "rule": "GET /spaces/{space_id:digits}/stories/{id:digits}/versions"
+      }
+    },
     {
       "name": "parameterized repeated root slash base does not select credentials outside its scope",
       "firewalls": [
