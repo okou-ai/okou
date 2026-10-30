@@ -87,6 +87,9 @@ jobs:
       api_contracts_release_created: ${{ steps.release.outputs['turbo/packages/api-contracts--release_created'] }}
       connectors_release_created: ${{ steps.release.outputs['turbo/packages/connectors--release_created'] }}
       db_release_created: ${{ steps.release.outputs['turbo/packages/db--release_created'] }}
+      browser_extension_release_created: ${{ steps.release.outputs['turbo/apps/browser-extension--release_created'] }}
+      browser_extension_version: ${{ steps.release.outputs['turbo/apps/browser-extension--version'] }}
+      browser_extension_tag: ${{ steps.release.outputs['turbo/apps/browser-extension--tag_name'] }}
       app_release_created: ${{ steps.release.outputs['turbo/apps/platform--release_created'] }}
       app_worker_release_created: ${{ steps.release.outputs['turbo/apps/app-worker--release_created'] }}
       app_deploy_required: ${{ steps.app-release.outputs.required }}
@@ -98,7 +101,7 @@ jobs:
       host_worker_release_created: ${{ steps.release.outputs['turbo/apps/host-worker--release_created'] }}
       runner_rs_release_created: ${{ steps.release.outputs['crates/runner--release_created'] }}
       api_runtime_dependency_release_created: ${{ steps.release.outputs['turbo/packages/core--release_created'] == 'true' || steps.release.outputs['turbo/packages/api-contracts--release_created'] == 'true' || steps.release.outputs['turbo/packages/connectors--release_created'] == 'true' }}
-      api_deploy_required: ${{ steps.release.outputs['turbo/apps/api--release_created'] == 'true' || steps.release.outputs['turbo/packages/core--release_created'] == 'true' || steps.release.outputs['turbo/packages/api-contracts--release_created'] == 'true' || steps.release.outputs['turbo/packages/connectors--release_created'] == 'true' }}
+      api_deploy_required: ${{ steps.release.outputs['turbo/apps/api--release_created'] == 'true' || steps.release.outputs['turbo/packages/core--release_created'] == 'true' || steps.release.outputs['turbo/packages/api-contracts--release_created'] == 'true' || steps.release.outputs['turbo/packages/connectors--release_created'] == 'true' || steps.release.outputs['turbo/apps/browser-extension--release_created'] == 'true' }}
       runner_rs_version: ${{ steps.release.outputs['crates/runner--version'] }}
       api_version: ${{ steps.release.outputs['turbo/apps/api--version'] }}
       app_version: ${{ steps.release.outputs['turbo/apps/platform--version'] }}
@@ -200,12 +203,14 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/guest-control-proto--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-control-tests--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/api--sha']) }},
+              ${{ toJSON(steps.release.outputs['turbo/apps/browser-extension--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/cli--sha']) }},
               ${{ toJSON(steps.release.outputs['desktop--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/host-worker--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/platform--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/app-worker--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/api-contracts--sha']) }},
+              ${{ toJSON(steps.release.outputs['turbo/packages/browser-extension-client--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/connectors--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/core--sha']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/db--sha']) }},
@@ -293,12 +298,14 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/guest-control-proto--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-control-tests--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/api--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['turbo/apps/browser-extension--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/cli--tag_name']) }},
               ${{ toJSON(steps.release.outputs['desktop--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/host-worker--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/platform--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/apps/app-worker--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/api-contracts--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['turbo/packages/browser-extension-client--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/connectors--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/core--tag_name']) }},
               ${{ toJSON(steps.release.outputs['turbo/packages/db--tag_name']) }},
@@ -393,6 +400,123 @@ jobs:
           fi
 
           echo "DB/API release coupling validated."
+
+  publish-browser-extension:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' && needs.release-please.outputs.browser_extension_release_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    environment: production
+    outputs:
+      extension_id: ${{ steps.publish.outputs.extension_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.release_target }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 10.33.4
+      - uses: ./.github/actions/toolchain-init
+
+      - name: Notify Slack - Starting
+        id: slack-start
+        if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} publishing to Browser Use..."
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} publishing to Browser Use...\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Normalize CI App private key
+        id: private-key
+        env:
+          SOURCE_PRIVATE_KEY_PEM: ${{ secrets.OKOU_CI_APP_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          private_key="$(printf '%s' "$SOURCE_PRIVATE_KEY_PEM" | bash .github/scripts/normalize-github-app-private-key.sh)"
+          printf '::add-mask::%s\n' "$private_key"
+          printf 'private-key=%s\n' "$private_key" >> "$GITHUB_OUTPUT"
+      - name: Create repository Variables token
+        id: variables-token
+        env:
+          OKOU_CI_APP_ID: ${{ vars.OKOU_CI_APP_ID }}
+          OKOU_CI_APP_PRIVATE_KEY: ${{ steps.private-key.outputs.private-key }}
+        run: node .github/scripts/release/browser-extension-variable-token.mjs
+      - name: Package selected extension release
+        run: pnpm --dir turbo --filter @okouai/browser-extension build
+      - name: Publish extension and verify configuration
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_VARIABLES_TOKEN: ${{ steps.variables-token.outputs.token }}
+          OKOU_BROWSER_USE_API_KEY: ${{ secrets.OKOU_BROWSER_USE_API_KEY }}
+          RELEASE_TARGET: ${{ needs.release-please.outputs.release_target }}
+          BROWSER_EXTENSION_VERSION: ${{ needs.release-please.outputs.browser_extension_version }}
+          BROWSER_EXTENSION_TAG: ${{ needs.release-please.outputs.browser_extension_tag }}
+        run: node .github/scripts/release/publish-browser-extension.mjs
+      - name: Revoke repository Variables token
+        if: ${{ always() && steps.variables-token.outputs.token != '' }}
+        env:
+          GITHUB_VARIABLES_TOKEN: ${{ steps.variables-token.outputs.token }}
+        run: node .github/scripts/release/browser-extension-variable-token.mjs --revoke
+
+      - name: Calculate duration
+        id: duration
+        if: ${{ always() && steps.timer.outputs.start }}
+        run: |
+          set -euo pipefail
+          elapsed=$(( $(date +%s) - ${{ steps.timer.outputs.start }} ))
+          h=$((elapsed / 3600)) m=$(( (elapsed % 3600) / 60 )) s=$((elapsed % 60))
+          if [ $h -gt 0 ]; then text="${h}h ${m}m ${s}s"
+          elif [ $m -gt 0 ]; then text="${m}m ${s}s"
+          else text="${s}s"; fi
+          echo "text=$text" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Slack - Success
+        if: ${{ success() && steps.slack-start.outputs.ts }}
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.update
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            ts: "${{ steps.slack-start.outputs.ts }}"
+            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ✅ Published to Browser Use; configuration verified"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ✅ Published to Browser Use; configuration verified\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+
+      - name: Notify Slack - Failure
+        if: ${{ failure() && steps.slack-start.outputs.ts }}
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.update
+          token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
+            ts: "${{ steps.slack-start.outputs.ts }}"
+            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ❌ Publish failed"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ❌ Publish failed\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
   publish-ios-testflight:
     name: publish-ios-testflight
@@ -1177,10 +1301,13 @@ jobs:
 
   # Build the API artifact and apply its prerequisite migrations before serving.
   promote-api-production:
-    needs: [release-please, builds-complete]
+    needs: [release-please, builds-complete, publish-browser-extension]
     if: >-
       always() &&
       !failure() && !cancelled() &&
+      (needs.publish-browser-extension.result == 'success' ||
+       (needs.release-please.outputs.browser_extension_release_created != 'true' &&
+        needs.publish-browser-extension.result == 'skipped')) &&
       needs.release-please.outputs.releases_created == 'true'
     runs-on: ubuntu-latest
     container:
@@ -1249,6 +1376,22 @@ jobs:
           doppler-project: vm0
           doppler-config: prd
 
+      - name: Resolve extension configuration for API deployment
+        id: browser-extension-env
+        shell: bash
+        env:
+          REPO_VARS_JSON: ${{ toJSON(vars) }}
+          BROWSER_EXTENSION_RELEASE_CREATED: ${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}
+          BROWSER_EXTENSION_ID: ${{ needs.publish-browser-extension.outputs.extension_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$BROWSER_EXTENSION_RELEASE_CREATED" == 'true' ]]; then
+            variables=$(jq -c --arg id "$BROWSER_EXTENSION_ID" '.OKOU_BROWSER_USE_EXTENSION_ID = $id' <<< "$REPO_VARS_JSON")
+          else
+            variables=$(jq -c . <<< "$REPO_VARS_JSON")
+          fi
+          printf 'json=%s\n' "$variables" >> "$GITHUB_OUTPUT"
+
       - name: Resolve API production environment
         id: api-production-env
         uses: ./.github/actions/web-api-env
@@ -1260,7 +1403,7 @@ jobs:
           app-url: https://app.okou.ai
           api-backend-url: ${{ vars.OKOU_API_BACKEND_URL }}
         env:
-          REPO_VARS_JSON: ${{ toJSON(vars) }}
+          REPO_VARS_JSON: ${{ steps.browser-extension-env.outputs.json }}
           REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
           DOPPLER_SECRETS_JSON: ${{ toJSON(steps.doppler-oauth.outputs) }}
 

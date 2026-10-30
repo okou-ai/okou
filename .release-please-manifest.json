@@ -1,4 +1,6 @@
 {
+  "turbo/apps/browser-extension": "0.2.0",
+  "turbo/packages/browser-extension-client": "0.2.0",
   "turbo/packages/core": "8.801.0",
   "turbo/apps/cli": "10.10.5",
   "turbo/apps/api": "2.26.0",
