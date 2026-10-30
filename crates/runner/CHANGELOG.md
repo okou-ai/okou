@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.240.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.19...runner-rs-v0.240.20) (2026-10-30)
+
+
+### Bug Fixes
+
+* **runner:** keep harfbuzz libraries paired for pdf printing ([#44159](https://github.com/okou-ai/okou/issues/44159)) ([22599e3](https://github.com/okou-ai/okou/commit/22599e3ca008be3a3dd36bb6e6a7fce39387d0a8))
+
 ## [0.240.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.18...runner-rs-v0.240.19) (2026-10-30)
 
 ### Release Dependencies
