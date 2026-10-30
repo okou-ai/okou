@@ -23,6 +23,7 @@ import {
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
+import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
 import {
   ChatHomeCompliance,
   useChatHomeComplianceVisible,
@@ -605,6 +606,7 @@ function AgentComposerPage() {
             {/* Keep the final row clear of the scrollport's bottom edge. */}
             <div className="order-2 sm:order-none sm:pb-10">
               <ComposerTaskChips signals={composerSignals} />
+              <SuggestionSaveErrors />
             </div>
           </div>
         </div>
