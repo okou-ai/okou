@@ -103,13 +103,14 @@ async fn captures_the_maximum_frame_as_complete_png_within_the_shared_budget() {
     assert_eq!(frame.color_type, png::ColorType::Rgba);
     assert_eq!(frame.bit_depth, png::BitDepth::Eight);
     assert_eq!(frame.buffer_size(), 8_388_608 * 4);
+    let expected_row = [17, 34, 51, 255].repeat(8192);
+    assert_eq!(pixels.len(), frame.buffer_size());
     assert!(
         pixels
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .all(|pixel| *pixel == [17, 34, 51, 255])
+            .chunks_exact(expected_row.len())
+            .all(|row| row == expected_row.as_slice())
     );
+    drop(expected_row);
     drop(reader);
     drop(pixels);
     let (retained, peak) = session.memory_usage();
