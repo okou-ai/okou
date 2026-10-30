@@ -345,13 +345,13 @@ mod tests {
         ])
         .unwrap();
 
-        let identity = load_identity(&files.cert, &files.key)
-            .unwrap()
-            .expect("test CA should be valid");
-        let combined = identity.combined();
+        let cert = std::fs::read(&files.cert).unwrap();
+        let key = std::fs::read(&files.key).unwrap();
+        let mut combined = cert.clone();
+        combined.extend_from_slice(&key);
         CaBytes {
-            cert: identity.cert,
-            key: identity.key,
+            cert,
+            key,
             combined,
         }
     }
