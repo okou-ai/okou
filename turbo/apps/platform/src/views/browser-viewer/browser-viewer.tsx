@@ -34,6 +34,10 @@ import {
   DropdownMenuSubContent,
 } from "@okouai/ui";
 import type { BrowserViewerSignals } from "../../signals/browser-viewer/browser-viewer.ts";
+import {
+  FOCUS_RELEASE_KEY,
+  isCompositionKey,
+} from "../../signals/browser-viewer/input/native.ts";
 import { captureResolutions } from "../../signals/browser-viewer/viewer/capture.ts";
 
 function BrowserSettings({
@@ -786,8 +790,10 @@ export function BrowserViewer({
   readonly actions: ReactNode;
   readonly presence: ReactNode;
   /**
-   * Observes the member's pointer and key input on the page. The viewer's own
-   * input handling still forwards that input; this never cancels it.
+   * Observes the member's mouse presses and keys on the page. The viewer's own
+   * input handling still forwards that input; this never cancels it, and it
+   * skips input the viewer does not send: touch and pen, composition keys and
+   * the focus-release key.
    */
   readonly onPageInput?: () => void;
 }) {
@@ -826,8 +832,19 @@ export function BrowserViewer({
         <div
           data-browser-surface
           className="relative h-full w-full overflow-hidden"
-          onPointerDownCapture={onPageInput}
-          onKeyDownCapture={onPageInput}
+          onPointerDownCapture={(event) => {
+            if (event.pointerType === "mouse") {
+              onPageInput?.();
+            }
+          }}
+          onKeyDownCapture={(event) => {
+            if (
+              event.key !== FOCUS_RELEASE_KEY &&
+              !isCompositionKey(event.nativeEvent)
+            ) {
+              onPageInput?.();
+            }
+          }}
         >
           <canvas
             data-browser-canvas

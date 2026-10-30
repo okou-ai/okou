@@ -13,6 +13,11 @@ export interface BrowserPresenceSignals {
    * input on the page. A live Run is told, not stopped.
    */
   readonly takeOver$: Command<Promise<void>, [string, AbortSignal]>;
+  /**
+   * Settles once the Run has been told about the latest take over. Handing back
+   * before then could reach the Run ahead of the take-over message.
+   */
+  readonly takeOverSent$: Computed<Promise<void>>;
   /** Tell the agent it may use the browser again. */
   readonly handBack$: Command<Promise<void>, [string, AbortSignal]>;
 }
@@ -37,6 +42,10 @@ export function createBrowserPresenceSignals({
 }): BrowserPresenceSignals {
   // The Run that was latest when the member took over.
   const memberRun$ = state<{ readonly runId: string | null } | null>(null);
+  const takeOverSend$ = state<Promise<void> | null>(null);
+  const takeOverSent$ = computed((get) => {
+    return get(takeOverSend$) ?? Promise.resolve();
+  });
 
   const controller$ = computed((get): BrowserController => {
     const memberRun = get(memberRun$);
@@ -79,9 +88,12 @@ export function createBrowserPresenceSignals({
       // Control moves with the member's first input, so repeated input while
       // the message is in flight does not tell the Run twice.
       set(memberRun$, { runId: get(latestRunId$) });
-      if (get(liveRunId$) !== null) {
-        await set(sendMessage$, message, signal);
+      if (get(liveRunId$) === null) {
+        return;
       }
+      const sending = set(sendMessage$, message, signal);
+      set(takeOverSend$, sending);
+      await sending;
     },
   );
 
@@ -92,5 +104,5 @@ export function createBrowserPresenceSignals({
     },
   );
 
-  return { controller$, takeOver$, handBack$ };
+  return { controller$, takeOver$, takeOverSent$, handBack$ };
 }

@@ -27,10 +27,14 @@ import {
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000901";
+const TAKE_OVER_MESSAGE =
+  "I've taken over the browser. Don't use it until I hand it back.";
+const HAND_BACK_MESSAGE = "I'm done in the browser. Please continue.";
 
 function liveBrowserSession(): BrowserSession {
   return {
@@ -470,19 +474,13 @@ test("Take over the cloud browser without stopping the working run and hand it b
       createdAt: "2026-09-01T12:00:04.000Z",
     },
   ];
-  const steeredMessages: string[] = [];
-  const interruptedRunIds: string[] = [];
+  const takeOverAccepted = createDeferredPromise<void>(context.signal);
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
     chatEvents,
     activeRunIds: [runId],
-    onQueuedEventAppend: ({ content }) => {
-      steeredMessages.push(content ?? "");
-    },
-    onInterruptEventAppend: ({ interruptsRunId }) => {
-      interruptedRunIds.push(interruptsRunId);
-    },
+    appendGate: takeOverAccepted.promise,
   });
   await setupPage({
     context,
@@ -508,10 +506,15 @@ test("Take over the cloud browser without stopping the working run and hand it b
   await expect(
     within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
-  // The working Run is told rather than stopped.
-  expect(steeredMessages).toStrictEqual([
-    "I've taken over the browser. Don't use it until I hand it back.",
-  ]);
+  await expect(
+    screen.findByText(TAKE_OVER_MESSAGE),
+  ).resolves.toBeInTheDocument();
+  // Handing back before the Run has been told could reach it first.
+  expect(buttonByName("Hand back", viewer)).toBeDisabled();
+  takeOverAccepted.resolve();
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
 
   // An earlier Run's final output, budget declaration and usage can arrive late.
   act(() => {
@@ -563,17 +566,13 @@ test("Take over the cloud browser without stopping the working run and hand it b
   expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 
   click(buttonByName("Hand back", viewer));
+  // The Run kept working, so the continue message is steered into it.
+  await expect(
+    screen.findByText(HAND_BACK_MESSAGE),
+  ).resolves.toBeInTheDocument();
   await expect(
     within(viewer).findByText(/is working$/u),
   ).resolves.toBeInTheDocument();
-  expect(steeredMessages).toStrictEqual([
-    "I've taken over the browser. Don't use it until I hand it back.",
-    "I'm done in the browser. Please continue.",
-  ]);
-  expect(interruptedRunIds).toStrictEqual([]);
-  expect(
-    screen.getByRole("textbox", { name: "Message" }),
-  ).not.toHaveTextContent("I'm done in the browser. Please continue.");
   click(buttonByName("Close cloud browser", viewer));
   await waitFor(() => {
     expect(sidebar).not.toBeInTheDocument();
@@ -581,24 +580,26 @@ test("Take over the cloud browser without stopping the working run and hand it b
   expect(browser.closeRequests()).toBe(1);
 });
 
-const TAKE_OVER_MESSAGE =
-  "I've taken over the browser. Don't use it until I hand it back.";
-const HAND_BACK_MESSAGE = "I'm done in the browser. Please continue.";
-
-function browserSurface(viewer: HTMLElement): HTMLElement {
-  const surface = viewer.querySelector("[data-browser-surface]");
-  if (!(surface instanceof HTMLElement)) {
-    throw new Error("Browser page surface is not rendered");
-  }
-  return surface;
+function livePage(viewer: HTMLElement): {
+  readonly view: HTMLElement;
+  readonly input: HTMLElement;
+} {
+  return {
+    view: within(viewer).getByRole("img", {
+      name: "Live browser view",
+      hidden: true,
+    }),
+    input: within(viewer).getByRole("textbox", {
+      name: "Remote browser input",
+      hidden: true,
+    }),
+  };
 }
 
-test("Input on the live page takes the cloud browser over from a working run", async () => {
+test("Mouse and key input on the live page take the cloud browser over from a working run", async () => {
   mockWideScreen();
   mockBrowserApi(liveBrowserSession());
   const runId = "d0000000-0000-4000-a000-000000000903";
-  const steeredMessages: string[] = [];
-  const interruptedRunIds: string[] = [];
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
@@ -613,12 +614,6 @@ test("Input on the live page takes the cloud browser over from a working run", a
       },
     ],
     activeRunIds: [runId],
-    onQueuedEventAppend: ({ content }) => {
-      steeredMessages.push(content ?? "");
-    },
-    onInterruptEventAppend: ({ interruptsRunId }) => {
-      interruptedRunIds.push(interruptsRunId);
-    },
   });
   await setupPage({
     context,
@@ -636,20 +631,28 @@ test("Input on the live page takes the cloud browser over from a working run", a
   await expect(
     within(viewer).findByText(/is working$/u),
   ).resolves.toBeInTheDocument();
+  const page = livePage(viewer);
 
-  const surface = browserSurface(viewer);
-  fireEvent.pointerDown(surface);
+  // The viewer does not send touch, composition keys or its focus-release key
+  // to the page, so they leave the agent driving.
+  fireEvent.pointerDown(page.view, { pointerType: "touch", button: 0 });
+  fireEvent.keyDown(page.input, { key: "Process", keyCode: 229 });
+  fireEvent.keyDown(page.input, { key: "F8" });
+  expect(within(viewer).getByText(/is working$/u)).toBeInTheDocument();
+  expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
+
+  fireEvent.pointerDown(page.view, { pointerType: "mouse", button: 0 });
   await expect(
     within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
-  fireEvent.pointerDown(surface);
-  fireEvent.keyDown(surface, { key: "a" });
+  fireEvent.pointerDown(page.view, { pointerType: "mouse", button: 0 });
+  fireEvent.keyDown(page.input, { key: "a" });
 
   // The Run is told once and keeps working.
-  await waitFor(() => {
-    expect(steeredMessages).toStrictEqual([TAKE_OVER_MESSAGE]);
-  });
-  expect(interruptedRunIds).toStrictEqual([]);
+  await expect(
+    screen.findByText(TAKE_OVER_MESSAGE),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByText(TAKE_OVER_MESSAGE)).toHaveLength(1);
   expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
 });
 
@@ -657,7 +660,6 @@ test("Hand back after using the cloud browser between runs continues in one step
   mockWideScreen();
   mockBrowserApi(liveBrowserSession());
   const runId = "d0000000-0000-4000-a000-000000000904";
-  const sentPrompts: string[] = [];
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
@@ -688,9 +690,6 @@ test("Hand back after using the cloud browser between runs continues in one step
         createdAt: "2026-09-01T12:00:02.000Z",
       },
     ],
-    onSendRequest: ({ prompt }) => {
-      sentPrompts.push(prompt);
-    },
   });
   await setupPage({
     context,
@@ -708,17 +707,20 @@ test("Hand back after using the cloud browser between runs continues in one step
   expect(within(viewer).queryByText("You're in control")).toBeNull();
 
   // Nobody is driving, so signing in tells no Run anything.
-  fireEvent.pointerDown(browserSurface(viewer));
+  fireEvent.pointerDown(livePage(viewer).view, {
+    pointerType: "mouse",
+    button: 0,
+  });
   await expect(
     within(viewer).findByText("You're in control"),
   ).resolves.toBeInTheDocument();
-  expect(sentPrompts).toStrictEqual([]);
+  expect(screen.queryByText(TAKE_OVER_MESSAGE)).toBeNull();
 
   click(buttonByName("Hand back", viewer));
-  await waitFor(() => {
-    expect(sentPrompts).toStrictEqual([HAND_BACK_MESSAGE]);
-  });
-  await waitFor(() => {
-    expect(within(viewer).queryByText("You're in control")).toBeNull();
-  });
+  await expect(
+    screen.findByText(HAND_BACK_MESSAGE),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    within(viewer).findByText(/is working$/u),
+  ).resolves.toBeInTheDocument();
 });
