@@ -47,6 +47,44 @@ const bindingColumns = Object.freeze({
   userId: discordOrgConnections.userId,
 });
 
+function verifiedBindingReadPlan(where: SQL) {
+  return {
+    columns: bindingColumns,
+    from: discordOrgConnections,
+    join: discordOauthStates,
+    joinCondition: eq(
+      discordOauthStates.id,
+      discordOrgConnections.oauthGrantId,
+    ),
+    where,
+  };
+}
+
+export function discordUserBindingReadPlan(identity: {
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return verifiedBindingReadPlan(
+    and(
+      eq(discordOauthStates.orgId, identity.orgId),
+      eq(discordOrgConnections.userId, identity.userId),
+    )!,
+  );
+}
+
+export function discordBindingFromMemberships(
+  row: Omit<DiscordVerifiedBinding, "orgName">,
+  members: readonly {
+    readonly publicUserData?: { readonly userId: string } | null;
+    readonly organization: { readonly name: string };
+  }[],
+): DiscordVerifiedBinding | null {
+  const member = members.find((candidate) => {
+    return candidate.publicUserData?.userId === row.userId;
+  });
+  return member ? { ...row, orgName: member.organization.name } : null;
+}
+
 /** Always ask the identity authority; a cached role cannot revive a binding. */
 function discordMembership(
   input:
@@ -106,14 +144,12 @@ function createVerifiedBindings(
       return [];
     }
     const db = get(db$);
+    const readPlan = verifiedBindingReadPlan(where);
     const rows = await db
-      .select(bindingColumns)
-      .from(discordOrgConnections)
-      .innerJoin(
-        discordOauthStates,
-        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
-      )
-      .where(where);
+      .select(readPlan.columns)
+      .from(readPlan.from)
+      .innerJoin(readPlan.join, readPlan.joinCondition)
+      .where(readPlan.where);
     const result: DiscordVerifiedBinding[] = [];
     for (const row of rows) {
       const membership = await settle(
@@ -129,11 +165,9 @@ function createVerifiedBindings(
         }
         throw membership.error;
       }
-      const member = membership.value.data.find((candidate) => {
-        return candidate.publicUserData?.userId === row.userId;
-      });
-      if (member) {
-        result.push({ ...row, orgName: member.organization.name });
+      const binding = discordBindingFromMemberships(row, membership.value.data);
+      if (binding) {
+        result.push(binding);
       }
     }
     return result;
@@ -151,10 +185,7 @@ export function createDiscordUserBinding(
     if (!identity) {
       return null;
     }
-    return and(
-      eq(discordOauthStates.orgId, identity.orgId),
-      eq(discordOrgConnections.userId, identity.userId),
-    )!;
+    return discordUserBindingReadPlan(identity).where;
   });
   const bindings$ = createVerifiedBindings(accountWhere$);
   return computed(async (get) => {
