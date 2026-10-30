@@ -1,9 +1,13 @@
 import { command, computed, type Computed } from "ccstate";
 import { now } from "../../lib/time";
-import { joinAll } from "../utils";
-import { getDiscordAppConfig } from "./discord-config";
+import { joinAll, settle } from "../utils";
+import { getDiscordAppConfig, type DiscordAppConfig } from "./discord-config";
+import { clerk$, isClerkResourceNotFound } from "../external/clerk";
+import { db$ } from "../external/db";
 import {
   createDiscordUserBinding,
+  discordUserBindingReadPlan,
+  discordBindingFromMemberships,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import { discordClient, type DiscordChannel } from "../external/discord-client";
@@ -40,19 +44,36 @@ export type DiscordBindingAccess =
     }
   | { kind: "denied"; response: DiscordFailureResponse };
 
-/** A read snapshot for one authorization boundary, keyed only by identities. */
-export function discordBindingAccess(args: DiscordBindingIdentity) {
-  const identity$ = computed(() => {
-    return Promise.resolve(args);
-  });
-  const access$ = createDiscordBindingAccess(identity$);
-  return computed(async (get): Promise<DiscordBindingAccess> => {
-    const access = await get(access$);
-    if (!access) {
-      throw new Error("Discord binding access is missing its identity");
-    }
-    return access;
-  });
+function discordBindingAccessResult(
+  identity: DiscordBindingIdentity,
+  config: DiscordAppConfig | null,
+  binding: DiscordVerifiedBinding | null,
+): DiscordBindingAccess {
+  if (!config) {
+    return {
+      kind: "denied",
+      response: {
+        status: 503,
+        body: {
+          error: {
+            code: "DISCORD_NOT_CONFIGURED",
+            message: "The Discord application is not configured.",
+          },
+        },
+      },
+    };
+  }
+  if (!binding) {
+    return { kind: "denied", response: discordUnavailable() };
+  }
+  return {
+    kind: "allowed",
+    binding: identity.guildId
+      ? { ...binding, guildId: identity.guildId }
+      : binding,
+    botToken: config.botToken,
+    applicationId: config.applicationId,
+  };
 }
 
 function createDiscordBindingAccess(
@@ -65,32 +86,8 @@ function createDiscordBindingAccess(
       return null;
     }
     const config = getDiscordAppConfig();
-    if (!config) {
-      return {
-        kind: "denied",
-        response: {
-          status: 503,
-          body: {
-            error: {
-              code: "DISCORD_NOT_CONFIGURED",
-              message: "The Discord application is not configured.",
-            },
-          },
-        },
-      };
-    }
-    const binding = await get(binding$);
-    if (!binding) {
-      return { kind: "denied", response: discordUnavailable() };
-    }
-    return {
-      kind: "allowed",
-      binding: identity.guildId
-        ? { ...binding, guildId: identity.guildId }
-        : binding,
-      botToken: config.botToken,
-      applicationId: config.applicationId,
-    };
+    const binding = config ? await get(binding$) : null;
+    return discordBindingAccessResult(identity, config, binding);
   });
 }
 
@@ -101,7 +98,51 @@ export const requireDiscordBinding$ = command(
     signal: AbortSignal,
   ): Promise<DiscordBindingAccess> => {
     signal.throwIfAborted();
-    const access = await get(discordBindingAccess(args));
+    const access = await (async () => {
+      const config = getDiscordAppConfig();
+      if (!config) {
+        return discordBindingAccessResult(args, config, null);
+      }
+      const readPlan = discordUserBindingReadPlan(args);
+      if (!getDiscordAppConfig()) {
+        return discordBindingAccessResult(args, config, null);
+      }
+      const db = get(db$);
+      const rows = await db
+        .select(readPlan.columns)
+        .from(readPlan.from)
+        .innerJoin(readPlan.join, readPlan.joinCondition)
+        .where(readPlan.where);
+      const verified: DiscordVerifiedBinding[] = [];
+      for (const row of rows) {
+        const membership = await settle(
+          get(clerk$).organizations.getOrganizationMembershipList({
+            organizationId: row.orgId,
+            userId: [row.userId],
+            limit: 1,
+          }),
+        );
+        if (!membership.ok) {
+          if (isClerkResourceNotFound(membership.error)) {
+            continue;
+          }
+          throw membership.error;
+        }
+        const binding = discordBindingFromMemberships(
+          row,
+          membership.value.data,
+        );
+        if (binding) {
+          verified.push(binding);
+        }
+      }
+      const [binding] = verified;
+      const scopedBinding =
+        binding?.userId === args.userId && binding.orgId === args.orgId
+          ? binding
+          : null;
+      return discordBindingAccessResult(args, config, scopedBinding);
+    })();
     signal.throwIfAborted();
     return access;
   },
