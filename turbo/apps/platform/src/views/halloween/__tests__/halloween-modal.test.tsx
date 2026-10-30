@@ -15,7 +15,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
+import { pathname, search } from "../../../signals/location.ts";
 
 const context = testContext();
 const homeAnimationStorage = localStorageSignals(
@@ -108,6 +108,36 @@ beforeEach(() => {
     context.store.set(currentRound$, answered);
     return respond(200, answered);
   });
+});
+
+test("the email deep link opens the quiz and returns to the chat when dismissed", async () => {
+  await setupPage({
+    context,
+    path: "/?halloween=1&prompt=Keep%20my%20request",
+    featureSwitches: switches,
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Spooky Halloween",
+  });
+  expect(within(dialog).getByText("Let’s go")).toBeInTheDocument();
+  expect(new URLSearchParams(search()).get("halloween")).toBeNull();
+  expect(screen.queryByTestId("halloween-bubbles")).not.toBeInTheDocument();
+
+  click(button("Back to Okou", dialog));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Spooky Halloween" }),
+    ).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "Keep my request",
+    );
+  });
+  click(button("Play the Halloween quiz"));
+  await expect(
+    screen.findByRole("dialog", { name: "Spooky Halloween" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("shows the first-visit home animation", async () => {
@@ -280,12 +310,15 @@ test("keeps ordinary home usable when the campaign endpoint is unavailable and t
   });
   await setupPage({
     context,
-    path: "/",
+    path: "/?halloween=1",
     featureSwitches: { [FeatureSwitchKey.HalloweenQuiz]: false },
   });
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fill(composer, "Keep working without the campaign");
   expect(composer).toHaveTextContent("Keep working without the campaign");
+  expect(
+    screen.queryByRole("dialog", { name: "Spooky Halloween" }),
+  ).not.toBeInTheDocument();
   expect(
     screen.queryByText("Campaign endpoint unavailable"),
   ).not.toBeInTheDocument();
@@ -294,6 +327,23 @@ test("keeps ordinary home usable when the campaign endpoint is unavailable and t
       return element.getAttribute("aria-label") === "Play the Halloween quiz";
     }),
   ).toBeUndefined();
+});
+
+test("the email deep link respects the campaign availability window", async () => {
+  context.mocks.api(halloweenContract.status, ({ respond }) => {
+    return respond(200, { phase: "unavailable" });
+  });
+  await setupPage({
+    context,
+    path: "/?halloween=1",
+    featureSwitches: switches,
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Keep working outside the campaign");
+  expect(composer).toHaveTextContent("Keep working outside the campaign");
+  expect(
+    screen.queryByRole("dialog", { name: "Spooky Halloween" }),
+  ).not.toBeInTheDocument();
 });
 
 test("opens by keyboard and restores focus through nested Escape dismissal", async () => {
