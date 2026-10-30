@@ -21,8 +21,8 @@ const version = "0.2.0";
 const oldId = "11111111-1111-4111-8111-111111111111";
 const newId = "22222222-2222-4222-8222-222222222222";
 
-async function run(t, script, env, args = []) {
-  const child = spawn(process.execPath, [script, ...args], {
+async function run(t, script, env) {
+  const child = spawn(process.execPath, [script], {
     cwd: root,
     env: { ...process.env, ...env },
     signal: t.signal,

@@ -1033,20 +1033,22 @@ done
 coproc EXTENSION_REGISTRY {
   exec node --input-type=module <<'JS'
 import { createServer } from "node:http";
+let lookups = 0;
 const server = createServer((request, response) => {
   if (request.headers["x-browser-use-api-key"] !== "github-browser-use-api-key") {
     response.writeHead(403).end();
     return;
   }
-  response.setHeader("Content-Type", "application/json");
-  response.end(JSON.stringify({
-    items: [{
+  const items = lookups++ === 0 ? [{
       id: "22222222-2222-4222-8222-222222222222",
       name: "Okou Browser",
       version: "0.10.0",
       createdAt: "2026-10-30T00:00:00Z",
-    }],
-    totalItems: 1,
+  }] : [];
+  response.setHeader("Content-Type", "application/json");
+  response.end(JSON.stringify({
+    items,
+    totalItems: items.length,
     pageNumber: 1,
     pageSize: 100,
   }));
@@ -1066,6 +1068,16 @@ BROWSER_USE_API_URL="$registry_origin" run_action \
   > "${lookup_dir}/output"
 lookup_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${lookup_dir}/github-output")"
 assert_env_value "$lookup_env_file" OKOU_BROWSER_USE_EXTENSION_ID "22222222-2222-4222-8222-222222222222"
+missing_lookup_dir="$(mktemp -d)"
+TEMP_DIRS+=("$missing_lookup_dir")
+status=0
+missing_lookup_output="$(BROWSER_USE_API_URL="$registry_origin" run_action \
+  "$(build_doppler_secrets_json)" "$missing_lookup_dir" api production canonical \
+  "{}" "{}" "" https://api.okou.test "" "" false "" 2>&1)" || status=$?
+if [[ "$status" -eq 0 || -s "${missing_lookup_dir}/github-output" ]]; then
+  fail "expected an unavailable extension to stop environment publication"
+fi
+assert_contains "$missing_lookup_output" "No uploaded Okou Browser extension was found"
 kill "$REGISTRY_PID"
 wait "$REGISTRY_PID" 2>/dev/null || true
 REGISTRY_PID=""
