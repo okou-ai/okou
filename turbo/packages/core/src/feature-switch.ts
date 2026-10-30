@@ -150,7 +150,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Unified chat workspace",
     description:
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
