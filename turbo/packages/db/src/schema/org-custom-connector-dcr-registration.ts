@@ -27,7 +27,7 @@ export const orgCustomConnectorDcrRegistrations = pgTable(
     orgId: text("org_id").notNull(),
     customConnectorId: uuid("custom_connector_id").notNull(),
     issuer: text("issuer").notNull(),
-    clientId: varchar("client_id", { length: 255 }).notNull(),
+    clientId: text("client_id").notNull(),
     encryptedClientSecret: text("encrypted_client_secret"),
     tokenEndpointAuthMethod: varchar("token_endpoint_auth_method", {
       length: 32,

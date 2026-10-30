@@ -389,6 +389,8 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly issuerParameterSupported?: boolean;
   readonly dcrTokenEndpointAuthMethod?:
     "none" | "client_secret_basic" | "client_secret_post";
+  readonly dcrDefaultTokenEndpointAuthMethod?:
+    "none" | "client_secret_basic" | "client_secret_post";
   readonly tokenEndpointAuthMethodsSupported?: readonly string[] | null;
   readonly dcrClientId?: string;
   readonly dcrClientSecret?: string;
@@ -747,7 +749,10 @@ export function mockAutomaticMcpOAuthProvider(
       registrationBodies.push(body);
       if (
         tokenEndpointAuthMethod === "none" &&
-        body.token_endpoint_auth_method !== "none"
+        body.token_endpoint_auth_method !== "none" &&
+        !authorizationServerMetadata.token_endpoint_auth_methods_supported?.includes(
+          body.token_endpoint_auth_method ?? "client_secret_basic",
+        )
       ) {
         return HttpResponse.json(
           {
@@ -790,7 +795,11 @@ export function mockAutomaticMcpOAuthProvider(
         ...(options.dcrClientSecretExpiresAt === undefined
           ? {}
           : { client_secret_expires_at: options.dcrClientSecretExpiresAt }),
-        token_endpoint_auth_method: tokenEndpointAuthMethod,
+        token_endpoint_auth_method:
+          body.token_endpoint_auth_method === undefined
+            ? (options.dcrDefaultTokenEndpointAuthMethod ??
+              tokenEndpointAuthMethod)
+            : tokenEndpointAuthMethod,
       });
     }),
     http.post(tokenUrl, async ({ request }) => {
