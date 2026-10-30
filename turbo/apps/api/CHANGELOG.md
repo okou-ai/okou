@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.31.4](https://github.com/okou-ai/okou/compare/api-v2.31.3...api-v2.31.4) (2026-10-30)
+
+
+### Bug Fixes
+
+* **api:** improve automatic mcp dcr interoperability ([#44278](https://github.com/okou-ai/okou/issues/44278)) ([bd9d165](https://github.com/okou-ai/okou/commit/bd9d165150060a5f4b3da3de2aba4e246d1a536b))
+
+
+### Refactoring
+
+* **api:** keep timed launch reads inside their owning nodes ([#44282](https://github.com/okou-ai/okou/issues/44282)) ([072915b](https://github.com/okou-ai/okou/commit/072915b415236d1d8739b69d6d81de563ecbb529))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.13.8
+
 ## [2.31.3](https://github.com/okou-ai/okou/compare/api-v2.31.2...api-v2.31.3) (2026-10-30)
 
 

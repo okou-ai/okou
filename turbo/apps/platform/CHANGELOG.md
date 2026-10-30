@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1079.10](https://github.com/okou-ai/okou/compare/app-v0.1079.9...app-v0.1079.10) (2026-10-30)
+
+
+### Bug Fixes
+
+* preserve thread identity and await relay shutdown ([#44285](https://github.com/okou-ai/okou/issues/44285)) ([ab91d71](https://github.com/okou-ai/okou/commit/ab91d71f10d12e68717b839446adb474b1d2dfba))
+
 ## [0.1079.9](https://github.com/okou-ai/okou/compare/app-v0.1079.8...app-v0.1079.9) (2026-10-30)
 
 
