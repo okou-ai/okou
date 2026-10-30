@@ -1,10 +1,9 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { exclusiveDurationBreakdown } from "@okouai/core/exclusive-duration";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
-import {
-  withPgPoolAcquisitionCapture,
-  type PgPoolAcquisitionCapture,
-  type PgPoolAcquisition,
+import type {
+  PgPoolAcquisitionCapture,
+  PgPoolAcquisition,
 } from "../../lib/db-instrumentation";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -34,6 +33,7 @@ interface AdmissionTimingRecord {
 }
 
 interface AdmissionAttemptTimingArgs {
+  readonly poolCapture: PgPoolAcquisitionCapture;
   readonly runId: string;
   readonly runnerGroup: string;
   readonly profile: string;
@@ -51,9 +51,6 @@ export class AdmissionAttemptTiming {
   private leafDurationMs = 0;
   private finished = false;
   private transactionStartedRecorded = false;
-  private readonly poolCapture: PgPoolAcquisitionCapture = {
-    acquisitions: [],
-  };
 
   constructor(
     private readonly args: AdmissionAttemptTimingArgs,
@@ -70,10 +67,6 @@ export class AdmissionAttemptTiming {
       "api_dispatch_admission_transaction_setup",
       this.nowMs() - this.startedAt,
     );
-  }
-
-  async capturePoolAcquisition<T>(operation: () => Promise<T>): Promise<T> {
-    return await withPgPoolAcquisitionCapture(this.poolCapture, operation);
   }
 
   /**
@@ -104,8 +97,8 @@ export class AdmissionAttemptTiming {
       return;
     }
     this.finished = true;
-    const [acquisition] = this.poolCapture.acquisitions;
-    if (this.poolCapture.acquisitions.length === 1 && acquisition) {
+    const [acquisition] = this.args.poolCapture.acquisitions;
+    if (this.args.poolCapture.acquisitions.length === 1 && acquisition) {
       this.records.push({
         actionType: "api_dispatch_admission_pool_acquire",
         durationMs: acquisition.durationMs,
@@ -157,9 +150,9 @@ export class AdmissionAttemptTiming {
         query_count_coverage: "unavailable",
         row_count_coverage: "unavailable",
         db_pool_capture:
-          this.poolCapture.acquisitions.length === 1
+          this.args.poolCapture.acquisitions.length === 1
             ? "single"
-            : this.poolCapture.acquisitions.length === 0
+            : this.args.poolCapture.acquisitions.length === 0
               ? "missing"
               : "multiple",
         ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
