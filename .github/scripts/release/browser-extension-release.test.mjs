@@ -157,6 +157,7 @@ async function fixture(t) {
     lostDeleteReplyId: null,
     missingOnDeleteId: null,
     invalidPage: 0,
+    invalidRegistryJson: false,
     events: [],
   };
   let api;
@@ -237,6 +238,10 @@ async function fixture(t) {
         const pageNumber = Number(url.searchParams.get("pageNumber"));
         const pageSize = Number(url.searchParams.get("pageSize"));
         state.listRequests.push(pageNumber);
+        if (state.invalidRegistryJson)
+          return response
+            .writeHead(200)
+            .end("provider-fixture-key: invalid JSON");
         return send(
           {
             items: state.extensions.slice(
@@ -442,6 +447,17 @@ test("an invalid later registry page prevents all deletion and can be retried wi
     f.state.extensions.filter((item) => item.name === "Okou Browser").length,
     3,
   );
+});
+
+test("unparseable registry replies fail with an owned diagnostic before cleanup", async (t) => {
+  const f = await fixture(t);
+  f.state.invalidRegistryJson = true;
+  const result = await f.run();
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /Browser Use returned invalid extension JSON/);
+  assert.ok(!result.stderr.includes("provider-fixture-key"));
+  assert.deepEqual(await f.outputs(), {});
+  assert.deepEqual(f.state.deletions, []);
 });
 
 test("invalid or ambiguous matching versions prevent destructive cleanup", async (t) => {

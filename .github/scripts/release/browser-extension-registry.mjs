@@ -44,7 +44,14 @@ export async function listOkouBrowserExtensions(origin, key) {
       throw new BrowserExtensionRegistryError(
         `Browser Use extension lookup failed (${response.status})`,
       );
-    const page = await response.json();
+    let page;
+    try {
+      page = await response.json();
+    } catch {
+      throw new BrowserExtensionRegistryError(
+        "Browser Use returned invalid extension JSON",
+      );
+    }
     if (
       !page ||
       !Array.isArray(page.items) ||
