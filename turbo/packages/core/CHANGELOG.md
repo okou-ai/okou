@@ -1,5 +1,26 @@
 # Changelog
 
+## [8.805.0](https://github.com/okou-ai/okou/compare/core-v8.804.2...core-v8.805.0) (2026-10-30)
+
+
+### Features
+
+* enable wechat for the requested workspace ([#44261](https://github.com/okou-ai/okou/issues/44261)) ([100af9e](https://github.com/okou-ai/okou/commit/100af9e018021b048cff54eef4c7db0a3bee422d))
+
+
+### Bug Fixes
+
+* **app:** open artifact menus on hover and copy saved share links ([#44244](https://github.com/okou-ai/okou/issues/44244)) ([665dd18](https://github.com/okou-ai/okou/commit/665dd18071bfe7e6b995a07a0c3c421be4c33ec0))
+
+## [8.804.2](https://github.com/okou-ai/okou/compare/core-v8.804.1...core-v8.804.2) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.24.0
+
 ## [8.804.1](https://github.com/okou-ai/okou/compare/core-v8.804.0...core-v8.804.1) (2026-10-30)
 
 

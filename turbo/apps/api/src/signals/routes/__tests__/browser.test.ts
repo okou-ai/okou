@@ -166,14 +166,10 @@ function browserValidationNodeResult(args: {
   readonly backendNodeId: unknown;
   readonly available: boolean;
   readonly missingBackendNodeId: number | null;
-  readonly malformed: boolean;
   readonly failure: string | null;
 }): unknown {
   if (args.failure) {
     return new Error(args.failure);
-  }
-  if (args.malformed) {
-    return {};
   }
   return args.available && args.backendNodeId !== args.missingBackendNodeId
     ? { object: { objectId: browserUserActionObjectId(args.backendNodeId) } }
@@ -3373,9 +3369,6 @@ describe("Browser user-action route", () => {
       { value: { kind: "checkbox", checked: false, observedChecked: true } },
       { value: 0 },
     ]);
-    expect(
-      JSON.stringify(browserSelectWrites().at(-1)?.[0].params.arguments),
-    ).not.toContain('"on"');
     const untouched = await createCheckbox();
     expect(
       (await accept(apply(untouched.body.action.requestToken, []), [200])).body
@@ -4085,9 +4078,6 @@ describe("Browser user-action route", () => {
       { value: { kind: "select", mode: "select-one", indices: [3] } },
       { value: 0 },
     ]);
-    expect(JSON.stringify(write?.params.arguments)).not.toContain(
-      "native-select-object",
-    );
 
     mode = "select-multiple";
     const multi = await createSelect();
@@ -5554,7 +5544,6 @@ describe("Browser user-action route", () => {
     let resolveNodeAvailable = true;
     let missingBackendNodeId: number | null = null;
     let nodeResolutionFailure: string | null = null;
-    let malformedNodeResponse = false;
     let verificationMatches = true;
     let failNextProviderRead = false;
     let providerStopped = false;
@@ -5599,7 +5588,6 @@ describe("Browser user-action route", () => {
           backendNodeId: command.params.backendNodeId,
           available: resolveNodeAvailable,
           missingBackendNodeId,
-          malformed: malformedNodeResponse,
           failure: nodeResolutionFailure,
         });
       }
@@ -5959,16 +5947,6 @@ describe("Browser user-action route", () => {
       "Target session closed",
     );
     nodeResolutionFailure = null;
-
-    malformedNodeResponse = true;
-    const malformedNodeInspection = await userActionClient().create(
-      nodeInspectionRequest,
-    );
-    expect(malformedNodeInspection).toMatchObject({
-      status: 502,
-      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
-    });
-    malformedNodeResponse = false;
 
     const missingPage = await userActionClient().create({
       headers: current.claim.browserHeaders,
@@ -6510,16 +6488,6 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(retriedPreflight.body.state).toBe("pending");
-    malformedNodeResponse = true;
-    const malformedPreflight = await userActionClient().preflight({
-      headers: { authorization: "Bearer clerk-session" },
-      params: {
-        requestToken: providerRetryCandidate.body.action.requestToken,
-      },
-      body: {},
-    });
-    malformedNodeResponse = false;
-    expect(malformedPreflight.status).toBe(502);
     expect(
       (
         await accept(

@@ -3544,22 +3544,36 @@ export async function restoreBrowserUseWindowTabUrls(
   if (bounded.length === 0) {
     return;
   }
-  await withBrowserUseBridge(connection, signal, async (client) => {
-    if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
-      throw new Error("The Browser restore window is unavailable");
-    }
-    for (const url of bounded) {
-      const created = await client.call("createTab", {
-        windowId: window.primaryWindowId,
-        url,
-        active: false,
-      });
-      const tab = browserUseNativeTabSchema.parse(created.value);
-      if (tab.windowId !== window.primaryWindowId) {
-        throw new Error("The Browser could not confirm restored tab placement");
+  const restored = await settleIncludingAbort(
+    withBrowserUseBridge(connection, signal, async (client) => {
+      if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
+        throw new Error("The Browser restore window is unavailable");
       }
-    }
-  });
+      for (const url of bounded) {
+        const created = await client.call("createTab", {
+          windowId: window.primaryWindowId,
+          url,
+          active: false,
+        });
+        const tab = browserUseNativeTabSchema.parse(created.value);
+        if (tab.windowId !== window.primaryWindowId) {
+          throw new Error(
+            "The Browser could not confirm restored tab placement",
+          );
+        }
+      }
+    }),
+  );
+  signal.throwIfAborted();
+  if (!restored.ok) {
+    throw restored.error instanceof BrowserUseProviderError
+      ? restored.error
+      : new BrowserUseProviderError(
+          502,
+          "BROWSER_USE_SHARED_OPERATION_FAILED",
+          "Managed Browser operation could not be confirmed",
+        );
+  }
   // The restored URLs are ready; blank-seed cleanup cannot undo that result.
   await tryCloseRestoredBrowserSeed(connection.cdpUrl, window, signal);
 }
@@ -3865,7 +3879,7 @@ export async function deleteBrowserUseProfile(
 ): Promise<void> {
   await browserUseRequest(
     `/profiles/${encodeURIComponent(profileId)}`,
-    { method: "DELETE" },
+    { method: "DELETE", signal },
     signal,
     [404],
   );

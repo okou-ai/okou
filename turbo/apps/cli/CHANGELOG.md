@@ -1,5 +1,31 @@
 # Changelog
 
+## [10.11.1](https://github.com/okou-ai/okou/compare/cli-v10.11.0...cli-v10.11.1) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.805.0
+    * @okouai/pi-agent-runtime bumped to 1.51.34
+
+## [10.11.0](https://github.com/okou-ai/okou/compare/cli-v10.10.10...cli-v10.11.0) (2026-10-30)
+
+
+### Features
+
+* **phone:** add emoji reactions and interaction guidance ([#44173](https://github.com/okou-ai/okou/issues/44173)) ([692e807](https://github.com/okou-ai/okou/commit/692e8071af47baeb6fa4d9c5902f07439c698594))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.24.0
+    * @okouai/core bumped to 8.804.2
+    * @okouai/pi-agent-runtime bumped to 1.51.33
+
 ## [10.10.10](https://github.com/okou-ai/okou/compare/cli-v10.10.9...cli-v10.10.10) (2026-10-30)
 
 

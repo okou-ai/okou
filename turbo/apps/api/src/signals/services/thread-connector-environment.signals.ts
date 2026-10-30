@@ -215,13 +215,16 @@ function createConnectorSecretSignals(
       });
     },
   );
-  const eagerCredentialContext$ = computed(async (get) => {
+  const eagerCredentialInput$ = computed(async (get) => {
     const resolveStartedAt = performance.now();
-    return createEagerConnectorCredentialContext(
-      await get(encryptedRows$),
+    return {
+      credentials: await get(encryptedRows$),
       resolveStartedAt,
-    );
+    };
   });
+  const eagerCredentialContext = createEagerConnectorCredentialContext(
+    eagerCredentialInput$,
+  );
   // Stored connector secrets, decrypted once per graph; KMS decryption has no
   // side effects (Ethan 2026-10-02).
   const decryptedSecrets$ = computed(async (get) => {
@@ -233,7 +236,7 @@ function createConnectorSecretSignals(
       return {};
     }
     const { credentials: decrypted, observation } = await get(
-      (await get(eagerCredentialContext$)).credentials$,
+      eagerCredentialContext.credentials$,
     );
     if (observation) {
       recordEagerDecryptObservation(plan, observation);

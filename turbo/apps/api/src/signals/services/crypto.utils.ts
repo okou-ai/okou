@@ -118,12 +118,15 @@ function decryptSecretValueWithDataKey(
 
 async function encryptSecretValueWithKms(
   plaintext: string,
+  signal?: AbortSignal,
 ): Promise<KmsCiphertext> {
   const keyId = requireSecretsKmsKeyId();
-  const dataKey = await getSecretKmsClient().generateDataKey({
-    keyId,
-    encryptionContext: KMS_ENCRYPTION_CONTEXT,
-  });
+  signal?.throwIfAborted();
+  const dataKey = await getSecretKmsClient().generateDataKey(
+    { keyId, encryptionContext: KMS_ENCRYPTION_CONTEXT },
+    signal,
+  );
+  signal?.throwIfAborted();
 
   const plaintextDataKey = Buffer.from(dataKey.plaintext);
   if (plaintextDataKey.byteLength !== DATA_KEY_BYTE_LENGTH) {
@@ -173,8 +176,9 @@ async function decryptSecretValueWithKms(
 export async function encryptStoredSecretValue(
   plaintext: string,
   _ctx: FeatureSwitchContext = {},
+  signal?: AbortSignal,
 ): Promise<string> {
-  const kms = await encryptSecretValueWithKms(plaintext);
+  const kms = await encryptSecretValueWithKms(plaintext, signal);
   return encodeStoredSecretEnvelope({
     v: 1,
     kind: "stored-secret",
@@ -193,8 +197,9 @@ export async function decryptStoredSecretValue(
 export async function encryptPersistentSecretValue(
   plaintext: string,
   ctx: FeatureSwitchContext,
+  signal?: AbortSignal,
 ): Promise<string> {
-  return await encryptStoredSecretValue(plaintext, ctx);
+  return await encryptStoredSecretValue(plaintext, ctx, signal);
 }
 
 export async function decryptPersistentSecretValue(

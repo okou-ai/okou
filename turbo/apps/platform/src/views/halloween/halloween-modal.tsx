@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogTitle } from "@okouai/ui";
+import { Dialog, DialogContent, DialogTitle, useMediaQuery } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import {
@@ -12,6 +12,7 @@ import { HalloweenBubbles, HalloweenEntry } from "./halloween-home.tsx";
 import { HalloweenPage } from "./halloween-page.tsx";
 
 export function HalloweenHomeActivity() {
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const copy = useHalloweenCopy();
   const open = useGet(halloweenModalOpen$);
   const screen = useGet(halloweenScreen$);
@@ -35,8 +36,10 @@ export function HalloweenHomeActivity() {
         ref={mount}
         maxWidth={1120}
         height={screen === "result" ? "content" : 760}
+        mode={isDesktop ? "windowed" : "fullscreen"}
+        scrollable={isDesktop}
         surface="transparent"
-        contentClassName="block p-0"
+        contentClassName="flex flex-col gap-0 p-0 lg:block"
         overlayClassName="backdrop-blur-sm"
         showCloseButton={false}
         aria-describedby={undefined}

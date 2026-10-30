@@ -103,6 +103,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
         sessionIds.delete(String(params.id));
         stoppedSessionIds.add(String(params.id));
         native.targets.clear();
+        native.nativeWindowErrors.clear();
         return HttpResponse.json({
           id: String(params.id),
           status: "stopped",

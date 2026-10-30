@@ -9,6 +9,55 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.31.2](https://github.com/okou-ai/okou/compare/api-v2.31.1...api-v2.31.2) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.805.0
+    * @okouai/db bumped to 2.13.6
+    * @okouai/pi-agent-runtime bumped to 1.51.34
+
+## [2.31.1](https://github.com/okou-ai/okou/compare/api-v2.31.0...api-v2.31.1) (2026-10-30)
+
+
+### Refactoring
+
+* **api:** keep optional enrichment execution in ingress owners ([#44251](https://github.com/okou-ai/okou/issues/44251)) ([de9cd7f](https://github.com/okou-ai/okou/commit/de9cd7f3d16fbc70e854550ba10f138eb8a07151))
+* **api:** remove tx-0047 agent deletion transaction ([#44248](https://github.com/okou-ai/okou/issues/44248)) ([60d3a02](https://github.com/okou-ai/okou/commit/60d3a021ba08e389c7dae490f780eba267d9aeb0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.13.5
+
+## [2.31.0](https://github.com/okou-ai/okou/compare/api-v2.30.1...api-v2.31.0) (2026-10-30)
+
+
+### Features
+
+* **phone:** add emoji reactions and interaction guidance ([#44173](https://github.com/okou-ai/okou/issues/44173)) ([692e807](https://github.com/okou-ai/okou/commit/692e8071af47baeb6fa4d9c5902f07439c698594))
+
+
+### Bug Fixes
+
+* **api:** declare public mcp oauth dynamic registration ([#44235](https://github.com/okou-ai/okou/issues/44235)) ([21106db](https://github.com/okou-ai/okou/commit/21106dbaef4fa98577692679ebe0573478a56a33))
+* **api:** share phone group threads and fork reply conversations ([#44171](https://github.com/okou-ai/okou/issues/44171)) ([a0987a7](https://github.com/okou-ai/okou/commit/a0987a786a1d800cb8aa4ab42f479720afbc4515))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.24.0
+    * @okouai/core bumped to 8.804.2
+    * @okouai/db bumped to 2.13.4
+    * @okouai/pi-agent-runtime bumped to 1.51.33
+
 ## [2.30.1](https://github.com/okou-ai/okou/compare/api-v2.30.0...api-v2.30.1) (2026-10-30)
 
 

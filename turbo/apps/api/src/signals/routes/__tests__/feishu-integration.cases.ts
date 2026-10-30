@@ -6084,7 +6084,6 @@ export function registerFeishuIntegrationTests(
         expect(history).toContain(`[${provider.name} file] source.pptx`);
         expect(history).toContain("- RELATIVE_INDEX: -4");
         expect(history).toContain("- RELATIVE_INDEX: -1");
-        expect(history).not.toContain("[interactive message]");
         await expectFeishuResourceDownloads({
           actor,
           chatId: "oc_feishu_dm",

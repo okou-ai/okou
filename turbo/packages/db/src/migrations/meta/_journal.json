@@ -2906,6 +2906,13 @@
       "when": 1793341156711,
       "tag": "1493_atomic_user_builtin_connectors",
       "breakpoints": true
+    },
+    {
+      "idx": 1494,
+      "version": "7",
+      "when": 1793344891499,
+      "tag": "1494_atomic_agent_deletion",
+      "breakpoints": true
     }
   ]
 }

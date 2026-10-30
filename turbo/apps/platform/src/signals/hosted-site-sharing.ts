@@ -7,6 +7,8 @@ import {
 } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilitySchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "./external/feature-switch.ts";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
@@ -100,6 +102,7 @@ function createSiteVisibilitySignals(sourceUrl: string) {
           }),
         );
       }
+      return updated;
     },
   );
   return {
@@ -219,8 +222,8 @@ function createSiteUrlEditorSignals(
         return $.artifacts.siteUrl.updated;
       }),
     );
+    return true;
   });
-  const save$ = throttleCommand(persist$, 0);
   return {
     draft$,
     editing$,
@@ -230,12 +233,11 @@ function createSiteUrlEditorSignals(
     edit$,
     change$,
     cancel$,
-    save$,
+    save$: persist$,
   };
 }
 
-function createHostedSiteShareSession(sourceUrl: string) {
-  const signal$ = state<AbortSignal | null>(null);
+function createSiteUrlSignals(sourceUrl: string) {
   const saved$ = state<SiteUrl | null>(null);
   const currentUrl$ = computed((get) => {
     return currentHostedSiteUrl(
@@ -270,6 +272,12 @@ function createHostedSiteShareSession(sourceUrl: string) {
       ? details.url
       : currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$));
   });
+  return { saved$, details$, copyUrl$ };
+}
+
+function createHostedSiteShareSession(sourceUrl: string) {
+  const signal$ = state<AbortSignal | null>(null);
+  const { saved$, details$, copyUrl$ } = createSiteUrlSignals(sourceUrl);
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
   const visibility = createSiteVisibilitySignals(sourceUrl);
@@ -289,12 +297,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
   });
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
-  const changeVisibility$ = command(
-    ({ set }, choice: Visibility, signal: AbortSignal) => {
-      set(linkCopy.clear$);
-      return set(visibility.changeVisibility$, choice, signal);
-    },
-  );
   const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
     if (!open) {
@@ -304,23 +306,57 @@ function createHostedSiteShareSession(sourceUrl: string) {
       set(linkCopy.clear$);
     }
   });
-  const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
-    const signal = set(resetOpenSignal$, parentSignal);
-    set(open$, true);
-    const hasSettings = await get(hasSettings$);
-    signal.throwIfAborted();
-    if (!hasSettings) {
-      set(open$, false);
-      const url = await get(copyUrl$);
+  const show$ = command(
+    async (
+      { get, set },
+      copyIfReadOnly: boolean,
+      parentSignal: AbortSignal,
+    ) => {
+      const signal = set(resetOpenSignal$, parentSignal);
+      set(open$, true);
+      const hasSettings = await get(hasSettings$);
       signal.throwIfAborted();
-      await copyAttachmentLinkToClipboard(url, undefined, signal);
-    }
-  });
+      if (!hasSettings) {
+        set(open$, false);
+        if (copyIfReadOnly) {
+          const url = await get(copyUrl$);
+          signal.throwIfAborted();
+          await copyAttachmentLinkToClipboard(url, undefined, signal);
+        }
+      }
+    },
+  );
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const url = await get(copyUrl$);
     signal.throwIfAborted();
     await set(linkCopy.copy$, url, signal);
   });
+  const changeVisibility$ = throttleCommand(
+    command(async ({ get, set }, choice: Visibility, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      const updated = await set(visibility.changeVisibility$, choice, signal);
+      if (
+        updated &&
+        get(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions]
+      ) {
+        await set(copy$, signal);
+      }
+    }),
+    0,
+  );
+  const save$ = throttleCommand(
+    command(async ({ get, set }, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      const updated = await set(editor.save$, signal);
+      if (
+        updated &&
+        get(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions]
+      ) {
+        await set(copy$, signal);
+      }
+    }),
+    0,
+  );
   return {
     signal$,
     details$,
@@ -331,6 +367,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     changeVisibility$,
     open$,
     ...editor,
+    save$,
     inputId: `hosted-site-url-${crypto.randomUUID()}`,
     setOpen$,
     show$,

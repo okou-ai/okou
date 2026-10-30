@@ -1053,6 +1053,14 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${userBuiltinConnectors}`,
   );
+  const agentDeletion = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/delete-agent-rows.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${agentDeletion}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1360,6 +1368,17 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "8a2a556c87ae25537c4d58abe23305cf",
+  },
+  {
+    schemaName: "public",
+    functionName: "delete_agent_rows",
+    identityArguments:
+      "p_agent_id uuid, p_org_id text, p_member_user_id text, p_is_org_admin boolean",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "92643bf0c1e256d924d2cf022c7c3657",
   },
 ];
 

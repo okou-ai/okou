@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.52](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.51...sandbox-firecracker-v0.53.52) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
 ## [0.53.51](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.50...sandbox-firecracker-v0.53.51) (2026-10-30)
 
 ## [0.53.50](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.49...sandbox-firecracker-v0.53.50) (2026-10-30)

@@ -18,11 +18,13 @@ import {
   type Computed,
   type State,
 } from "ccstate";
+import { delay } from "signal-timers";
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
+import { resetSignal } from "../utils.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
 import type { ChatThreadScrollSignals } from "./chat-thread-scroll.ts";
 import { buildRunWorkFolding } from "./run-work-folding.ts";
@@ -46,6 +48,7 @@ export interface ChatThreadSharingSignals {
   readonly selectedEventIds$: Computed<ReadonlySet<string>>;
   readonly selectedCount$: Computed<number>;
   readonly createdSharedThreadId$: Computed<string | null>;
+  readonly copiedMessageEventId$: Computed<string | null>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
   readonly close$: Command<Promise<void>, [AbortSignal]>;
   readonly toggle$: Command<
@@ -61,7 +64,7 @@ export interface ChatThreadSharingSignals {
    */
   readonly shareMessage$: Command<
     Promise<boolean>,
-    [readonly string[], AbortSignal]
+    [readonly string[], SharedThreadAudience, AbortSignal]
   >;
 }
 
@@ -171,21 +174,25 @@ function sharedThreadUrl(id: string): string {
   return `${window.location.origin}/share/threads/${id}`;
 }
 
-function createShareMessageCommand(
+function createMessageSharingSignals(
   threadId: string,
   allChatGroups$: Computed<ChatEventGroup[]>,
-  audience$: Computed<SharedThreadAudience>,
-  internalCreatedSharedThreadId$: State<string | null>,
-): ChatThreadSharingSignals["shareMessage$"] {
-  return command(
+): Pick<ChatThreadSharingSignals, "shareMessage$" | "copiedMessageEventId$"> {
+  const copiedMessageEventId$ = state<string | null>(null);
+  const resetCopied$ = resetSignal();
+  const shareMessage$ = command(
     async (
       { get, set },
       assistantEventIds: readonly string[],
+      audience: SharedThreadAudience,
       signal: AbortSignal,
     ): Promise<boolean> => {
-      if (assistantEventIds.length === 0) {
+      const firstEventId = assistantEventIds[0];
+      if (firstEventId === undefined) {
         return false;
       }
+      const confirmationSignal = set(resetCopied$, signal);
+      set(copiedMessageEventId$, null);
       const eventIds = messageShareEventIds(
         get(allChatGroups$),
         assistantEventIds,
@@ -201,7 +208,7 @@ function createShareMessageCommand(
         ? accept(
             get(apiClient$)(sharedThreadVisibilityContract).create({
               params: { threadId },
-              body: { eventIds: [...eventIds], id, audience: get(audience$) },
+              body: { eventIds: [...eventIds], id, audience },
               fetchOptions: { signal },
             }),
             [201, 400, 403, 404, 409, 413],
@@ -233,12 +240,23 @@ function createShareMessageCommand(
         );
         return false;
       }
-      if (visibilityEnabled) {
-        set(internalCreatedSharedThreadId$, result.body.id);
+      // Message shares finish at their action button; only multi-selection
+      // shares enter the page-level created phase and replace the composer.
+      if (visibilityEnabled && copySucceeded && !confirmationSignal.aborted) {
+        set(copiedMessageEventId$, firstEventId);
+        await delay(2000, { signal: confirmationSignal });
+        signal.throwIfAborted();
+        set(copiedMessageEventId$, null);
       }
       return copySucceeded;
     },
   );
+  return {
+    shareMessage$,
+    copiedMessageEventId$: computed((get) => {
+      return get(copiedMessageEventId$);
+    }),
+  };
 }
 
 function createShareCommand(
@@ -313,7 +331,7 @@ function createShareVisibility$(id$: State<string | null>) {
 }
 
 function createSharedThreadAudienceSignals() {
-  const draft$ = state<SharedThreadAudience>("private");
+  const draft$ = state<SharedThreadAudience>("public");
   return {
     audience$: computed((get) => {
       return get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
@@ -364,7 +382,7 @@ export function createChatThreadSharingSignals(
     set(closeFeedbackSelection$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
-    set(changeAudience$, "private");
+    set(changeAudience$, "public");
     set(internalPhase$, "selecting");
     return set(scroll.autoScroll$, position, signal);
   });
@@ -373,7 +391,7 @@ export function createChatThreadSharingSignals(
     const position = set(scroll.readRenderedThreadScrollPosition$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
-    set(changeAudience$, "private");
+    set(changeAudience$, "public");
     set(internalPhase$, "idle");
     return set(scroll.autoScroll$, position, signal);
   });
@@ -426,11 +444,9 @@ export function createChatThreadSharingSignals(
     internalPhase$,
   );
 
-  const shareMessage$ = createShareMessageCommand(
+  const { shareMessage$, copiedMessageEventId$ } = createMessageSharingSignals(
     threadId,
     allChatGroups$,
-    audience$,
-    internalCreatedSharedThreadId$,
   );
 
   return {
@@ -460,5 +476,6 @@ export function createChatThreadSharingSignals(
     toggle$,
     create$,
     shareMessage$,
+    copiedMessageEventId$,
   };
 }

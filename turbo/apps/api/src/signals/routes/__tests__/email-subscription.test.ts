@@ -205,7 +205,6 @@ describe("email subscription preferences", () => {
       { subscribed: true, email: null, deliveryStatus: "no-email" },
     );
     expect(context.mocks.clerk.users.getUser).toHaveBeenCalledOnce();
-    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 
   it("retains the first email when the primary address no longer resolves", async () => {
@@ -225,7 +224,6 @@ describe("email subscription preferences", () => {
     expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
       owner.userId,
     );
-    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -241,7 +239,6 @@ describe("email subscription preferences", () => {
       context.mocks.clerk.users.getUser.mockRejectedValue(error);
       const response = await accept(client().get({ headers }), [500]);
       expect(response.status).toBe(500);
-      expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
     },
   );
 

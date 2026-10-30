@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.63](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.62...guest-control-client-v0.23.63) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
 ## [0.23.62](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.61...guest-control-client-v0.23.62) (2026-10-30)
 
 ## [0.23.61](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.60...guest-control-client-v0.23.61) (2026-10-30)

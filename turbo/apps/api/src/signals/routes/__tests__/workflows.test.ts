@@ -1419,7 +1419,18 @@ describe("workflows", () => {
       agentId: agent.agentId,
       name: `deleted-agent-${randomUUID().slice(0, 8)}`,
       instruction: "# removed with its Agent",
+      files: [{ path: "owned.txt", content: "Owned package to retire" }],
     });
+    const current = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(current.body.fileContents).toStrictEqual([
+      { path: "owned.txt", content: "Owned package to retire" },
+    ]);
 
     await bdd.deleteAgent(actor, agent.agentId);
 
