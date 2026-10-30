@@ -67,7 +67,7 @@ async function supplementalFaces(css: string, missing: readonly FontScript[]) {
         continue;
       }
       const face = new FontFace(
-        `Okou Fallback ${script.name} ${family}`,
+        `Okou Fallback ${script.id} ${family}`,
         source,
         {
           unicodeRange,
@@ -82,15 +82,13 @@ async function supplementalFaces(css: string, missing: readonly FontScript[]) {
         await face.loaded;
       }
       faces.push(face);
-      supplied.add(`${script.name}:${family}`);
+      supplied.add(`${script.id}:${family}`);
     }
   }
   for (const script of missing) {
     for (const family of script.families) {
-      if (!supplied.has(`${script.name}:${family}`)) {
-        throw new Error(
-          `Missing font descriptors for ${script.name}:${family}`,
-        );
+      if (!supplied.has(`${script.id}:${family}`)) {
+        throw new Error(`Missing font descriptors for ${script.id}:${family}`);
       }
     }
   }
@@ -106,7 +104,7 @@ export async function installFontFallback(signal: AbortSignal): Promise<void> {
     fontScripts.map((script) => {
       // Unattached faces: probing never changes matching or loads a URL.
       return new FontFace(
-        `Okou Probe ${script.name}`,
+        `Okou Probe ${script.id}`,
         script.localFaces
           .map((name) => {
             return `local("${name}")`;

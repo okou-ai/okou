@@ -1,7 +1,8 @@
 {
-  "sourceCommit": "c65b6bf584305f5f06e89c7e66efaedecee5177b",
+  "sourceCommit": "87775ff1eb896b1064ec191c42695a6ea39830f0",
   "method": "existing acyclic partition extended from resolved production dependency layers; generated, do not hand-classify packages",
   "packages": {
+    "@adobe/css-tools": 1,
     "@axiomhq/js": 3,
     "@base-ui/react": 2,
     "@base-ui/utils": 2,

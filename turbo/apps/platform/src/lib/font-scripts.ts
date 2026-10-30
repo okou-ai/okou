@@ -14,7 +14,7 @@ const cjkFaces = [
 ] as const;
 
 export interface FontScript {
-  readonly name: string;
+  readonly id: string;
   readonly localFaces: readonly string[];
   readonly families: readonly string[];
   readonly prefix: string;
@@ -24,7 +24,7 @@ export interface FontScript {
 /** Only missing scripts enter the prefix; Latin and native scripts stay native. */
 export const fontScripts: readonly FontScript[] = [
   {
-    name: "Han",
+    id: "Han",
     localFaces: [
       ...cjkFaces,
       "PingFangSC-Regular",
@@ -53,7 +53,7 @@ export const fontScripts: readonly FontScript[] = [
     ],
   },
   {
-    name: "Kana",
+    id: "Kana",
     localFaces: [
       ...cjkFaces,
       "HiraginoSans-W3",
@@ -77,7 +77,7 @@ export const fontScripts: readonly FontScript[] = [
     ],
   },
   {
-    name: "Hangul",
+    id: "Hangul",
     localFaces: [
       ...cjkFaces,
       "AppleSDGothicNeo-Regular",
@@ -100,7 +100,7 @@ export const fontScripts: readonly FontScript[] = [
     ],
   },
   {
-    name: "Devanagari",
+    id: "Devanagari",
     localFaces: [
       "NotoSansDevanagari-Regular",
       "NotoSerifDevanagari-Regular",
