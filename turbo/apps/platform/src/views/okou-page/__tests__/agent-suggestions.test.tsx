@@ -512,17 +512,27 @@ test("An existing-thread suggestion merges its content and attachments with the 
   await expect(screen.findByText("original.txt")).resolves.toBeInTheDocument();
   expect(sends).toHaveLength(0);
 });
-test("A consumed suggestion reaches its saved draft before target metadata is available", async () => {
+test("A consumed suggestion is saved when target metadata is unavailable", async () => {
   const suggestion = {
     ...makeSuggestion(),
     options: [makeOption({ threadId })],
   };
   const pool = mockPool([suggestion]);
   mockChatLifecycle(context, { threadId });
+  const loadingDraft = context.mocks.deferred<void>();
+  const releaseDraft = context.mocks.deferred<void>();
   const saved: (UserMessageDocument | null | undefined)[] = [];
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Thread metadata is unavailable" },
+    });
+  });
+  context.mocks.api(chatThreadDraftContract.get, async ({ respond }) => {
+    loadingDraft.resolve();
+    await releaseDraft.promise;
+    return respond(200, {
+      draftUserMessage: null,
+      draftAttachments: null,
     });
   });
   context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
@@ -536,6 +546,12 @@ test("A consumed suggestion reaches its saved draft before target metadata is av
   });
   await screen.findByText(suggestion.title);
   click(button(suggestion.options[0].label));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${threadId}`);
+    expect(composer()).toHaveTextContent("Referenced decision");
+  });
+  await loadingDraft.promise;
+  releaseDraft.resolve();
   await waitFor(() => {
     expect(saved).toContainEqual(suggestion.options[0].draft.draftUserMessage);
   });
