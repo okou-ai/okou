@@ -390,6 +390,42 @@ describe("formatRunErrorForExternalSurface", () => {
     },
   );
 
+  it.each([undefined, "usage_limit"] as const)(
+    "shows raw Claude five-hour limit reset messages verbatim with reason %s",
+    (failureReason) => {
+      for (const message of [
+        "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)",
+        "You've hit your five-hour limit · resets 1:50am (Asia/Shanghai)",
+      ]) {
+        expect(
+          formatRunErrorForExternalSurface({
+            code: "UNKNOWN",
+            message,
+            failureReason,
+          }),
+        ).toBe(message);
+        expect(isActionableRunError(message)).toBe(true);
+        expect(isGenericRunErrorForDisplay(message)).toBe(false);
+      }
+    },
+  );
+
+  it.each([
+    "Tool output: You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)",
+    "You've hit your 5-hour limit while loading a local file.",
+  ])("keeps unrelated five-hour limit text generic: %s", (message) => {
+    expect(formatRunErrorForExternalSurface({ code: "UNKNOWN", message })).toBe(
+      CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+    );
+    expect(
+      formatRunErrorForExternalSurface({
+        code: "UNKNOWN",
+        message,
+        failureReason: "usage_limit",
+      }),
+    ).toBe(CHAT_RUN_USAGE_LIMIT_MESSAGE);
+  });
+
   it("shows Claude Code five-hour rate limit errors verbatim", () => {
     const rateLimit =
       "Claude Code rate limit reached. Your 5-hour limit has been reached; resets 12:50pm (Asia/Shanghai).";

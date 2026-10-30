@@ -552,7 +552,13 @@ function hasActionableRunErrorSnippet(errorMessage: string): boolean {
 }
 
 function isClaudeCodeLimitError(errorMessage: string): boolean {
-  const normalized = errorMessage.toLowerCase();
+  const normalized = errorMessage.trim().toLowerCase();
+  if (
+    normalized.startsWith("you've hit your 5-hour limit · resets ") ||
+    normalized.startsWith("you've hit your five-hour limit · resets ")
+  ) {
+    return true;
+  }
   if (!normalized.includes("claude")) {
     return false;
   }

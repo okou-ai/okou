@@ -2236,6 +2236,71 @@ fn cli_failure_reason_classifies_claude_weekly_limit() {
 }
 
 #[test]
+fn cli_failure_reason_classifies_claude_five_hour_limit_results() {
+    for message in [
+        "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)",
+        "You've hit your five-hour limit · resets 1:50am (Asia/Shanghai)",
+    ] {
+        let failure_message = cli_failure_message(
+            1,
+            &[],
+            Some(&cli_diagnostic(message, FailureDetailSource::ClaudeResult)),
+        );
+        let diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            AgentFramework::ClaudeCode,
+            PromptMetadata::from_prompt("plain prompt"),
+        )
+        .with_cli_exit_code(1)
+        .with_cli_observed_exit(CliObservedExitDiagnostic::from_exit_code(1))
+        .with_failure_detail_source(failure_message.source);
+
+        let classified = with_cli_failure_reason(diagnostic.clone(), &failure_message);
+
+        assert_eq!(failure_message.message, message);
+        assert_eq!(
+            classified,
+            diagnostic.with_failure_reason(FailureReason::UsageLimit),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn cli_failure_reason_keeps_unowned_five_hour_limit_text_unclassified() {
+    let message = "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)";
+    for (framework, source, message) in [
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            message,
+        ),
+        (
+            AgentFramework::Codex,
+            FailureDetailSource::CodexJsonl,
+            message,
+        ),
+        (AgentFramework::Pi, FailureDetailSource::PiResult, message),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "Tool output: You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)",
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "You've hit your 5-hour limit while loading a local file.",
+        ),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            None,
+            "framework={framework:?}, source={source:?}, message={message}"
+        );
+    }
+}
+
+#[test]
 fn cli_failure_reason_classifies_claude_monthly_spend_limit() {
     let reason = classify_cli_failure_reason(
         AgentFramework::ClaudeCode,
