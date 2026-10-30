@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/okou-ai/okou/compare/runner-host-v0.10.1...runner-host-v0.10.2) (2026-10-30)
+
+
+### Refactoring
+
+* **runner-host:** separate systemctl test source ownership ([#44265](https://github.com/okou-ai/okou/issues/44265)) ([ea3d7f5](https://github.com/okou-ai/okou/commit/ea3d7f5c6f147601b9d3c11db5f38d92874457bc))
+
 ## [0.10.1](https://github.com/okou-ai/okou/compare/runner-host-v0.10.0...runner-host-v0.10.1) (2026-10-30)
 
 ## [0.10.0](https://github.com/okou-ai/okou/compare/runner-host-v0.9.48...runner-host-v0.10.0) (2026-10-30)
