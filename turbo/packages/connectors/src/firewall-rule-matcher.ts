@@ -1,5 +1,6 @@
 import {
   type FirewallConfig,
+  firewallRequestPathInterpretations,
   hasUnsafeFirewallPath,
   hasBaseUrlParams,
   validateAuthBaseUrl,
@@ -1748,6 +1749,7 @@ function matchStaticFirewallBaseUrl(
   rawBase: string,
   options: {
     readonly tolerateMalformedBaseParams?: boolean;
+    readonly requestPath?: string;
   } = {},
 ): FirewallBaseUrlMatch | null {
   const parsedUrl = new URL(url);
@@ -1778,16 +1780,14 @@ function matchStaticFirewallBaseUrl(
   }
 
   const basePath = rawBasePathFromUrl(baseForMatch);
+  const requestPath = options.requestPath ?? rawPathFromUrl(url);
   // A normalized "/" retains the path boundary of a raw "//" base.
   const relativePath =
     baseHasParams && basePath !== "/"
       ? options.tolerateMalformedBaseParams === true
-        ? matchFirewallPathPrefixForMalformedBaseDecision(
-            rawPathFromUrl(url),
-            basePath,
-          )
-        : matchFirewallPathPrefix(rawPathFromUrl(url), basePath)
-      : matchStaticBasePathPrefix(rawPathFromUrl(url), basePath);
+        ? matchFirewallPathPrefixForMalformedBaseDecision(requestPath, basePath)
+        : matchFirewallPathPrefix(requestPath, basePath)
+      : matchStaticBasePathPrefix(requestPath, basePath);
   if (relativePath === null) return null;
 
   const displayBase = stripTrailingSlash(rawBase);
@@ -1829,6 +1829,7 @@ function runtimeUrlCanMatchFirewallBase(url: string): boolean {
 function matchFirewallBaseUrlForDecision(
   url: string,
   rawBase: string,
+  requestPath?: string,
 ): FirewallBaseUrlMatch | null {
   if (!runtimeUrlCanMatchFirewallBase(url)) return null;
   const baseForMatch = rawBaseForDecisionMatch(rawBase);
@@ -1837,6 +1838,7 @@ function matchFirewallBaseUrlForDecision(
   try {
     const match = matchStaticFirewallBaseUrl(url, baseForMatch, {
       tolerateMalformedBaseParams: true,
+      requestPath,
     });
     if (match === null) return null;
     return { ...match, displayBase: stripTrailingSlash(rawBase) };
@@ -2438,13 +2440,14 @@ export function matchFirewallBaseUrl(
   }
 }
 
-export function matchFirewallRequestDecision(
+function matchFirewallRequestInterpretation(
   firewalls: unknown,
   method: string,
   url: string,
   networkPolicies: unknown = undefined,
   connectorIntent: FirewallConnectorIntent = { status: "absent" },
   options: FirewallRequestDecisionOptions = {},
+  requestPath = rawPathFromUrl(url),
 ): FirewallRequestDecision {
   const awsDiagnosticEnabled = options.awsDiagnostic !== undefined;
   const decisionFirewalls = compileDecisionFirewalls(
@@ -2463,15 +2466,18 @@ export function matchFirewallRequestDecision(
   const compiledNetworkPolicies = compileNetworkPolicies(networkPolicies);
   const upperMethod = method.toUpperCase();
   const collection = createMatchCollection();
-  const unsafePath =
-    url.includes("\\") || hasUnsafeFirewallPath(rawPathFromUrl(url));
+  const unsafePath = url.includes("\\") || hasUnsafeFirewallPath(requestPath);
   let apiOrder = 0;
 
   for (const firewall of decisionFirewalls) {
     for (const api of firewall.apis) {
       const order = apiOrder;
       apiOrder += 1;
-      const baseMatch = matchFirewallBaseUrlForDecision(url, api.rawBase);
+      const baseMatch = matchFirewallBaseUrlForDecision(
+        url,
+        api.rawBase,
+        requestPath,
+      );
       if (baseMatch === null) continue;
       if (unsafePath) return unsafePathBlockDecision(firewall, baseMatch);
 
@@ -2502,7 +2508,7 @@ export function matchFirewallRequestDecision(
     collection,
     connectorIntent,
     upperMethod,
-    rawPathFromUrl(url),
+    requestPath,
   );
   if (selection.kind === "ambiguous") return selection.decision;
   const decision = reduceSelectedOwner(
@@ -2518,6 +2524,82 @@ export function matchFirewallRequestDecision(
     awsContext,
     awsDiagnosticEnabled,
   );
+}
+
+export function matchFirewallRequestDecision(
+  firewalls: unknown,
+  method: string,
+  url: string,
+  networkPolicies: unknown = undefined,
+  connectorIntent: FirewallConnectorIntent = { status: "absent" },
+  options: FirewallRequestDecisionOptions = {},
+): FirewallRequestDecision {
+  const original = matchFirewallRequestInterpretation(
+    firewalls,
+    method,
+    url,
+    networkPolicies,
+    connectorIntent,
+    options,
+  );
+  if (original.kind !== "allow" && original.kind !== "no_match")
+    return original;
+  const path = rawPathFromUrl(url);
+  if (!path.includes("%")) return original;
+  const interpretations = firewallRequestPathInterpretations(path);
+  if (interpretations === null) {
+    return original.kind === "allow"
+      ? {
+          kind: "block",
+          firewallName: original.firewallName,
+          base: original.base,
+          relativePath: original.relativePath,
+          reason: "unsafe_path",
+          permissions: [],
+        }
+      : original;
+  }
+  for (const interpretedPath of interpretations.slice(1)) {
+    const interpreted = matchFirewallRequestInterpretation(
+      firewalls,
+      method,
+      url,
+      networkPolicies,
+      connectorIntent,
+      options,
+      interpretedPath,
+    );
+    if (original.kind === "no_match") {
+      if (interpreted.kind === "no_match") continue;
+      if (interpreted.kind === "ambiguous") return { ...interpreted, path };
+      return {
+        kind: "block",
+        firewallName: interpreted.firewallName,
+        base: interpreted.base,
+        relativePath: path,
+        reason: "unsafe_path",
+        permissions: [],
+      };
+    }
+    if (
+      interpreted.kind !== "allow" ||
+      interpreted.firewallName !== original.firewallName ||
+      interpreted.base !== original.base ||
+      interpreted.permission !== original.permission ||
+      interpreted.rule !== original.rule
+    ) {
+      return {
+        kind: "block",
+        firewallName: original.firewallName,
+        base: original.base,
+        relativePath: original.relativePath,
+        reason: "unsafe_path",
+        permissions: [],
+      };
+    }
+  }
+  // Only the original selection may supply routing, raw captures or credentials.
+  return original;
 }
 
 function matchFirewallHostWithParser(

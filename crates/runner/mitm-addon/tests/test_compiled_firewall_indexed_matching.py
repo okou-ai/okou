@@ -935,7 +935,7 @@ def test_indexed_matches_linear_for_repeated_slash_static_base():
     assert result.params == {"path": "/report"}
 
 
-def test_indexed_matches_linear_for_encoded_slash_under_static_base():
+def test_indexed_matches_linear_when_encoded_slash_changes_resource_structure():
     firewalls = wrap_firewalls(
         [
             firewall_api(
@@ -954,8 +954,9 @@ def test_indexed_matches_linear_for_encoded_slash_under_static_base():
         policies,
     )
 
-    assert isinstance(result, matching.FirewallAllow)
-    assert result.params == {"owner": "acme%2Fteam", "repo": "project"}
+    assert isinstance(result, matching.FirewallBlock)
+    assert result.reason == "unsafe_path"
+    assert result.path == "/repos/acme%2Fteam/project"
 
 
 def test_indexed_matching_long_path_bounds_rule_candidate_segment_work(monkeypatch):

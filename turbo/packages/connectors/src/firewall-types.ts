@@ -748,6 +748,29 @@ export function hasUnsafeFirewallPath(path: string): boolean {
   });
 }
 
+/** Authorization-only interpretations; callers must keep the original wire path. */
+export function firewallRequestPathInterpretations(
+  path: string,
+): readonly string[] | null {
+  const paths = [path];
+  let current = path;
+  for (let pass = 0; pass < MAX_PATH_PERCENT_DECODE_PASSES; pass += 1) {
+    if (!current.includes("%")) return paths;
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(current);
+    } catch {
+      return null;
+    }
+    // Decoding path data must never create a new query or fragment boundary.
+    if (decoded.includes("?") || decoded.includes("#")) return null;
+    if (decoded === current) return paths;
+    paths.push(decoded);
+    current = decoded;
+  }
+  return current.includes("%") ? null : paths;
+}
+
 function validateBaseUrlVariablePercentEncoding({
   base,
   serviceName,

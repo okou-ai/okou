@@ -1155,6 +1155,30 @@ usage reporting boundary.
 
 ## Path normalization work boundary
 
+### Authorization across encoded path interpretations
+
+Firewall authorization intersects the original path with each bounded percent-decoded
+interpretation. Every interpretation must select the same owner, API base, permission
+and exact rule before a connector credential can be prepared. An encoded literal that
+falls through to a broader ID rule, an encoded separator that hides a nested resource,
+or a decoded-only owner selection is rejected with `unsafe_path`. Original denials
+are never promoted to decoded allowances. Decoding cannot introduce a query or fragment
+boundary, and query escapes are not path input.
+
+Successful decisions retain the original URL, query, raw parameter captures and API
+entry for forwarding and signing. Ordinary encoded Unicode/space IDs and greedy file
+keys remain supported when their authorization agrees; ambiguous encoded IDs must use
+an unambiguous supported request. Source grammar and stored firewall formats do not
+change. No-escape requests still use one matcher evaluation. Both TypeScript diagnostics
+and Python enforcement share final-decision vectors for this boundary.
+
+New enforcement accepts existing catalogs but can reject requests that old Runners
+allowed. Old or draining Runners retain their old local interpretation until replaced;
+publishing a new diagnostic package alone does not repair enforcement. No credential,
+wire-protocol or persisted-state migration is introduced.
+
+### Validation work limits
+
 Path safety validation accepts at most 65,536 input characters and five percent
 decoding passes. Before whole-segment NFKC, each raw or decoded segment must have
 at most 30 consecutive non-starters after compatibility decomposition (NFKD).

@@ -51,6 +51,25 @@ def has_unsafe_url_path(url: str) -> bool:
     return has_unsafe_path(path_and_after[:path_end])
 
 
+def request_path_interpretations(path: str) -> tuple[str, ...] | None:
+    """Return bounded authorization interpretations without changing the wire path."""
+    if len(path) > MAX_PATH_VALIDATION_CHARACTERS:
+        return None
+    paths = [path]
+    current = path
+    for _ in range(_MAX_PERCENT_DECODE_PASSES):
+        if "%" not in current:
+            return tuple(paths)
+        decoded = _percent_decode_segment(current)
+        if decoded is None or "?" in decoded or "#" in decoded:
+            return None
+        if decoded == current:
+            return tuple(paths)
+        paths.append(decoded)
+        current = decoded
+    return None if "%" in current else tuple(paths)
+
+
 def _segment_has_unsafe_path(raw_segment: str) -> bool:
     segment = raw_segment
     for _ in range(_MAX_PERCENT_DECODE_PASSES):

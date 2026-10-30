@@ -43,7 +43,7 @@ from firewall_matching.patterns import (
     _match_compiled_path_segments,
     _split_path_segments,
 )
-from path_security import has_unsafe_path
+from path_security import has_unsafe_path, request_path_interpretations
 from runtime_url_parsing import split_runtime_url
 from url_syntax import (
     has_raw_whitespace,
@@ -2528,27 +2528,15 @@ def _match_compiled_firewall_request_linear(
     *,
     is_asterisk_form: bool = False,
 ) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
-    prepared = _prepare_compiled_request_match(
+    return _match_request_interpretations(
         url,
         method,
         compiled_firewalls,
         network_policies,
-    )
-    if prepared is None or compiled_firewalls is None:
-        return None
-
-    url_parts, url_has_backslash, upper_method, compiled_network_policies = prepared
-    return _match_compiled_firewall_request_with_api_candidates(
-        url=url,
-        url_parts=url_parts,
-        url_has_backslash=url_has_backslash,
-        upper_method=upper_method,
-        compiled_network_policies=compiled_network_policies,
-        api_candidates=compiled_firewalls.linear_api_candidates(),
+        intent,
+        request_context,
         indexed_rules=False,
-        intent=intent or connector_intent.ABSENT,
         is_asterisk_form=is_asterisk_form,
-        request_context=request_context,
     )
 
 
@@ -2590,6 +2578,29 @@ def match_compiled_firewall_request(
     owner but skips endpoint permissions, then reports ``*`` as the decision
     path while resolving the request through unknown-policy semantics.
     """
+    return _match_request_interpretations(
+        url,
+        method,
+        compiled_firewalls,
+        network_policies,
+        intent,
+        request_context,
+        indexed_rules=True,
+        is_asterisk_form=is_asterisk_form,
+    )
+
+
+def _match_request_interpretations(
+    url: str,
+    method: str,
+    compiled_firewalls: CompiledFirewallSet | None,
+    network_policies: object | None,
+    intent: connector_intent.ConnectorIntent | None,
+    request_context: FirewallRequestContext | None,
+    *,
+    indexed_rules: bool,
+    is_asterisk_form: bool,
+) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
     prepared = _prepare_compiled_request_match(
         url,
         method,
@@ -2600,15 +2611,87 @@ def match_compiled_firewall_request(
         return None
 
     url_parts, url_has_backslash, upper_method, compiled_network_policies = prepared
-    return _match_compiled_firewall_request_with_api_candidates(
-        url=url,
-        url_parts=url_parts,
-        url_has_backslash=url_has_backslash,
-        upper_method=upper_method,
-        compiled_network_policies=compiled_network_policies,
-        api_candidates=compiled_firewalls.indexed_api_candidates(url_parts),
-        indexed_rules=True,
-        intent=intent or connector_intent.ABSENT,
-        is_asterisk_form=is_asterisk_form,
-        request_context=request_context,
-    )
+
+    def match_path(
+        path: str,
+    ) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
+        parts = url_parts._replace(path=path)
+        candidates = (
+            compiled_firewalls.indexed_api_candidates(parts)
+            if indexed_rules
+            else compiled_firewalls.linear_api_candidates()
+        )
+        return _match_compiled_firewall_request_with_api_candidates(
+            url=url,
+            url_parts=parts,
+            url_has_backslash=url_has_backslash,
+            upper_method=upper_method,
+            compiled_network_policies=compiled_network_policies,
+            api_candidates=candidates,
+            indexed_rules=indexed_rules,
+            intent=intent or connector_intent.ABSENT,
+            is_asterisk_form=is_asterisk_form,
+            request_context=request_context,
+        )
+
+    original = match_path(url_parts.path)
+    if is_asterisk_form or isinstance(
+        original, FirewallBlock | FirewallAmbiguous | FirewallPolicyAllow
+    ):
+        return original
+    if "%" not in url_parts.path:
+        return original
+    paths = request_path_interpretations(url_parts.path)
+    if paths is None:
+        if isinstance(original, FirewallAllow):
+            return FirewallBlock(
+                original.api_entry["base"],
+                original.name,
+                upper_method,
+                original.rel_path,
+                (),
+                "unsafe_path",
+            )
+        return original
+    for path in paths[1:]:
+        interpreted = match_path(path)
+        if original is None:
+            if interpreted is None:
+                continue
+            if isinstance(interpreted, FirewallAmbiguous):
+                return interpreted._replace(path=url_parts.path)
+            selected = (
+                interpreted.firewall_allow
+                if isinstance(interpreted, FirewallPolicyAllow)
+                else interpreted
+            )
+            if isinstance(selected, FirewallBlock):
+                return selected._replace(
+                    path=url_parts.path,
+                    permissions=(),
+                    reason="unsafe_path",
+                    aws_sigv4_body_pending=False,
+                )
+            return FirewallBlock(
+                selected.api_entry["base"],
+                selected.name,
+                upper_method,
+                url_parts.path,
+                (),
+                "unsafe_path",
+            )
+        if not isinstance(interpreted, FirewallAllow) or (
+            interpreted.name != original.name
+            or interpreted.api_entry != original.api_entry
+            or interpreted.permission != original.permission
+            or interpreted.rule != original.rule
+        ):
+            return FirewallBlock(
+                original.api_entry["base"],
+                original.name,
+                upper_method,
+                original.rel_path,
+                (),
+                "unsafe_path",
+            )
+    return original

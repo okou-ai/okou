@@ -27,6 +27,97 @@ from tests.upstream_connection_helpers import seed_server_binding
 _MAX_CONNECTOR_INTENT_BYTES = 64
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v2/registries/%64elegations",
+        "/v2/registries/%2564elegations",
+        "/v2/pods/pod-id%2Flogs",
+    ],
+)
+async def test_encoded_routes_are_denied_before_connector_credentials(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, path
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            firewall_name="example",
+            api_entry={
+                "base": "https://api.example.com/v2",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.API_TOKEN }}"}},
+                "permissions": [
+                    {"name": "registry-read", "rules": ["GET /registries/{id}"]},
+                    {"name": "delegations-read", "rules": ["GET /registries/delegations"]},
+                    {"name": "pods-read", "rules": ["GET /pods/{id}"]},
+                ],
+            },
+            network_policy={
+                "allow": ["registry-read", "pods-read"],
+                "deny": ["delegations-read"],
+                "ask": [],
+                "unknownPolicy": "deny",
+            },
+        ),
+    )
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="api.example.com",
+        path=path,
+        request_headers=headers(("Host", "api.example.com")),
+    )
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert json.loads(flow.response.content)["reason"] == "unsafe_path"
+    assert "Authorization" not in flow.request.headers
+    assert flow.request.path == path
+    auth_fetch.assert_not_awaited()
+
+
+async def test_unambiguous_encoded_resource_keeps_raw_forwarding(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            firewall_name="example",
+            api_entry={
+                "base": "https://api.example.com/v2",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.API_TOKEN }}"}},
+                "permissions": [{"name": "registry-read", "rules": ["GET /registries/{id}"]}],
+            },
+            network_policy={"allow": ["registry-read"], "deny": [], "unknownPolicy": "deny"},
+        ),
+    )
+    path = "/v2/registries/acme%20%E4%B8%AD?filter=%2F%23"
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="api.example.com",
+        path=path,
+        request_headers=headers(("Host", "api.example.com")),
+    )
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(),
+    ):
+        await await_requestheaders_result(mitm_addon.requestheaders(flow))
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer x"
+    assert flow.request.path == path
+
+
 class _DecodeGuardConnectorIntent(bytes):
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
         raise AssertionError("oversized connector intent must not be decoded")

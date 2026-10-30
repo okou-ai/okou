@@ -1017,6 +1017,620 @@
   ],
   "finalDecisionCases": [
     {
+      "name": "canonical protected literal remains denied",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/delegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/delegations",
+        "reason": "permission_denied",
+        "permissions": ["delegations.read"]
+      }
+    },
+    {
+      "name": "encoded literal cannot fall through to an allowed resource ID",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%64elegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%64elegations",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "nested encoded literal cannot select a weaker rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%2564elegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%2564elegations",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "encoded literal cannot bypass an ask permission",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": [],
+          "ask": ["delegations.read"],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%64elegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%64elegations",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "different decoded rules remain ambiguous even when both permissions are allowed",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read", "delegations.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%64elegations"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%64elegations",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "encoded separator cannot hide an unsupported nested resource",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "pods.read",
+                  "rules": ["GET /pods/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["pods.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/pods/pod-id%2Flogs"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/pods/pod-id%2Flogs",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "ordinary encoded Unicode and space IDs retain the original path",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/acme%20%E4%B8%AD"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/acme%20%E4%B8%AD",
+        "permission": "registry.read",
+        "rule": "GET /registries/{id}"
+      }
+    },
+    {
+      "name": "encoded greedy file keys retain the same authorization and raw path",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "files.read",
+                  "rules": ["GET /files/{key+}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["files.read"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/acme%2Freport"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/acme%2Freport",
+        "permission": "files.read",
+        "rule": "GET /files/{key+}"
+      }
+    },
+    {
+      "name": "query escapes do not become authorization path data",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/id?filter=%64elegations%2F%23"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/id",
+        "permission": "registry.read",
+        "rule": "GET /registries/{id}"
+      }
+    },
+    {
+      "name": "decoding cannot introduce a query boundary",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/id%3Fignored"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/id%3Fignored",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "encoded base cannot turn an unowned URL into a credential selection",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v%32/registries/id"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/v%32/registries/id",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "encoded Unicode cannot hide a protected literal",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/管理员"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/registries/%E7%AE%A1%E7%90%86%E5%91%98"
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/registries/%E7%AE%A1%E7%90%86%E5%91%98",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "unknown policy allowance must agree across decoded interpretations",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"
+                }
+              },
+              "permissions": [
+                {
+                  "name": "registry.read",
+                  "rules": ["GET /registries/{id}"]
+                },
+                {
+                  "name": "delegations.read",
+                  "rules": ["GET /registries/delegations"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["registry.read"],
+          "deny": ["delegations.read"],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/unlisted%2Fid"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/unlisted%2Fid"
+      }
+    },
+    {
       "name": "parameterized repeated root slash base does not select credentials outside its scope",
       "firewalls": [
         {
