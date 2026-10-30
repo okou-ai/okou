@@ -48,8 +48,6 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
-import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -780,7 +778,6 @@ describe("Workflow Run admission", () => {
   it("selects current ordinary Workflows when a queued Run is claimed", async () => {
     const owned = await publicChatActor(context);
     const fixture = createChatEventsFixture(context);
-    const s3 = installWorkflowVolumeS3Fixture(context);
     await owned.run(() => {
       return fixture.api.updateUserModelPreference(
         owned.actor,
@@ -790,15 +787,14 @@ describe("Workflow Run admission", () => {
     const published = [];
     for (const name of ["first", "retained"]) {
       const instruction = `Read the ${name} publication.`;
-      const workflowName = `published-${name}-${randomUUID().slice(0, 8)}`;
       const workflowId = await owned.run(() => {
         return workflowBdd.createWorkflow(owned.actor, {
           agentId: owned.agentId,
-          name: workflowName,
+          name: `published-${name}-${randomUUID().slice(0, 8)}`,
           instruction,
         });
       });
-      published.push({ workflowId, workflowName, instruction });
+      published.push({ workflowId, instruction });
     }
     const firstWorkflow = published[0];
     if (!firstWorkflow) {
@@ -830,19 +826,17 @@ describe("Workflow Run admission", () => {
         owned.runnerGroup,
         current.runId,
       );
-      const skills = claim.contentBundles.skills;
+      const skills = claim.storageManifest?.workflowSkills;
       expect(skills).toHaveLength(2);
       for (const workflow of published) {
-        const skill = skills.find((item) => {
-          return item.mountPath.endsWith(`/${workflow.workflowName}`);
-        });
-        if (!skill) {
-          throw new Error("Expected the current Workflow bundle");
-        }
         expect(
-          readClaimedContentBundle(s3.objects, skill)
-            .get("SKILL.md")
-            ?.toString(),
+          (
+            await runs.downloadWorkflow(
+              current.runId,
+              workflow.workflowId,
+              claim.sandboxToken,
+            )
+          ).skillMd,
         ).toContain(
           workflow.workflowId === firstWorkflow.workflowId
             ? revised

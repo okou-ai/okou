@@ -2,6 +2,7 @@ mod allocation;
 mod support;
 
 mod agent_run_tests;
+mod content_bundle_tests;
 mod diagnostics_tests;
 mod env_tests;
 mod guest_state_tests;

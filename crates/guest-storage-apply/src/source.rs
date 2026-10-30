@@ -12,6 +12,33 @@ use std::time::{Duration, Instant};
 const TIMEOUT: Duration = Duration::from_secs(60);
 const LOOKUP_ERROR_PREFIX: &str = "failed to lookup address information:";
 
+/// Verify a bounded immutable archive before any extraction writes.
+/// An exact byte count is available for hash-addressed bundle claims.
+pub(crate) fn verify_archive(
+    reader: ArchiveSource,
+    expected_sha256: &str,
+    expected_bytes: Option<u64>,
+) -> Result<ArchiveSource, DownloadError> {
+    use sha2::{Digest, Sha256};
+    use std::io::Cursor;
+    // Includes supplementary content, tar metadata and gzip overhead.
+    const MAX_ARCHIVE_BYTES: u64 = 32 * 1024 * 1024;
+    let (reader, _) = reader.into_parts();
+    let mut bytes = Vec::new();
+    reader
+        .take(MAX_ARCHIVE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| DownloadError::new("Archive read failed"))?;
+    let size = bytes.len() as u64;
+    if size > MAX_ARCHIVE_BYTES
+        || expected_bytes.is_some_and(|expected| expected != size)
+        || hex::encode(Sha256::digest(&bytes)) != expected_sha256
+    {
+        return Err(DownloadError::new("Archive integrity mismatch"));
+    }
+    Ok(ArchiveSource::local(Cursor::new(bytes), Some(size)))
+}
+
 /// Global HTTP agent with timeout and system certificate verification.
 /// Uses platform verifier to trust system CA certificates (including proxy CA).
 static HTTP_AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {

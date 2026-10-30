@@ -1,16 +1,17 @@
-//! Private verified-file application contract; package downloads remain on the host.
+//! Private archive application contract; package downloads remain on the host.
 use serde::{Deserialize, Serialize};
-/// Maximum installed bundle metadata, independent of content byte limits.
-// 501 paths of up to 256 UTF-16 units, including JSON escaping and source paths.
-pub const MAX_METADATA_BYTES: usize = 1024 * 1024;
-/// One verified file privately staged by Runner.
+/// Only an archive identity, private source and destination cross exec stdin.
+pub const MAX_METADATA_BYTES: usize = 4 * 1024;
+/// One verified archive privately staged by Runner's chunked file transport.
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BundleFileSource {
-    /// Canonical relative package path.
-    pub path: String,
-    /// Run-private source file.
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BundleArchiveSource {
+    /// Run-private compressed archive.
     pub source: String,
+    /// Expected SHA-256 of the compressed bytes.
+    pub sha256: String,
+    /// Expected compressed byte count.
+    pub archive_bytes: u64,
 }
 /// Apply one complete input package.
 #[derive(Serialize, Deserialize)]
@@ -20,14 +21,14 @@ pub enum BundleApplication {
     Instructions {
         /// Framework discriminator.
         framework: String,
-        /// Private instructions source.
-        source: String,
+        /// Complete instructions archive.
+        archive: BundleArchiveSource,
     },
     /// Replace a complete managed Workflow skill directory.
     Skill {
         /// Validated skills mount.
         mount: String,
-        /// Complete validated package files.
-        files: Vec<BundleFileSource>,
+        /// Complete Workflow archive, including SKILL.md and attachments.
+        archive: BundleArchiveSource,
     },
 }

@@ -3,16 +3,18 @@ use super::super::{
     DEFAULT_EXEC_TIMEOUT, ExecutorConfig, JobTelemetry, RunnerError, RunnerResult,
     guest_runtime_dir,
 };
-use super::{guest_storage_apply_env, helper_exec_succeeded};
-use guest_contracts::content_bundle::{BundleApplication, BundleFileSource};
+use super::{format_helper_exec_failure, guest_storage_apply_env, helper_exec_succeeded};
+use guest_contracts::content_bundle::{BundleApplication, BundleArchiveSource};
 use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
-use runner_types::{
-    content_bundle::{PreparedBundle, PreparedBundleFile},
-    types::ExecutionContext,
-};
+use runner_types::{content_bundle::PreparedBundle, types::ExecutionContext};
 use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox, WriteFileEntry};
-use std::{collections::HashSet, io::Read, time::Instant};
+use std::{collections::HashSet, time::Instant};
 use tokio_util::sync::CancellationToken;
+
+const _: () = assert!(
+    guest_contracts::content_bundle::MAX_METADATA_BYTES
+        <= guest_control_proto::MAX_EXEC_STDIN_BYTES
+);
 
 pub(in crate::executor) async fn prepare_content_bundles(
     context: &mut ExecutionContext,
@@ -28,11 +30,12 @@ pub(in crate::executor) async fn prepare_content_bundles(
         result = budget.run_attempt(prepare(context, config, cancel)) =>
             result.map_err(|_| RunnerError::Internal("Content bundle preparation budget expired".into()))?,
     };
+    let error = result.as_ref().err().map(ToString::to_string);
     telemetry.record(
         "runner_content_bundle_prepare",
         started.elapsed(),
         result.is_ok(),
-        None,
+        error.as_deref(),
     );
     result
 }
@@ -56,18 +59,11 @@ async fn prepare(
     let cache = &config.content_bundle_cache;
     let mut prepared = Vec::new();
     if let Some(reference) = &bundles.instructions {
-        let bytes = cache.get(reference, cancel).await?;
-        let files = decode(&bytes)?;
-        if files.len() != 1
-            || files
-                .first()
-                .is_none_or(|file| file.path != "instructions.md")
-        {
-            return Err(RunnerError::Api("Invalid instructions package".into()));
-        }
+        let archive = cache.get(reference, cancel).await?;
         prepared.push(PreparedBundle {
             mount_path: None,
-            files,
+            sha256: reference.sha256.clone(),
+            archive,
         });
     }
     let mut paths: HashSet<String> = context
@@ -86,14 +82,11 @@ async fn prepare(
         if !paths.insert(skill.mount_path.clone()) {
             return Err(RunnerError::Api("Conflicting content bundle mount".into()));
         }
-        let bytes = cache.get(&skill.reference(), cancel).await?;
-        let files = decode(&bytes)?;
-        if !files.iter().any(|f| f.path == "SKILL.md") {
-            return Err(RunnerError::Api("Workflow package missing SKILL.md".into()));
-        }
+        let archive = cache.get(&skill.reference(), cancel).await?;
         prepared.push(PreparedBundle {
             mount_path: Some(skill.mount_path.clone()),
-            files,
+            sha256: skill.sha256.clone(),
+            archive,
         });
     }
     if context.storage_manifest.is_none() {
@@ -107,63 +100,6 @@ async fn prepare(
     context.prepared_bundles = prepared;
     Ok(())
 }
-fn decode(bytes: &[u8]) -> RunnerResult<Vec<PreparedBundleFile>> {
-    let invalid = || RunnerError::Api("Invalid content bundle archive".into());
-    // Bound decompression before tar parses extension metadata or allocates member buffers.
-    let mut unpacked = Vec::new();
-    flate2::read::GzDecoder::new(bytes)
-        .take(34 * 1024 * 1024 + 1)
-        .read_to_end(&mut unpacked)
-        .map_err(|_| invalid())?;
-    if unpacked.len() > 34 * 1024 * 1024 {
-        return Err(invalid());
-    }
-    let mut archive = tar::Archive::new(unpacked.as_slice());
-    let mut files = Vec::new();
-    let mut paths = HashSet::new();
-    let mut total = 0u64;
-    for entry in archive.entries().map_err(|_| invalid())? {
-        let mut entry = entry.map_err(|_| invalid())?;
-        if !entry.header().entry_type().is_file() || files.len() >= 501 {
-            return Err(invalid());
-        }
-        let path = entry
-            .path()
-            .map_err(|_| invalid())?
-            .to_str()
-            .ok_or_else(invalid)?
-            .to_owned();
-        if path.is_empty()
-            || path.encode_utf16().count() > 256
-            || path.contains(['\\', '\0'])
-            || path
-                .split('/')
-                .any(|p| p.is_empty() || p == "." || p == "..")
-            || !paths.insert(path.clone())
-        {
-            return Err(invalid());
-        }
-        total = total.saturating_add(entry.size());
-        if total > 32 * 1024 * 1024 {
-            return Err(invalid());
-        }
-        let mut content = Vec::new();
-        entry.read_to_end(&mut content).map_err(|_| invalid())?;
-        files.push(PreparedBundleFile { path, content });
-    }
-    for path in &paths {
-        let mut parts = path.split('/').collect::<Vec<_>>();
-        parts.pop();
-        while !parts.is_empty() {
-            if paths.contains(&parts.join("/")) {
-                return Err(invalid());
-            }
-            parts.pop();
-        }
-    }
-    Ok(files)
-}
-
 pub(in crate::executor) async fn apply_content_bundles(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
@@ -174,57 +110,42 @@ pub(in crate::executor) async fn apply_content_bundles(
     }
     let started = Instant::now();
     let result = apply(sandbox, context).await;
+    let error = result.as_ref().err().map(ToString::to_string);
     telemetry.record(
         "runner_content_bundle_apply",
         started.elapsed(),
         result.is_ok(),
-        None,
+        error.as_deref(),
     );
     result
 }
 async fn apply(sandbox: &dyn Sandbox, context: &ExecutionContext) -> RunnerResult<()> {
     let runtime = guest_runtime_dir(context.run_id)?;
     for (index, bundle) in context.prepared_bundles.iter().enumerate() {
-        let sources = bundle
-            .files
-            .iter()
-            .enumerate()
-            .map(|(file, data)| (format!("{runtime}/bundle-{index}-{file}"), data))
-            .collect::<Vec<_>>();
-        // Private transport owns size/count admission and large-single-file chunking.
-        let entries = sources
-            .iter()
-            .map(|(source, data)| WriteFileEntry {
-                path: source,
-                content: &data.content,
-            })
-            .collect::<Vec<_>>();
-        for batch in entries.chunks(guest_contracts::file_write::WRITE_FILES_BATCH_FILE_LIMIT) {
-            sandbox.write_private_files(batch).await?;
-        }
+        let source = format!("{runtime}/bundle-{index}.tar.gz");
+        // The private file transport chunks large archives independently of exec stdin.
+        sandbox
+            .write_private_files(&[WriteFileEntry {
+                path: &source,
+                content: &bundle.archive,
+            }])
+            .await?;
+        let archive = BundleArchiveSource {
+            source,
+            sha256: bundle.sha256.clone(),
+            archive_bytes: bundle.archive.len() as u64,
+        };
         let application = match &bundle.mount_path {
             Some(mount) => BundleApplication::Skill {
                 mount: mount.clone(),
-                files: sources
-                    .iter()
-                    .map(|(source, data)| BundleFileSource {
-                        path: data.path.clone(),
-                        source: source.clone(),
-                    })
-                    .collect(),
+                archive,
             },
             None => BundleApplication::Instructions {
                 framework: super::super::cli_framework::normalized_cli_agent_type(
                     &context.cli_agent_type,
                 )
                 .into(),
-                source: sources
-                    .first()
-                    .ok_or_else(|| {
-                        RunnerError::Internal("Missing instruction bundle source".into())
-                    })?
-                    .0
-                    .clone(),
+                archive,
             },
         };
         let metadata = serde_json::to_vec(&application)
@@ -250,9 +171,10 @@ async fn apply(sandbox: &dyn Sandbox, context: &ExecutionContext) -> RunnerResul
             )
             .await?;
         if !helper_exec_succeeded(&result) {
-            return Err(RunnerError::Internal(
-                "Required content bundle application failed".into(),
-            ));
+            return Err(RunnerError::Internal(format_helper_exec_failure(
+                "content bundle application",
+                &result,
+            )));
         }
     }
     Ok(())

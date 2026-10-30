@@ -4,7 +4,7 @@ use crate::path::normalize_path;
 use crate::source::ArchiveSource;
 use crate::tar_metadata::{MetadataBudget, MetadataReader};
 use guest_telemetry::log_warn;
-use std::io;
+use std::io::{self, Read};
 use std::path::Path;
 
 #[cfg(target_os = "linux")]
@@ -46,11 +46,22 @@ pub(crate) mod rooted;
 /// accepted entry, or a gzip validation failure terminates extraction. Files
 /// written before an error remain in the target directory.
 pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(), DownloadError> {
+    extract_tar_gz_checked(source, target, u64::MAX, |_, _, _| Ok(()))
+}
+
+/// Reuse Storage extraction with an additional package contract before each write.
+/// Callers publish the private staging directory only after this succeeds.
+pub(crate) fn extract_tar_gz_checked(
+    source: ArchiveSource,
+    target: &Path,
+    max_unpacked_bytes: u64,
+    mut validate_entry: impl FnMut(&Path, tar::EntryType, u64) -> io::Result<()>,
+) -> Result<(), DownloadError> {
     let mut skipped_entries = SkippedEntries { target, skipped: 0 };
     #[cfg(target_os = "linux")]
     let mut rooted = rooted::RootedWriter::new(target);
     let (reader, http_body_read_failure) = source.into_parts();
-    let decoder = flate2::read::GzDecoder::new(reader);
+    let decoder = flate2::read::GzDecoder::new(reader).take(max_unpacked_bytes.saturating_add(1));
     let budget = MetadataBudget::default();
     let mut archive = tar::Archive::new(MetadataReader::new(decoder, &budget));
 
@@ -74,6 +85,8 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
             .into_owned();
 
         let entry_type = entry.header().entry_type();
+        validate_entry(&entry_path, entry_type, entry.size())
+            .map_err(|e| archive_error("Invalid archive entry", e))?;
 
         #[cfg(target_os = "linux")]
         {
@@ -191,6 +204,9 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
     let mut decoder = archive.into_inner();
     io::copy(&mut decoder, &mut io::sink())
         .map_err(|e| archive_error("Failed to finish gzip archive", e))?;
+    if decoder.into_inner().limit() == 0 {
+        return Err(DownloadError::new("Archive exceeds expanded size limit"));
+    }
 
     Ok(())
 }

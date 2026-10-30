@@ -4,18 +4,15 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
 
 const context = testContext();
 const api = createRunsApi(context);
 
 describe("Runner claim-time Agent instructions", () => {
-  it("pins published instruction bytes at claim and selects later edits only for later claims", async () => {
+  it("selects edits committed after queueing, preserves raw text, and leaves the claimed body unchanged", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
-      const s3 = installWorkflowVolumeS3Fixture(context);
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
@@ -32,23 +29,12 @@ describe("Runner claim-time Agent instructions", () => {
         owned.runnerGroup,
         queued.runId,
       );
-      const selected = claim.contentBundles.instructions!;
-      expect(claim).not.toHaveProperty("agentInstructions");
-      expect(
-        readClaimedContentBundle(s3.objects, selected)
-          .get("instructions.md")
-          ?.toString(),
-      ).toBe(current);
+      expect(claim.agentInstructions).toBe(current);
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
         "C after claim",
       );
-      expect(
-        readClaimedContentBundle(s3.objects, selected)
-          .get("instructions.md")
-          ?.toString(),
-      ).toBe(current);
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "claim the later edit",
@@ -58,24 +44,17 @@ describe("Runner claim-time Agent instructions", () => {
         owned.runnerGroup,
         next.runId,
       );
-      const later = subsequent.claim.contentBundles.instructions!;
-      expect(later.sha256).not.toBe(selected.sha256);
-      expect(
-        readClaimedContentBundle(s3.objects, later)
-          .get("instructions.md")
-          ?.toString(),
-      ).toBe("C after claim");
+      expect(subsequent.claim.agentInstructions).toBe("C after claim");
       await expect(
         api.readRun(owned.actor, queued.runId),
       ).resolves.toMatchObject({ status: "running" });
     });
   });
 
-  it("claims an empty-file package when instructions are cleared before claim", async () => {
+  it("returns an explicit empty body when instructions are cleared before claim", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
-      const s3 = installWorkflowVolumeS3Fixture(context);
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
@@ -91,12 +70,7 @@ describe("Runner claim-time Agent instructions", () => {
         owned.runnerGroup,
         queued.runId,
       );
-      const files = readClaimedContentBundle(
-        s3.objects,
-        claim.contentBundles.instructions!,
-      );
-      expect([...files.keys()]).toStrictEqual(["instructions.md"]);
-      expect(files.get("instructions.md")?.length).toBe(0);
+      expect(claim.agentInstructions).toBe("");
     });
   });
 
@@ -123,14 +97,7 @@ describe("Runner claim-time Agent instructions", () => {
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "private",
       });
-      const rejected = await api.requestClaimRunnerJob(
-        true,
-        queued.runId,
-        [404],
-      );
-      expect(rejected.body).toMatchObject({
-        error: { message: "Agent not found" },
-      });
+      await api.requestClaimRunnerJob(true, queued.runId, [404]);
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "public",
       });
@@ -138,10 +105,7 @@ describe("Runner claim-time Agent instructions", () => {
         owned.runnerGroup,
         queued.runId,
       );
-      expect(claim.contentBundles.instructions).toMatchObject({
-        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        archiveBytes: expect.any(Number),
-      });
+      expect(claim.agentInstructions).toBe("");
     });
   });
 });
