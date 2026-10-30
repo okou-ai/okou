@@ -2920,6 +2920,13 @@
       "when": 1793349563883,
       "tag": "1495_atomic_workflow_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 1496,
+      "version": "7",
+      "when": 1793354224631,
+      "tag": "1496_atomic_chat_thread_deletion",
+      "breakpoints": true
     }
   ]
 }
