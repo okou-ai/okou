@@ -1,10 +1,6 @@
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { connectors } from "@okouai/db/schema/connector";
-import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { ConnectorRuntimeMethod } from "./connector-catalog-runtime.service";
