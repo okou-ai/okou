@@ -799,9 +799,17 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
     for tile_y in (0..HEIGHT).step_by(64) {
         for tile_x in (0..WIDTH).step_by(64) {
             tiles.push(0); // Raw ZRLE tile, with three-byte RGB CPIXEL values.
-            for y in tile_y..(tile_y + 64).min(HEIGHT) {
-                for x in tile_x..(tile_x + 64).min(WIDTH) {
-                    tiles.extend_from_slice(&color(y * WIDTH + x));
+            let tile_width = (WIDTH - tile_x).min(64);
+            let tile_height = (HEIGHT - tile_y).min(64);
+            let pixel_start = tiles.len();
+            tiles.resize(pixel_start + tile_width * tile_height * 3, 0);
+            for (y, row) in tiles[pixel_start..]
+                .chunks_exact_mut(tile_width * 3)
+                .enumerate()
+            {
+                let row_start = (tile_y + y) * WIDTH + tile_x;
+                for (x, pixel) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                    *pixel = color(row_start + x);
                 }
             }
         }
