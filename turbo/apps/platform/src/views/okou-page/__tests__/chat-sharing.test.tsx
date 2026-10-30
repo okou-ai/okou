@@ -1026,7 +1026,7 @@ test("Select an audience before creating a share and change it after creation", 
     },
   );
   click(requiredButtonNamed("Who can access"));
-  expect(requiredRadioNamed("Only me")).toBeChecked();
+  expect(requiredRadioNamed("Anyone with the link")).toBeChecked();
   click(requiredRadioNamed("Anyone at Default Org"));
   await userEvent.keyboard("{Escape}");
   click(within(answerGroup).getByText("Select message group"));

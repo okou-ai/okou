@@ -26,6 +26,7 @@ import {
   type SendSlackMessageBody,
   type SendTelegramMessageBody,
   type SendPhoneMessageBody,
+  type SendPhoneReactionBody,
   type SlackUploadCompleteBody,
   type SlackUploadInitBody,
   type TelegramUploadInitBody,
@@ -1878,6 +1879,24 @@ export function createBddIntegrationApi(context: TestContext) {
       })(integrationsAgentPhoneContract);
       return await accept(
         client.groupMessage({
+          headers: authenticate(context, routeMocks, actor),
+          body,
+        }),
+        statuses,
+      );
+    },
+
+    async requestSendPhoneReaction(
+      actor: ApiTestUser | null,
+      body: SendPhoneReactionBody,
+      statuses: readonly (200 | 400 | 401 | 403 | 404 | 502)[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsPhoneMessageRoutes,
+      })(integrationsPhoneMessageContract);
+      return await accept(
+        client.sendReaction({
           headers: authenticate(context, routeMocks, actor),
           body,
         }),

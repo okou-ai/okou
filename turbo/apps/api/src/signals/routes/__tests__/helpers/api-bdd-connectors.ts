@@ -389,6 +389,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly issuerParameterSupported?: boolean;
   readonly dcrTokenEndpointAuthMethod?:
     "none" | "client_secret_basic" | "client_secret_post";
+  readonly tokenEndpointAuthMethodsSupported?: readonly string[] | null;
   readonly dcrClientId?: string;
   readonly dcrClientSecret?: string;
   readonly synchronizeAuthorizationServerDiscovery?: boolean;
@@ -446,6 +447,7 @@ interface AutomaticMcpOAuthProviderRecorder {
 const automaticDcrRequestSchema = object({
   redirect_uris: array(string()).min(1),
   scope: string().optional(),
+  token_endpoint_auth_method: string().optional(),
 });
 
 async function automaticOAuthIdToken(
@@ -519,6 +521,19 @@ function automaticOAuthGrantTypes(
   );
 }
 
+function automaticOAuthTokenAuthMethods(
+  options: AutomaticMcpOAuthProviderOptions,
+  dcrMethod: string,
+): readonly string[] | undefined {
+  if (options.tokenEndpointAuthMethodsSupported === null) {
+    return undefined;
+  }
+  return (
+    options.tokenEndpointAuthMethodsSupported ??
+    (options.registration === "dcr" ? [dcrMethod] : ["none"])
+  );
+}
+
 export function mockAutomaticMcpOAuthProvider(
   _context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
@@ -554,8 +569,10 @@ export function mockAutomaticMcpOAuthProvider(
     scopes_supported: options.authorizationServerScopes,
     code_challenge_methods_supported:
       options.pkceS256Supported === false ? ["plain"] : ["S256"],
-    token_endpoint_auth_methods_supported:
-      options.registration === "dcr" ? [tokenEndpointAuthMethod] : ["none"],
+    token_endpoint_auth_methods_supported: automaticOAuthTokenAuthMethods(
+      options,
+      tokenEndpointAuthMethod,
+    ),
     authorization_response_iss_parameter_supported:
       options.issuerParameterSupported ?? true,
     client_id_metadata_document_supported: options.registration === "cimd",
@@ -728,6 +745,19 @@ export function mockAutomaticMcpOAuthProvider(
     http.post(registrationUrl, async ({ request }) => {
       const body = automaticDcrRequestSchema.parse(await request.json());
       registrationBodies.push(body);
+      if (
+        tokenEndpointAuthMethod === "none" &&
+        body.token_endpoint_auth_method !== "none"
+      ) {
+        return HttpResponse.json(
+          {
+            error: "invalid_client_metadata",
+            error_description:
+              'token_endpoint_auth_method must be "none"; only public clients are supported',
+          },
+          { status: 400 },
+        );
+      }
       if (options.dcrFailureStatus) {
         return HttpResponse.json(
           {

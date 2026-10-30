@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.5.45](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.44...process-control-ipc-v0.5.45) (2026-10-30)
+
 ## [0.5.44](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.43...process-control-ipc-v0.5.44) (2026-10-30)
 
 ## [0.5.43](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.42...process-control-ipc-v0.5.43) (2026-10-30)

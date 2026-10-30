@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.0...guest-contracts-v0.29.1) (2026-10-30)
+
+
+### Refactoring
+
+* **rust:** retire orphaned codex session cleanup ([#44237](https://github.com/okou-ai/okou/issues/44237)) ([f46f3e6](https://github.com/okou-ai/okou/commit/f46f3e6f4c1c880a79b75eb1ef295913133c0956))
+
 ## [0.29.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.5...guest-contracts-v0.29.0) (2026-10-30)
 
 

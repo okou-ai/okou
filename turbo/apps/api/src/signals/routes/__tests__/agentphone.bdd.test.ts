@@ -5,6 +5,7 @@ import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
+import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -416,12 +417,10 @@ async function connectFromReceivedLink(
 
 // The surface delivery rules follow the integration block as their own
 // section, so they are part of the caller-supplied tail this test pins.
-const AGENTPHONE_INTEGRATION_NOTE = [
-  "# Integration Note",
-  "",
-  "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.",
-  "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in the phone channel. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to the phone channel unless the user explicitly requests it. A private `/artifacts/...` address is not openable from the phone channel, so a link alone shows the user nothing. When you judge that the phone channel can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou phone upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou phone upload-file`, so the owner can open the original artifact after returning to the web app.",
-].join("\n");
+const AGENTPHONE_MESSAGING_NOTE =
+  "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so message commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.";
+const AGENTPHONE_ARTIFACT_NOTE =
+  "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in the phone channel. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to the phone channel unless the user explicitly requests it. A private `/artifacts/...` address is not openable from the phone channel, so a link alone shows the user nothing. When you judge that the phone channel can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou phone upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou phone upload-file`, so the owner can open the original artifact after returning to the web app.";
 
 function expectIntegrationImmediatelyBeforeRestrictedContent(
   appendSystemPrompt: string,
@@ -440,17 +439,18 @@ function expectIntegrationImmediatelyBeforeRestrictedContent(
   );
   expect(imageModelIndex).toBeGreaterThan(-1);
   expect(imageModelIndex).toBeLessThan(restrictedContentIndex);
+  const callerPrompt = appendSystemPrompt.slice(0, imageModelIndex).trimEnd();
+  expect(callerPrompt).toContain(
+    [
+      expectedIntegration,
+      "# Integration Note\n\n" + AGENTPHONE_MESSAGING_NOTE,
+    ].join("\n\n"),
+  );
   const expectedTail = [
-    expectedIntegration,
-    AGENTPHONE_INTEGRATION_NOTE,
+    AGENTPHONE_ARTIFACT_NOTE,
     ...(expectedThreadContext === undefined ? [] : [expectedThreadContext]),
   ].join("\n\n");
-  expect(
-    appendSystemPrompt
-      .slice(0, imageModelIndex)
-      .trimEnd()
-      .endsWith(expectedTail),
-  ).toBeTruthy();
+  expect(callerPrompt.endsWith(expectedTail)).toBeTruthy();
 }
 
 async function waitForTyping(
@@ -550,6 +550,267 @@ const EXPECTED_PLAIN_RUN_OUTPUT = [
 ].join("\n");
 
 describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
+  it.each([false, true])(
+    "adds an iMessage reaction with a run token (group: %s)",
+    async (isGroup) => {
+      const { actor, ap, phone, runnerGroup, sends } =
+        await entitledLinkedActor();
+      const reactions = ap.captureAgentPhoneReactions();
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "@Okou review this plan",
+        conversationId: uniqueConversationId(),
+        isGroup,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.appendSystemPrompt).toContain(`Message ID: ${messageId}`);
+      expect(run.appendSystemPrompt).toContain(
+        "okou phone reaction <message-id>",
+      );
+      expect(run.appendSystemPrompt).toContain(
+        "does not require a separate user request",
+      );
+      if (!run.okouToken) {
+        throw new Error("Expected a claim-issued CLI token");
+      }
+      const client = setupApp({
+        context,
+        routes: integrationsPhoneMessageRoutes,
+      })(integrationsPhoneMessageContract);
+      const result = await accept(
+        client.sendReaction({
+          headers: { authorization: `Bearer ${run.okouToken}` },
+          body: { messageId, reaction: "🔥" },
+        }),
+        [200],
+      );
+      expect(result.body).toMatchObject({
+        ok: true,
+        messageId,
+        reaction: "🔥",
+        channel: "imessage",
+      });
+      expect(result.body.reactionId).toMatch(/^rxn_/u);
+      expect(reactions).toStrictEqual([{ messageId, reaction: "🔥" }]);
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+
+      if (isGroup) {
+        // Bot answers archived for the group are also valid reaction targets.
+        await flushWaitUntilForTest();
+        const answerMessageId = lastSend(sends).messageId;
+        await createBddIntegrationApi(context).requestSendPhoneReaction(
+          actor,
+          { messageId: answerMessageId, reaction: "like" },
+          [200],
+        );
+        expect(reactions).toContainEqual({
+          messageId: answerMessageId,
+          reaction: "like",
+        });
+      }
+    },
+  );
+
+  it("lets a current member add an iMessage reaction to another member's message", async () => {
+    const { ap, phone, sends } = await entitledLinkedActor();
+    const member = createBddApi(context).user();
+    const memberPhone = uniquePhoneHandle();
+    await ap.linkViaWebhookConnectPrompt(member, memberPhone, sends);
+    const reactions = ap.captureAgentPhoneReactions();
+    const messageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "The launch went well",
+      conversationId: uniqueConversationId(),
+      isGroup: true,
+      participants: [{ identifier: phone }, { identifier: memberPhone }],
+    });
+    await createBddIntegrationApi(context).requestSendPhoneReaction(
+      member,
+      { messageId, reaction: "love" },
+      [200],
+    );
+    expect(reactions).toStrictEqual([{ messageId, reaction: "love" }]);
+  });
+
+  it.each(["dm", "group"] as const)(
+    "denies iMessage reactions to another account's %s",
+    async (kind) => {
+      const { actor, ap, phone, sends } = await entitledLinkedActor();
+      const integrations = createBddIntegrationApi(context);
+      const reactions = ap.captureAgentPhoneReactions();
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "/help",
+        conversationId: uniqueConversationId(),
+        isGroup: kind === "group",
+      });
+      const other = createBddApi(context).user({ orgId: actor.orgId });
+      await ap.linkViaWebhookConnectPrompt(other, uniquePhoneHandle(), sends);
+      for (const requester of [
+        other,
+        { ...actor, orgId: `org_${randomUUID()}` },
+      ]) {
+        await integrations.requestSendPhoneReaction(
+          requester,
+          { messageId, reaction: "like" },
+          [404],
+        );
+      }
+      await integrations.requestSendPhoneReaction(
+        null,
+        { messageId, reaction: "like" },
+        [401],
+      );
+      expect(reactions).toHaveLength(0);
+    },
+  );
+
+  it.each(["late link", "departed member", "unlinked phone"] as const)(
+    "denies an iMessage reaction for a %s",
+    async (scenario) => {
+      const { actor, ap, phone, sends } = await entitledLinkedActor();
+      const integrations = createBddIntegrationApi(context);
+      const reactions = ap.captureAgentPhoneReactions();
+      const other = createBddApi(context).user();
+      const otherPhone = uniquePhoneHandle();
+      const conversationId = uniqueConversationId();
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "ordinary group message",
+        conversationId,
+        isGroup: true,
+        participants: [{ identifier: phone }, { identifier: otherPhone }],
+      });
+      if (scenario === "late link") {
+        await ap.linkViaWebhookConnectPrompt(other, otherPhone, sends);
+      } else if (scenario === "departed member") {
+        server.use(
+          http.get(
+            `https://api.agentphone.test/v1/conversations/${conversationId}`,
+            () => {
+              return HttpResponse.json({ participants: [otherPhone] });
+            },
+          ),
+        );
+      } else {
+        await integrations.requestUnlinkAgentPhone(actor, [204]);
+      }
+      await integrations.requestSendPhoneReaction(
+        scenario === "late link" ? other : actor,
+        { messageId, reaction: "like" },
+        [404],
+      );
+      expect(reactions).toHaveLength(0);
+    },
+  );
+
+  it.each(["sms", "mms"] as const)(
+    "rejects an iMessage reaction to %s",
+    async (channel) => {
+      const { actor, ap, phone } = await entitledLinkedActor();
+      const reactions = ap.captureAgentPhoneReactions();
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel,
+        from: phone,
+        body: "/help",
+        conversationId: uniqueConversationId(),
+      });
+      const result = await createBddIntegrationApi(
+        context,
+      ).requestSendPhoneReaction(actor, { messageId, reaction: "like" }, [400]);
+      expect(result.body).toMatchObject({
+        error: { code: "UNSUPPORTED_CHANNEL" },
+      });
+      expect(reactions).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    { providerStatus: 404, expectedStatus: 404 },
+    { providerStatus: 503, expectedStatus: 502 },
+  ] as const)(
+    "denies an iMessage reaction when the roster returns $providerStatus",
+    async ({ providerStatus, expectedStatus }) => {
+      const { actor, ap, phone } = await entitledLinkedActor();
+      const reactions = ap.captureAgentPhoneReactions();
+      const conversationId = uniqueConversationId();
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "ordinary group message",
+        conversationId,
+        isGroup: true,
+      });
+      server.use(
+        http.get(
+          `https://api.agentphone.test/v1/conversations/${conversationId}`,
+          () => {
+            return HttpResponse.json(
+              { detail: "Roster unavailable" },
+              { status: providerStatus },
+            );
+          },
+        ),
+      );
+      await createBddIntegrationApi(context).requestSendPhoneReaction(
+        actor,
+        { messageId, reaction: "like" },
+        [expectedStatus],
+      );
+      expect(reactions).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    { providerStatus: 400, expectedStatus: 400 },
+    { providerStatus: 404, expectedStatus: 404 },
+    { providerStatus: 503, expectedStatus: 502 },
+    { providerStatus: "network", expectedStatus: 502 },
+  ] as const)(
+    "returns iMessage reaction failures without retrying ($providerStatus)",
+    async ({ providerStatus, expectedStatus }) => {
+      const { actor, ap, phone } = await entitledLinkedActor();
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "ordinary group message",
+        conversationId: uniqueConversationId(),
+        isGroup: true,
+      });
+      const requests: unknown[] = [];
+      server.use(
+        http.post(
+          `https://api.agentphone.test/v1/messages/:messageId/reactions`,
+          async ({ request }) => {
+            requests.push(await request.json());
+            return providerStatus === "network"
+              ? HttpResponse.error()
+              : HttpResponse.json(
+                  { error: { message: "Reaction unavailable" } },
+                  { status: providerStatus },
+                );
+          },
+        ),
+      );
+      const result = await createBddIntegrationApi(
+        context,
+      ).requestSendPhoneReaction(actor, { messageId, reaction: "🔥" }, [
+        expectedStatus,
+      ]);
+      expect(result.status).toBe(expectedStatus);
+      expect(requests).toStrictEqual([{ reaction: "🔥" }]);
+      if (providerStatus === "network") {
+        expect(result.body).toMatchObject({
+          error: { code: "AGENTPHONE_OUTCOME_UNKNOWN" },
+        });
+      }
+    },
+  );
+
   it("sends an explicit group message with a run-scoped CLI token and archives it for current members", async () => {
     const integrations = createBddIntegrationApi(context);
     const { actor, ap, phone, runnerGroup, sends } =

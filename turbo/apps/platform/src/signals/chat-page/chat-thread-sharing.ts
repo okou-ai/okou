@@ -331,7 +331,7 @@ function createShareVisibility$(id$: State<string | null>) {
 }
 
 function createSharedThreadAudienceSignals() {
-  const draft$ = state<SharedThreadAudience>("private");
+  const draft$ = state<SharedThreadAudience>("public");
   return {
     audience$: computed((get) => {
       return get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility]
@@ -382,7 +382,7 @@ export function createChatThreadSharingSignals(
     set(closeFeedbackSelection$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
-    set(changeAudience$, "private");
+    set(changeAudience$, "public");
     set(internalPhase$, "selecting");
     return set(scroll.autoScroll$, position, signal);
   });
@@ -391,7 +391,7 @@ export function createChatThreadSharingSignals(
     const position = set(scroll.readRenderedThreadScrollPosition$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
-    set(changeAudience$, "private");
+    set(changeAudience$, "public");
     set(internalPhase$, "idle");
     return set(scroll.autoScroll$, position, signal);
   });
