@@ -26,11 +26,26 @@ export function agentPhoneRouteLinkColumn(channel?: AgentPhoneChannel) {
     : agentphoneChatThreadRoutes.agentphoneUserLinkId;
 }
 
+export function agentPhoneGroupRouteKey(conversationId: string): string {
+  return `group:${createHash("sha256")
+    .update(JSON.stringify([conversationId]))
+    .digest("hex")}`;
+}
+
 export function agentPhoneGroupMessageRouteKey(
   conversationId: string,
   messageId: string,
 ): string {
   return `group:${createHash("sha256")
+    .update(JSON.stringify([conversationId, messageId]))
+    .digest("hex")}`;
+}
+
+export function agentPhoneGroupReplyRouteKey(
+  conversationId: string,
+  messageId: string,
+): string {
+  return `group-reply:${createHash("sha256")
     .update(JSON.stringify([conversationId, messageId]))
     .digest("hex")}`;
 }
@@ -44,8 +59,13 @@ export const recordAgentPhoneGroupReplyRoute$ = command(
       readonly conversationId: string;
       readonly messageId: string;
       readonly chatThreadId: string;
+      readonly rootMessageId: string;
     },
   ): Promise<void> => {
+    // Replies to the group's main conversation start a separate thread.
+    if (args.rootMessageId === agentPhoneGroupRouteKey(args.conversationId)) {
+      return;
+    }
     await set(writeDb$)
       .insert(agentphoneChatThreadRoutes)
       .values({
