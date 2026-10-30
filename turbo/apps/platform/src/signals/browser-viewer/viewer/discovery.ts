@@ -1,4 +1,6 @@
-import { scheduleTimeout, setLoop, detach, Reason } from "../../utils.ts";
+import { createStore } from "ccstate";
+import { timeout } from "signal-timers";
+import { resetSignal, setLoop, detach, Reason } from "../../utils.ts";
 
 import { CdpFault, isRecord } from "../cdp/errors.ts";
 import { pageTarget, type TargetDirectory } from "../cdp/targets.ts";
@@ -20,15 +22,18 @@ const selectedFreshnessMs = 12_000;
 const inventoryIntervalMs = 10_000;
 const inventoryRoundMs = 10_000;
 
+const resetScan$ = resetSignal();
+const resetInventoryExpiry$ = resetSignal();
+const resetSelectedExpiry$ = resetSignal();
+
 interface Scan {
   readonly round: InventoryRound;
-  deadline: (() => void) | undefined;
+  readonly signal: AbortSignal;
 }
 
 interface Selected {
   readonly targetId: string;
   readonly order: number;
-  deadline: (() => void) | undefined;
   verifiedAt: number;
   pending: boolean;
 }
@@ -42,9 +47,10 @@ interface DiscoveryOptions {
 
 /** Connection-owned IO; the model alone owns target facts and their projection. */
 export class TargetDiscovery {
+  private readonly store = createStore();
   private readonly dirty = new Set<string>();
   private scan: Scan | null = null;
-  private inventoryDeadline: (() => void) | undefined;
+  private inventoryDeadline: AbortSignal | undefined;
   private selected: Selected | null = null;
   private fullWanted = false;
   private running = false;
@@ -88,14 +94,13 @@ export class TargetDiscovery {
   }
 
   watch(targetId: string | null): void {
-    this.selected?.deadline?.();
+    this.store.set(resetSelectedExpiry$);
     this.selected = null;
     if (targetId && this.options.scoped) {
       const selected: Selected = {
         targetId,
         order: this.state().sequence,
         pending: false,
-        deadline: undefined,
         verifiedAt: performance.now(),
       };
       this.selected = selected;
@@ -117,7 +122,7 @@ export class TargetDiscovery {
       return;
     }
     this.model.inventory({ type: "invalidate-round" });
-    this.scan?.deadline?.();
+    this.store.set(resetScan$);
     this.reconcile();
   }
 
@@ -125,7 +130,7 @@ export class TargetDiscovery {
     if (!this.active()) {
       return;
     }
-    this.scan?.deadline?.();
+    this.store.set(resetScan$);
     this.dirty.delete(targetId);
     this.commit({ type: "closed", id: targetId });
     this.reconcile();
@@ -157,7 +162,7 @@ export class TargetDiscovery {
     this.dirty.delete(target.id);
     this.commit({ type: "created", target, observation });
     if (this.scan && !currentRound(this.state(), this.scan.round)) {
-      this.scan.deadline?.();
+      this.store.set(resetScan$);
       if (this.running) {
         this.fullWanted = true;
       }
@@ -214,9 +219,9 @@ export class TargetDiscovery {
       return;
     }
     this.closed = true;
-    this.selected?.deadline?.();
-    this.scan?.deadline?.();
-    this.inventoryDeadline?.();
+    this.store.set(resetSelectedExpiry$);
+    this.store.set(resetScan$);
+    this.store.set(resetInventoryExpiry$);
     this.dirty.clear();
     this.selected = null;
     this.fullWanted = false;
@@ -318,12 +323,15 @@ export class TargetDiscovery {
       type: "begin-round",
       now: performance.now(),
     });
-    const scan: Scan = { round: state.round!, deadline: undefined };
+    const scan: Scan = {
+      round: state.round!,
+      signal: this.store.set(resetScan$, this.options.signal),
+    };
     this.scan = scan;
     const current = () => {
       return this.active() && currentRound(this.state(), scan.round);
     };
-    scan.deadline = scheduleTimeout(
+    timeout(
       () => {
         if (current()) {
           this.fail(
@@ -335,7 +343,7 @@ export class TargetDiscovery {
         }
       },
       inventoryRoundMs,
-      this.options.signal,
+      { signal: scan.signal },
     );
     const [completion2] = await Promise.allSettled([
       (async (): Promise<void> => {
@@ -377,8 +385,8 @@ export class TargetDiscovery {
       })(),
     ]);
 
-    scan.deadline?.();
     if (this.scan === scan) {
+      this.store.set(resetScan$);
       this.scan = null;
     }
 
@@ -392,13 +400,14 @@ export class TargetDiscovery {
     if (!this.active() || !this.options.scoped) {
       return;
     }
-    this.inventoryDeadline?.();
+    this.store.set(resetInventoryExpiry$);
     const expiresAt = inventoryExpiry(this.state());
     if (expiresAt === null) {
       return;
     }
     const remaining = expiresAt - performance.now();
-    const deadline = scheduleTimeout(
+    const deadline = this.store.set(resetInventoryExpiry$, this.options.signal);
+    timeout(
       () => {
         if (this.active() && this.inventoryDeadline === deadline) {
           this.fail(
@@ -410,7 +419,7 @@ export class TargetDiscovery {
         }
       },
       Math.max(0, remaining),
-      this.options.signal,
+      { signal: deadline },
     );
     this.inventoryDeadline = deadline;
   }
@@ -539,7 +548,6 @@ export class TargetDiscovery {
                 selected.verifiedAt,
                 entry.membership.startedAt,
               );
-              selected.deadline?.();
               this.expireSelected(selected);
             }
           })(),
@@ -569,7 +577,8 @@ export class TargetDiscovery {
   }
 
   private expireSelected(selected: Selected): void {
-    selected.deadline = scheduleTimeout(
+    const signal = this.store.set(resetSelectedExpiry$, this.options.signal);
+    timeout(
       () => {
         if (this.active() && this.selected === selected) {
           this.staleSelected();
@@ -579,7 +588,7 @@ export class TargetDiscovery {
         0,
         selected.verifiedAt + selectedFreshnessMs - performance.now(),
       ),
-      this.options.signal,
+      { signal },
     );
   }
 
@@ -602,8 +611,8 @@ export class TargetDiscovery {
     if (!this.active()) {
       return;
     }
-    this.scan?.deadline?.();
-    this.inventoryDeadline?.();
+    this.store.set(resetScan$);
+    this.store.set(resetInventoryExpiry$);
     this.fullWanted = false;
     this.dirty.clear();
     this.epoch = this.model.inventory({ type: "reset" }).epoch;

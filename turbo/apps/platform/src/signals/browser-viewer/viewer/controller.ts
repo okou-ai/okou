@@ -1,6 +1,7 @@
+import { createStore } from "ccstate";
+import { timeout } from "signal-timers";
 import {
-  callAsync,
-  scheduleTimeout,
+  resetSignal,
   createDeferredPromise,
   detach,
   Reason,
@@ -65,6 +66,9 @@ interface Selection extends ImageSelection {
   favicon: FaviconDocument;
 }
 
+const resetCaptureUpdate$ = resetSignal();
+const resetRetirementDeadline$ = resetSignal();
+
 const minimumCaptureIntervalMs = 150;
 const captureSettleMs = 200;
 const maximumCaptureWaitMs = 1000;
@@ -87,6 +91,58 @@ interface SelectionRetirement {
   readonly control: Retirement | null;
 }
 
+/** Original input cleanup retains its result after the caller's budget expires. */
+class InputRetirement implements Retirement {
+  private readonly store = createStore();
+  private readonly completion;
+  private started = false;
+  readonly complete: Promise<void>;
+
+  constructor(
+    readonly input: InputSession,
+    private readonly reason: Exclude<InputStop, "disconnected">,
+    budget: number,
+    signal: AbortSignal,
+  ) {
+    this.completion = createDeferredPromise<void>(signal);
+    this.complete = this.completion.promise;
+    const deadline = this.store.set(resetRetirementDeadline$, signal);
+    timeout(
+      () => {
+        if (!this.completion.settled()) {
+          this.completion.reject(
+            new DOMException("signal timed out", "TimeoutError"),
+          );
+        }
+      },
+      budget,
+      { signal: deadline },
+    );
+  }
+
+  start(): void {
+    if (this.started) {
+      return;
+    }
+    this.started = true;
+    detach(this.drain(), Reason.Deferred, "browser input retirement");
+  }
+
+  private async drain(): Promise<void> {
+    // The remote cleanup continues after the budget expires; the rejected
+    // completion remains a same-target admission fence until connection teardown.
+    const [result] = await Promise.allSettled([this.input.retire(this.reason)]);
+    this.store.set(resetRetirementDeadline$);
+    if (!this.completion.settled()) {
+      if (result.status === "fulfilled") {
+        this.completion.resolve();
+      } else {
+        this.completion.reject(result.reason);
+      }
+    }
+  }
+}
+
 interface ControllerOptions {
   url: string;
   windowId?: number;
@@ -105,6 +161,7 @@ interface ControllerOptions {
 
 /** Lifetime is one mounted connection, never an endpoint-keyed global. */
 export class ViewerController {
+  private readonly store = createStore();
   private readonly ownedSessions = new Set<string>();
   private readonly ownedFrameSessions = new Set<string>();
   private readonly retirements = new Map<string, Retirement>();
@@ -124,7 +181,7 @@ export class ViewerController {
   private displaySize: DisplaySize | null = null;
   private capture: ViewerCaptureOptions = Object.freeze({});
   private captureSize: DisplaySize | null = null;
-  private captureUpdate: (() => void) | null = null;
+  private captureUpdate: AbortSignal | null = null;
   private captureUpdated = -Infinity;
   private captureStarted: CaptureSettings | null = null;
   private captureChange: CaptureChange | null = null;
@@ -335,9 +392,7 @@ export class ViewerController {
   }
 
   private cancelCaptureUpdate(): void {
-    if (this.captureUpdate !== null) {
-      this.captureUpdate?.();
-    }
+    this.store.set(resetCaptureUpdate$);
     this.captureUpdate = null;
     this.captureChange = null;
   }
@@ -389,9 +444,6 @@ export class ViewerController {
       };
       this.captureChange = change;
     }
-    if (this.captureUpdate !== null) {
-      this.captureUpdate?.();
-    }
     const deadline = Math.max(
       this.captureUpdated + minimumCaptureIntervalMs,
       Math.min(
@@ -399,7 +451,8 @@ export class ViewerController {
         change.first + maximumCaptureWaitMs,
       ),
     );
-    const update = scheduleTimeout(
+    const update = this.store.set(resetCaptureUpdate$, this.signal);
+    timeout(
       () => {
         if (this.captureUpdate !== update) {
           return;
@@ -420,7 +473,7 @@ export class ViewerController {
         }
       },
       Math.max(0, Math.ceil(deadline - now)),
-      this.signal,
+      { signal: update },
     );
     this.captureUpdate = update;
   }
@@ -730,14 +783,30 @@ export class ViewerController {
           for (const retirement of this.retirements.values()) {
             retirement.start();
           }
+          using _sessions = {
+            [Symbol.dispose]: () => {
+              this.ownedSessions.clear();
+              this.ownedFrameSessions.clear();
+              this.retirements.clear();
+              this.imageRecovery.close();
+            },
+          };
+          using _client = {
+            [Symbol.dispose]: () => {
+              this.client?.close();
+            },
+          };
+          using _frames = {
+            [Symbol.dispose]: () => {
+              this.frames?.close();
+            },
+          };
+          using _sink = {
+            [Symbol.dispose]: () => {
+              this.sink.dispose();
+            },
+          };
           this.display?.close();
-          this.sink.dispose();
-          this.frames?.close();
-          this.client?.close();
-          this.ownedSessions.clear();
-          this.ownedFrameSessions.clear();
-          this.retirements.clear();
-          this.imageRecovery.close();
         },
       };
 
@@ -745,7 +814,7 @@ export class ViewerController {
     }
   }
 
-  private async connect(): Promise<void> {
+  private async acquireConnections(): Promise<CdpClient> {
     validateConfiguration(this.options.url, this.options.windowId);
     const transport = this.options.transport ?? "shared";
     if (transport !== "shared" && transport !== "split") {
@@ -759,6 +828,28 @@ export class ViewerController {
     );
     this.client = client;
     this.frames = client;
+    let acquired = false;
+    await using _acquisition = {
+      [Symbol.asyncDispose]: async () => {
+        if (!acquired) {
+          // Opening belongs to acquisition until both transports are established.
+          // Observe its rejection even when constructing the second socket fails.
+          const opening = Promise.allSettled([
+            client.opened,
+            this.frames!.opened,
+          ]);
+          {
+            using _control = {
+              [Symbol.dispose]: () => {
+                client.close();
+              },
+            };
+            this.frames?.close();
+          }
+          await opening;
+        }
+      },
+    };
     this.directory = new TargetDirectory(client, this.options.windowId);
     client.onEvent((event) => {
       return this.onEvent(event, client);
@@ -767,31 +858,27 @@ export class ViewerController {
       return this.disconnected(error, client);
     });
     if (this.options.interactive && transport === "split") {
-      const [created] = await Promise.allSettled([
-        callAsync(() => {
-          const frames = new CdpClient(
-            this.options.url,
-            this.signal,
-            this.options.socketFactory,
-            this.options.requestTimeout,
-          );
-          this.frames = frames;
-          frames.onEvent((event) => {
-            return this.onEvent(event, frames);
-          });
-          frames.onDisconnected((error) => {
-            return this.disconnected(error, frames);
-          });
-        }),
-      ]);
-      if (created.status === "rejected") {
-        client.close();
-        // Closing rejects opening; observe it even if the second socket cannot exist.
-        await Promise.allSettled([client.opened]);
-        throw created.reason;
-      }
+      const frames = new CdpClient(
+        this.options.url,
+        this.signal,
+        this.options.socketFactory,
+        this.options.requestTimeout,
+      );
+      this.frames = frames;
+      frames.onEvent((event) => {
+        return this.onEvent(event, frames);
+      });
+      frames.onDisconnected((error) => {
+        return this.disconnected(error, frames);
+      });
     }
     await Promise.all([client.opened, this.frames.opened]);
+    acquired = true;
+    return client;
+  }
+
+  private async connect(): Promise<void> {
+    const client = await this.acquireConnections();
     if (this.disposed || this.signal.aborted) {
       return;
     }
@@ -845,7 +932,7 @@ export class ViewerController {
     });
     this.display.setMode(this.displayMode);
     this.display.measure(this.displaySize);
-    this.discovery = new TargetDiscovery(this.directory, this.model, {
+    this.discovery = new TargetDiscovery(this.directory!, this.model, {
       signal: this.signal,
       scoped: this.options.windowId !== undefined,
       changed: () => {
@@ -876,38 +963,52 @@ export class ViewerController {
       "disconnected",
       { drainControl },
     );
-    this.display?.close();
-    this.frames?.close();
-    this.ownedFrameSessions.clear();
-    const closeControl = () => {
-      this.client?.close();
-      this.ownedSessions.clear();
-      this.retirements.clear();
-      this.imageRecovery.close();
+    using _control = {
+      [Symbol.dispose]: () => {
+        // Video loss revokes admission immediately, but a live control socket can
+        // still acknowledge its original pressed/composing cleanup. Never replay it.
+        if (drainControl && this.retirements.size) {
+          detach(
+            this.drainDisconnectedInput(),
+            Reason.DomCallback,
+            "browser input disconnection",
+          );
+        } else {
+          this.closeControl();
+        }
+      },
     };
-    // Video loss revokes admission immediately, but a live control socket can
-    // still acknowledge its original pressed/composing cleanup. Never replay it.
-    if (drainControl && this.retirements.size) {
-      detach(
-        (async () => {
-          const [reply4] = await Promise.allSettled([
-            Promise.allSettled(
-              [...this.retirements.values()].map((value) => {
-                return value.complete;
-              }),
-            ),
-          ]);
-          if (reply4.status === "fulfilled") {
-            return closeControl();
-          }
-          return closeControl();
-        })(),
-        Reason.DomCallback,
-        "browser operation",
-      );
-    } else {
-      closeControl();
-    }
+    using _frameSessions = {
+      [Symbol.dispose]: () => {
+        this.ownedFrameSessions.clear();
+      },
+    };
+    using _frames = {
+      [Symbol.dispose]: () => {
+        this.frames?.close();
+      },
+    };
+    this.display?.close();
+  }
+
+  private async drainDisconnectedInput(): Promise<void> {
+    await Promise.allSettled(
+      [...this.retirements.values()].map((value) => {
+        return value.complete;
+      }),
+    );
+    this.closeControl();
+  }
+
+  private closeControl(): void {
+    using _sessions = {
+      [Symbol.dispose]: () => {
+        this.ownedSessions.clear();
+        this.retirements.clear();
+        this.imageRecovery.close();
+      },
+    };
+    this.client?.close();
   }
 
   private refresh(): void {
@@ -1380,43 +1481,13 @@ export class ViewerController {
       (reason !== "disconnected" || drainControl) &&
       !this.disposed
     ) {
-      const deferred = createDeferredPromise<void>(this.signal);
-      const cancelDeadline = scheduleTimeout(
-        () => {
-          if (!deferred.settled()) {
-            deferred.reject(
-              new DOMException("signal timed out", "TimeoutError"),
-            );
-          }
-        },
+      const retirement = new InputRetirement(
+        input,
+        reason === "disconnected" ? "disposed" : reason,
         this.options.requestTimeout ?? 10_000,
         this.signal,
       );
-      const complete = deferred.promise;
-      const start = () => {
-        detach(
-          (async () => {
-            const [result] = await Promise.allSettled([
-              callAsync(() => {
-                return input.retire(
-                  reason === "disconnected" ? "disposed" : reason,
-                );
-              }),
-            ]);
-            cancelDeadline();
-            if (!deferred.settled()) {
-              if (result.status === "fulfilled") {
-                deferred.resolve();
-              } else {
-                deferred.reject(result.reason);
-              }
-            }
-          })(),
-          Reason.Deferred,
-          "browser input retirement",
-        );
-      };
-      const retirement = { input, complete, start };
+      const complete = retirement.complete;
       control = retirement;
       this.retirements.set(selection.targetId, retirement);
       detach(

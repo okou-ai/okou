@@ -1,4 +1,6 @@
-import { scheduleAnimationFrame } from "../../utils.ts";
+import { createStore } from "ccstate";
+import { animationFrame } from "signal-timers";
+import { resetSignal } from "../../utils.ts";
 import type { InputOwner } from "./lifecycle.ts";
 import type { NativeInputPort } from "./port.ts";
 import type { Point } from "../display/geometry.ts";
@@ -89,6 +91,9 @@ export class InputBinding {
 
 type Pending = ContinuousSample & { readonly input: InputBinding };
 
+// The graph is stable; every mounted admission boundary owns its own Store.
+const resetInputFrame$ = resetSignal();
+
 /** One origin/admission boundary; native preparation and reply pressure stay in the queue. */
 export class InputIngress {
   private binding:
@@ -96,7 +101,8 @@ export class InputIngress {
     | undefined;
   private readonly events = new WeakMap<Event, InputBinding | null>();
   private pending: Pending | null = null;
-  private frame: { cancel: () => void } | null = null;
+  private readonly store = createStore();
+  private frame: AbortSignal | null = null;
   private closed = false;
 
   constructor(
@@ -255,8 +261,8 @@ export class InputIngress {
     this.pending = null;
     const frame = this.frame;
     this.frame = null;
-    if (frame) {
-      frame.cancel();
+    if (frame && !frame.aborted) {
+      this.store.set(resetInputFrame$);
     }
   }
 
@@ -296,18 +302,21 @@ export class InputIngress {
   }
 
   private schedule(): void {
-    const frame = { cancel: () => {} };
+    const frame = this.store.set(resetInputFrame$, this.signal);
     this.frame = frame;
-    frame.cancel = scheduleAnimationFrame(() => {
-      if (this.frame !== frame) {
-        return;
-      }
-      this.frame = null;
-      const pending = this.pending;
-      this.pending = null;
-      if (pending) {
-        this.send(pending);
-      }
-    }, this.signal);
+    animationFrame(
+      () => {
+        if (this.frame !== frame) {
+          return;
+        }
+        this.frame = null;
+        const pending = this.pending;
+        this.pending = null;
+        if (pending) {
+          this.send(pending);
+        }
+      },
+      { signal: frame },
+    );
   }
 }

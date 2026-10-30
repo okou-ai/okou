@@ -4,7 +4,7 @@ import { BrowserViewer } from "../browser-viewer/browser-viewer.tsx";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -169,6 +169,7 @@ function BrowserCdpViewer({
   readonly overlay: ReactNode;
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
+  const viewer = useLoadable(signals.viewer$);
   // Keep the stream during lease refreshes, but never reuse an endpoint from a
   // previous provider instance while its replacement connection is loading.
   const connecting =
@@ -178,7 +179,7 @@ function BrowserCdpViewer({
       (connection.data.liveUrl !== liveUrl ||
         connection.data.instanceId !== (instanceId ?? null) ||
         connection.data.windowId !== (windowId ?? null)));
-  if (connecting) {
+  if (connecting || viewer.state === "loading") {
     return (
       <>
         <PanelActions actions={actions} />
@@ -186,7 +187,12 @@ function BrowserCdpViewer({
       </>
     );
   }
-  if (connection.state === "hasError" || !connection.data) {
+  if (
+    connection.state === "hasError" ||
+    !connection.data ||
+    viewer.state === "hasError" ||
+    !viewer.data
+  ) {
     return (
       <>
         <PanelActions actions={actions} />
@@ -203,7 +209,7 @@ function BrowserCdpViewer({
         className="relative isolate flex min-h-0 flex-1"
       >
         <BrowserViewer
-          signals={signals.viewer}
+          signals={viewer.data}
           connectionKey={
             (instanceId ?? liveUrl) +
             ":" +

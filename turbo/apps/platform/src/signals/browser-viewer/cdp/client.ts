@@ -1,6 +1,7 @@
+import { createStore } from "ccstate";
+import { timeout } from "signal-timers";
 import {
-  callAsync,
-  scheduleTimeout,
+  resetSignal,
   createDeferredPromise,
   detach,
   jsonParseOr,
@@ -31,11 +32,14 @@ interface Pending {
   readonly method: Method;
   readonly resolve: (result: unknown) => void;
   readonly reject: (error: CdpFault) => void;
-  timer: (() => void) | undefined;
+  readonly store: ReturnType<typeof createStore>;
   settled: boolean;
   late?: (result: unknown) => void | Promise<void>;
 }
 export type SocketFactory = (url: string) => WebSocket;
+
+const resetOpeningDeadline$ = resetSignal();
+const resetRequestDeadline$ = resetSignal();
 
 /** One mounted browser owns its socket, pending requests and native sessions. */
 export class CdpClient {
@@ -45,7 +49,7 @@ export class CdpClient {
   private readonly listeners = new Set<(event: CdpEvent) => void>();
   private readonly closeListeners = new Set<(error: CdpFault) => void>();
   private readonly opening;
-  private openingTimer: (() => void) | undefined;
+  private readonly store = createStore();
   private nextId = 1;
   private ended = false;
 
@@ -65,14 +69,14 @@ export class CdpClient {
     this.socket.addEventListener("message", this.onMessage);
     this.socket.addEventListener("error", this.onError);
     this.socket.addEventListener("close", this.onClose);
-    this.openingTimer = scheduleTimeout(
+    timeout(
       () => {
         return this.close(
           new CdpFault("connection", "The connection timed out."),
         );
       },
       requestTimeout,
-      this.signal,
+      { signal: this.store.set(resetOpeningDeadline$, signal) },
     );
     signal.addEventListener("abort", this.abort, { once: true });
   }
@@ -111,6 +115,12 @@ export class CdpClient {
       throw error;
     }
     const id = this.nextId++;
+    // Native responses are delivered in a later task. Acquire the pending
+    // request only after send succeeds, so a synchronous send failure cannot
+    // leave an unobserved deferred rejection behind.
+    if (!this.send({ id, method, params, sessionId })) {
+      throw new CdpFault("connection", "The connection is closed.");
+    }
     const deferred = createDeferredPromise<Result<M>>(this.signal);
     const entry: Pending = {
       method,
@@ -124,13 +134,14 @@ export class CdpClient {
           deferred.reject(error);
         }
       },
-      timer: undefined,
+      store: createStore(),
       settled: false,
       ...(late ? { late } : {}),
     };
     this.pending.set(id, entry);
-    entry.timer = scheduleTimeout(
+    timeout(
       () => {
+        entry.store.set(resetRequestDeadline$);
         entry.settled = true;
         if (!entry.late) {
           this.pending.delete(id);
@@ -145,37 +156,28 @@ export class CdpClient {
         );
       },
       this.requestTimeout,
-      this.signal,
+      { signal: entry.store.set(resetRequestDeadline$, this.signal) },
     );
-    if (!(await this.send({ id, method, params, sessionId }))) {
-      this.pending.delete(id);
-      entry.timer?.();
-      entry.reject(new CdpFault("connection", "The connection is closed."));
-    }
-    return deferred.promise;
+    return await deferred.promise;
   }
   notify<M extends Method>(
     method: M,
     params: Params<M>,
     sessionId?: string,
   ): void {
-    detach(
-      this.send({ id: this.nextId++, method, params, sessionId }),
-      Reason.DomCallback,
-      "browser native notification",
-    );
+    this.send({ id: this.nextId++, method, params, sessionId });
   }
   close(fault = new CdpFault("connection", "The connection is closed.")): void {
     if (this.ended) {
       return;
     }
     this.ended = true;
-    this.openingTimer?.();
+    this.store.set(resetOpeningDeadline$);
     if (!this.opening.settled()) {
       this.opening.reject(fault);
     }
     for (const request of this.pending.values()) {
-      request.timer?.();
+      request.store.set(resetRequestDeadline$);
       if (!request.settled) {
         request.reject(fault);
       }
@@ -186,28 +188,24 @@ export class CdpClient {
     this.socket.removeEventListener("message", this.onMessage);
     this.socket.removeEventListener("error", this.onError);
     this.socket.removeEventListener("close", this.onClose);
-    detach(
-      Promise.allSettled([
-        callAsync(() => {
-          this.socket.close();
-        }),
-      ]),
-      Reason.DomCallback,
-      "browser socket close",
-    );
     // Subscribers can unsubscribe or reenter while the original close publishes.
     const closeListeners = [...this.closeListeners];
-    for (const listener of closeListeners) {
-      listener(fault);
-    }
     this.closeListeners.clear();
     this.listeners.clear();
+    using _disconnection = {
+      [Symbol.dispose]: () => {
+        for (const listener of closeListeners) {
+          listener(fault);
+        }
+      },
+    };
+    this.socket.close();
   }
   private readonly abort = () => {
     return this.close();
   };
   private readonly onOpen = () => {
-    this.openingTimer?.();
+    this.store.set(resetOpeningDeadline$);
     if (!this.opening.settled()) {
       this.opening.resolve();
     }
@@ -223,12 +221,12 @@ export class CdpClient {
   private readonly onClose = () => {
     return this.close(new CdpFault("connection", "The browser disconnected."));
   };
-  private async send(message: {
+  private send(message: {
     id: number;
     method: Method;
     params?: unknown;
     sessionId?: string | undefined;
-  }): Promise<boolean> {
+  }): boolean {
     if (this.ended || this.socket.readyState !== 1) {
       return false;
     }
@@ -238,30 +236,34 @@ export class CdpClient {
       );
       return false;
     }
-    const [sent] = await Promise.allSettled([
-      callAsync(() => {
-        this.socket.send(JSON.stringify(message));
-      }),
-    ]);
-    if (sent.status === "rejected") {
-      this.onError();
-    }
-    return sent.status === "fulfilled";
+    let sent = false;
+    using _transport = {
+      [Symbol.dispose]: () => {
+        if (!sent) {
+          this.onError();
+        }
+      },
+    };
+    this.socket.send(JSON.stringify(message));
+    sent = true;
+    return true;
   }
   private async releaseLate(entry: Pending, value: unknown): Promise<void> {
-    const [released] = await Promise.allSettled([
-      (async () => {
-        await entry.late?.(value);
-      })(),
-    ]);
-    if (released.status === "rejected") {
-      this.close(
-        new CdpFault(
-          "protocol",
-          "A late browser session could not be released.",
-        ),
-      );
-    }
+    let released = false;
+    using _session = {
+      [Symbol.dispose]: () => {
+        if (!released) {
+          this.close(
+            new CdpFault(
+              "protocol",
+              "A late browser session could not be released.",
+            ),
+          );
+        }
+      },
+    };
+    await entry.late?.(value);
+    released = true;
   }
   private onResponse(value: Record<string, unknown> & { id: number }): void {
     const entry = this.pending.get(value.id);
@@ -275,7 +277,7 @@ export class CdpClient {
       return;
     }
     this.pending.delete(value.id);
-    entry.timer?.();
+    entry.store.set(resetRequestDeadline$);
     if (isRecord(value.error)) {
       if (!entry.settled) {
         const code =

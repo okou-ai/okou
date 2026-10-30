@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { animationFrame } from "signal-timers";
 import { expect, test, vi } from "vitest";
 import {
   fill,
@@ -534,4 +535,159 @@ test("Following the panel applies its display size and leaves remote input usabl
   });
   expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test("Unavailable canvas initialization can be retried from the viewer", async () => {
+  const consoleError = vi.spyOn(console, "error");
+  const unexpectedError = consoleError.getMockImplementation();
+  consoleError.mockImplementation((...args: unknown[]) => {
+    if (
+      args.some((value) => {
+        return (
+          value instanceof Error &&
+          value.message === "Canvas 2D is unavailable."
+        );
+      })
+    ) {
+      return;
+    }
+    unexpectedError?.(...args);
+  });
+  const browser = mockViewer();
+  browser.canvas.setAvailable(false);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  const failure = await screen.findByRole("alert");
+  expect(failure).toHaveTextContent("Browser view unavailable");
+
+  browser.canvas.setAvailable(true);
+  const reconnect = queryAllByRoleFast("button", failure).find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Missing reconnect control");
+  }
+  await userEvent.click(reconnect);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("Wheel samples coalesce before a key boundary and pending input is revoked on blur", async () => {
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this instanceof HTMLCanvasElement
+        ? new DOMRect(0, 0, 1440, 900)
+        : original.call(this);
+    },
+  );
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  const surface = input.parentElement!;
+  await userEvent.click(input);
+  const wheel = (deltaY: number) => {
+    // happy-dom's WheelEvent omits inherited MouseEvent coordinates.
+    fireEvent(
+      surface,
+      Object.assign(
+        new MouseEvent("wheel", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 100,
+          clientY: 100,
+        }),
+        { deltaX: 0, deltaY, deltaMode: 0 },
+      ),
+    );
+  };
+  const actions = () => {
+    return browser.input.filter(({ method, params }) => {
+      return (
+        method === "Input.dispatchKeyEvent" ||
+        (typeof params === "object" &&
+          params !== null &&
+          "type" in params &&
+          params.type === "mouseWheel")
+      );
+    });
+  };
+  wheel(10);
+  wheel(20);
+  fireEvent.keyDown(input, { key: "ArrowDown", code: "ArrowDown" });
+  await waitFor(() => {
+    expect(actions()).toStrictEqual([
+      expect.objectContaining({
+        method: "Input.dispatchMouseEvent",
+        params: expect.objectContaining({ type: "mouseWheel", deltaY: 30 }),
+      }),
+      expect.objectContaining({
+        method: "Input.dispatchKeyEvent",
+        params: expect.objectContaining({ key: "ArrowDown" }),
+      }),
+    ]);
+  });
+
+  wheel(99);
+  fireEvent.blur(input);
+  // Observe the browser's next paint; the cancelled sample must not escape
+  // after this admission boundary has ended.
+  const painted = context.mocks.deferred<void>();
+  animationFrame(
+    () => {
+      painted.resolve();
+    },
+    { signal: context.signal },
+  );
+  await painted.promise;
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "ArrowRight", code: "ArrowRight" });
+  await waitFor(() => {
+    expect(actions().at(-1)).toMatchObject({
+      method: "Input.dispatchKeyEvent",
+      params: { key: "ArrowRight" },
+    });
+  });
+  expect(
+    actions().filter((request) => {
+      return request.method === "Input.dispatchMouseEvent";
+    }),
+  ).toStrictEqual([
+    expect.objectContaining({
+      params: expect.objectContaining({ type: "mouseWheel", deltaY: 30 }),
+    }),
+  ]);
+});
+
+test("Clipboard permission failure keeps the original text for a fresh recovery gesture", async () => {
+  const clipboard = context.mocks.browser.clipboardWrite();
+  const recovery = context.mocks.browser.clipboardWriteText();
+  clipboard.rejectWith(new DOMException("Clipboard denied", "NotAllowedError"));
+  const browser = await setupViewer(0);
+  browser.selectText("Original selection");
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  // Model the browser's trusted copy dispatch; synthetic DOM does not grant
+  // real clipboard permission or transient activation.
+  const copy = new ClipboardEvent("copy", { bubbles: true, cancelable: true });
+  Object.defineProperty(copy, "isTrusted", { value: true });
+  fireEvent(input, copy);
+  // This assertion runs in the same task as the gesture, before any await.
+  expect(clipboard.writes).toHaveLength(1);
+  await expect(screen.findByLabelText("Copied text")).resolves.toHaveValue(
+    "Original selection",
+  );
+  browser.selectText("A later selection");
+  const retry = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Copy text";
+  });
+  if (!retry) {
+    throw new Error("Missing clipboard recovery control");
+  }
+  await userEvent.click(retry);
+  await waitFor(() => {
+    expect(screen.queryByLabelText("Copied text")).not.toBeInTheDocument();
+  });
+  expect(recovery.writes).toStrictEqual(["Original selection"]);
+  expect(input).toBeEnabled();
 });

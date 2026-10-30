@@ -35,7 +35,7 @@ export function mockBrowserCdp(
     readonly unavailableTargets?: readonly string[];
   } = {},
 ) {
-  context.mocks.browser.canvasRendering();
+  const canvas = context.mocks.browser.canvasRendering();
   context.mocks.browser.uint8ArrayFromBase64();
   const bitmap =
     options.streaming === false
@@ -54,6 +54,8 @@ export function mockBrowserCdp(
     return { ...target };
   });
   let created = 0;
+  let selectedText = "";
+  let selectionSnapshot = "";
   const input: { method: string; params: unknown; sessionId?: string }[] = [];
   const detached: string[] = [];
   const captures: unknown[] = [];
@@ -178,7 +180,16 @@ export function mockBrowserCdp(
     if (request.method === "Runtime.callFunctionOn") {
       const params = object({
         arguments: array(object({ value: unknown() })).optional(),
+        objectId: string().optional(),
       }).parse(request.params);
+      if (params.objectId === "clipboard-selection") {
+        return {
+          result: {
+            type: "object",
+            value: { status: "ok", text: selectionSnapshot },
+          },
+        };
+      }
       const url = params.arguments?.[0]?.value;
       if (typeof url === "string" && url.startsWith("about:blank#cdpv-")) {
         addTarget(url, targetForSession(request.sessionId).windowId);
@@ -188,6 +199,10 @@ export function mockBrowserCdp(
       const { expression } = object({ expression: string() }).parse(
         request.params,
       );
+      if (expression.includes("/* okou-browser selection */")) {
+        selectionSnapshot = selectedText;
+        return { result: { type: "object", objectId: "clipboard-selection" } };
+      }
       return {
         result: expression.includes("const fence =")
           ? { type: "object", value: { fence: 1000, now: 1001 } }
@@ -298,6 +313,7 @@ export function mockBrowserCdp(
           [
             "Input.insertText",
             "Input.dispatchKeyEvent",
+            "Input.dispatchMouseEvent",
             "Input.imeSetComposition",
           ].includes(request.method)
         ) {
@@ -331,6 +347,7 @@ export function mockBrowserCdp(
   });
 
   return {
+    canvas,
     event,
     frame,
     targets,
@@ -338,6 +355,9 @@ export function mockBrowserCdp(
     detached,
     captures,
     viewport,
+    selectText(text: string) {
+      selectedText = text;
+    },
     holdNext(method: string) {
       const response = context.mocks.deferred<string>();
       heldReplies.set(method, response.resolve);

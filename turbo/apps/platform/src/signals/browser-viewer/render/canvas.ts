@@ -1,4 +1,4 @@
-import { callAsync, detach, Reason } from "../../utils.ts";
+import { detach, Reason } from "../../utils.ts";
 
 import { CdpFault } from "../cdp/errors.ts";
 import type { BrowserByteArrayConstructor } from "../browser.ts";
@@ -132,67 +132,53 @@ export class CanvasRenderer implements FrameSink {
     while (this.queued && !this.disposed) {
       const frame = this.queued;
       this.queued = null;
-      const [decoded] = await Promise.allSettled([this.decode(frame.data)]);
-      if (this.disposed || frame.generation !== this.generation) {
-        if (decoded.status === "fulfilled") {
-          decoded.value.close();
-        }
-        continue;
-      }
-      if (decoded.status === "rejected") {
-        frame.failed(
-          decoded.reason instanceof CdpFault
-            ? decoded.reason
-            : new CdpFault("frame", "The browser frame could not be decoded."),
-        );
-        continue;
-      }
-      const image = decoded.value;
-      using _image = {
-        [Symbol.dispose]: () => {
-          return image.close();
-        },
-      };
-      const [painted] = await Promise.allSettled([
-        callAsync(() => {
-          if (
-            image.width < 1 ||
-            image.height < 1 ||
-            image.width > maximumFrameDimension ||
-            image.height > maximumFrameDimension ||
-            image.width * image.height > maximumFrameArea
-          ) {
-            throw new CdpFault(
-              "frame",
-              "The browser sent invalid frame dimensions.",
-            );
-          }
-          const raster = { width: image.width, height: image.height };
-          if (frame.accept && !frame.accept(raster)) {
-            return;
-          }
-          if (this.canvas.width !== image.width) {
-            this.canvas.width = image.width;
-          }
-          if (this.canvas.height !== image.height) {
-            this.canvas.height = image.height;
-          }
-          this.context.drawImage(image.source, 0, 0);
-          frame.painted(raster);
-        }),
-      ]);
+      const [rendered] = await Promise.allSettled([this.renderFrame(frame)]);
       if (
-        painted.status === "rejected" &&
+        rendered.status === "rejected" &&
         !this.disposed &&
         frame.generation === this.generation
       ) {
         frame.failed(
-          painted.reason instanceof CdpFault
-            ? painted.reason
+          rendered.reason instanceof CdpFault
+            ? rendered.reason
             : new CdpFault("frame", "The browser frame could not be decoded."),
         );
       }
     }
     this.decoding = false;
+  }
+
+  /** Decoded resources remain owned here through validation and painting. */
+  private async renderFrame(frame: QueuedFrame): Promise<void> {
+    const image = await this.decode(frame.data);
+    using _image = {
+      [Symbol.dispose]: () => {
+        image.close();
+      },
+    };
+    if (this.disposed || frame.generation !== this.generation) {
+      return;
+    }
+    if (
+      image.width < 1 ||
+      image.height < 1 ||
+      image.width > maximumFrameDimension ||
+      image.height > maximumFrameDimension ||
+      image.width * image.height > maximumFrameArea
+    ) {
+      throw new CdpFault("frame", "The browser sent invalid frame dimensions.");
+    }
+    const raster = { width: image.width, height: image.height };
+    if (frame.accept && !frame.accept(raster)) {
+      return;
+    }
+    if (this.canvas.width !== image.width) {
+      this.canvas.width = image.width;
+    }
+    if (this.canvas.height !== image.height) {
+      this.canvas.height = image.height;
+    }
+    this.context.drawImage(image.source, 0, 0);
+    frame.painted(raster);
   }
 }

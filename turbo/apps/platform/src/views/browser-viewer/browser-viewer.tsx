@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ErrorBoundary } from "../error-boundary.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -773,29 +774,68 @@ function BrowserNotification({
   );
 }
 
-/** Product presentation and state belong to Platform; each graph owns its mounted browser. */
-export function BrowserViewer({
-  signals,
-  connectionKey,
-  actions,
-  presence,
-}: {
+interface BrowserViewerProps {
   readonly signals: BrowserViewerSignals;
   readonly connectionKey: string;
   readonly actions: ReactNode;
   readonly presence: ReactNode;
+}
+
+/** DOM acquisition failures belong to this surface's React boundary. */
+export function BrowserViewer(props: BrowserViewerProps) {
+  const revision = useGet(props.signals.revision$);
+  return (
+    <ErrorBoundary
+      key={props.connectionKey + ":" + revision}
+      fallback={<BrowserInitializationFailure signals={props.signals} />}
+    >
+      <BrowserSurface {...props} />
+    </ErrorBoundary>
+  );
+}
+
+function BrowserInitializationFailure({
+  signals,
+}: {
+  readonly signals: BrowserViewerSignals;
 }) {
+  const { t } = useTranslation();
+  const reconnect = useSet(signals.reconnect$);
+  return (
+    <div
+      role="alert"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-background px-5 text-center text-sm text-muted-foreground"
+    >
+      <p>
+        {t(($) => {
+          return $.browserViewer.unavailable;
+        })}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          reconnect();
+        }}
+      >
+        {t(($) => {
+          return $.browserViewer.reconnect;
+        })}
+      </Button>
+    </div>
+  );
+}
+
+function BrowserSurface({ signals, actions, presence }: BrowserViewerProps) {
   const { t } = useTranslation();
   const snapshot = useGet(signals.snapshot$);
   const controls = useGet(signals.controls$);
-  const revision = useGet(signals.revision$);
-  const transport = useGet(signals.transport$);
   const mount = useSet(signals.mount$);
   const select = useSet(signals.select$);
   return (
     <Tabs
       render={<section />}
-      key={connectionKey + ":" + revision + ":" + transport}
       ref={mount}
       value={snapshot.selectedTargetId}
       onValueChange={(value) => {

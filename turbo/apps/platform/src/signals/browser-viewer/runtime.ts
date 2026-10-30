@@ -42,9 +42,7 @@ export class BrowserRuntime {
     using _acquisition = {
       [Symbol.dispose]: () => {
         if (!acquired) {
-          for (const cleanup of this.cleanups.splice(0)) {
-            cleanup();
-          }
+          this.releaseResources();
         }
       },
     };
@@ -198,10 +196,26 @@ export class BrowserRuntime {
       return;
     }
     this.closed = true;
-    for (const cleanup of this.cleanups.splice(0)) {
-      cleanup();
+    using _focus = {
+      [Symbol.dispose]: () => {
+        this.focus.reset();
+      },
+    };
+    this.releaseResources();
+  }
+
+  private releaseResources(): void {
+    const cleanup = this.cleanups.shift();
+    if (!cleanup) {
+      return;
     }
-    this.focus.reset();
+    // A failing native close must not strand the remaining DOM resources.
+    using _remaining = {
+      [Symbol.dispose]: () => {
+        this.releaseResources();
+      },
+    };
+    cleanup();
   }
 }
 

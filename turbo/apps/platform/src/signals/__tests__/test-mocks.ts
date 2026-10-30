@@ -122,6 +122,7 @@ interface CanvasImageDraw {
 }
 
 interface CanvasRenderingMock {
+  setAvailable(available: boolean): void;
   readonly clipCircles: CanvasClipCircle[];
   readonly imageDraws: CanvasImageDraw[];
   readonly renders: CanvasRender[];
@@ -1567,6 +1568,7 @@ function mockBrowserWebSocket(
 }
 
 function mockCanvasRendering(signal: AbortSignal): CanvasRenderingMock {
+  let available = true;
   const clipCircles: CanvasClipCircle[] = [];
   const imageDraws: CanvasImageDraw[] = [];
   const renders: CanvasRender[] = [];
@@ -1621,7 +1623,7 @@ function mockCanvasRendering(signal: AbortSignal): CanvasRenderingMock {
   const getContext = vi
     .spyOn(HTMLCanvasElement.prototype, "getContext")
     .mockImplementation(function getContext(contextId: string) {
-      return contextId === "2d" ? context : null;
+      return available && contextId === "2d" ? context : null;
     } as typeof HTMLCanvasElement.prototype.getContext);
   const toDataURL = vi
     .spyOn(HTMLCanvasElement.prototype, "toDataURL")
@@ -1647,7 +1649,14 @@ function mockCanvasRendering(signal: AbortSignal): CanvasRenderingMock {
     toBlob.mockRestore();
   });
 
-  return { clipCircles, imageDraws, renders };
+  return {
+    clipCircles,
+    imageDraws,
+    renders,
+    setAvailable(value) {
+      available = value;
+    },
+  };
 }
 
 function mockRequestCacheMode(signal: AbortSignal): void {

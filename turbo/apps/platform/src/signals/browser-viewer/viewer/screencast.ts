@@ -1,4 +1,6 @@
-import { scheduleTimeout, createDeferredPromise } from "../../utils.ts";
+import { createStore } from "ccstate";
+import { timeout } from "signal-timers";
+import { resetSignal, createDeferredPromise } from "../../utils.ts";
 
 import type { CdpClient } from "../cdp/client.ts";
 import { CdpFault } from "../cdp/errors.ts";
@@ -6,6 +8,9 @@ import { frameTimeoutMs } from "../display/limits.ts";
 import type { FrameSink } from "../render/canvas.ts";
 import type { Viewport } from "../display/geometry.ts";
 import { sameCaptureSettings, type CaptureSettings } from "./capture.ts";
+
+const resetFrameWait$ = resetSignal();
+const resetNavigationWait$ = resetSignal();
 
 interface ScreencastOwner {
   client: CdpClient;
@@ -22,7 +27,7 @@ type NativeCapture =
 
 /** Capture may restart while its selected session and native input remain owned. */
 export class Screencast {
-  private deadline: (() => void) | null = null;
+  private readonly store = createStore();
   private desired: CaptureSettings;
   private applied: CaptureSettings | null = null;
   private busy = false;
@@ -339,16 +344,14 @@ export class Screencast {
   }
 
   private cancelDeadline(): void {
-    if (this.deadline !== null) {
-      this.deadline?.();
-    }
-    this.deadline = null;
+    this.store.set(resetFrameWait$);
   }
 
   private waitForFrame(): void {
     this.cancelDeadline();
     if (!this.painted && this.monitor) {
-      this.deadline = scheduleTimeout(
+      const signal = this.store.set(resetFrameWait$, this.owner.client.signal);
+      timeout(
         () => {
           if (this.current() && !this.painted) {
             this.fail(
@@ -360,7 +363,7 @@ export class Screencast {
           }
         },
         frameTimeoutMs,
-        this.owner.client.signal,
+        { signal },
       );
     }
   }
@@ -458,20 +461,26 @@ export class Screencast {
     if (!this.navigating.size || !this.current()) {
       return Promise.resolve(true);
     }
+    const signal = this.store.set(
+      resetNavigationWait$,
+      this.owner.client.signal,
+    );
     const deferred = createDeferredPromise<boolean>(this.owner.client.signal);
     const finish = (completed: boolean) => {
-      deadline?.();
+      if (!signal.aborted) {
+        this.store.set(resetNavigationWait$);
+      }
       this.navigationWaiter = null;
       if (!deferred.settled()) {
         deferred.resolve(completed);
       }
     };
-    const deadline = scheduleTimeout(
+    timeout(
       () => {
         return finish(false);
       },
       frameTimeoutMs,
-      this.owner.client.signal,
+      { signal },
     );
     this.navigationWaiter = () => {
       return finish(true);

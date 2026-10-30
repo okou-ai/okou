@@ -169,11 +169,11 @@ export class InputSession {
   }
 
   /** Stop admission, join original effects/late cleanup, then finish disposal. */
-  retire(
+  async retire(
     reason: Exclude<InputStop, "disconnected"> = "disposed",
   ): Promise<void> {
     if (this.retirement) {
-      return this.retirement;
+      return await this.retirement;
     }
     this.retirement = (async () => {
       const [reply1] = await Promise.allSettled([Promise.resolve()]);
@@ -191,7 +191,7 @@ export class InputSession {
     })();
     // Publish retirement before reset callbacks can reenter input admission.
     this.transition("blur");
-    return this.retirement;
+    return await this.retirement;
   }
 
   private transition(reason: InputTransition): InputOwner | null {

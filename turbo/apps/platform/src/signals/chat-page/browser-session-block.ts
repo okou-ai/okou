@@ -51,7 +51,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
       readonly cdpUrl: string;
     } | null>
   >;
-  readonly viewer: BrowserViewerSignals;
+  readonly viewer$: Computed<Promise<BrowserViewerSignals | null>>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -333,18 +333,17 @@ export function createBrowserSessionSignals(
       : null;
   });
 
-  const browserConnection$ = computed(async (get) => {
+  const viewer$ = computed(async (get) => {
     const connection = await get(viewerConnection$);
     return connection
-      ? {
+      ? createBrowserViewerSignals({
           cdpUrl: connection.cdpUrl,
           ...(connection.windowId === null
             ? {}
             : { windowId: connection.windowId }),
-        }
+        })
       : null;
   });
-  const viewer = createBrowserViewerSignals(browserConnection$);
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,
@@ -371,7 +370,7 @@ export function createBrowserSessionSignals(
     session$,
     panelSession$: session$,
     viewerConnection$,
-    viewer,
+    viewer$,
     ...startSignals,
     ...closeSignals,
     reload$,

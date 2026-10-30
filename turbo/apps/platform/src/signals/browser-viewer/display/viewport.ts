@@ -1,4 +1,6 @@
-import { scheduleTimeout, createDeferredPromise } from "../../utils.ts";
+import { createStore } from "ccstate";
+import { timeout } from "signal-timers";
+import { resetSignal, createDeferredPromise } from "../../utils.ts";
 
 import type { Protocol } from "devtools-protocol";
 import { CdpFault, isRecord } from "../cdp/errors.ts";
@@ -13,6 +15,8 @@ import {
   type PresentationGeometry,
   type Viewport,
 } from "./geometry.ts";
+
+const resetPresentationWait$ = resetSignal();
 
 interface FrameGeometry {
   readonly viewport: Viewport | null;
@@ -98,6 +102,7 @@ function compatible(
 
 /** One selected session's acknowledged adaptation, calibration and painted facts. */
 export class DisplayViewport {
+  private readonly store = createStore();
   private version = 0;
   private timestamp = -Infinity;
   private captureAfter = -Infinity;
@@ -379,14 +384,16 @@ export class DisplayViewport {
       return Promise.resolve("inconsistent");
     }
     const deferred = createDeferredPromise<Presentation>(signal);
-    let deadline: (() => void) | undefined;
+    const deadline = this.store.set(resetPresentationWait$, signal);
     const aborted = () => {
       return finish(
         new CdpFault("display", "Display synchronization was cancelled."),
       );
     };
     const finish = (result: Presentation | CdpFault) => {
-      deadline?.();
+      if (!deadline.aborted) {
+        this.store.set(resetPresentationWait$);
+      }
       signal.removeEventListener("abort", aborted);
       this.waiting = null;
       if (!deferred.settled()) {
@@ -402,12 +409,12 @@ export class DisplayViewport {
       aborted();
     } else {
       signal.addEventListener("abort", aborted, { once: true });
-      deadline = scheduleTimeout(
+      timeout(
         () => {
           return finish(presentationTimeout());
         },
         budget,
-        signal,
+        { signal: deadline },
       );
     }
     return deferred.promise;

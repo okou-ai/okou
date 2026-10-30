@@ -1,4 +1,4 @@
-import { callAsync, createDeferredPromise } from "../../utils.ts";
+import { createDeferredPromise, type DeferredPromise } from "../../utils.ts";
 
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 import type { CdpClient } from "../cdp/client.ts";
@@ -121,17 +121,35 @@ export class InputQueue {
     return this.enqueueRead(owner, run, valid, false);
   }
 
-  private enqueueRead<T>(
+  private async enqueueRead<T>(
     owner: InputOwner,
     run: (job: InputJob) => Promise<T>,
     valid: () => boolean,
     completion: boolean,
   ): Promise<T> {
-    const deferred = createDeferredPromise<T>(this.client.signal);
+    const admitted = createDeferredPromise<InputJob>(this.client.signal);
+    const completed = createDeferredPromise<void>(this.client.signal);
+    const cancelled = createDeferredPromise<never>(this.client.signal);
     const cancel = () => {
-      if (!deferred.settled()) {
-        deferred.reject(new Error("Selection cancelled"));
+      const error = new Error("Selection cancelled");
+      if (!admitted.settled()) {
+        admitted.reject(error);
       }
+      if (!cancelled.settled()) {
+        cancelled.reject(error);
+      }
+    };
+    // The caller observes the real read result. The queue only joins its
+    // completion, so a failed selection cannot disable unrelated input.
+    const operation = this.executeRead(admitted.promise, run, completed);
+    using _cancellation = {
+      [Symbol.dispose]: () => {
+        if (!cancelled.settled()) {
+          cancelled.reject(
+            new DOMException("Selection finished", "AbortError"),
+          );
+        }
+      },
     };
     if (!this.lifecycle.owns(owner)) {
       cancel();
@@ -146,23 +164,32 @@ export class InputQueue {
       this.add(
         owner,
         async (job) => {
-          const [result] = await Promise.allSettled([
-            callAsync(() => {
-              return run(job);
-            }),
-          ]);
-          if (!deferred.settled()) {
-            if (result.status === "fulfilled") {
-              deferred.resolve(result.value);
-            } else {
-              deferred.reject(result.reason);
-            }
+          if (!admitted.settled()) {
+            admitted.resolve(job);
           }
+          await completed.promise;
         },
         { barrier: true, cancel, valid, completion },
       );
     }
-    return deferred.promise;
+    return await Promise.race([operation, cancelled.promise]);
+  }
+
+  private async executeRead<T>(
+    admitted: Promise<InputJob>,
+    run: (job: InputJob) => Promise<T>,
+    completed: DeferredPromise<void>,
+  ): Promise<T> {
+    using _completion = {
+      [Symbol.dispose]: () => {
+        if (!completed.settled()) {
+          completed.resolve();
+        }
+      },
+    };
+    const job = await admitted;
+    this.client.signal.throwIfAborted();
+    return await run(job);
   }
 
   capture(owner: InputOwner): InputJob {

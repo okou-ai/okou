@@ -1,24 +1,15 @@
-import { callAsync, onRef } from "../utils.ts";
-import { command, type Computed } from "ccstate";
+import { onRef } from "../utils.ts";
+import { command } from "ccstate";
 import { BrowserRuntime } from "./runtime.ts";
 import { createViewerSignals, type ViewerModel } from "./viewer/model.ts";
-import { diagnostic } from "./cdp/errors.ts";
 import type { BrowserConnection } from "./viewer/types.ts";
 
 /** Every browser session entry constructs its own graph in the existing App Store. */
-export function createBrowserViewerSignals(
-  connection$: Computed<
-    BrowserConnection | null | Promise<BrowserConnection | null>
-  >,
-) {
+export function createBrowserViewerSignals(connection: BrowserConnection) {
   const model = createViewerSignals();
   const mount$ = onRef(
-    command(async ({ get, set }, root: HTMLElement, signal: AbortSignal) => {
-      const connection = await get(connection$);
+    command(({ get, set }, root: HTMLElement, signal: AbortSignal) => {
       signal.throwIfAborted();
-      if (!connection) {
-        return;
-      }
       const native: ViewerModel = {
         commitIntent: (...args) => {
           return set(model.commitIntent$, ...args);
@@ -70,41 +61,32 @@ export function createBrowserViewerSignals(
         },
       };
       set(model.transition$, { type: "reset" });
-      const [acquired] = await Promise.allSettled([
-        callAsync(() => {
-          return new BrowserRuntime(
-            root,
-            native,
-            connection,
-            {
-              transport: get(model.transport$),
-              capture: get(model.capture$),
-              mode: get(model.windowSizeSync$),
-              clipboardChanged: (value) => {
-                return set(model.setClipboard$, value);
-              },
-              resized: (space) => {
-                return set(model.resizeTabs$, space);
-              },
-            },
-            signal,
-          );
-        }),
-      ]);
-      signal.throwIfAborted();
-      if (acquired.status === "rejected") {
-        set(model.transition$, {
-          type: "failed",
-          error: diagnostic(acquired.reason),
-        });
-        return;
-      }
-      const runtime = acquired.value;
+      const runtime = new BrowserRuntime(
+        root,
+        native,
+        connection,
+        {
+          transport: get(model.transport$),
+          capture: get(model.capture$),
+          mode: get(model.windowSizeSync$),
+          clipboardChanged: (value) => {
+            return set(model.setClipboard$, value);
+          },
+          resized: (space) => {
+            return set(model.resizeTabs$, space);
+          },
+        },
+        signal,
+      );
       signal.addEventListener(
         "abort",
         () => {
+          using _binding = {
+            [Symbol.dispose]: () => {
+              set(model.unbind$, runtime.actions);
+            },
+          };
           runtime.close();
-          set(model.unbind$, runtime.actions);
         },
         { once: true },
       );

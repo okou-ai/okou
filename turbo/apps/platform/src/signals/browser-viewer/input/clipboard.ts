@@ -1,9 +1,4 @@
-import {
-  callAsync,
-  createDeferredPromise,
-  detach,
-  Reason,
-} from "../../utils.ts";
+import { createDeferredPromise, detach, Reason } from "../../utils.ts";
 
 import { clipboardTextLimit } from "./selection.ts";
 import type { InputBinding } from "./ingress.ts";
@@ -203,20 +198,23 @@ export class NativeClipboard {
     attempt: CopyAttempt,
     failed: () => void,
   ): Promise<void> {
-    const [result] = await Promise.allSettled([
-      callAsync(() => {
-        return navigator.clipboard.write([
-          new ClipboardItem({ "text/plain": data }),
-        ]);
-      }),
-    ]);
-    if (result.status === "fulfilled") {
-      if (this.attempt === attempt) {
-        this.attempt = null;
-        this.show(null);
-      }
-    } else {
+    const [result] = await Promise.allSettled([this.commitData(data, attempt)]);
+    if (result.status === "rejected") {
       failed();
+      throw result.reason;
+    }
+  }
+
+  private async commitData(
+    data: Promise<Blob>,
+    attempt: CopyAttempt,
+  ): Promise<void> {
+    await navigator.clipboard.write([
+      new ClipboardItem({ "text/plain": data }),
+    ]);
+    if (this.attempt === attempt) {
+      this.attempt = null;
+      this.show(null);
     }
   }
 
@@ -238,19 +236,25 @@ export class NativeClipboard {
     text: string,
   ): Promise<void> {
     const [result] = await Promise.allSettled([
-      callAsync(() => {
-        return navigator.clipboard.writeText(text);
-      }),
+      this.commitRecovery(recovery, text),
     ]);
-    if (this.recovery !== recovery) {
-      return;
+    if (result.status === "rejected") {
+      if (this.recovery === recovery) {
+        this.input()?.clipboardError(
+          "Use your browser's Copy command on the selected recovery text.",
+        );
+      }
+      throw result.reason;
     }
-    if (result.status === "fulfilled") {
+  }
+
+  private async commitRecovery(
+    recovery: ClipboardRecovery,
+    text: string,
+  ): Promise<void> {
+    await navigator.clipboard.writeText(text);
+    if (this.recovery === recovery) {
       this.reset();
-    } else {
-      this.input()?.clipboardError(
-        "Use your browser's Copy command on the selected recovery text.",
-      );
     }
   }
 }

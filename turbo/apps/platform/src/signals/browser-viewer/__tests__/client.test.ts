@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { testContext } from "../../__tests__/test-helpers.ts";
 import { CdpClient } from "../cdp/client.ts";
 import { isRecord } from "../cdp/errors.ts";
@@ -155,4 +155,81 @@ test("native events remain private to the originating connection", async () => {
     "Runtime.executionContextsCleared",
   ]);
   second.close();
+});
+
+test("a completed request does not cancel another pending request's deadline", async () => {
+  context.mocks.browser.webSocket((data) => {
+    const request: unknown = JSON.parse(data);
+    if (!isRecord(request)) {
+      throw new Error("Invalid fixture request");
+    }
+    return request.method === "Browser.getVersion"
+      ? JSON.stringify({ id: request.id, result: { product: "Chrome" } })
+      : null;
+  });
+  const client = new CdpClient(endpoint, context.signal, undefined, 20);
+  await client.opened;
+  const pending = client.request("Target.getTargets", undefined);
+  await expect(
+    client.request("Browser.getVersion", undefined),
+  ).resolves.toMatchObject({ product: "Chrome" });
+  await expect(pending).rejects.toMatchObject({
+    kind: "protocol",
+    message: "The browser request timed out.",
+    request: { method: "Target.getTargets" },
+  });
+  // Expiring one request keeps the shared transport available.
+  await expect(
+    client.request("Browser.getVersion", undefined),
+  ).resolves.toMatchObject({ product: "Chrome" });
+  client.close();
+});
+
+test("a socket close failure reaches the caller after rejecting pending requests", async () => {
+  context.mocks.browser.webSocket(() => {
+    return null;
+  });
+  const client = new CdpClient(endpoint, context.signal);
+  await client.opened;
+  const pending = client.request("Target.getTargets", undefined);
+  const disconnected = context.mocks.deferred<unknown>();
+  client.onDisconnected(disconnected.resolve);
+  const failure = new Error("Socket could not close");
+  vi.spyOn(WebSocket.prototype, "close").mockImplementationOnce(() => {
+    throw failure;
+  });
+  expect(() => {
+    client.close();
+  }).toThrow(failure);
+  await expect(pending).rejects.toMatchObject({ kind: "connection" });
+  await expect(disconnected.promise).resolves.toMatchObject({
+    kind: "connection",
+  });
+  await expect(
+    client.request("Browser.getVersion", undefined),
+  ).rejects.toMatchObject({ kind: "connection" });
+});
+
+test("a synchronous send failure rejects its caller and the other pending requests", async () => {
+  const failure = new Error("Socket could not send");
+  context.mocks.browser.webSocket((data) => {
+    const request: unknown = JSON.parse(data);
+    if (!isRecord(request)) {
+      throw new Error("Invalid fixture request");
+    }
+    if (request.method === "Browser.getVersion") {
+      throw failure;
+    }
+    return null;
+  });
+  const client = new CdpClient(endpoint, context.signal);
+  await client.opened;
+  const pending = client.request("Target.getTargets", undefined);
+  await expect(client.request("Browser.getVersion", undefined)).rejects.toBe(
+    failure,
+  );
+  await expect(pending).rejects.toMatchObject({ kind: "connection" });
+  await expect(
+    client.request("Target.getTargets", undefined),
+  ).rejects.toMatchObject({ kind: "connection" });
 });

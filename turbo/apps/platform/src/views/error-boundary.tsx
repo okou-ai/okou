@@ -5,6 +5,7 @@ import { DefaultErrorFallback } from "./default-error-boundary.tsx";
 
 interface Props {
   children?: ReactNode;
+  fallback?: ReactNode;
 }
 
 interface State {
@@ -38,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       if (this.state.error && this.state.errorInfo) {
-        return <DefaultErrorFallback />;
+        return this.props.fallback ?? <DefaultErrorFallback />;
       }
 
       // hasError is true but errorInfo not yet set (componentDidCatch hasn't fired).
