@@ -24,9 +24,22 @@
   --okou-auth-card-padding-inline: 2.5rem;
   --okou-auth-card-padding-block: 2rem;
   /* Font families */
+  /* Installed script faces come first, so a system that already renders a
+     script keeps its own typography. The downloaded Noto families after them
+     only serve scripts the local list cannot cover, and a system with no usable
+     local face reaches them exactly as it did before they were added. */
+  --font-family-cjk-local:
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    "Source Han Sans SC", "WenQuanYi Micro Hei";
   --font-family-cjk:
     "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR";
-  --font-family-fallback: var(--font-family-cjk), "Noto Sans Devanagari";
+  --font-family-cjk-serif-local:
+    "Songti SC", "Songti TC", "SimSun", "PMingLiU", "Noto Serif CJK SC",
+    "Source Han Serif SC";
+  --font-family-devanagari-local: "Kohinoor Devanagari", "Nirmala UI";
+  --font-family-fallback:
+    var(--font-family-cjk-local), var(--font-family-cjk),
+    var(--font-family-devanagari-local), "Noto Sans Devanagari";
   --font-family-sans:
     "Geist", system-ui, var(--font-family-fallback), sans-serif;
   --font-family-mono:
@@ -37,8 +50,9 @@
   --font-mono: var(--font-family-mono);
   /* Keep native serif Latin faces ahead of the shared script fallback. */
   --font-serif:
-    ui-serif, Georgia, Cambria, "Times New Roman", Times, "Noto Serif",
-    "Liberation Serif", var(--font-family-fallback), serif;
+    ui-serif, Georgia, Cambria, "Times New Roman", Times,
+    var(--font-family-cjk-serif-local), "Noto Serif", "Liberation Serif",
+    var(--font-family-fallback), serif;
   /* Color-emoji fonts must come first so dual-presentation codepoints (e.g. the
      "squared CJK" buttons 🈶🈯🈹) resolve to their color glyph instead of the
      text glyph a CJK text font would otherwise supply. */
@@ -265,18 +279,26 @@
 }
 
 /* Shared Han codepoints have localized forms; all families remain available
-   for mixed-language text regardless of the UI language. */
+   for mixed-language text regardless of the UI language. Each language keeps
+   its own installed face first and its downloaded Noto counterpart second. */
 :root:lang(zh-Hant) {
+  --font-family-cjk-local:
+    "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC",
+    "Source Han Sans TC";
   --font-family-cjk:
     "Noto Sans TC", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR";
 }
 
 :root:lang(ja) {
+  --font-family-cjk-local:
+    "Hiragino Sans", "Yu Gothic", "Meiryo", "Noto Sans CJK JP";
   --font-family-cjk:
     "Noto Sans JP", "Noto Sans SC", "Noto Sans TC", "Noto Sans KR";
 }
 
 :root:lang(ko) {
+  --font-family-cjk-local:
+    "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR";
   --font-family-cjk:
     "Noto Sans KR", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP";
 }
