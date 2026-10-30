@@ -1,5 +1,6 @@
 """URL path safety helpers."""
 
+import re
 import unicodedata
 import urllib.parse
 
@@ -15,6 +16,8 @@ _MAX_CONSECUTIVE_NONSTARTERS = 30
 # Match the addon's existing 64 KiB request-work scale. Character count bounds
 # Python string processing without first scanning and allocating encoded bytes.
 MAX_PATH_VALIDATION_CHARACTERS = 64 * 1024
+_PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
+_URI_UNRESERVED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-")
 
 
 def has_unsafe_path(path: str) -> bool:
@@ -51,6 +54,17 @@ def has_unsafe_url_path(url: str) -> bool:
     return has_unsafe_path(path_and_after[:path_end])
 
 
+def canonical_path_percent_encoding(path: str) -> str:
+    """Normalize URI spelling without turning reserved escapes into structure."""
+
+    def replace_escape(match: re.Match[str]) -> str:
+        escape = match.group()
+        char = chr(int(escape[1:], 16))
+        return char if char in _URI_UNRESERVED else escape.upper()
+
+    return _PERCENT_ESCAPE.sub(replace_escape, path)
+
+
 def request_path_interpretations(path: str) -> tuple[str, ...] | None:
     """Return bounded authorization interpretations without changing the wire path."""
     if len(path) > MAX_PATH_VALIDATION_CHARACTERS:
@@ -58,6 +72,9 @@ def request_path_interpretations(path: str) -> tuple[str, ...] | None:
     paths = [path]
     current = path
     for _ in range(_MAX_PERCENT_DECODE_PASSES):
+        canonical = canonical_path_percent_encoding(current)
+        if canonical != current and canonical not in paths:
+            paths.append(canonical)
         if "%" not in current:
             return tuple(paths)
         decoded = _percent_decode_segment(current)

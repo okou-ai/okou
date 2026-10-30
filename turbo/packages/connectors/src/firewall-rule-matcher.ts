@@ -1,5 +1,6 @@
 import {
   type FirewallConfig,
+  canonicalFirewallPathPercentEncoding,
   firewallRequestPathInterpretations,
   hasUnsafeFirewallPath,
   hasBaseUrlParams,
@@ -175,6 +176,8 @@ interface DecisionRule {
 
 interface DecisionApi {
   readonly rawBase: string;
+  readonly uriMatchBase?: string;
+  readonly uriPathAmbiguous?: true;
   readonly baseMalformed: boolean;
   readonly authMalformed: boolean;
   readonly hasMalformedRules: boolean;
@@ -2440,20 +2443,122 @@ export function matchFirewallBaseUrl(
   }
 }
 
+function canonicalUriPattern(path: string): string {
+  return path
+    .split(/(\{[^{}]*\})/)
+    .map((part) => {
+      return part.startsWith("{")
+        ? part
+        : canonicalFirewallPathPercentEncoding(part);
+    })
+    .join("");
+}
+
+function canonicalUriBase(base: string): string {
+  const pathStart = base.indexOf("/", base.indexOf("://") + 3);
+  return pathStart === -1
+    ? base
+    : base.slice(0, pathStart) + canonicalUriPattern(base.slice(pathStart));
+}
+
+function uriRuleIdentity(rule: DecisionRule): string {
+  return JSON.stringify([
+    rule.method,
+    splitPathSegments(rule.path).map((segment) => {
+      const parsed = parseSegment(segment);
+      return parsed.kind === "param"
+        ? ["param", parsed.prefix, parsed.suffix, parsed.greedy]
+        : parsed;
+    }),
+    [...(rule.awsPredicates ?? [])].sort(),
+    [...(rule.awsQueryRequirements ?? [])].sort((left, right) => {
+      return JSON.stringify(left).localeCompare(JSON.stringify(right));
+    }),
+  ]);
+}
+
+function canonicalUriFirewalls(
+  firewalls: readonly DecisionFirewall[],
+): readonly DecisionFirewall[] | null {
+  if (
+    !firewalls.some((firewall) => {
+      return firewall.apis.some((api) => {
+        return (
+          api.rawBase.includes("%") ||
+          api.rules.some((rule) => {
+            return rule.path.includes("%");
+          })
+        );
+      });
+    })
+  )
+    return null;
+  let changed = false;
+  const canonical = firewalls.map((firewall) => {
+    const identities = new Map<string, Map<string, Set<number>>>();
+    const apis = firewall.apis.map((api, apiIndex) => {
+      const uriMatchBase = canonicalUriBase(api.rawBase);
+      const rules = api.rules.map((rule) => {
+        const path = canonicalUriPattern(rule.path);
+        const specificity: PathSpecificity = [
+          rule.specificity[0],
+          rule.specificity[1],
+          rule.specificity[2],
+          rule.specificity[3],
+          rule.specificity[4],
+          rule.specificity[5] -
+            (codePointLength(rule.path) - codePointLength(path)),
+          rule.specificity[6],
+        ];
+        const normalized = { ...rule, path, specificity };
+        const key = JSON.stringify([uriMatchBase, uriRuleIdentity(normalized)]);
+        const original = JSON.stringify([api.rawBase, uriRuleIdentity(rule)]);
+        let originals = identities.get(key);
+        if (originals === undefined) {
+          originals = new Map();
+          identities.set(key, originals);
+        }
+        let indices = originals.get(original);
+        if (indices === undefined) {
+          indices = new Set();
+          originals.set(original, indices);
+        }
+        indices.add(apiIndex);
+        if (path !== rule.path) changed = true;
+        return normalized;
+      });
+      if (uriMatchBase !== api.rawBase) changed = true;
+      return { ...api, uriMatchBase, rules: attachAwsQuerySelectorKeys(rules) };
+    });
+    const ambiguousApis = new Set<number>();
+    for (const originals of identities.values()) {
+      if (originals.size < 2) continue;
+      for (const indices of originals.values()) {
+        for (const index of indices) ambiguousApis.add(index);
+      }
+    }
+    return {
+      ...firewall,
+      apis: apis.map((api, index) => {
+        return ambiguousApis.has(index)
+          ? { ...api, uriPathAmbiguous: true as const }
+          : api;
+      }),
+    };
+  });
+  return changed ? canonical : null;
+}
+
 function matchFirewallRequestInterpretation(
-  firewalls: unknown,
+  decisionFirewalls: readonly DecisionFirewall[],
   method: string,
   url: string,
-  networkPolicies: unknown = undefined,
+  compiledNetworkPolicies: CompiledNetworkPolicies,
   connectorIntent: FirewallConnectorIntent = { status: "absent" },
   options: FirewallRequestDecisionOptions = {},
   requestPath = rawPathFromUrl(url),
 ): FirewallRequestDecision {
   const awsDiagnosticEnabled = options.awsDiagnostic !== undefined;
-  const decisionFirewalls = compileDecisionFirewalls(
-    firewalls,
-    awsDiagnosticEnabled,
-  );
   if (decisionFirewalls.length === 0) return { kind: "no_match" };
 
   const suppliedAwsContext = options.awsDiagnostic?.context;
@@ -2463,7 +2568,6 @@ function matchFirewallRequestInterpretation(
       ? suppliedAwsContext
       : undefined;
 
-  const compiledNetworkPolicies = compileNetworkPolicies(networkPolicies);
   const upperMethod = method.toUpperCase();
   const collection = createMatchCollection();
   const unsafePath = url.includes("\\") || hasUnsafeFirewallPath(requestPath);
@@ -2473,13 +2577,18 @@ function matchFirewallRequestInterpretation(
     for (const api of firewall.apis) {
       const order = apiOrder;
       apiOrder += 1;
-      const baseMatch = matchFirewallBaseUrlForDecision(
+      const matchedBase = matchFirewallBaseUrlForDecision(
         url,
-        api.rawBase,
+        api.uriMatchBase ?? api.rawBase,
         requestPath,
       );
-      if (baseMatch === null) continue;
-      if (unsafePath) return unsafePathBlockDecision(firewall, baseMatch);
+      if (matchedBase === null) continue;
+      const baseMatch = {
+        ...matchedBase,
+        displayBase: stripTrailingSlash(api.rawBase),
+      };
+      if (unsafePath || api.uriPathAmbiguous === true)
+        return unsafePathBlockDecision(firewall, baseMatch);
 
       const decisionBaseMatch: DecisionBaseMatch = {
         firewallName: firewall.name,
@@ -2526,6 +2635,19 @@ function matchFirewallRequestInterpretation(
   );
 }
 
+function firewallAllowsSameRule(
+  original: Extract<FirewallRequestDecision, { readonly kind: "allow" }>,
+  interpreted: FirewallRequestDecision,
+): boolean {
+  return (
+    interpreted.kind === "allow" &&
+    interpreted.firewallName === original.firewallName &&
+    interpreted.base === original.base &&
+    interpreted.permission === original.permission &&
+    interpreted.rule === original.rule
+  );
+}
+
 export function matchFirewallRequestDecision(
   firewalls: unknown,
   method: string,
@@ -2534,19 +2656,27 @@ export function matchFirewallRequestDecision(
   connectorIntent: FirewallConnectorIntent = { status: "absent" },
   options: FirewallRequestDecisionOptions = {},
 ): FirewallRequestDecision {
-  const original = matchFirewallRequestInterpretation(
+  const compiled = compileDecisionFirewalls(
     firewalls,
+    options.awsDiagnostic !== undefined,
+  );
+  const policies = compileNetworkPolicies(networkPolicies);
+  const original = matchFirewallRequestInterpretation(
+    compiled,
     method,
     url,
-    networkPolicies,
+    policies,
     connectorIntent,
     options,
   );
   if (original.kind !== "allow" && original.kind !== "no_match")
     return original;
   const path = rawPathFromUrl(url);
-  if (!path.includes("%")) return original;
-  const interpretations = firewallRequestPathInterpretations(path);
+  const canonical = canonicalUriFirewalls(compiled);
+  if (!path.includes("%") && canonical === null) return original;
+  const interpretations = path.includes("%")
+    ? firewallRequestPathInterpretations(path)
+    : [path];
   if (interpretations === null) {
     return original.kind === "allow"
       ? {
@@ -2559,15 +2689,20 @@ export function matchFirewallRequestDecision(
         }
       : original;
   }
-  for (const interpretedPath of interpretations.slice(1)) {
+  const seen = new Set<string>();
+  for (const interpretedPath of interpretations) {
+    const matchPath = canonicalFirewallPathPercentEncoding(interpretedPath);
+    if (seen.has(matchPath) || (canonical === null && matchPath === path))
+      continue;
+    seen.add(matchPath);
     const interpreted = matchFirewallRequestInterpretation(
-      firewalls,
+      canonical ?? compiled,
       method,
       url,
-      networkPolicies,
+      policies,
       connectorIntent,
       options,
-      interpretedPath,
+      matchPath,
     );
     if (original.kind === "no_match") {
       if (interpreted.kind === "no_match") continue;
@@ -2581,13 +2716,7 @@ export function matchFirewallRequestDecision(
         permissions: [],
       };
     }
-    if (
-      interpreted.kind !== "allow" ||
-      interpreted.firewallName !== original.firewallName ||
-      interpreted.base !== original.base ||
-      interpreted.permission !== original.permission ||
-      interpreted.rule !== original.rule
-    ) {
+    if (!firewallAllowsSameRule(original, interpreted)) {
       return {
         kind: "block",
         firewallName: original.firewallName,

@@ -43,7 +43,11 @@ from firewall_matching.patterns import (
     _match_compiled_path_segments,
     _split_path_segments,
 )
-from path_security import has_unsafe_path, request_path_interpretations
+from path_security import (
+    canonical_path_percent_encoding,
+    has_unsafe_path,
+    request_path_interpretations,
+)
 from runtime_url_parsing import split_runtime_url
 from url_syntax import (
     has_raw_whitespace,
@@ -247,6 +251,7 @@ class _CompiledApiCore(NamedTuple):
 class _CompiledApi(NamedTuple):
     raw_api_entry: dict
     core: _CompiledApiCore
+    uri_path_ambiguous: bool = False
 
     @property
     def base(self) -> _CompiledBase:
@@ -338,14 +343,25 @@ class CompiledFirewallSet:
         compare=False,
         repr=False,
     )
+    _uri_normalized: CompiledFirewallSet | None = field(compare=False, repr=False)
 
-    def __init__(self, firewalls: tuple[_CompiledFirewall, ...]) -> None:
+    def __init__(
+        self, firewalls: tuple[_CompiledFirewall, ...], *, _normalize_uri_literals: bool = True
+    ) -> None:
         object.__setattr__(self, "firewalls", firewalls)
         object.__setattr__(self, "_api_index", _compile_api_candidate_index(firewalls))
         object.__setattr__(
             self,
             "_ordinary_credential_authority_index",
             _compile_ordinary_credential_authority_index(firewalls),
+        )
+        normalized = _canonical_uri_firewalls(firewalls) if _normalize_uri_literals else None
+        object.__setattr__(
+            self,
+            "_uri_normalized",
+            CompiledFirewallSet(normalized, _normalize_uri_literals=False)
+            if normalized is not None
+            else None,
         )
 
     def __bool__(self) -> bool:
@@ -1063,6 +1079,126 @@ def _attach_aws_query_selector_keys(
             compiled_rules.append(_with_aws_query_selector_keys(rule, selector_keys))
         compiled_permissions.append(_CompiledPermission(permission.name, tuple(compiled_rules)))
     return tuple(compiled_permissions)
+
+
+def _canonical_uri_pattern(path: str) -> str:
+    return "".join(
+        part if part.startswith("{") else canonical_path_percent_encoding(part)
+        for part in re.split(r"(\{[^{}]*\})", path)
+    )
+
+
+def _canonical_uri_base(base: _CompiledBase) -> _CompiledBase:
+    path = _canonical_uri_pattern(base.parts.path)
+    if path == base.parts.path:
+        return base
+    return base._replace(
+        parts=base.parts._replace(path=path),
+        path_segments=_canonical_uri_segments(base.path_segments),
+        specificity=base.specificity._replace(
+            path=base.specificity.path - (len(base.parts.path) - len(path))
+        ),
+    )
+
+
+def _canonical_uri_segments(
+    original: tuple[SegmentLiteral | SegmentParam | SegmentError, ...],
+) -> tuple[SegmentLiteral | SegmentParam | SegmentError, ...]:
+    segments: list[SegmentLiteral | SegmentParam | SegmentError] = []
+    for segment in original:
+        if isinstance(segment, SegmentLiteral):
+            segments.append(SegmentLiteral(canonical_path_percent_encoding(segment.value)))
+        elif isinstance(segment, SegmentParam):
+            segments.append(
+                segment._replace(
+                    prefix=canonical_path_percent_encoding(segment.prefix),
+                    suffix=canonical_path_percent_encoding(segment.suffix),
+                )
+            )
+        else:
+            segments.append(segment)
+    return tuple(segments)
+
+
+def _canonical_uri_rule(rule: _CompiledRule) -> _CompiledRule:
+    path = CompiledPathPattern(_canonical_uri_segments(rule.path.segments))
+    if path == rule.path:
+        return rule
+    return rule._replace(path=path, specificity=_path_specificity(path))
+
+
+def _uri_rule_identity(rule: _CompiledRule) -> str:
+    return json.dumps(
+        (
+            rule.method,
+            tuple(_aws_path_segment_identity(segment) for segment in rule.path.segments),
+            sorted(rule.query_requirements, key=json.dumps),
+            sorted(rule.aws_predicates.items()) if rule.aws_predicates is not None else (),
+        )
+    )
+
+
+def _canonical_uri_firewalls(
+    firewalls: tuple[_CompiledFirewall, ...],
+) -> tuple[_CompiledFirewall, ...] | None:
+    if not any(
+        "%" in api.base.parts.path
+        or any("%" in rule.raw for permission in api.permissions for rule in permission.rules)
+        for firewall in firewalls
+        for api in firewall.apis
+    ):
+        return None
+    changed = False
+    normalized_firewalls: list[_CompiledFirewall] = []
+    for firewall in firewalls:
+        identities: dict[tuple[str, str, str, str], dict[str, set[int]]] = {}
+        normalized_apis: list[_CompiledApi] = []
+        for api_index, api in enumerate(firewall.apis):
+            base = _canonical_uri_base(api.base)
+            permissions: list[_CompiledPermission] = []
+            for permission in api.permissions:
+                rules: list[_CompiledRule] = []
+                for rule in permission.rules:
+                    normalized_rule = _canonical_uri_rule(rule)
+                    key = (
+                        base.parts.scheme,
+                        base.parts.authority,
+                        base.parts.path,
+                        _uri_rule_identity(normalized_rule),
+                    )
+                    original = json.dumps((api.base.parts.path, _uri_rule_identity(rule)))
+                    identities.setdefault(key, {}).setdefault(original, set()).add(api_index)
+                    rules.append(normalized_rule)
+                    changed |= normalized_rule.path != rule.path
+                permissions.append(permission._replace(rules=tuple(rules)))
+            compiled_permissions = _attach_aws_query_selector_keys(permissions)
+            changed |= base != api.base
+            if base == api.base and compiled_permissions == api.permissions:
+                normalized_apis.append(api)
+            else:
+                core = api.core._replace(
+                    base=base,
+                    permissions=compiled_permissions,
+                    rule_index=_compile_rule_index(compiled_permissions),
+                )
+                normalized_apis.append(api._replace(core=core))
+        ambiguous_apis = {
+            index
+            for originals in identities.values()
+            if len(originals) > 1
+            for indices in originals.values()
+            for index in indices
+        }
+        apis = tuple(
+            api._replace(uri_path_ambiguous=index in ambiguous_apis)
+            for index, api in enumerate(normalized_apis)
+        )
+        normalized_firewalls.append(
+            firewall._replace(
+                core=firewall.core._replace(api_cores=tuple(api.core for api in apis)), apis=apis
+            )
+        )
+    return tuple(normalized_firewalls) if changed else None
 
 
 def firewall_rule_is_valid(rule_str: str) -> bool:
@@ -2387,7 +2523,7 @@ def _match_compiled_firewall_request_with_api_candidates(
         if unsafe_path is None:
             unsafe_path = has_unsafe_path(url_parts.path)
 
-        if unsafe_path:
+        if unsafe_path or api_entry.uri_path_ambiguous:
             return FirewallBlock(
                 api_entry.base.raw,
                 fw_entry.name,
@@ -2614,12 +2750,13 @@ def _match_request_interpretations(
 
     def match_path(
         path: str,
+        definitions: CompiledFirewallSet,
     ) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
         parts = url_parts._replace(path=path)
         candidates = (
-            compiled_firewalls.indexed_api_candidates(parts)
+            definitions.indexed_api_candidates(parts)
             if indexed_rules
-            else compiled_firewalls.linear_api_candidates()
+            else definitions.linear_api_candidates()
         )
         return _match_compiled_firewall_request_with_api_candidates(
             url=url,
@@ -2634,12 +2771,13 @@ def _match_request_interpretations(
             request_context=request_context,
         )
 
-    original = match_path(url_parts.path)
+    original = match_path(url_parts.path, compiled_firewalls)
     if is_asterisk_form or isinstance(
         original, FirewallBlock | FirewallAmbiguous | FirewallPolicyAllow
     ):
         return original
-    if "%" not in url_parts.path:
+    normalized = compiled_firewalls._uri_normalized
+    if "%" not in url_parts.path and normalized is None:
         return original
     paths = request_path_interpretations(url_parts.path)
     if paths is None:
@@ -2653,8 +2791,15 @@ def _match_request_interpretations(
                 "unsafe_path",
             )
         return original
-    for path in paths[1:]:
-        interpreted = match_path(path)
+    seen: set[str] = set()
+    for path in paths:
+        canonical_path = canonical_path_percent_encoding(path)
+        if canonical_path in seen or (normalized is None and canonical_path == url_parts.path):
+            continue
+        seen.add(canonical_path)
+        interpreted = match_path(
+            canonical_path, normalized if normalized is not None else compiled_firewalls
+        )
         if original is None:
             if interpreted is None:
                 continue

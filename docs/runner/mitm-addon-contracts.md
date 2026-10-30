@@ -1158,7 +1158,11 @@ usage reporting boundary.
 ### Authorization across encoded path interpretations
 
 Firewall authorization intersects the original path with each bounded percent-decoded
-interpretation. Every interpretation must select the same owner, API base, permission
+interpretation, including URI normalization that decodes unreserved bytes while
+retaining reserved escapes and normalizing escape hex case. Configured literal path
+text uses the same URI normalization for these checks; parameter names and original
+rule/API identities are retained. Newly equivalent but distinct route declarations
+are ambiguous and cannot supply credentials. Every interpretation must select the same owner, API base, permission
 and exact rule before a connector credential can be prepared. An encoded literal that
 falls through to a broader ID rule, an encoded separator that hides a nested resource,
 or a decoded-only owner selection is rejected with `unsafe_path`. Original denials
@@ -1169,7 +1173,9 @@ Successful decisions retain the original URL, query, raw parameter captures and 
 entry for forwarding and signing. Ordinary encoded Unicode/space IDs and greedy file
 keys remain supported when their authorization agrees; ambiguous encoded IDs must use
 an unambiguous supported request. Source grammar and stored firewall formats do not
-change. No-escape requests still use one matcher evaluation. Both TypeScript diagnostics
+change. Requests without escapes and catalogs without encoded literal paths still
+use one matcher evaluation. Python caches a normalized compiled view and its indexes
+with the owning firewall set only when configured literals change. Both TypeScript diagnostics
 and Python enforcement share final-decision vectors for this boundary.
 
 New enforcement accepts existing catalogs but can reject requests that old Runners

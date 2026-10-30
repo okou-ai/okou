@@ -748,6 +748,14 @@ export function hasUnsafeFirewallPath(path: string): boolean {
   });
 }
 
+/** RFC URI normalization; reserved escapes remain path data, never structure. */
+export function canonicalFirewallPathPercentEncoding(path: string): string {
+  return path.replace(/%[\da-f]{2}/gi, (escape) => {
+    const char = String.fromCharCode(Number.parseInt(escape.slice(1), 16));
+    return /^[A-Za-z0-9._~-]$/.test(char) ? char : escape.toUpperCase();
+  });
+}
+
 /** Authorization-only interpretations; callers must keep the original wire path. */
 export function firewallRequestPathInterpretations(
   path: string,
@@ -755,6 +763,9 @@ export function firewallRequestPathInterpretations(
   const paths = [path];
   let current = path;
   for (let pass = 0; pass < MAX_PATH_PERCENT_DECODE_PASSES; pass += 1) {
+    const canonical = canonicalFirewallPathPercentEncoding(current);
+    if (canonical !== current && !paths.includes(canonical))
+      paths.push(canonical);
     if (!current.includes("%")) return paths;
     let decoded: string;
     try {
