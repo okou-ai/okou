@@ -32,7 +32,6 @@
     "resultRewardRest": "請聯絡我們領取獎勵，須經審核。",
     "review": "需通過資格審核。",
     "rewardQuestion": "準備好贏取 7 天 Okou Pro 試用了嗎？",
-    "roundProgress": "第 {{current}} 回合 · {{title}}",
     "rules": "活動規則",
     "rulesBrand": "Okou · 萬聖節",
     "rulesHeading": "奇趣萬聖節 — 活動規則",
@@ -540,13 +539,6 @@
       },
       "text": "你喜歡Okou嗎？"
     }
-  },
-  "roundTitles": {
-    "five": "Okou 喜歡你",
-    "four": "最後一關",
-    "one": "看看你的實力",
-    "three": "她對你刮目相看",
-    "two": "你識破她的把戲了"
   },
   "rules": {
     "availability": {

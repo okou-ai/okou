@@ -32,7 +32,6 @@
     "resultRewardRest": "Contáctanos para canjear tu recompensa. Sujeta a revisión.",
     "review": "Sujeto a revisión de elegibilidad.",
     "rewardQuestion": "¿Quieres probar Okou Pro durante 7 días?",
-    "roundProgress": "Ronda {{current}} · {{title}}",
     "rules": "Reglas de actividad",
     "rulesBrand": "Okou · Halloween",
     "rulesHeading": "Halloween espeluznante: reglas de la actividad",
@@ -540,13 +539,6 @@
       },
       "text": "¿Te gusta Okou?"
     }
-  },
-  "roundTitles": {
-    "five": "A Okou le gustas",
-    "four": "Un último truco",
-    "one": "Veamos que tienes",
-    "three": "ella esta impresionada",
-    "two": "Estás en sus trucos"
   },
   "rules": {
     "availability": {

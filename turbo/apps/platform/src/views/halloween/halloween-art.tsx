@@ -84,8 +84,27 @@ const haunt = [
   },
 ] as const;
 
-export function HalloweenStage() {
+export function HalloweenStage({
+  quiet = false,
+}: {
+  readonly quiet?: boolean;
+}) {
   const motion = useSet(halloweenStageMotion$);
+  if (quiet) {
+    return (
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 hidden overflow-hidden md:block"
+        aria-hidden="true"
+      >
+        <div className="absolute bottom-20 left-2 h-10 w-8 opacity-15">
+          <HalloweenGhost />
+        </div>
+        <div className="absolute bottom-20 right-2 size-8 opacity-15">
+          <HalloweenPumpkin />
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       ref={motion}

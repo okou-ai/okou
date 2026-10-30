@@ -32,10 +32,9 @@
     "resultRewardRest": "Contact us to redeem your reward. Subject to review.",
     "review": "Subject to eligibility review.",
     "rewardQuestion": "Ready to get a 7-day Okou Pro trial?",
-    "roundProgress": "Round {{current}} · {{title}}",
     "rules": "Activity rules",
     "rulesBrand": "Okou · Halloween",
-    "rulesHeading": "Spooky Halloween — Activity Rules",
+    "rulesHeading": "Spooky Halloween — Activity rules",
     "rulesSub": "A little mischief. A few simple rules.",
     "soundOff": "Sound off",
     "soundOn": "Sound on",
@@ -540,13 +539,6 @@
       },
       "text": "Do you like Okou?"
     }
-  },
-  "roundTitles": {
-    "five": "OKOU LIKES YOU.",
-    "four": "ONE LAST TRICK",
-    "one": "LET’S SEE WHAT YOU’VE GOT",
-    "three": "OKOU’S IMPRESSED",
-    "two": "YOU’RE ONTO OKOU’S TRICKS"
   },
   "rules": {
     "availability": {

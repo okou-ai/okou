@@ -9,14 +9,7 @@ import {
   IconButton,
 } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  Info,
-  Volume2,
-  VolumeX,
-  X,
-} from "lucide-react";
+import { ArrowLeft, Info, Volume2, VolumeX, X } from "lucide-react";
 import {
   platformOkouWordmarkDarkImg,
   platformOkouWordmarkLightImg,
@@ -24,7 +17,6 @@ import {
 import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import { playHalloweenClick$ } from "../../signals/halloween/halloween-motion.ts";
 import {
-  halloweenRound$,
   halloweenRulesOpen$,
   halloweenScreen$,
   halloweenSound$,
@@ -62,17 +54,15 @@ function HalloweenBrand() {
 export function HalloweenHeader() {
   const copy = useHalloweenCopy();
   const screen = useGet(halloweenScreen$);
-  const round = useGet(halloweenRound$);
   const sound = useGet(halloweenSound$);
   const toggle = useSet(toggleHalloweenSound$);
   const setRules = useSet(setHalloweenRulesOpen$);
   const playSound = useSet(playHalloweenClick$);
   const signal = useGet(pageSignal$);
-  const playing = screen === "question";
   return (
     <header
       className={cn(
-        "relative z-20 flex min-h-16 shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-5 py-3 text-[#eef1f5] md:px-8",
+        "relative z-20 flex min-h-16 shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-5 py-3 text-[#eef1f5] md:px-12",
       )}
     >
       <HalloweenBrand />
@@ -82,33 +72,33 @@ export function HalloweenHeader() {
           typography.labelClassName,
         )}
       >
-        <span className="hidden text-[#c5cfdd] md:inline">
-          {playing
-            ? copy.questionProgress(round!.questionNumber, 5)
-            : copy.campaign}
-        </span>
+        {screen !== "question" && (
+          <span className="hidden text-[#b8c6d8] md:inline">
+            {copy.campaign}
+          </span>
+        )}
         {screen !== "result" && (
           <Button
             variant="quiet"
-            size="sm"
+            size="default"
             aria-label={copy.rules}
             className={cn(
-              "h-8 gap-2 rounded-full border border-[#b4c5dc24] bg-[#ffffff04] px-2.5 text-[#bcc8d9] hover:border-[#e8c68d66] hover:bg-[#ffffff09] hover:text-[#e8c68d] sm:px-3",
+              "h-9 gap-2 rounded-lg border border-[#b4c5dc24] bg-[#ffffff04] px-3 text-[#b8c6d8] hover:border-[#e8c68d66] hover:bg-[#ffffff09] hover:text-[#e8c68d]",
               typography.labelClassName,
             )}
             onClick={() => {
               setRules(true);
             }}
           >
+            <Info className="size-4" />
             <span className="hidden sm:inline">{copy.rules}</span>
-            <Info className="size-3" />
           </Button>
         )}
         <Button
           variant="quiet"
-          size="sm"
+          size="default"
           className={cn(
-            "h-8 gap-2 rounded-full border border-[#b4c5dc24] bg-[#ffffff04] px-2.5 text-[#bcc8d9] hover:border-[#e8c68d66] hover:bg-[#ffffff09] hover:text-[#e8c68d] md:px-3",
+            "h-9 gap-2 rounded-lg border border-[#b4c5dc24] bg-[#ffffff04] px-3 text-[#b8c6d8] hover:border-[#e8c68d66] hover:bg-[#ffffff09] hover:text-[#e8c68d]",
             typography.labelClassName,
           )}
           aria-pressed={sound}
@@ -119,9 +109,9 @@ export function HalloweenHeader() {
           }}
         >
           {sound ? (
-            <Volume2 className="size-3" />
+            <Volume2 className="size-4" />
           ) : (
-            <VolumeX className="size-3" />
+            <VolumeX className="size-4" />
           )}
           <span className="hidden md:inline">
             {sound ? copy.soundOn : copy.soundOff}
@@ -144,32 +134,15 @@ export function HalloweenHeader() {
 
 export function HalloweenFooter() {
   const copy = useHalloweenCopy();
-  const setRules = useSet(setHalloweenRulesOpen$);
   return (
     <footer
       className={cn(
-        "relative z-10 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[#c0d1e512] px-5 py-4 text-[#7c8ba1] md:px-8",
-        typography.labelClassName,
+        "relative z-10 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[#c0d1e512] px-5 py-4 text-[#9aabc1] md:px-12",
+        typography.captionClassName,
       )}
     >
       <span>{copy.tagline}</span>
-      <span className="flex items-center gap-[10px]">
-        {copy.language} ·{" "}
-        <Button
-          variant="quiet"
-          size="sm"
-          className={cn(
-            "h-auto gap-1 rounded-none p-0 text-[#7c8ba1] underline decoration-[#7c8ba160] underline-offset-4 hover:bg-transparent hover:text-[#e8c68d]",
-            typography.labelClassName,
-          )}
-          onClick={() => {
-            setRules(true);
-          }}
-        >
-          {copy.rules}
-          <ArrowUpRight className="size-[11px]" />
-        </Button>
-      </span>
+      <span>{copy.language}</span>
     </footer>
   );
 }

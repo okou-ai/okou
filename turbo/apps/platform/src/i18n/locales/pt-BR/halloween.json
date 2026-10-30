@@ -32,7 +32,6 @@
     "resultRewardRest": "Entre em contato para resgatar sua recompensa. Sujeito à análise.",
     "review": "Sujeito a análise de elegibilidade.",
     "rewardQuestion": "Pronto para ganhar 7 dias de teste do Okou Pro?",
-    "roundProgress": "Rodada {{current}} · {{title}}",
     "rules": "Regras de atividade",
     "rulesBrand": "Okou · Dia das Bruxas",
     "rulesHeading": "Halloween assustador – regras de atividade",
@@ -540,13 +539,6 @@
       },
       "text": "Você gosta de Okou?"
     }
-  },
-  "roundTitles": {
-    "five": "Okou gosta de você",
-    "four": "Um último truque",
-    "one": "Vamos ver o que você tem",
-    "three": "Ela está impressionada",
-    "two": "Você conhece os truques dela"
   },
   "rules": {
     "availability": {

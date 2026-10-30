@@ -129,7 +129,6 @@ export function HalloweenResultScreen() {
               className={cn(
                 "text-balance text-[#f4f1eb]",
                 typography.titleClassName,
-                "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
               )}
             >
               {won ? copy.won : copy.lost}

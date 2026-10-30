@@ -79,10 +79,10 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
       >
         <span>{copy.correctAnswers}</span>
         <span className="flex shrink-0 items-baseline gap-1.5 tabular-nums">
-          <strong className="text-lg font-medium leading-6 text-[#f0e7d8]">
+          <strong className="text-base font-medium leading-6 text-[#f0e7d8]">
             {round.correct}
           </strong>
-          <span className="text-xs text-[#a7b7cc]">/ 5</span>
+          <span className="text-sm text-[#a7b7cc]">/ 5</span>
         </span>
       </p>
     </aside>
@@ -101,7 +101,7 @@ function AnswerOptions({
   const signal = useGet(pageSignal$);
   const playSound = useSet(playHalloweenClick$);
   return (
-    <div className="mx-auto flex w-full max-w-[540px] flex-col gap-3">
+    <div className="flex w-full flex-col gap-3">
       {round.question?.options.map((option, index) => {
         const selected = round.feedback?.selectedId === option.id;
         return (
@@ -111,14 +111,14 @@ function AnswerOptions({
             disabled={busy || Boolean(round.feedback)}
             aria-pressed={selected}
             className={cn(
-              "relative isolate h-auto min-h-14 w-full whitespace-normal rounded-none border-0 bg-[#8ba6c34d] px-16 py-3.5 text-center text-[#dce4ef] transition-all duration-200 [clip-path:polygon(16px_0,calc(100%-16px)_0,100%_50%,calc(100%-16px)_100%,16px_100%,0_50%)] before:absolute before:inset-px before:-z-10 before:bg-[linear-gradient(110deg,#10243b,#142b45_50%,#10243b)] before:[clip-path:polygon(15px_0,calc(100%-15px)_0,100%_50%,calc(100%-15px)_100%,15px_100%,0_50%)] hover:bg-[#d8b77f] hover:text-[#f3eadb] hover:before:bg-[linear-gradient(110deg,#1d3147,#263e58,#1d3147)] focus-visible:brightness-125 disabled:opacity-100",
+              "h-auto min-h-16 w-full justify-start gap-4 whitespace-normal rounded-xl border border-[#a9c1df40] bg-[#11253b] px-4 py-4 text-left text-[#dce4ef] transition-colors duration-150 hover:border-[#e8c68d80] hover:bg-[#1b3047] hover:text-[#f4f1eb] disabled:opacity-100",
               typography.bodyClassName,
               selected &&
                 round.feedback?.correct &&
-                "bg-[#dfc089] text-[#f7e5c5] before:bg-[linear-gradient(110deg,#343225,#4b4130,#343225)]",
+                "border-[#dfc089] bg-[#343225] text-[#f7e5c5]",
               selected &&
                 !round.feedback?.correct &&
-                "bg-[#b57b8f] text-[#f5dce5] before:bg-[#432b3b] before:bg-none",
+                "border-[#b57b8f] bg-[#432b3b] text-[#f5dce5]",
             )}
             onClick={() => {
               detach(playSound(signal), Reason.DomCallback);
@@ -127,15 +127,15 @@ function AnswerOptions({
           >
             <span
               className={cn(
-                "absolute left-6 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-[#ffffff06] text-[#dbc39d]",
+                "flex size-7 shrink-0 items-center justify-center rounded-md bg-[#ffffff06] text-[#b8c6d8]",
                 typography.labelClassName,
               )}
             >
               {String.fromCharCode(65 + index)}
             </span>
-            <span>{option.text}</span>
+            <span className="min-w-0 flex-1">{option.text}</span>
             {selected && round.feedback?.correct && (
-              <Check className="absolute right-6 size-4 text-[#e8c68d]" />
+              <Check aria-hidden className="size-4 shrink-0 text-[#e8c68d]" />
             )}
           </Button>
         );
@@ -158,27 +158,23 @@ export function HalloweenQuestionScreen() {
   const busy =
     answerOperation.state === "loading" || nextOperation.state === "loading";
   return (
-    <main
-      className={cn(
-        "relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14",
-        "gap-6 py-6 pb-8 md:py-10",
-      )}
-    >
-      <div className="min-w-0 text-center">
-        <p className={cn("mb-5 text-[#b5a07e]", typography.labelClassName)}>
-          {copy.roundProgress(
-            String(round.questionNumber).padStart(2, "0"),
-            copy.roundTitles[round.questionNumber - 1]!,
+    <main className="relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-start items-start gap-6 py-8 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-12 md:py-12">
+      <div className="min-w-0 text-left md:pt-5">
+        <p
+          className={cn(
+            typography.labelClassName,
+            "mb-4 font-normal text-[#b8c6d8]",
           )}
+        >
+          {copy.questionProgress(round.questionNumber, 5)}
         </p>
         <h1
           key={round.question.id}
           ref={focusHeading}
           tabIndex={-1}
           className={cn(
-            "mx-auto mb-9 max-w-[640px] text-balance text-[#f4f1eb] outline-none",
+            "mb-8 min-h-18 text-balance text-[#f4f1eb] outline-none md:min-h-20",
             typography.titleClassName,
-            "mb-7 text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
           )}
         >
           {round.question.text}
@@ -193,7 +189,7 @@ export function HalloweenQuestionScreen() {
         {round.feedback && (
           <div
             role="status"
-            className="mx-auto mt-6 w-full max-w-[540px] border-t border-[#a9c1df1c] pt-5"
+            className="mt-6 w-full border-t border-[#a9c1df1c] pt-5"
           >
             <p
               className={cn(
@@ -209,10 +205,7 @@ export function HalloweenQuestionScreen() {
             </p>
             {round.feedback.correct && (
               <Button
-                className={cn(
-                  goldButton,
-                  "mx-auto min-h-11 min-w-[188px] px-6 py-3",
-                )}
+                className={cn(goldButton, "min-h-11 min-w-[188px] px-6 py-3")}
                 pending={nextOperation.state === "loading"}
                 onClick={() => {
                   detach(next(signal), Reason.DomCallback);

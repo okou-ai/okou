@@ -250,7 +250,7 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
   await within(dialog).findByText(correctExplanation);
   click(button("Activity rules", dialog));
   const rules = await screen.findByRole("dialog", {
-    name: "Spooky Halloween — Activity Rules",
+    name: "Spooky Halloween — Activity rules",
   });
   expect(within(rules).getByText("Your Halloween reward")).toBeInTheDocument();
   expect(
@@ -263,7 +263,7 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", {
-        name: "Spooky Halloween — Activity Rules",
+        name: "Spooky Halloween — Activity rules",
       }),
     ).not.toBeInTheDocument();
   });
@@ -310,13 +310,13 @@ test("opens by keyboard and restores focus through nested Escape dismissal", asy
   rulesButton.focus();
   await userEvent.keyboard(" ");
   await screen.findByRole("dialog", {
-    name: "Spooky Halloween — Activity Rules",
+    name: "Spooky Halloween — Activity rules",
   });
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", {
-        name: "Spooky Halloween — Activity Rules",
+        name: "Spooky Halloween — Activity rules",
       }),
     ).not.toBeInTheDocument();
     expect(rulesButton).toHaveFocus();
