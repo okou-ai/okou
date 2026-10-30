@@ -80,6 +80,8 @@ function fixture(t) {
   }
   for (const file of [
     "src/worker-sdk.d.ts",
+    "src/worker-roles/runtime.ts",
+    "src/worker-domains/threads.ts",
     "src/__tests__/worker-lifecycle.test.ts",
     "src/worker-unsupported-pg-native.ts",
     "src/worker-unsupported-react-email.ts",
@@ -493,7 +495,7 @@ test("Worker roots are isolated from Node programs and production bootstrap acce
   assert.deepEqual(worker.options.paths["@cloudflare/workers-types"], [
     "./node_modules/@cloudflare/workers-types/index.ts",
   ]);
-  assert.equal(worker.fileNames.length, 5);
+  assert.equal(worker.fileNames.length, 7);
   for (const name of [
     "tsconfig.foundation.json",
     "tsconfig.admission.json",

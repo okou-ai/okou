@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { build } from "esbuild";
 import { workerRequireBanner } from "./worker-bundle-banner.mjs";
-import { auditWorkerRole, selectWorkerBuilds } from "./worker-role-build.mjs";
+import {
+  auditWorkerSelection,
+  selectWorkerBuilds,
+} from "./worker-role-build.mjs";
 
 const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const selections = selectWorkerBuilds();
@@ -18,7 +21,8 @@ const builtins = new Set(
 // This is separate from Vite/Vercel: only the Worker artifact replaces
 // unsupported image/native PostgreSQL/React email rendering operations.
 // The default artifact still aggregates the complete production API. Explicit
-// --role/--roles builds are experimental artifacts; no deployment selects them.
+// --role/--roles and partial --domain/--domains builds are experimental artifacts;
+// no deployment selects them.
 const outputDirectories = selections.map(({ directory }) => {
   return resolve(apiRoot, directory);
 });
@@ -126,9 +130,7 @@ try {
 
     assertNativeExternals(result.metafile);
 
-    const audit = selection.role
-      ? auditWorkerRole(apiRoot, selection.role, result)
-      : undefined;
+    const audit = auditWorkerSelection(apiRoot, selection, result);
     for (const output of result.outputFiles) {
       await writeFile(output.path, output.contents);
     }
@@ -143,7 +145,7 @@ try {
       `${JSON.stringify(result.metafile, null, 2)}\n`,
     );
     process.stdout.write(
-      `Built ${selection.role ?? "full API"} Worker: ${selection.directory}/worker.js\n`,
+      `Built ${selection.domain ?? selection.role ?? "full API"} Worker: ${selection.directory}/worker.js\n`,
     );
   }
 } catch (error) {

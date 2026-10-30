@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import ts from "typescript";
 
 const apiRoot = resolve(import.meta.dirname, "..");
@@ -478,10 +478,16 @@ function expectedWorkerRoleImports(config, aggregate) {
   const initializer = config.initializeChatRunFinishedEvents
     ? "configureChatRunFinishedEventDispatcher$"
     : "initializeNoServices$";
+  const noServices = relative(
+    dirname(config.entry),
+    "src/worker-roles/initialize-no-services",
+  ).replaceAll("\\", "/");
   expected.set(initializer, {
     module: config.initializeChatRunFinishedEvents
       ? "../signals/services/chat-run-finished-event-registration.service"
-      : "./initialize-no-services",
+      : noServices.startsWith(".")
+        ? noServices
+        : `./${noServices}`,
     name: initializer,
     typeOnly: false,
   });
@@ -633,13 +639,9 @@ function assertWorkerRoleHandler(source, role, initializer) {
   );
 }
 
-/** Validate actual static roots before a role build, without importing API code. */
-export function assertWorkerRoleEntries(root = apiRoot) {
-  const aggregate = assertWorkerRoleOwnership(
-    workerRoles,
-    readAggregateRouteGroups(root),
-  );
-  for (const [role, config] of Object.entries(workerRoles)) {
+/** Validate static compositions without importing or executing API handlers. */
+export function assertWorkerEntries(definitions, aggregate, root = apiRoot) {
+  for (const [role, config] of Object.entries(definitions)) {
     const file = resolve(root, config.entry);
     const source = ts.createSourceFile(
       file,
@@ -656,5 +658,14 @@ export function assertWorkerRoleEntries(root = apiRoot) {
     assertWorkerRoleRoutes(source, role, config);
     assertWorkerRoleHandler(source, role, initializer);
   }
-  return workerRoles;
+  return definitions;
+}
+
+/** Validate the complete, original nine-role partition before its build. */
+export function assertWorkerRoleEntries(root = apiRoot) {
+  const aggregate = assertWorkerRoleOwnership(
+    workerRoles,
+    readAggregateRouteGroups(root),
+  );
+  return assertWorkerEntries(workerRoles, aggregate, root);
 }

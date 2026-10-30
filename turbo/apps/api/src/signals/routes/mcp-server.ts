@@ -1,18 +1,5 @@
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
-import {
-  chatEventsContract,
-  chatThreadEventsContract,
-  chatThreadModelSelectionContract,
-  chatThreadRenameContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
 import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
-import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
-import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import { command, computed } from "ccstate";
 import { createAppWithRoutes } from "../../app-factory-core";
 import {
@@ -31,9 +18,15 @@ import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import { mcpChatSearch } from "../services/mcp-chat-search.service";
 import { awaitWithSignal, settle } from "../utils";
-import { agentsRoutes } from "./agents";
+import { agentListRoutes } from "./agents-list";
 import { chatEventsRoutes } from "./chat-events";
-import { chatThreadRoutes } from "./chat-threads";
+import { chatInputStatusRoutes } from "./chat-input-status";
+import { chatThreadIndicatorRoutes } from "./chat-thread-indicators";
+import { chatThreadMessageReadRoutes } from "./chat-thread-message-reads";
+import { chatThreadSnapshotRoutes } from "./chat-thread-snapshots";
+import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
+import { chatThreadModelSelectionRoutes } from "./chat-threads-model-selection";
+import { chatThreadRenameRoutes } from "./chat-threads-rename";
 import { runModelsRoutes } from "./run-models";
 import { runsCancelRoutes } from "./runs-cancel";
 
@@ -49,28 +42,16 @@ const searchResponse$ = computed(async (get) => {
 });
 
 // Search alone owns MCP presentation; other tools reuse production Web entries.
-const toolContracts: ReadonlySet<AppRoute> = Object.freeze(
-  new Set([
-    agentsMainContract.list,
-    runModelsMainContract.list,
-    chatThreadsContract.snapshot,
-    chatThreadsContract.events,
-    chatThreadsContract.indicators,
-    chatThreadEventsContract.snapshot,
-    chatThreadEventsContract.rows,
-    mcpChatSearchContract.search,
-    chatThreadActivitySummaryContract.summarize,
-    chatInputStatusContract.get,
-    chatEventsContract.send,
-    chatThreadRenameContract.rename,
-    chatThreadModelSelectionContract.update,
-    runsCancelContract.cancel,
-  ]),
-);
-const toolRoutes = [
-  ...agentsRoutes,
+const toolRoutes: readonly RouteEntry[] = [
+  ...agentListRoutes,
   ...runModelsRoutes,
-  ...chatThreadRoutes,
+  ...chatThreadIndicatorRoutes,
+  ...chatThreadSnapshotRoutes,
+  ...chatThreadMessageReadRoutes,
+  ...chatThreadActivitySummaryRoutes,
+  ...chatInputStatusRoutes,
+  ...chatThreadModelSelectionRoutes,
+  ...chatThreadRenameRoutes,
   ...chatEventsRoutes,
   ...runsCancelRoutes,
   {
@@ -85,9 +66,7 @@ const toolRoutes = [
       searchResponse$,
     ),
   },
-].filter((entry) => {
-  return toolContracts.has(entry.route);
-});
+];
 
 function unavailable() {
   return Response.json(

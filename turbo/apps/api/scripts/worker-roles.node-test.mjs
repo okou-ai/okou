@@ -11,6 +11,12 @@ import {
   workerRoles,
 } from "./worker-role-manifest.mjs";
 
+import {
+  assertWorkerDomainEntries,
+  workerDomainRouteGroups,
+  workerDomains,
+} from "./worker-domain-manifest.mjs";
+
 const apiRoot = resolve(import.meta.dirname, "..");
 const contractsRoot = resolve(apiRoot, "../../packages/api-contracts/src");
 const aggregate = readAggregateRouteGroups();
@@ -159,7 +165,7 @@ function metadataFactoryScope(target, node, context) {
   return { context: scoped, node: metadataFactoryReturn(scoped, fn.body) };
 }
 
-function routeMetadata() {
+function routeMetadata(groups = aggregate) {
   const cache = new Map();
   function load(file) {
     if (!cache.has(file)) {
@@ -272,7 +278,7 @@ function routeMetadata() {
       return [{ method: method.text, path: path.text }];
     });
   }
-  return aggregate.flatMap((group) => {
+  return groups.flatMap((group) => {
     const context = load(
       sourceModule(resolve(apiRoot, "src/signals/route.ts"), group.module),
     );
@@ -385,4 +391,110 @@ test("current registered method/path pairs are unique and same-path methods have
       ),
     }),
   );
+});
+
+function methodPath(route) {
+  return `${route.method} ${route.path}`;
+}
+
+test("business probes preserve selected canonical registrations and order without claiming complete coverage", (context) => {
+  assertWorkerDomainEntries();
+  const leaves = routeMetadata(workerDomainRouteGroups);
+  const expectedCounts = {
+    threads: 44,
+    chat: 4,
+    runs: 7,
+    agents: 16,
+    workflows: 23,
+  };
+  assert.deepEqual(Object.keys(workerDomains), Object.keys(expectedCounts));
+  const selected = new Set();
+  for (const [domain, definition] of Object.entries(workerDomains)) {
+    assert.equal(definition.entry, `src/worker-domains/${domain}.ts`);
+    const routes = leaves
+      .filter((route) => {
+        return definition.groups.includes(route.group);
+      })
+      .map(methodPath);
+    assert.equal(routes.length, expectedCounts[domain]);
+    const keys = new Set(routes);
+    assert.equal(keys.size, routes.length);
+    assert.deepEqual(
+      routes,
+      metadata.map(methodPath).filter((key) => {
+        return keys.has(key);
+      }),
+      `Changed canonical route membership/order: ${domain}`,
+    );
+    for (const key of keys) {
+      assert.ok(
+        !selected.has(key),
+        `Duplicate business probe registration: ${key}`,
+      );
+      selected.add(key);
+    }
+  }
+  assert.equal(selected.size, 94);
+  assert.ok(
+    selected.size < metadata.length,
+    "These probes are not a complete fleet",
+  );
+  context.diagnostic(
+    JSON.stringify({
+      partialProbes: expectedCounts,
+      selected: selected.size,
+      aggregate: metadata.length,
+    }),
+  );
+});
+
+test("MCP composes its canonical tool leaves directly in the existing tool order", () => {
+  const groups = [
+    "agentListRoutes",
+    "runModelsRoutes",
+    "chatThreadIndicatorRoutes",
+    "chatThreadSnapshotRoutes",
+    "chatThreadMessageReadRoutes",
+    "chatThreadActivitySummaryRoutes",
+    "chatInputStatusRoutes",
+    "chatThreadModelSelectionRoutes",
+    "chatThreadRenameRoutes",
+    "chatEventsRoutes",
+    "runsCancelRoutes",
+  ].map((name) => {
+    const group = [
+      {
+        name: "agentListRoutes",
+        module: "./routes/agents-list",
+        exportName: "agentListRoutes",
+      },
+      ...workerDomainRouteGroups,
+      ...aggregate,
+    ].find((item) => {
+      return item.name === name;
+    });
+    assert.ok(group, `Missing MCP leaf: ${name}`);
+    return group;
+  });
+  const expected = routeMetadata(groups).map(methodPath);
+  expected.push("GET /api/chat/search");
+  const actual = routeMetadata([
+    {
+      name: "toolRoutes",
+      module: "./routes/mcp-server",
+      exportName: "toolRoutes",
+    },
+  ]).map(methodPath);
+  assert.equal(actual.length, 14);
+  assert.deepEqual(actual, expected);
+  const source = readSource(
+    resolve(apiRoot, "src/signals/routes/mcp-server.ts"),
+  );
+  const imports = new Set(
+    source.statements.filter(ts.isImportDeclaration).map((statement) => {
+      return statement.moduleSpecifier.text;
+    }),
+  );
+  assert.ok(!imports.has("./agents"));
+  assert.ok(!imports.has("./chat-threads"));
 });

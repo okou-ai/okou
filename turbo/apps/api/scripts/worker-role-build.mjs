@@ -7,12 +7,12 @@ import {
   assertWorkerRoleEntries,
   workerRoles,
 } from "./worker-role-manifest.mjs";
+import {
+  assertWorkerDomainEntries,
+  workerDomains,
+} from "./worker-domain-manifest.mjs";
 
-export function selectWorkerBuilds(args = process.argv.slice(2)) {
-  const { values } = parseArgs({
-    args,
-    options: { role: { type: "string" }, roles: { type: "boolean" } },
-  });
+function selectRoleBuilds(values) {
   const hasRole = values.role !== undefined;
   if (hasRole && values.roles) {
     throw new Error("Select --role <name> or --roles, not both");
@@ -33,8 +33,48 @@ export function selectWorkerBuilds(args = process.argv.slice(2)) {
   });
 }
 
-export function auditWorkerRole(apiRoot, role, result) {
-  const definition = workerRoles[role];
+function selectDomainBuilds(values) {
+  const hasDomain = values.domain !== undefined;
+  if (hasDomain && values.domains) {
+    throw new Error("Select --domain <name> or --domains, not both");
+  }
+  if (hasDomain && !Object.hasOwn(workerDomains, values.domain)) {
+    throw new Error(`Unknown Worker business domain: ${values.domain}`);
+  }
+  assertWorkerDomainEntries();
+  const domains = values.domains ? Object.keys(workerDomains) : [values.domain];
+  return domains.map((domain) => {
+    return {
+      domain,
+      entry: workerDomains[domain].entry,
+      directory: `dist-worker-domains/${domain}`,
+    };
+  });
+}
+
+export function selectWorkerBuilds(args = process.argv.slice(2)) {
+  const { values } = parseArgs({
+    args,
+    options: {
+      role: { type: "string" },
+      roles: { type: "boolean" },
+      domain: { type: "string" },
+      domains: { type: "boolean" },
+    },
+  });
+  const domainSelection = values.domain !== undefined || values.domains;
+  const roleSelection = values.role !== undefined || values.roles;
+  if (domainSelection && roleSelection) {
+    throw new Error(
+      "Worker role and business-domain selections cannot be mixed",
+    );
+  }
+  return domainSelection
+    ? selectDomainBuilds(values)
+    : selectRoleBuilds(values);
+}
+
+function auditDefinition(apiRoot, name, definition, result, directory) {
   const retained = new Set(
     Object.values(result.metafile.outputs).flatMap((output) => {
       return Object.entries(output.inputs)
@@ -47,29 +87,28 @@ export function auditWorkerRole(apiRoot, role, result) {
     }),
   );
   if (retained.has("src/signals/route.ts")) {
-    throw new Error(`${role} imports the complete API route table`);
+    throw new Error(`${name} imports the complete API route table`);
   }
   const dispatch =
     "src/signals/services/chat-run-finished-event-dispatch.service.ts";
   const registration =
     "src/signals/services/chat-run-finished-event-registration.service.ts";
   if (retained.has(dispatch) && !definition.initializeChatRunFinishedEvents) {
-    throw new Error(`${role} needs completion-event registration`);
+    throw new Error(`${name} needs completion-event registration`);
   }
   if (
     definition.initializeChatRunFinishedEvents &&
     !retained.has(registration)
   ) {
-    throw new Error(`${role} lost its required completion-event initializer`);
+    throw new Error(`${name} lost its required completion-event initializer`);
   }
   const javascript = result.outputFiles.find((output) => {
     return output.path.endsWith("/worker.js");
   });
   if (!javascript) {
-    throw new Error(`Missing JavaScript output for ${role}`);
+    throw new Error(`Missing JavaScript output for ${name}`);
   }
   return {
-    role,
     entry: definition.entry,
     groups: definition.groups,
     initializeChatRunFinishedEvents: definition.initializeChatRunFinishedEvents,
@@ -79,6 +118,38 @@ export function auditWorkerRole(apiRoot, role, result) {
     retainedModules: retained.size,
     retainedCompletionDispatch: retained.has(dispatch),
     retainedCompletionRegistration: retained.has(registration),
-    outputDirectory: resolve(apiRoot, `dist-worker-roles/${role}`),
+    outputDirectory: resolve(apiRoot, directory),
   };
+}
+
+export function auditWorkerRole(apiRoot, role, result) {
+  return {
+    role,
+    ...auditDefinition(
+      apiRoot,
+      role,
+      workerRoles[role],
+      result,
+      `dist-worker-roles/${role}`,
+    ),
+  };
+}
+
+export function auditWorkerSelection(apiRoot, selection, result) {
+  if (selection.domain) {
+    return {
+      ...auditDefinition(
+        apiRoot,
+        selection.domain,
+        workerDomains[selection.domain],
+        result,
+        selection.directory,
+      ),
+      domain: selection.domain,
+      coverage: "partial-business-domain-probe-not-a-fleet",
+    };
+  }
+  return selection.role
+    ? auditWorkerRole(apiRoot, selection.role, result)
+    : undefined;
 }

@@ -16,11 +16,18 @@
     "src/worker.ts",
     "src/worker-runtime.ts",
     "src/worker-roles/*.ts",
+    "src/worker-domains/*.ts",
     "src/__tests__/worker-lifecycle.test.ts",
     "src/worker-sdk.d.ts",
     "src/worker-unsupported-*.ts"
   ],
-  "exclude": ["node_modules", "dist", "dist-worker", "dist-worker-roles"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-worker",
+    "dist-worker-roles",
+    "dist-worker-domains"
+  ],
   "references": [
     { "path": "./tsconfig.gateways.json" },
     { "path": "./tsconfig.foundation.json" },

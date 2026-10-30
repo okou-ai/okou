@@ -33,6 +33,11 @@
         "src/worker-roles/delivery.ts",
         "src/worker-roles/source-events.ts",
         "src/worker-roles/mcp.ts",
+        "src/worker-domains/threads.ts",
+        "src/worker-domains/chat.ts",
+        "src/worker-domains/runs.ts",
+        "src/worker-domains/agents.ts",
+        "src/worker-domains/workflows.ts",
         "src/worker-unsupported-pg-native.ts",
         "vite.config.ts",
         "vitest.config.ts"

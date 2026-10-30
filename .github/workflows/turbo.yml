@@ -1461,6 +1461,7 @@ jobs:
           node --test .github/scripts/api-worker-workflow.test.cjs .github/scripts/api-worker-preview.test.cjs
           pnpm --dir turbo/apps/api test:worker-build
           pnpm --dir turbo/apps/api build:worker-roles
+          pnpm --dir turbo/apps/api build:worker-domains
 
       - name: Build and deploy API Worker using the shared preview database
         id: api-worker-deploy

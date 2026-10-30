@@ -145,6 +145,10 @@ test("API job keeps auxiliary Worker steps non-blocking after Vercel deployment"
     stepNamed(contractName),
     /pnpm --dir turbo\/apps\/api build:worker-roles/,
   );
+  assert.match(
+    stepNamed(contractName),
+    /pnpm --dir turbo\/apps\/api build:worker-domains/,
+  );
   const executionOwners = Object.entries(turboJobs).flatMap(([name, job]) =>
     steps(job)
       .filter((step) =>
