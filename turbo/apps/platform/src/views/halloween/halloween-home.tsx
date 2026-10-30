@@ -61,15 +61,15 @@ export function HalloweenEntry() {
       }
     },
     className: cn(
-      "pointer-events-auto absolute bottom-[76px] right-0 z-20 block h-[136px] max-w-[calc(100%-16px)] overflow-hidden rounded-none bg-transparent p-0 outline-none transition-[width] duration-500 hover:bg-transparent motion-reduce:transition-none",
-      expanded ? "w-[330px]" : "w-12",
+      "pointer-events-auto absolute bottom-[76px] right-0 z-20 block h-[172px] max-w-[calc(100%-16px)] overflow-hidden rounded-none bg-transparent p-0 outline-none transition-[width] duration-500 hover:bg-transparent motion-reduce:transition-none",
+      expanded ? "w-[366px]" : "w-24",
     ),
   };
   const content = (
     <>
       <span
         className={cn(
-          "pointer-events-none absolute right-[90px] top-[70px] w-[220px] max-w-[calc(100vw-130px)] whitespace-pre-line text-right text-[#716456] transition-all duration-300 motion-reduce:transition-none",
+          "pointer-events-none absolute right-[126px] top-[88px] w-[220px] max-w-[calc(100vw-166px)] whitespace-pre-line text-right text-[#716456] transition-all duration-300 motion-reduce:transition-none",
           typography.labelClassName,
           expanded ? "translate-x-0 opacity-100" : "translate-x-3 opacity-0",
         )}
@@ -88,7 +88,7 @@ export function HalloweenEntry() {
       </span>
       <span
         className={cn(
-          "absolute top-12 h-[72px] w-[68px] origin-right drop-shadow-[0_5px_9px_#62401725] transition-all duration-500 motion-reduce:transition-none",
+          "absolute top-12 h-[108px] w-[102px] origin-right drop-shadow-[0_5px_14px_#2c2d3314] transition-all duration-500 motion-reduce:transition-none",
           expanded ? "right-3 scale-100" : "-right-[25px] scale-80",
         )}
       >
