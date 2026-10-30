@@ -2,7 +2,13 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
@@ -573,4 +579,146 @@ test("Take over the cloud browser without stopping the working run and hand it b
     expect(sidebar).not.toBeInTheDocument();
   });
   expect(browser.closeRequests()).toBe(1);
+});
+
+const TAKE_OVER_MESSAGE =
+  "I've taken over the browser. Don't use it until I hand it back.";
+const HAND_BACK_MESSAGE = "I'm done in the browser. Please continue.";
+
+function browserSurface(viewer: HTMLElement): HTMLElement {
+  const surface = viewer.querySelector("[data-browser-surface]");
+  if (!(surface instanceof HTMLElement)) {
+    throw new Error("Browser page surface is not rendered");
+  }
+  return surface;
+}
+
+test("Input on the live page takes the cloud browser over from a working run", async () => {
+  mockWideScreen();
+  mockBrowserApi(liveBrowserSession());
+  const runId = "d0000000-0000-4000-a000-000000000903";
+  const steeredMessages: string[] = [];
+  const interruptedRunIds: string[] = [];
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Browser navigation",
+    chatEvents: [
+      {
+        id: "page-input-live-user",
+        role: "user",
+        content: "Compare the two pricing pages",
+        runId,
+        seqId: 1,
+        createdAt: "2026-09-01T12:00:00.000Z",
+      },
+    ],
+    activeRunIds: [runId],
+    onQueuedEventAppend: ({ content }) => {
+      steeredMessages.push(content ?? "");
+    },
+    onInterruptEventAppend: ({ interruptsRunId }) => {
+      interruptedRunIds.push(interruptsRunId);
+    },
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  await expect(
+    within(viewer).findByText(/is working$/u),
+  ).resolves.toBeInTheDocument();
+
+  const surface = browserSurface(viewer);
+  fireEvent.pointerDown(surface);
+  await expect(
+    within(viewer).findByText("You're in control"),
+  ).resolves.toBeInTheDocument();
+  fireEvent.pointerDown(surface);
+  fireEvent.keyDown(surface, { key: "a" });
+
+  // The Run is told once and keeps working.
+  await waitFor(() => {
+    expect(steeredMessages).toStrictEqual([TAKE_OVER_MESSAGE]);
+  });
+  expect(interruptedRunIds).toStrictEqual([]);
+  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
+});
+
+test("Hand back after using the cloud browser between runs continues in one step", async () => {
+  mockWideScreen();
+  mockBrowserApi(liveBrowserSession());
+  const runId = "d0000000-0000-4000-a000-000000000904";
+  const sentPrompts: string[] = [];
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Browser navigation",
+    chatEvents: [
+      {
+        id: "between-runs-user",
+        role: "user",
+        content: "Download last month's invoices",
+        runId,
+        seqId: 1,
+        createdAt: "2026-09-01T12:00:00.000Z",
+      },
+      {
+        id: "between-runs-reply",
+        role: "assistant",
+        content: "Please sign in to the billing site in the browser.",
+        runId,
+        seqId: 2,
+        createdAt: "2026-09-01T12:00:01.000Z",
+      },
+      {
+        id: "between-runs-complete",
+        role: "assistant",
+        content: null,
+        runId,
+        runLifecycleEvent: "completed",
+        seqId: 3,
+        createdAt: "2026-09-01T12:00:02.000Z",
+      },
+    ],
+    onSendRequest: ({ prompt }) => {
+      sentPrompts.push(prompt);
+    },
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  expect(within(viewer).queryByText("You're in control")).toBeNull();
+
+  // Nobody is driving, so signing in tells no Run anything.
+  fireEvent.pointerDown(browserSurface(viewer));
+  await expect(
+    within(viewer).findByText("You're in control"),
+  ).resolves.toBeInTheDocument();
+  expect(sentPrompts).toStrictEqual([]);
+
+  click(buttonByName("Hand back", viewer));
+  await waitFor(() => {
+    expect(sentPrompts).toStrictEqual([HAND_BACK_MESSAGE]);
+  });
+  await waitFor(() => {
+    expect(within(viewer).queryByText("You're in control")).toBeNull();
+  });
 });

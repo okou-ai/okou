@@ -779,11 +779,17 @@ export function BrowserViewer({
   connectionKey,
   actions,
   presence,
+  onPageInput,
 }: {
   readonly signals: BrowserViewerSignals;
   readonly connectionKey: string;
   readonly actions: ReactNode;
   readonly presence: ReactNode;
+  /**
+   * Observes the member's pointer and key input on the page. The viewer's own
+   * input handling still forwards that input; this never cancels it.
+   */
+  readonly onPageInput?: () => void;
 }) {
   const { t } = useTranslation();
   const snapshot = useGet(signals.snapshot$);
@@ -820,6 +826,8 @@ export function BrowserViewer({
         <div
           data-browser-surface
           className="relative h-full w-full overflow-hidden"
+          onPointerDownCapture={onPageInput}
+          onKeyDownCapture={onPageInput}
         >
           <canvas
             data-browser-canvas

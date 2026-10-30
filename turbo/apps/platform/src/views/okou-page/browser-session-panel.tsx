@@ -27,6 +27,8 @@ interface BrowserSessionPanelProps {
   readonly actions?: ReactNode;
   /** Status layered over the live viewer, such as who is in control. */
   readonly overlay?: ReactNode;
+  /** The member's input on the live page, for the host's presence. */
+  readonly onPageInput?: () => void;
 }
 
 function PanelFrame({
@@ -158,6 +160,7 @@ function BrowserCdpViewer({
   refined,
   actions,
   overlay,
+  onPageInput,
 }: {
   readonly signals: BrowserSessionSignals;
   readonly liveUrl: string;
@@ -167,6 +170,7 @@ function BrowserCdpViewer({
   readonly refined: boolean;
   readonly actions: ReactNode;
   readonly overlay: ReactNode;
+  readonly onPageInput?: () => void;
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
   // Keep the stream during lease refreshes, but never reuse an endpoint from a
@@ -213,6 +217,7 @@ function BrowserCdpViewer({
           }
           actions={refined ? actions : null}
           presence={overlay}
+          onPageInput={onPageInput}
         />
       </div>
     </>
@@ -329,6 +334,7 @@ export function BrowserSessionPanel({
   showPausedScreenshot = false,
   actions,
   overlay,
+  onPageInput,
 }: BrowserSessionPanelProps) {
   const sessionLoadable = useLastLoadable(signals.panelSession$);
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
@@ -386,6 +392,7 @@ export function BrowserSessionPanel({
         refined={refined}
         actions={actions}
         overlay={overlay}
+        onPageInput={onPageInput}
       />
       {refined ? null : (
         <p className="border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">

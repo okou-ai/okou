@@ -8,17 +8,21 @@ export type BrowserController = "agent" | "member" | null;
 export interface BrowserPresenceSignals {
   /** Who drives the thread's cloud browser right now, if anyone. */
   readonly controller$: Computed<BrowserController>;
-  /** Tell the live Run the member is using the browser, without stopping it. */
+  /**
+   * Give the member the browser, from the Take over button or their first
+   * input on the page. A live Run is told, not stopped.
+   */
   readonly takeOver$: Command<Promise<void>, [string, AbortSignal]>;
   /** Tell the agent it may use the browser again. */
   readonly handBack$: Command<Promise<void>, [string, AbortSignal]>;
 }
 
 /**
- * Taking over leaves the live Run working on everything else: the message is
- * steered into it at its next step, and the member keeps control until a newer
- * Run starts. Handing back steers the continue message into the same Run while
- * it is live, and starts a new Run once it has ended.
+ * The member drives from the moment they take over until they hand back or a
+ * newer Run starts. A live Run keeps working on everything else: the take-over
+ * message is steered into it at its next step. Handing back steers the continue
+ * message into the same Run while it is live, and starts a new Run once it has
+ * ended, so a member who signed in for a finished Run continues it in one step.
  */
 export function createBrowserPresenceSignals({
   agentId,
@@ -31,11 +35,12 @@ export function createBrowserPresenceSignals({
   readonly liveRunId$: Computed<string | null>;
   readonly sendEvent$: ChatEventSignals["sendEvent$"];
 }): BrowserPresenceSignals {
-  const takeoverRunId$ = state<string | null>(null);
+  // The Run that was latest when the member took over.
+  const memberRun$ = state<{ readonly runId: string | null } | null>(null);
 
   const controller$ = computed((get): BrowserController => {
-    const takeoverRunId = get(takeoverRunId$);
-    if (takeoverRunId !== null && takeoverRunId === get(latestRunId$)) {
+    const memberRun = get(memberRun$);
+    if (memberRun !== null && memberRun.runId === get(latestRunId$)) {
       return "member";
     }
     return get(liveRunId$) === null ? null : "agent";
@@ -68,21 +73,22 @@ export function createBrowserPresenceSignals({
 
   const takeOver$ = command(
     async ({ get, set }, message: string, signal: AbortSignal) => {
-      const runId = get(liveRunId$);
-      if (runId === null) {
+      if (get(controller$) === "member") {
         return;
       }
-      // Control moves only once the Run has been told; a failed send leaves it
-      // with the agent.
-      await set(sendMessage$, message, signal);
-      set(takeoverRunId$, runId);
+      // Control moves with the member's first input, so repeated input while
+      // the message is in flight does not tell the Run twice.
+      set(memberRun$, { runId: get(latestRunId$) });
+      if (get(liveRunId$) !== null) {
+        await set(sendMessage$, message, signal);
+      }
     },
   );
 
   const handBack$ = command(
     async ({ set }, message: string, signal: AbortSignal) => {
       await set(sendMessage$, message, signal);
-      set(takeoverRunId$, null);
+      set(memberRun$, null);
     },
   );
 

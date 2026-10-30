@@ -520,12 +520,27 @@ function ThreadBrowserSessionPanel({
 }: {
   readonly thread: ChatPanelSignals;
 }) {
+  const { t } = useTranslation();
   const close = useSet(thread.sidebar.close$);
+  const takeOver = useSet(thread.browserPresence.takeOver$);
+  const pageSignal = useGet(pageSignal$);
   return (
     <BrowserSessionSidebar
       signals={thread.browserSessionSignals}
       onClose={close}
       overlay={<BrowserPresence thread={thread} />}
+      onPageInput={() => {
+        detach(
+          takeOver(
+            t(($) => {
+              return $.browserSession.presence.takeOverMessage;
+            }),
+            pageSignal,
+          ),
+          Reason.DomCallback,
+          "take over the cloud browser from page input",
+        );
+      }}
     />
   );
 }
