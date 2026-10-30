@@ -147,7 +147,12 @@ function integrationNoteLines(
         ];
       }
       return [
-        "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.",
+        "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so message commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery. For an explicitly requested iMessage group upload, use `--to <Group ID>`; the connected user must currently belong to that group. Omitting --to sends to the user's own phone.",
+        ...(args.agentPhoneChannel === "imessage"
+          ? [
+              '- iMessage reactions: you may use `okou phone reaction <message-id> --emoji "👍"` to acknowledge a message, celebrate progress, or add warmth when it helps the conversation. A lightweight reaction in the current conversation does not require a separate user request. Use the Message ID above or a known message ID from this conversation, react sparingly, and do not use reactions in place of doing the work or answering a substantive question. Standard tapback names (love, like, dislike, laugh, emphasize, question) work across iMessage lines; custom emoji depend on line support. Use `okou phone reaction --help` for details. Do not automatically repeat a failed or uncertain reaction. SMS and MMS do not support reactions.',
+            ]
+          : []),
         privateArtifactFinalReplyLine({
           surface: "the phone channel",
           uploadCommand: "okou phone upload-file",
