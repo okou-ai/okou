@@ -1045,6 +1045,14 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${agentMetadata}`,
   );
+  const userBuiltinConnectors = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/update-user-builtin-connectors.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${userBuiltinConnectors}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1341,6 +1349,17 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "80d63df57c2cf7e352b6f691c40d30f8",
+  },
+  {
+    schemaName: "public",
+    functionName: "update_user_builtin_connectors",
+    identityArguments:
+      "p_org_id text, p_user_id text, p_agent_id uuid, p_operation text, p_slugs bytea",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "8a2a556c87ae25537c4d58abe23305cf",
   },
 ];
 

@@ -47,11 +47,6 @@
       "owner": "writeUsagePackPendingSnapshots"
     },
     {
-      "id": "TX-0308",
-      "file": "turbo/apps/api/src/signals/services/user-connectors.service.ts",
-      "owner": "updateUserBuiltinConnectors$"
-    },
-    {
       "id": "TX-0314",
       "file": "turbo/apps/api/src/signals/services/user-permission-grants.service.ts",
       "owner": "applyVisibleAgentGrantRows"

@@ -2899,6 +2899,13 @@
       "when": 1793337228658,
       "tag": "1492_atomic_agent_metadata_update",
       "breakpoints": true
+    },
+    {
+      "idx": 1493,
+      "version": "7",
+      "when": 1793341156711,
+      "tag": "1493_atomic_user_builtin_connectors",
+      "breakpoints": true
     }
   ]
 }
