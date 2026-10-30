@@ -9,6 +9,21 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.31.1](https://github.com/okou-ai/okou/compare/api-v2.31.0...api-v2.31.1) (2026-10-30)
+
+
+### Refactoring
+
+* **api:** keep optional enrichment execution in ingress owners ([#44251](https://github.com/okou-ai/okou/issues/44251)) ([de9cd7f](https://github.com/okou-ai/okou/commit/de9cd7f3d16fbc70e854550ba10f138eb8a07151))
+* **api:** remove tx-0047 agent deletion transaction ([#44248](https://github.com/okou-ai/okou/issues/44248)) ([60d3a02](https://github.com/okou-ai/okou/commit/60d3a021ba08e389c7dae490f780eba267d9aeb0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.13.5
+
 ## [2.31.0](https://github.com/okou-ai/okou/compare/api-v2.30.1...api-v2.31.0) (2026-10-30)
 
 
