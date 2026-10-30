@@ -32,6 +32,7 @@
     "resultRewardRest": "Contactez-nous pour obtenir votre récompense. Sous réserve de vérification.",
     "review": "Sous réserve d'examen d'éligibilité.",
     "rewardQuestion": "Envie de tester Okou Pro pendant 7 jours ?",
+    "roundProgress": "Manche {{current}} · {{title}}",
     "rules": "Règles d'activité",
     "rulesBrand": "Okou · Halloween",
     "rulesHeading": "Halloween effrayant – règles d’activité",
@@ -539,6 +540,13 @@
       },
       "text": "Aimez-vous Okou ?"
     }
+  },
+  "roundTitles": {
+    "five": "Okou vous aime bien",
+    "four": "Un dernier truc",
+    "one": "Voyons ce que tu as",
+    "three": "Elle est impressionnée",
+    "two": "Tu es sur ses tours"
   },
   "rules": {
     "availability": {

@@ -32,6 +32,7 @@
     "resultRewardRest": "特典の引き換えはお問い合わせください。審査の対象となります。",
     "review": "資格審査の対象となります。",
     "rewardQuestion": "Okou Proの7日間トライアルを手に入れませんか？",
+    "roundProgress": "ラウンド {{current}} · {{title}}",
     "rules": "活動ルール",
     "rulesBrand": "Okou · ハロウィン",
     "rulesHeading": "不気味なハロウィーン — アクティビティのルール",
@@ -539,6 +540,13 @@
       },
       "text": "Okouは好きですか?"
     }
+  },
+  "roundTitles": {
+    "five": "Okouはあなたが好きです",
+    "four": "最後のトリック",
+    "one": "何を持っているか見てみましょう",
+    "three": "彼女は感動しました",
+    "two": "あなたは彼女のトリックにハマっています"
   },
   "rules": {
     "availability": {

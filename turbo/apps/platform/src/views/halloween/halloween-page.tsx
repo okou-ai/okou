@@ -33,6 +33,7 @@ function StartScreen() {
         className={cn(
           "mb-9 max-w-[900px] text-balance text-[#f6f3ed]",
           typography.titleClassName,
+          "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
         )}
       >
         {open ? (
@@ -115,7 +116,7 @@ export function HalloweenPage() {
           : "bg-[radial-gradient(ellipse_at_50%_42%,#183452_0,#0c1d34_42%,#060d19_85%)]",
       )}
     >
-      {screen !== "result" && <HalloweenStage quiet={screen === "question"} />}
+      {screen !== "result" && <HalloweenStage />}
       <HalloweenHeader />
       {screen === "question" ? (
         <HalloweenQuestionScreen />

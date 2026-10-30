@@ -1,6 +1,6 @@
 export const halloweenTypography = {
   titleClassName:
-    "text-[28px] font-medium not-italic leading-9 tracking-[-.02em] font-family-sans md:text-[32px] md:leading-10",
+    "text-[40px] font-medium not-italic leading-[48px] tracking-[-.03em] font-family-sans",
   bodyClassName:
     "text-base font-normal not-italic leading-6 tracking-normal font-family-sans",
   labelClassName:

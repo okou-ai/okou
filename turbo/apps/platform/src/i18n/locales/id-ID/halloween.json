@@ -32,6 +32,7 @@
     "resultRewardRest": "Hubungi kami untuk menukarkan hadiahmu. Tunduk pada peninjauan.",
     "review": "Tunduk pada tinjauan kelayakan.",
     "rewardQuestion": "Siap mendapatkan uji coba Okou Pro selama 7 hari?",
+    "roundProgress": "Babak {{current}} · {{title}}",
     "rules": "Aturan aktivitas",
     "rulesBrand": "Okou ·Halloween",
     "rulesHeading": "Halloween Seram — aturan aktivitas",
@@ -539,6 +540,13 @@
       },
       "text": "Apakah kamu suka Okou?"
     }
+  },
+  "roundTitles": {
+    "five": "Okou menyukaimu",
+    "four": "Satu trik terakhir",
+    "one": "Mari kita lihat apa yang Anda punya",
+    "three": "Dia terkesan",
+    "two": "Anda menyukai tipuannya"
   },
   "rules": {
     "availability": {

@@ -32,6 +32,7 @@
     "resultRewardRest": "보상을 받으려면 문의해 주세요. 자격 심사 후 제공됩니다.",
     "review": "적격성 심사 대상입니다.",
     "rewardQuestion": "Okou Pro 7일 체험을 받을 준비가 되셨나요?",
+    "roundProgress": "라운드 {{current}} · {{title}}",
     "rules": "활동 규칙",
     "rulesBrand": "Okou · 할로윈",
     "rulesHeading": "으스스한 할로윈 — 활동 규칙",
@@ -539,6 +540,13 @@
       },
       "text": "Okou 앱이 마음에 드시나요?"
     }
+  },
+  "roundTitles": {
+    "five": "Okou님이 당신을 좋아합니다.",
+    "four": "마지막 트릭",
+    "one": "당신이 무엇을 가지고 있는지 보자",
+    "three": "그녀는 감동받았어요",
+    "two": "당신은 그녀의 속임수에 빠져 있어요"
   },
   "rules": {
     "availability": {

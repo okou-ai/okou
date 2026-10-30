@@ -32,6 +32,7 @@
     "resultRewardRest": "请联系我们领取奖励，须经审核。",
     "review": "需通过资格审核。",
     "rewardQuestion": "准备好赢取 7 天 Okou Pro 试用了吗？",
+    "roundProgress": "第 {{current}} 回合 · {{title}}",
     "rules": "活动规则",
     "rulesBrand": "Okou · 万圣节",
     "rulesHeading": "Spooky Halloween — 活动规则",
@@ -539,6 +540,13 @@
       },
       "text": "你喜欢 Okou 吗？"
     }
+  },
+  "roundTitles": {
+    "five": "OKOU 喜欢你。",
+    "four": "最后一个把戏",
+    "one": "看看你的本事",
+    "three": "它开始佩服你了",
+    "two": "你看穿它的把戏了"
   },
   "rules": {
     "availability": {

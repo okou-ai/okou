@@ -14,6 +14,12 @@ export function useHalloweenCopy() {
     },
     { returnObjects: true },
   );
+  const roundTitles = t(
+    ($) => {
+      return $.roundTitles;
+    },
+    { returnObjects: true },
+  );
   const levels = t(
     ($) => {
       return $.levels;
@@ -48,6 +54,21 @@ export function useHalloweenCopy() {
         { current, total },
       );
     },
+    roundProgress: (current: string, title: string) => {
+      return t(
+        ($) => {
+          return $.copy.roundProgress;
+        },
+        { current, title },
+      );
+    },
+    roundTitles: [
+      roundTitles.one,
+      roundTitles.two,
+      roundTitles.three,
+      roundTitles.four,
+      roundTitles.five,
+    ],
     levels: [levels.one, levels.two, levels.three, levels.four, levels.five],
     nudges: [nudges.one, nudges.two, nudges.three],
     tasks: [
