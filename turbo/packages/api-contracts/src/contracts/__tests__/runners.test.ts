@@ -161,9 +161,40 @@ describe("runner claim response contract", () => {
       modelUsageProvider: "fixture-model",
       modelUsageLongContextMinTotalInputTokens: 272_001,
       platformEnvironment: { OKOU_AGENT_ID: "fixture-agent-id" },
+      contentBundles: {
+        format: "tar-gzip-v1",
+        instructions: { sha256: "a".repeat(64), archiveBytes: 128 },
+        skills: [{ mountPath: "/home/user/.codex/skills/fixture-skill" }],
+      },
     });
     expect(context.environment).not.toHaveProperty("OKOU_AGENT_ID");
     expect(context).not.toHaveProperty("experimentalProfile");
+  });
+
+  it("rejects mixed bundle and legacy claim content", () => {
+    const fixture = executionContextSchema.parse(
+      loadRunnerClaimResponseFixture(),
+    );
+    expect(
+      executionContextSchema.safeParse({
+        ...fixture,
+        agentInstructions: "inline body",
+      }).success,
+    ).toBe(false);
+    expect(
+      executionContextSchema.safeParse({
+        ...fixture,
+        storageManifest: {
+          ...fixture.storageManifest,
+          workflowSkills: [
+            {
+              workflowId: "00000000-0000-4000-8000-000000020987",
+              mountPath: "/home/user/.codex/skills/fixture-skill",
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("round-trips canonical trusted environments through stored contexts", () => {

@@ -1,4 +1,4 @@
-//! Prepared package-only bootstrap. Current API claims still use legacy delivery.
+//! Hash-addressed package bootstrap with verified bytes and private installation.
 use super::super::{
     DEFAULT_EXEC_TIMEOUT, ExecutorConfig, JobTelemetry, RunnerError, RunnerResult,
     guest_runtime_dir,
