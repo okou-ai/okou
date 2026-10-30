@@ -1854,11 +1854,7 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
         outcome: ExecuteOutcome {
             failure: agent_result.failure,
             sandbox_reuse_disposition: agent_result.sandbox_reuse_disposition,
-            storage_fingerprints: context
-                .storage_manifest
-                .as_ref()
-                .map(StorageFingerprints::from_manifest)
-                .unwrap_or_default(),
+            storage_fingerprints: runner_types::content_bundle::fingerprints(context),
             sandbox: Some(sandbox),
             source_ip,
             network_log_session: Some(network_log_session),

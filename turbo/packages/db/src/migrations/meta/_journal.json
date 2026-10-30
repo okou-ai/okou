@@ -2885,6 +2885,27 @@
       "when": 1793326405452,
       "tag": "1490_drop_chat_thread_folders",
       "breakpoints": true
+    },
+    {
+      "idx": 1491,
+      "version": "7",
+      "when": 1793330139802,
+      "tag": "1491_charming_naoko",
+      "breakpoints": true
+    },
+    {
+      "idx": 1492,
+      "version": "7",
+      "when": 1793337228658,
+      "tag": "1492_atomic_agent_metadata_update",
+      "breakpoints": true
+    },
+    {
+      "idx": 1493,
+      "version": "7",
+      "when": 1793341156711,
+      "tag": "1493_atomic_user_builtin_connectors",
+      "breakpoints": true
     }
   ]
 }

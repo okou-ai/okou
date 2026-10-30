@@ -429,50 +429,28 @@ jobs:
           token: ${{ secrets.CI_SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
-            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} publishing to Browser Use..."
+            text: "*Browser Extension* publishing to Browser Use..."
             blocks:
               - type: section
                 text:
                   type: mrkdwn
-                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} publishing to Browser Use...\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  text: "*Browser Extension* publishing to Browser Use...\n📦 Version: `${{ needs.release-please.outputs.browser_extension_version }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.browser_extension_tag }}|View Release>"
 
       - name: Record start time
         id: timer
         run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
 
-      - name: Normalize CI App private key
-        id: private-key
-        env:
-          SOURCE_PRIVATE_KEY_PEM: ${{ secrets.OKOU_CI_APP_PRIVATE_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          private_key="$(printf '%s' "$SOURCE_PRIVATE_KEY_PEM" | bash .github/scripts/normalize-github-app-private-key.sh)"
-          printf '::add-mask::%s\n' "$private_key"
-          printf 'private-key=%s\n' "$private_key" >> "$GITHUB_OUTPUT"
-      - name: Create repository Variables token
-        id: variables-token
-        env:
-          OKOU_CI_APP_ID: ${{ vars.OKOU_CI_APP_ID }}
-          OKOU_CI_APP_PRIVATE_KEY: ${{ steps.private-key.outputs.private-key }}
-        run: node .github/scripts/release/browser-extension-variable-token.mjs
       - name: Package selected extension release
         run: pnpm --dir turbo --filter @okouai/browser-extension build
-      - name: Publish extension and verify configuration
+      - name: Publish extension and retain upload receipt
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
-          GITHUB_VARIABLES_TOKEN: ${{ steps.variables-token.outputs.token }}
           OKOU_BROWSER_USE_API_KEY: ${{ secrets.OKOU_BROWSER_USE_API_KEY }}
           RELEASE_TARGET: ${{ needs.release-please.outputs.release_target }}
           BROWSER_EXTENSION_VERSION: ${{ needs.release-please.outputs.browser_extension_version }}
           BROWSER_EXTENSION_TAG: ${{ needs.release-please.outputs.browser_extension_tag }}
         run: node .github/scripts/release/publish-browser-extension.mjs
-      - name: Revoke repository Variables token
-        if: ${{ always() && steps.variables-token.outputs.token != '' }}
-        env:
-          GITHUB_VARIABLES_TOKEN: ${{ steps.variables-token.outputs.token }}
-        run: node .github/scripts/release/browser-extension-variable-token.mjs --revoke
 
       - name: Calculate duration
         id: duration
@@ -495,12 +473,12 @@ jobs:
           payload: |
             channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
             ts: "${{ steps.slack-start.outputs.ts }}"
-            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ✅ Published to Browser Use; configuration verified"
+            text: "*Browser Extension* ✅ Published to Browser Use"
             blocks:
               - type: section
                 text:
                   type: mrkdwn
-                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ✅ Published to Browser Use; configuration verified\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  text: "*Browser Extension* ✅ Published to Browser Use\n📦 Version: `${{ needs.release-please.outputs.browser_extension_version }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.browser_extension_tag }}|View Release>"
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
@@ -511,12 +489,12 @@ jobs:
           payload: |
             channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}
             ts: "${{ steps.slack-start.outputs.ts }}"
-            text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ❌ Publish failed"
+            text: "*Browser Extension* ❌ Publish failed"
             blocks:
               - type: section
                 text:
                   type: mrkdwn
-                  text: "*Browser Extension* v${{ needs.release-please.outputs.browser_extension_version }} ❌ Publish failed\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  text: "*Browser Extension* ❌ Publish failed\n📦 Version: `${{ needs.release-please.outputs.browser_extension_version }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.browser_extension_tag }}|View Release>\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
   publish-ios-testflight:
     name: publish-ios-testflight
@@ -1376,22 +1354,6 @@ jobs:
           doppler-project: vm0
           doppler-config: prd
 
-      - name: Resolve extension configuration for API deployment
-        id: browser-extension-env
-        shell: bash
-        env:
-          REPO_VARS_JSON: ${{ toJSON(vars) }}
-          BROWSER_EXTENSION_RELEASE_CREATED: ${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}
-          BROWSER_EXTENSION_ID: ${{ needs.publish-browser-extension.outputs.extension_id }}
-        run: |
-          set -euo pipefail
-          if [[ "$BROWSER_EXTENSION_RELEASE_CREATED" == 'true' ]]; then
-            variables=$(jq -c --arg id "$BROWSER_EXTENSION_ID" '.OKOU_BROWSER_USE_EXTENSION_ID = $id' <<< "$REPO_VARS_JSON")
-          else
-            variables=$(jq -c . <<< "$REPO_VARS_JSON")
-          fi
-          printf 'json=%s\n' "$variables" >> "$GITHUB_OUTPUT"
-
       - name: Resolve API production environment
         id: api-production-env
         uses: ./.github/actions/web-api-env
@@ -1402,8 +1364,10 @@ jobs:
           web-url: https://www.okou.ai
           app-url: https://app.okou.ai
           api-backend-url: ${{ vars.OKOU_API_BACKEND_URL }}
+          browser-extension-release-created: ${{ needs.release-please.outputs.browser_extension_release_created == 'true' }}
+          browser-extension-id: ${{ needs.publish-browser-extension.outputs.extension_id }}
         env:
-          REPO_VARS_JSON: ${{ steps.browser-extension-env.outputs.json }}
+          REPO_VARS_JSON: ${{ toJSON(vars) }}
           REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
           DOPPLER_SECRETS_JSON: ${{ toJSON(steps.doppler-oauth.outputs) }}
 

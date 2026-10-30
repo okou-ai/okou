@@ -137,6 +137,23 @@ const browserAuthorizationRequestApplyResponseSchema = object({
   cloudBrowserEnabled: literal(true),
 });
 
+export const browserExtensionSchema = object({
+  id: uuid(),
+  runtimeId: string().regex(/^[a-p]{32}$/u),
+  version: string().min(1),
+});
+
+export type BrowserExtension = zInfer<typeof browserExtensionSchema>;
+
+const browserViewerConnectionSchema = object({
+  cdpUrl: url({ protocol: /^wss$/u }),
+  extension: browserExtensionSchema,
+});
+
+export type BrowserViewerConnection = zInfer<
+  typeof browserViewerConnectionSchema
+>;
+
 const browserConnectionResponseSchema = browserResponseSchema.extend({
   cdpUrl: url(),
 });
@@ -262,9 +279,7 @@ export const browserContract = c.router({
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
     responses: {
-      200: object({
-        cdpUrl: url({ protocol: /^wss$/u }),
-      }),
+      200: browserViewerConnectionSchema,
       ...commonErrorResponses,
     },
     summary: "Get a live browser's WebSocket endpoint for its signed-in owner",

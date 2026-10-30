@@ -9,6 +9,114 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.30.1](https://github.com/okou-ai/okou/compare/api-v2.30.0...api-v2.30.1) (2026-10-30)
+
+
+### Refactoring
+
+* **api:** localize runner reuse preference capture ownership ([#44212](https://github.com/okou-ai/okou/issues/44212)) ([c349eda](https://github.com/okou-ai/okou/commit/c349edab2cd37730da11610704b13d7b8ac55a7a))
+* **api:** remove builtin connector selection transaction ([#44221](https://github.com/okou-ai/okou/issues/44221)) ([738c3fa](https://github.com/okou-ai/okou/commit/738c3fa6a3b11bca957ce6f59791be62b3cdc1b3))
+
+
+### Performance Improvements
+
+* **browser:** use native extension window operations ([#44195](https://github.com/okou-ai/okou/issues/44195)) ([90925ae](https://github.com/okou-ai/okou/commit/90925ae2ce82dc5ab1457b09c0caf8df08651d19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.2
+    * @okouai/core bumped to 8.804.1
+    * @okouai/db bumped to 2.13.3
+    * @okouai/pi-agent-runtime bumped to 1.51.32
+
+## [2.30.0](https://github.com/okou-ai/okou/compare/api-v2.29.0...api-v2.30.0) (2026-10-30)
+
+
+### Features
+
+* release halloween quiz to all users ([#44208](https://github.com/okou-ai/okou/issues/44208)) ([5b89b78](https://github.com/okou-ai/okou/commit/5b89b784990936be1d6a050aa0b3ed2789e69ad9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.804.0
+    * @okouai/db bumped to 2.13.2
+    * @okouai/pi-agent-runtime bumped to 1.51.31
+
+## [2.29.0](https://github.com/okou-ai/okou/compare/api-v2.28.0...api-v2.29.0) (2026-10-30)
+
+
+### Features
+
+* **connectors:** support declared automatic oauth prompts ([#44202](https://github.com/okou-ai/okou/issues/44202)) ([3063efe](https://github.com/okou-ai/okou/commit/3063efe6cf29cf22b8bdc4ac39feff7d4ae856b9))
+
+
+### Refactoring
+
+* **api:** localize admission commit capture ownership ([#44177](https://github.com/okou-ai/okou/issues/44177)) ([e025482](https://github.com/okou-ai/okou/commit/e02548264985bd94a023fcc5d6525ea9c31d3900))
+* **api:** remove tx-0012 from agent metadata updates ([#44201](https://github.com/okou-ai/okou/issues/44201)) ([a2ce78e](https://github.com/okou-ai/okou/commit/a2ce78e6d3a43ae08b39f4a4df4ef49bfb6eb583))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.1
+    * @okouai/connectors bumped to 3.20.0
+    * @okouai/core bumped to 8.803.1
+    * @okouai/db bumped to 2.13.1
+    * @okouai/pi-agent-runtime bumped to 1.51.30
+
+## [2.28.0](https://github.com/okou-ai/okou/compare/api-v2.27.0...api-v2.28.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+
+### Bug Fixes
+
+* refresh runner platform api cli and browser extension release markers ([#44180](https://github.com/okou-ai/okou/issues/44180)) ([ca744df](https://github.com/okou-ai/okou/commit/ca744df83b1f51794edcb1b58f10634df2da7aed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.0
+    * @okouai/core bumped to 8.803.0
+    * @okouai/db bumped to 2.13.0
+    * @okouai/pi-agent-runtime bumped to 1.51.29
+
+## [2.27.0](https://github.com/okou-ai/okou/compare/api-v2.26.0...api-v2.27.0) (2026-10-30)
+
+
+### Features
+
+* **browser:** own extension source and release delivery ([#44106](https://github.com/okou-ai/okou/issues/44106)) ([a45e176](https://github.com/okou-ai/okou/commit/a45e176ab11bba983668681f929cf9d2d58b5e9e))
+
+
+### Bug Fixes
+
+* bound computer-use auth reads and preserve heartbeat diagnostics ([#44157](https://github.com/okou-ai/okou/issues/44157)) ([77f4d3b](https://github.com/okou-ai/okou/commit/77f4d3b67081731ec70886ed63715f9a012e2db8))
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.1
+    * @okouai/core bumped to 8.802.0
+    * @okouai/db bumped to 2.12.1
+    * @okouai/pi-agent-runtime bumped to 1.51.28
+
 ## [2.26.0](https://github.com/okou-ai/okou/compare/api-v2.25.4...api-v2.26.0) (2026-10-30)
 
 

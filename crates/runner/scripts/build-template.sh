@@ -114,15 +114,15 @@ CACHE_TMP_TAR=""
 # Pinned versions (changes here invalidate the template cache via script hash)
 NODE_VERSION="26.13.0"
 GO_VERSION="1.27.3"
-CLAUDE_CODE_VERSION="2.1.312"
-CODEX_CLI_VERSION="0.165.0"
+CLAUDE_CODE_VERSION="2.1.314"
+CODEX_CLI_VERSION="0.166.0"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.39.4-vm0.1"
 PNPM_VERSION="12.16.1"
 UV_VERSION="0.13.6"
-CHROMIUM_VERSION="156.0.8078.47-1~deb12u1"
-CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261024T014305Z"
+CHROMIUM_VERSION="156.0.8078.73-1~deb12u1"
+CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261029T213339Z"
 
 # ---------------------------------------------------------------------------
 # Dependency checks
@@ -354,6 +354,7 @@ install_packages() {
     procps wget git ripgrep jq file iproute2 sudo ffmpeg \
     libreoffice-impress poppler-utils \
     fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
+    libharfbuzz0b libharfbuzz-subset0 \
     libnss3 p11-kit-modules tzdata-legacy unzip \
     "nodejs=${NODE_VERSION}-1nodesource1" \
     python3 python3-pip python3-venv \
@@ -379,7 +380,7 @@ install_packages() {
   '
 
   # Chromium from Debian Bookworm security (Ubuntu 24.04 snap stub does not work).
-  # Installed separately to avoid cross-distro dependency conflicts.
+  # Keep HarfBuzz on Ubuntu: mixing its core and subset libraries crashes PDF printing.
   # Pin to a Debian security snapshot for reproducible Chromium packages.
   sudo chroot "$ROOTFS_DIR" env \
     CHROMIUM_VERSION="$CHROMIUM_VERSION" \
@@ -395,11 +396,22 @@ install_packages() {
 deb [signed-by=/usr/share/keyrings/debian-bookworm.gpg] http://deb.debian.org/debian bookworm main
 deb [check-valid-until=no signed-by=/usr/share/keyrings/debian-bookworm.gpg] ${CHROMIUM_SECURITY_SNAPSHOT_URL}/ bookworm-security main
 EOF
+    cat > /etc/apt/preferences.d/harfbuzz-ubuntu <<EOF
+Package: libharfbuzz*
+Pin: release o=Debian
+Pin-Priority: -1
+EOF
     apt-get update
     apt-get install -y -t bookworm \
       chromium="${CHROMIUM_VERSION}" \
       chromium-common="${CHROMIUM_VERSION}" \
       chromium-sandbox="${CHROMIUM_VERSION}"
+    harfbuzz_version=$(dpkg-query -W -f="\${Version}" libharfbuzz0b)
+    subset_version=$(dpkg-query -W -f="\${Version}" libharfbuzz-subset0)
+    if [[ "$harfbuzz_version" != "$subset_version" ]]; then
+      echo "error: HarfBuzz core ($harfbuzz_version) and subset ($subset_version) versions differ" >&2
+      exit 1
+    fi
     rm -f /etc/apt/sources.list.d/debian-bookworm.list \
          /usr/share/keyrings/debian-bookworm.gpg
     rm -rf /var/lib/apt/lists/* /var/cache/apt/*
@@ -531,6 +543,36 @@ install_runtimes() {
   echo "[OK] runtimes and CLIs installed"
 }
 
+# Exercise font subsetting before publishing the template, with a hard timeout
+# so a crashed print compositor cannot leave the image build hanging.
+verify_chromium_pdf() {
+  sudo chroot "$ROOTFS_DIR" runuser -u user -- bash -s <<'CHROMIUM_PDF_CHECK'
+set -euo pipefail
+probe_dir=$(mktemp -d)
+trap 'rm -rf "$probe_dir"' EXIT
+export XDG_CONFIG_HOME="$probe_dir/config"
+cat > "$probe_dir/probe.html" <<'HTML'
+<!doctype html><html lang="en"><meta charset="utf-8">
+<title>PDF check</title><p>Chromium PDF smoke test</p></html>
+HTML
+if timeout --kill-after=5s 30 chromium \
+  --headless --no-sandbox --disable-dev-shm-usage \
+  --no-first-run --no-default-browser-check --no-pdf-header-footer \
+  --user-data-dir="$probe_dir/profile" \
+  --print-to-pdf="$probe_dir/probe.pdf" "file://$probe_dir/probe.html" \
+  > "$probe_dir/chromium.log" 2>&1; then
+  pdfinfo "$probe_dir/probe.pdf" > /dev/null
+  pdftotext "$probe_dir/probe.pdf" "$probe_dir/probe.txt"
+  grep -Fxq "Chromium PDF smoke test" "$probe_dir/probe.txt"
+else
+  status=$?
+  cat "$probe_dir/chromium.log" >&2
+  exit "$status"
+fi
+echo "[OK] Chromium PDF printing passed"
+CHROMIUM_PDF_CHECK
+}
+
 # ---------------------------------------------------------------------------
 # ext4 image creation
 # ---------------------------------------------------------------------------
@@ -553,9 +595,6 @@ create_ext4() {
   # block layout for identical content, making the rootfs reproducible.
   local fs_uuid="${INPUT_HASH:0:8}-${INPUT_HASH:8:4}-${INPUT_HASH:12:4}-${INPUT_HASH:16:4}-${INPUT_HASH:20:12}"
 
-  # mktemp -d creates 0700; ext4 root inode must be 0755 for non-root access.
-  sudo chmod 755 "$ROOTFS_DIR"
-
   # Create ext4 image populated directly from directory (no loopback mount needed)
   truncate -s "$image_bytes" "$TMP_TEMPLATE_PATH"
   mkfs.ext4 -F -q -U "$fs_uuid" -d "$ROOTFS_DIR" "$TMP_TEMPLATE_PATH"
@@ -571,6 +610,9 @@ check_dependencies
 debootstrap_build
 install_packages
 install_runtimes
+# mktemp -d creates 0700; the root must be traversable by the sandbox user.
+sudo chmod 755 "$ROOTFS_DIR"
+verify_chromium_pdf
 
 # Remove build-time host resolver state before producing the reusable rootfs
 # template. The VM resolver config is injected by customize-rootfs.sh.

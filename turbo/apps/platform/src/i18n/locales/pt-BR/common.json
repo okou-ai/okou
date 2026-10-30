@@ -4257,6 +4257,17 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "drive": "Salvar no Google Drive",
+      "excel": "Exportar para Excel",
+      "export": "Exportar",
+      "filename": "Tabela",
+      "googleUnavailable": "Abra esta tabela no seu chat ou verifique sua conexão com o Google Drive.",
+      "sheets": "Salvar no Google Sheets",
+      "uploadFailed": "Não foi possível enviar a tabela. Tente novamente."
+    }
+  },
   "onboarding": {
     "common": {
       "next": "Próximo",

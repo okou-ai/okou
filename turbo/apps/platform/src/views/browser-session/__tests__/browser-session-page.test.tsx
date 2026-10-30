@@ -14,7 +14,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
+import {
+  mockBrowserCdp,
+  TEST_BROWSER_EXTENSION,
+} from "../../../__tests__/browser-cdp-fixture.ts";
 
 const context = testContext();
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
@@ -85,7 +88,7 @@ async function setupInteractiveViewer(): Promise<void> {
   mockBrowserSession(activeSession);
   mockBrowserCdp(context, cdpUrl);
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl });
+    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: activeSession });
@@ -162,7 +165,7 @@ test("The Okou viewer shows its host blank page only while the blank tab is sele
     ],
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl });
+    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: activeSession });
@@ -279,7 +282,7 @@ test.each(["url", "instance", "window"] as const)(
     });
     context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
       if (!replacing) {
-        return respond(200, { cdpUrl });
+        return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
       }
       connectionStarted.resolve();
       await releaseConnection.promise;
@@ -348,7 +351,7 @@ test("A user can restart a reclaimed browser", async () => {
   const cdpUrl = "wss://cdp.browser-use.com/restarted";
   mockBrowserCdp(context, cdpUrl);
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl });
+    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
   });
   let startCount = 0;
   mockBrowserSession(
@@ -412,7 +415,7 @@ function mockSharedViewer() {
     ],
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl });
+    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
   });
   return { session, cdpUrl };
 }
@@ -488,7 +491,10 @@ test("A mounted heartbeat keeps address editing usable after renewal", async () 
   let connectionAvailable = true;
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return connectionAvailable
-      ? respond(200, { cdpUrl: "wss://cdp.browser-use.com/shared-viewer" })
+      ? respond(200, {
+          cdpUrl: "wss://cdp.browser-use.com/shared-viewer",
+          extension: TEST_BROWSER_EXTENSION,
+        })
       : respond(409, {
           error: {
             code: "BROWSER_NOT_LIVE",
@@ -590,7 +596,7 @@ test.each(["legacy", "instance", "window"] as const)(
         connectionStarted.resolve();
         await releaseConnection.promise;
       }
-      return respond(200, { cdpUrl });
+      return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
     });
     const entered = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();

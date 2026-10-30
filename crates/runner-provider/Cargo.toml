@@ -1,6 +1,6 @@
 [package]
 name = "runner-provider"
-version = "0.11.34"
+version = "0.12.0"
 edition.workspace = true
 description = "Runner API and local job-provider coordination"
 
@@ -34,6 +34,7 @@ url = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }
 
 [dev-dependencies]
+runner-network = { workspace = true, features = ["test-support"] }
 raw-http-test-support = { workspace = true, features = ["test-support"] }
 http-body.workspace = true
 httpmock = { workspace = true, features = ["cookies"] }

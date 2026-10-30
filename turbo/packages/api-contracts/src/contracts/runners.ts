@@ -1,3 +1,4 @@
+import { claimedContentBundlesSchema } from "./content-bundle";
 import {
   array,
   boolean,
@@ -1048,6 +1049,8 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = object({
+  // Reader preparation; the current API does not emit this section.
+  contentBundles: claimedContentBundlesSchema.optional(),
   // Claim-only current Agent body; absent for jobs without an Agent.
   agentInstructions: string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.

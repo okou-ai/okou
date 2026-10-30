@@ -39,9 +39,8 @@ export default defineConfig({
     projects: [
       "packages/*",
       "apps/*",
-      // These suites run through their package-owned Node/Playwright commands.
+      // Native Chromium scenarios run through the package-owned Playwright command.
       "!apps/browser-extension",
-      "!packages/browser-extension-client",
     ],
   },
 });

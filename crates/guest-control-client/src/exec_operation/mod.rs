@@ -13,17 +13,17 @@ pub use handle::{
     ExecControlHandle, ExecOperationHandle, SupervisedExecCancelHandle, SupervisedExecHandle,
 };
 pub use types::{
-    CodexSessionCleanupRequest, ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus,
-    ExecControlOutcome, ExecOperationRequest, ExecOperationResult, ExecOutputEvent,
-    ExecOwnedCapturedOutput, ExecStreamRequest, SessionHistoryIdentityVerifyRequest,
-    SupervisedExecControl, SupervisedExecRequest, SupervisedExecStartTiming,
+    ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus, ExecControlOutcome,
+    ExecOperationRequest, ExecOperationResult, ExecOutputEvent, ExecOwnedCapturedOutput,
+    ExecStreamRequest, SessionHistoryIdentityVerifyRequest, SupervisedExecControl,
+    SupervisedExecRequest, SupervisedExecStartTiming,
 };
 
 pub(crate) use diagnostics::log_operations_closed;
 pub(crate) use dispatch::dispatch_incoming_frame;
 pub(crate) use handle::{ExecOperationCancelOnDropGuard, ExecOperationWaitOutcome};
 pub(crate) use start::{
-    append_diagnostic, codex_session_cleanup_on_shared, exec_operation_capture_on_shared,
+    append_diagnostic, exec_operation_capture_on_shared,
     exec_operation_capture_on_shared_with_write_admission,
     exec_operation_capture_on_shared_with_write_observer,
     exec_operation_capture_with_composite_on_shared_and_observer,

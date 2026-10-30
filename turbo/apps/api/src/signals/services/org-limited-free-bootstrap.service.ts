@@ -1,3 +1,5 @@
+import { publishContentBundle$ } from "./content-bundle.service";
+import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import { randomUUID } from "node:crypto";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { agents } from "@okouai/db/schema/agent";
@@ -137,12 +139,23 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       return { bootstrapped: false, agentId: reservation.agentId };
     }
 
+    const instructionsBundle = await set(
+      publishContentBundle$,
+      [
+        {
+          path: "instructions.md",
+          content: Buffer.from(SEED_INSTRUCTIONS, "utf8"),
+        },
+      ],
+      signal,
+    );
     const [publication] = parseRawRows(
       orgLimitedFreeBootstrapPublicationRow,
       await writeDb.execute(
         orgLimitedFreeBootstrapPublicationSql({
           ...args,
           agentId: reservation.agentId,
+          instructionsBundle,
         }),
       ),
     );

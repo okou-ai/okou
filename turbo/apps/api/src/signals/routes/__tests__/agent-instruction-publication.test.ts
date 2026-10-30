@@ -1,3 +1,8 @@
+import {
+  contentBundleDigest,
+  readContentBundle,
+} from "@okouai/core/content-bundle";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { randomUUID } from "node:crypto";
 import {
   agentInstructionsContract,
@@ -21,6 +26,7 @@ async function instructionFixture(visibility: "public" | "private" = "public") {
   const app = await setupApp({
     context,
     routes: [...agentsRoutes, ...agentInstructionsRoutes],
+    rethrowErrors: false,
   });
   const instructions = app(agentInstructionsContract);
   const collection = app(agentsMainContract);
@@ -53,12 +59,25 @@ async function instructionFixture(visibility: "public" | "private" = "public") {
 }
 
 describe("Agent database instructions", () => {
-  it("creates, reads, edits and clears exact text while object storage is unavailable", async () => {
+  it("preserves the accepted body when package publication fails", async () => {
+    const fixture = await instructionFixture();
+    const raw = "\uFEFF  First line\r\n中文\n\n  ";
+    await fixture.update(raw);
     context.mocks.s3.send.mockRejectedValue(
       new Error("Object storage is unavailable"),
     );
+    await expect(
+      fixture.instructions.update({
+        headers,
+        params: fixture.params,
+        body: { content: "Unpublished edit" },
+      }),
+    ).rejects.toThrow("500");
+    await expect(fixture.content()).resolves.toBe(raw);
+  });
+
+  it("publishes exact text and explicit empty overwrite", async () => {
     const fixture = await instructionFixture();
-    await expect(fixture.content()).resolves.toBe("");
     const raw = "\uFEFF  First line\r\n中文\n\n  ";
     await fixture.update(raw);
     await expect(fixture.content()).resolves.toBe(raw);
@@ -66,16 +85,60 @@ describe("Agent database instructions", () => {
     await expect(fixture.content()).resolves.toBe("");
   });
 
-  it("accepts concurrent edits and remains editable after both commits", async () => {
+  it("keeps a coherent accepted edit under concurrent publication", async () => {
     const fixture = await instructionFixture();
-    await Promise.all([
-      fixture.update("First edit"),
-      fixture.update("Second edit"),
-    ]);
+    const results = await Promise.all(
+      ["First edit", "Second edit"].map((content) => {
+        return accept(
+          fixture.instructions.update({
+            headers,
+            params: fixture.params,
+            body: { content },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      results.some((result) => {
+        return result.status === 200;
+      }),
+    ).toBeTruthy();
     const current = await fixture.content();
     expect(["First edit", "Second edit"]).toContain(current);
     await fixture.update("After both commits");
     await expect(fixture.content()).resolves.toBe("After both commits");
+  });
+
+  it("publishes owner-independent immutable packages containing the exact accepted text", async () => {
+    const objects = new Map<string, Buffer>();
+    installWorkflowVolumeS3Fixture(context, objects);
+    const first = await instructionFixture();
+    const body = "\uFEFF raw instructions\r\n中文  ";
+    await first.update(body);
+    const second = await instructionFixture();
+    await second.update(body);
+    const packages = [...objects].filter(([key]) => {
+      return key.startsWith("bundles/v1/");
+    });
+    const matching = packages
+      .flatMap(([key, archive]) => {
+        const sha256 = contentBundleDigest(archive);
+        expect(key).toBe(`bundles/v1/${sha256}.tar.gz`);
+        return readContentBundle(archive, {
+          sha256,
+          archiveBytes: archive.length,
+        });
+      })
+      .filter((file) => {
+        return file.content.equals(Buffer.from(body));
+      });
+    expect(
+      matching.map((file) => {
+        return file.path;
+      }),
+    ).toStrictEqual(["instructions.md"]);
+    await expect(second.content()).resolves.toBe(body);
   });
 
   it("rejects NUL text and preserves the current body", async () => {

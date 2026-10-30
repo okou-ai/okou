@@ -320,22 +320,29 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     }
     async function seedWithInstallation() {
       const base = await seedBaseContext();
-      const installerOrgId = base.orgId;
       const installed = await scenario.run(() => {
         return slackOrgs.installForOrg({
-          orgId: installerOrgId,
-          installer: scenario.user({
-            orgId: installerOrgId,
-            orgRole: "org:admin",
-          }),
+          orgId: base.orgId,
+          installer: actorFor(base),
           run: scenario.run,
         });
       });
-      await connectMember({
-        ...base,
-        slackWorkspaceId: installed.slackWorkspaceId,
+      const connection = { slackUserId: installed.installerSlackUserId };
+      connections.set(
+        `${base.orgId}:${installed.slackWorkspaceId}:${base.userId}`,
+        connection,
+      );
+      context.mocks.slack.users.info.mockResolvedValue({
+        ok: true,
+        user: {
+          id: connection.slackUserId,
+          team_id: installed.slackWorkspaceId,
+          deleted: false,
+          is_bot: false,
+        },
       });
       await restoreMembership(base);
+      mockSharedSlackConversations(undefined, connection.slackUserId);
       return { ...base, slackWorkspaceId: installed.slackWorkspaceId };
     }
     async function rememberClaim(actor: ApiTestUser, runId: string) {

@@ -1,3 +1,4 @@
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
@@ -45,6 +46,7 @@ interface BootstrapPublicationArgs {
   readonly orgId: string;
   readonly ownerUserId: string;
   readonly agentId: string;
+  readonly instructionsBundle: ContentBundle;
 }
 
 export const orgLimitedFreeBootstrapPublicationRow = object({
@@ -108,6 +110,7 @@ function bootstrapAgentValues(args: BootstrapPublicationArgs) {
     displayName: DEFAULT_AGENT_DISPLAY_NAME,
     description: null,
     instructions: SEED_INSTRUCTIONS,
+    instructionsBundle: args.instructionsBundle,
     sound: DEFAULT_AGENT_SOUND,
     avatarUrl: DEFAULT_AGENT_AVATAR_URL,
     createdAt,

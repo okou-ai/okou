@@ -45,14 +45,19 @@ export function nowDate(): Date {
   return new Date(now());
 }
 
-/** UTC wall time evaluated by SQL after its preceding dependencies complete. */
-export function nowDateSql() {
+/**
+ * UTC wall time evaluated by SQL after its preceding dependencies complete.
+ * A server routine may supply NULL to own the unmocked clock after its reads.
+ */
+export function nowDateSql(
+  unmockedClock = sql`date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC')`,
+) {
   const scoped = currentScopedMockNow();
   const mocked = scoped ? scoped.value : getMockedNow();
   if (mocked !== undefined) {
     return sql`${timestampWithoutTimeZone(new Date(mocked))}::timestamp`;
   }
-  return sql`date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC')`;
+  return unmockedClock;
 }
 
 /** The non-wall clock used to measure real elapsed I/O time. */

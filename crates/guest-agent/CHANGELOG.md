@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.109.22](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.21...guest-agent-v0.109.22) (2026-10-30)
+
+## [0.109.21](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.20...guest-agent-v0.109.21) (2026-10-30)
+
+
+### Bug Fixes
+
+* classify claude five-hour limits as usage limits ([#44162](https://github.com/okou-ai/okou/issues/44162)) ([45f1cf7](https://github.com/okou-ai/okou/commit/45f1cf7d3de049882434435f0616afb6f46689a7))
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+* **runner:** clean terminal homes without initialized runtime directories ([#44163](https://github.com/okou-ai/okou/issues/44163)) ([486040f](https://github.com/okou-ai/okou/commit/486040fb0979e385ecc3b165206cbebf996f3e28))
+
 ## [0.109.20](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.19...guest-agent-v0.109.20) (2026-10-29)
 
 

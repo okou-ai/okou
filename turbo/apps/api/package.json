@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "2.26.0",
+  "version": "2.30.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -41,6 +41,7 @@
     "@modelcontextprotocol/client": "^2.3.0",
     "@modelcontextprotocol/server": "^2.3.0",
     "@okouai/api-contracts": "workspace:*",
+    "@okouai/browser-extension-client": "workspace:*",
     "@okouai/connectors": "workspace:*",
     "@okouai/core": "workspace:*",
     "@okouai/db": "workspace:*",

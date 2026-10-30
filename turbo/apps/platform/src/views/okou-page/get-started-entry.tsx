@@ -9,7 +9,9 @@ import {
   Check,
   ChevronRight,
   Coins,
+  Hash,
   Link2,
+  MessageCircle,
   Route,
   UserPlus,
 } from "lucide-react";
@@ -37,8 +39,6 @@ import {
 } from "../../signals/okou-page/get-started.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
-import { SlackMark } from "./components/slack-mark.tsx";
-import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import {
   agentPhoneLinkStatus$,
   createAgentPhoneLinkCode$,
@@ -83,17 +83,15 @@ function QuestRing({ completed, total }: { completed: number; total: number }) {
   );
 }
 
+// Every tile draws the task in the same muted line glyph, channels included.
+// A full-colour brand mark was the one saturated block in the panel, pulled the
+// eye to its row ahead of equal rewards, and nested a rounded app tile inside
+// the rounded tile; the title already names the app. The colour marks stay on
+// the surfaces that connect the app: the phone card, its connect page, Works.
 const QUEST_ICONS = Object.freeze<Record<GetStartedQuestKey, ReactNode>>({
   connector: <Link2 className="text-muted-foreground" />,
-  slack: <SlackMark size={16} />,
-  // The same iMessage mark the phone card on Integrations carries.
-  imessage: (
-    <img
-      src={settingsIconAssetUrl("imessage")}
-      alt=""
-      className="size-4 shrink-0"
-    />
-  ),
+  slack: <Hash className="text-muted-foreground" />,
+  imessage: <MessageCircle className="text-muted-foreground" />,
   workflow: <Route className="text-muted-foreground" />,
   invite: <UserPlus className="text-muted-foreground" />,
   checkin: <CalendarCheck className="text-muted-foreground" />,

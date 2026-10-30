@@ -64,7 +64,9 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import {
+  withPgPoolAcquisitionCapture,
   withPgQueryExecutionCapture,
+  type PgPoolAcquisitionCapture,
   type PgQueryExecutionCapture,
 } from "../../lib/db-instrumentation";
 import { env, optionalEnv } from "../../lib/env";
@@ -4065,7 +4067,9 @@ export function createThreadClaimRunObjects(
         launch,
         timing: timing.run,
       };
+      const poolCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
       const admissionTiming = new AdmissionAttemptTiming({
+        poolCapture,
         runId: identity.runId,
         runnerGroup: launch.runnerJobPayload.runnerGroup,
         profile: launch.runnerJobPayload.profile,
@@ -4081,33 +4085,39 @@ export function createThreadClaimRunObjects(
         featureSwitchContext: context.featureSwitchContext,
         admissionTiming,
       };
-      const committed: AtomicLaunchCommitCompletion = await timing.run.measure(
-        "api_dispatch_insert_run_with_concurrency",
-        "top_level",
-        async () => {
-          const result = await admissionTiming.capturePoolAcquisition(
-            async () => {
-              return await set(
-                commitPreparedPendingLaunch$,
-                preparedCommit,
-                {
-                  orgId: claim.orgId,
-                  chatThreadId: claim.chatThreadId,
-                  claimId: claim.claimId,
-                  producer: context.producerBinding,
-                },
-                signal,
-              );
-            },
-          );
-          if ("kind" in result && result.kind === "pending") {
-            set(internalCommittedRunId$, result.run.id);
-          }
-          const transactionReturnedAt = now();
-          await admissionTiming.finish(admissionAttemptOutcome(result));
-          return { result, transactionReturnedAt };
-        },
-      );
+      const commitTiming = timing.run;
+      const commitStartedAt = performance.now();
+      const committed: AtomicLaunchCommitCompletion = await (async () => {
+        const result = await withPgPoolAcquisitionCapture(
+          poolCapture,
+          async () => {
+            return await set(
+              commitPreparedPendingLaunch$,
+              preparedCommit,
+              {
+                orgId: claim.orgId,
+                chatThreadId: claim.chatThreadId,
+                claimId: claim.claimId,
+                producer: context.producerBinding,
+              },
+              signal,
+            );
+          },
+        );
+        if ("kind" in result && result.kind === "pending") {
+          set(internalCommittedRunId$, result.run.id);
+        }
+        const transactionReturnedAt = now();
+        await admissionTiming.finish(admissionAttemptOutcome(result));
+        return { result, transactionReturnedAt };
+      })().finally(() => {
+        commitTiming.recordDuration(
+          "api_dispatch_insert_run_with_concurrency",
+          "top_level",
+          performance.now() - commitStartedAt,
+          now(),
+        );
+      });
       signal.throwIfAborted();
       return set(recordRunCommit$, context, committed, timing, signal);
     },

@@ -1,7 +1,9 @@
+import type { ContentBundle } from "../jsonb-contracts/content-bundle";
 import {
   index,
   pgTable,
   text,
+  jsonb,
   timestamp,
   unique,
   uniqueIndex,
@@ -30,6 +32,8 @@ export const agents = pgTable(
     displayName: varchar("display_name", { length: 256 }),
     description: text("description"),
     instructions: text("instructions").notNull().default(""),
+    // NULL is unconverted; publication writes text and bundle together.
+    instructionsBundle: jsonb("instructions_bundle").$type<ContentBundle>(),
     sound: varchar("sound", { length: 64 }),
     avatarUrl: varchar("avatar_url", { length: 1024 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -74,7 +74,7 @@ fn verify_at_path(request: &HomeCacheHistoryVerifyRequest, path: &Path) -> bool 
 }
 
 pub(crate) fn capture(
-    current_runtime: &Path,
+    current_runtime: Option<&Path>,
     retained_runtime: Option<&Path>,
     generation: &str,
 ) -> CapturedHistoryProof {
@@ -82,26 +82,29 @@ pub(crate) fn capture(
 }
 
 fn capture_at_path(
-    current_runtime: &Path,
+    current_runtime: Option<&Path>,
     retained_runtime: Option<&Path>,
     generation: &str,
     path: &Path,
 ) -> CapturedHistoryProof {
     let current =
-        guest_contracts::runtime_paths::final_session_history_identity_file(current_runtime);
+        current_runtime.map(guest_contracts::runtime_paths::final_session_history_identity_file);
     // Retained metadata is considered only when the current run produced none,
-    // never to mask a malformed/changed current history identity.
-    let current_missing = matches!(
-        guest_contracts::runtime_paths::read_private_bounded(
-            &current,
-            HOME_CACHE_HISTORY_PROOF_MAX_BYTES
-        ),
-        Ok(None)
-    );
+    // never to mask a malformed/changed current history identity. Do not read
+    // an unstarted runtime: the private reader would create its missing parents.
+    let current_missing = current.as_ref().is_none_or(|current| {
+        matches!(
+            guest_contracts::runtime_paths::read_private_bounded(
+                current,
+                HOME_CACHE_HISTORY_PROOF_MAX_BYTES
+            ),
+            Ok(None)
+        )
+    });
     let metadata = if current_missing {
         retained_runtime.map(guest_contracts::runtime_paths::final_session_history_identity_file)
     } else {
-        Some(current)
+        current
     };
     let candidate = metadata.and_then(|metadata| {
         let identity = read_final_session_history_identity(metadata).ok()?;
@@ -249,7 +252,7 @@ mod tests {
                 std::fs::write(&raw, history).unwrap();
             }
             let binding = capture_at_path(
-                &runtime,
+                Some(&runtime),
                 None,
                 "74b68da0-6e0a-4adc-a68e-65a04c4885c4",
                 &proof_path,
@@ -289,7 +292,7 @@ mod tests {
             assert!(!verify_at_path(&request, &proof_path));
             assert!(
                 capture_at_path(
-                    &runtime,
+                    Some(&runtime),
                     None,
                     "74b68da0-6e0a-4adc-a68e-65a04c4885c4",
                     &proof_path
@@ -330,7 +333,7 @@ mod tests {
             .unwrap();
         let proof_path = dir.path().join("cache/proof.json");
         let binding = capture_at_path(
-            &runtime,
+            Some(&runtime),
             None,
             "74b68da0-6e0a-4adc-a68e-65a04c4885c4",
             &proof_path,
@@ -369,7 +372,7 @@ mod tests {
         assert!(!verify_at_path(&request, &proof_path));
         assert!(
             capture_at_path(
-                &runtime,
+                Some(&runtime),
                 None,
                 "74b68da0-6e0a-4adc-a68e-65a04c4885c4",
                 &proof_path

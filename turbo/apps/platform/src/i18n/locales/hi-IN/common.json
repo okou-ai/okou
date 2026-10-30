@@ -4203,6 +4203,17 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "drive": "Google Drive में सेव करें",
+      "excel": "Excel में एक्सपोर्ट करें",
+      "export": "एक्सपोर्ट करें",
+      "filename": "तालिका",
+      "googleUnavailable": "इस तालिका को अपने चैट में खोलें या अपना Google Drive कनेक्शन जाँचें।",
+      "sheets": "Google Sheets में सेव करें",
+      "uploadFailed": "तालिका अपलोड नहीं हो सकी। फिर से कोशिश करें।"
+    }
+  },
   "onboarding": {
     "common": {
       "next": "अगला",

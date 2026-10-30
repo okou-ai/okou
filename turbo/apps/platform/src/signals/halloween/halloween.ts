@@ -12,6 +12,12 @@ import { apiClient$ } from "../api-client.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { locale$ } from "../locale.ts";
+import {
+  hash$,
+  historyState$,
+  replaceSearchParams$,
+  searchParams$,
+} from "../route.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
 
 const soundStorage = localStorageSignals("halloween_2026_sound");
@@ -296,6 +302,15 @@ export const initializeHalloweenHome$ = command(
       return;
     }
     await set(loadCurrentHalloweenRound$, signal);
+    const params = new URLSearchParams(get(searchParams$));
+    if (params.get("halloween") === "1") {
+      params.delete("halloween");
+      set(replaceSearchParams$, params, get(historyState$), get(hash$));
+      set(homeAnimationStorage.set$, "seen");
+      set(modalAnchorState$, null);
+      set(openHalloweenModal$);
+      return;
+    }
     const first = set(homeAnimationStorage.readFresh$) === null;
     set(homeAnimationStorage.set$, "seen");
     set(homeAnimationVisibleState$, first);

@@ -16,7 +16,10 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
+import {
+  mockBrowserCdp,
+  TEST_BROWSER_EXTENSION,
+} from "../../../__tests__/browser-cdp-fixture.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
@@ -103,7 +106,7 @@ function mockBrowserApi(
       : {}),
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl });
+    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
   });
 
   return {

@@ -6,10 +6,10 @@ use ::sandbox::*;
 use tokio_util::sync::CancellationToken;
 
 use crate::call_records::{
-    CodexSessionCleanupCall, CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall,
-    GuestStateRestoreCall, ProcessCancelCall, ProcessControlCall, ReadFileCall,
-    SessionHistoryIdentityVerifyCall, StartAgentProcessCall, StartProcessCall, StorageManifestCall,
-    WaitProcessCall, WriteFileCall, WriteFilesCall,
+    CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall, GuestStateRestoreCall,
+    ProcessCancelCall, ProcessControlCall, ReadFileCall, SessionHistoryIdentityVerifyCall,
+    StartAgentProcessCall, StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall,
+    WriteFilesCall,
 };
 use crate::lifecycle::{DestroyBehavior, LifecycleBehaviors, MockLifecycleGate};
 use crate::support::LockIgnoringPoison;
@@ -71,11 +71,6 @@ pub(crate) struct ExecOverrideState {
     pub(crate) home_drive_mount_lifecycle_gate: Mutex<Option<MockLifecycleGate>>,
     /// Recorded fixed live identity verifier calls across attached sandboxes.
     pub(crate) session_history_identity_verify_calls: Mutex<Vec<SessionHistoryIdentityVerifyCall>>,
-    /// Recorded fixed requested-session Codex cleanup calls across attached sandboxes.
-    pub(crate) codex_session_cleanup_calls: Mutex<Vec<CodexSessionCleanupCall>>,
-    /// FIFO results and an optional gate for destination preparation.
-    pub(crate) codex_session_cleanup_results: Mutex<VecDeque<Result<ExecResult>>>,
-    pub(crate) codex_session_cleanup_gate: Mutex<Option<MockLifecycleGate>>,
     /// Recorded fixed guest-state restore calls across all attached sandboxes.
     pub(crate) guest_state_restore_calls: Mutex<Vec<GuestStateRestoreCall>>,
     /// FIFO behaviors for fixed guest-state restore operations.
@@ -638,27 +633,6 @@ impl MockSandboxOverrides {
     pub fn session_history_identity_verify_calls(&self) -> Vec<SessionHistoryIdentityVerifyCall> {
         self.exec
             .session_history_identity_verify_calls
-            .lock_ignoring_poison()
-            .clone()
-    }
-
-    /// Queue a fixed requested-session cleanup result.
-    pub fn push_codex_session_cleanup_result(&self, result: Result<ExecResult>) {
-        self.exec
-            .codex_session_cleanup_results
-            .lock_ignoring_poison()
-            .push_back(result);
-    }
-
-    /// Gate fixed requested-session cleanup after recording the call.
-    pub fn set_codex_session_cleanup_gate(&self, gate: MockLifecycleGate) {
-        *self.exec.codex_session_cleanup_gate.lock_ignoring_poison() = Some(gate);
-    }
-
-    /// Return fixed requested-session Codex cleanup calls across all attached sandboxes.
-    pub fn codex_session_cleanup_calls(&self) -> Vec<CodexSessionCleanupCall> {
-        self.exec
-            .codex_session_cleanup_calls
             .lock_ignoring_poison()
             .clone()
     }

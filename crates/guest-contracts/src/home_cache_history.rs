@@ -98,9 +98,9 @@ impl HomeCacheHistoryProofBinding {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TerminalHomeCachePreparationRequest {
-    /// Completed run's canonical runtime anchor.
+    /// Current run's canonical runtime path, which may be absent after an early failure.
     pub current_runtime_dir: String,
-    /// Earlier runtime anchor still owning legitimate finalized metadata.
+    /// Earlier runtime anchor still owning legitimate finalized metadata; must exist if supplied.
     pub retained_runtime_dir: Option<String>,
     /// Publication generation owned by the host image context.
     pub generation: String,

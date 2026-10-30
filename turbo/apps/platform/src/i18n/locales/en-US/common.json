@@ -4201,6 +4201,17 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "drive": "Save to Google Drive",
+      "excel": "Export Excel",
+      "export": "Export",
+      "filename": "Table",
+      "googleUnavailable": "Open this table in your chat to save it to Google, or check your Google Drive connection.",
+      "sheets": "Save to Google Sheets",
+      "uploadFailed": "Could not upload the table. Please try again."
+    }
+  },
   "onboarding": {
     "common": {
       "next": "Next",

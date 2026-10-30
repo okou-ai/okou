@@ -24,6 +24,8 @@ use runner_types::types::ExecutionContext;
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
+mod content_bundles;
+pub(super) use content_bundles::{apply_content_bundles, prepare_content_bundles};
 mod workflow_documents;
 mod workflow_download;
 pub(super) use workflow_documents::apply_workflow_skill_documents;

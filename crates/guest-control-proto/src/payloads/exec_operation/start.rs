@@ -19,7 +19,6 @@ pub(super) const EXEC_LIFECYCLE_SUPERVISED: u8 = 0x01;
 pub(super) const EXEC_PROCESS_ROLE_WORKLOAD: u8 = 0x00;
 pub(super) const EXEC_PROCESS_ROLE_AGENT: u8 = 0x01;
 pub(super) const EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER: u8 = 0x02;
-pub(super) const EXEC_PROCESS_ROLE_CODEX_SESSION_CLEANUP: u8 = 0x03;
 
 pub(super) const EXEC_TIMEOUT_DURATION: u8 = 0x00;
 pub(super) const EXEC_TIMEOUT_NONE: u8 = 0x01;
@@ -91,8 +90,6 @@ pub enum ExecProcessRole {
     Agent,
     /// Fixed one-shot session-history identity verifier.
     SessionHistoryIdentityVerifier,
-    /// Fixed one-shot reused-Codex session cleanup helper.
-    CodexSessionCleanup,
 }
 
 impl ExecProcessRole {
@@ -102,7 +99,6 @@ impl ExecProcessRole {
             Self::Workload => "contained_workload",
             Self::Agent => "controlled_agent",
             Self::SessionHistoryIdentityVerifier => "session_history_identity_verifier",
-            Self::CodexSessionCleanup => "codex_session_cleanup",
         }
     }
 
@@ -121,8 +117,6 @@ impl ExecProcessRole {
                 "verify_session_history_identity"
             }
             (Self::SessionHistoryIdentityVerifier, ExecLifecyclePolicy::Supervised) => "invalid",
-            (Self::CodexSessionCleanup, ExecLifecyclePolicy::OneShot) => "cleanup_codex_session",
-            (Self::CodexSessionCleanup, ExecLifecyclePolicy::Supervised) => "invalid",
         }
     }
 }
@@ -167,7 +161,6 @@ pub enum ExecControlPolicy {
 /// | [`ExecProcessRole::Workload`] | [`ExecLifecyclePolicy::Supervised`] | `Enabled { sink: false, .. }` | Controlled supervised workload without a guest sink |
 /// | [`ExecProcessRole::Agent`] | [`ExecLifecyclePolicy::Supervised`] | `Enabled { sink: true, .. }` | Controlled Agent operation with a guest sink |
 /// | [`ExecProcessRole::SessionHistoryIdentityVerifier`] | [`ExecLifecyclePolicy::OneShot`] | [`ExecControlPolicy::Disabled`] | Fixed one-shot live identity verifier |
-/// | [`ExecProcessRole::CodexSessionCleanup`] | [`ExecLifecyclePolicy::OneShot`] | [`ExecControlPolicy::Disabled`] | Fixed one-shot reused-Codex cleanup helper |
 ///
 /// An `Agent` therefore requires a supervised lifecycle and an enabled control
 /// sink. A controlled `Workload` is supervised with an enabled control channel
@@ -192,13 +185,10 @@ pub struct ExecStartEncodeRequest<'a> {
     ///   program.
     /// - [`ExecProcessRole::SessionHistoryIdentityVerifier`]: serialized JSON of
     ///   [`guest_contracts::session_history_identity::SessionHistoryIdentityVerifyRequest`].
-    /// - [`ExecProcessRole::CodexSessionCleanup`]: serialized JSON of
-    ///   [`guest_contracts::codex_session_cleanup::CodexSessionCleanupRequest`].
     ///
-    /// Prefer the typed client helpers
+    /// Prefer the typed client helper
     /// `guest_control_client::GuestControlClient::verify_session_history_identity`
-    /// and `guest_control_client::GuestControlClient::cleanup_codex_session` to
-    /// construct the fixed-helper requests.
+    /// to construct the fixed-helper request.
     pub command: &'a str,
     /// Environment key/value pairs to encode.
     ///
@@ -330,7 +320,6 @@ fn append_exec_process_role(p: &mut Vec<u8>, role: ExecProcessRole) {
         ExecProcessRole::SessionHistoryIdentityVerifier => {
             EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER
         }
-        ExecProcessRole::CodexSessionCleanup => EXEC_PROCESS_ROLE_CODEX_SESSION_CLEANUP,
     });
 }
 
@@ -406,11 +395,6 @@ pub fn validate_exec_process_contract(
         )
         | (
             ExecProcessRole::SessionHistoryIdentityVerifier,
-            ExecLifecyclePolicy::OneShot,
-            ExecControlPolicy::Disabled,
-        )
-        | (
-            ExecProcessRole::CodexSessionCleanup,
             ExecLifecyclePolicy::OneShot,
             ExecControlPolicy::Disabled,
         ) => Ok(()),
@@ -637,7 +621,6 @@ fn decode_exec_process_role(
         EXEC_PROCESS_ROLE_SESSION_HISTORY_IDENTITY_VERIFIER => {
             Ok(ExecProcessRole::SessionHistoryIdentityVerifier)
         }
-        EXEC_PROCESS_ROLE_CODEX_SESSION_CLEANUP => Ok(ExecProcessRole::CodexSessionCleanup),
         _ => Err(ProtocolError::InvalidPayload(
             "exec start process role invalid",
         )),

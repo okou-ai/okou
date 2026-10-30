@@ -12,6 +12,91 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1079.5](https://github.com/okou-ai/okou/compare/app-v0.1079.4...app-v0.1079.5) (2026-10-30)
+
+
+### Bug Fixes
+
+* **app:** open halloween from campaign email links ([#44211](https://github.com/okou-ai/okou/issues/44211)) ([548c744](https://github.com/okou-ai/okou/commit/548c74447456731a9c69648ef1d7469f0ba838d7))
+
+
+### Performance Improvements
+
+* **browser:** use native extension window operations ([#44195](https://github.com/okou-ai/okou/issues/44195)) ([90925ae](https://github.com/okou-ai/okou/commit/90925ae2ce82dc5ab1457b09c0caf8df08651d19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.2
+    * @okouai/core bumped to 8.804.1
+
+## [0.1079.4](https://github.com/okou-ai/okou/compare/app-v0.1079.3...app-v0.1079.4) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.804.0
+
+## [0.1079.3](https://github.com/okou-ai/okou/compare/app-v0.1079.2...app-v0.1079.3) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.1
+    * @okouai/connectors bumped to 3.20.0
+    * @okouai/core bumped to 8.803.1
+
+## [0.1079.2](https://github.com/okou-ai/okou/compare/app-v0.1079.1...app-v0.1079.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* refresh runner platform api cli and browser extension release markers ([#44180](https://github.com/okou-ai/okou/issues/44180)) ([ca744df](https://github.com/okou-ai/okou/commit/ca744df83b1f51794edcb1b58f10634df2da7aed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.0
+    * @okouai/core bumped to 8.803.0
+
+## [0.1079.1](https://github.com/okou-ai/okou/compare/app-v0.1079.0...app-v0.1079.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **platform:** center suggestion feedback notice content ([#44176](https://github.com/okou-ai/okou/issues/44176)) ([d17b956](https://github.com/okou-ai/okou/commit/d17b9560b61ba8f111e9296ea5aedc481f276739))
+
+## [0.1079.0](https://github.com/okou-ai/okou/compare/app-v0.1078.1...app-v0.1079.0) (2026-10-30)
+
+
+### Features
+
+* **app:** release the unified chat workspace to everyone ([#44168](https://github.com/okou-ai/okou/issues/44168)) ([e59858c](https://github.com/okou-ai/okou/commit/e59858ca253958200c6560224a32eb8e846bec13))
+
+
+### Bug Fixes
+
+* **app:** refine halloween progress and surrounding controls ([#44138](https://github.com/okou-ai/okou/issues/44138)) ([3f7e168](https://github.com/okou-ai/okou/commit/3f7e16882e3b5f870158a1e7ffbfb58a62108193))
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+* **platform:** add multilingual fallback to serif text ([#44169](https://github.com/okou-ai/okou/issues/44169)) ([c46f447](https://github.com/okou-ai/okou/commit/c46f447cd1c40230b4addb9ce1a7db63217a09e6))
+* **platform:** keep the default workspace mark at one proportion ([#44167](https://github.com/okou-ai/okou/issues/44167)) ([2eb4333](https://github.com/okou-ai/okou/commit/2eb433329bdf14bc3f545197f90cded7a256c792))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.1
+    * @okouai/core bumped to 8.802.0
+
 ## [0.1078.1](https://github.com/okou-ai/okou/compare/app-v0.1078.0...app-v0.1078.1) (2026-10-30)
 
 

@@ -101,7 +101,8 @@ export function createPublicSlackOrgApi(context: TestContext) {
 
   /**
    * Installs Slack for an existing org through the production OAuth install,
-   * performed by another admin of that org so the caller stays unlinked. The
+   * performed by another admin by default so the caller stays unlinked. An
+   * explicit installer can use its own OAuth-created member connection. The
    * install exchange returns the given bot token, scopes and team name.
    * Callers that rely on their own Clerk membership mock must re-apply it:
    * the install authenticates the installing admin.
@@ -116,21 +117,27 @@ export function createPublicSlackOrgApi(context: TestContext) {
   }): Promise<{
     readonly slackWorkspaceId: string;
     readonly slackWorkspaceName: string;
+    readonly installerSlackUserId: string;
   }> {
     mockEnv("SLACK_OAUTH_CLIENT_ID", "slack-bdd-client-id");
     mockOptionalEnv("SLACK_OAUTH_CLIENT_SECRET", "slack-bdd-client-secret");
     const installer =
       args.installer ?? bdd.user({ orgId: args.orgId, orgRole: "org:admin" });
     const teamName = args.teamName ?? "Test Org Workspace";
-    const { teamId } = await integrations.installSlackWorkspace(installer, {
-      ...(args.botToken === undefined ? {} : { botToken: args.botToken }),
-      // Like the former seeded installation, scopes default to unreported.
-      botScopes: args.botScopes === undefined ? null : args.botScopes,
-      teamName,
-      run: args.run,
-    });
+    const { teamId, installerSlackUserId } =
+      await integrations.installSlackWorkspace(installer, {
+        ...(args.botToken === undefined ? {} : { botToken: args.botToken }),
+        // Like the former seeded installation, scopes default to unreported.
+        botScopes: args.botScopes === undefined ? null : args.botScopes,
+        teamName,
+        run: args.run,
+      });
     await settleSlackNotifications();
-    return { slackWorkspaceId: teamId, slackWorkspaceName: teamName };
+    return {
+      slackWorkspaceId: teamId,
+      slackWorkspaceName: teamName,
+      installerSlackUserId,
+    };
   }
 
   /** Connects the member's Slack user through the production connect flow. */

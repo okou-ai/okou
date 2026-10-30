@@ -180,6 +180,9 @@ impl Fixture {
             mitm_jsonl_flush: None,
             connector_runtime_sync: None,
             guest_rpc: None,
+            content_bundle_cache: runner_storage::content_bundle_cache::ContentBundleCache::new(
+                home.bundles_dir(),
+            )?,
             fresh_archive_delivery: FreshArchiveDeliveryAdmission::new(),
             background_fill: StorageCacheBackgroundFillCoordinator::new()?,
             decoded_cache: DecodedCache::new(home.clone()),

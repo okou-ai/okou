@@ -52,6 +52,7 @@ import {
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
+import { MarkdownTable } from "./markdown-table.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
 import { MathFormulaView } from "./math-formula.tsx";
 import { MermaidDiagramView } from "./mermaid-diagram.tsx";
@@ -65,18 +66,6 @@ type MarkdownTimeProps = ComponentPropsWithoutRef<"time"> & MarkdownNodeProp;
 type MarkdownDivProps = ComponentPropsWithoutRef<"div"> & {
   node?: Element;
 };
-
-/**
- * Wraps a markdown table in an overflow-x-auto container so wide tables scroll
- * within their container instead of stretching the page on mobile.
- */
-function ResponsiveTable({ children }: ComponentPropsWithoutRef<"table">) {
-  return (
-    <div className="overflow-x-auto">
-      <table>{children}</table>
-    </div>
-  );
-}
 
 function omitMarkdownNodeProp<Props extends object>(
   props: Props,
@@ -765,7 +754,7 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
 }
 
 const PLAIN_MARKDOWN_COMPONENTS = {
-  table: ResponsiveTable,
+  table: MarkdownTable,
   a: PlainLinkRenderer,
   img: PlainImageRenderer,
   span: MarkdownSpanRenderer,
@@ -774,7 +763,7 @@ const PLAIN_MARKDOWN_COMPONENTS = {
 } as const;
 
 const MEDIA_MARKDOWN_COMPONENTS = {
-  table: ResponsiveTable,
+  table: MarkdownTable,
   p: MediaParagraphRenderer,
   a: MediaLinkRenderer,
   img: MediaImageRenderer,

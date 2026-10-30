@@ -1,6 +1,6 @@
 [package]
 name = "guest-home-mount"
-version = "0.2.45"
+version = "0.2.47"
 edition.workspace = true
 description = "Fixed privileged home mount checks and bounded initialization"
 

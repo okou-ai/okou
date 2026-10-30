@@ -2386,6 +2386,7 @@ mod tests {
     struct ConnectorRuntimeSyncHarness {
         _dir: tempfile::TempDir,
         handle: ConnectorRuntimeSyncHandle,
+        registry: ProxyRegistryHandle,
         registry_path: std::path::PathBuf,
         run_id: RunId,
         source_ip: String,
@@ -2494,6 +2495,7 @@ mod tests {
             Self {
                 _dir: dir,
                 handle,
+                registry,
                 registry_path,
                 run_id,
                 source_ip: source_ip.to_string(),
@@ -3227,7 +3229,7 @@ mod tests {
         let run_id = RunId::from(uuid::Uuid::nil());
         let harness = ConnectorRuntimeSyncHarness::new(&server, run_id).await;
         mock_publication_response(&server, run_id, terminal);
-        let mut gate = crate::proxy::RegistryWriteGate::new(&harness.registry_path);
+        let mut gate = harness.registry.gate_next_transaction();
         let caller = if cancel_caller {
             let core = harness.handle.core.clone();
             Some(tokio::spawn(async move {
@@ -6105,6 +6107,15 @@ mod tests {
 
     #[tokio::test]
     async fn terminal_connector_runtime_sync_reconciles_entire_run() {
+        assert_terminal_run_reconciliation(false).await;
+    }
+
+    #[tokio::test]
+    async fn terminal_reconciliation_continues_after_custom_ownership_conflict() {
+        assert_terminal_run_reconciliation(true).await;
+    }
+
+    async fn assert_terminal_run_reconciliation(custom_ownership_conflict: bool) {
         let server = MockServer::start();
         let run_id = RunId::from(uuid::Uuid::nil());
         let sync_mock = server.mock(|when, then| {
@@ -6171,6 +6182,29 @@ mod tests {
         let (_dir, registry, registry_path) =
             registered_runtime_registry_with_targets(run_id, &firewalls, &policies, &registrations)
                 .await;
+        if custom_ownership_conflict {
+            // Canonical registration rejects conflicting owners. Model the
+            // persisted-state conflict covered by Network's owner regression.
+            let mut stored: serde_json::Value =
+                serde_json::from_slice(&tokio::fs::read(&registry_path).await.unwrap()).unwrap();
+            stored["sandboxes"]["10.200.0.2"]["firewalls"]
+                .as_array_mut()
+                .unwrap()
+                .push(
+                    serde_json::to_value(FirewallEntry::Builtin {
+                        name: custom_firewall_name.clone(),
+                        base_url_vars: None,
+                        source_id: None,
+                    })
+                    .unwrap(),
+                );
+            runner_host::state_file::write_private_atomic(
+                &registry_path,
+                &serde_json::to_vec(&stored).unwrap(),
+            )
+            .await
+            .unwrap();
+        }
         core.register_run(ConnectorRuntimeSyncRegistration {
             run_id,
             source_ip: "10.200.0.2",
@@ -6225,7 +6259,25 @@ mod tests {
         let network_policies = &registry_json["sandboxes"]["10.200.0.2"]["networkPolicies"];
         assert_fail_closed_policy(&network_policies["slack"]);
         assert_fail_closed_policy(&network_policies["github"]);
-        assert_fail_closed_policy(&network_policies[&custom_firewall_name]);
+        if custom_ownership_conflict {
+            assert_eq!(
+                network_policies[&custom_firewall_name],
+                serde_json::to_value(&policies[&custom_firewall_name]).unwrap(),
+                "a conflicting target must not modify its shared policy"
+            );
+            let failure = captured_event(
+                &events,
+                "failed to close terminal run connector runtime target",
+            );
+            assert_connector_field(
+                failure,
+                "target",
+                &custom_target(custom_connector_id).log_identity(),
+            );
+            assert!(failure.fields["error"].contains("does not exclusively own its firewall"));
+        } else {
+            assert_fail_closed_policy(&network_policies[&custom_firewall_name]);
+        }
         assert!(!core.inner.active_runs.lock().await.contains_key(&run_id));
         let batch_events = events
             .iter()
@@ -6241,8 +6293,16 @@ mod tests {
             "terminal reconciliation should persist one target batch"
         );
         assert_connector_field(batch_events[0], "target_count", "3");
-        assert_connector_field(batch_events[0], "applied_count", "3");
-        assert_connector_field(batch_events[0], "failed_count", "0");
+        assert_connector_field(
+            batch_events[0],
+            "applied_count",
+            if custom_ownership_conflict { "2" } else { "3" },
+        );
+        assert_connector_field(
+            batch_events[0],
+            "failed_count",
+            if custom_ownership_conflict { "1" } else { "0" },
+        );
         assert!(
             events.iter().all(|event| {
                 event

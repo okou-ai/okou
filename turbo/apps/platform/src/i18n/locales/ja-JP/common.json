@@ -4188,6 +4188,17 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "drive": "Google Drive に保存",
+      "excel": "Excel にエクスポート",
+      "export": "エクスポート",
+      "filename": "表",
+      "googleUnavailable": "自分のチャットでこの表を開くか、Google Drive の接続を確認してください。",
+      "sheets": "Google Sheets に保存",
+      "uploadFailed": "表をアップロードできませんでした。もう一度お試しください。"
+    }
+  },
   "onboarding": {
     "common": {
       "next": "次へ",

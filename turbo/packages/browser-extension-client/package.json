@@ -1,6 +1,6 @@
 {
   "name": "@okouai/browser-extension-client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -12,7 +12,8 @@
   "scripts": {
     "check-types": "tsc --noEmit",
     "lint": "oxlint --deny-warnings && eslint . --max-warnings 0",
-    "test": "node --test tests/client.test.mjs"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",
@@ -20,6 +21,7 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
     "oxlint": "^1.75.0",
-    "typescript": "npm:@typescript/typescript6@6.0.2"
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^5.0.5"
   }
 }

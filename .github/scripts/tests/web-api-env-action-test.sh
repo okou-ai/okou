@@ -7,6 +7,7 @@ ACTION="${REPO_ROOT}/.github/actions/web-api-env/action.yml"
 BROWSER_EXTENSION_ID="11111111-1111-4111-8111-111111111111"
 EXPECTED_BUILD_COMMIT_SHA="$(git -C "$REPO_ROOT" rev-parse --verify HEAD)"
 TEMP_DIRS=()
+REGISTRY_PID=""
 GITHUB_APP_VAR_SUFFIXES=(
   SLUG
   ID
@@ -19,6 +20,10 @@ GITHUB_APP_SECRET_SUFFIXES=(
 )
 
 cleanup() {
+  if [[ -n "$REGISTRY_PID" ]]; then
+    kill "$REGISTRY_PID" 2>/dev/null || true
+    wait "$REGISTRY_PID" 2>/dev/null || true
+  fi
   if [[ "${#TEMP_DIRS[@]}" -gt 0 ]]; then
     rm -rf "${TEMP_DIRS[@]}"
   fi
@@ -283,6 +288,8 @@ run_action() {
   local input_api_backend_url="${9-https://pr-123-api-backend.okou.test}"
   local machine_secret_repo_secrets_json="${10:-}"
   local extra_repo_vars_json="${11:-}"
+  local input_extension_release_created="${12:-true}"
+  local input_extension_id="${13-$BROWSER_EXTENSION_ID}"
   local action_script="${test_dir}/web-api-env-action.sh"
   local github_output="${test_dir}/github-output"
   local repo_vars_json
@@ -300,7 +307,6 @@ run_action() {
 
   repo_vars_json='{"GH_OAUTH_CLIENT_ID":"github-gh-client-id","SLACK_OAUTH_CLIENT_ID":"github-slack-client-id","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-var","FINICITY_PARTNER_ID":"github-finicity-partner-id","LINK_STRIPE_PUBLISHABLE_KEY":"pk_live_github_link_fixture","POSTHOG_KEY":"github-posthog-key","POSTHOG_HOST":"https://posthog.github.test","ATOM_URL":"https://atom.github.test","STRIPE_OAUTH_CLIENT_ID":"ca_test_connect_client","STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID":"bpc_test_concurrency","MICROSOFT_TEAMS_BOT_APP_ID":"github-teams-bot-app-id","MICROSOFT_TEAMS_APP_TENANT_ID":"github-teams-app-tenant-id","OKOU_PRICE_PRO":"price_test_pro","OKOU_PRICE_TEAM":"price_test_team","OKOU_PRICE_USAGE_PACK_PLAN_PRO":"price_test_usage_pack_plan_pro","OKOU_PRICE_USAGE_PACK_PLAN_TEAM":"price_test_usage_pack_plan_team","OKOU_PRICE_USAGE_PACK_20":"price_test_usage_pack_20","OKOU_PRICE_USAGE_PACK_50":"price_test_usage_pack_50","OKOU_PRICE_USAGE_PACK_100":"price_test_usage_pack_100","OKOU_PRICE_USAGE_PACK_200":"price_test_usage_pack_200","ATOM_GRANT_PRICE":"price_test_atom_grant","OKOU_PRICE_CUSTOM_CREDITS":"price_test_custom_credits","OKOU_PRICE_CUSTOM_CREDIT_UNIT":"price_test_custom_credit_unit","OKOU_PRICE_CONCURRENCY":"price_test_concurrency","GMAIL_PUBSUB_TOPIC_NAME":"projects/github/topics/gmail","GMAIL_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/gmail","GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"gmail-push@github.test","GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME":"projects/github/topics/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"workspace-events-push@github.test"}'
   repo_vars_json="$(jq -c '. + {OKOU_PUBLIC_ARTIFACTS_BASE_URL: "https://cdn.okou.test", OKOU_PUBLIC_HOST_DOMAIN: "okou.app", OKOU_HOST_SCHEME: "https", OKOU_ONE_TIME_CAMPAIGN: "test-campaign"}' <<< "$repo_vars_json")"
-  repo_vars_json="$(jq -c --arg id "$BROWSER_EXTENSION_ID" '. + {OKOU_BROWSER_USE_EXTENSION_ID: $id}' <<< "$repo_vars_json")"
   repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_DATA_ROUTER_URL":"https://data.okou.ai/mcp","OKOU_DATA_TOKEN":"github-data-router-token","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","STEAM_WEB_API_KEY":"github-steam-web-api-key","LINK_OAUTH_CLIENT_ID":"github-link-client-id","LINK_OAUTH_CLIENT_SECRET":"github-link-client-secret","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret"}'
   repo_vars_json="$(jq -c '. + {APNS_KEY_ID: "TESTKEY001", APNS_TEAM_ID: "TESTTEAM01"}' <<< "$repo_vars_json")"
   repo_secrets_json="$(jq -c '. + {
@@ -344,6 +350,8 @@ run_action() {
     INPUT_WEB_URL="https://pr-123-www.okou.test" \
     INPUT_APP_URL="https://pr-123-app.okou.test" \
     INPUT_API_BACKEND_URL="$input_api_backend_url" \
+    INPUT_BROWSER_EXTENSION_RELEASE_CREATED="$input_extension_release_created" \
+    INPUT_BROWSER_EXTENSION_ID="$input_extension_id" \
     REPO_VARS_JSON="$repo_vars_json" \
     REPO_SECRETS_JSON="$repo_secrets_json" \
     DOPPLER_SECRETS_JSON="$doppler_secrets_json" \
@@ -1020,5 +1028,58 @@ for whatsapp_environment in preview production; do
     fi
   done
 done
+
+# Exercise the no-release branch through the actual environment producer too.
+coproc EXTENSION_REGISTRY {
+  exec node --input-type=module <<'JS'
+import { createServer } from "node:http";
+let lookups = 0;
+const server = createServer((request, response) => {
+  if (request.headers["x-browser-use-api-key"] !== "github-browser-use-api-key") {
+    response.writeHead(403).end();
+    return;
+  }
+  const items = lookups++ === 0 ? [{
+      id: "22222222-2222-4222-8222-222222222222",
+      name: "Okou Browser",
+      version: "0.10.0",
+      createdAt: "2026-10-30T00:00:00Z",
+  }] : [];
+  response.setHeader("Content-Type", "application/json");
+  response.end(JSON.stringify({
+    items,
+    totalItems: items.length,
+    pageNumber: 1,
+    pageSize: 100,
+  }));
+});
+server.listen(0, "127.0.0.1", () => {
+  console.log(`http://127.0.0.1:${server.address().port}`);
+});
+JS
+}
+REGISTRY_PID="$EXTENSION_REGISTRY_PID"
+IFS= read -r registry_origin <&"${EXTENSION_REGISTRY[0]}"
+lookup_dir="$(mktemp -d)"
+TEMP_DIRS+=("$lookup_dir")
+BROWSER_USE_API_URL="$registry_origin" run_action \
+  "$(build_doppler_secrets_json)" "$lookup_dir" api preview canonical \
+  "{}" "{}" pr-123 https://pr-123-api-backend.okou.test "" "" false "" \
+  > "${lookup_dir}/output"
+lookup_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${lookup_dir}/github-output")"
+assert_env_value "$lookup_env_file" OKOU_BROWSER_USE_EXTENSION_ID "22222222-2222-4222-8222-222222222222"
+missing_lookup_dir="$(mktemp -d)"
+TEMP_DIRS+=("$missing_lookup_dir")
+status=0
+missing_lookup_output="$(BROWSER_USE_API_URL="$registry_origin" run_action \
+  "$(build_doppler_secrets_json)" "$missing_lookup_dir" api production canonical \
+  "{}" "{}" "" https://api.okou.test "" "" false "" 2>&1)" || status=$?
+if [[ "$status" -eq 0 || -s "${missing_lookup_dir}/github-output" ]]; then
+  fail "expected an unavailable extension to stop environment publication"
+fi
+assert_contains "$missing_lookup_output" "No uploaded Okou Browser extension was found"
+kill "$REGISTRY_PID"
+wait "$REGISTRY_PID" 2>/dev/null || true
+REGISTRY_PID=""
 
 echo "web-api-env-action-test: ok"

@@ -4188,6 +4188,17 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "drive": "Google Drive에 저장",
+      "excel": "Excel로 내보내기",
+      "export": "내보내기",
+      "filename": "표",
+      "googleUnavailable": "내 채팅에서 이 표를 열거나 Google Drive 연결을 확인해 주세요.",
+      "sheets": "Google Sheets에 저장",
+      "uploadFailed": "표를 업로드하지 못했습니다. 다시 시도해 주세요."
+    }
+  },
   "onboarding": {
     "common": {
       "next": "다음",

@@ -44,6 +44,7 @@ import {
 
 import { createApp } from "../../../app-factory";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -7207,6 +7208,7 @@ function providerBrowser(
         ? "https://live.browser-use.com/?wss=provider-live-token"
         : null,
     cdpUrl: status === "active" ? `https://${id}.cdp.browser-use.com/` : null,
+    extensions: [TEST_BROWSER_EXTENSION],
     // The API buys the provider's longest lifetime and reclaims idle browsers
     // itself, so the provider deadline stays far away in these tests.
     timeoutAt: isoAt(240 * MINUTE_MS),

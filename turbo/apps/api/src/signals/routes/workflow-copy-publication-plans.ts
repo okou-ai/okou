@@ -1,3 +1,4 @@
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { gmailLabelAppliedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import {
   workflows,
@@ -52,6 +53,7 @@ export type CopyWorkflowDatabaseResult =
 
 export interface WorkflowCopyPublicationArgs extends WorkflowCopyInput {
   readonly attachments: WorkflowAttachments;
+  readonly contentBundle: ContentBundle;
   readonly targetWorkflowId: string;
   readonly threadPreparation: WorkflowThreadPreparation;
   readonly currentTime: Date;
@@ -88,6 +90,7 @@ export function workflowCopyRowValues(
     visibility: "private",
     instruction: args.sourceWorkflow.instruction,
     attachments: args.attachments,
+    contentBundle: args.contentBundle,
     ownerUserId: args.userId,
     displayName: args.sourceWorkflow.displayName,
     description: args.sourceWorkflow.description,

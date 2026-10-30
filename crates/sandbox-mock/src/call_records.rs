@@ -91,17 +91,6 @@ pub struct SessionHistoryIdentityVerifyCall {
     pub timeout: Duration,
 }
 
-/// Captured fixed reused-Codex session cleanup request.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CodexSessionCleanupCall {
-    /// Canonical Codex thread identifier supplied to the cleanup helper.
-    pub session_id: String,
-    /// Canonical logical rollout path relative to the fixed Codex home.
-    pub fallback_relative_path: String,
-    /// Helper timeout supplied by the caller.
-    pub timeout: Duration,
-}
-
 /// Owned timezone behavior recorded for a fixed guest-state restore call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GuestStateRestoreTimezoneCall {

@@ -21,6 +21,7 @@ import {
   BROWSER_PROVIDER_TIMEOUT_MINUTES,
   BROWSER_SCREEN_WIDTH,
   type BrowserSession,
+  type BrowserViewerConnection,
 } from "@okouai/api-contracts/contracts/browser";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -63,12 +64,14 @@ import {
 import {
   BrowserUseProviderError,
   browserUseWindowExists,
+  browserUseNativeConnection,
   createBrowserUseSession,
   findBrowserUseSession,
   resizeBrowserUseSession,
   resolveBrowserUseViewerConnection,
   stopBrowserUseSessionForCleanup,
   type BrowserUseSession,
+  type BrowserUseNativeConnection,
 } from "./browser-use.service";
 import {
   saveSharedSnapshot$,
@@ -417,10 +420,9 @@ const provisionSharedInstance$ = command(
   },
 );
 
-interface AdmitSharedWindow {
+interface AdmitSharedWindow extends BrowserUseNativeConnection {
   readonly owner: BrowserPublicAuthority;
   readonly profile: Profile;
-  readonly cdpUrl: string;
   readonly initial: boolean;
 }
 
@@ -436,6 +438,7 @@ const admitSharedWindow$ = command(
         owner: args.owner,
         instanceId: args.profile.instanceId,
         cdpUrl: args.cdpUrl,
+        extension: args.extension,
         initial: args.initial,
       },
       signal,
@@ -780,7 +783,7 @@ const resolveSharedWindow$ = command(
         window.state !== "active" ||
         window.expiresAt <= nowDate() ||
         !(await provider(
-          browserUseWindowExists(args.cdpUrl, window.primaryWindowId, signal),
+          browserUseWindowExists(args, window.primaryWindowId, signal),
           signal,
         ))
       ) {
@@ -874,7 +877,7 @@ function sharedBrowserOpen(
             {
               owner: ctx.owner,
               profile,
-              cdpUrl: session.cdpUrl,
+              ...browserUseNativeConnection(session),
               initial: created,
               window:
                 view?.profile.instanceId === profile.instanceId
@@ -953,7 +956,7 @@ function sharedBrowserLease(
           session.cdpUrl &&
           (await provider(
             browserUseWindowExists(
-              session.cdpUrl,
+              browserUseNativeConnection(session),
               window.primaryWindowId,
               signal,
             ),
@@ -1100,7 +1103,7 @@ function sharedBrowserViewer(
     async (
       { get },
       signal: AbortSignal,
-    ): Promise<Result<{ readonly cdpUrl: string }> | null> => {
+    ): Promise<Result<BrowserViewerConnection> | null> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
       if (!ctx || ctx.kind === "error") {
@@ -1120,7 +1123,7 @@ function sharedBrowserViewer(
       }
       const providerSessionId = view.profile.providerSessionId;
       const operation = await settleIncludingAbort(
-        (async (): Promise<Result<{ readonly cdpUrl: string }> | null> => {
+        (async (): Promise<Result<BrowserViewerConnection> | null> => {
           const session = await provider(
             findBrowserUseSession(providerSessionId, signal),
             signal,
@@ -1131,6 +1134,7 @@ function sharedBrowserViewer(
           return {
             kind: "ok",
             value: {
+              extension: browserUseNativeConnection(session).extension,
               cdpUrl: await provider(
                 resolveBrowserUseViewerConnection(
                   session.cdpUrl,
@@ -1186,7 +1190,7 @@ function sharedBrowserClose(
                   owner: ctx.owner,
                   profile: view.profile,
                   window,
-                  cdpUrl: session.cdpUrl,
+                  ...browserUseNativeConnection(session),
                 },
                 signal,
               );

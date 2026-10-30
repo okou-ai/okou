@@ -7,6 +7,7 @@ import { array, object, string, uuid } from "zod";
 
 import { createApp } from "../../../app-factory";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -55,6 +56,7 @@ function providerFixture(rejectCreate = false) {
           ? `https://live.browser-use.com/?wss=${encodeURIComponent(webSocketUrl)}`
           : null,
       cdpUrl: status === "active" ? `https://${id}.cdp.browser-use.com/` : null,
+      extensions: [{ ...TEST_BROWSER_EXTENSION, id: EXTENSION_ID }],
       timeoutAt: new Date(STARTED_AT + 240 * 60_000).toISOString(),
       startedAt: new Date(STARTED_AT).toISOString(),
       finishedAt:

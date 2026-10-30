@@ -171,6 +171,33 @@ test("Keep the chat viewport keyboard-focusable only while a conversation is ope
   });
   viewport.focus();
   expect(viewport).toHaveFocus();
+
+  click(
+    within(sidebar).getByLabelText("New chat", {
+      selector: "button[aria-keyshortcuts]",
+    }),
+  );
+  await waitFor(() => {
+    expect(viewport).toHaveAttribute("tabindex", "-1");
+  });
+});
+
+test("Keyboard navigation reveals an adjacent conversation outside the virtual window", async () => {
+  const threadCount = 32;
+  mockThreads(threadCount);
+  mockViewportHeight(() => {
+    return 5 * ROW_HEIGHT;
+  }, threadCount);
+  await setupPage({ context, path: `/chats/${threadId(0)}` });
+  const sidebar = await screen.findByTestId("chat-list-column");
+  const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
+  const first = await within(viewport).findByText("History 1");
+  await waitFor(() => {
+    expect(first.closest("a")).toHaveAttribute("aria-current", "page");
+  });
+  expect(viewport).toHaveAttribute("tabindex", "0");
+  viewport.focus();
+  expect(viewport).toHaveFocus();
   // The next conversation lies outside the scrolled window. Keyboard
   // navigation must bring it back into view without losing the viewport.
   fireEvent.scroll(viewport, { target: { scrollTop: 16 * ROW_HEIGHT } });
@@ -186,15 +213,6 @@ test("Keep the chat viewport keyboard-focusable only while a conversation is ope
     expect(viewport.scrollTop).toBe(ROW_HEIGHT);
   });
   expect(viewport).toHaveAttribute("tabindex", "0");
-
-  click(
-    within(sidebar).getByLabelText("New chat", {
-      selector: "button[aria-keyshortcuts]",
-    }),
-  );
-  await waitFor(() => {
-    expect(viewport).toHaveAttribute("tabindex", "-1");
-  });
 });
 
 test("Resize and navigate a loaded virtual viewport", async () => {

@@ -21,6 +21,7 @@ export const setupHomePage$ = command(
     const settings = params.get("settings");
     const billingView = params.get("billingView");
     const featureGuidePreview = params.get("featureGuidePreview");
+    const halloween = params.get("halloween");
     const templatePicker = parseTemplatePickerEntryCategory(
       params.get("templatePicker"),
     );
@@ -39,6 +40,9 @@ export const setupHomePage$ = command(
     }
     if (featureGuidePreview === "1") {
       forwardParams.set("featureGuidePreview", featureGuidePreview);
+    }
+    if (halloween === "1") {
+      forwardParams.set("halloween", halloween);
     }
     if (templatePicker) {
       forwardParams.set("templatePicker", templatePicker);

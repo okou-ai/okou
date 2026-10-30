@@ -20,6 +20,12 @@ import {
 } from "zod";
 
 import { mockStripeClient } from "../signals/external/stripe-client";
+import {
+  TEST_EXTENSION_TARGETS,
+  browserExtensionBootstrap,
+  browserExtensionRequest,
+  browserExtensionReply,
+} from "./browser-extension";
 
 type AsyncMock = Mock<(...args: unknown[]) => Promise<unknown>>;
 type AblyBatchPublish = (
@@ -660,6 +666,41 @@ const browserUseCdpCommandSchema = object({
 });
 
 function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
+  const bootstrap = browserExtensionBootstrap(command);
+  if (bootstrap !== undefined) {
+    return bootstrap;
+  }
+  const native = browserExtensionRequest(command);
+  if (native) {
+    const window = {
+      id: 7,
+      focused: true,
+      tabs: [
+        {
+          id: 1,
+          windowId: 7,
+          index: 0,
+          active: true,
+          pinned: false,
+          discarded: false,
+          url: "about:blank",
+        },
+      ],
+    };
+    if (native.method === "hello") {
+      return browserExtensionReply({
+        protocol: 1,
+        capabilities: ["windows", "tabs", "events", "identity-probe"],
+      });
+    }
+    if (native.method === "listWindows") {
+      return browserExtensionReply([window]);
+    }
+    if (native.method === "getWindow") {
+      return browserExtensionReply(native.windowId === 7 ? window : null);
+    }
+    throw new Error(`Unhandled native browser request: ${native.method}`);
+  }
   if (command.method === "Target.getTargets") {
     return {
       targetInfos: [
@@ -690,17 +731,33 @@ export function browserUseCdpHandler(
       }
       const command = browserUseCdpCommandSchema.parse(JSON.parse(event.data));
       const mockedResult = apiTestMocks.browserUseCdp.command(command);
+      let result =
+        browserExtensionRequest(command) ||
+        browserExtensionBootstrap(command) !== undefined
+          ? defaultBrowserUseCdpResult(command)
+          : (mockedResult ?? defaultBrowserUseCdpResult(command));
+      if (
+        command.method === "Target.getTargets" &&
+        !(result instanceof Error)
+      ) {
+        const inventory = object({ targetInfos: array(zUnknown()) }).parse(
+          result,
+        );
+        result = {
+          targetInfos: [...inventory.targetInfos, ...TEST_EXTENSION_TARGETS],
+        };
+      }
       for (const beforeReply of eventsBeforeReply?.(command) ?? []) {
         client.send(JSON.stringify(beforeReply));
       }
       if (withholdReply?.(command)) {
         return;
       }
-      if (mockedResult instanceof Error) {
+      if (result instanceof Error) {
         client.send(
           JSON.stringify({
             id: command.id,
-            error: { message: mockedResult.message },
+            error: { message: result.message },
           }),
         );
         afterReply?.(command);
@@ -709,7 +766,7 @@ export function browserUseCdpHandler(
       client.send(
         JSON.stringify({
           id: command.id,
-          result: mockedResult ?? defaultBrowserUseCdpResult(command),
+          result,
         }),
       );
       afterReply?.(command);

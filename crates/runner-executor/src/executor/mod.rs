@@ -73,7 +73,6 @@ use guest_contracts::exec_terminal::EXEC_TERMINAL_CLEANUP_BUDGET;
 use runner_provider::RunCancellationSignals;
 use runner_types::ids::RunId;
 use runner_types::storage_fingerprints::StorageFingerprints;
-use runner_types::storage_manifest::StorageManifest;
 
 /// Maximum guest-side runtime budget for a single agent process.
 const JOB_TIMEOUT: Duration = Duration::from_secs(AGENT_EXECUTION_TIMEOUT_SECONDS);
@@ -203,6 +202,7 @@ pub struct ExecutorConfig {
     pub fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission,
     pub background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator,
     pub decoded_cache: crate::storage_cache::decoded::DecodedCache,
+    pub content_bundle_cache: runner_storage::content_bundle_cache::ContentBundleCache,
     pub pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission,
     pub home: HomePaths,
     pub home_cache: Option<HomeImageCache>,
@@ -530,10 +530,8 @@ impl ExecuteOutcome {
         self.failure = Some(ExecutionFailure::cancelled());
     }
 
-    fn with_storage_manifest(mut self, manifest: Option<&StorageManifest>) -> Self {
-        self.storage_fingerprints = manifest
-            .map(StorageFingerprints::from_manifest)
-            .unwrap_or_default();
+    fn with_content_context(mut self, context: &ExecutionContext) -> Self {
+        self.storage_fingerprints = runner_types::content_bundle::fingerprints(context);
         self
     }
 }
@@ -738,7 +736,13 @@ async fn prepare_execution_context(
 ) -> RunnerResult<env::PreparedRunPayload> {
     let payload = validate_execution_context_before_sandbox(context, &config.api_url, sandbox_id)
         .map_err(RunnerError::Internal)?;
-    storage::resolve_workflow_documents(context, &config.http, cancel, telemetry).await?;
+    // GA API/Runner rollout: remove the legacy branch after old API requests and captured
+    // claims drain and incompatible API rollback targets are excluded (#44164, Release 3).
+    if context.content_bundles.is_some() {
+        storage::prepare_content_bundles(context, config, cancel, telemetry).await?;
+    } else {
+        storage::resolve_workflow_documents(context, &config.http, cancel, telemetry).await?;
+    }
     Ok(payload)
 }
 
@@ -822,10 +826,7 @@ pub async fn execute_job_with_prepared_notifier(
         },
     };
 
-    (
-        outcome.with_storage_manifest(context.storage_manifest.as_ref()),
-        telemetry,
-    )
+    (outcome.with_content_context(&context), telemetry)
 }
 
 /// Execute a single job inside a **reused** (kept-alive) sandbox.
@@ -912,7 +913,7 @@ pub async fn execute_job_reuse_with_hooks(
                 source_ip,
                 None,
             )
-            .with_storage_manifest(context.storage_manifest.as_ref()),
+            .with_content_context(&context),
             telemetry,
         );
     }
@@ -940,7 +941,7 @@ pub async fn execute_job_reuse_with_hooks(
         Err(failure) => {
             return (
                 ExecuteOutcome::reused_sandbox_failure(*failure, sandbox, source_ip, None)
-                    .with_storage_manifest(context.storage_manifest.as_ref()),
+                    .with_content_context(&context),
                 telemetry,
             );
         }
@@ -955,7 +956,7 @@ pub async fn execute_job_reuse_with_hooks(
                 source_ip,
                 home_image,
             )
-            .with_storage_manifest(context.storage_manifest.as_ref()),
+            .with_content_context(&context),
             telemetry,
         );
     }
@@ -1046,10 +1047,7 @@ pub async fn execute_job_reuse_with_hooks(
         }
     };
 
-    (
-        outcome.with_storage_manifest(context.storage_manifest.as_ref()),
-        telemetry,
-    )
+    (outcome.with_content_context(&context), telemetry)
 }
 
 fn blank_home_reuse_result(context: &ExecutionContext, config: &ExecutorConfig) -> HomeReuseResult {

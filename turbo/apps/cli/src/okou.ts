@@ -1,5 +1,5 @@
 // Okou CLI entry point - standalone binary for Okou platform commands
-// (no-op CLI release marker refreshed for production delivery at 2026-10-17T01:32:05+08:00)
+// (no-op CLI release marker refreshed for production delivery at 2026-10-30T11:35:01+08:00)
 // Sentry must be initialized before any other imports
 import "./instrument.js";
 import { Command } from "commander";
@@ -312,14 +312,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "phone",
     description:
-      "Send phone messages, share files with your phone or iMessage groups, and download media",
+      "Send phone messages, react to iMessages, share files, and download media",
     load: async () => {
       return (await import("./commands/phone")).phoneCommand;
     },
   },
   {
     name: "imessage",
-    description: "Send messages and read group history",
+    description: "Send messages, add reactions, and read group history",
     load: async () => {
       return (await import("./commands/imessage")).imessageCommand;
     },

@@ -121,7 +121,7 @@ impl WorkflowSkillDocument {
     }
 }
 
-fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
+pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
     let name = [
         "/home/user/.claude/skills/",
         "/home/user/.codex/skills/",

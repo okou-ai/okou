@@ -4,8 +4,11 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+  compareExtensionVersions,
+  listOkouBrowserExtensions,
+} from "./browser-extension-registry.mjs";
 
-const variable = "OKOU_BROWSER_USE_EXTENSION_ID";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const repository = required("GITHUB_REPOSITORY");
 if (!/^[\w.-]+\/[\w.-]+$/.test(repository))
@@ -48,17 +51,7 @@ async function json(response, service) {
   }
 }
 
-async function github(
-  path,
-  {
-    method = "GET",
-    body,
-    missing = false,
-    raw = false,
-    binary = false,
-    variables = false,
-  } = {},
-) {
+async function github(path, { raw = false, binary = false } = {}) {
   const url = new URL(path, githubOrigin);
   if (
     url.origin !== githubOrigin &&
@@ -67,23 +60,17 @@ async function github(
     throw new Error("Unexpected GitHub upload origin");
   }
   const response = await fetch(url, {
-    method,
     headers: {
-      Authorization: `Bearer ${required(variables ? "GITHUB_VARIABLES_TOKEN" : "GH_TOKEN")}`,
+      Authorization: `Bearer ${required("GH_TOKEN")}`,
       Accept:
         raw || binary
           ? "application/octet-stream"
           : "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(45_000),
   });
-  if (missing && response.status === 404) return null;
-  if (!response.ok)
-    throw new Error(`GitHub ${method} failed (${response.status})`);
-  if (response.status === 204) return null;
+  if (!response.ok) throw new Error(`GitHub GET failed (${response.status})`);
   if (binary) return Buffer.from(await response.arrayBuffer());
   return json(response, "GitHub");
 }
@@ -142,7 +129,7 @@ async function latest(version) {
     );
     if (difference !== -1 && candidate[difference] > selected[difference]) {
       throw new Error(
-        "This extension release was superseded; refusing to publish older configuration",
+        "This extension release was superseded; refusing to upload older artifacts",
       );
     }
   }
@@ -155,9 +142,49 @@ function matches(receipt, expected) {
   );
 }
 
+async function pruneExtensions(extensionId, version) {
+  const extensions = await listOkouBrowserExtensions(
+    providerOrigin,
+    required("OKOU_BROWSER_USE_API_KEY"),
+  );
+  extensions.sort((left, right) => compareExtensionVersions(right, left));
+  for (let index = 1; index < extensions.length; index++) {
+    if (
+      compareExtensionVersions(extensions[index - 1], extensions[index]) === 0
+    )
+      throw new Error("Browser Use returned ambiguous Okou Browser versions");
+  }
+  if (
+    !extensions.slice(0, 3).some((item) => {
+      return item.id === extensionId && item.version === version;
+    })
+  ) {
+    throw new Error(
+      "Published extension is not among the retained Browser Use versions",
+    );
+  }
+  for (const item of extensions.slice(3)) {
+    const response = await fetch(
+      `${providerOrigin}/api/v4/extensions/${item.id}`,
+      {
+        method: "DELETE",
+        headers: {
+          "X-Browser-Use-API-Key": required("OKOU_BROWSER_USE_API_KEY"),
+        },
+        redirect: "error",
+        signal: AbortSignal.timeout(45_000),
+      },
+    );
+    // Another cleanup may already have removed this exact provider reference.
+    if (response.status !== 204 && response.status !== 404)
+      throw new Error(
+        `Browser Use extension cleanup failed (${response.status})`,
+      );
+  }
+}
+
 async function publish() {
   required("GH_TOKEN");
-  required("GITHUB_VARIABLES_TOKEN");
   required("OKOU_BROWSER_USE_API_KEY");
   const sourceCommit = required("RELEASE_TARGET");
   const version = required("BROWSER_EXTENSION_VERSION");
@@ -202,6 +229,7 @@ async function publish() {
     JSON.stringify(entries) !==
       JSON.stringify(["background.js", "manifest.json"]) ||
     manifest.version !== version ||
+    manifest.name !== "Okou Browser" ||
     manifest.manifest_version !== 3
   ) {
     throw new Error("Invalid extension ZIP contents");
@@ -269,6 +297,10 @@ async function publish() {
     const uploaded = await json(response, "Browser Use");
     if (!uuid.test(uploaded.id))
       throw new Error("Browser Use returned an invalid uploaded extension ID");
+    if (uploaded.name !== manifest.name || uploaded.version !== version)
+      throw new Error(
+        "Browser Use returned a different extension name or version",
+      );
     extensionId = uploaded.id;
     console.log(
       `Browser Use registered ${extensionId}; source ${sourceCommit}; sha256 ${sha256}`,
@@ -278,28 +310,8 @@ async function publish() {
       extensionId,
     });
   }
-  await latest(version);
-  const existing = await github(`${root}/actions/variables/${variable}`, {
-    missing: true,
-    variables: true,
-  });
-  if (existing?.value !== extensionId) {
-    await github(
-      existing === null
-        ? `${root}/actions/variables`
-        : `${root}/actions/variables/${variable}`,
-      {
-        method: existing === null ? "POST" : "PATCH",
-        body: { name: variable, value: extensionId },
-        variables: true,
-      },
-    );
-  }
-  const configured = await github(`${root}/actions/variables/${variable}`, {
-    variables: true,
-  });
-  if (configured.value !== extensionId)
-    throw new Error("Published GitHub Variable could not be confirmed");
+  // A completed receipt also resumes interrupted cleanup without another upload.
+  await pruneExtensions(extensionId, version);
   return extensionId;
 }
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.30.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.52...runner-remote-v0.30.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.29.52](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.51...runner-remote-v0.29.52) (2026-10-30)
+
 ## [0.29.51](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.50...runner-remote-v0.29.51) (2026-10-29)
 
 ## [0.29.50](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.49...runner-remote-v0.29.50) (2026-10-29)

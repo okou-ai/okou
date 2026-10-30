@@ -338,26 +338,44 @@ describe("default Agent bootstrap", () => {
     expect(replayed.body).toStrictEqual(initial.body);
   });
 
-  it("bootstraps and preserves the default identity while object storage is unavailable", async () => {
+  it("preserves the accepted default and grant when later bundle publication fails", async () => {
     authenticateAdmin();
+    const api = clients({ rethrowErrors: false });
+    const agentId = await readDefaultId(api);
+    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
     context.mocks.s3.send.mockRejectedValue(
       new Error("Object storage is unavailable"),
     );
-    const api = clients();
-    const agentId = await readDefaultId(api);
-    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
-    await accept(
+    await expect(
       api.instructions.update({
         headers,
         params: { id: agentId },
         body: { content: "Edited default" },
       }),
-      [200],
-    );
+    ).rejects.toThrow("500");
     const peers = await Promise.all([readDefaultId(api), readDefaultId(api)]);
     expect(peers).toStrictEqual([agentId, agentId]);
-    await expectInstructions(api, agentId, "Edited default");
+    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
     await expectSingleOnboardingGrant(api);
+  });
+
+  it("recovers default bootstrap after an instruction bundle upload fails", async () => {
+    authenticateAdmin();
+    const api = clients({ rethrowErrors: false });
+    context.mocks.s3.send.mockRejectedValueOnce(
+      new Error("Object storage is unavailable"),
+    );
+    const pending = await accept(api.status.getStatus({ headers }), [200]);
+    expect(pending.body).toMatchObject({
+      defaultAgentId: null,
+      hasDefaultAgent: false,
+    });
+    const before = await accept(api.agents.list({ headers }), [200]);
+    expect(before.body).toStrictEqual([]);
+    const agentId = await readDefaultId(api);
+    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
+    await expectSingleOnboardingGrant(api);
+    await expect(readDefaultId(api)).resolves.toBe(agentId);
   });
 
   it.each(["pro", "team"] as const)(

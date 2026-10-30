@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.13](https://github.com/okou-ai/okou/compare/desktop-v0.54.12...desktop-v0.54.13) (2026-10-30)
+
+
+### Bug Fixes
+
+* bound computer-use auth reads and preserve heartbeat diagnostics ([#44157](https://github.com/okou-ai/okou/issues/44157)) ([77f4d3b](https://github.com/okou-ai/okou/commit/77f4d3b67081731ec70886ed63715f9a012e2db8))
+
 ## [0.54.12](https://github.com/okou-ai/okou/compare/desktop-v0.54.11...desktop-v0.54.12) (2026-10-29)
 
 

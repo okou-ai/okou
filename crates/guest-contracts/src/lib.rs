@@ -9,7 +9,6 @@ pub mod active_input;
 pub mod cli_agent_session_id;
 pub mod cli_stderr_diagnostics;
 pub mod codex_failure;
-pub mod codex_session_cleanup;
 pub mod codex_session_path;
 pub mod codex_thread_id;
 pub mod connector_account_context;
@@ -40,3 +39,5 @@ pub mod storage_manifest;
 pub mod storage_resources;
 pub mod workflow_attachments;
 pub mod workflow_documents;
+
+pub mod content_bundle;

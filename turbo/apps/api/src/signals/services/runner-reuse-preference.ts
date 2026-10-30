@@ -34,6 +34,10 @@ import {
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
+import {
+  withPgPoolAcquisitionCapture,
+  withPgQueryExecutionCapture,
+} from "../../lib/db-instrumentation";
 import { db$, writeDb$ } from "../external/db";
 import type { RunnerReusePreferenceTiming } from "./runner-reuse-timing.service";
 
@@ -883,6 +887,16 @@ function runnerReuseLookupStages(
   };
 }
 
+function runnerReuseLookupExpired(
+  stages: ReturnType<typeof runnerReuseLookupStages>,
+): boolean {
+  return (
+    !stages.shouldLookUpGenericReuse &&
+    !stages.shouldLookUpFinalizingProducer &&
+    !stages.shouldLookUpExactSandbox
+  );
+}
+
 const findRunnerReuseCandidate$ = command(
   async (
     { get },
@@ -948,11 +962,7 @@ export const resolveRunnerReusePreference$ = command(
       };
     }
     const lookupStages = runnerReuseLookupStages(args, nowDate());
-    if (
-      !lookupStages.shouldLookUpGenericReuse &&
-      !lookupStages.shouldLookUpFinalizingProducer &&
-      !lookupStages.shouldLookUpExactSandbox
-    ) {
+    if (runnerReuseLookupExpired(lookupStages)) {
       return {
         preference: { kind: "noPreference", reason: "expired" },
       };
@@ -969,8 +979,19 @@ export const resolveRunnerReusePreference$ = command(
         ...lookupStages,
       });
     };
-    let candidate = await (timing?.measure("holder_select", selectCandidate) ??
-      selectCandidate());
+    const selectionCapture = timing?.start();
+    let candidate = await (selectionCapture
+      ? withPgPoolAcquisitionCapture(selectionCapture.pool, async () => {
+          const result = await withPgQueryExecutionCapture(
+            selectionCapture.queries,
+            selectCandidate,
+          );
+          selectionCapture.success = true;
+          return result;
+        }).finally(() => {
+          timing?.record("holder_select", selectionCapture);
+        })
+      : selectCandidate());
 
     // Prepare the candidate before starting a new window. Both delivery paths
     // await this write before returning a poll result or publishing to Ably.
@@ -979,8 +1000,21 @@ export const resolveRunnerReusePreference$ = command(
     };
     const discoveryStartedAt =
       args.discoveryStartedAt ??
-      (await (timing?.measure("discovery_persist", startDiscovery) ??
-        startDiscovery()));
+      (await (async () => {
+        const discoveryCapture = timing?.start();
+        return await (discoveryCapture
+          ? withPgPoolAcquisitionCapture(discoveryCapture.pool, async () => {
+              const result = await withPgQueryExecutionCapture(
+                discoveryCapture.queries,
+                startDiscovery,
+              );
+              discoveryCapture.success = true;
+              return result;
+            }).finally(() => {
+              timing?.record("discovery_persist", discoveryCapture);
+            })
+          : startDiscovery());
+      })());
     if (discoveryStartedAt === null) {
       return {
         preference: { kind: "noPreference", reason: "noViableHolder" },
@@ -992,11 +1026,7 @@ export const resolveRunnerReusePreference$ = command(
       },
       nowDate(),
     );
-    if (
-      !savedStages.shouldLookUpGenericReuse &&
-      !savedStages.shouldLookUpFinalizingProducer &&
-      !savedStages.shouldLookUpExactSandbox
-    ) {
+    if (runnerReuseLookupExpired(savedStages)) {
       return {
         preference: { kind: "noPreference", reason: "expired" },
       };
@@ -1017,23 +1047,23 @@ export const resolveRunnerReusePreference$ = command(
           ...savedStages,
         });
       };
-      candidate = await (timing?.measure(
-        "holder_reselect",
-        reselectCandidate,
-      ) ?? reselectCandidate());
+      const reselectionCapture = timing?.start();
+      candidate = await (reselectionCapture
+        ? withPgPoolAcquisitionCapture(reselectionCapture.pool, async () => {
+            const result = await withPgQueryExecutionCapture(
+              reselectionCapture.queries,
+              reselectCandidate,
+            );
+            reselectionCapture.success = true;
+            return result;
+          }).finally(() => {
+            timing?.record("holder_reselect", reselectionCapture);
+          })
+        : reselectCandidate());
     }
     return runnerReusePreferenceResult({
       candidate,
-      reuseRoutingExpiresAt: new Date(
-        discoveryStartedAt.getTime() + RUNNER_REUSE_ROUTING_WINDOW_MS,
-      ),
-      predecessorWaitUntil: new Date(
-        discoveryStartedAt.getTime() +
-          RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
-      ),
-      exactSandboxRoutingExpiresAt: new Date(
-        discoveryStartedAt.getTime() + RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS,
-      ),
+      discoveryStartedAt,
       shouldLookUpGenericReuse: savedStages.shouldLookUpGenericReuse,
     });
   },
@@ -1041,18 +1071,19 @@ export const resolveRunnerReusePreference$ = command(
 
 function runnerReusePreferenceResult(args: {
   readonly candidate: RunnerReuseCandidate | null;
-  readonly reuseRoutingExpiresAt: Date;
-  readonly predecessorWaitUntil: Date;
-  readonly exactSandboxRoutingExpiresAt: Date;
+  readonly discoveryStartedAt: Date;
   readonly shouldLookUpGenericReuse: boolean;
 }): RunnerReusePreferenceResolution {
-  const {
-    candidate,
-    reuseRoutingExpiresAt,
-    predecessorWaitUntil,
-    exactSandboxRoutingExpiresAt,
-    shouldLookUpGenericReuse,
-  } = args;
+  const { candidate, discoveryStartedAt, shouldLookUpGenericReuse } = args;
+  const reuseRoutingExpiresAt = new Date(
+    discoveryStartedAt.getTime() + RUNNER_REUSE_ROUTING_WINDOW_MS,
+  );
+  const predecessorWaitUntil = new Date(
+    discoveryStartedAt.getTime() + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+  );
+  const exactSandboxRoutingExpiresAt = new Date(
+    discoveryStartedAt.getTime() + RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS,
+  );
 
   if (!candidate) {
     return {

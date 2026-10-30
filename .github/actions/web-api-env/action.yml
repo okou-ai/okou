@@ -33,6 +33,14 @@ inputs:
     description: "Backend API URL; required for API deployments, optional for web proxy routes"
     required: false
     default: ""
+  browser-extension-release-created:
+    description: "Whether this release published a Browser extension"
+    required: false
+    default: "false"
+  browser-extension-id:
+    description: "Verified extension ID from this release's publication"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -48,6 +56,8 @@ runs:
         INPUT_WEB_URL: ${{ inputs.web-url }}
         INPUT_APP_URL: ${{ inputs.app-url }}
         INPUT_API_BACKEND_URL: ${{ inputs.api-backend-url }}
+        INPUT_BROWSER_EXTENSION_RELEASE_CREATED: ${{ inputs.browser-extension-release-created }}
+        INPUT_BROWSER_EXTENSION_ID: ${{ inputs.browser-extension-id }}
       run: |
         set -euo pipefail
         set +x
@@ -415,7 +425,13 @@ runs:
           add_secret OKOU_DATA_ROUTER_URL OKOU_DATA_ROUTER_URL
           add_secret OKOU_DATA_TOKEN OKOU_DATA_TOKEN
           add_secret OKOU_BROWSER_USE_API_KEY OKOU_BROWSER_USE_API_KEY
-          add_var OKOU_BROWSER_USE_EXTENSION_ID OKOU_BROWSER_USE_EXTENSION_ID
+          browser_extension_id="$(
+            BROWSER_EXTENSION_RELEASE_CREATED="$INPUT_BROWSER_EXTENSION_RELEASE_CREATED" \
+            BROWSER_EXTENSION_ID="$INPUT_BROWSER_EXTENSION_ID" \
+            OKOU_BROWSER_USE_API_KEY="$(repo_secret OKOU_BROWSER_USE_API_KEY)" \
+              node .github/scripts/release/resolve-browser-extension.mjs
+          )"
+          add_env OKOU_BROWSER_USE_EXTENSION_ID "$browser_extension_id"
           # Optional while the default-off hosted-consent pilot is unconfigured.
           add_env LINK_OAUTH_CLIENT_ID "$(doppler_secret LINK_OAUTH_CLIENT_ID)"
           add_env LINK_OAUTH_CLIENT_SECRET "$(doppler_secret LINK_OAUTH_CLIENT_SECRET)"

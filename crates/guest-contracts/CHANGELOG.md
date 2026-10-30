@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.29.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.5...guest-contracts-v0.29.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.28.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.4...guest-contracts-v0.28.5) (2026-10-30)
+
+
+### Bug Fixes
+
+* log claude account verification failures at info ([#44165](https://github.com/okou-ai/okou/issues/44165)) ([6c13dec](https://github.com/okou-ai/okou/commit/6c13dec6a6f7d0ed8981656fc309c0a4e44a254d))
+* **runner:** clean terminal homes without initialized runtime directories ([#44163](https://github.com/okou-ai/okou/issues/44163)) ([486040f](https://github.com/okou-ai/okou/commit/486040fb0979e385ecc3b165206cbebf996f3e28))
+
 ## [0.28.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.3...guest-contracts-v0.28.4) (2026-10-29)
 
 ## [0.28.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.28.2...guest-contracts-v0.28.3) (2026-10-29)

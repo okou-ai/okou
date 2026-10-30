@@ -84,6 +84,12 @@ pub struct ExecutionContext {
         skip_serializing_if = "Option::is_none"
     )]
     pub agent_instructions: Option<String>,
+    /// Prepared package protocol; the API producer activates in the next release.
+    #[serde(default, deserialize_with = "deserialize_content_bundles")]
+    pub content_bundles: Option<crate::content_bundle::ClaimedContentBundles>,
+    /// Verified files owned by this execution, never decoded from claim JSON.
+    #[serde(skip)]
+    pub prepared_bundles: Vec<crate::content_bundle::PreparedBundle>,
     // Vars are passed to the proxy registry for auth header template resolution.
     #[serde(default)]
     pub vars: Option<HashMap<String, String>>,
@@ -1870,6 +1876,12 @@ impl HomeReuseResult {
             Self::SandboxPrepareFallback => "sandboxPrepareFallback",
         }
     }
+}
+
+fn deserialize_content_bundles<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::content_bundle::ClaimedContentBundles>, D::Error> {
+    crate::content_bundle::ClaimedContentBundles::deserialize(deserializer).map(Some)
 }
 
 #[cfg(test)]

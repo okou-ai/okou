@@ -1,7 +1,9 @@
+import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
 import { and, eq, lt, or, sql } from "drizzle-orm";
+import { enum as zodEnum, int, object, string } from "zod";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
@@ -26,6 +28,7 @@ import {
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { conflict, notFound } from "../../lib/error";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { deleteAgentById$ } from "../services/agent-deletion.service";
 import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wakeup.service";
@@ -102,17 +105,6 @@ function publicAgentCreateLimitError() {
   return conflict(
     "This organization has reached the maximum number of agents (7). Delete an existing agent before creating a new one.",
   );
-}
-
-function buildAgentUpsertConflictSet(body: AgentUpdateBody, updatedAt: Date) {
-  return {
-    updatedAt,
-    ...(body.displayName !== undefined && { displayName: body.displayName }),
-    ...(body.description !== undefined && { description: body.description }),
-    ...(body.sound !== undefined && { sound: body.sound }),
-    ...(body.avatarUrl !== undefined && { avatarUrl: body.avatarUrl }),
-    ...(body.visibility !== undefined && { visibility: body.visibility }),
-  };
 }
 
 function deferredAgentUpdateText(value: string | null) {
@@ -301,6 +293,10 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
     instructions: sql`${sql.param(values.instructions, agents.instructions)}`
       .mapWith(agents.instructions)
       .as("instructions"),
+    instructionsBundle:
+      sql`${sql.param(values.instructionsBundle, agents.instructionsBundle)}`
+        .mapWith(nullableDriverValueDecoder(agents.instructionsBundle))
+        .as("instructions_bundle"),
     sound: sql`convert_from(${sql.param(sound)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.sound))
       .as("sound"),
@@ -361,6 +357,11 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     owner: auth.userId,
     name: agentId,
     instructions: "",
+    instructionsBundle: await set(
+      publishContentBundle$,
+      [{ path: "instructions.md", content: Buffer.alloc(0) }],
+      signal,
+    ),
     ...metadata,
     createdAt,
     updatedAt: createdAt,
@@ -654,6 +655,50 @@ const updateAgentMetadataBody$ = bodyResultOf(
   agentsByIdContract.updateMetadata,
 );
 
+function encodeAgentMetadataText(value: string | null) {
+  return value === null ? null : Buffer.from(value, "utf8").toString("base64");
+}
+
+function encodedAgentMetadataBody(body: AgentUpdateBody) {
+  return Buffer.from(
+    JSON.stringify({
+      ...(body.displayName !== undefined && {
+        displayName: encodeAgentMetadataText(body.displayName),
+      }),
+      ...(body.description !== undefined && {
+        description: encodeAgentMetadataText(body.description),
+      }),
+      ...(body.sound !== undefined && {
+        sound: encodeAgentMetadataText(body.sound),
+      }),
+      ...(body.avatarUrl !== undefined && {
+        avatarUrl: encodeAgentMetadataText(body.avatarUrl),
+      }),
+    }),
+    "utf8",
+  );
+}
+
+const agentMetadataUpdateRow = object({
+  existing: object({
+    id: string(),
+    owner: string(),
+    visibility: zodEnum(["public", "private"]),
+    defaultAgentId: string().nullable(),
+    publicAgentCount: int(),
+  }),
+  agent: object({
+    agentId: string(),
+    defaultAgentId: string().nullable(),
+    owner: string(),
+    displayName: string().nullable(),
+    description: string().nullable(),
+    sound: string().nullable(),
+    avatarUrl: string().nullable(),
+    visibility: zodEnum(["public", "private"]),
+  }).nullable(),
+});
+
 const updateAgentMetadataInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -665,106 +710,50 @@ const updateAgentMetadataInner$ = command(
       return body.response;
     }
 
+    const updateBody = body.data;
     const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0012; new non-billing transactions are prohibited.
-    const result = await writeDb.transaction(async (tx) => {
-      await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-        .for("update");
-
-      const [existing] = await tx
-        .select({
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          defaultAgentId: orgMetadata.defaultAgentId,
-        })
-        .from(agents)
-        .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-        .limit(1);
-      if (!existing) {
-        return { response: agentNotFound(params.id) };
-      }
-      const updateBody = body.data;
-
-      const rejection = agentMetadataUpdateRejection(
-        existing,
-        member,
-        updateBody,
-      );
-      if (rejection) {
-        return { response: rejection };
-      }
-
-      if (updateBody.visibility !== undefined) {
-        const visibilityError = await (() => {
-          const ownerError = visibilityOwnerError(
-            existing,
-            member,
-            updateBody.visibility,
-          );
-          if (ownerError) {
-            return ownerError;
-          }
-
-          return (async () => {
-            if (
-              updateBody.visibility !== "public" ||
-              existing.visibility === "public"
-            ) {
-              return null;
-            }
-
-            const countPlan = publicAgentCountReadPlan(auth.orgId);
-            const [publicAgentCount] = await tx
-              .select(countPlan.selection)
-              .from(agents)
-              .where(countPlan.condition);
-            signal.throwIfAborted();
-
-            return (publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT
-              ? publicAgentLimitError()
-              : null;
-          })();
-        })();
-        if (visibilityError) {
-          return { response: visibilityError };
-        }
-      }
-
-      await tx
-        .update(agents)
-        .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
-        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
-      const responseDb = tx;
-      const responseOrgId = auth.orgId;
-      const responseAgentId = params.id;
-      const agent = await (async () => {
-        const rows = await responseDb
-          .select(agentUpdateResponseSelection())
-          .from(agents)
-          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-          .where(
-            and(
-              eq(agents.orgId, responseOrgId),
-              eq(agents.id, responseAgentId),
-            ),
-          )
-          .limit(1);
-        return rows[0] ?? null;
-      })();
-      if (!agent) {
-        throw new Error(`Canonical Agent missing after update: ${params.id}`);
-      }
-      return { agent };
-    });
+    // The VOLATILE routine retains fresh reads after the existing Agent lock,
+    // including default publication by a supported outgoing writer.
+    const [result] = parseRawRows(
+      agentMetadataUpdateRow,
+      await writeDb.execute(sql`SELECT * FROM public.update_agent_metadata(
+        ${auth.orgId}::text, ${params.id}::uuid, ${member.userId}::text,
+        ${member.role === "admin"}::boolean,
+        ${agentIdentityUpdateError(true, updateBody) !== null}::boolean,
+        ${updateBody.visibility ?? null}::text, ${PUBLIC_AGENT_LIMIT}::integer,
+        ${sql.param(encodedAgentMetadataBody(updateBody))}::bytea,
+        ${nowDateSql(sql`NULL::timestamp`)}
+      )`),
+    );
     signal.throwIfAborted();
-
-    if ("response" in result) {
-      return result.response;
+    if (!result) {
+      return agentNotFound(params.id);
+    }
+    const rejection = agentMetadataUpdateRejection(
+      result.existing,
+      member,
+      updateBody,
+    );
+    if (rejection) {
+      return rejection;
+    }
+    const ownerError = visibilityOwnerError(
+      result.existing,
+      member,
+      updateBody.visibility,
+    );
+    if (ownerError) {
+      return ownerError;
+    }
+    if (
+      updateBody.visibility === "public" &&
+      result.existing.visibility !== "public" &&
+      result.existing.publicAgentCount >= PUBLIC_AGENT_LIMIT
+    ) {
+      return publicAgentLimitError();
+    }
+    if (!result.agent) {
+      throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
 
     if (body.data.visibility === "private") {

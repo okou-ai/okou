@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-types-v0.10.4...runner-types-v0.11.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.10.4](https://github.com/okou-ai/okou/compare/runner-types-v0.10.3...runner-types-v0.10.4) (2026-10-30)
+
 ## [0.10.3](https://github.com/okou-ai/okou/compare/runner-types-v0.10.2...runner-types-v0.10.3) (2026-10-29)
 
 ## [0.10.2](https://github.com/okou-ai/okou/compare/runner-types-v0.10.1...runner-types-v0.10.2) (2026-10-29)

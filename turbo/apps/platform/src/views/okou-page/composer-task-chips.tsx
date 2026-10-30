@@ -6,7 +6,7 @@ import {
   agentSuggestionsEnabled$,
   visibleAgentSuggestions$,
   suggestionFeedbackConfirmation$,
-} from "../../signals/okou-page/agent-suggestions.ts";
+} from "../../signals/okou-page/agent-suggestion-session.ts";
 import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { EntrustedJobs } from "./entrusted-jobs.tsx";
 import { entrustedJobsEnabled$ } from "../../signals/okou-page/entrusted-jobs.ts";

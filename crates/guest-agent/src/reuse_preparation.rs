@@ -1,7 +1,8 @@
 //! Reclaims runner-owned runtime state before idle reuse or terminal image publication.
 //!
 //! Idle preparation protects current/retained runtime readers. Terminal cache preparation instead
-//! validates those anchors under the canonical managed runtime parent and removes all its children.
+//! validates existing anchors under the canonical managed runtime parent and removes all its
+//! children. A terminal Run can fail before creating its current runtime or the managed parent.
 //! The terminal caller must finish finalization, identity, diagnostic and log readers first; it must
 //! terminate the sandbox after cleanup rather than return it to idle or handoff.
 //!
@@ -186,7 +187,9 @@ pub fn prepare_from_stdin() -> Result<ReusePreparationReport, ReusePreparationEr
 /// Remove completed managed-private state before terminal cache publication.
 ///
 /// The bounded request/report and safety checks are shared with idle preparation, but no runtime
-/// child is protected. Current and retained anchors must exist under the canonical managed parent.
+/// child is protected. The current runtime and canonical managed parent may not have been created
+/// before an early execution failure. Any supplied retained anchor must still exist, and existing
+/// directories must pass the same path, mount and identity checks as idle preparation.
 /// Required readers must finish before invoking this helper. Any error rejects publication;
 /// partial deletion is not rolled back and unlink does not establish forensic block erasure.
 ///
@@ -263,27 +266,49 @@ fn prepare(
         .transpose()?;
     verify_process_containment().map_err(ReusePreparationError::Containment)?;
 
-    let parent = Dir::open_absolute(&runtime_parent).map_err(ReusePreparationError::Cleanup)?;
-    let parent_identity = parent.identity().map_err(ReusePreparationError::Cleanup)?;
-    let mut protected = vec![open_protected(&parent, current_name, parent_identity)?];
-    if let Some(retained_name) = retained_name {
-        let retained = open_protected(&parent, retained_name, parent_identity)?;
-        if !protected
-            .iter()
-            .any(|entry| entry.identity == retained.identity)
-        {
-            protected.push(retained);
+    let parent = open_runtime_parent(&runtime_parent, retention)?;
+    let mut protected: Vec<ProtectedRuntime> = Vec::new();
+    if let Some((parent, parent_identity)) = &parent {
+        let anchors = std::iter::once((current_name, retention == RuntimeRetention::IdleReaders))
+            .chain(retained_name.map(|name| (name, true)));
+        for (name, required) in anchors {
+            let directory = match parent.open_child_dir(name) {
+                Ok(directory) => directory,
+                Err(error) if !required && error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(ReusePreparationError::Cleanup(error)),
+            };
+            let identity = directory
+                .identity()
+                .map_err(ReusePreparationError::Cleanup)?;
+            identity
+                .ensure_same_mount(*parent_identity)
+                .map_err(ReusePreparationError::Cleanup)?;
+            if !protected.iter().any(|entry| entry.identity == identity) {
+                protected.push(ProtectedRuntime {
+                    name: name.to_os_string(),
+                    identity,
+                });
+            }
         }
+    } else if retained_name.is_some() {
+        return Err(ReusePreparationError::Cleanup(io::Error::new(
+            io::ErrorKind::NotFound,
+            "retained runtime parent is missing",
+        )));
     }
 
     let captured_history = if retention == RuntimeRetention::TerminalCache {
-        // Containment and both descriptor-owned anchors have been proven before
-        // reading final metadata or changing any surviving proof. Capture facts
-        // from actual finalized bytes, then remove private runtime namespaces.
+        // Containment and existing anchors have been checked before reading
+        // final metadata or changing any surviving proof. An unstarted current
+        // Run can still use finalized history from its required retained anchor.
         let generation =
             generation.ok_or_else(|| invalid_path("missing publication generation"))?;
+        let current_runtime = protected
+            .iter()
+            .any(|entry| entry.name == current_name)
+            .then_some(current_path);
         let proof = crate::home_cache_history::capture(
-            current_path,
+            current_runtime,
             request.retained_runtime_dir.as_deref().map(Path::new),
             generation,
         );
@@ -295,36 +320,40 @@ fn prepare(
     remove_managed_codex_auth().map_err(ReusePreparationError::Cleanup)?;
 
     let before = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
-    let protected_identities = protected
-        .iter()
-        .map(|entry| entry.identity)
-        .collect::<Vec<_>>();
-    let protected_names = protected
-        .iter()
-        .map(|entry| entry.name.clone())
-        .collect::<Vec<_>>();
-    let removed_entries = parent
-        .remove_children_except(&protected_names, parent_identity, &protected_identities)
-        .map_err(ReusePreparationError::Cleanup)?;
-
-    for entry in &protected {
-        let identity = parent
-            .open_child_dir(&entry.name)
-            .and_then(|directory| directory.identity())
+    let removed_entries = if let Some((parent, parent_identity)) = &parent {
+        let protected_identities = protected
+            .iter()
+            .map(|entry| entry.identity)
+            .collect::<Vec<_>>();
+        let protected_names = protected
+            .iter()
+            .map(|entry| entry.name.clone())
+            .collect::<Vec<_>>();
+        let removed_entries = parent
+            .remove_children_except(&protected_names, *parent_identity, &protected_identities)
             .map_err(ReusePreparationError::Cleanup)?;
-        if identity != entry.identity {
-            return Err(ReusePreparationError::Cleanup(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "protected runtime directory identity changed during cleanup",
-            )));
+
+        for entry in &protected {
+            let identity = parent
+                .open_child_dir(&entry.name)
+                .and_then(|directory| directory.identity())
+                .map_err(ReusePreparationError::Cleanup)?;
+            if identity != entry.identity {
+                return Err(ReusePreparationError::Cleanup(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "protected runtime directory identity changed during cleanup",
+                )));
+            }
         }
-    }
+        removed_entries
+    } else {
+        0
+    };
 
     if retention == RuntimeRetention::TerminalCache {
-        let identity = Dir::open_absolute(&runtime_parent)
-            .and_then(|directory| directory.identity())
-            .map_err(ReusePreparationError::Cleanup)?;
-        if identity != parent_identity {
+        let identity =
+            open_runtime_parent(&runtime_parent, retention)?.map(|(_, identity)| identity);
+        if identity != parent.as_ref().map(|(_, identity)| *identity) {
             return Err(ReusePreparationError::Cleanup(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "managed runtime parent identity changed during terminal cleanup",
@@ -812,24 +841,24 @@ fn split_retained_runtime_path<'a>(
     Ok(name)
 }
 
-fn open_protected(
-    parent: &Dir,
-    name: &OsStr,
-    parent_identity: FileIdentity,
-) -> Result<ProtectedRuntime, ReusePreparationError> {
-    let directory = parent
-        .open_child_dir(name)
-        .map_err(ReusePreparationError::Cleanup)?;
+fn open_runtime_parent(
+    path: &Path,
+    retention: RuntimeRetention,
+) -> Result<Option<(Dir, FileIdentity)>, ReusePreparationError> {
+    let directory = match Dir::open_absolute(path) {
+        Ok(directory) => directory,
+        Err(error)
+            if retention == RuntimeRetention::TerminalCache
+                && error.kind() == io::ErrorKind::NotFound =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(ReusePreparationError::Cleanup(error)),
+    };
     let identity = directory
         .identity()
         .map_err(ReusePreparationError::Cleanup)?;
-    identity
-        .ensure_same_mount(parent_identity)
-        .map_err(ReusePreparationError::Cleanup)?;
-    Ok(ProtectedRuntime {
-        name: name.to_os_string(),
-        identity,
-    })
+    Ok(Some((directory, identity)))
 }
 
 fn invalid_path(message: &'static str) -> ReusePreparationError {

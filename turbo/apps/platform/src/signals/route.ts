@@ -490,6 +490,8 @@ export const setupAuthPageWrapper = (
         {
           redirectUrl:
             isIntegrationAuthContinuation(new URL(location.href)) ||
+            (get(pathname$) === ROUTES.home &&
+              get(searchParams$).get("halloween") === "1") ||
             get(pathname$) === ROUTES.hostedSiteAuthorize
               ? location.href
               : undefined,

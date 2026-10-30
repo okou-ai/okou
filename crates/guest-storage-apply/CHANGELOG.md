@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.28.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.5...guest-storage-apply-v0.28.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.27.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.4...guest-storage-apply-v0.27.5) (2026-10-30)
+
 ## [0.27.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.3...guest-storage-apply-v0.27.4) (2026-10-29)
 
 ## [0.27.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.2...guest-storage-apply-v0.27.3) (2026-10-29)

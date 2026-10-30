@@ -35,7 +35,7 @@ function use(chat: Chat) {
 }
 
 describe("server-owned shared Browser recovery", () => {
-  it("cancels a silent native close and preserves recovery without stopping its active sibling", async () => {
+  it("bounds a silent native close and reopens without stopping its active sibling", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       installBrowserWindowContentCommands(f.provider.native);
@@ -54,7 +54,7 @@ describe("server-owned shared Browser recovery", () => {
       const leased = await renew(b);
       mockNow(START + 11 * MINUTE);
       f.provider.native.closeReply = "withhold";
-      expect((await use(a)).status).toBe(409);
+      const reopened = await open(a);
       expect(f.provider.native.targets.get(page.targetId)).toStrictEqual(page);
       expect((await view(b)).window).toStrictEqual(sibling.window);
       expect((await view(b)).idleExpiresAt).toBe(leased.idleExpiresAt);
@@ -62,7 +62,6 @@ describe("server-owned shared Browser recovery", () => {
       expect(f.provider.sessionRequests).toHaveLength(1);
 
       f.provider.native.closeReply = "reply";
-      const reopened = await open(a);
       expect(reopened.window?.instanceId).toBe(first.window?.instanceId);
       expect(reopened.window?.primaryWindowId).not.toBe(
         first.window?.primaryWindowId,

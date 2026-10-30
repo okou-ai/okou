@@ -39,7 +39,13 @@ function accounts() {
   return setupApp({ context, routes })(connectorAccountsContract);
 }
 
-function fixture(variant: "oauth" | "declared-scopes" = "oauth") {
+function fixture(
+  variant:
+    | "oauth"
+    | "declared-scopes"
+    | "provider-prompt"
+    | "explicit-prompt" = "oauth",
+) {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -122,10 +128,18 @@ function receipt(f: Fixture, attemptId: string) {
 }
 
 describe("builtin MCP automatic authentication", () => {
-  it.each(["cimd", "dcr"] as const)(
-    "requests declared business scopes on %s connection and exact-account reconnect",
-    async (registration) => {
-      const f = fixture("declared-scopes");
+  it.each(
+    (["cimd", "dcr"] as const).flatMap((registration) => {
+      return [
+        [registration, "declared-scopes", "consent"],
+        [registration, "provider-prompt", null],
+        [registration, "explicit-prompt", "login consent"],
+      ] as const;
+    }),
+  )(
+    "uses %s %s authorization policy on connection and exact-account reconnect",
+    async (registration, variant, prompt) => {
+      const f = fixture(variant);
       const scope = "openid read write offline_access";
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
@@ -143,6 +157,17 @@ describe("builtin MCP automatic authentication", () => {
       });
       const started = await beginOAuth(f);
       expect(started.url.searchParams.get("scope")).toBe(scope);
+      expect(started.url.searchParams.get("prompt")).toBe(prompt);
+      expect(Object.fromEntries(started.url.searchParams)).toMatchObject({
+        redirect_uri: "https://api.okou.ai/api/connectors/automatic/callback",
+        resource: f.endpoint,
+        code_challenge_method: "S256",
+        response_type: "code",
+        state: started.state,
+      });
+      expect(started.url.searchParams.get("code_challenge")).toMatch(
+        /^[\w-]{43}$/u,
+      );
       expect((await callback(started.state, provider.issuer)).body.status).toBe(
         "success",
       );
@@ -151,6 +176,17 @@ describe("builtin MCP automatic authentication", () => {
 
       const reconnected = await beginOAuth(f, connectionId);
       expect(reconnected.url.searchParams.get("scope")).toBe(scope);
+      expect(reconnected.url.searchParams.get("prompt")).toBe(prompt);
+      expect(Object.fromEntries(reconnected.url.searchParams)).toMatchObject({
+        redirect_uri: "https://api.okou.ai/api/connectors/automatic/callback",
+        resource: f.endpoint,
+        code_challenge_method: "S256",
+        response_type: "code",
+        state: reconnected.state,
+      });
+      expect(reconnected.url.searchParams.get("code_challenge")).toMatch(
+        /^[\w-]{43}$/u,
+      );
       expect(
         (await callback(reconnected.state, provider.issuer)).body.status,
       ).toBe("success");
@@ -512,31 +548,70 @@ describe("builtin MCP automatic authentication", () => {
     });
   });
 
-  it("keeps DCR clients bound and rejects an OAuth issuer mismatch", async () => {
-    const f = fixture();
-    const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "dcr",
-    });
-    const rejected = await beginOAuth(f);
-    expect(
-      (await callback(rejected.state, "https://other.example.test")).body
-        .status,
-    ).toBe("error");
-    await accept(receipt(f, rejected.oauthAttemptId), [404]);
-    const started = await beginOAuth(f);
-    expect((await callback(started.state, provider.issuer)).body.status).toBe(
-      "success",
-    );
-    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
-    const reconnect = await beginOAuth(f, completed.body.connectionId);
-    expect((await callback(reconnect.state, provider.issuer)).body.status).toBe(
-      "success",
-    );
-    expect(
-      (await accept(receipt(f, reconnect.oauthAttemptId), [200])).body,
-    ).toStrictEqual(completed.body);
-    expect(provider.registrationBodies).toHaveLength(1);
-  });
+  it.each([
+    {
+      name: "public-only",
+      method: "none",
+      advertised: ["none"],
+      requested: "none",
+    },
+    {
+      name: "public with an unsupported alternative",
+      method: "none",
+      advertised: ["private_key_jwt", "none"],
+      requested: "none",
+    },
+    {
+      name: "public and confidential basic",
+      method: "client_secret_basic",
+      advertised: ["none", "client_secret_basic"],
+      requested: undefined,
+    },
+    {
+      name: "public and confidential post",
+      method: "client_secret_post",
+      advertised: ["none", "client_secret_post"],
+      requested: undefined,
+    },
+    {
+      name: "unspecified authentication",
+      method: "client_secret_basic",
+      advertised: null,
+      requested: undefined,
+    },
+  ] as const)(
+    "connects and reuses a $name DCR client with issuer binding",
+    async ({ method, advertised, requested }) => {
+      const f = fixture();
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        dcrTokenEndpointAuthMethod: method,
+        tokenEndpointAuthMethodsSupported: advertised,
+      });
+      const rejected = await beginOAuth(f);
+      expect(
+        (await callback(rejected.state, "https://other.example.test")).body
+          .status,
+      ).toBe("error");
+      await accept(receipt(f, rejected.oauthAttemptId), [404]);
+      const started = await beginOAuth(f);
+      expect((await callback(started.state, provider.issuer)).body.status).toBe(
+        "success",
+      );
+      const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+      const reconnect = await beginOAuth(f, completed.body.connectionId);
+      expect(
+        (await callback(reconnect.state, provider.issuer)).body.status,
+      ).toBe("success");
+      expect(
+        (await accept(receipt(f, reconnect.oauthAttemptId), [200])).body,
+      ).toStrictEqual(completed.body);
+      expect(provider.registrationBodies).toHaveLength(1);
+      expect(provider.registrationBodies[0]?.token_endpoint_auth_method).toBe(
+        requested,
+      );
+    },
+  );
 
   it("connects and reuses a DCR client with millisecond issuance and expiry", async () => {
     const f = fixture();

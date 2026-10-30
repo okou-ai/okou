@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-host-v0.9.48...runner-host-v0.10.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.9.48](https://github.com/okou-ai/okou/compare/runner-host-v0.9.47...runner-host-v0.9.48) (2026-10-30)
+
 ## [0.9.47](https://github.com/okou-ai/okou/compare/runner-host-v0.9.46...runner-host-v0.9.47) (2026-10-29)
 
 ## [0.9.46](https://github.com/okou-ai/okou/compare/runner-host-v0.9.45...runner-host-v0.9.46) (2026-10-29)

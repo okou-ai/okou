@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.35...runner-provider-v0.12.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+## [0.11.35](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.34...runner-provider-v0.11.35) (2026-10-30)
+
 ## [0.11.34](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.33...runner-provider-v0.11.34) (2026-10-29)
 
 

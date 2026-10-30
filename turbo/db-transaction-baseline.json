@@ -2,11 +2,6 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0012",
-      "file": "turbo/apps/api/src/signals/routes/agents.ts",
-      "owner": "updateAgentMetadataInner$"
-    },
-    {
       "id": "TX-0047",
       "file": "turbo/apps/api/src/signals/services/agent-deletion.service.ts",
       "owner": "deleteAgentRows$"
@@ -50,11 +45,6 @@
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"
-    },
-    {
-      "id": "TX-0308",
-      "file": "turbo/apps/api/src/signals/services/user-connectors.service.ts",
-      "owner": "updateUserBuiltinConnectors$"
     },
     {
       "id": "TX-0314",

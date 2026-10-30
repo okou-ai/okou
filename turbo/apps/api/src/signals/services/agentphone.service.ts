@@ -164,7 +164,6 @@ const agentPhoneChatRouteRootMessageId$ = command(
       {
         userLinkId,
         conversationId: event.conversationId,
-        messageId: event.messageId,
         replyToMessageId: event.replyToMessageId,
       },
       signal,

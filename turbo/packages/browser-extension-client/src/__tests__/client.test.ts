@@ -1,20 +1,24 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { OkouBrowserClient } from "../src/index.ts";
+import { expect, it } from "vitest";
+import { OkouBrowserClient, type CdpEvent } from "../index";
 
-test("an aborted attachment still releases its late native session", async () => {
-  const attachment = Promise.withResolvers();
+it("an aborted attachment still releases its late native session", async () => {
   const abort = new AbortController();
-  const commands = [];
-  const listeners = new Set();
+  const commands: {
+    method: string;
+    params: Readonly<Record<string, unknown>>;
+    sessionId: string | undefined;
+  }[] = [];
+  const listeners = new Set<(event: CdpEvent) => void>();
   const pending = OkouBrowserClient.connect({
     runtimeId: "a".repeat(32),
     signal: abort.signal,
     transport: {
       async request(method, params, sessionId) {
         commands.push({ method, params, sessionId });
-        if (method === "Target.attachToBrowserTarget")
-          return attachment.promise;
+        if (method === "Target.attachToBrowserTarget") {
+          abort.abort();
+          return { sessionId: "late-owned-browser-session" };
+        }
         return {};
       },
       onEvent(listener) {
@@ -25,14 +29,12 @@ test("an aborted attachment still releases its late native session", async () =>
       },
     },
   });
-  abort.abort();
-  attachment.resolve({ sessionId: "late-owned-browser-session" });
-  await assert.rejects(pending, {
+  await expect(pending).rejects.toMatchObject({
     name: "BrowserBridgeError",
     kind: "unavailable",
   });
-  assert.equal(listeners.size, 0);
-  assert.deepEqual(commands, [
+  expect(listeners.size).toBe(0);
+  expect(commands).toStrictEqual([
     {
       method: "Target.attachToBrowserTarget",
       params: {},

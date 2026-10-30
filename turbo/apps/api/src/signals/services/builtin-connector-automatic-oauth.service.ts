@@ -352,6 +352,7 @@ const prepareBuiltinAutomaticAuthorization$ = command(
         },
         endpoint: contract.endpoint,
         additionalScopes: contract.method.grant.scopes,
+        authorizationPrompt: contract.method.grant.authorizationPrompt,
         redirectUri: args.redirectUri,
         state: args.state,
         cimdClientId: args.cimdClientId,

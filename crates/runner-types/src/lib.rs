@@ -9,3 +9,5 @@ pub mod profile_name;
 pub mod storage_fingerprints;
 pub mod storage_manifest;
 pub mod types;
+
+pub mod content_bundle;

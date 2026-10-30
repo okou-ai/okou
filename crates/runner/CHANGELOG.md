@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.241.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.2...runner-rs-v0.241.3) (2026-10-30)
+
+
+### Refactoring
+
+* **runner:** separate service signal test source ownership ([#44223](https://github.com/okou-ai/okou/issues/44223)) ([5b5a7bc](https://github.com/okou-ai/okou/commit/5b5a7bc56c35e44ce03a38b580854c7d4fd16595))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.241.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.1...runner-rs-v0.241.2) (2026-10-30)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.241.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.0...runner-rs-v0.241.1) (2026-10-30)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.241.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.20...runner-rs-v0.241.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+
+### Bug Fixes
+
+* refresh runner platform api cli and browser extension release markers ([#44180](https://github.com/okou-ai/okou/issues/44180)) ([ca744df](https://github.com/okou-ai/okou/commit/ca744df83b1f51794edcb1b58f10634df2da7aed))
+
+
+### Refactoring
+
+* **runner:** separate systemd reload test source ownership ([#44191](https://github.com/okou-ai/okou/issues/44191)) ([3519c3b](https://github.com/okou-ai/okou/commit/3519c3b98401750e6ef0fb20159be693c8f4c2b9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.240.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.19...runner-rs-v0.240.20) (2026-10-30)
+
+
+### Bug Fixes
+
+* **runner:** keep harfbuzz libraries paired for pdf printing ([#44159](https://github.com/okou-ai/okou/issues/44159)) ([22599e3](https://github.com/okou-ai/okou/commit/22599e3ca008be3a3dd36bb6e6a7fce39387d0a8))
+
+## [0.240.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.18...runner-rs-v0.240.19) (2026-10-30)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.240.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.17...runner-rs-v0.240.18) (2026-10-30)
 
 

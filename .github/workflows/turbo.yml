@@ -1150,8 +1150,6 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Test extension release boundaries
         run: node --test .github/scripts/release/browser-extension-release.test.mjs
-      - name: Test the CDP client
-        run: pnpm --dir turbo --filter @okouai/browser-extension-client test
       - name: Install full Chromium
         run: pnpm --dir turbo/apps/browser-extension exec playwright install --with-deps chromium
       - name: Test native extension behavior
@@ -1171,7 +1169,7 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Test Other Packages
         working-directory: turbo
-        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --coverage.enabled --coverage.reporter=json
+        run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --project=@okouai/browser-extension-client --coverage.enabled --coverage.reporter=json
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default

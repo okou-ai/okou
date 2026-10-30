@@ -30,10 +30,12 @@ import { joinAll, settleIncludingAbort } from "../utils";
 import {
   BrowserUseProviderError,
   browserUseWindowExists,
-  closeBrowserUseWindow,
+  browserUseNativeConnection,
+  tryCloseBrowserUseWindow,
   findBrowserUseSession,
   findBrowserUseSessionByInstance,
   stopBrowserUseSessionForCleanup,
+  type BrowserUseNativeConnection,
 } from "./browser-use.service";
 import {
   captureSharedSnapshot$,
@@ -124,10 +126,10 @@ function noWindows(state?: Window["state"]) {
 const claimSharedWindowRetirement$ = command(
   async (
     { set },
-    target: Candidate & {
-      readonly cdpUrl: string;
-      readonly nativeMissing: boolean;
-    },
+    target: Candidate &
+      BrowserUseNativeConnection & {
+        readonly nativeMissing: boolean;
+      },
     signal: AbortSignal,
   ): Promise<Window | null> => {
     const { profile, window: current, cdpUrl, nativeMissing } = target;
@@ -142,7 +144,7 @@ const claimSharedWindowRetirement$ = command(
       !nativeMissing && target.threadId !== null
         ? await set(
             captureSharedSnapshot$,
-            { owner, window: current, cdpUrl },
+            { owner, window: current, cdpUrl, extension: target.extension },
             signal,
           )
         : null;
@@ -240,7 +242,7 @@ const retireSharedWindow$ = command(
       );
     }
     const db = set(writeDb$);
-    if (!cdpUrl) {
+    if (!provider || !cdpUrl) {
       // The provider confirms that the whole instance is gone. Preserve every
       // chat's accepted snapshot; there is no live native state left to capture.
       await db
@@ -261,8 +263,9 @@ const retireSharedWindow$ = command(
       signal.throwIfAborted();
       return null;
     }
+    const connection = browserUseNativeConnection(provider);
     const nativeMissing = !(await browserUseWindowExists(
-      cdpUrl,
+      connection,
       current.primaryWindowId,
       signal,
     ));
@@ -283,7 +286,7 @@ const retireSharedWindow$ = command(
     if (current.state === "active") {
       const closing = await set(
         claimSharedWindowRetirement$,
-        { ...target, window: current, cdpUrl, nativeMissing },
+        { ...target, window: current, ...connection, nativeMissing },
         signal,
       );
       signal.throwIfAborted();
@@ -293,13 +296,13 @@ const retireSharedWindow$ = command(
       current = closing;
     }
     if (!nativeMissing) {
-      await closeBrowserUseWindow(cdpUrl, current.primaryWindowId, signal);
-      if (
-        await browserUseWindowExists(cdpUrl, current.primaryWindowId, signal)
-      ) {
-        throw new Error("Shared Browser window closure is not confirmed");
-      }
+      await tryCloseBrowserUseWindow(
+        connection,
+        current.primaryWindowId,
+        signal,
+      );
     }
+    // The accepted snapshot owns recovery; native cleanup is advisory.
     const [closed] = await db
       .delete(windows)
       .where(and(identity, eq(windows.state, "closing")))

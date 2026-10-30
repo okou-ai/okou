@@ -706,14 +706,20 @@ describe("PATCH /api/agents/:id", () => {
   it("returns 403 when an org admin changes another user's public agent visibility", async () => {
     const user = newOrgUser();
     const adminUserId = `user_${randomUUID()}`;
-    const agent = await createAgentAs(user, { visibility: "public" });
+    const agent = await createAgentAs(user, {
+      visibility: "public",
+      description: "Retained public profile",
+    });
     mocks.clerk.session(adminUserId, user.orgId, "org:admin");
 
     const response = await accept(
       agentsClient().updateMetadata({
         params: { id: agent.agentId },
         headers: authHeaders(),
-        body: { visibility: "private" },
+        body: {
+          visibility: "private",
+          description: "Rejected\0profile",
+        },
       }),
       [403],
     );
@@ -723,6 +729,18 @@ describe("PATCH /api/agents/:id", () => {
         message: "Only the agent owner can update agent visibility",
         code: "FORBIDDEN",
       },
+    });
+    mocks.clerk.session(user.userId, user.orgId);
+    const current = await accept(
+      agentsClient().get({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      visibility: "public",
+      description: "Retained public profile",
     });
   });
 
@@ -754,13 +772,19 @@ describe("PATCH /api/agents/:id", () => {
     for (let index = 0; index < 7; index += 1) {
       await createAgentAs(user, { visibility: "public" });
     }
-    const privateAgent = await createAgentAs(user, { visibility: "private" });
+    const privateAgent = await createAgentAs(user, {
+      visibility: "private",
+      description: "Retained private profile",
+    });
 
     const response = await accept(
       agentsClient().updateMetadata({
         params: { id: privateAgent.agentId },
         headers: authHeaders(),
-        body: { visibility: "public" },
+        body: {
+          visibility: "public",
+          description: "Rejected\0promotion",
+        },
       }),
       [409],
     );
@@ -772,6 +796,118 @@ describe("PATCH /api/agents/:id", () => {
         code: "CONFLICT",
       },
     });
+    const current = await accept(
+      agentsClient().get({
+        params: { id: privateAgent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      visibility: "private",
+      description: "Retained private profile",
+    });
+  });
+
+  it("edits default metadata while preserving every protected identity field", async () => {
+    const owner = newOrgUser();
+    mocks.clerk.session(owner.userId, owner.orgId, "org:admin");
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.test/default-agent.tar.gz?signature=test",
+    );
+    const onboarding = await accept(
+      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+      [200],
+    );
+    const agentId = onboarding.body.defaultAgentId;
+    if (!agentId) {
+      throw new Error("Expected onboarding to create a default Agent");
+    }
+    const saved = await accept(
+      agentsClient().updateMetadata({
+        params: { id: agentId },
+        headers: authHeaders(),
+        body: { description: "Updated default profile", sound: "friendly" },
+      }),
+      [200],
+    );
+    expect(saved.body).toMatchObject({
+      agentId,
+      isDefaultAgent: true,
+      displayName: "Okou",
+      description: "Updated default profile",
+      sound: "friendly",
+      visibility: "public",
+    });
+    for (const [body, errorCode] of [
+      [{ displayName: "Renamed" }, "DEFAULT_AGENT_NAME_LOCKED"],
+      [{ avatarUrl: "preset:4" }, "DEFAULT_AGENT_AVATAR_LOCKED"],
+      [{ visibility: "private" }, "DEFAULT_AGENT_VISIBILITY_LOCKED"],
+    ] as const) {
+      const response = await accept(
+        agentsClient().updateMetadata({
+          params: { id: agentId },
+          headers: authHeaders(),
+          body: { ...body, description: "Rejected\0profile" },
+        }),
+        [400],
+      );
+      expect(response.body.error.code).toBe(errorCode);
+      const current = await accept(
+        agentsClient().get({ params: { id: agentId }, headers: authHeaders() }),
+        [200],
+      );
+      expect(current.body).toStrictEqual(saved.body);
+    }
+  });
+
+  it("preserves UTF8 text encoding through metadata updates", async () => {
+    const owner = newOrgUser();
+    const agent = await createAgentAs(owner);
+    const updated = await accept(
+      agentsClient().updateMetadata({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+        body: { description: "Profile \ud800 and \ud83d\ude00" },
+      }),
+      [200],
+    );
+    expect(updated.body.description).toBe("Profile \ufffd and \ud83d\ude00");
+    const current = await accept(
+      agentsClient().get({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(current.body).toStrictEqual(updated.body);
+  });
+
+  it("orders metadata edits using the application clock", async () => {
+    const owner = newOrgUser();
+    mockNow(new Date("2030-10-27T01:00:00.123Z"));
+    const first = await createAgentAs(owner, { displayName: "First" });
+    mockNow(new Date("2030-10-27T01:01:00.456Z"));
+    const second = await createAgentAs(owner, { displayName: "Second" });
+    mockNow(new Date("2030-10-27T01:02:00.789Z"));
+    await accept(
+      agentsClient().updateMetadata({
+        params: { id: first.agentId },
+        headers: authHeaders(),
+        body: { description: "Most recently saved metadata" },
+      }),
+      [200],
+    );
+    const listed = await accept(
+      agentsCollectionClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(
+      listed.body.map((agent) => {
+        return agent.agentId;
+      }),
+    ).toStrictEqual([first.agentId, second.agentId]);
   });
 
   it("allows an owner to update private agent metadata without changing visibility", async () => {

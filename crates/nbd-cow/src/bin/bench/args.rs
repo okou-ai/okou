@@ -89,11 +89,10 @@ mod tests {
 
     #[test]
     fn base_size_bytes_rejects_too_small_values_and_overflow() {
-        assert_eq!(base_size_bytes(MIN_BASE_SIZE_MB - 1), None);
-        assert_eq!(
-            base_size_bytes(MIN_BASE_SIZE_MB),
-            Some(MIN_BASE_SIZE_MB * 1024 * 1024)
-        );
+        // The 512 MiB workload needs extra COW metadata space. Keep these values
+        // independent of MIN_BASE_SIZE_MB so lowering the guard fails this test.
+        assert_eq!(base_size_bytes(512), None);
+        assert_eq!(base_size_bytes(1023), None);
         assert_eq!(base_size_bytes(1024), Some(1024 * 1024 * 1024));
         assert_eq!(base_size_bytes(0), None);
         assert_eq!(base_size_bytes(u64::MAX), None);

@@ -4257,6 +4257,17 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "drive": "Enregistrer dans Google Drive",
+      "excel": "Exporter vers Excel",
+      "export": "Exporter",
+      "filename": "Tableau",
+      "googleUnavailable": "Ouvre ce tableau dans ton chat ou vérifie ta connexion à Google Drive.",
+      "sheets": "Enregistrer dans Google Sheets",
+      "uploadFailed": "Impossible d’importer le tableau. Réessaie."
+    }
+  },
   "onboarding": {
     "common": {
       "next": "Suivant",

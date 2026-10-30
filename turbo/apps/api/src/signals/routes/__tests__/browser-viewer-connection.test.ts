@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import { object, string } from "zod";
 
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -44,6 +45,7 @@ async function viewerScenario() {
       status: provider.status,
       liveUrl: active ? provider.liveUrl : null,
       cdpUrl: active ? provider.cdpUrl : null,
+      extensions: [TEST_BROWSER_EXTENSION],
       timeoutAt: new Date(STARTED_AT + 240 * 60_000).toISOString(),
       startedAt: new Date(STARTED_AT).toISOString(),
       finishedAt: active ? null : new Date(STARTED_AT).toISOString(),
@@ -128,6 +130,8 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
   const scenario = await viewerScenario();
   await scenario.run(async () => {
     const { params } = scenario;
+    // A later release changes configuration, not the installed artifact of this Browser.
+    mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", randomUUID());
     createRouteMocks(context).clerk.session(
       scenario.actor.userId,
       scenario.actor.orgId,
@@ -136,7 +140,10 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
       client().viewerConnection({ headers, params }),
       [200],
     );
-    expect(connected.body).toStrictEqual({ cdpUrl: scenario.webSocketUrl });
+    expect(connected.body).toStrictEqual({
+      cdpUrl: scenario.webSocketUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
     expect(connected.headers.get("cache-control")).toBe("no-store");
     const deniedRun = await client().viewerConnection({
       headers: scenario.runHeaders,
@@ -187,7 +194,10 @@ test.each(["provider WSS", "live WSS", "double-encoded live WSS"] as const)(
         client().viewerConnection({ headers, params: scenario.params }),
         [200],
       );
-      expect(connected.body).toStrictEqual({ cdpUrl: scenario.webSocketUrl });
+      expect(connected.body).toStrictEqual({
+        cdpUrl: scenario.webSocketUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      });
       // Teardown also uses the normal provider discovery path.
       scenario.provider.discoveryUrl = scenario.webSocketUrl;
     });

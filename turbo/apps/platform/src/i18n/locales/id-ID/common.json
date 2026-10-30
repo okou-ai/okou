@@ -4188,6 +4188,17 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "drive": "Simpan ke Google Drive",
+      "excel": "Ekspor ke Excel",
+      "export": "Ekspor",
+      "filename": "Tabel",
+      "googleUnavailable": "Buka tabel ini di chat Anda atau periksa koneksi Google Drive Anda.",
+      "sheets": "Simpan ke Google Sheets",
+      "uploadFailed": "Tabel tidak dapat diunggah. Coba lagi."
+    }
+  },
   "onboarding": {
     "common": {
       "next": "Berikutnya",

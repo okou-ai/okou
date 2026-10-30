@@ -1,5 +1,58 @@
 # Changelog
 
+## [8.804.1](https://github.com/okou-ai/okou/compare/core-v8.804.0...core-v8.804.1) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.2
+
+## [8.804.0](https://github.com/okou-ai/okou/compare/core-v8.803.1...core-v8.804.0) (2026-10-30)
+
+
+### Features
+
+* release halloween quiz to all users ([#44208](https://github.com/okou-ai/okou/issues/44208)) ([5b89b78](https://github.com/okou-ai/okou/commit/5b89b784990936be1d6a050aa0b3ed2789e69ad9))
+
+## [8.803.1](https://github.com/okou-ai/okou/compare/core-v8.803.0...core-v8.803.1) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.1
+
+## [8.803.0](https://github.com/okou-ai/okou/compare/core-v8.802.0...core-v8.803.0) (2026-10-30)
+
+
+### Features
+
+* prepare content-addressed instruction and workflow bundles ([#44189](https://github.com/okou-ai/okou/issues/44189)) ([fc8f994](https://github.com/okou-ai/okou/commit/fc8f99468cc7946843620ff655ae22c09f9cb2ae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.23.0
+
+## [8.802.0](https://github.com/okou-ai/okou/compare/core-v8.801.0...core-v8.802.0) (2026-10-30)
+
+
+### Features
+
+* **app:** release the unified chat workspace to everyone ([#44168](https://github.com/okou-ai/okou/issues/44168)) ([e59858c](https://github.com/okou-ai/okou/commit/e59858ca253958200c6560224a32eb8e846bec13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.1
+
 ## [8.801.0](https://github.com/okou-ai/okou/compare/core-v8.800.7...core-v8.801.0) (2026-10-30)
 
 

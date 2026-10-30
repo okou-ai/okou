@@ -14,6 +14,7 @@ import { browserCapturePublication } from "./browser-capture-publication";
 import {
   BrowserUseProviderError,
   listBrowserUseTabUrls,
+  type BrowserUseNativeConnection,
 } from "./browser-use.service";
 import { encryptPersistentSecretValue } from "./crypto.utils";
 
@@ -63,14 +64,13 @@ export interface SharedSnapshotCapture {
 export const captureSharedSnapshot$ = command(
   async (
     { get },
-    args: {
+    args: BrowserUseNativeConnection & {
       readonly owner: SnapshotOwner;
       readonly window: Pick<Window, "primaryWindowId">;
-      readonly cdpUrl: string;
     },
     signal: AbortSignal,
   ): Promise<SharedSnapshotCapture | null> => {
-    const { owner, window, cdpUrl } = args;
+    const { owner, window } = args;
     const t = browserSessionTabSnapshots;
     const [previous] = await get(db$)
       .select({ encryptedTabUrls: t.encryptedTabUrls })
@@ -78,7 +78,7 @@ export const captureSharedSnapshot$ = command(
       .where(eq(t.chatThreadId, owner.chatThreadId));
     signal.throwIfAborted();
     const observed = await settleIncludingAbort(
-      listBrowserUseTabUrls(cdpUrl, signal, window.primaryWindowId),
+      listBrowserUseTabUrls(args, signal, window.primaryWindowId),
     );
     signal.throwIfAborted();
     if (!observed.ok) {
@@ -157,11 +157,10 @@ export function sharedSnapshotPublication(
 export const saveSharedSnapshot$ = command(
   async (
     { set },
-    args: {
+    args: BrowserUseNativeConnection & {
       readonly owner: SnapshotOwner;
       readonly profile: Profile;
       readonly window: Window;
-      readonly cdpUrl: string;
     },
     signal: AbortSignal,
   ) => {

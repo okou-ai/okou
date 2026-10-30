@@ -1,5 +1,65 @@
 # Changelog
 
+## [10.10.10](https://github.com/okou-ai/okou/compare/cli-v10.10.9...cli-v10.10.10) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.23.2
+    * @okouai/core bumped to 8.804.1
+    * @okouai/pi-agent-runtime bumped to 1.51.32
+
+## [10.10.9](https://github.com/okou-ai/okou/compare/cli-v10.10.8...cli-v10.10.9) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.804.0
+    * @okouai/pi-agent-runtime bumped to 1.51.31
+
+## [10.10.8](https://github.com/okou-ai/okou/compare/cli-v10.10.7...cli-v10.10.8) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.23.1
+    * @okouai/connectors bumped to 3.20.0
+    * @okouai/core bumped to 8.803.1
+    * @okouai/pi-agent-runtime bumped to 1.51.30
+
+## [10.10.7](https://github.com/okou-ai/okou/compare/cli-v10.10.6...cli-v10.10.7) (2026-10-30)
+
+
+### Bug Fixes
+
+* refresh runner platform api cli and browser extension release markers ([#44180](https://github.com/okou-ai/okou/issues/44180)) ([ca744df](https://github.com/okou-ai/okou/commit/ca744df83b1f51794edcb1b58f10634df2da7aed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.23.0
+    * @okouai/core bumped to 8.803.0
+    * @okouai/pi-agent-runtime bumped to 1.51.29
+
+## [10.10.6](https://github.com/okou-ai/okou/compare/cli-v10.10.5...cli-v10.10.6) (2026-10-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.22.1
+    * @okouai/core bumped to 8.802.0
+    * @okouai/pi-agent-runtime bumped to 1.51.28
+
 ## [10.10.5](https://github.com/okou-ai/okou/compare/cli-v10.10.4...cli-v10.10.5) (2026-10-30)
 
 

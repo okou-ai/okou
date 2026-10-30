@@ -28,7 +28,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
+import {
+  mockBrowserCdp,
+  TEST_BROWSER_EXTENSION,
+} from "../../../__tests__/browser-cdp-fixture.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   CAPABILITY_AGENT_ID,
@@ -279,7 +282,7 @@ async function openManagedBrowserChat(
   const cdpUrl = "wss://cdp.browser-use.com/research";
   mockBrowserCdp(context, cdpUrl);
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl });
+    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
   });
   let browser = managedBrowserSession({
     status: "active",

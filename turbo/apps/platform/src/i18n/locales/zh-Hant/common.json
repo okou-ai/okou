@@ -4188,6 +4188,17 @@
       }
     }
   },
+  "markdown": {
+    "tableExport": {
+      "drive": "儲存到 Google Drive",
+      "excel": "匯出 Excel",
+      "export": "匯出",
+      "filename": "表格",
+      "googleUnavailable": "請在你的聊天中儲存表格，或檢查 Google Drive 連線。",
+      "sheets": "儲存到 Google Sheets",
+      "uploadFailed": "表格上傳失敗，請重試。"
+    }
+  },
   "onboarding": {
     "common": {
       "next": "下一步",

@@ -64,8 +64,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Halloween quiz",
     description:
       "Open the 2026 Halloween quiz from the animated chat home dialog and associate results with your account.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
@@ -150,7 +149,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Unified chat workspace",
     description:
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
@@ -198,6 +197,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // fidelity is being evaluated.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.MarkdownTableExport]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown table export",
+    description:
+      "Export tables to Excel or save them to Google Drive and Google Sheets.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatMessagePdf]: {
     maintainer: "ethan@okou.ai",

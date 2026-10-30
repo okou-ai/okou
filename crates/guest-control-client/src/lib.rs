@@ -115,9 +115,9 @@ pub use connection::{
     ConnectionCloseInfo, ConnectionCloseReason, ConnectionClosedAtAdmission, GuestConnectionTiming,
 };
 pub use exec_operation::{
-    CodexSessionCleanupRequest, ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus,
-    ExecControlHandle, ExecControlOutcome, ExecOperationHandle, ExecOperationRequest,
-    ExecOperationResult, ExecOutputEvent, ExecOwnedCapturedOutput, ExecStreamRequest,
+    ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus, ExecControlHandle,
+    ExecControlOutcome, ExecOperationHandle, ExecOperationRequest, ExecOperationResult,
+    ExecOutputEvent, ExecOwnedCapturedOutput, ExecStreamRequest,
     SessionHistoryIdentityVerifyRequest, SupervisedExecCancelHandle, SupervisedExecControl,
     SupervisedExecHandle, SupervisedExecRequest, SupervisedExecStartTiming,
 };
@@ -522,14 +522,6 @@ impl GuestControlClient {
         request: SessionHistoryIdentityVerifyRequest<'_>,
     ) -> io::Result<ExecOperationResult> {
         exec_operation::session_history_identity_verify_on_shared(&self.shared, request).await
-    }
-
-    /// Run the fixed reused-Codex session cleanup helper.
-    pub async fn cleanup_codex_session(
-        &self,
-        request: CodexSessionCleanupRequest<'_>,
-    ) -> io::Result<ExecOperationResult> {
-        exec_operation::codex_session_cleanup_on_shared(&self.shared, request).await
     }
 
     /// Run a capture-only exec operation with a synchronous admission check at

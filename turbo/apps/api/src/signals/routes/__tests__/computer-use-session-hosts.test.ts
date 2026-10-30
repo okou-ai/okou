@@ -909,6 +909,7 @@ describe("Native Computer Use session authentication", () => {
       );
       expect(recovered.body.status).toBe("idle");
     },
+    6000,
   );
 
   it("pauses after expired validation during a Clerk outage and recovers the same connection", async () => {

@@ -1,5 +1,4 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -9,7 +8,6 @@ import {
   ChevronRight,
   MessageSquare,
   MessageSquarePlus,
-  LoaderCircle,
   X,
   CircleCheck,
   CircleMinus,
@@ -20,11 +18,9 @@ import { Button, Textarea } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
-  prepareAgentSuggestion$,
-  preparedAgentSuggestionId$,
-  dismissAgentSuggestion$,
+  agentSuggestionEntries$,
+  type AgentSuggestionEntry,
   showAgentSuggestion$,
-  startAgentSuggestion$,
   visibleAgentSuggestions$,
   submitAgentSuggestionFeedback$,
   suggestionFeedbackConfirmation$,
@@ -33,6 +29,11 @@ import {
   openSuggestionFeedbackReason$,
   undoSuggestionFeedback$,
   saveSuggestionFeedbackReason$,
+} from "../../signals/okou-page/agent-suggestion-session.ts";
+import {
+  prepareAgentSuggestion$,
+  preparedAgentSuggestionId$,
+  startAgentSuggestion$,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -104,8 +105,6 @@ function AgentSuggestionHeader({
 
 function AgentSuggestionOption({
   option,
-  starting,
-  disabled,
   onClick,
   custom = false,
   selected = false,
@@ -113,8 +112,6 @@ function AgentSuggestionOption({
   readonly option: Pick<SuggestionOption, "label" | "description" | "threadId">;
   readonly custom?: boolean;
   readonly selected?: boolean;
-  readonly starting: boolean;
-  readonly disabled: boolean;
   readonly onClick: () => void;
 }) {
   const label = option.label;
@@ -125,14 +122,10 @@ function AgentSuggestionOption({
       className="h-auto min-h-12 w-full justify-start gap-3 whitespace-normal rounded-lg border-border bg-card px-3 py-2.5 text-left font-normal"
       aria-label={label}
       aria-description={option.description}
-      aria-busy={starting}
       aria-pressed={custom ? selected : undefined}
-      disabled={disabled}
       onClick={onClick}
     >
-      {starting ? (
-        <LoaderCircle aria-hidden className="animate-spin" />
-      ) : custom ? (
+      {custom ? (
         <MessageCircle aria-hidden className="text-muted-foreground" />
       ) : option.threadId ? (
         <MessageSquare aria-hidden className="text-muted-foreground" />
@@ -158,13 +151,9 @@ function AgentSuggestionOption({
 
 function CustomDirectionOption({
   selected,
-  preparing,
-  disabled,
   onClick,
 }: {
   readonly selected: boolean;
-  readonly preparing: boolean;
-  readonly disabled: boolean;
   readonly onClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -189,8 +178,6 @@ function CustomDirectionOption({
               return $.chat.agentSuggestions.customDirectionDescription;
             }),
       }}
-      starting={preparing}
-      disabled={disabled}
       onClick={onClick}
     />
   );
@@ -199,12 +186,10 @@ function CustomDirectionOption({
 function SuggestionFeedbackReason({
   feedbackId,
   initialNote,
-  busy,
   onSave,
 }: {
   readonly feedbackId: string;
   readonly initialNote: string;
-  readonly busy: boolean;
   readonly onSave: (note: string) => void;
 }) {
   const { t } = useTranslation();
@@ -235,15 +220,8 @@ function SuggestionFeedbackReason({
         maxLength={512}
         required
         rows={2}
-        disabled={busy}
       />
-      <Button
-        type="submit"
-        variant="neutral"
-        size="sm"
-        disabled={busy}
-        className="self-end"
-      >
+      <Button type="submit" variant="neutral" size="sm" className="self-end">
         {t(($) => {
           return $.chat.agentSuggestions.saveReason;
         })}
@@ -258,13 +236,12 @@ function SuggestionFeedbackNotice() {
   const reasonOpen = useGet(suggestionFeedbackReasonOpen$);
   const openReason = useSet(openSuggestionFeedbackReason$);
   const close = useSet(closeSuggestionFeedback$);
-  const [undoing, undo] = useLoadableSet(undoSuggestionFeedback$);
-  const [saving, save] = useLoadableSet(saveSuggestionFeedbackReason$);
+  const undo = useSet(undoSuggestionFeedback$);
+  const save = useSet(saveSuggestionFeedbackReason$);
   const signal = useGet(pageSignal$);
   if (!last) {
     return null;
   }
-  const busy = undoing.state === "loading" || saving.state === "loading";
   const message =
     last.kind === "already_done"
       ? t(($) => {
@@ -286,11 +263,8 @@ function SuggestionFeedbackNotice() {
             });
   return (
     <div className="mt-4 rounded-xl border border-border bg-card p-3">
-      <div className="flex items-start gap-2">
-        <Check
-          aria-hidden
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-        />
+      <div className="flex items-center gap-2">
+        <Check aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         <p
           role="status"
           className="flex-1 text-sm leading-5 text-muted-foreground"
@@ -301,7 +275,6 @@ function SuggestionFeedbackNotice() {
           type="button"
           variant="quiet"
           size="sm"
-          disabled={busy}
           onClick={() => {
             detach(undo(signal), Reason.DomCallback);
           }}
@@ -315,7 +288,6 @@ function SuggestionFeedbackNotice() {
           variant="quiet"
           size="icon-xs"
           showTooltip
-          disabled={busy}
           aria-label={t(($) => {
             return $.chat.agentSuggestions.closeFeedback;
           })}
@@ -348,7 +320,6 @@ function SuggestionFeedbackNotice() {
         <SuggestionFeedbackReason
           feedbackId={last.id}
           initialNote={last.note}
-          busy={busy}
           onSave={(note) => {
             detach(save(note, signal), Reason.DomCallback);
           }}
@@ -426,21 +397,63 @@ function AgentSuggestionActions({
   );
 }
 
+function SuggestionSaveError({
+  entry,
+}: {
+  readonly entry: AgentSuggestionEntry;
+}) {
+  const { t } = useTranslation();
+  const result = useLoadable(entry.result$);
+  const retry = useSet(entry.retry$);
+  const signal = useGet(pageSignal$);
+  if (result.state !== "hasError") {
+    return null;
+  }
+  return (
+    <div
+      role="alert"
+      className="mt-3 flex items-center gap-3 rounded-xl border border-border bg-card p-3"
+    >
+      <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+        {entry.item.title}:{" "}
+        {result.error instanceof Error
+          ? result.error.message
+          : t(($) => {
+              return $.global.errors.requestFailed;
+            })}
+      </p>
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        onClick={() => {
+          detach(retry(signal), Reason.DomCallback);
+        }}
+      >
+        {t(($) => {
+          return $.chat.errors.recovery.tryAgain;
+        })}
+      </Button>
+    </div>
+  );
+}
+
+export function SuggestionSaveErrors() {
+  const entries = useLastLoadable(agentSuggestionEntries$);
+  return entries.state === "hasData"
+    ? entries.data.map((entry) => {
+        return <SuggestionSaveError key={entry.item.id} entry={entry} />;
+      })
+    : null;
+}
+
 export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(visibleAgentSuggestions$);
-  const [operation, start] = useLoadableSet(startAgentSuggestion$);
-  const [dismissal, dismiss] = useLoadableSet(dismissAgentSuggestion$);
-  const [preparation, prepare] = useLoadableSet(prepareAgentSuggestion$);
-  const [feedback, submitFeedback] = useLoadableSet(
-    submitAgentSuggestionFeedback$,
-  );
+  const start = useSet(startAgentSuggestion$);
+  const prepare = useSet(prepareAgentSuggestion$);
+  const submitFeedback = useSet(submitAgentSuggestionFeedback$);
   const preparedId = useGet(preparedAgentSuggestionId$);
-  const preparing = preparation.state === "loading";
-  const starting = operation.state === "loading";
-  // The card stays until the server's change notification re-reads the list.
-  const recording =
-    dismissal.state === "loading" || feedback.state === "loading";
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   if (result.state !== "hasData" || result.data.length === 0) {
@@ -465,10 +478,7 @@ export function AgentSuggestions() {
         {behind >= 1 && (
           <div aria-hidden className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")} />
         )}
-        <fieldset
-          disabled={starting || preparing || recording}
-          className="@container/suggestion relative min-w-0"
-        >
+        <div className="@container/suggestion relative min-w-0">
           <article className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4">
             <AgentSuggestionHeader index={index} total={items.length} />
             <div
@@ -494,8 +504,6 @@ export function AgentSuggestions() {
                     <AgentSuggestionOption
                       key={option.id}
                       option={option}
-                      starting={starting}
-                      disabled={starting || preparing}
                       onClick={() => {
                         detach(
                           start(item, option.id, signal),
@@ -507,15 +515,16 @@ export function AgentSuggestions() {
                 })}
                 <CustomDirectionOption
                   selected={preparedId === item.id}
-                  preparing={preparing}
-                  disabled={starting || preparing}
                   onClick={() => {
                     detach(prepare(item, signal), Reason.DomCallback);
                   }}
                 />
                 <AgentSuggestionActions
                   onDismiss={() => {
-                    detach(dismiss(item, signal), Reason.DomCallback);
+                    detach(
+                      submitFeedback(item, "dismissed", signal),
+                      Reason.DomCallback,
+                    );
                   }}
                   onSelect={(kind) => {
                     detach(
@@ -527,7 +536,7 @@ export function AgentSuggestions() {
               </div>
             </div>
           </article>
-        </fieldset>
+        </div>
       </section>
       <SuggestionFeedbackNotice />
     </>

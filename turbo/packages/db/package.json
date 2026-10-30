@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.12.0",
+  "version": "2.13.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -72,6 +72,7 @@
     "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts",
     "test:run-output-memory-citation-retirement": "tsx scripts/test-run-output-memory-citation-retirement.ts",
     "test:workflow-attachments": "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts",
+    "test:content-bundles": "node --import tsx scripts/migrations/027-content-bundles/test-backfill.ts",
     "test:workflow-storage-retirement": "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts"
   },
   "dependencies": {

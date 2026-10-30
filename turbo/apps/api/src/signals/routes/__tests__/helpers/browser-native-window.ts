@@ -3,6 +3,12 @@ import { ws } from "msw";
 import { number, object, record, string, unknown as zUnknown } from "zod";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { detach, Mechanism } from "../../../utils";
+import {
+  TEST_EXTENSION_TARGETS,
+  browserExtensionBootstrap,
+  browserExtensionRequest,
+  browserExtensionReply,
+} from "../../../../__tests__/browser-extension";
 
 interface NativeTarget {
   readonly targetId: string;
@@ -24,12 +30,22 @@ export function createNativeWindowProvider(context: TestContext) {
     readonly closed: string[];
     readonly windowIds: number[];
     readonly windowErrors: Map<string, string>;
+    readonly commands: {
+      readonly method: string;
+      readonly params: Readonly<Record<string, unknown>>;
+      readonly sessionId?: string;
+    }[];
+    beforeNativeWindowReply?: (windowId: number) => Promise<void> | void;
+    beforeCloseWindowReply?: (windowId: number) => Promise<void> | void;
+    bridgeAvailable: boolean;
+    snapshotEventWindowId?: number;
+    emptySnapshot: boolean;
     beforeCreateReply?: (target: NativeTarget) => Promise<void> | void;
-    beforeWindowReply?: (targetId: string) => Promise<void> | void;
     onSocketClose?: () => void;
     windowError?: string;
     closeSucceeds: boolean;
-    closeReply: "reply" | "withhold";
+    closeReply: "reply" | "withhold" | "disconnect";
+    seedCloseError?: string;
     windowReply: "reply" | "withhold";
     createReply: "reply" | "disconnect" | "withhold";
     command?: (command: {
@@ -46,12 +62,116 @@ export function createNativeWindowProvider(context: TestContext) {
     closed: [],
     windowIds: [],
     windowErrors: new Map(),
+    commands: [],
+    bridgeAvailable: true,
+    emptySnapshot: false,
     closeSucceeds: true,
     closeReply: "reply",
     windowReply: "reply",
     createReply: "reply",
   };
   let nextWindowId = 1;
+  let nextTabId = 1;
+  let nativeSequence = 0;
+  const tabIds = new Map<string, number>();
+  function windowInfo(windowId: number, populate: boolean) {
+    const targets = [...state.targets.values()].filter((target) => {
+      return target.windowId === windowId;
+    });
+    if (targets.length === 0) {
+      return null;
+    }
+    return {
+      id: windowId,
+      focused: true,
+      ...(populate
+        ? {
+            tabs: targets.map((target, index) => {
+              let id = tabIds.get(target.targetId);
+              if (id === undefined) {
+                id = nextTabId++;
+                tabIds.set(target.targetId, id);
+              }
+              return {
+                id,
+                windowId,
+                index,
+                active: index === 0,
+                pinned: false,
+                discarded: false,
+                url: target.url ?? "about:blank",
+              };
+            }),
+          }
+        : {}),
+    };
+  }
+  async function invokeNative(
+    request: NonNullable<ReturnType<typeof browserExtensionRequest>>,
+  ): Promise<unknown> {
+    switch (request.method) {
+      case "hello": {
+        return {
+          protocol: 1,
+          capabilities: ["windows", "tabs", "events", "identity-probe"],
+        };
+      }
+      case "getWindow":
+      case "listWindows": {
+        await state.beforeNativeWindowReply?.(Number(request.windowId));
+        context.signal.throwIfAborted();
+        if (state.windowError) {
+          return new Error(state.windowError);
+        }
+        if (
+          request.populate &&
+          state.emptySnapshot &&
+          request.method === "getWindow"
+        ) {
+          return { id: request.windowId, focused: true, tabs: [] };
+        }
+        return request.method === "getWindow"
+          ? windowInfo(Number(request.windowId), request.populate === true)
+          : [
+              ...new Set(
+                [...state.targets.values()].map((target) => {
+                  return target.windowId;
+                }),
+              ),
+            ].map((id) => {
+              return windowInfo(id, request.populate === true);
+            });
+      }
+      case "closeWindow": {
+        await state.beforeCloseWindowReply?.(Number(request.windowId));
+        context.signal.throwIfAborted();
+        if (state.closeSucceeds) {
+          for (const target of state.targets.values()) {
+            if (target.windowId === request.windowId) {
+              state.targets.delete(target.targetId);
+              state.closed.push(target.targetId);
+            }
+          }
+        }
+        return null;
+      }
+      case "createTab": {
+        if (!windowInfo(Number(request.windowId), false)) {
+          throw new Error("Restore window missing");
+        }
+        const target = {
+          targetId: randomUUID(),
+          windowId: Number(request.windowId),
+          url: string().parse(request.url),
+        };
+        state.targets.set(target.targetId, target);
+        return windowInfo(target.windowId, true)?.tabs?.at(-1);
+      }
+      default: {
+        throw new Error(`Unexpected native request: ${request.method}`);
+      }
+    }
+  }
   const commandSchema = object({
     id: number(),
     method: string(),
@@ -59,12 +179,88 @@ export function createNativeWindowProvider(context: TestContext) {
     sessionId: string().optional(),
   });
   const handler = ws.link(url).addEventListener("connection", ({ client }) => {
+    const sendResult = (id: number, result: unknown) => {
+      client.send(
+        JSON.stringify(
+          result instanceof Error
+            ? { id, error: { message: result.message } }
+            : { id, result },
+        ),
+      );
+    };
     client.addEventListener("close", () => {
       state.onSocketClose?.();
     });
+    const replyBridge = async (
+      command: ReturnType<typeof commandSchema.parse>,
+    ): Promise<boolean> => {
+      const bootstrap = browserExtensionBootstrap(command);
+      const request = browserExtensionRequest(command);
+      if (!request && bootstrap === undefined) {
+        return false;
+      }
+      if (
+        !state.bridgeAvailable &&
+        command.method === "Extensions.triggerAction"
+      ) {
+        client.send(
+          JSON.stringify({
+            id: command.id,
+            error: { message: "Required extension unavailable" },
+          }),
+        );
+        return true;
+      }
+      if (
+        request &&
+        (((request.method === "getWindow" ||
+          request.method === "listWindows") &&
+          state.windowReply === "withhold") ||
+          (request.method === "closeWindow" && state.closeReply === "withhold"))
+      ) {
+        return true;
+      }
+      const startedSequence = nativeSequence;
+      const value = request ? await invokeNative(request) : bootstrap;
+      if (request?.populate && state.snapshotEventWindowId !== undefined) {
+        nativeSequence++;
+        client.send(
+          JSON.stringify({
+            method: "Runtime.bindingCalled",
+            sessionId: "extension-worker-session",
+            params: {
+              name: "__okouBrowserEvent",
+              payload: JSON.stringify({
+                epoch: "fixture-worker",
+                sequence: nativeSequence,
+                kind: "tab-updated",
+                windowId: state.snapshotEventWindowId,
+              }),
+            },
+          }),
+        );
+      }
+      if (
+        request?.method === "closeWindow" &&
+        state.closeReply === "disconnect"
+      ) {
+        client.close(1011);
+        return true;
+      }
+      const result =
+        request && !(value instanceof Error)
+          ? browserExtensionReply(value, nativeSequence, startedSequence)
+          : value;
+      sendResult(command.id, result);
+      return true;
+    };
     const reply = async (event: { readonly data: unknown }) => {
       const command = commandSchema.parse(JSON.parse(String(event.data)));
+      state.commands.push(command);
       let result: unknown;
+      if (await replyBridge(command)) {
+        return;
+      }
       if (command.method === "Target.createTarget") {
         const target = {
           targetId: randomUUID().replaceAll("-", ""),
@@ -90,20 +286,12 @@ export function createNativeWindowProvider(context: TestContext) {
         if (state.windowReply === "withhold") {
           return;
         }
-        await state.beforeWindowReply?.(targetId);
-        context.signal.throwIfAborted();
         const target = state.targets.get(targetId);
         const error = state.windowErrors.get(targetId) ?? state.windowError;
-        if (!target || error) {
-          client.send(
-            JSON.stringify({
-              id: command.id,
-              error: { message: error ?? "No target with this ID" },
-            }),
-          );
-          return;
-        }
-        result = { windowId: target.windowId };
+        result =
+          !target || error
+            ? new Error(error ?? "No target with this ID")
+            : { windowId: target.windowId };
       } else if (command.method === "Browser.setContentsSize") {
         state.contentsSizes.set(Number(command.params.windowId), {
           width: Number(command.params.width),
@@ -112,40 +300,32 @@ export function createNativeWindowProvider(context: TestContext) {
         result = {};
       } else if (command.method === "Target.getTargets") {
         result = {
-          targetInfos: [...state.targets.values()].map((target) => {
-            return {
-              targetId: target.targetId,
-              type: "page",
-              url: target.url ?? "about:blank",
-            };
-          }),
+          targetInfos: [...state.targets.values()]
+            .map((target) => {
+              return {
+                targetId: target.targetId,
+                type: "page",
+                url: target.url ?? "about:blank",
+              };
+            })
+            .concat(state.bridgeAvailable ? [...TEST_EXTENSION_TARGETS] : []),
         };
       } else if (command.method === "Target.closeTarget") {
         const targetId = String(command.params.targetId);
-        if (state.closeReply === "withhold") {
-          return;
-        }
-        if (state.closeSucceeds) {
+        if (state.seedCloseError) {
+          result = new Error(state.seedCloseError);
+        } else {
           state.targets.delete(targetId);
           state.closed.push(targetId);
+          result = { success: true };
         }
-        result = { success: state.closeSucceeds };
       } else {
         if (!state.command) {
           throw new Error(`Unhandled external CDP method: ${command.method}`);
         }
         result = await state.command(command);
-        if (result instanceof Error) {
-          client.send(
-            JSON.stringify({
-              id: command.id,
-              error: { message: result.message },
-            }),
-          );
-          return;
-        }
       }
-      client.send(JSON.stringify({ id: command.id, result }));
+      sendResult(command.id, result);
     };
     client.addEventListener("message", (event) => {
       detach(
@@ -178,27 +358,6 @@ export function installBrowserWindowContentCommands(
       return { executionContextId: 1 };
     }
     if (command.method === "Runtime.evaluate") {
-      const expression = String(command.params.expression);
-      if (expression.includes("window.open(")) {
-        const source = native.targets.get(String(targetId));
-        if (!source) {
-          throw new Error("Restore source missing");
-        }
-        const match =
-          /^Boolean\(window\.open\(("(?:[^"\\]|\\.)*"), "_blank"\)\)$/u.exec(
-            expression,
-          );
-        if (!match?.[1]) {
-          throw new Error("Unexpected restore expression");
-        }
-        const target = {
-          targetId: randomUUID(),
-          windowId: source.windowId,
-          url: String(JSON.parse(match[1])),
-        };
-        native.targets.set(target.targetId, target);
-        return { result: { value: true } };
-      }
       return { result: { value: true } };
     }
     if (command.method === "Page.getLayoutMetrics") {
