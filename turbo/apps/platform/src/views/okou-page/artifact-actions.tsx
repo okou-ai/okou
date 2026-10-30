@@ -762,31 +762,32 @@ export function ArtifactDownloadMenu({
   const downloadPending = downloadLoadable.state === "loading";
   const downloadName = artifactDownloadFilename(artifactKind, filename, url);
   return (
-    <DropdownMenu>
-      <ArtifactActionTooltip label={label}>
-        <DropdownMenuTrigger
-          aria-label={label}
-          aria-busy={downloadPending ? "true" : undefined}
-          disabled={downloadPending}
-          render={
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              className={cn(
-                "data-popup-open:bg-state-hover data-popup-open:text-foreground disabled:pointer-events-none disabled:opacity-70",
-                className,
-              )}
-            />
-          }
-        >
-          {downloadPending ? (
-            <Loader2 size={iconSize} className="animate-spin" />
-          ) : (
-            <Download size={iconSize} />
-          )}
-        </DropdownMenuTrigger>
-      </ArtifactActionTooltip>
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger
+        openOnHover
+        delay={100}
+        closeDelay={150}
+        aria-label={label}
+        aria-busy={downloadPending ? "true" : undefined}
+        disabled={downloadPending}
+        render={
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            className={cn(
+              "data-popup-open:bg-state-hover data-popup-open:text-foreground disabled:pointer-events-none disabled:opacity-70",
+              className,
+            )}
+          />
+        }
+      >
+        {downloadPending ? (
+          <Loader2 size={iconSize} className="animate-spin" />
+        ) : (
+          <Download size={iconSize} />
+        )}
+      </DropdownMenuTrigger>
       <DropdownMenuContent align={align} sideOffset={6} className="w-56">
         <DropdownMenuItem
           onClick={() => {

@@ -374,15 +374,21 @@ function ShareSessionMenu({
   return (
     <Popover
       open={requestedOpen && !recipient}
-      onOpenChange={(next) => {
+      onOpenChange={(next, details) => {
         if (next) {
-          detach(open(signal), Reason.DomCallback);
+          detach(
+            open(details.reason !== "trigger-hover", signal),
+            Reason.DomCallback,
+          );
         } else {
           close();
         }
       }}
     >
       <PopoverTrigger
+        openOnHover={!recipient}
+        delay={100}
+        closeDelay={150}
         aria-label={ariaLabel ?? title}
         render={<Button variant="quiet" size="icon-sm" className={className} />}
       >

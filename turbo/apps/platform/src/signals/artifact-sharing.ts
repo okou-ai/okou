@@ -141,8 +141,7 @@ function createAudienceSignals(
       return true;
     },
   );
-  const save$ = throttleCommand(persist$, 0);
-  return { change$: save$ };
+  return { change$: persist$ };
 }
 
 function createArtifactShareSession(source: ShareSource) {
@@ -161,18 +160,28 @@ function createArtifactShareSession(source: ShareSource) {
     set(resetOpenSignal$);
     set(linkCopy.clear$);
   });
-  const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
-    const signal = set(resetOpenSignal$, parentSignal);
-    set(open$, true);
-    const details = await get(details$);
-    signal.throwIfAborted();
-    if (!details?.status) {
-      set(open$, false);
-      if (details) {
-        await copyAttachmentLinkToClipboard(details.copyUrl, undefined, signal);
+  const show$ = command(
+    async (
+      { get, set },
+      copyIfReadOnly: boolean,
+      parentSignal: AbortSignal,
+    ) => {
+      const signal = set(resetOpenSignal$, parentSignal);
+      set(open$, true);
+      const details = await get(details$);
+      signal.throwIfAborted();
+      if (!details?.status) {
+        set(open$, false);
+        if (details && copyIfReadOnly) {
+          await copyAttachmentLinkToClipboard(
+            details.copyUrl,
+            undefined,
+            signal,
+          );
+        }
       }
-    }
-  });
+    },
+  );
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const details = await get(details$);
     signal.throwIfAborted();
@@ -181,12 +190,16 @@ function createArtifactShareSession(source: ShareSource) {
     }
   });
   const audience = createAudienceSignals(details$, reload$);
-  // "Copied" confirmed the link under the previous audience; a new choice asks
-  // to be copied again.
-  const change$ = command(({ set }, choice: Audience, signal: AbortSignal) => {
-    set(linkCopy.clear$);
-    return set(audience.change$, choice, signal);
-  });
+  const change$ = throttleCommand(
+    command(async ({ set }, choice: Audience, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      const updated = await set(audience.change$, choice, signal);
+      if (updated) {
+        await set(copy$, signal);
+      }
+    }),
+    0,
+  );
   return {
     signal$,
     details$,

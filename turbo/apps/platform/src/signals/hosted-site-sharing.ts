@@ -100,6 +100,7 @@ function createSiteVisibilitySignals(sourceUrl: string) {
           }),
         );
       }
+      return updated;
     },
   );
   return {
@@ -219,8 +220,8 @@ function createSiteUrlEditorSignals(
         return $.artifacts.siteUrl.updated;
       }),
     );
+    return true;
   });
-  const save$ = throttleCommand(persist$, 0);
   return {
     draft$,
     editing$,
@@ -230,7 +231,7 @@ function createSiteUrlEditorSignals(
     edit$,
     change$,
     cancel$,
-    save$,
+    save$: persist$,
   };
 }
 
@@ -289,12 +290,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
   });
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
-  const changeVisibility$ = command(
-    ({ set }, choice: Visibility, signal: AbortSignal) => {
-      set(linkCopy.clear$);
-      return set(visibility.changeVisibility$, choice, signal);
-    },
-  );
   const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
     if (!open) {
@@ -304,23 +299,51 @@ function createHostedSiteShareSession(sourceUrl: string) {
       set(linkCopy.clear$);
     }
   });
-  const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
-    const signal = set(resetOpenSignal$, parentSignal);
-    set(open$, true);
-    const hasSettings = await get(hasSettings$);
-    signal.throwIfAborted();
-    if (!hasSettings) {
-      set(open$, false);
-      const url = await get(copyUrl$);
+  const show$ = command(
+    async (
+      { get, set },
+      copyIfReadOnly: boolean,
+      parentSignal: AbortSignal,
+    ) => {
+      const signal = set(resetOpenSignal$, parentSignal);
+      set(open$, true);
+      const hasSettings = await get(hasSettings$);
       signal.throwIfAborted();
-      await copyAttachmentLinkToClipboard(url, undefined, signal);
-    }
-  });
+      if (!hasSettings) {
+        set(open$, false);
+        if (copyIfReadOnly) {
+          const url = await get(copyUrl$);
+          signal.throwIfAborted();
+          await copyAttachmentLinkToClipboard(url, undefined, signal);
+        }
+      }
+    },
+  );
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const url = await get(copyUrl$);
     signal.throwIfAborted();
     await set(linkCopy.copy$, url, signal);
   });
+  const changeVisibility$ = throttleCommand(
+    command(async ({ set }, choice: Visibility, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      const updated = await set(visibility.changeVisibility$, choice, signal);
+      if (updated) {
+        await set(copy$, signal);
+      }
+    }),
+    0,
+  );
+  const save$ = throttleCommand(
+    command(async ({ set }, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      const updated = await set(editor.save$, signal);
+      if (updated) {
+        await set(copy$, signal);
+      }
+    }),
+    0,
+  );
   return {
     signal$,
     details$,
@@ -331,6 +354,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     changeVisibility$,
     open$,
     ...editor,
+    save$,
     inputId: `hosted-site-url-${crypto.randomUUID()}`,
     setOpen$,
     show$,

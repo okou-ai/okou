@@ -3,7 +3,8 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import type { infer as zInfer } from "zod";
 import {
   click,
@@ -117,7 +118,7 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
   });
 });
 
-test("published sites customize their address in Share and copy the saved URL alongside permission choices", async () => {
+test("published sites automatically copy the saved address after customizing the URL", async () => {
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site);
   });
@@ -159,6 +160,7 @@ test("published sites customize their address in Share and copy the saved URL al
     }),
   ).toBeFalsy();
   expect(input).toHaveValue("launch-report");
+  const clipboard = context.mocks.browser.clipboardWriteText();
   click(getButtonByName("Save"));
   await screen.findByText("Website URL updated");
   expect(getButtonByName("Customize URL")).toHaveFocus();
@@ -167,8 +169,6 @@ test("published sites customize their address in Share and copy the saved URL al
       screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
     ).toHaveAttribute("src", "https://launch-report.okou.app/");
   });
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  click(getButtonByName("Copy link"));
   await waitFor(() => {
     expect(queryButtonByName("Copied")).toBeDefined();
   });
@@ -226,11 +226,12 @@ test("a save conflict keeps the draft and current shared address", async () => {
   click(getButtonByName("Customize URL"));
   await fill(await screen.findByLabelText("Website URL"), "taken-report");
   await screen.findByText("Available");
+  const clipboard = context.mocks.browser.clipboardWriteText();
   click(getButtonByName("Save"));
   await screen.findByText(/Could not save/);
   expect(screen.getByLabelText("Website URL")).toHaveValue("taken-report");
   click(getButtonByName("Cancel"));
-  const clipboard = context.mocks.browser.clipboardWriteText();
+  expect(clipboard.writes).toStrictEqual([]);
   click(getButtonByName("Copy link"));
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([site.url]);
@@ -293,6 +294,7 @@ test("a failed save retains the draft and the current address", async () => {
   click(getButtonByName("Customize URL"));
   await fill(await screen.findByLabelText("Website URL"), "launch-report");
   await screen.findByText("Available");
+  const clipboard = context.mocks.browser.clipboardWriteText();
   click(getButtonByName("Save"));
   await screen.findByText("Website save unavailable");
   await screen.findByText(/Could not save/);
@@ -301,6 +303,7 @@ test("a failed save retains the draft and the current address", async () => {
   expect(
     screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
   ).toHaveAttribute("src", site.url);
+  expect(clipboard.writes).toStrictEqual([]);
 });
 
 test("A settings failure disables copying an unknown address", async () => {
@@ -571,12 +574,20 @@ test.each([false, true])(
           name === "Anyone with the link" ? site.url : temporary,
         );
       });
-      expect(getButtonByName("Copy link", menu)).toBeEnabled();
+      expect(getButtonByName("Copied", menu)).toBeEnabled();
     }
-    expect(clipboard.writes).toStrictEqual([site.url]);
-    click(getButtonByName("Copy link", menu));
+    expect(clipboard.writes).toStrictEqual(
+      Array.from({ length: 4 }, () => {
+        return site.url;
+      }),
+    );
+    click(getButtonByName("Copied", menu));
     await waitFor(() => {
-      expect(clipboard.writes).toStrictEqual([site.url, site.url]);
+      expect(clipboard.writes).toStrictEqual(
+        Array.from({ length: 5 }, () => {
+          return site.url;
+        }),
+      );
     });
   },
 );
@@ -624,6 +635,7 @@ test("Unavailable visibility settings keep permission choices disabled", async (
 });
 
 test("a conflicting permission change preserves the last confirmed audience", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
   mockSiteAlias();
   let status: SiteVisibilityStatus = {
     siteId,
@@ -659,9 +671,11 @@ test("a conflicting permission change preserves the last confirmed audience", as
     screen.findByText("Website visibility changed"),
   ).resolves.toBeInTheDocument();
   await expectPermission("Anyone with the link");
+  expect(clipboard.writes).toStrictEqual([]);
 });
 
 test("a failed visibility save preserves the last confirmed audience", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
   mockSiteAlias();
   const status: SiteVisibilityStatus = {
     siteId,
@@ -687,6 +701,7 @@ test("a failed visibility save preserves the last confirmed audience", async () 
     screen.findByText("Website visibility save unavailable"),
   ).resolves.toBeInTheDocument();
   await expectPermission("Only me");
+  expect(clipboard.writes).toStrictEqual([]);
 });
 
 test.each([false, true])(
@@ -745,6 +760,7 @@ test("a pending Share copies the link once permissions resolve without owner set
 });
 
 test("rapid permission choices settle on the latest audience using the refreshed revision", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
   mockSiteAlias();
   const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
@@ -792,5 +808,108 @@ test("rapid permission choices settle on the latest audience using the refreshed
     response.resolve();
   }
   await expectPermission("Only me");
-  await screen.findByText("Access updated");
+  expect(getButtonByName("Copied")).toBeEnabled();
+  expect(clipboard.writes).toStrictEqual([site.url, site.url]);
+});
+
+test.each([false, true])(
+  "Share and Download open on hover and retain keyboard dismissal (sidebar: %s)",
+  async (sidebar) => {
+    const user = userEvent.setup();
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    await openSite({ sidebar });
+    const shareLabel = sidebar ? "Share artifact" : "Share";
+    const share = getButtonByName(shareLabel);
+    await user.hover(share);
+    const menu = await screen.findByRole("dialog", { name: shareLabel });
+    await user.hover(getButtonByName("Copy link", menu));
+    expect(share).toHaveAttribute("aria-expanded", "true");
+    expect(clipboard.writes).toStrictEqual([]);
+    await user.click(getButtonByName("Copy link", menu));
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([site.url]);
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(share).toHaveAttribute("aria-expanded", "false");
+    });
+    const download = getButtonByName(
+      sidebar ? "Download artifact" : "Download options",
+    );
+    await user.hover(download);
+    const downloadMenu = await screen.findByRole("menu");
+    expect(within(downloadMenu).getByText("Download")).toBeInTheDocument();
+    download.focus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(download).toHaveAttribute("aria-expanded", "false");
+    });
+    // Keyboard users still open the same menu without a mouse.
+    download.focus();
+    await user.keyboard("{ArrowDown}");
+    await screen.findByRole("menu");
+  },
+);
+
+test("hovering Share while recipient access resolves never copies; clicking still does", async () => {
+  const user = userEvent.setup();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Published website not found" },
+    });
+  });
+  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
+    await response.promise;
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Published website not found" },
+    });
+  });
+  await openSite();
+  const share = getButtonByName("Share");
+  await user.hover(share);
+  await screen.findByRole("status", { name: "Loading permissions" });
+  response.resolve();
+  await waitFor(() => {
+    expect(share).toHaveAttribute("aria-expanded", "false");
+  });
+  expect(clipboard.writes).toStrictEqual([]);
+  await user.click(share);
+  await screen.findByText("Link copied");
+  expect(clipboard.writes).toStrictEqual([site.url]);
+});
+
+test("a clipboard failure preserves the saved access and offers manual copy", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(
+    new DOMException("Clipboard denied", "NotAllowedError"),
+  );
+  let status: SiteVisibilityStatus = {
+    siteId,
+    visibility: "private",
+    revision: null,
+  };
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(hostContract.updateSiteVisibility, ({ body, respond }) => {
+    status = {
+      siteId,
+      visibility: body.visibility,
+      revision: crypto.randomUUID(),
+    };
+    return respond(200, status);
+  });
+  await openSite();
+  await openShare();
+  await expectPermission("Only me");
+  click(permission("Anyone with the link"));
+  await screen.findByText("Failed to copy link");
+  await expectPermission("Anyone with the link");
+  expect(queryButtonByName("Copied")).toBeUndefined();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
 });

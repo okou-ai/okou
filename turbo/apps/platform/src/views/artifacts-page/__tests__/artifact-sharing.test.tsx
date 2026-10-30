@@ -8,6 +8,7 @@ import {
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
   click,
@@ -138,7 +139,7 @@ async function openShareMenu() {
   });
 }
 
-test("owners can change three access levels separately from copying the stable app link", async () => {
+test("owners automatically copy the stable app link after each saved access change", async () => {
   let status = sharingStatus();
   const changes: string[] = [];
   const clipboard = context.mocks.browser.clipboardWriteText();
@@ -151,7 +152,11 @@ test("owners can change three access levels separately from copying the stable a
     return respond(200, status);
   });
   await openArtifact();
-  await openShareMenu();
+  await userEvent.hover(action("button", "Share"));
+  await screen.findByRole("dialog", { name: "Share" });
+  await waitFor(() => {
+    expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
+  });
   expect(
     queryAllByRoleFast("radio").map((element) => {
       return element.textContent;
@@ -170,11 +175,7 @@ test("owners can change three access levels separately from copying the stable a
     await waitFor(() => {
       return expect(permission(name)).toHaveAttribute("aria-checked", "true");
     });
-    expect(clipboard.writes).toHaveLength(changes.length - 1);
-    await waitFor(() => {
-      return expect(action("button", "Copy link")).not.toBeDisabled();
-    });
-    click(action("button", "Copy link"));
+    expect(action("button", "Copied")).toBeEnabled();
     await waitFor(() => {
       return expect(clipboard.writes).toHaveLength(changes.length);
     });
