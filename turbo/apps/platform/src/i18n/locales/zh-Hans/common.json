@@ -2017,6 +2017,8 @@
       "recovery": {
         "accessProgramDescription": "稍后再试，仍可在这段聊天中继续。",
         "accessProgramTitle": "Codex 暂时无法访问",
+        "accountVerificationDescription": "你的 Claude 账号目前无法接收回复。请前往 Anthropic 验证门户查看下一步操作。",
+        "accountVerificationTitle": "Claude 账号需要验证",
         "autonomyLimitDescription": "连续自动运行的次数已达上限。确认后可以继续。",
         "autonomyLimitTitle": "已达自动运行上限",
         "capacityDescription": "可以稍等片刻再试，或换个模型继续。",

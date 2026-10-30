@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CLAUDE_ACCOUNT_VERIFICATION_REQUIRED_MESSAGE,
   CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
@@ -21,6 +22,24 @@ const SHORT_CLAUDE_OAUTH_REVOCATION =
   "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.";
 
 describe("formatRunErrorForExternalSurface", () => {
+  it("shows account-verification guidance without leaking the personal portal link", () => {
+    const message = formatRunErrorForExternalSurface({
+      code: "UNKNOWN",
+      message:
+        "API Error: Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://example.invalid/verification?token=private-verification-token",
+      failureReason: "account_verification_required",
+      framework: "claude-code",
+      modelProviderType: "claude-code-oauth-token",
+      claudeCodeCredentialRecovery: {
+        modelProviderType: "claude-code-oauth-token",
+        modelProvidersUrl: "https://example.invalid/?settings=model",
+      },
+    });
+
+    expect(message).toBe(CLAUDE_ACCOUNT_VERIFICATION_REQUIRED_MESSAGE);
+    expect(message).not.toContain("https://");
+    expect(isGenericRunErrorForDisplay(message)).toBe(false);
+  });
   it.each(["built-in", "openrouter-codex"] as const)(
     "presents model restrictions as unavailable for %s without exposing provider configuration",
     (modelProviderType) => {

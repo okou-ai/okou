@@ -2024,6 +2024,8 @@
       "recovery": {
         "accessProgramDescription": "Try again in a little while. You can keep this chat open.",
         "accessProgramTitle": "Codex access is temporarily unavailable",
+        "accountVerificationDescription": "Your Claude account can't receive replies right now. Check the Anthropic Verification Portal for the next step.",
+        "accountVerificationTitle": "Claude account verification required",
         "autonomyLimitDescription": "The limit for consecutive automatic runs has been reached. Confirm to continue.",
         "autonomyLimitTitle": "Automatic run limit reached",
         "capacityDescription": "Try again in a moment, or choose another model to keep working.",

@@ -2017,6 +2017,8 @@
       "recovery": {
         "accessProgramDescription": "잠시 후 다시 시도하세요. 이 채팅은 그대로 열어 둘 수 있습니다.",
         "accessProgramTitle": "Codex 액세스를 일시적으로 사용할 수 없습니다",
+        "accountVerificationDescription": "현재 Claude 계정에서 응답을 받을 수 없습니다. Anthropic Verification Portal에서 다음 단계를 확인하세요.",
+        "accountVerificationTitle": "Claude 계정 인증이 필요합니다",
         "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
         "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
         "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 작업을 계속하세요.",

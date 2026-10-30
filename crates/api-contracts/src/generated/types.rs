@@ -3500,6 +3500,9 @@ pub mod webhooks {
                 /// The provider requires acceptance of updated terms.
                 #[serde(rename = "terms_acceptance_required")]
                 TermsAcceptanceRequired,
+                /// The provider requires account verification before replying.
+                #[serde(rename = "account_verification_required")]
+                AccountVerificationRequired,
                 /// The model context window was exceeded.
                 #[serde(rename = "context_window_exceeded")]
                 ContextWindowExceeded,

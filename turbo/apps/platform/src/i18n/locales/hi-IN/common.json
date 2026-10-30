@@ -2024,6 +2024,8 @@
       "recovery": {
         "accessProgramDescription": "थोड़ी देर बाद फिर कोशिश करें। आप इस चैट को खुला रख सकते हैं।",
         "accessProgramTitle": "Codex एक्सेस अस्थायी रूप से उपलब्ध नहीं है",
+        "accountVerificationDescription": "आपका Claude खाता अभी जवाब प्राप्त नहीं कर सकता। अगले कदम के लिए Anthropic सत्यापन पोर्टल देखें।",
+        "accountVerificationTitle": "Claude खाते का सत्यापन ज़रूरी है",
         "autonomyLimitDescription": "लगातार अपने-आप चलने की सीमा पूरी हो गई है। जारी रखने के लिए पुष्टि करें।",
         "autonomyLimitTitle": "अपने-आप चलने की सीमा पूरी हो गई",
         "capacityDescription": "कुछ देर बाद फिर कोशिश करें, या काम जारी रखने के लिए दूसरा मॉडल चुनें।",

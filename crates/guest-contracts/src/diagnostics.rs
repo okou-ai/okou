@@ -743,6 +743,8 @@ pub enum FailureReason {
     InvalidCredentials,
     /// The provider account must accept updated consumer terms.
     TermsAcceptanceRequired,
+    /// The provider requires account verification before replying.
+    AccountVerificationRequired,
     /// The model context window was exhausted.
     ContextWindowExceeded,
     /// The Codex app-server input limit was exceeded.
@@ -791,6 +793,7 @@ impl FailureReason {
             Self::InvalidApiKey => "invalid_api_key",
             Self::InvalidCredentials => "invalid_credentials",
             Self::TermsAcceptanceRequired => "terms_acceptance_required",
+            Self::AccountVerificationRequired => "account_verification_required",
             Self::ContextWindowExceeded => "context_window_exceeded",
             Self::InputTooLarge => "input_too_large",
             Self::ProviderImageTooLarge => "provider_image_too_large",
@@ -824,6 +827,7 @@ impl From<FailureReason>
             FailureReason::InvalidApiKey => Self::InvalidApiKey,
             FailureReason::InvalidCredentials => Self::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired => Self::TermsAcceptanceRequired,
+            FailureReason::AccountVerificationRequired => Self::AccountVerificationRequired,
             FailureReason::ContextWindowExceeded => Self::ContextWindowExceeded,
             FailureReason::InputTooLarge => Self::InputTooLarge,
             FailureReason::ProviderImageTooLarge => Self::ProviderImageTooLarge,
@@ -1558,6 +1562,10 @@ mod tests {
             (
                 FailureReason::TermsAcceptanceRequired,
                 "terms_acceptance_required",
+            ),
+            (
+                FailureReason::AccountVerificationRequired,
+                "account_verification_required",
             ),
             (
                 FailureReason::ContextWindowExceeded,

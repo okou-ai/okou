@@ -2055,6 +2055,8 @@
       "recovery": {
         "accessProgramDescription": "Riprova tra poco. Puoi lasciare aperta questa chat.",
         "accessProgramTitle": "L’accesso a Codex non è temporaneamente disponibile",
+        "accountVerificationDescription": "Al momento il tuo account Claude non può ricevere risposte. Consulta il portale di verifica Anthropic per conoscere il prossimo passaggio.",
+        "accountVerificationTitle": "È richiesta la verifica dell'account Claude",
         "autonomyLimitDescription": "È stato raggiunto il limite di esecuzioni automatiche consecutive. Conferma per continuare.",
         "autonomyLimitTitle": "Limite di esecuzioni automatiche raggiunto",
         "capacityDescription": "Riprova tra poco oppure scegli un altro modello per continuare a lavorare.",
