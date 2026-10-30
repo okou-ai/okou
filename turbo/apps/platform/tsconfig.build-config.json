@@ -1,4 +1,8 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["vite.config.ts", "scripts/check-build-config.node.ts"]
+  "include": [
+    "vite.config.ts",
+    "scripts/check-build-config.node.ts",
+    "scripts/check-client-descriptors.node.ts"
+  ]
 }

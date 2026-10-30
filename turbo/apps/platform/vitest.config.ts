@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      // Keep full response validators in tests without loading them in production.
+      "@okouai/api-contracts/client/response-validation": path.resolve(
+        __dirname,
+        "./src/test/client-response-validation.ts",
+      ),
       // Hosted Clerk components render through the Clerk core in a real
       // browser; page tests observe their mount contract instead.
       "@clerk/react": path.resolve(

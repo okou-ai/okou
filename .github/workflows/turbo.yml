@@ -623,6 +623,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
+      - name: Check generated client descriptors
+        working-directory: turbo
+        run: pnpm --filter @okouai/api-contracts generate:client --check
+      - name: Check client descriptor bundle guard
+        working-directory: turbo/apps/platform
+        run: pnpm exec tsx --test scripts/check-client-descriptors.node.ts
       # The two heavy app type-checks (api, @okouai/app ≈ 57% of the former
       # serial total) run in separate jobs below. Here we check everything
       # else. Dependency packages resolve via source

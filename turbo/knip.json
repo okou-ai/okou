@@ -43,6 +43,7 @@
         "i18next.config.ts",
         "scripts/bench-p90-reporter.ts",
         "scripts/check-build-config.node.ts",
+        "scripts/check-client-descriptors.node.ts",
         "src/**/__benches__/**/*.bench.tsx",
         "**/*.{test,spec}.ts?(x)"
       ],

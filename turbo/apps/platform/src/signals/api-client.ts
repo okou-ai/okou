@@ -6,10 +6,10 @@
  */
 import { computed } from "ccstate";
 import type {
-  AppRouter,
+  ClientRouter,
   InitClientArgs,
   InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
 import type { AuthTokenProvider } from "../lib/auth-token-provider.ts";
 import { appVersion$ } from "./app-version.ts";
 import { createAuthedContractClient } from "./api-client-base.ts";
@@ -20,7 +20,7 @@ import { apiClientRuntime$ } from "./api-client-runtime.ts";
  * Useful for shared helper functions that accept the client factory
  * as a parameter (e.g. `createAgent`).
  */
-export type ApiClientFactory = <T extends AppRouter>(
+export type ApiClientFactory = <T extends ClientRouter>(
   contract: T,
   options?: ApiClientOptions,
 ) => InitClientReturn<T, InitClientArgs>;
@@ -78,7 +78,7 @@ export const apiClient$ = computed((get) => {
   const tokenOptions = {
     getToken: runtime.getToken,
   };
-  return <T extends AppRouter>(contract: T, options?: ApiClientOptions) => {
+  return <T extends ClientRouter>(contract: T, options?: ApiClientOptions) => {
     return createAuthedContractClient(contract, {
       getToken: options?.getToken ?? tokenOptions.getToken,
       getTokenGuard: options?.getTokenGuard,

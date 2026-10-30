@@ -8,6 +8,7 @@ import { defineConfig, type Plugin } from "vite";
 import { devArtifactFetchProxy } from "./dev-artifact-fetch-proxy.ts";
 import platformPackage from "./package.json";
 import { applicationResourcePriorityHtmlPlugin } from "./scripts/app-resource-priority-html.ts";
+import { clientDescriptorsPlugin } from "./scripts/check-client-descriptors.ts";
 import { clerkCoreHtmlPlugin } from "./scripts/clerk-html.ts";
 import { clerkUiAssetPlugin } from "./scripts/clerk-ui.ts";
 import { MESSAGE_PDF_WORKER_FILE_PATTERN } from "./scripts/message-pdf-worker.ts";
@@ -83,7 +84,11 @@ export default defineConfig(({ command }) => ({
   },
   worker: {
     plugins: () => {
-      return [workerDomGlobalsPlugin(), singleWorkerJavaScriptBundlePlugin()];
+      return [
+        workerDomGlobalsPlugin(),
+        singleWorkerJavaScriptBundlePlugin(),
+        clientDescriptorsPlugin({ requireAgentsDescriptor: false }),
+      ];
     },
   },
   plugins: [
@@ -95,6 +100,7 @@ export default defineConfig(({ command }) => ({
     runtimeBuildInfoHtmlPlugin,
     vendor.plugin,
     applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length),
+    clientDescriptorsPlugin(),
     applicationResourcePriorityHtmlPlugin(),
     sharedDatabaseWorkerHtmlPlugin(),
     // Tags bundles with the application key for the runtime third-party filter.
