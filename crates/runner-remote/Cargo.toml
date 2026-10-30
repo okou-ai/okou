@@ -1,6 +1,6 @@
 [package]
 name = "runner-remote"
-version = "0.30.2"
+version = "0.30.3"
 edition.workspace = true
 description = "Runner guest RPC, remote usage, SSH, Tailscale, and VNC services"
 

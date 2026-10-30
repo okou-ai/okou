@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.3](https://github.com/okou-ai/okou/compare/runner-host-v0.10.2...runner-host-v0.10.3) (2026-10-30)
+
+
+### Refactoring
+
+* **runner-host:** separate live instance test source ownership ([#44287](https://github.com/okou-ai/okou/issues/44287)) ([5cdaca5](https://github.com/okou-ai/okou/commit/5cdaca53aaa59824ae3d6136c2914645c439ffb9))
+
 ## [0.10.2](https://github.com/okou-ai/okou/compare/runner-host-v0.10.1...runner-host-v0.10.2) (2026-10-30)
 
 
