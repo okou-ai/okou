@@ -66,6 +66,12 @@ class NativeTabCreation {
     if (!this.host.current() || this.signal.aborted) {
       throw new CdpFault("tab", "The tab action is no longer current.");
     }
+    if (this.candidates.size > 1) {
+      throw new CdpFault(
+        "tab",
+        "The new tab could not be identified unambiguously.",
+      );
+    }
     if (
       this.movementOverflow ||
       this.pageChanged ||
@@ -288,6 +294,12 @@ class NativeTabCreation {
         this.detach(value);
       },
     );
+    if (typeof session.sessionId !== "string" || !session.sessionId) {
+      throw new CdpFault(
+        "tab",
+        "The browser returned an invalid new-tab session.",
+      );
+    }
     this.attached = session.sessionId;
     this.check();
     await this.verify(targetId);

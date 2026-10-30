@@ -304,6 +304,52 @@ test.each(["movement", "pending navigation"])(
   },
 );
 
+test("A malformed new-page attachment preserves the established browser pages", async () => {
+  const browser = await setupViewer(0);
+  browser.corruptNextPageAttachment();
+  await userEvent.click(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  );
+  await screen.findByText(
+    "The browser action could not be completed. Check the browser before trying again.",
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  expect(
+    browser.targets.map((target) => {
+      return target.targetId;
+    }),
+  ).toStrictEqual(["example-page", "other-page"]);
+});
+
+test("A duplicate marker during creation never takes over the other caller's page", async () => {
+  const browser = await setupViewer(0);
+  const receipt = browser.holdNext("Runtime.evaluate");
+  await userEvent.click(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  );
+  await receipt.received;
+  act(() => {
+    browser.duplicate("created-1");
+  });
+  await receipt.release();
+  await screen.findByText(
+    "The browser action could not be completed. Check the browser before trying again.",
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  expect(
+    browser.targets.map((target) => {
+      return target.targetId;
+    }),
+  ).toStrictEqual(["example-page", "other-page", "created-2"]);
+  expect(browser.targets.at(-1)?.url).toMatch(/^about:blank#okou-create-/);
+});
+
 test.each([
   ["[::1]:8080/path", "http://[::1]:8080/path"],
   ["例子.测试/你好", "http://xn--fsqu00a.xn--0zwm56d/%E4%BD%A0%E5%A5%BD"],

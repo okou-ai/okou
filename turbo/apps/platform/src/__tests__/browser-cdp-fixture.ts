@@ -56,6 +56,7 @@ export function mockBrowserCdp(
     return { ...target };
   });
   let created = 0;
+  let corruptPageAttachment = false;
   let sessionSequence = 0;
   let nativeSequence = 0;
   let nativeEpoch = "fixture-worker";
@@ -271,6 +272,13 @@ export function mockBrowserCdp(
         return {};
       }
       case "Target.attachToTarget": {
+        if (
+          request.params?.targetId !== "okou-worker" &&
+          corruptPageAttachment
+        ) {
+          corruptPageAttachment = false;
+          return { sessionId: "" };
+        }
         return {
           sessionId:
             request.params?.targetId === "okou-worker"
@@ -520,6 +528,15 @@ export function mockBrowserCdp(
       })!;
       target.pendingUrl = url;
       nativeEvent("tab-updated", target);
+    },
+    duplicate(targetId: string) {
+      const target = targets.find((target) => {
+        return target.targetId === targetId;
+      })!;
+      addTarget(target.url, target.windowId);
+    },
+    corruptNextPageAttachment() {
+      corruptPageAttachment = true;
     },
     holdNext(method: string) {
       const response = context.mocks.deferred<string>();
