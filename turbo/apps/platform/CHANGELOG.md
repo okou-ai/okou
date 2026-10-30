@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1079.8](https://github.com/okou-ai/okou/compare/app-v0.1079.7...app-v0.1079.8) (2026-10-30)
+
+
+### Bug Fixes
+
+* **app:** open artifact menus on hover and copy saved share links ([#44244](https://github.com/okou-ai/okou/issues/44244)) ([665dd18](https://github.com/okou-ai/okou/commit/665dd18071bfe7e6b995a07a0c3c421be4c33ec0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.805.0
+
 ## [0.1079.7](https://github.com/okou-ai/okou/compare/app-v0.1079.6...app-v0.1079.7) (2026-10-30)
 
 
