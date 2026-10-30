@@ -12,6 +12,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1078.0](https://github.com/okou-ai/okou/compare/app-v0.1077.6...app-v0.1078.0) (2026-10-30)
+
+
+### Features
+
+* add staff-only personal chat folders ([#44100](https://github.com/okou-ai/okou/issues/44100)) ([c8cfe6e](https://github.com/okou-ai/okou/commit/c8cfe6e97b1aaa3513e48ec120234e39e9a5079c))
+
+
+### Refactoring
+
+* **app:** own the cloud browser viewer in platform ([#44085](https://github.com/okou-ai/okou/issues/44085)) ([ff15f20](https://github.com/okou-ai/okou/commit/ff15f203474a78d1456d6a889b1ab2ebbd197ec8))
+
+
+### Performance Improvements
+
+* **app:** avoid redundant saved site url recomputations ([#44094](https://github.com/okou-ai/okou/issues/44094)) ([4e49bab](https://github.com/okou-ai/okou/commit/4e49babfbb45e5d469d2602d432575d2fd1aeca6))
+* **app:** avoid reprojecting complete chat windows on scroll ([#44083](https://github.com/okou-ai/okou/issues/44083)) ([2df48f2](https://github.com/okou-ai/okou/commit/2df48f2173bdd7c27118cb8183b338e4d738f39f))
+* **app:** wait for initial events before loading chat resources ([#44089](https://github.com/okou-ai/okou/issues/44089)) ([dd2f50c](https://github.com/okou-ai/okou/commit/dd2f50cc2d22c2fa1f693924b8e2ef221555b98b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.22.0
+    * @okouai/connectors bumped to 3.19.0
+    * @okouai/core bumped to 8.801.0
+
 ## [0.1077.6](https://github.com/okou-ai/okou/compare/app-v0.1077.5...app-v0.1077.6) (2026-10-29)
 
 

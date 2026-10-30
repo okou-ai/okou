@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.240.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.16...runner-rs-v0.240.17) (2026-10-30)
+
+
+### Refactoring
+
+* **runner:** separate benchmark test source ownership ([#44120](https://github.com/okou-ai/okou/issues/44120)) ([710d7ff](https://github.com/okou-ai/okou/commit/710d7ff9134b7ee26f5c4dde3d48a1b68528ea3b))
+* **runner:** separate kill command test source ownership ([#44087](https://github.com/okou-ai/okou/issues/44087)) ([79b6ddc](https://github.com/okou-ai/okou/commit/79b6ddc74cb65bfb8e675c6b97044cbdc4cc38da))
+* **runner:** separate kill-target test source ownership ([#44073](https://github.com/okou-ai/okou/issues/44073)) ([74e91d6](https://github.com/okou-ai/okou/commit/74e91d6646c83328df59ed6581cc9c017cce2448))
+* **runner:** separate local rootfs publication test source ownership ([#44112](https://github.com/okou-ai/okou/issues/44112)) ([bb11cef](https://github.com/okou-ai/okou/commit/bb11cef20fe3066d25cb7b5da63eacbedf5516af))
+* **runner:** separate setup artifact test source ownership ([#44129](https://github.com/okou-ai/okou/issues/44129)) ([dcad37c](https://github.com/okou-ai/okou/commit/dcad37cbac19f7a92ec6fcd4c1c56ef165936ee1))
+* **runner:** separate snapshot publication test source ownership ([#44095](https://github.com/okou-ai/okou/issues/44095)) ([2ff0945](https://github.com/okou-ai/okou/commit/2ff09453268fdb67702a545bd9b29d3ed6f787dc))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.240.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.240.15...runner-rs-v0.240.16) (2026-10-29)
 
 
