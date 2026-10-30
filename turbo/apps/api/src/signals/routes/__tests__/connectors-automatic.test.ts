@@ -39,7 +39,13 @@ function accounts() {
   return setupApp({ context, routes })(connectorAccountsContract);
 }
 
-function fixture(variant: "oauth" | "declared-scopes" = "oauth") {
+function fixture(
+  variant:
+    | "oauth"
+    | "declared-scopes"
+    | "provider-prompt"
+    | "explicit-prompt" = "oauth",
+) {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -122,10 +128,18 @@ function receipt(f: Fixture, attemptId: string) {
 }
 
 describe("builtin MCP automatic authentication", () => {
-  it.each(["cimd", "dcr"] as const)(
-    "requests declared business scopes on %s connection and exact-account reconnect",
-    async (registration) => {
-      const f = fixture("declared-scopes");
+  it.each(
+    (["cimd", "dcr"] as const).flatMap((registration) => {
+      return [
+        [registration, "declared-scopes", "consent"],
+        [registration, "provider-prompt", null],
+        [registration, "explicit-prompt", "login consent"],
+      ] as const;
+    }),
+  )(
+    "uses %s %s authorization policy on connection and exact-account reconnect",
+    async (registration, variant, prompt) => {
+      const f = fixture(variant);
       const scope = "openid read write offline_access";
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
@@ -143,6 +157,17 @@ describe("builtin MCP automatic authentication", () => {
       });
       const started = await beginOAuth(f);
       expect(started.url.searchParams.get("scope")).toBe(scope);
+      expect(started.url.searchParams.get("prompt")).toBe(prompt);
+      expect(Object.fromEntries(started.url.searchParams)).toMatchObject({
+        redirect_uri: "https://api.okou.ai/api/connectors/automatic/callback",
+        resource: f.endpoint,
+        code_challenge_method: "S256",
+        response_type: "code",
+        state: started.state,
+      });
+      expect(started.url.searchParams.get("code_challenge")).toMatch(
+        /^[\w-]{43}$/u,
+      );
       expect((await callback(started.state, provider.issuer)).body.status).toBe(
         "success",
       );
@@ -151,6 +176,17 @@ describe("builtin MCP automatic authentication", () => {
 
       const reconnected = await beginOAuth(f, connectionId);
       expect(reconnected.url.searchParams.get("scope")).toBe(scope);
+      expect(reconnected.url.searchParams.get("prompt")).toBe(prompt);
+      expect(Object.fromEntries(reconnected.url.searchParams)).toMatchObject({
+        redirect_uri: "https://api.okou.ai/api/connectors/automatic/callback",
+        resource: f.endpoint,
+        code_challenge_method: "S256",
+        response_type: "code",
+        state: reconnected.state,
+      });
+      expect(reconnected.url.searchParams.get("code_challenge")).toMatch(
+        /^[\w-]{43}$/u,
+      );
       expect(
         (await callback(reconnected.state, provider.issuer)).body.status,
       ).toBe("success");

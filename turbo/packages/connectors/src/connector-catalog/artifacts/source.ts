@@ -78,6 +78,7 @@ export const automaticGrantSourceSchema = object({
   kind: literal("automatic"),
   callbackOrigin: literal("api"),
   scopes: array(string()).optional(),
+  authorizationPrompt: string().nullable().optional(),
   outputs: connectorAutomaticTokenBindingsSchema,
 }).strict();
 
