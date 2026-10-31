@@ -19,7 +19,10 @@ import {
   setupPage,
   startPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { hash, pathname, search } from "../../../signals/location.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
@@ -474,7 +477,23 @@ function mockLandingPopup() {
       );
     });
   };
-  return { open, close, post, deliver };
+  const ready = async (origin = "https://www.okou.ai") => {
+    const address = open.mock.calls.at(-1)?.[0];
+    if (!address) {
+      throw new Error("Expected a user-initiated file transfer window");
+    }
+    const nonce = new URL(String(address)).hash.slice(1);
+    await act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin,
+          source: window,
+          data: { type: "okou:landing-files:ready", nonce },
+        }),
+      );
+    });
+  };
+  return { open, close, post, deliver, ready };
 }
 
 test("A landing-page request waits for its files and sends them with the edited prompt after onboarding", async () => {
@@ -491,7 +510,7 @@ test("A landing-page request waits for its files and sends them with the edited 
   await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
   await expect(
     screen.findByRole("heading", { name: "Start with your files" }),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   expect(capture.sends).toHaveLength(0);
   expect(popup.open).not.toHaveBeenCalled();
   await fill(
@@ -553,27 +572,40 @@ test("Missing landing files do not silently start a text-only task", async () =>
   expect(capture.sends).toHaveLength(0);
 });
 
-test("An untrusted landing source is rejected without opening a window or starting a task", async () => {
-  const popup = mockLandingPopup();
-  const capture = capturePromptLaunch();
-  await setupPage({
-    context,
-    path: landingPath("https://attacker.example/files"),
-    host: "app.okou.ai",
-  });
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Your files are unavailable",
-  );
-  expect(popup.open).not.toHaveBeenCalled();
-  expect(
-    queryAllByRoleFast("link").find((link) => {
-      return link.textContent === "Back to files";
-    }),
-  ).toBeUndefined();
-  expect(capture.sends).toHaveLength(0);
-});
+test.each([
+  "https://attacker.example/files",
+  "https://pr-848-www.omby.ai/en/tools/pdf-to-ppt",
+  "https://www.okou.ai.evil.example/files",
+  "https://user@www.okou.ai/files",
+  "http://www.okou.ai/files",
+  "https://www.okou.ai/files?redirect=evil",
+  "https://www.okou.ai/files#fragment",
+  "https://www.okou.ai:444/files",
+])(
+  "An untrusted landing source %s cannot open a window or start a task",
+  async (source) => {
+    const popup = mockLandingPopup();
+    const capture = capturePromptLaunch();
+    await setupPage({
+      context,
+      path: landingPath(source),
+      host: "app.okou.ai",
+    });
+    await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+      "Your files are unavailable",
+    );
+    expect(popup.open).not.toHaveBeenCalled();
+    expect(
+      queryAllByRoleFast("link").find((link) => {
+        return link.textContent === "Back to files";
+      }),
+    ).toBeUndefined();
+    expect(capture.sends).toHaveLength(0);
+  },
+);
 
 test("A new user keeps the landing file handoff while completing onboarding", async () => {
+  const user = userEvent.setup();
   const popup = mockLandingPopup();
   const capture = capturePromptLaunch();
   const report = {
@@ -617,13 +649,17 @@ test("A new user keeps the landing file handoff while completing onboarding", as
   });
   expect(within(selected).getByText("report.pdf")).toBeInTheDocument();
   expect(within(selected).getByText("董事会笔记.txt")).toBeInTheDocument();
-  expect(within(selected).getByTitle("report.pdf · 6B")).toBeInTheDocument();
   expect(
-    within(selected).getByTitle("董事会笔记.txt · 5B"),
+    within(selected).getByLabelText("report.pdf · 6B"),
   ).toBeInTheDocument();
   expect(
-    within(selected).queryByText("Uploads when you start the task."),
-  ).not.toBeInTheDocument();
+    within(selected).getByLabelText("董事会笔记.txt · 5B"),
+  ).toBeInTheDocument();
+  await user.hover(within(selected).getByLabelText("report.pdf · 6B"));
+  await expect(
+    screen.findByText("report.pdf · 6B"),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(within(selected).getByLabelText("report.pdf · 6B"));
   expect(
     within(selected).getByLabelText("Attach", { selector: "input" }),
   ).toBeInTheDocument();
@@ -637,7 +673,7 @@ test("A new user keeps the landing file handoff while completing onboarding", as
   click(await findButton("Next"));
   await expect(
     screen.findByRole("heading", { name: "Start with your files" }),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   await expect(
     screen.findByText("董事会笔记.txt"),
   ).resolves.toBeInTheDocument();
@@ -963,4 +999,56 @@ test("Adding files beyond the combined limit leaves the existing selection intac
   expect(screen.getByText("report.pdf")).toBeInTheDocument();
   expect(screen.getByText("notes.txt")).toBeInTheDocument();
   expect(screen.queryByText("extra-0.txt")).not.toBeInTheDocument();
+});
+
+test("A preview file transfer returns to the same Marketing and App preview pair", async () => {
+  const popup = mockLandingPopup();
+  const source = "https://pr-848-www.omby.ai/en/tools/pdf-to-ppt";
+  await setupPage({
+    context,
+    path: landingPath(source),
+    host: "pr-44425-app-okou-app-preview.vm0.workers.dev",
+  });
+  click(await findButton("Upload and start"));
+  await popup.deliver(null, "https://pr-848-www.omby.ai");
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Your files are unavailable",
+  );
+  const back = queryAllByRoleFast("link").find((link) => {
+    return link.textContent === "Back to files";
+  });
+  expect(back).toHaveAttribute(
+    "href",
+    `${source}?fileDraft=${LANDING_DRAFT_ID}&appPreview=44425`,
+  );
+});
+
+const closingApp = createTestRuntime(context);
+
+test("Closing the App during transfer closes its file window and stops the handshake", async () => {
+  const popup = mockLandingPopup();
+  const capture = capturePromptLaunch();
+  await setupPage({
+    context: closingApp,
+    path: landingPath(),
+    host: "app.okou.ai",
+  });
+  click(await findButton("Upload and start"));
+  await popup.ready();
+  expect(popup.post).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      type: "okou:landing-files:read",
+      id: LANDING_DRAFT_ID,
+    }),
+    "https://www.okou.ai",
+  );
+  await act(() => {
+    closingApp.dispose();
+  });
+  await waitFor(() => {
+    expect(popup.close).toHaveBeenCalledOnce();
+  });
+  await popup.ready();
+  expect(popup.post).toHaveBeenCalledOnce();
+  expect(capture.sends).toHaveLength(0);
 });

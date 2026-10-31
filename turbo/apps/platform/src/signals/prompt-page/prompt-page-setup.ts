@@ -4,7 +4,7 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updatePage$ } from "../react-router.ts";
 import { LandingFilesPage } from "../../views/prompt-page/landing-files-page.tsx";
 import { landingFileSource } from "./landing-file-handoff.ts";
-import { createLandingFilesSignals } from "./landing-files.ts";
+import { prepareLandingFiles$ } from "./landing-files.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
@@ -190,25 +190,29 @@ export const setupPromptPage$ = command(
     if (params.has("landingFiles") || params.has("landingSource")) {
       const switches = await get(featureSwitch$);
       signal.throwIfAborted();
-      const files = createLandingFilesSignals(
-        switches[FeatureSwitchKey.LandingFileHandoff]
-          ? landingFileSource(
-              params.get("landingSource") ?? "",
-              location.origin,
-            )
-          : null,
-        params.get("landingFiles") ?? "",
-        prompt,
+      const files = set(
+        prepareLandingFiles$,
         {
-          agentId,
+          source: switches[FeatureSwitchKey.LandingFileHandoff]
+            ? landingFileSource(
+                params.get("landingSource") ?? "",
+                location.origin,
+              )
+            : null,
+          id: params.get("landingFiles") ?? "",
           prompt,
-          modelSelection,
-          generationTemplate: resolvedGenerationTemplate?.template,
-          generationTemplateTitleSnapshot:
-            resolvedGenerationTemplate?.titleSnapshot,
-          computerUseHostId: null,
-          routeSearchParams: cleaned,
+          request: {
+            agentId,
+            prompt,
+            modelSelection,
+            generationTemplate: resolvedGenerationTemplate?.template,
+            generationTemplateTitleSnapshot:
+              resolvedGenerationTemplate?.titleSnapshot,
+            computerUseHostId: null,
+            routeSearchParams: cleaned,
+          },
         },
+        signal,
       );
       set(
         updatePage$,

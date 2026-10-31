@@ -144,8 +144,8 @@ export async function readLandingFiles(
   const [outcome] = await Promise.allSettled([result.promise]);
   window.removeEventListener("message", receive);
   popup.close();
-  if (!outcome || outcome.status === "rejected") {
-    throw outcome?.reason ?? new Error("File transfer did not complete");
+  if (outcome.status === "rejected") {
+    throw outcome.reason;
   }
   return outcome.value;
 }

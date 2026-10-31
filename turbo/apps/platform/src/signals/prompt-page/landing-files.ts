@@ -22,7 +22,7 @@ interface LandingFile {
   file: File;
 }
 
-export function createLandingFilesSignals(
+function createLandingFilesSignals(
   source: URL | null,
   id: string,
   prompt: string,
@@ -131,3 +131,40 @@ export function createLandingFilesSignals(
 }
 
 export type LandingFilesSignals = ReturnType<typeof createLandingFilesSignals>;
+
+interface LandingFilesRequest {
+  source: URL | null;
+  id: string;
+  prompt: string;
+  request: SendNewThreadMessageRequest;
+}
+
+const landingFilesRequest$ = state<LandingFilesRequest | null>(null);
+const landingFiles$ = computed((get) => {
+  const request = get(landingFilesRequest$);
+  return request
+    ? createLandingFilesSignals(
+        request.source,
+        request.id,
+        request.prompt,
+        request.request,
+      )
+    : null;
+});
+
+export const prepareLandingFiles$ = command(
+  ({ get, set }, request: LandingFilesRequest, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(landingFilesRequest$, request);
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (get(landingFilesRequest$) === request) {
+          set(landingFilesRequest$, null);
+        }
+      },
+      { once: true },
+    );
+    return get(landingFiles$)!;
+  },
+);

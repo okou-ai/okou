@@ -1,4 +1,10 @@
-import { Button } from "@okouai/ui";
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@okouai/ui";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { Paperclip, X } from "lucide-react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -29,21 +35,30 @@ export function LandingFileList({
 }) {
   const { t } = useTranslation();
   return (
-    <>
+    <TooltipProvider delay={200}>
       {files.map(({ id, file }) => {
         return (
-          <span
-            key={id}
-            className="relative inline-flex min-w-0 items-center"
-            title={`${file.name} · ${formatSize(file.size)}`}
-          >
-            <span className={FILE_CHIP_CLASSES}>
-              <FileChipBody
-                filename={file.name}
-                contentType={file.type}
-                testId="landing-attachment-file-icon"
-              />
-            </span>
+          <span key={id} className="relative inline-flex min-w-0 items-center">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className={FILE_CHIP_CLASSES}
+                    tabIndex={0}
+                    aria-label={`${file.name} · ${formatSize(file.size)}`}
+                  />
+                }
+              >
+                <FileChipBody
+                  filename={file.name}
+                  contentType={file.type}
+                  testId="landing-attachment-file-icon"
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                {file.name} · {formatSize(file.size)}
+              </TooltipContent>
+            </Tooltip>
             {onRemove && (
               <IconTooltipButton
                 type="button"
@@ -65,7 +80,7 @@ export function LandingFileList({
           </span>
         );
       })}
-    </>
+    </TooltipProvider>
   );
 }
 
