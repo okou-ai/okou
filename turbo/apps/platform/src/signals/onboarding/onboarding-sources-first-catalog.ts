@@ -1,4 +1,3 @@
-import { onboardingCapabilitiesEnabled$ } from "./onboarding-capabilities-enabled.ts";
 import { command, computed } from "ccstate";
 import { onboardingSourcesContract } from "@okouai/api-contracts/client/onboarding";
 import { accept } from "../../lib/accept.ts";
@@ -37,7 +36,6 @@ export const continueSourcesFirstIndustry$ = command(
     const next = nextSourcesFirstStep(
       "industry",
       get(sourcesFirstDraft$).provider,
-      get(onboardingCapabilitiesEnabled$),
     );
     const searchParams = new URLSearchParams(get(searchParams$));
     await get(onboardingSourceConnectors$);

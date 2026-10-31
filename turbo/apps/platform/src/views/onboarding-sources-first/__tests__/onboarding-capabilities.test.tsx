@@ -1,5 +1,4 @@
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -80,7 +79,7 @@ function button(name: string) {
   return element;
 }
 
-async function openCapabilities({ enabled = true, isAdmin = true } = {}) {
+async function openCapabilities({ isAdmin = true } = {}) {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -91,7 +90,6 @@ async function openCapabilities({ enabled = true, isAdmin = true } = {}) {
     context,
     locale: "en-US",
     path: `${ROUTES.onboardingCapabilities}?redeemCode=LAUNCH50`,
-    featureSwitches: { [FeatureSwitchKey.OnboardingCapabilities]: enabled },
   });
 }
 
@@ -273,14 +271,21 @@ test("Catalog failure does not block onboarding", async () => {
   expect(pathname()).toBe(ROUTES.onboardingReady);
 });
 
-test("The disabled feature redirects its old URL and excludes the step on Back", async () => {
-  await openCapabilities({ enabled: false });
-  await screen.findByRole("heading", { name: READY_TITLE });
-  expect(pathname()).toBe(ROUTES.onboardingReady);
-  click(button("Back"));
-  await screen.findByRole("heading", { name: "Keep Okou a message away" });
-  expect(pathname()).toBe(ROUTES.onboardingSlack);
-});
+test.each([true, false])(
+  "All new users choose capabilities after chat channels (isAdmin=%s)",
+  async (isAdmin) => {
+    await openCapabilities({ isAdmin });
+    await screen.findByRole("heading", { name: TITLE });
+    click(button("Back"));
+    await screen.findByRole("heading", { name: "Keep Okou a message away" });
+    click(button("Not now"));
+    await screen.findByRole("heading", { name: TITLE });
+    expect(pathname()).toBe(ROUTES.onboardingCapabilities);
+    click(button("Continue"));
+    await screen.findByRole("heading", { name: READY_TITLE });
+    expect(pathname()).toBe(ROUTES.onboardingReady);
+  },
+);
 
 test("Opening Settings does not replace the onboarding catalog", async () => {
   mockCatalog();

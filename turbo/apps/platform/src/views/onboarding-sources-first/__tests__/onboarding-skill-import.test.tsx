@@ -513,6 +513,8 @@ test("Finishing onboarding sends the industry after a full Codex flow", async ()
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();
   click(getButtonByName("Not now"));
+  await screen.findByRole("heading", { name: "Meet Okou’s secret tools" });
+  click(getButtonByName("Continue"));
   await expect(
     screen.findByRole("heading", { name: "Start with a task that matters" }),
   ).resolves.toBeInTheDocument();

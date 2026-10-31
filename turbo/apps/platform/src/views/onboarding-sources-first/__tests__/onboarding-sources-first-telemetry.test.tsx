@@ -184,7 +184,7 @@ test("Each step reports its position in the flow without an invitation step", as
         flow: "source_first",
         step_key: "industry",
         step_index: 0,
-        step_count: 5,
+        step_count: 6,
         route_path: ROUTES.onboarding,
         is_owner: true,
       }),
@@ -227,13 +227,13 @@ test("Each step reports its position in the flow without an invitation step", as
       onboardingEvent("StepViewed", {
         step_key: "sources",
         step_index: 1,
-        step_count: 5,
+        step_count: 6,
         route_path: ROUTES.onboardingSources,
       }),
       onboardingEvent("StepViewed", {
         step_key: "experience",
         step_index: 2,
-        step_count: 5,
+        step_count: 6,
       }),
     ]),
   );

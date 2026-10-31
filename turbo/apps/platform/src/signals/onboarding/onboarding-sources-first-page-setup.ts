@@ -1,6 +1,5 @@
 import { OnboardingCapabilitiesPage } from "../../views/onboarding-sources-first/onboarding-capabilities-page.tsx";
 import { startOnboardingCapabilitiesDiscovery$ } from "./onboarding-capabilities.ts";
-import { onboardingCapabilitiesEnabled$ } from "./onboarding-capabilities-enabled.ts";
 import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
 import { OnboardingSkillsPage } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
@@ -156,19 +155,9 @@ function createSourcesFirstPageSetup(
     }
 
     const draft = get(sourcesFirstDraft$);
-    if (
-      !sourcesFirstSteps(
-        draft.provider,
-        get(onboardingCapabilitiesEnabled$),
-      ).includes(config.step)
-    ) {
-      // Preserve old links and saved progress when a branch is not enabled.
-      set(
-        redirectTo$,
-        config.step === "capabilities"
-          ? ROUTES.onboardingReady
-          : ROUTES.onboardingExperience,
-      );
+    if (!sourcesFirstSteps(draft.provider).includes(config.step)) {
+      // The optional skills step requires a selected subscription provider.
+      set(redirectTo$, ROUTES.onboardingExperience);
       return;
     }
 

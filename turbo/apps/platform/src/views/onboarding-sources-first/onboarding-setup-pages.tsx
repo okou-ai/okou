@@ -355,11 +355,7 @@ export function OnboardingExperiencePage() {
   // The answer decides the branch, so the next step is resolved from the
   // answer itself instead of the one this render was built from.
   const goNext = (): void => {
-    const next = nextSourcesFirstStep(
-      "experience",
-      provider,
-      flow.capabilitiesEnabled,
-    );
+    const next = nextSourcesFirstStep("experience", provider);
     if (next) {
       flow.goTo(next);
     }

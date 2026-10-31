@@ -145,6 +145,8 @@ async function leaveSlackStepWithNotNow(): Promise<void> {
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingSlack);
   click(getButtonByName("Not now"));
+  await screen.findByRole("heading", { name: "Meet Okou’s secret tools" });
+  click(getButtonByName("Continue"));
 }
 
 /** One catalog entry, so the source step has a grid to render. */

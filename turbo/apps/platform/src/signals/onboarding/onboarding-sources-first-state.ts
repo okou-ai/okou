@@ -383,10 +383,9 @@ export const selectStartingPromptOutput$ = command(
   },
 );
 
-/** A subscription adds Skills; the rollout adds Capabilities before the first task. */
+/** A subscription adds Skills; everyone chooses Capabilities before the first task. */
 export function sourcesFirstSteps(
   provider: SubscriptionProvider | null,
-  capabilitiesEnabled = false,
 ): readonly SourcesFirstStep[] {
   return [
     "industry",
@@ -394,7 +393,7 @@ export function sourcesFirstSteps(
     "experience",
     ...(provider === null ? [] : ["skills" as const]),
     "slack",
-    ...(capabilitiesEnabled ? ["capabilities" as const] : []),
+    "capabilities",
     "ready",
   ];
 }
@@ -403,9 +402,8 @@ export function sourcesFirstSteps(
 export function sourcesFirstProgress(
   step: SourcesFirstStep,
   provider: SubscriptionProvider | null,
-  capabilitiesEnabled = false,
 ): { readonly current: number; readonly total: number } {
-  const steps = sourcesFirstSteps(provider, capabilitiesEnabled);
+  const steps = sourcesFirstSteps(provider);
   const index = steps.indexOf(step);
   return { current: (index === -1 ? 0 : index) + 1, total: steps.length };
 }
@@ -414,9 +412,8 @@ export function sourcesFirstProgress(
 export function previousSourcesFirstStep(
   step: SourcesFirstStep,
   provider: SubscriptionProvider | null,
-  capabilitiesEnabled = false,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(provider, capabilitiesEnabled);
+  const steps = sourcesFirstSteps(provider);
   const index = steps.indexOf(step);
   return index > 0 ? (steps[index - 1] ?? null) : null;
 }
@@ -425,9 +422,8 @@ export function previousSourcesFirstStep(
 export function nextSourcesFirstStep(
   step: SourcesFirstStep,
   provider: SubscriptionProvider | null,
-  capabilitiesEnabled = false,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(provider, capabilitiesEnabled);
+  const steps = sourcesFirstSteps(provider);
   const index = steps.indexOf(step);
   return index === -1 ? null : (steps[index + 1] ?? null);
 }

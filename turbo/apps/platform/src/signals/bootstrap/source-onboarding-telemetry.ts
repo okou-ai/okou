@@ -5,7 +5,6 @@
 // leaves the browser; the funnel carries counts, lengths,
 // connector slugs and the enum answers instead.
 import { command, state } from "ccstate";
-import { onboardingCapabilitiesEnabled$ } from "../onboarding/onboarding-capabilities-enabled.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import { captureOnboardingEvent } from "../../lib/posthog.ts";
@@ -33,10 +32,7 @@ const captureStepEvent$ = command(
     properties: TelemetryProperties = {},
   ): void => {
     const flow = get(sourcesFirstFlow$);
-    const steps = sourcesFirstSteps(
-      get(sourcesFirstDraft$).provider,
-      get(onboardingCapabilitiesEnabled$),
-    );
+    const steps = sourcesFirstSteps(get(sourcesFirstDraft$).provider);
     captureOnboardingEvent(name, {
       flow: "source_first",
       step_key: step,
