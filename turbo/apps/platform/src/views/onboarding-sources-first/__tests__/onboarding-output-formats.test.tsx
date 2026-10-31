@@ -1,5 +1,4 @@
 import { cleanup, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
   click,
@@ -13,11 +12,13 @@ import {
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { resetSignal } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const TASK =
   "Review last week's ad results and suggest three things to test next.";
 const PRESENTATION =
@@ -56,7 +57,7 @@ function button(name: string): HTMLElement {
   return match;
 }
 
-test("formats augment the recommended task and the first chat receives the visible prompt", async () => {
+test("format choices leave the task unchanged and only the final choice reaches the first chat", async () => {
   let sentPrompt: string | undefined;
   mockChatLifecycle(context, {
     onRunCreate: (body) => {
@@ -66,71 +67,69 @@ test("formats augment the recommended task and the first chat receives the visib
   const input = await openReady();
   const original = input.value;
   const choices = [
-    ["Image", "Present the findings as a clear visual summary image."],
-    [
-      "Website",
-      "Present the findings as a shareable webpage with clear sections and takeaways.",
-    ],
-    ["Report", REPORT],
-    [
-      "Research brief",
-      "Present the findings as a research brief with supporting sources and open questions. Distinguish sourced facts from recommendations.",
-    ],
-    [
-      "People shortlist",
-      "Use this task as context to produce a shortlist of relevant people, with their roles, reasons for inclusion, and public professional profile links. If their relevance to the task is unclear, ask a focused question before searching.",
-    ],
-    ["Presentation", PRESENTATION],
+    "Image",
+    "Website",
+    "Report",
+    "Research brief",
+    "People shortlist",
+    "Presentation",
   ] as const;
-  for (const [name, instruction] of choices) {
+  for (const name of choices) {
     click(button(name));
     await waitFor(() => {
-      expect(input).toHaveValue(`${original}\n\n${instruction}`);
+      expect(input).toHaveValue(original);
       expect(button(name)).toHaveAttribute("aria-pressed", "true");
-      expect(input).toHaveFocus();
     });
   }
   // Selecting the same format again must not append a second instruction.
   click(button("Presentation"));
-  expect(input).toHaveValue(`${original}\n\n${PRESENTATION}`);
+  expect(input).toHaveValue(original);
   click(button("Start with Okou"));
   await waitFor(() => {
     expect(sentPrompt).toBe(`${original}\n\n${PRESENTATION}`);
   });
 });
 
-test("switching and clearing formats preserve edits around the output paragraph", async () => {
+test("switching and clearing formats preserve task edits and clearing submits only the task", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
   const input = await openReady();
   await fill(input, TASK);
   click(button("Presentation"));
   await waitFor(() => {
-    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
+    expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
+    expect(input).toHaveValue(TASK);
   });
-  const user = userEvent.setup({ delay: null });
-  await user.click(input);
-  await user.keyboard("{Control>}{Home}{/Control}Please ");
-  const wordStart = input.value.indexOf("concise");
-  input.setSelectionRange(wordStart, wordStart + "concise".length);
-  await user.keyboard("detailed");
-  await user.keyboard(
-    "{Control>}{End}{/Control}{Enter}{Enter}Use plain English.",
-  );
+  const editedTask = `${TASK}\n\nFocus on the spring campaign.`;
+  await fill(input, editedTask);
 
   click(button("Report"));
   await waitFor(() => {
-    expect(input).toHaveValue(
-      `Please ${TASK}\n\n${REPORT}\n\nUse plain English.`,
-    );
+    expect(input).toHaveValue(editedTask);
+    expect(button("Report")).toHaveAttribute("aria-pressed", "true");
   });
   click(button("Clear selection"));
   await waitFor(() => {
-    expect(input).toHaveValue(`Please ${TASK}\n\nUse plain English.`);
+    expect(input).toHaveValue(editedTask);
     expect(button("Report")).toHaveAttribute("aria-pressed", "false");
-    expect(input).toHaveFocus();
+  });
+  click(button("Start with Okou"));
+  await waitFor(() => {
+    expect(sentPrompt).toBe(editedTask);
   });
 });
 
-test("replacing the whole prompt starts a new task without stale output ownership", async () => {
+test("replacing the task preserves the selected format until submission", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
   const input = await openReady();
   click(button("Presentation"));
   await waitFor(() => {
@@ -138,11 +137,12 @@ test("replacing the whole prompt starts a new task without stale output ownershi
   });
   await fill(input, "Draft a customer update.");
   await waitFor(() => {
-    expect(button("Presentation")).toHaveAttribute("aria-pressed", "false");
+    expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
+    expect(input).toHaveValue("Draft a customer update.");
   });
-  click(button("Report"));
+  click(button("Start with Okou"));
   await waitFor(() => {
-    expect(input).toHaveValue(`Draft a customer update.\n\n${REPORT}`);
+    expect(sentPrompt).toBe(`Draft a customer update.\n\n${PRESENTATION}`);
   });
 });
 
@@ -173,14 +173,48 @@ test("format choices respect the prompt length limit without truncating the task
   });
 });
 
-test("a reload preserves the complete editable prompt and its format selection", async () => {
+test("the selected format reserves space within the saved prompt limit", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
+  const input = await openReady();
+  click(button("Report"));
+  const taskLimit = 1000 - 2 - REPORT.length;
+  await waitFor(() => {
+    expect(input).toHaveAttribute("maxlength", String(taskLimit));
+  });
+  const longTask = "a".repeat(taskLimit);
+  await fill(input, "");
+  await waitFor(() => {
+    expect(input).toHaveValue("");
+  });
+  await fill(input, longTask);
+  expect(input).toHaveValue(longTask);
+  click(button("Start with Okou"));
+  await waitFor(() => {
+    expect(sentPrompt).toBe(`${longTask}\n\n${REPORT}`);
+    expect(sentPrompt).toHaveLength(1000);
+  });
+});
+
+test("a reload preserves the task and separate format selection without duplicating instructions", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
   const resetFirstPage = resetSignal();
   const pageSignal = context.store.set(resetFirstPage, context.signal);
   const input = await openReady({ ...context, signal: pageSignal });
   await fill(input, TASK);
   click(button("Presentation"));
   await waitFor(() => {
-    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
+    expect(input).toHaveValue(TASK);
+    expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
   });
   context.store.set(resetFirstPage);
   cleanup();
@@ -189,10 +223,55 @@ test("a reload preserves the complete editable prompt and its format selection",
   vi.mocked(window.history.back).mockRestore();
 
   const restored = await openReady(reloadedContext);
-  expect(restored).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
+  expect(restored).toHaveValue(TASK);
   expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
   click(button("Report"));
   await waitFor(() => {
-    expect(restored).toHaveValue(`${TASK}\n\n${REPORT}`);
+    expect(restored).toHaveValue(TASK);
+    expect(button("Report")).toHaveAttribute("aria-pressed", "true");
+  });
+  click(button("Start with Okou"));
+  await waitFor(() => {
+    expect(sentPrompt).toBe(`${TASK}\n\n${REPORT}`);
+  });
+});
+
+test("existing drafts retain customized format instructions separately from surrounding task text", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
+  const customFormat = "\n\nPresent the findings as a five-slide presentation.";
+  const afterFormat = "\n\nFocus on the spring campaign.";
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 2,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: true,
+      provider: null,
+      startingPromptDraft: TASK + customFormat + afterFormat,
+      startingPromptKey: "marketing:none",
+      startingPromptOutput: {
+        format: "presentation",
+        start: TASK.length,
+        end: TASK.length + customFormat.length,
+      },
+      recommendationJobId: null,
+      recommendationStartedAt: null,
+    }),
+  );
+
+  const input = await openReady();
+  expect(input).toHaveValue(TASK + afterFormat);
+  expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
+  click(button("Presentation"));
+  click(button("Start with Okou"));
+  await waitFor(() => {
+    expect(sentPrompt).toBe(TASK + afterFormat + customFormat);
   });
 });

@@ -133,6 +133,7 @@ export const runOnboardingRequest$ = command(
     { get, set },
     request: string,
     template: string | null,
+    outputSuffix: string,
     signal: AbortSignal,
   ): Promise<void> => {
     const searchParams = get(searchParams$);
@@ -142,7 +143,7 @@ export const runOnboardingRequest$ = command(
       signal,
     );
     const handoffParams = promptHandoffParams(searchParams);
-    handoffParams.set("prompt", request);
+    handoffParams.set("prompt", request + outputSuffix);
     if (template) {
       handoffParams.set("template", template);
     } else {
@@ -168,10 +169,10 @@ export const runPromptOnboarding$ = command(
       },
       { returnObjects: true },
     );
-    const request = output
-      ? `${prompt}\n\n${copy.options[output].instruction}`
-      : prompt;
+    const outputSuffix = output
+      ? `\n\n${copy.options[output].instruction}`
+      : "";
     const template = get(searchParams$).get("template")?.trim() || null;
-    await set(runOnboardingRequest$, request, template, signal);
+    await set(runOnboardingRequest$, prompt, template, outputSuffix, signal);
   },
 );
