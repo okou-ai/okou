@@ -2,7 +2,10 @@ import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Textarea, cn, surfaceVariants } from "@okouai/ui";
-import { STARTING_PROMPT_MAX_LENGTH } from "../../signals/onboarding/onboarding-output-format.ts";
+import {
+  STARTING_PROMPT_MAX_LENGTH,
+  onboardingPromptWithFormat,
+} from "../../signals/onboarding/onboarding-output-format.ts";
 import { OnboardingOutputFormats } from "./onboarding-output-formats.tsx";
 import { Loader2 } from "lucide-react";
 import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/validators/onboarding";
@@ -61,7 +64,6 @@ function StartingPromptPanel({
   outcomeDetail,
   sourceLabel,
   text,
-  promptKey,
   busy,
   onChange,
 }: {
@@ -70,14 +72,13 @@ function StartingPromptPanel({
   readonly outcomeDetail: string | null;
   readonly sourceLabel: string | null;
   readonly text: string;
-  readonly promptKey: string;
   readonly busy: boolean;
   readonly onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
   const setPromptInput = useSet(setStartingPromptInput$);
-  const { startingPromptOutput: output } = useGet(sourcesFirstDraft$);
+  const { startingPromptFormat: output } = useGet(sourcesFirstDraft$);
   const selectOutput = useSet(selectStartingPromptOutput$);
   return (
     <div
@@ -130,17 +131,14 @@ function StartingPromptPanel({
             maxLength={STARTING_PROMPT_MAX_LENGTH}
             spellCheck={false}
             value={text}
+            disabled={busy}
             onChange={(event) => {
               onChange(event.target.value);
             }}
           />
           <OnboardingOutputFormats
-            text={text}
             output={output}
-            onSelect={(format, instruction) => {
-              selectOutput(text, promptKey, format, instruction);
-            }}
-            maxLength={STARTING_PROMPT_MAX_LENGTH}
+            onSelect={selectOutput}
             disabled={busy}
           />
         </>
@@ -199,6 +197,8 @@ export function OnboardingReadyPage() {
   const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
   const pageSignal = useGet(pageSignal$);
   const [runLoadable, runRequest] = useLoadableSet(runOnboardingRequest$);
+  const busy =
+    runLoadable.state === "loading" || runLoadable.state === "hasData";
   // Keep the settled job while a notification re-reads it.
   const recommendationJob = useLastLoadable(onboardingRecommendation$);
 
@@ -259,10 +259,20 @@ export function OnboardingReadyPage() {
         captureStartClicked(request.length);
         // Starting it completes onboarding first: an owner completes the
         // workspace's onboarding; a member completes only their own.
-        detach(runRequest(request, null, pageSignal), Reason.DomCallback);
+        detach(
+          runRequest(
+            onboardingPromptWithFormat(
+              request,
+              flow.draft.startingPromptFormat,
+            ),
+            null,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       primaryDisabled={isLoading || text.trim().length === 0}
-      primaryBusy={runLoadable.state === "loading"}
+      primaryBusy={busy}
       onBack={flow.goBack}
     >
       {/* One column on the step's own sheet: the welcome, then the request it
@@ -280,10 +290,9 @@ export function OnboardingReadyPage() {
           outcomeDetail={outcomeDetail}
           sourceLabel={sourceLabel}
           text={text}
-          promptKey={promptKey}
-          busy={runLoadable.state === "loading"}
+          busy={busy}
           onChange={(value) => {
-            editPrompt(text, value, promptKey);
+            editPrompt(value, promptKey);
             capturePromptEdited(value.length);
           }}
         />

@@ -4568,38 +4568,36 @@
         "clear": "Cancella selezione",
         "options": {
           "image": {
-            "instruction": "Presenta i risultati come un’immagine di sintesi chiara.",
+            "instruction": "Formato di output: Immagine.",
             "label": "Immagine"
           },
           "people": {
-            "instruction": "Usa questa attività come contesto per creare un elenco di persone pertinenti, con ruoli, motivi della selezione e link a profili professionali pubblici. Se il collegamento con l’attività non è chiaro, fai una domanda mirata prima di cercare.",
+            "instruction": "Formato di output: Elenco di persone.",
             "label": "Elenco di persone"
           },
           "presentation": {
-            "instruction": "Presenta i risultati in una presentazione Okou con i punti chiave, le raccomandazioni e i prossimi passi, e condividi il link.",
+            "instruction": "Formato di output: presentazione Okou. Condividi il link.",
             "label": "Presentazione"
           },
           "report": {
-            "instruction": "Presenta i risultati in un report strutturato con risultati principali, raccomandazioni e prossimi passi.",
+            "instruction": "Formato di output: Report.",
             "label": "Report"
           },
           "research": {
-            "instruction": "Presenta i risultati in una sintesi della ricerca con fonti e domande aperte. Distingui i fatti documentati dalle raccomandazioni.",
+            "instruction": "Formato di output: Sintesi della ricerca.",
             "label": "Sintesi della ricerca"
           },
           "website": {
-            "instruction": "Presenta i risultati in una pagina web condivisibile con sezioni e punti chiave chiari.",
+            "instruction": "Formato di output: Sito web.",
             "label": "Sito web"
           }
         },
-        "selectionPriority": "Usa questo formato per il risultato finale, sostituendo qualsiasi formato richiesto in precedenza.",
-        "title": "Scegli un formato",
-        "tooLong": "Accorcia il testo dell’attività per scegliere un altro formato."
+        "title": "Scegli un formato"
       },
       "prompt": {
         "connectorsDescription": "Collega le tue app per aiutare Okou a capire meglio il tuo lavoro.",
         "connectorsTitle": "Collega i tuoi strumenti di lavoro",
-        "intro": "Collega i tuoi strumenti per risultati migliori e scegli un formato per aggiungere istruzioni modificabili al prompt."
+        "intro": "Collega i tuoi strumenti per risultati migliori e scegli un formato di output."
       },
       "skills": {
         "copied": "Copiato",

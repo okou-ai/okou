@@ -4568,38 +4568,36 @@
         "clear": "Effacer la sélection",
         "options": {
           "image": {
-            "instruction": "Présente les résultats sous la forme d’une image de synthèse claire.",
+            "instruction": "Format de sortie : Image.",
             "label": "Image"
           },
           "people": {
-            "instruction": "À partir de cette tâche, établis une sélection de personnes pertinentes avec leurs rôles, les raisons de leur sélection et des liens vers leurs profils professionnels publics. Si leur lien avec la tâche n’est pas clair, pose une question précise avant de chercher.",
+            "instruction": "Format de sortie : Sélection de personnes.",
             "label": "Sélection de personnes"
           },
           "presentation": {
-            "instruction": "Présente les conclusions dans une présentation Okou avec les résultats clés, les recommandations et les prochaines étapes, puis partage son lien.",
+            "instruction": "Format de sortie : présentation Okou. Partagez son lien.",
             "label": "Présentation"
           },
           "report": {
-            "instruction": "Présente les résultats dans un rapport structuré avec les conclusions clés, les recommandations et les prochaines étapes.",
+            "instruction": "Format de sortie : Rapport.",
             "label": "Rapport"
           },
           "research": {
-            "instruction": "Présente les résultats dans une note de recherche avec les sources et les questions ouvertes. Distingue les faits étayés des recommandations.",
+            "instruction": "Format de sortie : Note de recherche.",
             "label": "Note de recherche"
           },
           "website": {
-            "instruction": "Présente les résultats sur une page web partageable avec des sections et des points clés clairs.",
+            "instruction": "Format de sortie : Site web.",
             "label": "Site web"
           }
         },
-        "selectionPriority": "Utilise ce format pour le livrable final, en remplaçant toute demande de format antérieure.",
-        "title": "Choisir un format",
-        "tooLong": "Raccourcissez la tâche pour choisir un autre format."
+        "title": "Choisir un format"
       },
       "prompt": {
         "connectorsDescription": "Connectez vos applications pour aider Okou à mieux comprendre votre travail.",
         "connectorsTitle": "Connectez vos outils de travail",
-        "intro": "Connectez vos outils pour de meilleurs résultats et choisissez un format pour ajouter des consignes modifiables à votre prompt."
+        "intro": "Connectez vos outils pour de meilleurs résultats et choisissez un format de sortie."
       },
       "skills": {
         "copied": "Copié",

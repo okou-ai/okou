@@ -4499,38 +4499,36 @@
         "clear": "Hapus pilihan",
         "options": {
           "image": {
-            "instruction": "Sajikan temuan sebagai gambar ringkasan visual yang jelas.",
+            "instruction": "Format keluaran: Gambar.",
             "label": "Gambar"
           },
           "people": {
-            "instruction": "Gunakan tugas ini sebagai konteks untuk menyusun daftar orang yang relevan, lengkap dengan peran, alasan pemilihan, dan tautan profil profesional publik. Jika kaitannya dengan tugas belum jelas, ajukan pertanyaan yang terarah sebelum mencari.",
+            "instruction": "Format keluaran: Daftar kandidat.",
             "label": "Daftar kandidat"
           },
           "presentation": {
-            "instruction": "Sajikan temuan sebagai presentasi Okou dengan hasil utama, rekomendasi, dan langkah berikutnya, lalu bagikan tautannya.",
+            "instruction": "Format keluaran: presentasi Okou. Bagikan tautannya.",
             "label": "Presentasi"
           },
           "report": {
-            "instruction": "Sajikan temuan sebagai laporan terstruktur berisi hasil utama, rekomendasi, dan langkah berikutnya.",
+            "instruction": "Format keluaran: Laporan.",
             "label": "Laporan"
           },
           "research": {
-            "instruction": "Sajikan temuan sebagai ringkasan riset dengan sumber pendukung dan pertanyaan terbuka. Bedakan fakta bersumber dari rekomendasi.",
+            "instruction": "Format keluaran: Ringkasan riset.",
             "label": "Ringkasan riset"
           },
           "website": {
-            "instruction": "Sajikan temuan sebagai halaman web yang dapat dibagikan dengan bagian dan poin utama yang jelas.",
+            "instruction": "Format keluaran: Situs web.",
             "label": "Situs web"
           }
         },
-        "selectionPriority": "Gunakan format ini untuk hasil akhir, menggantikan permintaan format sebelumnya.",
-        "title": "Pilih format",
-        "tooLong": "Persingkat tugas untuk memilih format lain."
+        "title": "Pilih format"
       },
       "prompt": {
         "connectorsDescription": "Hubungkan aplikasi Anda agar Okou lebih memahami pekerjaan Anda.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
-        "intro": "Hubungkan alat Anda untuk hasil yang lebih baik dan pilih format untuk menambahkan instruksi yang dapat diedit ke prompt."
+        "intro": "Hubungkan alat Anda untuk hasil yang lebih baik dan pilih format keluaran."
       },
       "skills": {
         "copied": "Tersalin",

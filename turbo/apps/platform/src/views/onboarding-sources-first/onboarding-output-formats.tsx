@@ -10,9 +10,7 @@ import {
 } from "lucide-react";
 import {
   ONBOARDING_OUTPUT_FORMATS,
-  withStartingPromptOutput,
   type OnboardingOutputFormat,
-  type StartingPromptOutput,
 } from "../../signals/onboarding/onboarding-output-format.ts";
 
 const OUTPUT_ICONS = Object.freeze({
@@ -25,19 +23,12 @@ const OUTPUT_ICONS = Object.freeze({
 });
 
 export function OnboardingOutputFormats({
-  text,
   output,
   onSelect,
-  maxLength,
   disabled,
 }: {
-  readonly text: string;
-  readonly output: StartingPromptOutput | null;
-  readonly onSelect: (
-    format: OnboardingOutputFormat | null,
-    instruction: string,
-  ) => void;
-  readonly maxLength?: number;
+  readonly output: OnboardingOutputFormat | null;
+  readonly onSelect: (format: OnboardingOutputFormat | null) => void;
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
@@ -47,15 +38,6 @@ export function OnboardingOutputFormats({
     },
     { returnObjects: true },
   );
-  const options = ONBOARDING_OUTPUT_FORMATS.map((format) => {
-    const instruction = `${copy.options[format].instruction} ${copy.selectionPriority}`;
-    const next = withStartingPromptOutput(text, output, instruction);
-    return {
-      format,
-      instruction,
-      tooLong: maxLength !== undefined && next.text.length > maxLength,
-    };
-  });
 
   return (
     <section
@@ -77,7 +59,7 @@ export function OnboardingOutputFormats({
             className="shrink-0 max-sm:min-h-11"
             disabled={disabled}
             onClick={() => {
-              onSelect(null, "");
+              onSelect(null);
             }}
           >
             {copy.clear}
@@ -86,25 +68,22 @@ export function OnboardingOutputFormats({
       </div>
       <ToggleGroup<OnboardingOutputFormat>
         aria-labelledby="onboarding-output-formats-title"
-        value={output ? [output.format] : []}
+        value={output ? [output] : []}
         disabled={disabled}
         className="grid grid-cols-1 items-stretch gap-2 @min-[18rem]:grid-cols-2"
         onValueChange={(values) => {
-          const selected = options.find(({ format }) => {
-            return format === values[0];
-          });
+          const selected = values[0];
           if (selected) {
-            onSelect(selected.format, selected.instruction);
+            onSelect(selected);
           }
         }}
       >
-        {options.map(({ format, tooLong }) => {
+        {ONBOARDING_OUTPUT_FORMATS.map((format) => {
           const Icon = OUTPUT_ICONS[format];
           return (
             <Toggle
               key={format}
               value={format}
-              disabled={tooLong}
               className="h-auto min-h-10 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left text-sm leading-5 whitespace-normal max-sm:min-h-11"
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -115,13 +94,6 @@ export function OnboardingOutputFormats({
           );
         })}
       </ToggleGroup>
-      {options.some((option) => {
-        return option.tooLong;
-      }) ? (
-        <p className="mt-2 text-xs text-muted-foreground" role="status">
-          {copy.tooLong}
-        </p>
-      ) : null}
     </section>
   );
 }

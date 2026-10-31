@@ -20,6 +20,7 @@ import {
   sourcesFirstDraft$,
 } from "./onboarding-sources-first-state.ts";
 import { onboardingDraft$ } from "./onboarding-state.ts";
+import { onboardingPromptWithFormat } from "./onboarding-output-format.ts";
 
 const ONBOARDING_TRANSIENT_PARAMS = [
   "choice",
@@ -161,8 +162,9 @@ export const runOnboardingRequest$ = command(
  */
 export const runPromptOnboarding$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const prompt = get(onboardingDraft$).prompt;
+    const { prompt, output } = get(onboardingDraft$);
+    const request = onboardingPromptWithFormat(prompt, output);
     const template = get(searchParams$).get("template")?.trim() || null;
-    await set(runOnboardingRequest$, prompt, template, signal);
+    await set(runOnboardingRequest$, request, template, signal);
   },
 );

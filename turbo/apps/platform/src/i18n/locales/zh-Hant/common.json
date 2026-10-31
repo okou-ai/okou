@@ -4499,38 +4499,36 @@
         "clear": "清除選擇",
         "options": {
           "image": {
-            "instruction": "將結果整理為一張清晰的視覺化摘要圖片。",
+            "instruction": "輸出格式：圖片。",
             "label": "圖片"
           },
           "people": {
-            "instruction": "結合此任務，整理相關人員的候選名單，說明其角色、入選理由，並附上公開職業資料連結。若人員與任務的關聯不明確，先提出一個具體問題再開始尋找。",
+            "instruction": "輸出格式：人員名單。",
             "label": "人員名單"
           },
           "presentation": {
-            "instruction": "將結果製作成 Okou 簡報，包含關鍵結論、建議和後續步驟，並分享連結。",
+            "instruction": "輸出格式：Okou 簡報，並分享連結。",
             "label": "簡報"
           },
           "report": {
-            "instruction": "將結果整理為一份結構清晰的報告，包含關鍵結果、建議和後續步驟。",
+            "instruction": "輸出格式：報告。",
             "label": "報告"
           },
           "research": {
-            "instruction": "將結果整理為一份研究摘要，附上支持結論的來源和待解決的問題。區分有來源支持的事實與建議。",
+            "instruction": "輸出格式：研究摘要。",
             "label": "研究摘要"
           },
           "website": {
-            "instruction": "將結果整理為一個可分享的網頁，結構清晰並凸顯重點。",
+            "instruction": "輸出格式：網站。",
             "label": "網站"
           }
         },
-        "selectionPriority": "最終交付使用此格式，取代前文中的其他格式要求。",
-        "title": "選擇產出形式",
-        "tooLong": "請縮短任務內容，以選擇其他產出形式。"
+        "title": "選擇產出形式"
       },
       "prompt": {
         "connectorsDescription": "連接應用程式，讓 Okou 更了解你的工作。",
         "connectorsTitle": "連接你的工作工具",
-        "intro": "連接工具，讓成果更符合需求；選擇格式後，輸出要求會填入提示詞，供你編輯。"
+        "intro": "連接工具，讓成果更符合需求，並選擇輸出格式。"
       },
       "skills": {
         "copied": "已複製",

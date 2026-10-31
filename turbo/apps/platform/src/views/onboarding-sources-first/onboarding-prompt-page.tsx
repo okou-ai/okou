@@ -47,7 +47,7 @@ function usePromptOnboarding() {
     selectOutput,
     connectorSlugs,
     run,
-    busy: runLoadable.state === "loading",
+    busy: runLoadable.state === "loading" || runLoadable.state === "hasData",
   };
 }
 
@@ -72,6 +72,7 @@ export function OnboardingSourcesFirstPromptPage() {
         return $.onboarding.make.promptLabel;
       })}
       value={prompt}
+      disabled={busy}
       onChange={(event) => {
         setPrompt(event.target.value);
       }}
@@ -139,7 +140,6 @@ export function OnboardingSourcesFirstPromptPage() {
           />
         </section>
         <OnboardingOutputFormats
-          text={prompt}
           output={output}
           onSelect={selectOutput}
           disabled={busy}

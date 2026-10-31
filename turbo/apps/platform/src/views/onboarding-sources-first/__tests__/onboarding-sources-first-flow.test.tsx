@@ -42,10 +42,10 @@ const START_ACTION = "Start with Okou";
 const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
-const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`;
+const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nOutput format: Report.`;
 const PROMPT_TITLE = "Make this task your own";
 const PROMPT_INTRO =
-  "Connect your tools for better results and choose a format to add editable instructions to your prompt.";
+  "Connect your tools for better results and choose an output format.";
 const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 function generatedProfile() {
   return {
@@ -754,6 +754,9 @@ test("The ready step keeps the request on screen until the first chat opens", as
   click(getButtonByName(START_ACTION));
   await handoff.handoffPending;
 
+  expect(screen.getByRole("textbox")).toBeDisabled();
+  expect(getButtonByName("Presentation")).toBeDisabled();
+
   expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
     "Draft my launch plan",
   );
@@ -875,7 +878,7 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
     screen.findByRole("heading", { name: PROMPT_TITLE }),
   ).resolves.toBeInTheDocument();
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    HANDOFF_WITH_FORMAT,
+    HANDOFF_PROMPT,
   );
   // Task guidance and compliance sit beside the prompt.
   expect(screen.getByText(PROMPT_INTRO)).toBeInTheDocument();
@@ -968,7 +971,7 @@ test("The sheet's connector card connects the tool the prompt link names", async
 
   await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    "Track keyword rankings\n\nPresent the findings as a structured report with key results, recommendations, and next steps.",
+    "Track keyword rankings",
   );
 });
 
@@ -1038,7 +1041,7 @@ test("The prompt step completes onboarding, then runs the prompt as edited", asy
   click(getButtonByName("Next"));
 
   await waitFor(() => {
-    expect(runPrompt).toBe(editedPrompt);
+    expect(runPrompt).toBe(`${editedPrompt}\n\nOutput format: Report.`);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboarding]);
@@ -1067,11 +1070,14 @@ test("The prompt step keeps the edited prompt on screen until the first chat ope
   click(getButtonByName("Next"));
   await handoff.handoffPending;
 
+  expect(screen.getByRole("textbox")).toBeDisabled();
+  expect(getButtonByName("Presentation")).toBeDisabled();
+
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(editedPrompt);
 
   handoff.release();
   await waitFor(() => {
-    expect(runPrompt).toBe(editedPrompt);
+    expect(runPrompt).toBe(`${editedPrompt}\n\nOutput format: Report.`);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
 });
@@ -1173,7 +1179,7 @@ test("A later source-first step opened with a prompt goes back to the prompt pag
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboarding);
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    HANDOFF_WITH_FORMAT,
+    HANDOFF_PROMPT,
   );
 });
 
