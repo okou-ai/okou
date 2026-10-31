@@ -7,8 +7,14 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import {
+  createConnection,
+  createServer as createTcpServer,
+  type Socket,
+} from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { clearTimeout, setTimeout } from "node:timers";
 import { promisify } from "node:util";
 import { Client } from "pg";
 import {
@@ -306,6 +312,96 @@ try {
     objects.add(`${directory}/archive.tar.gz`);
     objects.add(`${directory}/manifest.json`);
     return { id, workflowId, prefix, version, directory };
+  }
+
+  // Delay a large response on the wire, after PostgreSQL has produced it. This
+  // exceeds the old 12-second client deadline without extending SQL execution.
+  const slowSource = await seed();
+  await db.query(
+    `INSERT INTO workflows(org_id,agent_id,owner_user_id,name,instruction,attachments,created_by,updated_by)
+      SELECT $1,$2,'owner','receive-fixture-'||n,'fixture body','{"kind":"empty"}'::jsonb,'owner','owner'
+      FROM generate_series(1,80) AS item(n)`,
+    [orgId, agentId],
+  );
+  const sockets = new Set<Socket>();
+  const receiveTimers = new Set<NodeJS.Timeout>();
+  let delayedInventory = false;
+  const slowProxy = createTcpServer((downstream) => {
+    const upstream = createConnection({ host: db.host, port: db.port });
+    sockets.add(downstream);
+    sockets.add(upstream);
+    downstream.on("error", () => {
+      upstream.destroy();
+    });
+    upstream.on("error", () => {
+      downstream.destroy();
+    });
+    downstream.on("close", () => {
+      sockets.delete(downstream);
+      upstream.destroy();
+    });
+    upstream.on("close", () => {
+      sockets.delete(upstream);
+      downstream.destroy();
+    });
+    upstream.on("end", () => {
+      downstream.end();
+    });
+    downstream.pipe(upstream);
+    let received = 0;
+    upstream.on("data", (chunk: Buffer) => {
+      received += chunk.length;
+      if (!delayedInventory && received > 16 * 1024) {
+        delayedInventory = true;
+        upstream.pause();
+        const timer: NodeJS.Timeout = setTimeout(() => {
+          receiveTimers.delete(timer);
+          downstream.write(chunk);
+          upstream.resume();
+        }, 13000);
+        receiveTimers.add(timer);
+      } else downstream.write(chunk);
+    });
+  });
+  try {
+    await new Promise<void>((resolve) => {
+      return slowProxy.listen(0, "127.0.0.1", resolve);
+    });
+    const proxyAddress = slowProxy.address();
+    assert.ok(proxyAddress && typeof proxyAddress !== "string");
+    const proxyUrl = new URL(databaseUrl);
+    proxyUrl.hostname = "127.0.0.1";
+    proxyUrl.port = String(proxyAddress.port);
+    const proxyCredential = join(root, "slow-database-url");
+    await writeFile(proxyCredential, proxyUrl.href, { mode: 0o600 });
+    const result = await invoke(["--storage-id", slowSource.id], 0, {
+      DATABASE_URL_FILE: proxyCredential,
+    });
+    const plan = planSchema.parse(
+      JSON.parse(await readFile(result.output, "utf8")),
+    );
+    assert.equal(delayedInventory, true);
+    assert.equal(result.last?.status, "review_ready");
+    assert.deepEqual(
+      plan.ready.map((row) => {
+        return row.source.id;
+      }),
+      [slowSource.id],
+    );
+    assert.ok(plan.workflows.length >= 81);
+  } finally {
+    for (const timer of receiveTimers) clearTimeout(timer);
+    for (const socket of sockets) socket.destroy();
+    if (slowProxy.listening)
+      await new Promise<void>((resolve, reject) => {
+        return slowProxy.close((error) => {
+          return error ? reject(error) : resolve();
+        });
+      });
+    await db.query(
+      "DELETE FROM workflows WHERE org_id=$1 AND agent_id=$2 AND starts_with(name,'receive-fixture-')",
+      [orgId, agentId],
+    );
   }
 
   // An exact reviewed manifest is the boundary; unrelated Storage and new attachments survive.
