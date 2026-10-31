@@ -20,7 +20,9 @@ import { runOnboardingRequest$ } from "../../signals/onboarding/onboarding-actio
 import { onboardingRecommendation$ } from "../../signals/onboarding/onboarding-recommendation.ts";
 import {
   editStartingPrompt$,
+  selectStartingPromptOutput$,
   setStartingPromptInput$,
+  sourcesFirstDraft$,
   type SourcesFirstDraft,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -75,6 +77,8 @@ function StartingPromptPanel({
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
   const setPromptInput = useSet(setStartingPromptInput$);
+  const { startingPromptOutput: output } = useGet(sourcesFirstDraft$);
+  const selectOutput = useSet(selectStartingPromptOutput$);
   return (
     <div
       className={cn(
@@ -132,7 +136,11 @@ function StartingPromptPanel({
           />
           <OnboardingOutputFormats
             text={text}
-            promptKey={promptKey}
+            output={output}
+            onSelect={(format, instruction) => {
+              selectOutput(text, promptKey, format, instruction);
+            }}
+            maxLength={STARTING_PROMPT_MAX_LENGTH}
             disabled={busy}
           />
         </>

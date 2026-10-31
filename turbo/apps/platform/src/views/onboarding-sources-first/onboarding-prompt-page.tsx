@@ -5,8 +5,10 @@ import { useTranslation } from "react-i18next";
 import { runPromptOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
 import { onboardingMakeConnectorSlugs$ } from "../../signals/onboarding/onboarding-connector-items.ts";
 import {
+  editOnboardingPrompt$,
   onboardingDraft$,
-  updateOnboardingDraft$,
+  selectOnboardingPromptOutput$,
+  setOnboardingPromptInput$,
 } from "../../signals/onboarding/onboarding-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -19,6 +21,7 @@ import {
 } from "./onboarding-industry-parts.tsx";
 import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
+import { OnboardingOutputFormats } from "./onboarding-output-formats.tsx";
 
 /**
  * What the prompt handoff does: the prompt the visitor brought stays editable,
@@ -27,7 +30,8 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
  */
 function usePromptOnboarding() {
   const draft = useGet(onboardingDraft$);
-  const setDraft = useSet(updateOnboardingDraft$);
+  const setPrompt = useSet(editOnboardingPrompt$);
+  const selectOutput = useSet(selectOnboardingPromptOutput$);
   const [runLoadable, runPrompt] = useLoadableSet(runPromptOnboarding$);
   const pageSignal = useGet(pageSignal$);
   const connectorSlugs = useGet(onboardingMakeConnectorSlugs$);
@@ -38,9 +42,9 @@ function usePromptOnboarding() {
 
   return {
     prompt: draft.prompt,
-    setPrompt: (prompt: string) => {
-      setDraft({ prompt });
-    },
+    output: draft.output,
+    setPrompt,
+    selectOutput,
     connectorSlugs,
     run,
     busy: runLoadable.state === "loading",
@@ -56,12 +60,14 @@ function usePromptOnboarding() {
 export function OnboardingSourcesFirstPromptPage() {
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
-  const { prompt, setPrompt, connectorSlugs, run, busy } =
+  const { prompt, output, setPrompt, selectOutput, connectorSlugs, run, busy } =
     usePromptOnboarding();
+  const setPromptInput = useSet(setOnboardingPromptInput$);
 
   const promptInput = (
     <Textarea
       id="onboarding-prompt"
+      ref={setPromptInput}
       aria-label={t(($) => {
         return $.onboarding.make.promptLabel;
       })}
@@ -113,6 +119,12 @@ export function OnboardingSourcesFirstPromptPage() {
           <ProductBrandMark decorative size="hero" />
         </div>
         {promptInput}
+        <OnboardingOutputFormats
+          text={prompt}
+          output={output}
+          onSelect={selectOutput}
+          disabled={busy}
+        />
         <section
           aria-labelledby="onboarding-prompt-connectors-title"
           className="mt-3 space-y-3"
