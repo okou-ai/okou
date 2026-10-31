@@ -236,7 +236,7 @@ test("All capabilities can be off and the editable prompt and output format surv
   }
   const edited = prompt.value;
   expect(edited).toContain("Draft a launch plan for my business.");
-  expect(edited).toContain("concise presentation");
+  expect(edited).toContain("an Okou presentation");
   click(button("Back"));
   await screen.findByRole("heading", { name: TITLE });
   click(button("Continue"));
