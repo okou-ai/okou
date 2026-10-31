@@ -2100,6 +2100,22 @@
       "threads": "聊天",
       "title": "轉發到"
     },
+    "landingFiles": {
+      "back": "返回選擇檔案",
+      "description": "確認需求後，上傳已選檔案並開始任務。",
+      "editFailed": "無法更新附件，請重試。",
+      "failed": "未能完成，檔案和需求已保留。請重試。",
+      "limit": "最多新增 10 個檔案，總大小不超過 1 GB。",
+      "loading": "正在恢復檔案…",
+      "missing": "無法讀取檔案。請在同一瀏覽器返回原頁面重新選擇。",
+      "popupBlocked": "請允許此網站開啟彈出視窗，然後重試以傳送檔案。",
+      "prompt": "你的需求",
+      "retry": "重試",
+      "selected": "已選檔案",
+      "start": "上傳並開始",
+      "title": "使用你的檔案開始",
+      "uploading": "正在上傳檔案 {{current}} / {{total}}…"
+    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",

@@ -1,4 +1,12 @@
 import { command } from "ccstate";
+import { createElement } from "react";
+import { hideAppSkeleton$ } from "../app-skeleton.ts";
+import { updatePage$ } from "../react-router.ts";
+import { LandingFilesPage } from "../../views/prompt-page/landing-files-page.tsx";
+import { landingFileSource } from "./landing-file-handoff.ts";
+import { prepareLandingFiles$ } from "./landing-files.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
@@ -167,21 +175,59 @@ export const setupPromptPage$ = command(
     const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const resolvedRequestedModel = catalog.resolve(requestedModel);
+    const modelSelection = resolvedRequestedModel
+      ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
+      : null;
 
     const cleaned = new URLSearchParams(params);
     cleaned.delete("prompt");
     cleaned.delete("model");
     cleaned.delete("template");
     cleaned.delete("connector");
+    cleaned.delete("landingFiles");
+    cleaned.delete("landingSource");
     const rootSignal = get(rootSignal$);
+    if (params.has("landingFiles") || params.has("landingSource")) {
+      const switches = await get(featureSwitch$);
+      signal.throwIfAborted();
+      const files = set(
+        prepareLandingFiles$,
+        {
+          source: switches[FeatureSwitchKey.LandingFileHandoff]
+            ? landingFileSource(
+                params.get("landingSource") ?? "",
+                location.origin,
+              )
+            : null,
+          id: params.get("landingFiles") ?? "",
+          prompt,
+          request: {
+            agentId,
+            prompt,
+            modelSelection,
+            generationTemplate: resolvedGenerationTemplate?.template,
+            generationTemplateTitleSnapshot:
+              resolvedGenerationTemplate?.titleSnapshot,
+            computerUseHostId: null,
+            routeSearchParams: cleaned,
+          },
+        },
+        signal,
+      );
+      set(
+        updatePage$,
+        createElement(LandingFilesPage, { key: files.back, signals: files }),
+        "none",
+      );
+      await set(hideAppSkeleton$, signal);
+      return;
+    }
     await set(
       sendNewThread$,
       {
         agentId,
         prompt,
-        modelSelection: resolvedRequestedModel
-          ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
-          : null,
+        modelSelection,
         generationTemplate: resolvedGenerationTemplate?.template,
         generationTemplateTitleSnapshot:
           resolvedGenerationTemplate?.titleSnapshot,
