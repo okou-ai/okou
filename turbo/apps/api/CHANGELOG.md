@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.33.1](https://github.com/okou-ai/okou/compare/api-v2.33.0...api-v2.33.1) (2026-10-31)
+
+
+### Performance Improvements
+
+* **app:** replace browser http contracts with schema-free descriptors ([#44306](https://github.com/okou-ai/okou/issues/44306)) ([ce8f7fc](https://github.com/okou-ai/okou/commit/ce8f7fc59e52c4da702aced0d641d41f57a63139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.1
+    * @okouai/core bumped to 8.805.4
+    * @okouai/db bumped to 2.13.12
+    * @okouai/pi-agent-runtime bumped to 1.51.38
+
 ## [2.33.0](https://github.com/okou-ai/okou/compare/api-v2.32.1...api-v2.33.0) (2026-10-30)
 
 
