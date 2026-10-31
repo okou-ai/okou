@@ -54,8 +54,8 @@ function usePromptOnboarding() {
 /**
  * The prompt handoff in the source-first flow's look. A visitor who brings a
  * prompt skips that flow's questions, so this is their whole onboarding: one
- * step that introduces Okou as the first question does, the prompt they
- * brought on the sheet, and recommended connections below it.
+ * step that explains how to tailor the task, connect relevant tools, and
+ * choose an output format beside the editable prompt and its controls.
  */
 export function OnboardingSourcesFirstPromptPage() {
   const { t } = useTranslation();
@@ -101,6 +101,12 @@ export function OnboardingSourcesFirstPromptPage() {
         t(($) => {
           return $.onboarding.make.promptDescription;
         }),
+        t(($) => {
+          return $.onboarding.sourcesFirst.prompt.toolsDescription;
+        }),
+        t(($) => {
+          return $.onboarding.sourcesFirst.prompt.formatDescription;
+        }),
       ]}
       supplement={<OnboardingCompliance />}
       primaryLabel={t(($) => {
@@ -123,14 +129,21 @@ export function OnboardingSourcesFirstPromptPage() {
           aria-labelledby="onboarding-prompt-connectors-title"
           className="mt-3 space-y-3"
         >
-          <h2
-            id="onboarding-prompt-connectors-title"
-            className="text-sm font-medium"
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.prompt.connectorsTitle;
-            })}
-          </h2>
+          <div className="space-y-1">
+            <h2
+              id="onboarding-prompt-connectors-title"
+              className="text-sm font-medium"
+            >
+              {t(($) => {
+                return $.onboarding.sourcesFirst.prompt.connectorsTitle;
+              })}
+            </h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.prompt.connectorsDescription;
+              })}
+            </p>
+          </div>
           <OnboardingConnectorSetup
             connectorSlugs={connectorSlugs}
             variant="sheet"

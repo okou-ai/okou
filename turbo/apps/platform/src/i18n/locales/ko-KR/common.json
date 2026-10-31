@@ -4206,9 +4206,9 @@
       "make": "{{brandName}}에 오신 것을 환영합니다"
     },
     "make": {
-      "promptDescription": "아래에서 조정하거나 그대로 실행하세요. {{assistantName}}가 처리합니다. 도구는 샌드박스에 유지되고 워크스페이스를 벗어나지 않습니다.",
+      "promptDescription": "작업을 검토하고 Okou가 따라야 할 세부 사항이나 요구 사항을 추가하세요.",
       "promptLabel": "온보딩 프롬프트",
-      "promptTitle": "이 프롬프트를 사용해 보세요"
+      "promptTitle": "필요에 맞게 작업 조정하기"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4528,8 +4528,11 @@
         "tooLong": "다른 형식을 선택하려면 작업 내용을 줄여 주세요."
       },
       "prompt": {
+        "connectorsDescription": "이 작업에 필요한 도구를 연결하세요. 나중에 연결해도 돼요.",
         "connectorsTitle": "업무 도구 연결",
-        "intro": "Okou는 나와 팀을 위한 업무 어시스턴트입니다. 흩어진 정보를 클라우드에서 완료된 업무로 바꿉니다."
+        "formatDescription": "보고서, 프레젠테이션, 웹사이트 등 원하는 결과물 형식을 선택하세요.",
+        "intro": "이 프롬프트를 바탕으로 원하는 결과에 맞게 조정하세요.",
+        "toolsDescription": "필요한 도구를 연결하면 Okou가 이메일, 파일, 데이터를 활용해 작업할 수 있어요."
       },
       "skills": {
         "copied": "복사됨",

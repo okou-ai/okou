@@ -4206,9 +4206,9 @@
       "make": "Selamat datang di {{brandName}}"
     },
     "make": {
-      "promptDescription": "Sesuaikan di bawah atau jalankan apa adanya. {{assistantName}} akan menanganinya dari sini. Alat Anda tetap dalam sandbox dan tidak ada yang keluar dari ruang kerja Anda.",
+      "promptDescription": "Tinjau tugas dan tambahkan detail atau persyaratan yang perlu diikuti Okou.",
       "promptLabel": "Prompt onboarding",
-      "promptTitle": "Coba prompt ini"
+      "promptTitle": "Sesuaikan tugas ini"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4528,8 +4528,11 @@
         "tooLong": "Persingkat tugas untuk memilih format lain."
       },
       "prompt": {
+        "connectorsDescription": "Hubungkan alat yang dibutuhkan untuk tugas ini. Anda juga dapat melakukannya nanti.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
-        "intro": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud."
+        "formatDescription": "Pilih bentuk hasil yang Anda inginkan, seperti laporan, presentasi, atau situs web.",
+        "intro": "Mulai dari prompt ini dan sesuaikan dengan hasil yang Anda butuhkan.",
+        "toolsDescription": "Hubungkan alat yang dibutuhkan agar Okou dapat bekerja dengan email, file, dan data Anda."
       },
       "skills": {
         "copied": "Tersalin",

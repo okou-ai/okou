@@ -4206,9 +4206,9 @@
       "make": "歡迎使用 {{brandName}}"
     },
     "make": {
-      "promptDescription": "你可以在下面改一改，也可以直接執行，接下來交給 {{assistantName}}。你的工具都在沙箱裡執行，資料不會離開你的工作區。",
+      "promptDescription": "檢查任務內容，補充你希望 Okou 遵循的細節和要求。",
       "promptLabel": "新手引導提示詞",
-      "promptTitle": "試試這個提示詞"
+      "promptTitle": "依你的需求調整任務"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4528,8 +4528,11 @@
         "tooLong": "請縮短任務內容，以選擇其他產出形式。"
       },
       "prompt": {
+        "connectorsDescription": "連接本次任務需要的工具，也可以稍後再連接。",
         "connectorsTitle": "連接你的工作工具",
-        "intro": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。"
+        "formatDescription": "選擇你想要的成果形式，例如報告、簡報或網站。",
+        "intro": "從這段提示詞開始，調整成你想完成的任務。",
+        "toolsDescription": "連接任務需要的工具，讓 Okou 使用相關郵件、檔案和資料。"
       },
       "skills": {
         "copied": "已複製",

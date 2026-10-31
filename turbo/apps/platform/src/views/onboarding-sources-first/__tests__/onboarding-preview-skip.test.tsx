@@ -172,7 +172,7 @@ test("Skipping a preview prompt handoff opens the app without running the prompt
   });
 
   expect(
-    screen.getByRole("heading", { name: "Try this prompt" }),
+    screen.getByRole("heading", { name: "Make this task your own" }),
   ).toBeInTheDocument();
   click(buttonNamed("Skip"));
 

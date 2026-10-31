@@ -4275,9 +4275,9 @@
       "make": "Te damos la bienvenida a {{brandName}}"
     },
     "make": {
-      "promptDescription": "Ajústalo a continuación o ejecútalo tal cual. {{assistantName}} se encarga del resto. Tus herramientas permanecen aisladas y nada sale de tu espacio de trabajo.",
+      "promptDescription": "Revisa la tarea y añade los detalles o requisitos que quieres que Okou siga.",
       "promptLabel": "Prompt de incorporación",
-      "promptTitle": "Prueba este prompt"
+      "promptTitle": "Haz tuya esta tarea"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4597,8 +4597,11 @@
         "tooLong": "Acorta la tarea para elegir otro formato."
       },
       "prompt": {
+        "connectorsDescription": "Conecta las herramientas que necesita esta tarea. También puedes hacerlo más tarde.",
         "connectorsTitle": "Conecta tus herramientas de trabajo",
-        "intro": "Okou es el asistente de trabajo para ti y tu equipo. Convierte la información dispersa en trabajo hecho, en la nube."
+        "formatDescription": "Elige cómo quieres el resultado: por ejemplo, un informe, una presentación o un sitio web.",
+        "intro": "Parte de este prompt y adáptalo al resultado que necesitas.",
+        "toolsDescription": "Conecta las herramientas necesarias para que Okou trabaje con tus correos, archivos y datos."
       },
       "skills": {
         "copied": "Copiado",

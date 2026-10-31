@@ -43,9 +43,9 @@ const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
 const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`;
-const PROMPT_TITLE = "Try this prompt";
+const PROMPT_TITLE = "Make this task your own";
 const PROMPT_INTRO =
-  "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud.";
+  "Start with this prompt and tailor it to the result you need.";
 const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 function generatedProfile() {
   return {
@@ -877,7 +877,7 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
     HANDOFF_WITH_FORMAT,
   );
-  // The first question's introduction and compliance beside the prompt.
+  // Task guidance and compliance sit beside the prompt.
   expect(screen.getByText(PROMPT_INTRO)).toBeInTheDocument();
   expect(
     screen.getByRole("region", { name: COMPLIANCE_TITLE }),

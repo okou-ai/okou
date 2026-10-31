@@ -4275,9 +4275,9 @@
       "make": "Bienvenue chez {{brandName}}"
     },
     "make": {
-      "promptDescription": "Modifiez-le ci-dessous ou exécutez-le tel quel. {{assistantName}} prend le relais à partir d'ici. Vos outils restent en sandbox et rien ne quitte votre espace de travail.",
+      "promptDescription": "Relisez la tâche et ajoutez les détails ou les consignes qu’Okou doit suivre.",
       "promptLabel": "Prompt d’onboarding",
-      "promptTitle": "Essayez ce prompt"
+      "promptTitle": "Adaptez cette tâche à vos besoins"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4597,8 +4597,11 @@
         "tooLong": "Raccourcissez la tâche pour choisir un autre format."
       },
       "prompt": {
+        "connectorsDescription": "Connectez les outils nécessaires à cette tâche. Vous pouvez aussi le faire plus tard.",
         "connectorsTitle": "Connectez vos outils de travail",
-        "intro": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud."
+        "formatDescription": "Choisissez le format du résultat, par exemple un rapport, une présentation ou un site web.",
+        "intro": "Partez de ce prompt et adaptez-le au résultat souhaité.",
+        "toolsDescription": "Connectez les outils nécessaires pour qu’Okou puisse utiliser vos e-mails, fichiers et données."
       },
       "skills": {
         "copied": "Copié",
