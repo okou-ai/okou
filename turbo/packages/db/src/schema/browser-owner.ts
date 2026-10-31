@@ -44,6 +44,9 @@ export const browserOwnerProfiles = pgTable(
         table.status,
         table.updatedAt,
       ),
+      index("idx_browser_owner_profiles_extension")
+        .on(table.browserExtensionId)
+        .where(sql`${table.browserExtensionId} IS NOT NULL`),
       check(
         "browser_owner_profiles_status_check",
         sql`${table.status} IN ('creating', 'active', 'stopping', 'stopped')`,
