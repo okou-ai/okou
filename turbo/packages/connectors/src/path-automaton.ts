@@ -25,7 +25,11 @@ const STAR = -3;
 const ANY = -4;
 const NONSLASH = -5;
 const SLASH = 47;
-const strictDecoder = new TextDecoder("utf-8", { fatal: true });
+// U+FEFF is path data, not a transport signature.
+const strictDecoder = new TextDecoder("utf-8", {
+  fatal: true,
+  ignoreBOM: true,
+});
 
 interface PatternNfa {
   readonly edges: readonly (readonly PathEdge[])[];

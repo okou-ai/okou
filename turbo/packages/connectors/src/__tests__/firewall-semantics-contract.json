@@ -7437,6 +7437,52 @@
       }
     },
     {
+      "name": "leading U+FEFF cannot hide a newly tied source rule",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{id}%61"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/\uFEFF{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/\uFEFFx%61"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/\uFEFFx%61",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
       "name": "stable applicability still rejects a derived specificity flip",
       "firewalls": [
         {

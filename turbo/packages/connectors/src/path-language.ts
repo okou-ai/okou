@@ -16,7 +16,10 @@ const ESCAPED_DATA = new Set(
   }),
 );
 const encoder = new TextEncoder();
-const strictDecoder = new TextDecoder("utf-8", { fatal: true });
+const strictDecoder = new TextDecoder("utf-8", {
+  fatal: true,
+  ignoreBOM: true,
+});
 
 export class AnalysisLimitError extends Error {}
 export class InvalidPathError extends Error {}

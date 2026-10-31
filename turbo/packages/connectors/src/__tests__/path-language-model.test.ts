@@ -13,6 +13,29 @@ import {
 } from "../path-language";
 
 describe("bounded path-language contract from the independent concrete oracle", () => {
+  it("retains U+FEFF when scoring literal and API-prefix characters", () => {
+    const compiler = new PathCompiler();
+    const rule = pathApplicability(
+      requestLanguage("/files/%EF%BB%BFx"),
+      compiler.compile("/files/%EF%BB%BF{id}"),
+    );
+    expect(rule).toEqual({
+      possible: true,
+      certain: true,
+      minimum: [1, 1, 0, 0, 0, 6, 2],
+      maximum: [1, 1, 0, 0, 0, 6, 2],
+    });
+    const api = pathApplicability(
+      requestLanguage("/%EF%BB%BF/x"),
+      compiler.compileApi("/%EF%BB%BF", false, "/{id}"),
+    );
+    expect(api).toEqual({
+      possible: true,
+      certain: true,
+      minimum: [1001, 0, 0, 1, 0, 0, 0, 1],
+      maximum: [1001, 0, 0, 1, 0, 0, 0, 1],
+    });
+  });
   it("preserves a long Unicode literal within the graph and work budgets", () => {
     const path = `/${"😀".repeat(32000)}`;
     const forms = new PathCompiler().compile(path);
