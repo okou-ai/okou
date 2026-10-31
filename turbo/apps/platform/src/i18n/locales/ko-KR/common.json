@@ -4499,37 +4499,36 @@
         "clear": "선택 해제",
         "options": {
           "image": {
-            "instruction": "결과를 명확한 시각적 요약 이미지로 정리해 주세요.",
+            "instruction": "출력 형식: 이미지.",
             "label": "이미지"
           },
           "people": {
-            "instruction": "이 작업과 관련된 인물 후보 목록을 작성하고 역할, 선정 이유, 공개 직업 프로필 링크를 포함해 주세요. 작업과의 관련성이 불분명하면 검색 전에 구체적인 질문을 해 주세요.",
+            "instruction": "출력 형식: 인물 후보 목록.",
             "label": "인물 후보 목록"
           },
           "presentation": {
-            "instruction": "주요 결과, 제안, 다음 단계를 포함한 간결한 프레젠테이션으로 정리해 주세요.",
+            "instruction": "출력 형식: Okou 프레젠테이션. 링크를 공유하세요.",
             "label": "프레젠테이션"
           },
           "report": {
-            "instruction": "주요 결과, 제안, 다음 단계를 포함한 체계적인 보고서로 정리해 주세요.",
+            "instruction": "출력 형식: 보고서.",
             "label": "보고서"
           },
           "research": {
-            "instruction": "근거 자료와 미해결 질문을 포함한 조사 요약을 작성해 주세요. 출처가 있는 사실과 제안을 구분해 주세요.",
+            "instruction": "출력 형식: 조사 요약.",
             "label": "조사 요약"
           },
           "website": {
-            "instruction": "결과를 공유 가능한 웹페이지로 정리하고 섹션과 핵심 내용을 명확히 해 주세요.",
+            "instruction": "출력 형식: 웹사이트.",
             "label": "웹사이트"
           }
         },
-        "title": "결과물 형식 선택",
-        "tooLong": "다른 형식을 선택하려면 작업 내용을 줄여 주세요."
+        "title": "결과물 형식 선택"
       },
       "prompt": {
         "connectorsDescription": "앱을 연결하면 Okou가 업무를 더 잘 이해할 수 있어요.",
         "connectorsTitle": "업무 도구 연결",
-        "intro": "도구를 연결해 더 나은 결과를 얻고, 형식을 선택해 수정 가능한 지침을 프롬프트에 추가하세요."
+        "intro": "도구를 연결해 더 나은 결과를 얻고 출력 형식을 선택하세요."
       },
       "skills": {
         "copied": "복사됨",

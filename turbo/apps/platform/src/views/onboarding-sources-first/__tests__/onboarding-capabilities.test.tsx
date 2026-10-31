@@ -229,14 +229,11 @@ test("All capabilities can be off and the editable prompt and output format surv
   click(button("Continue"));
   await screen.findByRole("heading", { name: READY_TITLE });
   const prompt = await screen.findByLabelText("Your starting prompt");
-  await fill(prompt, "Draft a launch plan for my business.");
+  const edited = "Draft a launch plan for my business.";
+  await fill(prompt, edited);
   click(button("Presentation"));
-  if (!(prompt instanceof HTMLTextAreaElement)) {
-    throw new Error("Expected the starting prompt textarea");
-  }
-  const edited = prompt.value;
-  expect(edited).toContain("Draft a launch plan for my business.");
-  expect(edited).toContain("concise presentation");
+  expect(prompt).toHaveValue(edited);
+  expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
   click(button("Back"));
   await screen.findByRole("heading", { name: TITLE });
   click(button("Continue"));

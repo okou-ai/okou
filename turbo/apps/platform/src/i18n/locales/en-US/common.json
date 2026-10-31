@@ -4512,37 +4512,36 @@
         "clear": "Clear selection",
         "options": {
           "image": {
-            "instruction": "Present the findings as a clear visual summary image.",
+            "instruction": "Output format: Image.",
             "label": "Image"
           },
           "people": {
-            "instruction": "Use this task as context to produce a shortlist of relevant people, with their roles, reasons for inclusion, and public professional profile links. If their relevance to the task is unclear, ask a focused question before searching.",
+            "instruction": "Output format: People shortlist.",
             "label": "People shortlist"
           },
           "presentation": {
-            "instruction": "Present the findings as a concise presentation with key results, recommendations, and next steps.",
+            "instruction": "Output format: Okou presentation. Share its link.",
             "label": "Presentation"
           },
           "report": {
-            "instruction": "Present the findings as a structured report with key results, recommendations, and next steps.",
+            "instruction": "Output format: Report.",
             "label": "Report"
           },
           "research": {
-            "instruction": "Present the findings as a research brief with supporting sources and open questions. Distinguish sourced facts from recommendations.",
+            "instruction": "Output format: Research brief.",
             "label": "Research brief"
           },
           "website": {
-            "instruction": "Present the findings as a shareable webpage with clear sections and takeaways.",
+            "instruction": "Output format: Website.",
             "label": "Website"
           }
         },
-        "title": "Choose a format",
-        "tooLong": "Shorten your task to choose another format."
+        "title": "Choose a format"
       },
       "prompt": {
         "connectorsDescription": "Connect your apps to help Okou understand your work.",
         "connectorsTitle": "Connect your work tools",
-        "intro": "Connect your tools for better results and choose a format to add editable instructions to your prompt."
+        "intro": "Connect your tools for better results and choose an output format."
       },
       "skills": {
         "copied": "Copied",

@@ -4514,37 +4514,36 @@
         "clear": "Auswahl aufheben",
         "options": {
           "image": {
-            "instruction": "Stelle die Ergebnisse als übersichtliches Schaubild dar.",
+            "instruction": "Ausgabeformat: Bild.",
             "label": "Bild"
           },
           "people": {
-            "instruction": "Erstelle passend zu dieser Aufgabe eine Auswahl relevanter Personen mit Rollen, Auswahlgründen und Links zu öffentlichen beruflichen Profilen. Falls der Bezug zur Aufgabe unklar ist, stelle vor der Suche eine gezielte Frage.",
+            "instruction": "Ausgabeformat: Personenauswahl.",
             "label": "Personenauswahl"
           },
           "presentation": {
-            "instruction": "Fasse die Ergebnisse in einer kurzen Präsentation mit Kernergebnissen, Empfehlungen und nächsten Schritten zusammen.",
+            "instruction": "Ausgabeformat: Okou-Präsentation. Teile den Link dazu.",
             "label": "Präsentation"
           },
           "report": {
-            "instruction": "Fasse die Ergebnisse in einem strukturierten Bericht mit Kernergebnissen, Empfehlungen und nächsten Schritten zusammen.",
+            "instruction": "Ausgabeformat: Bericht.",
             "label": "Bericht"
           },
           "research": {
-            "instruction": "Erstelle eine Rechercheübersicht mit Quellen und offenen Fragen. Unterscheide belegte Fakten von Empfehlungen.",
+            "instruction": "Ausgabeformat: Rechercheübersicht.",
             "label": "Rechercheübersicht"
           },
           "website": {
-            "instruction": "Stelle die Ergebnisse als teilbare Webseite mit klaren Abschnitten und Kernaussagen dar.",
+            "instruction": "Ausgabeformat: Website.",
             "label": "Website"
           }
         },
-        "title": "Format wählen",
-        "tooLong": "Kürze deine Aufgabe, um ein anderes Format zu wählen."
+        "title": "Format wählen"
       },
       "prompt": {
         "connectorsDescription": "Verbinde deine Apps, damit Okou deine Arbeit besser versteht.",
         "connectorsTitle": "Verbinde deine Arbeitstools",
-        "intro": "Verbinde deine Tools für bessere Ergebnisse und wähle ein Format, um bearbeitbare Vorgaben in deinen Prompt einzufügen."
+        "intro": "Verbinde deine Tools für bessere Ergebnisse und wähle ein Ausgabeformat."
       },
       "skills": {
         "copied": "Kopiert",

@@ -4568,37 +4568,36 @@
         "clear": "Borrar selección",
         "options": {
           "image": {
-            "instruction": "Presenta los hallazgos como una imagen que los resuma de forma clara.",
+            "instruction": "Formato de salida: Imagen.",
             "label": "Imagen"
           },
           "people": {
-            "instruction": "Usa esta tarea como contexto para crear una lista de personas relevantes con sus funciones, motivos de selección y enlaces a perfiles profesionales públicos. Si su relación con la tarea no está clara, haz una pregunta concreta antes de buscar.",
+            "instruction": "Formato de salida: Lista de personas.",
             "label": "Lista de personas"
           },
           "presentation": {
-            "instruction": "Presenta los hallazgos en una presentación breve con resultados clave, recomendaciones y próximos pasos.",
+            "instruction": "Formato de salida: presentación de Okou. Comparte su enlace.",
             "label": "Presentación"
           },
           "report": {
-            "instruction": "Presenta los hallazgos en un informe estructurado con resultados clave, recomendaciones y próximos pasos.",
+            "instruction": "Formato de salida: Informe.",
             "label": "Informe"
           },
           "research": {
-            "instruction": "Presenta los hallazgos en un resumen de investigación con fuentes y preguntas pendientes. Distingue los hechos respaldados por fuentes de las recomendaciones.",
+            "instruction": "Formato de salida: Resumen de investigación.",
             "label": "Resumen de investigación"
           },
           "website": {
-            "instruction": "Presenta los hallazgos en una página web que se pueda compartir, con secciones y conclusiones claras.",
+            "instruction": "Formato de salida: Sitio web.",
             "label": "Sitio web"
           }
         },
-        "title": "Elige un formato",
-        "tooLong": "Acorta la tarea para elegir otro formato."
+        "title": "Elige un formato"
       },
       "prompt": {
         "connectorsDescription": "Conecta tus aplicaciones para que Okou entienda mejor tu trabajo.",
         "connectorsTitle": "Conecta tus herramientas de trabajo",
-        "intro": "Conecta tus herramientas para obtener mejores resultados y elige un formato para añadir instrucciones editables a tu prompt."
+        "intro": "Conecta tus herramientas para obtener mejores resultados y elige un formato de salida."
       },
       "skills": {
         "copied": "Copiado",

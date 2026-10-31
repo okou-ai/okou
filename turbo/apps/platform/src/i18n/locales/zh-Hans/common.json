@@ -4499,37 +4499,36 @@
         "clear": "清除选择",
         "options": {
           "image": {
-            "instruction": "将结果整理为一张清晰的可视化总结图片。",
+            "instruction": "输出格式：图片。",
             "label": "图片"
           },
           "people": {
-            "instruction": "结合此任务，整理相关人员的候选名单，说明其角色、入选理由，并附上公开职业资料链接。如果人员与任务的关联不明确，先提出一个具体问题再开始查找。",
+            "instruction": "输出格式：人员名单。",
             "label": "人员名单"
           },
           "presentation": {
-            "instruction": "将结果整理为一份简洁的演示文稿，包含关键结果、建议和后续步骤。",
+            "instruction": "输出格式：Okou 演示文稿，并分享链接。",
             "label": "演示文稿"
           },
           "report": {
-            "instruction": "将结果整理为一份结构清晰的报告，包含关键结果、建议和后续步骤。",
+            "instruction": "输出格式：报告。",
             "label": "报告"
           },
           "research": {
-            "instruction": "将结果整理为一份研究简报，附上支持结论的来源和待解决的问题。区分有来源支持的事实与建议。",
+            "instruction": "输出格式：研究简报。",
             "label": "研究简报"
           },
           "website": {
-            "instruction": "将结果整理为一个可分享的网页，结构清晰，并突出要点。",
+            "instruction": "输出格式：网站。",
             "label": "网站"
           }
         },
-        "title": "选择产出形式",
-        "tooLong": "请缩短任务内容，以选择其他产出形式。"
+        "title": "选择产出形式"
       },
       "prompt": {
         "connectorsDescription": "连接应用，让 Okou 更了解你的工作。",
         "connectorsTitle": "连接你的工作工具",
-        "intro": "连接工具，让结果更贴合需求；选择格式后，输出要求会填入提示词，供你编辑。"
+        "intro": "连接工具，让结果更贴合需求，并选择输出格式。"
       },
       "skills": {
         "copied": "已复制",
