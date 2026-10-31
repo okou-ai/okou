@@ -522,11 +522,14 @@
     },
     "deletion": {
       "cancel": "取消",
+      "checking": "正在檢查刪除權限",
       "delete": "刪除",
       "deleting": "正在刪除…",
       "description": "刪除此作品並停用其 Okou 連結。已下載或儲存至其他服務的副本會保留。",
       "hostedDescription": "此網站及其所有已發佈版本將下線。儲存至其他服務的副本會保留。",
+      "loadFailed": "無法檢查刪除權限",
       "menu": "{{title}}的更多操作",
+      "noActions": "暫無可用操作",
       "sharedDescription": "從你的作品中刪除此分享對話，其分享連結將失效。原始對話仍會保留。",
       "success": "作品已刪除",
       "title": "刪除{{title}}？"

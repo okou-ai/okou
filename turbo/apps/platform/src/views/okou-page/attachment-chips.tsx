@@ -1,4 +1,4 @@
-import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import { ArtifactPreviewMoreMenu } from "./artifact-deletion.tsx";
 import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import {
   ArtifactPreviewCloseButton,
@@ -1426,14 +1426,6 @@ function ArtifactPreviewDialogActions({
         syncTarget={artifactDialogSyncTarget(artifact)}
         url={preview.url}
       />
-      <ArtifactDeleteButton
-        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-        surface="dialog"
-        iconSize={18}
-        onDeleted={() => {
-          closeDeletedPreview(rootSignal);
-        }}
-      />
       <ArtifactActionSeparator />
       {showSplitView && (
         <ArtifactDialogSplitViewButton onClick={openInSplitView} />
@@ -1446,6 +1438,14 @@ function ArtifactPreviewDialogActions({
           }}
         />
       )}
+      <ArtifactPreviewMoreMenu
+        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+        surface="dialog"
+        iconSize={18}
+        onDeleted={() => {
+          closeDeletedPreview(rootSignal);
+        }}
+      />
       <ArtifactPreviewCloseButton />
     </div>
   );

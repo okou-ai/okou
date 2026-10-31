@@ -1,10 +1,15 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifactRun,
@@ -15,6 +20,8 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
   openResourceArtifact,
 } from "./chat-navigation-artifact-test-helpers.ts";
+
+import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
 const report = artifactSummary(
@@ -81,7 +88,7 @@ function mockReport(available: () => boolean) {
 }
 
 test.each(["lightbox", "sidebar", "resources"] as const)(
-  "a thread artifact can be deleted from the %s toolbar",
+  "a thread artifact can be deleted through the %s More menu",
   async (surface) => {
     let removed = false;
     mockReport(() => {
@@ -115,9 +122,10 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
       within(preview).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect(buttonNamed("Delete", preview)).toBeInTheDocument();
+      expect(buttonNamed("More artifact actions", preview)).toBeEnabled();
     });
-    click(buttonNamed("Delete", preview));
+    click(buttonNamed("More artifact actions", preview));
+    click(await findNamedMenuItem("Delete"));
     const cancelled = await screen.findByRole("dialog", {
       name: `Delete ${report.title}?`,
     });
@@ -127,7 +135,8 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
     });
     expect(preview).toBeInTheDocument();
     expect(removed).toBeFalsy();
-    click(buttonNamed("Delete", preview));
+    click(buttonNamed("More artifact actions", preview));
+    click(await findNamedMenuItem("Delete"));
     const confirmed = await screen.findByRole("dialog", {
       name: `Delete ${report.title}?`,
     });
@@ -150,37 +159,119 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
     await expect(
       within(reopened).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
-    expect(
-      Array.from(reopened.querySelectorAll("button")).find((button) => {
-        return button.getAttribute("aria-label") === "Delete";
-      }),
-    ).toBeUndefined();
+    await waitFor(() => {
+      expect(
+        buttonNamed("More artifact actions", reopened),
+      ).toHaveAccessibleDescription("No actions available");
+    });
+    const more = buttonNamed("More artifact actions", reopened);
+    expect(more).toBeDisabled();
+    click(more);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   },
 );
 
-test("a missing or foreign catalog identity does not expose deletion in a thread preview", async () => {
-  mockReport(() => {
-    return true;
-  });
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact not found" },
+test.each([
+  { surface: "lightbox", outcome: "owner" },
+  { surface: "lightbox", outcome: "unavailable" },
+  { surface: "lightbox", outcome: "forbidden" },
+  { surface: "lightbox", outcome: "failed" },
+  { surface: "sidebar", outcome: "owner" },
+  { surface: "sidebar", outcome: "unavailable" },
+  { surface: "sidebar", outcome: "forbidden" },
+  { surface: "sidebar", outcome: "failed" },
+] as const)(
+  "$surface disables More until delete access resolves to $outcome",
+  async ({ surface, outcome }) => {
+    const user = userEvent.setup();
+    mockReport(() => {
+      return true;
     });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
-  });
-  click(await screen.findByLabelText(`Open text preview for ${report.title}`));
-  const preview = await screen.findByTestId("attachment-lightbox");
-  await expect(
-    within(preview).findByText("Thread report content"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    Array.from(preview.querySelectorAll("button")).find((button) => {
-      return button.getAttribute("aria-label") === "Delete";
-    }),
-  ).toBeUndefined();
-});
+    const permission = context.mocks.deferred<void>();
+    context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
+      await permission.promise;
+      if (outcome === "failed") {
+        throw new Error("Owner lookup unavailable");
+      }
+      if (outcome === "forbidden") {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Access denied" },
+        });
+      }
+      return outcome === "owner"
+        ? respond(
+            200,
+            fileArtifactDetail(report, {
+              filename: report.title,
+              contentType: "text/plain",
+              fileId: "f0000000-0000-4000-a000-000000000921",
+              url,
+            }),
+          )
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Artifact not found" },
+          });
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: {
+        [FeatureSwitchKey.ArtifactDeletion]: true,
+        [FeatureSwitchKey.ArtifactSidebarPreview]: surface === "sidebar",
+      },
+    });
+    click(
+      await screen.findByLabelText(`Open text preview for ${report.title}`),
+    );
+    const preview = await screen.findByTestId(
+      surface === "lightbox" ? "attachment-lightbox" : "artifact-sidebar",
+    );
+    await expect(
+      within(preview).findByText("Thread report content"),
+    ).resolves.toBeInTheDocument();
+    const more = buttonNamed("More artifact actions", preview);
+    expect(more).toBeDisabled();
+    expect(more).toHaveAttribute("aria-busy", "true");
+    expect(more).toHaveAccessibleDescription("Checking delete access");
+    expect(
+      queryAllByRoleFast("button", preview).find((button) => {
+        return button.getAttribute("aria-label") === "Delete";
+      }),
+    ).toBeUndefined();
+    click(more);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await user.hover(more.parentElement!);
+    await expect(
+      screen.findByText("Checking delete access"),
+    ).resolves.toBeInTheDocument();
+    await user.unhover(more.parentElement!);
+    permission.resolve();
+    const readyText =
+      outcome === "owner"
+        ? "Delete"
+        : outcome === "failed"
+          ? "Couldn’t check delete access"
+          : "No actions available";
+    await waitFor(() => {
+      expect(
+        buttonNamed("More artifact actions", preview),
+      ).toHaveAccessibleDescription(outcome === "owner" ? "" : readyText);
+    });
+    const resolvedMore = buttonNamed("More artifact actions", preview);
+    expect(resolvedMore).toHaveProperty("disabled", outcome !== "owner");
+    expect(resolvedMore).not.toHaveAttribute("aria-busy");
+    click(resolvedMore);
+    if (outcome !== "owner") {
+      await user.hover(resolvedMore.parentElement!);
+    }
+    await expect(
+      outcome === "owner"
+        ? findNamedMenuItem("Delete")
+        : screen.findByText(readyText),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryAllByRole("menu")).toHaveLength(
+      outcome === "owner" ? 1 : 0,
+    );
+  },
+);

@@ -33,6 +33,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
+import { ArtifactActionTooltip } from "./artifact-actions.tsx";
 
 export function ArtifactDeleteMenu({
   artifact,
@@ -126,8 +127,110 @@ export function ArtifactPageDeleteButton({
   );
 }
 
-/** Owner-only action shared by catalog, chat, and standalone previews. */
-export function ArtifactDeleteButton({
+/** The toolbar entry keeps its place independently of the owner lookup. */
+export function ArtifactPreviewMoreMenu({
+  artifactId,
+  surface,
+  onDeleted,
+  iconSize = 16,
+}: {
+  readonly artifactId?: string;
+  readonly surface: "dialog" | "sidebar";
+  readonly onDeleted: () => void;
+  readonly iconSize?: number;
+}) {
+  const { t } = useTranslation();
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
+  const scope = artifactPreviewDeletionScope(surface);
+  const mountRef = useSet(scope.mountRef$);
+  const session = useGet(scope.session$);
+  const detail = useLoadable(scope.detail$);
+  const triggerRef = useSet(scope.menuTriggerRef$);
+  const menuTrigger = useGet(scope.menuTrigger$);
+  const label = t(($) => {
+    return $.artifacts.actions.more;
+  });
+  const loading =
+    Boolean(artifactId) &&
+    (session?.artifactId !== artifactId || detail.state === "loading");
+  const canDelete =
+    Boolean(artifactId) &&
+    session?.artifactId === artifactId &&
+    detail.state === "hasData" &&
+    detail.data !== null;
+  const tooltip = loading
+    ? t(($) => {
+        return $.artifacts.deletion.checking;
+      })
+    : detail.state === "hasError"
+      ? t(($) => {
+          return $.artifacts.deletion.loadFailed;
+        })
+      : canDelete
+        ? label
+        : t(($) => {
+            return $.artifacts.deletion.noActions;
+          });
+  if (!enabled) {
+    return null;
+  }
+  return (
+    <DropdownMenu>
+      <ArtifactActionTooltip label={tooltip}>
+        <DropdownMenuTrigger
+          ref={triggerRef}
+          disabled={!canDelete}
+          aria-label={label}
+          aria-description={canDelete ? undefined : tooltip}
+          aria-busy={loading || undefined}
+          render={<Button variant="quiet" size="icon-sm" />}
+        >
+          <MoreHorizontal size={iconSize} />
+        </DropdownMenuTrigger>
+      </ArtifactActionTooltip>
+      <span
+        key={`mount:${artifactId ?? ""}`}
+        ref={mountRef}
+        data-artifact-id={artifactId}
+        className="contents"
+      />
+      {artifactId && session?.artifactId === artifactId ? (
+        <PreviewArtifactDeleteAction
+          key={artifactId}
+          session={session}
+          onDeleted={onDeleted}
+          iconSize={iconSize}
+          menuTrigger={menuTrigger}
+        />
+      ) : (
+        <DropdownMenuContent align="end">
+          <ArtifactActionStatus
+            message={
+              artifactId
+                ? t(($) => {
+                    return $.artifacts.deletion.checking;
+                  })
+                : t(($) => {
+                    return $.artifacts.deletion.noActions;
+                  })
+            }
+          />
+        </DropdownMenuContent>
+      )}
+    </DropdownMenu>
+  );
+}
+
+function ArtifactActionStatus({ message }: { readonly message: string }) {
+  return (
+    <div role="status" className="px-2 py-1.5 text-sm text-muted-foreground">
+      {message}
+    </div>
+  );
+}
+
+/** Standalone pages retain their owner-only delete button. */
+function ArtifactDeleteButton({
   artifactId,
   sourceKind,
   surface,
@@ -157,7 +260,7 @@ export function ArtifactDeleteButton({
     >
       {session?.artifactId === artifactId &&
         session.sourceKind === sourceKind && (
-          <PreviewArtifactDeleteButton
+          <PreviewArtifactDeleteAction
             key={artifactId}
             session={session}
             onDeleted={onDeleted}
@@ -168,14 +271,16 @@ export function ArtifactDeleteButton({
   );
 }
 
-function PreviewArtifactDeleteButton({
+function PreviewArtifactDeleteAction({
   session,
   onDeleted,
   iconSize,
+  menuTrigger,
 }: {
   readonly session: PreviewArtifactDeletion;
   readonly onDeleted: () => void;
   readonly iconSize: number;
+  readonly menuTrigger?: HTMLElement | null;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -187,7 +292,47 @@ function PreviewArtifactDeleteButton({
   const [deletion, confirm] = useLoadableSet(session.confirm$);
   return (
     <>
-      {detail.state === "hasData" && detail.data && (
+      {menuTrigger !== undefined ? (
+        <DropdownMenuContent align="end">
+          {detail.state === "hasData" && detail.data ? (
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={() => {
+                // The menu item unmounts on selection. Return focus to the
+                // persistent More trigger when the confirmation is dismissed.
+                if (menuTrigger) {
+                  detach(
+                    requestDeletion(menuTrigger, pageSignal),
+                    Reason.DomCallback,
+                    "confirm artifact deletion",
+                  );
+                }
+              }}
+            >
+              <Trash2 size={iconSize} />
+              {t(($) => {
+                return $.artifacts.deletion.delete;
+              })}
+            </DropdownMenuItem>
+          ) : (
+            <ArtifactActionStatus
+              message={
+                detail.state === "loading"
+                  ? t(($) => {
+                      return $.artifacts.deletion.checking;
+                    })
+                  : detail.state === "hasError"
+                    ? t(($) => {
+                        return $.artifacts.deletion.loadFailed;
+                      })
+                    : t(($) => {
+                        return $.artifacts.deletion.noActions;
+                      })
+              }
+            />
+          )}
+        </DropdownMenuContent>
+      ) : detail.state === "hasData" && detail.data ? (
         <Button
           showTooltip
           type="button"
@@ -207,7 +352,7 @@ function PreviewArtifactDeleteButton({
         >
           <Trash2 size={iconSize} />
         </Button>
-      )}
+      ) : null}
       <ArtifactDeleteConfirmation
         target={target}
         busy={deletion.state === "loading"}

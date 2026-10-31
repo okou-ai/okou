@@ -1,6 +1,8 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { closeDeletedThreadArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import { ArtifactPreviewMoreMenu } from "./artifact-deletion.tsx";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
 import {
@@ -265,8 +267,8 @@ export function ArtifactSidebarContent({
 
   return (
     <ArtifactSidebarResolvedContent
-      deleteAction={
-        <ArtifactDeleteButton
+      moreAction={
+        <ArtifactPreviewMoreMenu
           artifactId={artifactId ?? syncTarget?.artifactId}
           surface="sidebar"
           onDeleted={onDeleted ?? onClose}
@@ -290,7 +292,7 @@ export function ArtifactSidebarContent({
 }
 
 type ArtifactSidebarResolvedContentProps = {
-  readonly deleteAction: ReactNode;
+  readonly moreAction: ReactNode;
   readonly recovery: ReactNode;
   readonly resourceUrl: string | null;
   readonly shareUrl: string | null | undefined;
@@ -307,7 +309,7 @@ type ArtifactSidebarResolvedContentProps = {
 };
 
 function ArtifactSidebarResolvedContent({
-  deleteAction,
+  moreAction,
   recovery,
   resourceUrl,
   shareUrl,
@@ -339,7 +341,7 @@ function ArtifactSidebarResolvedContent({
       }
     >
       <ArtifactSidebarHeader
-        deleteAction={deleteAction}
+        moreAction={moreAction}
         shareUrl={shareUrl}
         title={display.title}
         filename={display.filename}
@@ -489,7 +491,7 @@ function resolveArtifactDisplay(
 }
 
 function ArtifactSidebarHeader({
-  deleteAction,
+  moreAction,
   shareUrl,
   title,
   filename,
@@ -505,7 +507,7 @@ function ArtifactSidebarHeader({
   onToggleFullscreen,
   onClose,
 }: {
-  deleteAction: ReactNode;
+  moreAction: ReactNode;
   shareUrl?: string | null;
   title: string;
   filename: string;
@@ -557,7 +559,7 @@ function ArtifactSidebarHeader({
         )}
       </div>
       <ArtifactSidebarActions
-        deleteAction={deleteAction}
+        moreAction={moreAction}
         shareUrl={shareUrl}
         compactActions={compactActions}
         artifactKind={artifactKind}
@@ -575,7 +577,7 @@ function ArtifactSidebarHeader({
 }
 
 function ArtifactSidebarActions({
-  deleteAction,
+  moreAction,
   shareUrl,
   artifactKind,
   compactActions,
@@ -588,7 +590,7 @@ function ArtifactSidebarActions({
   filename,
   url,
 }: {
-  deleteAction: ReactNode;
+  moreAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   compactActions: boolean;
@@ -601,11 +603,12 @@ function ArtifactSidebarActions({
   filename: string;
   url?: string;
 }) {
+  const deletionEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
   return (
     <div className="flex shrink-0 items-center gap-1">
       {url && (
         <ArtifactSidebarPreviewActions
-          deleteAction={deleteAction}
           shareUrl={shareUrl}
           artifactKind={artifactKind}
           kind={kind}
@@ -619,7 +622,8 @@ function ArtifactSidebarActions({
         fullscreen={fullscreen}
         onToggleFullscreen={onToggleFullscreen}
       />
-      {compactActions ? (
+      {moreAction}
+      {compactActions && !deletionEnabled ? (
         <ArtifactMoreActions onClose={onClose} />
       ) : (
         <ArtifactCloseAction onClose={onClose} />
@@ -629,7 +633,6 @@ function ArtifactSidebarActions({
 }
 
 function ArtifactSidebarPreviewActions({
-  deleteAction,
   shareUrl,
   artifactKind,
   kind,
@@ -638,7 +641,6 @@ function ArtifactSidebarPreviewActions({
   filename,
   url,
 }: {
-  deleteAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   kind?: ArtifactKindForBody;
@@ -671,7 +673,6 @@ function ArtifactSidebarPreviewActions({
         syncTarget={syncTarget}
         url={url}
       />
-      {deleteAction}
       <ArtifactActionSeparator />
     </>
   );
