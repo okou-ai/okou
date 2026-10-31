@@ -76,11 +76,15 @@ overrides:
   # Express still pins proxy-addr 2.0.7, vulnerable to IPv4-mapped IPv6 trust
   # subnet spoofing (GHSA-jqcg-44mw-7w3h). Remove when upstream requires 2.0.8.
   "express>proxy-addr": 2.0.8
-  # axios 1.20.0 still permits follow-redirects 1.16.0, vulnerable to
-  # array-form header credential stripping (GHSA-q3jh-wrc6-jgq8) and
-  # sensitiveHeaders regex escaping (GHSA-8r9p-f939-6h3c). Remove when
-  # axios requires >=1.16.1.
-  "axios>follow-redirects": ^1.16.1
+  # axios 1.20.0 still permits follow-redirects releases vulnerable to
+  # credential leaks, including cross-realm sensitiveHeaders handling
+  # (GHSA-mrwp-f3q8-3g9p). Remove when axios requires >=1.16.2.
+  "axios>follow-redirects": ^1.16.2
+  # readdir-glob and pi-coding-agent require minimatch 10, vulnerable to
+  # globparts amplification (GHSA-g3hv-75wg-m249). Their named APIs are
+  # compatible with v11. Remove when upstream requires >=11.0.1.
+  "readdir-glob>minimatch": ^11.0.3
+  "@earendil-works/pi-coding-agent>minimatch": ^11.0.3
   tar: ">=7.5.21"
   tmp: ">=0.2.6"
   ws: ">=8.21.0"

@@ -31,17 +31,15 @@
     "lint": "oxlint && oxlint --type-aware -c ../../.oxlintrc.typeaware.json && eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"
   },
-  "dependencies": {
-    "@typescript-eslint/utils": "^8.72.0",
-    "libpg-query": "17.7.4"
-  },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "@types/node": "^24.3.0",
     "@typescript-eslint/rule-tester": "^8.72.0",
+    "@typescript-eslint/utils": "^8.72.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
+    "libpg-query": "17.7.4",
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
     "tsx": "^4.21.0",
