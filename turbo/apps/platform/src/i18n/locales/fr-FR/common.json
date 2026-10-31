@@ -4598,7 +4598,7 @@
       "prompt": {
         "connectorsDescription": "Connectez les outils nécessaires à cette tâche. Vous pouvez aussi le faire plus tard.",
         "connectorsTitle": "Connectez vos outils de travail",
-        "intro": "Adaptez ce prompt au résultat souhaité en ajoutant vos détails ou vos consignes, puis connectez les outils dont Okou a besoin pour utiliser vos e-mails, fichiers et données. Choisissez le format du résultat, par exemple un rapport, une présentation ou un site web."
+        "intro": "En connectant vos outils de travail, vous donnez à Okou le contexte de vos e-mails, fichiers et données pour mieux comprendre votre travail et produire des résultats plus pertinents. Vous pouvez adapter ce prompt et choisir le format qui convient à votre tâche, comme un rapport, une présentation ou un site web."
       },
       "skills": {
         "copied": "Copié",

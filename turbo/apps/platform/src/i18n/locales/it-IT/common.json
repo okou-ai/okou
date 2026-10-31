@@ -4598,7 +4598,7 @@
       "prompt": {
         "connectorsDescription": "Collega gli strumenti necessari per questa attività. Puoi farlo anche più tardi.",
         "connectorsTitle": "Collega i tuoi strumenti di lavoro",
-        "intro": "Adatta questo prompt al risultato che desideri aggiungendo dettagli o requisiti, poi collega gli strumenti necessari a Okou per lavorare con le tue email, i tuoi file e i tuoi dati. Scegli il formato del risultato, ad esempio un report, una presentazione o un sito web."
+        "intro": "Collegando i tuoi strumenti di lavoro, dai a Okou il contesto delle tue email, dei tuoi file e dei tuoi dati, aiutandolo a comprendere il tuo lavoro e a fornire risultati più pertinenti. Puoi modificare questo prompt e scegliere il formato più adatto alla tua attività, come un report, una presentazione o un sito web."
       },
       "skills": {
         "copied": "Copiato",
