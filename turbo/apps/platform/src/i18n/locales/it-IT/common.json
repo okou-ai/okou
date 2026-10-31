@@ -4592,7 +4592,7 @@
             "label": "Sito web"
           }
         },
-        "title": "Scegli un formato",
+        "title": "Scegli un formato di output",
         "tooLong": "Accorcia il testo dell’attività per scegliere un altro formato."
       },
       "prompt": {

@@ -4536,7 +4536,7 @@
             "label": "Website"
           }
         },
-        "title": "Choose a format",
+        "title": "Choose an output format",
         "tooLong": "Shorten your task to choose another format."
       },
       "prompt": {

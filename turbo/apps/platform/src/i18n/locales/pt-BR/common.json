@@ -4592,7 +4592,7 @@
             "label": "Site"
           }
         },
-        "title": "Escolha um formato",
+        "title": "Escolha um formato de saída",
         "tooLong": "Encurte a tarefa para escolher outro formato."
       },
       "prompt": {
