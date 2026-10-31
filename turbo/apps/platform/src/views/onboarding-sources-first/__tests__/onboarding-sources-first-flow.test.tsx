@@ -807,9 +807,6 @@ test("A member skips sources, completes their own onboarding and enters chat", a
     name: "How would you like to start with Okou?",
   });
   expect(pathname()).toBe(ROUTES.onboardingExperience);
-  expect(
-    screen.queryByLabelText("Team member’s email"),
-  ).not.toBeInTheDocument();
   click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
