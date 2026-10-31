@@ -19,6 +19,12 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
+
+export {
+  MIN_EPOCH_MS_TIMESTAMP,
+  elapsedSinceApiStartMs,
+} from "./api-start-time";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
@@ -61,7 +67,6 @@ export {
 
 const c = initContract();
 
-export const MIN_EPOCH_MS_TIMESTAMP = 1_000_000_000_000;
 const apiStartTimeSchema = number().int().min(MIN_EPOCH_MS_TIMESTAMP);
 
 export const CANONICAL_CLAUDE_CONFIG_DIR = `${CANONICAL_GUEST_HOME_DIR}/.claude`;
@@ -142,20 +147,6 @@ export const releaseVersionSchema = string().regex(
   /^\d+\.\d+\.\d+$/,
   "Release versions are MAJOR.MINOR.PATCH",
 );
-export function elapsedSinceApiStartMs(
-  apiStartTimeMs: number | undefined,
-  nowMs: number,
-): number | undefined {
-  if (
-    apiStartTimeMs === undefined ||
-    !Number.isInteger(apiStartTimeMs) ||
-    apiStartTimeMs < MIN_EPOCH_MS_TIMESTAMP
-  ) {
-    return undefined;
-  }
-
-  return Math.max(0, nowMs - apiStartTimeMs);
-}
 
 export const runnerClaimPollReasonSchema = zEnum([
   "immediate",

@@ -1,18 +1,12 @@
-import { builtinModules } from "node:module";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { build } from "esbuild";
-import { workerRequireBanner } from "./worker-bundle-banner.mjs";
+import { builtins, workerBuildOptions } from "./worker-build-options.mjs";
 
 const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDirectory = resolve(apiRoot, "dist-worker");
-const builtins = new Set(
-  builtinModules.map((name) => {
-    return name.replace(/^node:/, "");
-  }),
-);
 
 // This is separate from Vite/Vercel: only the Worker artifact replaces
 // unsupported image/native PostgreSQL/React email rendering operations.
@@ -25,72 +19,10 @@ try {
     absWorkingDir: apiRoot,
     entryPoints: ["src/worker.ts"],
     outfile: "dist-worker/worker.js",
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    target: "es2022",
-    minify: true,
-    keepNames: true,
+    ...workerBuildOptions(apiRoot),
     sourcemap: true,
     metafile: true,
     write: false,
-    // Keep Cloudflare's native modules intact; Wrangler must not rebundle this.
-    external: ["cloudflare:*"],
-    // Custom conditions drop esbuild's default `module` condition. Keep it so
-    // packages' ESM builds (for example OpenTelemetry's) are tree-shaken
-    // instead of CommonJS aggregates that initialize every export at startup.
-    conditions: ["workerd", "worker", "module"],
-    // Shared code imports @sentry/node, which cannot run on Workers. The Worker
-    // never initializes Sentry, so these Workers SDK calls remain no-ops.
-    alias: { "@sentry/node": "@sentry/cloudflare" },
-    banner: {
-      js: workerRequireBanner,
-    },
-    plugins: [
-      {
-        name: "worker-compatibility",
-        setup(builder) {
-          // --no-bundle skips Wrangler's normal builtin normalization. Workers
-          // native imports require node: even when a dependency uses bare names.
-          builder.onResolve({ filter: /^[^./]/ }, ({ path }) => {
-            const name = path.replace(/^node:/, "");
-            if (builtins.has(name)) {
-              return { path: `node:${name}`, external: true };
-            }
-          });
-          const unsupportedPackages = new Map([
-            ["pg-native", "pg-native"],
-            ["@react-email/render", "react-email"],
-            // Vercel-only fallbacks; Workers use their RequestRuntime instead.
-            ["@vercel/functions", "vercel-functions"],
-            ["@vercel/oidc", "vercel-oidc"],
-          ]);
-          builder.onResolve(
-            {
-              filter:
-                /^(pg-native|@react-email\/render|@vercel\/functions|@vercel\/oidc)$/,
-            },
-            ({ path }) => {
-              return {
-                path: resolve(
-                  apiRoot,
-                  `src/worker-unsupported-${unsupportedPackages.get(path)}.ts`,
-                ),
-              };
-            },
-          );
-          builder.onLoad({ filter: /\.node$/ }, ({ path }) => {
-            return {
-              errors: [
-                {
-                  text: `Native addon ${path} cannot run on Cloudflare Workers. Provide a reviewed Worker-compatible implementation; do not externalize or silently stub it.`,
-                },
-              ],
-            };
-          });
-        },
-      },
-    ],
   });
 
   // A no-bundle deployment cannot resolve third-party packages at runtime.

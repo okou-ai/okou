@@ -1,7 +1,5 @@
-import {
-  MODEL_FIRST_SELECTION_PROVIDER_ID,
-  type ChatThreadServiceTier,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import { MODEL_FIRST_SELECTION_PROVIDER_ID } from "@okouai/api-contracts/validators/chat-threads";
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
 import {
   modelProviderTypeSchema,

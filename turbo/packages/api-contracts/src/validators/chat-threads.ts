@@ -21,6 +21,9 @@ import {
 } from "zod";
 import { requireUserMessageForDraftAttachments } from "../contracts/draft-user-message";
 
+/** Maximum run ids accepted by one chat thread usage request. */
+export const CHAT_THREAD_USAGE_RUN_LIMIT = 100;
+
 export const MODEL_FIRST_SELECTION_PROVIDER_ID =
   "00000000-0000-4000-8000-000000000000";
 

@@ -20,6 +20,11 @@ import {
 
 const c = initContract();
 
+export {
+  cronCleanupXResourceReadsContract,
+  type CronCleanupXResourceReadsContract,
+} from "./cron-cleanup-x-resource-reads";
+
 /**
  * Cleanup result schema
  */
@@ -78,21 +83,6 @@ export const cronCleanupSandboxesContract = c.router({
 
 export type CronCleanupSandboxesContract = typeof cronCleanupSandboxesContract;
 export type CronCleanupSandboxesResponse = zInfer<typeof cleanupResponseSchema>;
-
-export const cronCleanupXResourceReadsContract = c.router({
-  cleanup: {
-    method: "GET",
-    path: "/api/cron/cleanup-x-resource-reads",
-    headers: authHeadersSchema,
-    responses: {
-      200: object({ deleted: number().int().nonnegative() }),
-      401: apiErrorSchema,
-    },
-    summary: "Delete X resource reads older than yesterday in UTC",
-  },
-});
-export type CronCleanupXResourceReadsContract =
-  typeof cronCleanupXResourceReadsContract;
 
 const cronProcessUsageEventsResponseSchema = object({
   success: literal(true),

@@ -23,12 +23,16 @@ import {
   enum as zEnum,
   never as zNever,
   null as zNull,
-  undefined as zUndefined,
   unknown as zUnknown,
   type infer as zInfer,
 } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
+import {
+  chatRunOptionsRequestSchema,
+  codexServiceTierSchema,
+  selectedModelRequestSchema,
+} from "./chat-run-options";
 import { chatEventRowSchema } from "./chat-event-rows";
 import { CHAT_EVENT_TYPES } from "./chat-events";
 import {
@@ -41,8 +45,8 @@ import { initialRemoteAccessOverrideSchema } from "./chat-remote-access";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
-import { runModelIdSchema } from "./model-providers";
 import {
+  CHAT_THREAD_USAGE_RUN_LIMIT,
   imageAnnotationMarkSchema,
   imageAnnotationSchema,
   persistedAttachmentSchema,
@@ -68,6 +72,7 @@ import {
 } from "../validators/chat-threads";
 
 export {
+  CHAT_THREAD_USAGE_RUN_LIMIT,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   annotatedImageFilename,
   chatThreadServiceTierSchema,
@@ -82,6 +87,16 @@ export {
   indicatorSchema,
   indicatorsSchema,
 } from "../validators/chat-threads";
+export {
+  chatEventNormalSendBodySchema,
+  chatEventsContract,
+  type ChatEventSendBody,
+  type ChatEventsContract,
+} from "./chat-event-send";
+export type {
+  ChatRunOptionsRequest,
+  CodexServiceTier,
+} from "./chat-run-options";
 
 const c = initContract();
 const chatThreadDraftSchema = composerDraftSchema;
@@ -179,8 +194,6 @@ const chatThreadArtifactRunSchema = object({
 });
 
 export { type ReasoningEffort } from "./model-reasoning-effort";
-
-const codexServiceTierSchema = zEnum(["fast"]);
 
 const chatEventUsageProviderBreakdownSchema = object({
   provider: string(),
@@ -398,8 +411,6 @@ const chatThreadMetadataSchema = object({
 });
 export type ComposerDraft = zInfer<typeof composerDraftSchema>;
 
-const selectedModelRequestSchema = runModelIdSchema;
-
 const chatThreadCreateBodySchema = object({
   agentId: string().min(1),
   clientThreadId: string().uuid().optional(),
@@ -448,79 +459,6 @@ const chatThreadModelSelectionUpdateBodySchema = object({
   eventId: chatThreadEventIdSchema.optional(),
   serviceTierEventId: chatThreadEventIdSchema.optional(),
 });
-
-const chatRunOptionsRequestSchema = object({
-  /** Update the selected model's effort. */
-  reasoningEffort: reasoningEffortSchema.optional(),
-  codexServiceTier: codexServiceTierSchema.optional(),
-});
-
-const chatNormalSendBodyShape = {
-  agentId: string().min(1),
-  prompt: string().min(1),
-  threadId: string().optional(),
-  clientThreadId: string().uuid().optional(),
-  chatThreadEventId: chatThreadEventIdSchema.optional(),
-  // Client-generated UUID for the sort touch created by direct user sends.
-  // Lets event-sourced clients reconcile optimistic sidebar recency by id.
-  chatThreadSortEventId: chatThreadEventIdSchema.optional(),
-  /**
-   * Run whose selected output the user is forwarding. The server resolves the
-   * run to authoritative thread and agent provenance before persisting it.
-   */
-  sourceRunId: string().uuid().optional(),
-  /**
-   * Selected model id, or null for Auto. The API resolves the effective
-   * provider from org policy and available credentials. Existing threads may
-   * omit it to reuse the thread's persisted selection.
-   */
-  model: selectedModelRequestSchema.nullable().optional(),
-  runOptions: chatRunOptionsRequestSchema.optional(),
-  userMessage: userMessageDocumentSchema,
-  computerUseHostId: string().uuid().nullable().optional(),
-  cloudBrowserEnabled: boolean().optional(),
-  hasTextContent: boolean(),
-  // Preview evaluation escape hatch: when enabled, the request asks the
-  // runner to bypass preview mock CLIs and use the real agent runtime.
-  realAgentInPreview: boolean().optional(),
-  // Internal diagnostic option: capture bounded request/response data in this
-  // run's network logs. Production authorization is enforced at run creation.
-  captureNetworkBodies: boolean().optional(),
-} as const;
-
-export const chatEventNormalSendBodySchema = object({
-  ...chatNormalSendBodyShape,
-  // Client-generated UUID used as the user event's primary key.
-  clientEventId: string().uuid().optional(),
-  revokesEventId: string().min(1).optional(),
-  interruptsRunId: zUndefined().optional(),
-})
-  .strict()
-  .refine(
-    (body) => {
-      return !(body.cloudBrowserEnabled && body.computerUseHostId);
-    },
-    {
-      message: "Cloud browser and Computer Use cannot both be enabled",
-      path: ["cloudBrowserEnabled"],
-    },
-  )
-  .refine(
-    (body) => {
-      return body.userMessage.parts.every((part) => {
-        return (
-          part.type !== "file" ||
-          (part.annotatedFileId === undefined) ===
-            (part.annotations === undefined)
-        );
-      });
-    },
-    {
-      message:
-        "Annotated user-message files require annotatedFileId and annotations together",
-      path: ["userMessage"],
-    },
-  );
 
 /**
  * Chat thread collection route contract.
@@ -634,8 +572,6 @@ const chatThreadIdPathParamsSchema = object({ id: string().uuid() });
 const chatThreadThreadIdPathParamsSchema = object({
   threadId: string().uuid(),
 });
-
-export const CHAT_THREAD_USAGE_RUN_LIMIT = 100;
 
 /** Bounded read: money comes from settled usage, independent of chat hints. */
 export const chatThreadUsageContract = c.router({
@@ -1099,77 +1035,6 @@ export const chatThreadComputerUseHostContract = c.router({
 });
 
 /** Canonical ChatEvent write contract. */
-export const chatEventsContract = c.router({
-  send: {
-    method: "POST",
-    path: "/api/chat/events",
-    headers: authHeadersSchema,
-    body: union([
-      chatEventNormalSendBodySchema,
-      object({
-        agentId: string().min(1),
-        threadId: string().min(1),
-        revokesEventId: string().min(1),
-        clientEventId: string().uuid().optional(),
-        prompt: zUndefined().optional(),
-        clientThreadId: zUndefined().optional(),
-        chatThreadEventId: zUndefined().optional(),
-        chatThreadSortEventId: zUndefined().optional(),
-        sourceRunId: zUndefined().optional(),
-        model: zUndefined().optional(),
-        runOptions: zUndefined().optional(),
-        userMessage: zUndefined().optional(),
-        computerUseHostId: zUndefined().optional(),
-        hasTextContent: zUndefined().optional(),
-        realAgentInPreview: zUndefined().optional(),
-        captureNetworkBodies: zUndefined().optional(),
-        interruptsRunId: zUndefined().optional(),
-      }).strict(),
-      object({
-        agentId: string().min(1),
-        threadId: string().min(1),
-        interruptsRunId: string().uuid().toLowerCase(),
-        clientEventId: string().uuid().optional(),
-        prompt: zUndefined().optional(),
-        clientThreadId: zUndefined().optional(),
-        chatThreadEventId: zUndefined().optional(),
-        chatThreadSortEventId: zUndefined().optional(),
-        sourceRunId: zUndefined().optional(),
-        model: zUndefined().optional(),
-        runOptions: zUndefined().optional(),
-        userMessage: zUndefined().optional(),
-        computerUseHostId: zUndefined().optional(),
-        hasTextContent: zUndefined().optional(),
-        realAgentInPreview: zUndefined().optional(),
-        captureNetworkBodies: zUndefined().optional(),
-        revokesEventId: zUndefined().optional(),
-      }).strict(),
-    ]),
-    responses: {
-      /**
-       * A send enqueues its input and returns without waiting for a run. The
-       * run, or an `input.rejected` event explaining why none started,
-       * appears in the thread's event stream.
-       */
-      201: object({
-        threadId: string(),
-        createdAt: string().optional(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      409: apiErrorSchema,
-      422: apiErrorSchema,
-      429: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary:
-      "Append a chat event; user input is enqueued and picked into a run asynchronously",
-  },
-});
-
 /**
  * Single chat message in a search result.
  * `(chatThreadId, seqId)` is the stable identity and `runId` carries optional
@@ -1361,7 +1226,6 @@ export type ChatThreadConnectorSelectionContract =
   typeof chatThreadConnectorSelectionContract;
 export type ChatThreadComputerUseHostContract =
   typeof chatThreadComputerUseHostContract;
-export type ChatEventsContract = typeof chatEventsContract;
 export type ChatThreadEventsContract = typeof chatThreadEventsContract;
 export type ChatThreadArtifactsContract = typeof chatThreadArtifactsContract;
 export type ChatSearchContract = typeof chatSearchContract;
@@ -1399,9 +1263,7 @@ export {
   chatThreadArtifactRunSchema,
 };
 
-export type CodexServiceTier = zInfer<typeof codexServiceTierSchema>;
 export type ChatThreadServiceTier = zInfer<typeof chatThreadServiceTierSchema>;
-export type ChatRunOptionsRequest = zInfer<typeof chatRunOptionsRequestSchema>;
 export type GenerationTemplateRequest = zInfer<
   typeof generationTemplateRequestSchema
 >;
@@ -1459,7 +1321,6 @@ export type ChatThreadDetail = zInfer<typeof chatThreadDetailSchema>;
 export type ChatThreadMetadata = zInfer<typeof chatThreadMetadataSchema>;
 export type ChatThreadDraft = zInfer<typeof chatThreadDraftSchema>;
 export type ChatEvent = zInfer<typeof chatEventSchema>;
-export type ChatEventSendBody = zInfer<typeof chatEventsContract.send.body>;
 export type Indicator = zInfer<typeof indicatorSchema>;
 export type Indicators = zInfer<typeof indicatorsSchema>;
 

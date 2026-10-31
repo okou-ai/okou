@@ -105,6 +105,10 @@ export const clientDescriptorManifest = [
     contracts: ["builtInGenerationContract"],
   },
   {
+    module: "chat-event-send",
+    contracts: ["chatEventsContract"],
+  },
+  {
     module: "chat-input-status",
     contracts: ["chatInputStatusContract"],
   },
@@ -123,7 +127,6 @@ export const clientDescriptorManifest = [
   {
     module: "chat-threads",
     contracts: [
-      "chatEventsContract",
       "chatSearchContract",
       "chatThreadArchiveContract",
       "chatThreadArtifactsContract",
@@ -216,12 +219,15 @@ export const clientDescriptorManifest = [
     ],
   },
   {
+    module: "cron-cleanup-x-resource-reads",
+    contracts: ["cronCleanupXResourceReadsContract"],
+  },
+  {
     module: "cron",
     contracts: [
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
-      "cronCleanupXResourceReadsContract",
       "cronCompactChatThreadSnapshotsContract",
       "cronCompactUsageEventsContract",
       "cronComputerUseScreenshotCleanupContract",

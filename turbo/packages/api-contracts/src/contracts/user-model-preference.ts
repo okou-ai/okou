@@ -3,7 +3,7 @@ import { object, string, type infer as zInfer } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { imageModelIdSchema } from "./image-models";
-import { runModelIdSchema } from "./model-providers";
+import { runModelIdSchema } from "./run-model-id";
 import { chatThreadServiceTierSchema } from "./chat-threads";
 import {
   modelSettingsPatchSchema,

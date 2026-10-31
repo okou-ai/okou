@@ -1,5 +1,5 @@
 import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
-import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-threads";
+import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQLWrapper } from "drizzle-orm";
