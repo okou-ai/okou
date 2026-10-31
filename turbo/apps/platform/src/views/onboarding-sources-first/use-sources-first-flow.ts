@@ -1,4 +1,5 @@
 import { useGet, useSet } from "ccstate-react";
+import { onboardingCapabilitiesEnabled$ } from "../../signals/onboarding/onboarding-capabilities-enabled.ts";
 import {
   captureSourceOnboardingBack$,
   captureSourceOnboardingSkipped$,
@@ -8,16 +9,14 @@ import {
   previousSourcesFirstStep,
   SOURCES_FIRST_STEP_ROUTES,
   sourcesFirstDraft$,
-  sourcesFirstFlow$,
   sourcesFirstProgress,
   type SourcesFirstDraft,
-  type SourcesFirstFlow,
   type SourcesFirstStep,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { detachedNavigateTo$, searchParams$ } from "../../signals/route.ts";
 
 interface SourcesFirstFlowState {
-  readonly flow: SourcesFirstFlow;
+  readonly capabilitiesEnabled: boolean;
   readonly draft: SourcesFirstDraft;
   /** 1-based index for the progress bar. */
   readonly currentStep: number;
@@ -37,14 +36,22 @@ interface SourcesFirstFlowState {
 export function useSourcesFirstFlow(
   step: SourcesFirstStep,
 ): SourcesFirstFlowState {
-  const flow = useGet(sourcesFirstFlow$);
+  const capabilitiesEnabled = useGet(onboardingCapabilitiesEnabled$);
   const draft = useGet(sourcesFirstDraft$);
   const navigate = useSet(detachedNavigateTo$);
   const searchParams = useGet(searchParams$);
   const captureBack = useSet(captureSourceOnboardingBack$);
   const captureSkipped = useSet(captureSourceOnboardingSkipped$);
-  const previous = previousSourcesFirstStep(step, flow, draft.provider);
-  const progress = sourcesFirstProgress(step, flow, draft.provider);
+  const previous = previousSourcesFirstStep(
+    step,
+    draft.provider,
+    capabilitiesEnabled,
+  );
+  const progress = sourcesFirstProgress(
+    step,
+    draft.provider,
+    capabilitiesEnabled,
+  );
 
   const goTo = (target: SourcesFirstStep): void => {
     // Every step keeps the query it arrived with, so the Marketing `prompt`
@@ -56,14 +63,18 @@ export function useSourcesFirstFlow(
   };
 
   const goNext = (): void => {
-    const next = nextSourcesFirstStep(step, flow, draft.provider);
+    const next = nextSourcesFirstStep(
+      step,
+      draft.provider,
+      capabilitiesEnabled,
+    );
     if (next) {
       goTo(next);
     }
   };
 
   return {
-    flow,
+    capabilitiesEnabled,
     draft,
     currentStep: progress.current,
     totalSteps: progress.total,

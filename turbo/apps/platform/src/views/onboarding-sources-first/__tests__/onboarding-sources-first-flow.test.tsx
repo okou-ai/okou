@@ -397,10 +397,10 @@ test.each([false, true])(
 
     await screen.findByRole("heading", {
       name: mobile
-        ? "Invite a teammate"
-        : "Make Okou useful to your whole team",
+        ? "Choose how to start"
+        : "How would you like to start with Okou?",
     });
-    expect(pathname()).toBe(ROUTES.onboardingTeam);
+    expect(pathname()).toBe(ROUTES.onboardingExperience);
     expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
 
     click(getButtonByName("Back"));

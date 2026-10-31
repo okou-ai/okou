@@ -20,9 +20,10 @@ const OKOU_PAID_TOOL_IDS: ReadonlySet<string> = new Set(
   AVAILABLE_PAID_TOOL_IDS,
 );
 
-function createPaidToolsSignals(
+export function createPaidToolsSignals(
   createClient: ApiClientFactory,
   assertCurrent: () => void,
+  catalog$ = dataRouterCatalog$,
 ) {
   const client = createClient(paidToolsContract, {
     getTokenGuard: () => {
@@ -70,7 +71,7 @@ function createPaidToolsSignals(
   // tool ID is controlled by that Okou row.
   const dataFamilies$ = computed(async (get) => {
     assertCurrent();
-    const families = await get(dataRouterCatalog$);
+    const families = await get(catalog$);
     assertCurrent();
     return families
       .filter((family) => {

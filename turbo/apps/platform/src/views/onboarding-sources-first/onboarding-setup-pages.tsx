@@ -1,19 +1,13 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Check, Loader2, TriangleAlert } from "lucide-react";
-import { Button, Input, RadioGroup, cn } from "@okouai/ui";
+import { Check } from "lucide-react";
+import { Button, RadioGroup, cn } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   OnboardingCompliance,
   OnboardingSecurityLink,
 } from "./onboarding-industry-parts.tsx";
-import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
-import {
-  sendSourcesFirstInvite$,
-  sourcesFirstInviteEmailValid,
-  sourcesFirstInviteSendable,
-} from "../../signals/onboarding/onboarding-sources-first-invite.ts";
 import {
   ONBOARDING_INDUSTRY_IDS,
   type OnboardingIndustry,
@@ -21,14 +15,10 @@ import {
 import {
   captureSourceOnboardingExperienceAnswered$,
   captureSourceOnboardingIndustrySelected$,
-  captureSourceOnboardingInviteAdded$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import {
   nextSourcesFirstStep,
-  sourcesFirstUi$,
   updateSourcesFirstDraft$,
-  updateSourcesFirstUi$,
-  type SourcesFirstInvite,
   type SubscriptionProvider,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import {
@@ -46,7 +36,6 @@ import { detach, Reason } from "../../signals/utils.ts";
 import {
   OnboardingChoiceCard,
   OnboardingIllustration,
-  OnboardingPanel,
   OnboardingPosterCard,
   ProductMark,
 } from "./onboarding-step-parts.tsx";
@@ -142,278 +131,6 @@ export function OnboardingIndustryPage() {
           </p>
         </div>
       ) : null}
-    </OnboardingStepLayout>
-  );
-}
-
-const TEAM_POINT_IDS = ["workspace", "accounts", "workflows"] as const;
-
-/** What joining actually gives a teammate, until there is an invite to show. */
-function TeamPoints() {
-  const { t } = useTranslation();
-
-  return (
-    <ul className="flex flex-1 flex-col justify-center gap-3 border-t border-border/60 px-5 py-4 max-sm:hidden">
-      {TEAM_POINT_IDS.map((id) => {
-        return (
-          <li key={id} className="flex items-start gap-2.5">
-            <Check
-              size={16}
-              className="mt-0.5 shrink-0 text-emerald-600"
-              aria-hidden="true"
-            />
-            <span className="text-sm leading-5 text-muted-foreground">
-              {t(($) => {
-                return $.onboarding.sourcesFirst.team.points[id];
-              })}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-/** What the API last answered for one address, in its own row. */
-function InviteOutcome({ invite }: { readonly invite: SourcesFirstInvite }) {
-  const { t } = useTranslation();
-
-  if (invite.status === "invited") {
-    return (
-      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-        <Check size={14} aria-hidden="true" />
-        {t(($) => {
-          return $.onboarding.sourcesFirst.team.invited;
-        })}
-      </span>
-    );
-  }
-  return (
-    <span className="flex shrink-0 items-center gap-1.5 text-xs text-destructive">
-      <TriangleAlert size={14} aria-hidden="true" />
-      {t(($) => {
-        return $.onboarding.sourcesFirst.team.notSent;
-      })}
-    </span>
-  );
-}
-
-/** The addresses this run tried, under the form that sent them. */
-function InviteList({
-  invites,
-}: {
-  readonly invites: readonly SourcesFirstInvite[];
-}) {
-  return (
-    <div className="border-t border-border/60">
-      {invites.map((invite) => {
-        return (
-          <div
-            key={invite.email}
-            className="flex items-start gap-3 border-t border-border/60 px-5 py-3.5 first:border-t-0"
-          >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground">
-              {invite.email.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-sm text-foreground">
-                {invite.email}
-              </span>
-              {/* The reason belongs to the address, so it stays with it. */}
-              {invite.failure === null ? null : (
-                <span
-                  role="alert"
-                  className="mt-0.5 text-xs leading-5 text-destructive"
-                >
-                  {invite.failure}
-                </span>
-              )}
-            </span>
-            <InviteOutcome invite={invite} />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** The address field and its send, with the hint for a malformed address. */
-function InviteEmailForm({
-  malformed,
-  sendable,
-  sending,
-  onInvite,
-  actionInFooter,
-}: {
-  readonly malformed: boolean;
-  readonly sendable: boolean;
-  readonly sending: boolean;
-  readonly onInvite: () => void;
-  readonly actionInFooter: boolean;
-}) {
-  const { t } = useTranslation();
-  const ui = useGet(sourcesFirstUi$);
-  const updateUi = useSet(updateSourcesFirstUi$);
-
-  return (
-    <div className="px-5 py-4 max-sm:p-0">
-      <label
-        htmlFor="onboarding-invite-email"
-        className="block text-sm font-medium text-foreground"
-      >
-        {t(($) => {
-          return $.onboarding.sourcesFirst.team.label;
-        })}
-      </label>
-      {/* The hint belongs to the address, so it sits under the field
-          even where the send action stacks below it. */}
-      <div className="mt-2 flex items-start gap-2 max-sm:flex-col max-sm:items-stretch">
-        <div className="min-w-0 flex-1">
-          <Input
-            id="onboarding-invite-email"
-            className="max-sm:h-12 max-sm:text-base max-sm:placeholder:text-base"
-            type="email"
-            autoComplete="off"
-            value={ui.inviteEmail}
-            disabled={sending}
-            placeholder={t(($) => {
-              return $.onboarding.sourcesFirst.team.placeholder;
-            })}
-            aria-invalid={malformed}
-            aria-describedby={
-              malformed ? "onboarding-invite-email-error" : undefined
-            }
-            onChange={(event) => {
-              updateUi({
-                inviteEmail: event.target.value,
-                inviteEmailLeft: false,
-              });
-            }}
-            onBlur={() => {
-              updateUi({ inviteEmailLeft: true });
-            }}
-          />
-          {malformed ? (
-            <p
-              id="onboarding-invite-email-error"
-              className="mt-1.5 text-xs leading-5 text-destructive"
-            >
-              {t(($) => {
-                return $.onboarding.sourcesFirst.team.invalidEmail;
-              })}
-            </p>
-          ) : null}
-        </div>
-        {actionInFooter ? null : (
-          <Button
-            type="button"
-            onClick={onInvite}
-            disabled={!sendable || sending}
-          >
-            {sending && (
-              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-            )}
-            {t(($) => {
-              return sending
-                ? $.onboarding.sourcesFirst.team.sending
-                : $.onboarding.sourcesFirst.team.invite;
-            })}
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function OnboardingTeamPage() {
-  const { t } = useTranslation();
-  const mobile = useMobileOnboarding();
-  const captureInviteAdded = useSet(captureSourceOnboardingInviteAdded$);
-  const flow = useSourcesFirstFlow("team");
-  const ui = useGet(sourcesFirstUi$);
-  const [invitation, sendInvite] = useLoadableSet(sendSourcesFirstInvite$);
-  const pageSignal = useGet(pageSignal$);
-  const address = ui.inviteEmail.trim();
-  const sendable = sourcesFirstInviteSendable(flow.draft.invites, address);
-  // Named only once the field is left, so the hint never argues with an
-  // address that is still being typed.
-  const malformed =
-    ui.inviteEmailLeft &&
-    address !== "" &&
-    !sourcesFirstInviteEmailValid(address);
-  const invited = flow.draft.invites.some((entry) => {
-    return entry.status === "invited";
-  });
-  const sendFromFooter = mobile && (!invited || address !== "");
-
-  const invite = (): void => {
-    if (!sendable || invitation.state === "loading") {
-      return;
-    }
-    // A refused address is sent again under its own entry, so only a new one
-    // makes the list longer.
-    const known = flow.draft.invites.some((entry) => {
-      return entry.email === address;
-    });
-    detach(sendInvite(address, pageSignal), Reason.DomCallback);
-    // The funnel counts invitees; the addresses themselves stay in the draft.
-    captureInviteAdded(
-      known ? flow.draft.invites.length : flow.draft.invites.length + 1,
-    );
-  };
-
-  return (
-    <OnboardingStepLayout
-      currentStep={flow.currentStep}
-      totalSteps={flow.totalSteps}
-      title={t(($) => {
-        return $.onboarding.sourcesFirst.team.title;
-      })}
-      description={t(($) => {
-        return $.onboarding.sourcesFirst.team.copy;
-      })}
-      mobileTitle={t(($) => {
-        return $.onboarding.sourcesFirst.mobile.teamTitle;
-      })}
-      mobileDescription={t(($) => {
-        return $.onboarding.sourcesFirst.mobile.teamCopy;
-      })}
-      primaryLabel={t(($) => {
-        return sendFromFooter
-          ? $.onboarding.sourcesFirst.team.invite
-          : $.onboarding.sourcesFirst.common.continue;
-      })}
-      // Continue waits for an accepted invite; Not now leaves without one.
-      onPrimary={sendFromFooter ? invite : flow.goNext}
-      primaryDisabled={sendFromFooter ? !sendable : !invited}
-      primaryBusy={mobile && invitation.state === "loading"}
-      secondaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.notNow;
-      })}
-      onSecondary={flow.goSkip}
-      onBack={flow.goBack}
-    >
-      <OnboardingPanel
-        title={t(($) => {
-          return $.onboarding.sourcesFirst.team.panelTitle;
-        })}
-        description={t(($) => {
-          return $.onboarding.sourcesFirst.team.note;
-        })}
-      >
-        <InviteEmailForm
-          malformed={malformed}
-          sendable={sendable}
-          sending={invitation.state === "loading"}
-          onInvite={invite}
-          actionInFooter={mobile}
-        />
-        {flow.draft.invites.length > 0 ? (
-          <InviteList invites={flow.draft.invites} />
-        ) : (
-          <TeamPoints />
-        )}
-      </OnboardingPanel>
     </OnboardingStepLayout>
   );
 }
@@ -638,7 +355,11 @@ export function OnboardingExperiencePage() {
   // The answer decides the branch, so the next step is resolved from the
   // answer itself instead of the one this render was built from.
   const goNext = (): void => {
-    const next = nextSourcesFirstStep("experience", flow.flow, provider);
+    const next = nextSourcesFirstStep(
+      "experience",
+      provider,
+      flow.capabilitiesEnabled,
+    );
     if (next) {
       flow.goTo(next);
     }

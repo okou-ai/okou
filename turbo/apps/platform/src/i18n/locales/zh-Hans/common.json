@@ -4211,6 +4211,49 @@
       "promptTitle": "试试这个提示词"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "专业数据、社交洞察和图像生成，让你的 agent 更强大。选择需要的能力，Okou 会用它们为你完成工作。",
+        "items": {
+          "data-search": {
+            "description": "比较公司、网站流量和广告，发现业务机会。",
+            "name": "高级数据研究"
+          },
+          "finance": {
+            "description": "比较股价和市场趋势，为投资研究提供依据。",
+            "name": "金融数据"
+          },
+          "image-generation": {
+            "description": "为社交帖子、营销活动和演示文稿创作原创图片。",
+            "name": "图像生成"
+          },
+          "maps": {
+            "description": "查找商家和场所、比较位置并规划路线。",
+            "name": "地图与地点"
+          },
+          "people-search": {
+            "description": "按职位和公司寻找潜在客户、合作伙伴或候选人。",
+            "name": "人物搜索"
+          },
+          "scrape": {
+            "description": "从网页提取关键事实，用于简报和对比分析。",
+            "name": "网页提取"
+          },
+          "seo": {
+            "description": "发现客户搜索的关键词，了解竞争对手的排名。",
+            "name": "SEO 研究"
+          },
+          "social": {
+            "description": "研究创作者、帖子和互动表现，为内容决策提供依据。",
+            "name": "社交搜索"
+          },
+          "web-search": {
+            "description": "查找最新资讯和事实，并提供可核查的来源。",
+            "name": "网页搜索"
+          }
+        },
+        "listLabel": "内置能力",
+        "title": "认识 Okou 的秘密工具"
+      },
       "chatChannels": {
         "connectedTitle": "聊天渠道已连接",
         "copy": "通过消息与 Okou 协作，或把它加入团队聊天。选择你习惯的方式。",
@@ -4233,8 +4276,7 @@
         "industry": "选择你的领域",
         "ready": "Okou 已就绪",
         "skills": "导入你的技能",
-        "sources": "连接你的工作",
-        "team": "邀请团队成员"
+        "sources": "连接你的工作"
       },
       "experience": {
         "copy": "可以从引导开始，也可以接入你已有的 Codex 或 Claude Code 订阅。",
@@ -4324,9 +4366,7 @@
         "skillsCopy": "在电脑上使用 {{provider}}。",
         "skillsTitle": "导入你的技能",
         "sourcesCopy": "为首个任务连接一个工具。",
-        "startTask": "开始任务",
-        "teamCopy": "在同一个工作区协作。",
-        "teamTitle": "邀请同事"
+        "startTask": "开始任务"
       },
       "outcomes": {
         "accessibleLabel": "基于 {{source}} 整理的{{title}}示意，内容均为示例数据。",
@@ -4898,24 +4938,6 @@
         "failedNote": "无法连接 {{provider}}。你可以继续，稍后再连接。",
         "rowCopy": "连接后可使用你的套餐运行，不消耗 Okou 积分。",
         "unconfirmedNote": "无法确认 {{provider}} 的连接状态。你可以继续，稍后再连接。"
-      },
-      "team": {
-        "copy": "邀请团队成员共享你的工作流，每个人各自连接自己的工具。",
-        "invalidEmail": "请输入有效的邮箱地址",
-        "invite": "发送邀请",
-        "invited": "已邀请",
-        "label": "团队成员的邮箱",
-        "note": "他们可以马上开始使用 Okou。",
-        "notSent": "未发送",
-        "panelTitle": "邀请团队成员",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "需要时连接自己的工具。",
-          "workflows": "可以运行团队已搭建的所有工作流。",
-          "workspace": "加入你的工作区。"
-        },
-        "sending": "发送中…",
-        "title": "让整个团队一起用好 Okou"
       },
       "welcome": {
         "copy": "看看为你的工作推荐的任务，按目标调整，再让 Okou 开始执行。",

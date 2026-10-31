@@ -30,8 +30,8 @@ import { jsonParseOr, onRef } from "../utils.ts";
 
 /**
  * Source-first onboarding draft. Unsaved answers survive a browser refresh in
- * local storage, scoped to the current user and organization. Connections and
- * invitations keep their own server-backed state; their transient UI status
+ * local storage, scoped to the current user and organization. Connections
+ * keep their own server-backed state; their transient UI status
  * belongs to this application start.
  */
 
@@ -40,10 +40,10 @@ export type SourcesFirstFlow = "owner" | "member";
 const sourcesFirstStepSchema = zEnum([
   "sources",
   "industry",
-  "team",
   "experience",
   "skills",
   "slack",
+  "capabilities",
   "ready",
 ]);
 
@@ -54,7 +54,7 @@ export const SOURCES_FIRST_STEP_ROUTES: Readonly<
 > = {
   industry: ROUTES.onboarding,
   sources: ROUTES.onboardingSources,
-  team: ROUTES.onboardingTeam,
+  capabilities: ROUTES.onboardingCapabilities,
   experience: ROUTES.onboardingExperience,
   skills: ROUTES.onboardingSkills,
   slack: ROUTES.onboardingSlack,
@@ -66,23 +66,8 @@ export type SubscriptionProvider = OnboardingSubscriptionProvider;
 /** The other places a mention works, offered beside Slack on the same step. */
 export type ChatChannelId = "telegram" | "imessage" | "teams" | "discord";
 
-/**
- * The invitation API result for an address. Request lifecycle belongs to
- * the command loadable; only an API answer makes an address invited.
- */
-export type SourcesFirstInviteStatus = "invited" | "failed";
-
-export interface SourcesFirstInvite {
-  readonly email: string;
-  readonly status: SourcesFirstInviteStatus;
-  /** Why the invitation was refused, as the API put it; null otherwise. */
-  readonly failure: string | null;
-}
-
 export interface SourcesFirstDraft {
   readonly industry: OnboardingIndustry | null;
-  /** One entry per address this run tried, with what the API answered. */
-  readonly invites: readonly SourcesFirstInvite[];
   /** Null until the step is answered, so nothing is pre-chosen for the user. */
   readonly experienced: boolean | null;
   /**
@@ -105,7 +90,6 @@ export interface SourcesFirstDraft {
 function emptyDraft(): SourcesFirstDraft {
   return {
     industry: null,
-    invites: [],
     experienced: null,
     provider: null,
     startingPromptDraft: "",
@@ -127,7 +111,8 @@ const persistedDraftIdentitySchema = object({
 });
 
 const persistedStepSchema = persistedDraftIdentitySchema.extend({
-  step: sourcesFirstStepSchema,
+  // Existing browser drafts can still point at the retired invitation step.
+  step: zEnum([...sourcesFirstStepSchema.options, "team"]),
 });
 
 const persistedDraftSchema = persistedDraftIdentitySchema.extend({
@@ -216,7 +201,9 @@ export const restoreSourcesFirstDraft$ = command(
     return step.success &&
       step.data.orgId === identity.orgId &&
       step.data.userId === identity.userId
-      ? step.data.step
+      ? step.data.step === "team"
+        ? "experience"
+        : step.data.step
       : null;
   },
 );
@@ -252,8 +239,7 @@ export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
 });
 
 /**
- * Owner runs the full flow; a member invited into an existing org runs the
- * same steps except the invite, which only an admin can send.
+ * Keep workspace role for funnel telemetry; both roles use the same steps.
  */
 const internalFlow$ = state<SourcesFirstFlow>("owner");
 
@@ -275,15 +261,10 @@ export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
 
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
-  readonly inviteEmail: string;
-  /** The field was left since it last changed, so its address is final. */
-  readonly inviteEmailLeft: boolean;
   readonly importPromptShown: boolean;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
-  inviteEmail: "",
-  inviteEmailLeft: false,
   importPromptShown: false,
 });
 
@@ -402,42 +383,29 @@ export const selectStartingPromptOutput$ = command(
   },
 );
 
-const OWNER_BASE_STEPS = [
-  "industry",
-  "sources",
-  "team",
-  "experience",
-] as const satisfies readonly SourcesFirstStep[];
-
-const MEMBER_BASE_STEPS = [
-  "industry",
-  "sources",
-  "experience",
-] as const satisfies readonly SourcesFirstStep[];
-
-/**
- * Step order for one run. Members skip the invite; answering the AI
- * experience question with a selected plan adds the skills step after it.
- * Everyone reaches Slack: a member who cannot add it is told to ask an admin
- * and can leave the step with Not now.
- */
+/** A subscription adds Skills; the rollout adds Capabilities before the first task. */
 export function sourcesFirstSteps(
-  flow: SourcesFirstFlow,
   provider: SubscriptionProvider | null,
+  capabilitiesEnabled = false,
 ): readonly SourcesFirstStep[] {
-  const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
-  const skillSteps: readonly SourcesFirstStep[] =
-    provider === null ? [] : ["skills"];
-  return [...base, ...skillSteps, "slack", "ready"];
+  return [
+    "industry",
+    "sources",
+    "experience",
+    ...(provider === null ? [] : ["skills" as const]),
+    "slack",
+    ...(capabilitiesEnabled ? ["capabilities" as const] : []),
+    "ready",
+  ];
 }
 
 /** Progress markers: one per step of this run. */
 export function sourcesFirstProgress(
   step: SourcesFirstStep,
-  flow: SourcesFirstFlow,
   provider: SubscriptionProvider | null,
+  capabilitiesEnabled = false,
 ): { readonly current: number; readonly total: number } {
-  const steps = sourcesFirstSteps(flow, provider);
+  const steps = sourcesFirstSteps(provider, capabilitiesEnabled);
   const index = steps.indexOf(step);
   return { current: (index === -1 ? 0 : index) + 1, total: steps.length };
 }
@@ -445,10 +413,10 @@ export function sourcesFirstProgress(
 /** The step before `step`, or null when it is the first one. */
 export function previousSourcesFirstStep(
   step: SourcesFirstStep,
-  flow: SourcesFirstFlow,
   provider: SubscriptionProvider | null,
+  capabilitiesEnabled = false,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, provider);
+  const steps = sourcesFirstSteps(provider, capabilitiesEnabled);
   const index = steps.indexOf(step);
   return index > 0 ? (steps[index - 1] ?? null) : null;
 }
@@ -456,10 +424,10 @@ export function previousSourcesFirstStep(
 /** The step after `step`, or null when the flow is finished. */
 export function nextSourcesFirstStep(
   step: SourcesFirstStep,
-  flow: SourcesFirstFlow,
   provider: SubscriptionProvider | null,
+  capabilitiesEnabled = false,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, provider);
+  const steps = sourcesFirstSteps(provider, capabilitiesEnabled);
   const index = steps.indexOf(step);
   return index === -1 ? null : (steps[index + 1] ?? null);
 }

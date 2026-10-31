@@ -72,6 +72,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Show published product updates once per user and edition.",
     enabled: false,
   },
+  [FeatureSwitchKey.OnboardingCapabilities]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Onboarding capabilities",
+    description:
+      "Choose built-in capabilities before the first onboarding task.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.OnboardingSourceOutcomes]: {
     maintainer: "ming@okou.ai",
     displayName: "Onboarding source outcomes",

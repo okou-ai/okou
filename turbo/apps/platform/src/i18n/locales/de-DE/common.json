@@ -4226,6 +4226,49 @@
       "promptTitle": "Versuchen Sie es mit dieser Eingabeaufforderung"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Stärke deinen Agenten mit Fachdaten, Social-Media-Einblicken und Bildgenerierung. Wähle die Fähigkeiten aus. Okou setzt sie für deine Arbeit ein.",
+        "items": {
+          "data-search": {
+            "description": "Vergleiche Unternehmen, Website-Traffic und Anzeigen, um Chancen zu erkennen.",
+            "name": "Erweiterte Datenrecherche"
+          },
+          "finance": {
+            "description": "Vergleiche Aktienkurse und Markttrends für deine Investmentrecherche.",
+            "name": "Finanzdaten"
+          },
+          "image-generation": {
+            "description": "Erstelle eigene Bilder für Social Media, Kampagnen und Präsentationen.",
+            "name": "Bildgenerierung"
+          },
+          "maps": {
+            "description": "Finde Unternehmen und Veranstaltungsorte, vergleiche Standorte und plane Routen.",
+            "name": "Karten und Orte"
+          },
+          "people-search": {
+            "description": "Finde Kunden, Partner oder Bewerber nach Position und Unternehmen.",
+            "name": "Personensuche"
+          },
+          "scrape": {
+            "description": "Extrahiere Fakten aus Webseiten für Briefings und Vergleiche.",
+            "name": "Seitenextraktion"
+          },
+          "seo": {
+            "description": "Finde Suchbegriffe deiner Kunden und prüfe die Rankings der Konkurrenz.",
+            "name": "SEO-Recherche"
+          },
+          "social": {
+            "description": "Untersuche Creator, Beiträge und Interaktionen für deine Inhalte.",
+            "name": "Social-Media-Suche"
+          },
+          "web-search": {
+            "description": "Finde aktuelle Nachrichten und Fakten mit überprüfbaren Quellen.",
+            "name": "Websuche"
+          }
+        },
+        "listLabel": "Integrierte Fähigkeiten",
+        "title": "Okous geheime Werkzeuge"
+      },
       "chatChannels": {
         "connectedTitle": "Dein Chat ist verbunden",
         "copy": "Schreibe Okou direkt oder füge es zum Teamchat hinzu. Wähle die Art, wie du bereits arbeitest.",
@@ -4248,8 +4291,7 @@
         "industry": "Bereich wählen",
         "ready": "Okou ist bereit",
         "skills": "Skills importieren",
-        "sources": "Arbeit verbinden",
-        "team": "Teammitglied einladen"
+        "sources": "Arbeit verbinden"
       },
       "experience": {
         "copy": "Lass dich beim Einstieg begleiten oder nutze deinen vorhandenen Codex- oder Claude-Code-Tarif.",
@@ -4339,9 +4381,7 @@
         "skillsCopy": "Nutze {{provider}} auf deinem Computer.",
         "skillsTitle": "Skills importieren",
         "sourcesCopy": "Verbinde ein Tool für die erste Aufgabe.",
-        "startTask": "Aufgabe starten",
-        "teamCopy": "Arbeitet im selben Workspace.",
-        "teamTitle": "Teammitglied einladen"
+        "startTask": "Aufgabe starten"
       },
       "outcomes": {
         "accessibleLabel": "Beispiel: {{title}}, erstellt aus {{source}}. Alle Inhalte sind Beispieldaten.",
@@ -4914,24 +4954,6 @@
         "failedNote": "{{provider}} konnte nicht verbunden werden. Du kannst fortfahren und die Verbindung später herstellen.",
         "rowCopy": "Verbinde deinen Plan, damit Aufgaben statt mit Okou-Credits darüber laufen.",
         "unconfirmedNote": "Deine Verbindung zu {{provider}} konnte nicht geprüft werden. Du kannst fortfahren und die Verbindung später herstellen."
-      },
-      "team": {
-        "copy": "Lade ein Teammitglied ein, deine Workflows zu teilen – jede Person verbindet dabei ihre eigenen Tools.",
-        "invalidEmail": "Bitte gib eine gültige E-Mail-Adresse ein",
-        "invite": "Einladung senden",
-        "invited": "Eingeladen",
-        "label": "E-Mail des Teammitglieds",
-        "note": "Es kann sofort mit Okou loslegen.",
-        "notSent": "Nicht gesendet",
-        "panelTitle": "Teammitglied einladen",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "Verbindet bei Bedarf eigene Tools.",
-          "workflows": "Kann alle Workflows deines Teams ausführen.",
-          "workspace": "Tritt deinem Workspace bei."
-        },
-        "sending": "Wird gesendet…",
-        "title": "Mach Okou für dein ganzes Team nützlich"
       },
       "welcome": {
         "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",

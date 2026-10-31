@@ -265,10 +265,6 @@ async function openSkillsStep(
       name: "Connect a work tool",
     });
     click(getButtonByName("Continue"));
-    await screen.findByRole("heading", {
-      name: "Make Okou useful to your whole team",
-    });
-    click(getButtonByName("Not now"));
   }
 
   await expect(
