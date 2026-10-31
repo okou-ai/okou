@@ -1,70 +1,163 @@
-import { useLoadable } from "ccstate-react";
+import { Button } from "@okouai/ui";
+import { IconTooltipButton } from "../components/icon-tooltip.tsx";
+import { Paperclip, X } from "lucide-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { landingFilePreview$ } from "../../signals/prompt-page/landing-file-preview.ts";
-import { FilePreviewIcon } from "../okou-page/file-preview-icon.tsx";
+import {
+  landingFilePreview$,
+  editLandingFiles$,
+  LandingFileLimitError,
+  setLandingFileInput$,
+  openLandingFileInput$,
+} from "../../signals/prompt-page/landing-file-preview.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+import { FILE_CHIP_CLASSES, FileChipBody } from "../okou-page/file-chip.tsx";
 import { formatSize } from "../okou-page/components/network-badge.tsx";
+
+type SelectedFile = { id: string; file: Pick<File, "name" | "size" | "type"> };
 
 export function LandingFileList({
   files,
-  pending = true,
+  onRemove,
+  disabled = false,
 }: {
-  files: readonly {
-    id: string;
-    file: Pick<File, "name" | "size" | "type">;
-  }[];
-  pending?: boolean;
+  files: readonly SelectedFile[];
+  onRemove?: (key: string) => void;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
+  return (
+    <>
+      {files.map(({ id, file }) => {
+        return (
+          <span
+            key={id}
+            className="relative inline-flex min-w-0 items-center"
+            title={`${file.name} · ${formatSize(file.size)}`}
+          >
+            <span className={FILE_CHIP_CLASSES}>
+              <FileChipBody
+                filename={file.name}
+                contentType={file.type}
+                testId="landing-attachment-file-icon"
+              />
+            </span>
+            {onRemove && (
+              <IconTooltipButton
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  onRemove(id);
+                }}
+                className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                aria-label={t(
+                  ($) => {
+                    return $.artifacts.attachments.remove;
+                  },
+                  { filename: file.name },
+                )}
+              >
+                <X size={9} />
+              </IconTooltipButton>
+            )}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+export function LandingFilePreview({
+  editable = false,
+}: {
+  editable?: boolean;
+}) {
+  const { t } = useTranslation();
+  const preview = useLoadable(landingFilePreview$);
+  const [editing, edit] = useLoadableSet(editLandingFiles$);
+  const signal = useGet(rootSignal$);
+  const setInput = useSet(setLandingFileInput$);
+  const openInput = useSet(openLandingFileInput$);
+  const busy = editing.state === "loading";
+  if (preview.state !== "hasData" || preview.data === null) {
+    return null;
+  }
   return (
     <section
       aria-label={t(($) => {
         return $.chat.landingFiles.selected;
       })}
-      className="min-w-0 space-y-2"
+      className="min-w-0"
     >
-      <h2 className="text-sm font-medium">
-        {t(($) => {
-          return $.chat.landingFiles.selected;
-        })}
-      </h2>
-      <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-        {files.map(({ id, file }) => {
-          return (
-            <li
-              key={id}
-              className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-background px-3 py-2"
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <LandingFileList
+          files={preview.data}
+          disabled={busy}
+          onRemove={
+            editable
+              ? (key) => {
+                  detach(
+                    edit({ kind: "remove", key }, signal),
+                    Reason.DomCallback,
+                  );
+                }
+              : undefined
+          }
+        />
+        {editable && (
+          <>
+            <input
+              ref={setInput}
+              type="file"
+              multiple
+              className="hidden"
+              disabled={busy}
+              aria-label={t(($) => {
+                return $.chat.attachments.attach;
+              })}
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                if (files.length) {
+                  detach(
+                    edit({ kind: "add", files }, signal),
+                    Reason.DomCallback,
+                  );
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+              disabled={busy}
+              pending={busy}
+              onClick={() => {
+                openInput();
+              }}
             >
-              <FilePreviewIcon
-                filename={file.name}
-                contentType={file.type}
-                className="shrink-0"
-              />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium" title={file.name}>
-                  {file.name}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatSize(file.size)}
-                </p>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      {pending && (
-        <p className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.chat.landingFiles.pending;
-          })}
+              <Paperclip size={14} />
+              {t(($) => {
+                return $.chat.attachments.attach;
+              })}
+            </Button>
+          </>
+        )}
+      </div>
+      {editing.state === "hasError" && (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          {editing.error instanceof LandingFileLimitError
+            ? t(($) => {
+                return $.chat.landingFiles.limit;
+              })
+            : t(($) => {
+                return $.chat.landingFiles.editFailed;
+              })}
         </p>
       )}
     </section>
   );
-}
-
-export function LandingFilePreview() {
-  const preview = useLoadable(landingFilePreview$);
-  return preview.state === "hasData" && preview.data ? (
-    <LandingFileList files={preview.data} />
-  ) : null;
 }

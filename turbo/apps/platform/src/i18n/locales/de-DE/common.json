@@ -2109,10 +2109,11 @@
     "landingFiles": {
       "back": "Zurück zu den Dateien",
       "description": "Prüfe deine Anfrage und lade dann die ausgewählten Dateien hoch, um zu starten.",
+      "editFailed": "Die Dateien konnten nicht aktualisiert werden. Bitte erneut versuchen.",
       "failed": "Der Vorgang konnte nicht abgeschlossen werden. Dateien und Anfrage bleiben erhalten. Versuche es erneut.",
+      "limit": "Bis zu 10 Dateien hinzufügen (insgesamt 1 GB).",
       "loading": "Dateien werden wiederhergestellt…",
       "missing": "Deine Dateien sind nicht verfügbar. Kehre im selben Browser zur Seite zurück und wähle sie erneut aus.",
-      "pending": "Wird beim Start der Aufgabe hochgeladen.",
       "popupBlocked": "Erlaube Pop-ups für diese Website und versuche erneut, deine Dateien zu übertragen.",
       "prompt": "Deine Anfrage",
       "retry": "Erneut versuchen",

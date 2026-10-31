@@ -2109,10 +2109,11 @@
     "landingFiles": {
       "back": "Back to files",
       "description": "Review your request, then upload your selected files to start.",
+      "editFailed": "Couldn’t update the files. Please try again.",
       "failed": "Could not finish. Your files and request are kept here. Try again.",
+      "limit": "Add up to 10 files (1 GB total).",
       "loading": "Restoring your files…",
       "missing": "Your files are unavailable. Return to the page in the same browser and select them again.",
-      "pending": "Uploads when you start the task.",
       "popupBlocked": "Allow pop-ups for this site, then retry to transfer your files.",
       "prompt": "Your request",
       "retry": "Retry",

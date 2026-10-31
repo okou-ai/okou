@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { array, number, object, string, uuid } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { now } from "../../lib/time.ts";
@@ -6,22 +6,25 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { hash, pathname, replaceState, search } from "../location.ts";
 import { searchParams$ } from "../route.ts";
-import { jsonParseOr } from "../utils.ts";
+import { jsonParseOr, onRef } from "../utils.ts";
 import { landingFileSource } from "./landing-file-handoff.ts";
+import {
+  saveLandingFileAdditions,
+  removeLandingFileAddition,
+} from "./landing-file-store.ts";
 
 const MAX_AGE = 24 * 60 * 60 * 1000;
 const MAX_PREVIEW_LENGTH = 32 * 1024;
 const draftIdSchema = uuid();
-const filesSchema = array(
-  object({
-    name: string().min(1).max(1024),
-    size: number()
-      .int()
-      .nonnegative()
-      .max(1024 * 1024 * 1024),
-    type: string().max(255),
-  }),
-)
+const fileSchema = object({
+  name: string().min(1).max(1024),
+  size: number()
+    .int()
+    .nonnegative()
+    .max(1024 * 1024 * 1024),
+  type: string().max(255),
+});
+const filesSchema = array(fileSchema)
   .min(1)
   .max(10)
   .refine((files) => {
@@ -36,6 +39,10 @@ const savedPreviewSchema = object({
   source: string(),
   savedAt: number().finite().nonnegative(),
   files: filesSchema,
+  removed: array(number().int().min(0).max(9)).default([]),
+  added: array(fileSchema.extend({ key: uuid() }))
+    .max(10)
+    .default([]),
 });
 
 function previewStorage(id: string) {
@@ -87,11 +94,7 @@ const currentPreviewStorage$ = computed((get) => {
   return id.success ? previewStorage(id.data) : null;
 });
 
-export const landingFilePreview$ = computed(async (get) => {
-  const switches = await get(featureSwitch$);
-  if (!switches[FeatureSwitchKey.LandingFileHandoff]) {
-    return null;
-  }
+export const landingFileSelection$ = computed((get) => {
   const source = landingFileSource(
     get(searchParams$).get("landingSource") ?? "",
     location.origin,
@@ -111,7 +114,132 @@ export const landingFilePreview$ = computed(async (get) => {
   ) {
     return null;
   }
-  return parsed.data.files.map((file) => {
-    return { id: crypto.randomUUID(), file };
-  });
+  return { ...parsed.data, id: get(searchParams$).get("landingFiles") ?? "" };
+});
+
+export const landingFilePreview$ = computed(async (get) => {
+  const switches = await get(featureSwitch$);
+  if (!switches[FeatureSwitchKey.LandingFileHandoff]) {
+    return null;
+  }
+  const selection = get(landingFileSelection$);
+  if (!selection) {
+    return null;
+  }
+  return [
+    ...selection.files.flatMap((file, index) => {
+      return selection.removed.includes(index)
+        ? []
+        : [{ id: `source-${index}`, file }];
+    }),
+    ...selection.added.map(({ key, ...file }) => {
+      return { id: key, file };
+    }),
+  ];
+});
+
+export class LandingFileLimitError extends Error {}
+
+type LandingFileEdit =
+  { kind: "add"; files: File[] } | { kind: "remove"; key: string };
+const pendingEdit$ = state<Promise<void> | null>(null);
+export const landingFileEditsReady$ = computed((get) => {
+  return get(pendingEdit$);
+});
+
+const applyLandingFileEdit$ = command(
+  async ({ get, set }, edit: LandingFileEdit, signal: AbortSignal) => {
+    const previous = get(pendingEdit$);
+    if (previous) {
+      await Promise.allSettled([previous]);
+    }
+    signal.throwIfAborted();
+    const selection = get(landingFileSelection$);
+    const storage = get(currentPreviewStorage$);
+    if (!selection || !storage) {
+      return;
+    }
+    if (edit.kind === "remove") {
+      if (edit.key.startsWith("source-")) {
+        const index = Number(edit.key.slice(7));
+        if (Number.isInteger(index) && selection.files[index]) {
+          set(
+            storage.set$,
+            JSON.stringify({
+              ...selection,
+              removed: [...new Set([...selection.removed, index])],
+            }),
+          );
+        }
+      } else {
+        await removeLandingFileAddition(selection.id, edit.key, signal);
+        signal.throwIfAborted();
+        set(
+          storage.set$,
+          JSON.stringify({
+            ...selection,
+            added: selection.added.filter((file) => {
+              return file.key !== edit.key;
+            }),
+          }),
+        );
+      }
+      return;
+    }
+    const retained = selection.files.filter((_file, index) => {
+      return !selection.removed.includes(index);
+    });
+    const next = [...retained, ...selection.added, ...edit.files];
+    if (
+      next.length > 10 ||
+      next.reduce((total, file) => {
+        return total + file.size;
+      }, 0) >
+        1024 * 1024 * 1024
+    ) {
+      throw new LandingFileLimitError();
+    }
+    const additions = edit.files.map((file) => {
+      return { key: crypto.randomUUID(), file };
+    });
+    await saveLandingFileAdditions(selection.id, additions, signal);
+    signal.throwIfAborted();
+    set(
+      storage.set$,
+      JSON.stringify({
+        ...selection,
+        added: [
+          ...selection.added,
+          ...additions.map(({ key, file }) => {
+            return { key, name: file.name, size: file.size, type: file.type };
+          }),
+        ],
+      }),
+    );
+  },
+);
+
+export const editLandingFiles$ = command(
+  ({ set }, edit: LandingFileEdit, signal: AbortSignal) => {
+    const pending = set(applyLandingFileEdit$, edit, signal);
+    set(pendingEdit$, pending);
+    return pending;
+  },
+);
+
+const fileInput$ = state<HTMLInputElement | null>(null);
+export const setLandingFileInput$ = onRef(
+  command(({ set }, element: HTMLInputElement, signal: AbortSignal) => {
+    set(fileInput$, element);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(fileInput$, null);
+      },
+      { once: true },
+    );
+  }),
+);
+export const openLandingFileInput$ = command(({ get }) => {
+  get(fileInput$)?.click();
 });

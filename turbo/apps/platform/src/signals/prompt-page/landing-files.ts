@@ -7,8 +7,15 @@ import {
 import { rootSignal$ } from "../root-signal.ts";
 import {
   landingFileReturnUrl,
+  LandingFilesUnavailableError,
   readLandingFiles,
 } from "./landing-file-handoff.ts";
+
+import {
+  landingFileSelection$,
+  LandingFileLimitError,
+} from "./landing-file-preview.ts";
+import { readLandingFileAdditions } from "./landing-file-store.ts";
 
 interface LandingFile {
   id: string;
@@ -37,8 +44,55 @@ export function createLandingFilesSignals(
     }
     let files = get(files$);
     if (!files) {
-      const restored = await readLandingFiles(source, id, operationSignal);
+      const selection = get(landingFileSelection$);
+      const needsSource =
+        !selection ||
+        selection.files.some((_file, index) => {
+          return !selection.removed.includes(index);
+        });
+      // Open the source window before awaiting anything, preserving user activation.
+      const original = needsSource
+        ? await readLandingFiles(source, id, operationSignal)
+        : [];
       operationSignal.throwIfAborted();
+      if (
+        selection &&
+        needsSource &&
+        (original.length !== selection.files.length ||
+          original.some((file, index) => {
+            const expected = selection.files[index];
+            return (
+              file.name !== expected.name ||
+              file.size !== expected.size ||
+              file.type !== expected.type
+            );
+          }))
+      ) {
+        throw new LandingFilesUnavailableError();
+      }
+      const added = await readLandingFileAdditions(
+        id,
+        selection?.added.map((file) => {
+          return file.key;
+        }) ?? [],
+        operationSignal,
+      );
+      operationSignal.throwIfAborted();
+      const restored = [
+        ...original.filter((_file, index) => {
+          return !selection?.removed.includes(index);
+        }),
+        ...added,
+      ];
+      if (
+        restored.length > 10 ||
+        restored.reduce((total, file) => {
+          return total + file.size;
+        }, 0) >
+          1024 * 1024 * 1024
+      ) {
+        throw new LandingFileLimitError();
+      }
       files = restored.map((file) => {
         return { id: crypto.randomUUID(), file };
       });

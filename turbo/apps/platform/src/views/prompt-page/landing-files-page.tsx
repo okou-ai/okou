@@ -66,7 +66,9 @@ export function LandingFilesPage({
           </p>
         )}
         {files ? (
-          <LandingFileList files={files} pending={false} />
+          <div className="flex flex-wrap gap-2">
+            <LandingFileList files={files} />
+          </div>
         ) : (
           <LandingFilePreview />
         )}

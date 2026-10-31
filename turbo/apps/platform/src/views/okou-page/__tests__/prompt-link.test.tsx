@@ -1,3 +1,4 @@
+import { Blob as NativeBlob, File as NativeFile } from "node:buffer";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
@@ -616,10 +617,15 @@ test("A new user keeps the landing file handoff while completing onboarding", as
   });
   expect(within(selected).getByText("report.pdf")).toBeInTheDocument();
   expect(within(selected).getByText("董事会笔记.txt")).toBeInTheDocument();
-  expect(within(selected).getByText("6B")).toBeInTheDocument();
-  expect(within(selected).getByText("5B")).toBeInTheDocument();
+  expect(within(selected).getByTitle("report.pdf · 6B")).toBeInTheDocument();
   expect(
-    within(selected).getByText("Uploads when you start the task."),
+    within(selected).getByTitle("董事会笔记.txt · 5B"),
+  ).toBeInTheDocument();
+  expect(
+    within(selected).queryByText("Uploads when you start the task."),
+  ).not.toBeInTheDocument();
+  expect(
+    within(selected).getByLabelText("Attach", { selector: "input" }),
   ).toBeInTheDocument();
   expect(hash()).toBe("");
   expect(search()).not.toContain("report.pdf");
@@ -820,4 +826,141 @@ test("File names are removed before the sign-in redirect", async () => {
   expect(hash()).toBe("");
   expect(search()).not.toContain("private-board-report");
   expect(search()).not.toContain("landingFilePreview");
+});
+
+test("Onboarding submits only retained files and files added in that step", async () => {
+  // fake-indexeddb uses Node structuredClone; happy-dom Blob is not cloneable.
+  // Native blobs exercise actual byte preservation through that browser boundary.
+  vi.stubGlobal("Blob", NativeBlob);
+  vi.stubGlobal("File", NativeFile);
+  const user = userEvent.setup();
+  const popup = mockLandingPopup();
+  const capture = capturePromptLaunch();
+  const notes = {
+    id: "a0000000-0000-4000-a000-000000000083",
+    filename: "notes.txt",
+    contentType: "text/plain",
+    size: 5,
+    url: "https://cdn.vm7.io/artifacts/tests/notes.txt",
+  };
+  const added = {
+    id: "a0000000-0000-4000-a000-000000000084",
+    filename: "extra.csv",
+    contentType: "text/csv",
+    size: 7,
+    url: "https://cdn.vm7.io/artifacts/tests/extra.csv",
+  };
+  context.mocks.upload.success(notes);
+  context.mocks.upload.success(added);
+  const prepared: string[] = [];
+  const preparedSizes: number[] = [];
+  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+    prepared.push(body.filename);
+    preparedSizes.push(body.size);
+    const result = body.filename === notes.filename ? notes : added;
+    return respond(200, {
+      ...result,
+      uploadUrl: `https://mock-upload.r2.test/${result.id}`,
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: landingPath(undefined, [
+      { name: "report.pdf", size: 6, type: "application/pdf" },
+      { name: "notes.txt", size: 5, type: "text/plain" },
+    ]),
+  });
+  await user.click(
+    await screen.findByLabelText("Remove report.pdf", { selector: "button" }),
+  );
+  await waitFor(() => {
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+  });
+  await user.upload(
+    screen.getByLabelText("Attach", { selector: "input" }),
+    new File(["a,b\n1,2"], "extra.csv", { type: "text/csv" }),
+  );
+  await expect(screen.findByText("extra.csv")).resolves.toBeInTheDocument();
+  await user.click(await findButton("Next"));
+  await user.click(await findButton("Upload and start"));
+  await popup.deliver([
+    new File(["report"], "report.pdf", { type: "application/pdf" }),
+    new File(["notes"], "notes.txt", { type: "text/plain" }),
+  ]);
+  await waitFor(() => {
+    expect(capture.sends).toHaveLength(1);
+  });
+  expect(prepared).toStrictEqual(["notes.txt", "extra.csv"]);
+  expect(preparedSizes).toStrictEqual([5, 7]);
+  expect(JSON.stringify(capture.sends[0].userMessage)).toContain("extra.csv");
+  expect(JSON.stringify(capture.sends[0].userMessage)).not.toContain(
+    "report.pdf",
+  );
+});
+
+test("Removing every landing file starts only the edited request without a transfer popup", async () => {
+  const user = userEvent.setup();
+  const popup = mockLandingPopup();
+  const capture = capturePromptLaunch();
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: landingPath(undefined, [
+      { name: "report.pdf", size: 6, type: "application/pdf" },
+    ]),
+  });
+  await user.click(
+    await screen.findByLabelText("Remove report.pdf", { selector: "button" }),
+  );
+  await waitFor(() => {
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+  });
+  await user.click(await findButton("Next"));
+  await user.click(await findButton("Upload and start"));
+  await waitFor(() => {
+    expect(capture.sends).toHaveLength(1);
+  });
+  expect(popup.open).not.toHaveBeenCalled();
+  expect(JSON.stringify(capture.sends[0].userMessage)).not.toContain(
+    "report.pdf",
+  );
+});
+
+test("Adding files beyond the combined limit leaves the existing selection intact", async () => {
+  const user = userEvent.setup();
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: landingPath(undefined, [
+      { name: "report.pdf", size: 6, type: "application/pdf" },
+      { name: "notes.txt", size: 5, type: "text/plain" },
+    ]),
+  });
+  await findButton("Attach");
+  await user.upload(
+    screen.getByLabelText("Attach", { selector: "input" }),
+    Array.from({ length: 9 }, (_, i) => {
+      return new File(["extra"], `extra-${i}.txt`, { type: "text/plain" });
+    }),
+  );
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Add up to 10 files (1 GB total).",
+  );
+  expect(screen.getByText("report.pdf")).toBeInTheDocument();
+  expect(screen.getByText("notes.txt")).toBeInTheDocument();
+  expect(screen.queryByText("extra-0.txt")).not.toBeInTheDocument();
 });
