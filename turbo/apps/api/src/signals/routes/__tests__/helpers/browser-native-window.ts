@@ -6,6 +6,7 @@ import { detach, Mechanism } from "../../../utils";
 import {
   TEST_EXTENSION_TARGETS,
   browserExtensionBootstrap,
+  browserExtensionBootstrapEvents,
   browserExtensionRequest,
   browserExtensionReply,
 } from "../../../../__tests__/browser-extension";
@@ -196,7 +197,14 @@ export function createNativeWindowProvider(context: TestContext) {
     sessionId: string().optional(),
   });
   const handler = ws.link(url).addEventListener("connection", ({ client }) => {
-    const sendResult = (id: number, result: unknown) => {
+    const sendResult = (
+      id: number,
+      result: unknown,
+      events: readonly Readonly<Record<string, unknown>>[] = [],
+    ) => {
+      for (const event of events) {
+        client.send(JSON.stringify(event));
+      }
       client.send(
         JSON.stringify(
           result instanceof Error
@@ -268,7 +276,11 @@ export function createNativeWindowProvider(context: TestContext) {
         request && !(value instanceof Error)
           ? browserExtensionReply(value, nativeSequence, startedSequence)
           : value;
-      sendResult(command.id, result);
+      sendResult(
+        command.id,
+        result,
+        browserExtensionBootstrapEvents(command, state.bridgeAvailable),
+      );
       return true;
     };
     const reply = async (event: { readonly data: unknown }) => {
@@ -325,7 +337,13 @@ export function createNativeWindowProvider(context: TestContext) {
                 url: target.url ?? "about:blank",
               };
             })
-            .concat(state.bridgeAvailable ? [...TEST_EXTENSION_TARGETS] : []),
+            .concat(
+              TEST_EXTENSION_TARGETS.filter((target) => {
+                return (
+                  state.bridgeAvailable || target.type !== "service_worker"
+                );
+              }),
+            ),
         };
       } else if (command.method === "Target.closeTarget") {
         const targetId = String(command.params.targetId);
