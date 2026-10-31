@@ -1,3 +1,4 @@
+import { FILE_CHIP_CLASSES, FileChipBody } from "./file-chip.tsx";
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import {
@@ -1580,35 +1581,6 @@ export function AttachmentLightbox() {
 // ---------------------------------------------------------------------------
 // FileAttachmentChip — compact chip shown inside sent message bubbles
 // ---------------------------------------------------------------------------
-
-// Shared visual shape for file attachment chips. Keeps a fixed h-7 (28px)
-// height regardless of upload state, with the filename always visible and
-// truncated with an ellipsis past max-w-[240px].
-const FILE_CHIP_CLASSES =
-  "inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-md border border-foreground/15 bg-background/80 px-1.5 transition-colors";
-
-function FileChipBody({
-  filename,
-  contentType,
-  testId,
-}: {
-  filename: string;
-  contentType?: string;
-  testId: string;
-}) {
-  return (
-    <>
-      <FilePreviewIcon
-        filename={filename}
-        contentType={contentType}
-        size="sm"
-        className="shrink-0"
-        testId={testId}
-      />
-      <span className="min-w-0 truncate text-xs font-medium">{filename}</span>
-    </>
-  );
-}
 
 export function FileAttachmentChip({
   threadId,

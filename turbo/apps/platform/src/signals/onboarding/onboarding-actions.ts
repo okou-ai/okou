@@ -20,6 +20,7 @@ import {
   clearSourcesFirstDraft$,
   sourcesFirstDraft$,
 } from "./onboarding-sources-first-state.ts";
+import { landingFileEditsReady$ } from "../prompt-page/landing-file-preview.ts";
 import { onboardingDraft$ } from "./onboarding-state.ts";
 
 const ONBOARDING_TRANSIENT_PARAMS = [
@@ -162,6 +163,8 @@ export const runOnboardingRequest$ = command(
  */
 export const runPromptOnboarding$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    await Promise.allSettled([get(landingFileEditsReady$)]);
+    signal.throwIfAborted();
     const { prompt, output } = get(onboardingDraft$);
     const copy = i18n.t(
       ($) => {
