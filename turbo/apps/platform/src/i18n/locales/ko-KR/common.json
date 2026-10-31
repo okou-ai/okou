@@ -1764,6 +1764,7 @@
       "customDollarAmount": "맞춤 금액",
       "outOfCredits": "크레딧이 부족합니다",
       "proCard": {
+        "creditsNow": "크레딧 · 바로 지금",
         "description": "추가 크레딧 · 고급 기능 · 클라우드 컴퓨터 3대",
         "priceUnavailable": "요금제에서 현재 가격 확인",
         "title": "남은 작업 약 5개",

@@ -1764,6 +1764,7 @@
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
       "proCard": {
+        "creditsNow": "クレジット · 今すぐ",
         "description": "追加クレジット · 高度な機能 · 3 台のクラウドコンピューター",
         "priceUnavailable": "プランで最新の料金を確認",
         "title": "残り約 5 件のタスク",

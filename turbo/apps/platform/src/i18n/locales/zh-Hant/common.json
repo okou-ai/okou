@@ -1764,6 +1764,7 @@
       "customDollarAmount": "自定義金額（美元）",
       "outOfCredits": "你的積分用完了",
       "proCard": {
+        "creditsNow": "點數 · 就現在",
         "description": "額外積分 · 進階功能 · 3 台雲端電腦",
         "priceUnavailable": "查看方案及最新價格",
         "title": "大約還剩 5 個任務",
