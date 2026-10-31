@@ -105,11 +105,13 @@ export const hydrateOnboardingRoute$ = command(
           return;
         }
         const format = defaultOnboardingOutputFormat(prompt);
-        set(
-          selectOnboardingPromptOutput$,
-          format,
-          copy.options[format].instruction,
-        );
+        if (format) {
+          set(
+            selectOnboardingPromptOutput$,
+            format,
+            copy.options[format].instruction,
+          );
+        }
       }
     }
   },

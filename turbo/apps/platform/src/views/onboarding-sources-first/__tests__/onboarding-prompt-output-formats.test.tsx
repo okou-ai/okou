@@ -81,6 +81,19 @@ test.each([
   ["寻找适合推广办公工具的达人", "People shortlist"],
   ["调研AI助手的市场和竞争对手", "Research brief"],
   ["分析上周广告效果并提出改进建议", "Report"],
+  ["Turn these notes into a 10-slide presentation.", "Presentation"],
+  ["把这些资料整理成一份PPT。", "Presentation"],
+  ["Don't create a presentation. Create a report with the findings.", "Report"],
+  ["Do not create a report; instead create a presentation.", "Presentation"],
+  ["不要制作PPT，写一份报告。", "Report"],
+  ["Do not return JSON. Create a report.", "Report"],
+  ["Find people who can help me design a website.", "People shortlist"],
+  ["Find designers to create a presentation.", "People shortlist"],
+  ["找能帮我设计网站的人", "People shortlist"],
+  [
+    "Find people who can design a website. Present the shortlist as a report.",
+    "Report",
+  ],
 ])("selects a task-matched default for %s", async (prompt, label) => {
   const input = await openPrompt({ prompt });
   expect(getConnectorAction("button", label)).toHaveAttribute(
@@ -102,6 +115,49 @@ test.each([
     "aria-pressed",
     "false",
   );
+});
+
+test.each([
+  "What is 1 + 2? Reply with only the number.",
+  "What is 1 + 2? Only return the number.",
+  "Compare these two records. Return valid JSON.",
+  "计算1加2，只回复数字。",
+  "Create a report on the campaign. Reply with only one sentence.",
+])("preserves an explicit response contract: %s", async (prompt) => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
+  const input = await openPrompt({ prompt });
+  expect(input).toHaveValue(prompt);
+  expect(getConnectorAction("button", "Report")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  click(getConnectorAction("button", "Next"));
+  await waitFor(() => {
+    expect(sentPrompt).toBe(prompt);
+  });
+});
+
+test("an explicit response contract can still be changed with the format controls", async () => {
+  const prompt = "What is 1 + 2? Reply with only the number.";
+  const input = await openPrompt({ prompt });
+  expect(input).toHaveValue(prompt);
+  click(getConnectorAction("button", "Report"));
+  await waitFor(() => {
+    expect(input).toHaveValue(`${prompt}\n\n${REPORT}`);
+    expect(getConnectorAction("button", "Report")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  click(getConnectorAction("button", "Clear selection"));
+  await waitFor(() => {
+    expect(input).toHaveValue(prompt);
+  });
 });
 
 test("the default format reaches the first chat without requiring a selection", async () => {
