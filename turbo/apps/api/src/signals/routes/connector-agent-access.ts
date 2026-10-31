@@ -1,4 +1,4 @@
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
@@ -12,13 +12,14 @@ import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { connectorActionResolver } from "../services/connector-action-resolver.service";
+import { readConnectorResolver$ } from "../services/connector-action-resolver.service";
 
 /** Loads only the catalog entries for the rows' builtin connectors. */
-function availableBuiltinSlugs(
-  rows: readonly { connectorSlug: string }[],
-): Computed<Promise<Set<string>>> {
-  return computed(async (get) => {
+const readAvailableBuiltinSlugs$ = command(
+  async (
+    { set },
+    rows: readonly { connectorSlug: string }[],
+  ): Promise<Set<string>> => {
     if (rows.length === 0) {
       return new Set<string>();
     }
@@ -29,15 +30,15 @@ function availableBuiltinSlugs(
         }),
       ),
     ];
-    const resolver = await get(connectorActionResolver(connectorSlugs));
+    const resolver = await set(readConnectorResolver$, connectorSlugs);
     return new Set(
       connectorSlugs.filter((connectorSlug) => {
         return resolver.resolveSlug({ connectorSlug, requireExecutable: true })
           .ok;
       }),
     );
-  });
-}
+  },
+);
 
 function toBuiltinAccessRow(row: { connectorSlug: string; agentId: string }) {
   return {
@@ -47,7 +48,7 @@ function toBuiltinAccessRow(row: { connectorSlug: string; agentId: string }) {
 }
 
 const getConnectorAgentAccess$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(queryOf(connectorAgentAccessContract.get));
     if (query.builtinSlug && query.customConnectorId) {
@@ -140,7 +141,7 @@ const getConnectorAgentAccess$ = command(
     ]);
     signal.throwIfAborted();
 
-    const availableSlugs = await get(availableBuiltinSlugs(builtinRows));
+    const availableSlugs = await set(readAvailableBuiltinSlugs$, builtinRows);
     signal.throwIfAborted();
 
     return {
