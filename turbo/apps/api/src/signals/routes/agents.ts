@@ -43,7 +43,10 @@ import {
   nonDefaultAgentCondition,
   publicAgentCountReadPlan,
 } from "../services/agent-data.service";
-import { connectorActionResolver } from "../services/connector-action-resolver.service";
+import {
+  connectorActionResolver,
+  readConnectorResolver$,
+} from "../services/connector-action-resolver.service";
 
 import {
   updateUserBuiltinConnectors$,
@@ -936,7 +939,7 @@ const updateAgentUserConnectorsInner$ = command(
       // discovery surface. Validate that each connector can execute, but do
       // not consult feature switches or authored visibility: rollout changes
       // must not invalidate direct API updates or an existing agent config.
-      const resolver = await get(connectorActionResolver(uniqueConnectorSlugs));
+      const resolver = await set(readConnectorResolver$, uniqueConnectorSlugs);
       signal.throwIfAborted();
       const resolved = await resolver.resolveSlugs({
         connectorSlugs: uniqueConnectorSlugs,
