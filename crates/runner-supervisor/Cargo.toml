@@ -44,6 +44,7 @@ runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }
 sandbox-mock.workspace = true
+tar = { workspace = true, features = ["xattr"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
