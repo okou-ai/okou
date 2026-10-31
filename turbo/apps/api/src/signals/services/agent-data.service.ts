@@ -113,38 +113,6 @@ export function agentList(
   });
 }
 
-export function agentDetail(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}): Computed<Promise<AgentResponse | null>> {
-  return computed(async (get): Promise<AgentResponse | null> => {
-    const [row] = await get(db$)
-      .select({
-        agentId: agents.id,
-        defaultAgentId: orgMetadata.defaultAgentId,
-        owner: agents.owner,
-        displayName: agents.displayName,
-        description: agents.description,
-        sound: agents.sound,
-        avatarUrl: agents.avatarUrl,
-        visibility: agents.visibility,
-      })
-      .from(agents)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-      .where(
-        and(
-          eq(agents.orgId, args.orgId),
-          eq(agents.id, args.agentId),
-          visibleAgentCondition(args.userId),
-        ),
-      )
-      .limit(1);
-
-    return row ? agentResponse(row) : null;
-  });
-}
-
 export function agentEnabledConnectorSlugsCondition(args: {
   readonly orgId: string;
   readonly userId: string;

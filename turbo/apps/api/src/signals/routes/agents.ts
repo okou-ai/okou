@@ -38,7 +38,6 @@ import { deleteAgentById$ } from "../services/agent-deletion.service";
 import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wakeup.service";
 import {
   agentResponse,
-  agentDetail,
   agentEnabledConnectorSlugsCondition,
   agentCustomConnectorGrantJoinCondition,
   agentCustomConnectorGrantsCondition,
@@ -439,13 +438,27 @@ const agentListResponse$ = computed(
 const getAgentInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(agentsByIdContract.get));
-  const agent = await get(
-    agentDetail({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const agentScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const [row] = await get(db$)
+    .select({
+      agentId: agents.id,
+      defaultAgentId: orgMetadata.defaultAgentId,
+      owner: agents.owner,
+      displayName: agents.displayName,
+      description: agents.description,
+      sound: agents.sound,
+      avatarUrl: agents.avatarUrl,
+      visibility: agents.visibility,
+    })
+    .from(agents)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .where(visibleAgentIdentityCondition(agentScope))
+    .limit(1);
+  const agent = row ? agentResponse(row) : null;
   if (!agent) {
     return agentNotFound(params.id);
   }
