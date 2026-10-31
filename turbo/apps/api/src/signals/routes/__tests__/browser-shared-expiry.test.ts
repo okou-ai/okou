@@ -157,19 +157,23 @@ test.each(["native window", "encryption"] as const)(
   },
 );
 
-test("does not expire a healthy logical window solely because native health is unavailable", async () => {
+test.each([
+  { code: -32_000, message: "Native health unavailable" },
+  { code: -32_601, message: "Browser window not found" },
+])("preserves a healthy logical window on CDP failure: %j", async (error) => {
   const f = await fixture();
   await f.owned.run(async () => {
     const a = await f.start();
     const first = await open(a);
-    f.provider.native.windowError = "Native health unavailable";
+    expect(first.window?.primaryWindowId).toBe(0);
+    f.provider.native.windowBoundsError = error;
     mockNow(START + 9 * MINUTE);
     expect((await use(a)).status).toBe(502);
     const current = await view(a);
     expect(current.window).toStrictEqual(first.window);
     expect(current.idleExpiresAt).toBe(first.idleExpiresAt);
     expect(f.provider.stoppedSessionIds.size).toBe(0);
-    f.provider.native.windowError = undefined;
+    f.provider.native.windowBoundsError = undefined;
     const leased = await renew(a);
     expect(leased.window).toStrictEqual(first.window);
     expect(f.provider.sessionRequests).toHaveLength(1);

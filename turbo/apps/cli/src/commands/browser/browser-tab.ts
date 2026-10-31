@@ -8,6 +8,7 @@ import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { BrowserCdpClient } from "./browser-cdp";
 
 export const DEFAULT_AGENT_BROWSER_SESSION = "okou-browser";
+const WINDOW_LOOKUP_CONCURRENCY = 4;
 const tabIdSchema = string().regex(/^t[1-9]\d*$/u);
 const tabListSchema = object({
   success: literal(true),
@@ -164,21 +165,44 @@ export async function bindBrowserWindow(
       return Number(right.active) - Number(left.active);
     });
     let lookupFailure: BrowserWindowLookupError | undefined;
-    for (const target of tabs) {
-      let windowId: number | null;
-      try {
-        windowId = await nativeWindow(client, target.targetId);
-      } catch (error) {
-        if (!(error instanceof BrowserWindowLookupError)) {
-          throw error;
+    for (let offset = 0; offset < tabs.length;) {
+      // A selected member remains a one-command fast path. Other candidates
+      // are checked in driver order, independent of their response order.
+      const count =
+        offset === 0 && tabs[0]?.active ? 1 : WINDOW_LOOKUP_CONCURRENCY;
+      const batch = tabs.slice(offset, offset + count);
+      const results = await Promise.allSettled(
+        batch.map((target) => {
+          return nativeWindow(client, target.targetId);
+        }),
+      );
+      for (const [index, result] of results.entries()) {
+        if (result.status === "rejected") {
+          const error: unknown = result.reason;
+          if (!(error instanceof BrowserWindowLookupError)) {
+            throw error;
+          }
+          lookupFailure ??= error;
+          continue;
         }
-        lookupFailure ??= error;
-        continue;
-      }
-      if (windowId === window.primaryWindowId) {
+        if (result.value !== window.primaryWindowId) {
+          continue;
+        }
+        const target = batch[index]!;
+        // A candidate can move while another lookup in its batch completes.
+        if (
+          batch.length > 1 &&
+          (await nativeWindow(client, target.targetId)) !==
+            window.primaryWindowId
+        ) {
+          throw new Error(
+            "The Browser tab moved or closed before attachment; run `okou browser use` again",
+          );
+        }
         runAgentBrowser(session, ["--pin-tab", "tab", target.targetId]);
         return;
       }
+      offset += count;
     }
     throw (
       lookupFailure ??
