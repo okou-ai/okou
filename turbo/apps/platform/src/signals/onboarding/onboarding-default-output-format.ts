@@ -22,12 +22,12 @@ const OUTPUT_REQUESTS: readonly {
   {
     format: "image",
     pattern:
-      /\b(?:create|make|generate|draw|design|produce|present)\b[^.!?;,\n]{0,80}?\b(?:image|images|illustration|illustrations|poster|logo|visual|visuals|banner|infographic)\b|\b(?:as|into)\s+[^.!?;,\n]{0,60}?\b(?:image|illustration|infographic)\b|(?:生成|画|畫|绘制|繪製|设计|設計|制作|製作|转换|轉換|转成|轉成)[^。！？；，\n]{0,30}?(?:图片|圖片|图像|圖像|插画|插畫|海报|海報|配图|配圖|标志|標誌)|生图|生圖/giu,
+      /\b(?:create|make|generate|draw|design|produce|present)\b[^.!?;\n]{0,100}?\b(?:image|images|illustration|illustrations|poster|logo|visual|visuals|banner|infographic|flyers?|thumbnails?)\b|\b(?:as|into)\s+[^.!?;,\n]{0,60}?\b(?:image|illustration|infographic)\b|(?:生成|画|畫|绘制|繪製|设计|設計|制作|製作|转换|轉換|转成|轉成)[^。！？；，\n]{0,30}?(?:图片|圖片|图像|圖像|插画|插畫|海报|海報|配图|配圖|标志|標誌|传单|傳單|缩略图|縮圖)|生图|生圖/giu,
   },
   {
     format: "website",
     pattern:
-      /\b(?:create|make|build|generate|design|launch|present)\b[^.!?;,\n]{0,80}?\b(?:website|webpage|web page|landing page|microsite|portfolio site)\b|\b(?:as|into)\s+[^.!?;,\n]{0,60}?\b(?:website|webpage|web page|landing page)\b|(?:制作|製作|生成|创建|建立|搭建|设计|設計|做|整理|转换|轉換|转成|轉成)[^。！？；，\n]{0,30}?(?:网站|網站|网页|網頁|落地页|落地頁)/giu,
+      /\b(?:create|make|build|generate|design|launch|present)\b[^.!?;,\n]{0,80}?\b(?:website|webpage|web page|landing page|microsite|portfolio site|dashboard|wireframe)\b|\b(?:as|into)\s+[^.!?;,\n]{0,60}?\b(?:website|webpage|web page|landing page|dashboard|wireframe)\b|(?:制作|製作|生成|创建|建立|搭建|设计|設計|做|整理|转换|轉換|转成|轉成)[^。！？；，\n]{0,30}?(?:网站|網站|网页|網頁|落地页|落地頁|仪表盘|儀表板|线框|線框)/giu,
   },
   {
     format: "report",
@@ -37,7 +37,7 @@ const OUTPUT_REQUESTS: readonly {
 ];
 
 const PEOPLE_REQUEST =
-  /\b(?:find|source|identify|shortlist|discover|research|generate|search(?: for)?|look for)\b[^.!?;,\n]{0,100}?\b(?:people|leads|prospects|creators|influencers|partners|candidates|contacts|founders|investors|businesses|designers)\b|\b(?:lead generation|people search)\b|(?:找|寻找|尋找|搜寻|搜尋|筛选|篩選)[^。！？；，\n]{0,30}?(?:客户|客戶|达人|達人|创作者|創作者|候选人|候選人|联系人|聯絡人|合作伙伴|合作夥伴|投资人|投資人|设计师|設計師|人)/giu;
+  /\b(?:find|source|identify|shortlist|discover|research|generate|search(?: for)?|look for)\b[^.!?;,\n]{0,100}?\b(?:people|leads|prospects|creators|influencers|partners|candidates|contacts|founders|investors|businesses|designers|recruiters?|professionals)\b|\b(?:lead generation|people search)\b|(?:找|寻找|尋找|搜寻|搜尋|筛选|篩選)[^。！？；，\n]{0,30}?(?:客户|客戶|达人|達人|创作者|創作者|候选人|候選人|联系人|聯絡人|合作伙伴|合作夥伴|投资人|投資人|设计师|設計師|招聘顾问|招聘顧問|招聘人员|招聘人員|猎头|獵頭|专业人士|專業人士|人)/giu;
 
 /** Negation owns its clause, not a later affirmative request. */
 function isNegatedRequest(prompt: string, start: number): boolean {

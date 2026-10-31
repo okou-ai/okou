@@ -21,9 +21,11 @@ const reloadedContext = createTestRuntime(context);
 const TASK =
   "Review last week's ad results and suggest three things to test next.";
 const PRESENTATION =
-  "Present the findings as a concise presentation with key results, recommendations, and next steps.";
+  "Present the findings as an Okou presentation with key results, recommendations, and next steps, and share its link.";
 const REPORT =
   "Present the findings as a structured report with key results, recommendations, and next steps.";
+const PRIORITY =
+  "Use this format for the final deliverable, replacing any earlier format request.";
 
 async function openReady(
   pageContext: TestContext = context,
@@ -85,17 +87,17 @@ test("formats augment the recommended task and the first chat receives the visib
   for (const [name, instruction] of choices) {
     click(button(name));
     await waitFor(() => {
-      expect(input).toHaveValue(`${original}\n\n${instruction}`);
+      expect(input).toHaveValue(`${original}\n\n${instruction} ${PRIORITY}`);
       expect(button(name)).toHaveAttribute("aria-pressed", "true");
       expect(input).toHaveFocus();
     });
   }
   // Selecting the same format again must not append a second instruction.
   click(button("Presentation"));
-  expect(input).toHaveValue(`${original}\n\n${PRESENTATION}`);
+  expect(input).toHaveValue(`${original}\n\n${PRESENTATION} ${PRIORITY}`);
   click(button("Start with Okou"));
   await waitFor(() => {
-    expect(sentPrompt).toBe(`${original}\n\n${PRESENTATION}`);
+    expect(sentPrompt).toBe(`${original}\n\n${PRESENTATION} ${PRIORITY}`);
   });
 });
 
@@ -104,14 +106,15 @@ test("switching and clearing formats preserve edits around the output paragraph"
   await fill(input, TASK);
   click(button("Presentation"));
   await waitFor(() => {
-    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
+    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION} ${PRIORITY}`);
   });
   const user = userEvent.setup({ delay: null });
   await user.click(input);
   await user.keyboard("{Control>}{Home}{/Control}Please ");
-  const wordStart = input.value.indexOf("concise");
-  input.setSelectionRange(wordStart, wordStart + "concise".length);
-  await user.keyboard("detailed");
+  const wordStart = input.value.indexOf("key results");
+  expect(wordStart).toBeGreaterThanOrEqual(0);
+  input.setSelectionRange(wordStart, wordStart + "key results".length);
+  await user.keyboard("detailed results");
   await user.keyboard(
     "{Control>}{End}{/Control}{Enter}{Enter}Use plain English.",
   );
@@ -119,7 +122,7 @@ test("switching and clearing formats preserve edits around the output paragraph"
   click(button("Report"));
   await waitFor(() => {
     expect(input).toHaveValue(
-      `Please ${TASK}\n\n${REPORT}\n\nUse plain English.`,
+      `Please ${TASK}\n\n${REPORT} ${PRIORITY}\n\nUse plain English.`,
     );
   });
   click(button("Clear selection"));
@@ -142,7 +145,9 @@ test("replacing the whole prompt starts a new task without stale output ownershi
   });
   click(button("Report"));
   await waitFor(() => {
-    expect(input).toHaveValue(`Draft a customer update.\n\n${REPORT}`);
+    expect(input).toHaveValue(
+      `Draft a customer update.\n\n${REPORT} ${PRIORITY}`,
+    );
   });
 });
 
@@ -180,7 +185,7 @@ test("a reload preserves the complete editable prompt and its format selection",
   await fill(input, TASK);
   click(button("Presentation"));
   await waitFor(() => {
-    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
+    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION} ${PRIORITY}`);
   });
   context.store.set(resetFirstPage);
   cleanup();
@@ -189,10 +194,10 @@ test("a reload preserves the complete editable prompt and its format selection",
   vi.mocked(window.history.back).mockRestore();
 
   const restored = await openReady(reloadedContext);
-  expect(restored).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
+  expect(restored).toHaveValue(`${TASK}\n\n${PRESENTATION} ${PRIORITY}`);
   expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
   click(button("Report"));
   await waitFor(() => {
-    expect(restored).toHaveValue(`${TASK}\n\n${REPORT}`);
+    expect(restored).toHaveValue(`${TASK}\n\n${REPORT} ${PRIORITY}`);
   });
 });

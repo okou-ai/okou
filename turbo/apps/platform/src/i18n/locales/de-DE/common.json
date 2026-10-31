@@ -4522,7 +4522,7 @@
             "label": "Personenauswahl"
           },
           "presentation": {
-            "instruction": "Fasse die Ergebnisse in einer kurzen Präsentation mit Kernergebnissen, Empfehlungen und nächsten Schritten zusammen.",
+            "instruction": "Stelle die Erkenntnisse als Okou-Präsentation mit den wichtigsten Ergebnissen, Empfehlungen und nächsten Schritten dar und teile den Link.",
             "label": "Präsentation"
           },
           "report": {
@@ -4538,6 +4538,7 @@
             "label": "Website"
           }
         },
+        "selectionPriority": "Verwende dieses Format für das Endergebnis und ersetze damit frühere Formatvorgaben.",
         "title": "Format wählen",
         "tooLong": "Kürze deine Aufgabe, um ein anderes Format zu wählen."
       },

@@ -4576,7 +4576,7 @@
             "label": "Sélection de personnes"
           },
           "presentation": {
-            "instruction": "Présente les résultats dans une présentation concise avec les conclusions clés, les recommandations et les prochaines étapes.",
+            "instruction": "Présente les conclusions dans une présentation Okou avec les résultats clés, les recommandations et les prochaines étapes, puis partage son lien.",
             "label": "Présentation"
           },
           "report": {
@@ -4592,6 +4592,7 @@
             "label": "Site web"
           }
         },
+        "selectionPriority": "Utilise ce format pour le livrable final, en remplaçant toute demande de format antérieure.",
         "title": "Choisir un format",
         "tooLong": "Raccourcissez la tâche pour choisir un autre format."
       },

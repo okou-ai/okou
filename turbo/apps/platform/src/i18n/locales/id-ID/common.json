@@ -4507,7 +4507,7 @@
             "label": "Daftar kandidat"
           },
           "presentation": {
-            "instruction": "Sajikan temuan sebagai presentasi singkat berisi hasil utama, rekomendasi, dan langkah berikutnya.",
+            "instruction": "Sajikan temuan sebagai presentasi Okou dengan hasil utama, rekomendasi, dan langkah berikutnya, lalu bagikan tautannya.",
             "label": "Presentasi"
           },
           "report": {
@@ -4523,6 +4523,7 @@
             "label": "Situs web"
           }
         },
+        "selectionPriority": "Gunakan format ini untuk hasil akhir, menggantikan permintaan format sebelumnya.",
         "title": "Pilih format",
         "tooLong": "Persingkat tugas untuk memilih format lain."
       },

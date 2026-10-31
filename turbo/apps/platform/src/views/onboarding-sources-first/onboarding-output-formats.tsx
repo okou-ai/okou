@@ -48,13 +48,11 @@ export function OnboardingOutputFormats({
     { returnObjects: true },
   );
   const options = ONBOARDING_OUTPUT_FORMATS.map((format) => {
-    const next = withStartingPromptOutput(
-      text,
-      output,
-      copy.options[format].instruction,
-    );
+    const instruction = `${copy.options[format].instruction} ${copy.selectionPriority}`;
+    const next = withStartingPromptOutput(text, output, instruction);
     return {
       format,
+      instruction,
       tooLong: maxLength !== undefined && next.text.length > maxLength,
     };
   });
@@ -92,9 +90,11 @@ export function OnboardingOutputFormats({
         disabled={disabled}
         className="grid grid-cols-1 items-stretch gap-2 @min-[18rem]:grid-cols-2"
         onValueChange={(values) => {
-          const format = values[0];
-          if (format) {
-            onSelect(format, copy.options[format].instruction);
+          const selected = options.find(({ format }) => {
+            return format === values[0];
+          });
+          if (selected) {
+            onSelect(selected.format, selected.instruction);
           }
         }}
       >

@@ -4576,7 +4576,7 @@
             "label": "Lista de pessoas"
           },
           "presentation": {
-            "instruction": "Apresente os resultados em uma apresentação concisa com os principais resultados, recomendações e próximos passos.",
+            "instruction": "Apresente as conclusões em uma apresentação do Okou com os principais resultados, recomendações e próximos passos, e compartilhe o link.",
             "label": "Apresentação"
           },
           "report": {
@@ -4592,6 +4592,7 @@
             "label": "Site"
           }
         },
+        "selectionPriority": "Use este formato para a entrega final, substituindo qualquer formato solicitado anteriormente.",
         "title": "Escolha um formato",
         "tooLong": "Encurte a tarefa para escolher outro formato."
       },

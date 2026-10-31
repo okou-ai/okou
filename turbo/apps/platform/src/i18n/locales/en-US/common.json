@@ -4520,7 +4520,7 @@
             "label": "People shortlist"
           },
           "presentation": {
-            "instruction": "Present the findings as a concise presentation with key results, recommendations, and next steps.",
+            "instruction": "Present the findings as an Okou presentation with key results, recommendations, and next steps, and share its link.",
             "label": "Presentation"
           },
           "report": {
@@ -4536,6 +4536,7 @@
             "label": "Website"
           }
         },
+        "selectionPriority": "Use this format for the final deliverable, replacing any earlier format request.",
         "title": "Choose a format",
         "tooLong": "Shorten your task to choose another format."
       },

@@ -87,18 +87,22 @@ export const hydrateOnboardingRoute$ = command(
           { returnObjects: true },
         );
         // A shared prompt may already contain one of our format paragraphs.
-        const existingFormat = ONBOARDING_OUTPUT_FORMATS.find((format) => {
-          return prompt.endsWith(`\n\n${copy.options[format].instruction}`);
+        const existingOutput = ONBOARDING_OUTPUT_FORMATS.flatMap((format) => {
+          const instruction = copy.options[format].instruction;
+          return [instruction, `${instruction} ${copy.selectionPriority}`].map(
+            (text) => {
+              return { format, instruction: text };
+            },
+          );
+        }).find(({ instruction }) => {
+          return prompt.endsWith(`\n\n${instruction}`);
         });
-        if (existingFormat) {
+        if (existingOutput) {
           set(internalOnboardingDraft$, {
             prompt,
             output: {
-              format: existingFormat,
-              start:
-                prompt.length -
-                copy.options[existingFormat].instruction.length -
-                2,
+              format: existingOutput.format,
+              start: prompt.length - existingOutput.instruction.length - 2,
               end: prompt.length,
             },
           });
