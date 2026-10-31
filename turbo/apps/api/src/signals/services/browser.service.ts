@@ -887,8 +887,8 @@ const suspendBrowserWithoutActiveInstance$ = command(
   },
 );
 
-const browserConcurrencyLimit$ = command(
-  async ({ set }, orgId: string): Promise<number> => {
+const browserAvailableConcurrency$ = command(
+  async ({ get, set }, orgId: string): Promise<number> => {
     const [capabilities, paidSlots] = await Promise.all([
       set(loadOrgPlanCapabilities$, orgId),
       set(loadActivePaidConcurrencySlots$, orgId),
@@ -896,32 +896,14 @@ const browserConcurrencyLimit$ = command(
     if (!capabilities) {
       return 0;
     }
-    return totalConcurrencyLimit({
+    const limit = totalConcurrencyLimit({
       baseLimit: cappedBaseConcurrencyLimit(capabilities.baseConcurrencyLimit),
       paidSlots,
     });
-  },
-);
-
-export const ensureBrowserCapacity$ = command(
-  async (
-    { get, set },
-    orgId: string,
-    signal: AbortSignal,
-  ): Promise<BrowserServiceError | null> => {
-    const db = get(db$);
-    const limit = await set(browserConcurrencyLimit$, orgId);
-    signal.throwIfAborted();
-    if (limit === 0) {
-      return conflict(
-        "This organization has no managed browser concurrency available",
-        "BROWSER_CONCURRENCY_LIMIT",
-      );
+    if (!Number.isFinite(limit) || limit === 0) {
+      return limit;
     }
-    if (!Number.isFinite(limit)) {
-      return null;
-    }
-    const shared = await db.$count(
+    const shared = await get(db$).$count(
       browserOwnerProfiles,
       and(
         eq(browserOwnerProfiles.orgId, orgId),
@@ -932,8 +914,22 @@ export const ensureBrowserCapacity$ = command(
         ]),
       ),
     );
+    return limit - shared;
+  },
+);
+
+const ensureBrowserCapacity$ = command(
+  async (
+    { get, set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<BrowserServiceError | null> => {
+    const db = get(db$);
+    const available = await set(browserAvailableConcurrency$, orgId);
     signal.throwIfAborted();
-    const available = limit - shared;
+    if (!Number.isFinite(available)) {
+      return null;
+    }
     if (available <= 0) {
       return conflict(
         "This organization has no managed browser concurrency available",
@@ -974,6 +970,51 @@ export const ensureBrowserCapacity$ = command(
       );
     }
     return null;
+  },
+);
+
+/** Shared admission accounts for legacy providers without reclaiming their state. */
+export const ensureSharedBrowserCapacity$ = command(
+  async (
+    { get, set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<BrowserServiceError | null> => {
+    const available = await set(browserAvailableConcurrency$, orgId);
+    signal.throwIfAborted();
+    if (!Number.isFinite(available)) {
+      return null;
+    }
+    if (available > 0) {
+      const legacy = await get(db$).$count(
+        browserSessionInstances,
+        and(
+          inArray(browserSessionInstances.status, ["active", "stopping"]),
+          exists(
+            new QueryBuilder()
+              .select({ id: browserThreadProfiles.id })
+              .from(browserThreadProfiles)
+              .where(
+                and(
+                  eq(
+                    browserThreadProfiles.chatThreadId,
+                    browserSessionInstances.chatThreadId,
+                  ),
+                  eq(browserThreadProfiles.orgId, orgId),
+                ),
+              ),
+          ),
+        ),
+      );
+      signal.throwIfAborted();
+      if (legacy < available) {
+        return null;
+      }
+    }
+    return conflict(
+      "This organization has no managed browser concurrency available",
+      "BROWSER_CONCURRENCY_LIMIT",
+    );
   },
 );
 

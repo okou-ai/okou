@@ -25,7 +25,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
 import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
 import {
-  browserSessions,
+  browserThreadProfiles,
   browserSessionInstances,
 } from "@okouai/db/schema/browser-session";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -50,7 +50,7 @@ import {
   type BrowserChatWindow,
 } from "./browser-chat-session";
 import {
-  ensureBrowserCapacity$,
+  ensureSharedBrowserCapacity$,
   resolveBrowserScreenshotUrl$,
   captureAndStoreBrowserScreenshot$,
   type BrowserServiceError,
@@ -351,16 +351,20 @@ const provisionSharedInstance$ = command(
       .select({ id: browserSessionInstances.providerSessionId })
       .from(browserSessionInstances)
       .innerJoin(
-        browserSessions,
-        eq(browserSessions.chatThreadId, browserSessionInstances.chatThreadId),
+        browserThreadProfiles,
+        eq(
+          browserThreadProfiles.chatThreadId,
+          browserSessionInstances.chatThreadId,
+        ),
       )
       .where(
         and(
-          eq(browserSessions.orgId, args.owner.orgId),
-          eq(browserSessions.userId, args.owner.userId),
+          eq(browserThreadProfiles.orgId, args.owner.orgId),
+          eq(browserThreadProfiles.userId, args.owner.userId),
           inArray(browserSessionInstances.status, ["active", "stopping"]),
         ),
-      );
+      )
+      .limit(1);
     signal.throwIfAborted();
     if (old) {
       return {
@@ -371,7 +375,7 @@ const provisionSharedInstance$ = command(
       };
     }
     const capacity = await set(
-      ensureBrowserCapacity$,
+      ensureSharedBrowserCapacity$,
       args.owner.orgId,
       signal,
     );
