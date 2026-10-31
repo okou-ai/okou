@@ -138,18 +138,17 @@ export async function applyPendingMigrations(
     }
 
     const file = requiredMigrationFile(migrationFiles, migration.folderMillis);
-    // Keep shipped 1462 bytes/journal identity, but execute its canonical,
-    // replayable DDL outside TX-0357. Retire with 1462 in a future history squash.
-    const statements =
-      file === "1462_browser_owner_windows.sql"
-        ? readFileSync(
-            new URL(
-              "./migration-replays/1462_browser_owner_windows.sql",
-              import.meta.url,
-            ),
-            "utf8",
-          ).split("--> statement-breakpoint")
-        : migration.sql;
+    // Keep shipped bytes/journal identities, but execute canonical, replayable
+    // DDL outside TX-0357. Retire each replay with its historical migration.
+    const statements = [
+      "1462_browser_owner_windows.sql",
+      "1496_slippery_sheva_callister.sql",
+    ].includes(file)
+      ? readFileSync(
+          new URL(`./migration-replays/${file}`, import.meta.url),
+          "utf8",
+        ).split("--> statement-breakpoint")
+      : migration.sql;
     const startedAt = performance.now();
     const nonTransactional = statements.some((statement) => {
       return statement.includes(NON_TRANSACTIONAL_MIGRATION_MARKER);
