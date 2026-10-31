@@ -1021,7 +1021,10 @@ export const ensureSharedBrowserCapacity$ = command(
 type BrowserScreenshotStage = "prepare" | "capture" | "upload" | "save";
 
 interface BrowserScreenshotPublication {
-  readonly browser: Pick<BrowserSessionRow, "orgId" | "userId" | "chatThreadId">;
+  readonly browser: Pick<
+    BrowserSessionRow,
+    "orgId" | "userId" | "chatThreadId"
+  >;
   readonly fileId: string;
   readonly shared?: {
     readonly providerSessionId: string;
@@ -1228,7 +1231,9 @@ const publishBrowserScreenshot$ = command(
             createdAt: browserSessionScreenshots.createdAt,
           })
           .from(browserSessionScreenshots)
-          .where(eq(browserSessionScreenshots.chatThreadId, browser.chatThreadId));
+          .where(
+            eq(browserSessionScreenshots.chatThreadId, browser.chatThreadId),
+          );
     const queued = db
       .insert(browserSessionScreenshotDeletions)
       .select(

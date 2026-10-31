@@ -20,6 +20,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
   createSharedBrowserFixtures,
+  MINUTE,
   START,
 } from "./helpers/browser-shared-fixture";
 
@@ -187,6 +188,35 @@ test("reclaims replaced screenshots and their file access while the current prev
     await chat.requestWebFileUrl(
       f.owned.actor,
       latest.split("/")[1] ?? "",
+      [200],
+    );
+  });
+});
+
+test("retains the accepted screenshot after the shared owner and window retire", async () => {
+  const f = await fixture();
+  await f.owned.run(async () => {
+    installBrowserWindowContentCommands(f.provider.native);
+    const a = await f.start();
+    await open(a);
+    const s3 = storage();
+    await capture(a);
+    mockNow(START + 11 * MINUTE);
+    await sweep();
+    const inactive = await view(a);
+    expect(inactive.window).toBeUndefined();
+    if (!inactive.screenshotUrl) {
+      throw new Error("Expected the inactive chat's accepted screenshot");
+    }
+    const key = decodeURIComponent(
+      new URL(inactive.screenshotUrl).pathname.slice(1),
+    );
+    await sweep();
+    expect(s3.bytes(key)?.toString()).toMatch(/^preview:/u);
+    expect((await view(a)).screenshotUrl).toBe(inactive.screenshotUrl);
+    await createChatFilesBddApi(context).requestWebFileUrl(
+      f.owned.actor,
+      key.split("/")[1] ?? "",
       [200],
     );
   });
