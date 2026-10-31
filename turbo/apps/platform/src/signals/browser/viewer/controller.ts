@@ -476,7 +476,7 @@ interface ControllerLinks {
   readonly syncDisplay$: Command<Promise<void>, [AbortSignal]>;
   readonly restoreSelection$: Command<Promise<void>, [AbortSignal]>;
   readonly pause$: Command<Promise<void>, [boolean, AbortSignal]>;
-  readonly revokeAuthority$: Command<Promise<void>, [AbortSignal]>;
+  readonly revokeAuthority$: Command<void, []>;
   readonly refreshAuthority$: Command<Promise<void>, [AbortSignal]>;
   readonly rejectFavicon$: Command<void, [string, string]>;
   readonly dispose$: Command<void, []>;
@@ -1172,7 +1172,14 @@ function createCaptureGraph(
 }
 
 function createRetirementReceiptsGraph(context: ControllerContext) {
-  const { model, disposedState$, retirements$, wake$, waitEvent$ } = context;
+  const {
+    model,
+    disposedState$,
+    closingState$,
+    retirements$,
+    wake$,
+    waitEvent$,
+  } = context;
   const waitRetirement$ = command(
     async (
       { get, set },
@@ -1231,7 +1238,10 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
           return receipt.status === "rejected";
         },
       );
-      set(detachAttached$, selected.attached);
+      // Once closing begins, the transport close owns session detachment.
+      if (!get(closingState$)) {
+        set(detachAttached$, selected.attached);
+      }
       if (get(retirements$).get(targetId) === retirement) {
         const fences = new Map(get(retirements$));
         if (!result) {
@@ -3074,40 +3084,27 @@ function createAuthoritySettingsGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const {
-    model,
-    authority$,
-    disposedState$,
-    retirements$,
-    authorityRevoked$,
-    wake$,
-  } = context;
-  const revokeAuthority$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      if (get(disposedState$)) {
-        return;
-      }
-      set(authorityRevoked$, true);
-      set(get(links$).retireCurrent$, "target-replaced", true);
-      const display = get(get(links$).displayGraph$);
-      if (display) {
-        set(display.setSuspended$, true);
-      }
-      set(wake$);
-      // Admission is already false. These waits are original resource cleanup, not new business writes.
-      await Promise.all(
-        [...get(retirements$).keys()].map((targetId) => {
-          return set(get(links$).waitRetirement$, targetId, signal);
-        }),
-      );
-      signal.throwIfAborted();
-    },
-  );
+  const { model, authority$, disposedState$, authorityRevoked$, wake$ } =
+    context;
+  // Retirement writes its releases synchronously. Reattaching a target still
+  // waits for that target's own retirement; revocation never does.
+  const revokeAuthority$ = command(({ get, set }) => {
+    if (get(disposedState$)) {
+      return;
+    }
+    set(authorityRevoked$, true);
+    set(get(links$).retireCurrent$, "target-replaced", true);
+    const display = get(get(links$).displayGraph$);
+    if (display) {
+      set(display.setSuspended$, true);
+    }
+    set(wake$);
+  });
   const refreshAuthority$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       signal.throwIfAborted();
       if (!get(authority$)) {
-        await set(revokeAuthority$, signal);
+        set(revokeAuthority$);
         return;
       }
       if (get(disposedState$)) {
@@ -3184,22 +3181,15 @@ function createDisposalGraph(
           while (get(startedState$) && get(bootstrapping$)) {
             await set(waitEvent$, signal);
           }
-          const receipts = await Promise.allSettled(
-            [...get(retirements$).keys()].map((targetId) => {
-              return set(get(links$).waitRetirement$, targetId, signal);
-            }),
-          );
-          const native = get(nativeState$);
-          const [nativeClose] = await Promise.allSettled([native?.close()]);
-          if (nativeClose.status === "rejected") {
-            throw nativeClose.reason;
+          // Retirement wrote its input releases when it began, so detaching
+          // now follows them on the wire. The peer can vanish at any moment, so
+          // closing never waits for their acknowledgement.
+          for (const retirement of get(retirements$).values()) {
+            if (retirement.phase === "pending") {
+              set(get(links$).detachAttached$, retirement.session.attached);
+            }
           }
-          const rejected = receipts.find((receipt) => {
-            return receipt.status === "rejected";
-          });
-          if (rejected?.status === "rejected") {
-            throw rejected.reason;
-          }
+          await get(nativeState$)?.close();
         })(),
       ]);
       signal.throwIfAborted();
