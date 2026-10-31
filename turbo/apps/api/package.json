@@ -87,7 +87,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260924.1",
-    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite": "^0.5.13",
     "@hono/vite-build": "^1.11.1",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
