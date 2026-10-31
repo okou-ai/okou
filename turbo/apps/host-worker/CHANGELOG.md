@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.9.28](https://github.com/okou-ai/okou/compare/host-worker-v1.9.27...host-worker-v1.9.28) (2026-10-31)
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.1
+    * @okouai/core bumped to 8.805.7
+    * @okouai/ui bumped to 1.18.7
+
 ## [1.9.27](https://github.com/okou-ai/okou/compare/host-worker-v1.9.26...host-worker-v1.9.27) (2026-10-31)
 
 

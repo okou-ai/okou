@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.805.7](https://github.com/okou-ai/okou/compare/core-v8.805.6...core-v8.805.7) (2026-10-31)
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.1
+
 ## [8.805.6](https://github.com/okou-ai/okou/compare/core-v8.805.5...core-v8.805.6) (2026-10-31)
 
 
