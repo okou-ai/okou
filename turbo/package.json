@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
-    "@eslint/css": "^2.0.0",
+    "@eslint/css": "^2.0.1",
     "@eslint/css-tree": "^4.1.1",
     "@vitest/coverage-v8": "^5.0.5",
     "@vitest/ui": "^5.0.5",
