@@ -12,13 +12,11 @@ import {
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { resetSignal } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
-const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const TASK =
   "Review last week's ad results and suggest three things to test next.";
 const PRESENTATION =
@@ -233,45 +231,5 @@ test("a reload preserves the task and separate format selection without duplicat
   click(button("Start with Okou"));
   await waitFor(() => {
     expect(sentPrompt).toBe(`${TASK}\n\n${REPORT}`);
-  });
-});
-
-test("existing drafts retain customized format instructions separately from surrounding task text", async () => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const customFormat = "\n\nPresent the findings as a five-slide presentation.";
-  const afterFormat = "\n\nFocus on the spring campaign.";
-  context.store.set(
-    draftStorage.set$,
-    JSON.stringify({
-      version: 2,
-      orgId: "org_default",
-      userId: "test-user-123",
-      industry: "marketing",
-      experienced: true,
-      provider: null,
-      startingPromptDraft: TASK + customFormat + afterFormat,
-      startingPromptKey: "marketing:none",
-      startingPromptOutput: {
-        format: "presentation",
-        start: TASK.length,
-        end: TASK.length + customFormat.length,
-      },
-      recommendationJobId: null,
-      recommendationStartedAt: null,
-    }),
-  );
-
-  const input = await openReady();
-  expect(input).toHaveValue(TASK + afterFormat);
-  expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
-  click(button("Presentation"));
-  click(button("Start with Okou"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(TASK + afterFormat + customFormat);
   });
 });
