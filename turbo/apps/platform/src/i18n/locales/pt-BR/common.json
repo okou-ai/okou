@@ -4598,7 +4598,7 @@
       "prompt": {
         "connectorsDescription": "Conecte as ferramentas necessárias para esta tarefa. Você também pode fazer isso depois.",
         "connectorsTitle": "Conecte suas ferramentas de trabalho",
-        "intro": "Conectar suas ferramentas de trabalho dá ao Okou contexto a partir dos seus e-mails, arquivos e dados, ajudando-o a entender seu trabalho e entregar resultados mais relevantes. Você pode ajustar este prompt e escolher o formato mais adequado à sua tarefa, como um relatório, uma apresentação ou um site."
+        "intro": "Conectar suas ferramentas de trabalho dá ao Okou contexto a partir dos seus e-mails, arquivos e dados, ajudando-o a entender seu trabalho e entregar resultados mais relevantes. Ao escolher um formato, as instruções correspondentes são adicionadas automaticamente ao campo do prompt para você revisar e editar antes de começar."
       },
       "skills": {
         "copied": "Copiado",

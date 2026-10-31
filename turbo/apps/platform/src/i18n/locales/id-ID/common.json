@@ -4529,7 +4529,7 @@
       "prompt": {
         "connectorsDescription": "Hubungkan alat yang dibutuhkan untuk tugas ini. Anda juga dapat melakukannya nanti.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
-        "intro": "Menghubungkan alat kerja memberi Okou konteks dari email, file, dan data Anda, sehingga dapat lebih memahami pekerjaan Anda dan memberikan hasil yang lebih relevan. Anda dapat menyesuaikan prompt ini dan memilih format yang cocok untuk tugas Anda, seperti laporan, presentasi, atau situs web."
+        "intro": "Menghubungkan alat kerja memberi Okou konteks dari email, file, dan data Anda, sehingga dapat lebih memahami pekerjaan Anda dan memberikan hasil yang lebih relevan. Saat Anda memilih format, instruksi hasilnya otomatis ditambahkan ke kotak prompt agar dapat ditinjau dan diedit sebelum memulai."
       },
       "skills": {
         "copied": "Tersalin",
