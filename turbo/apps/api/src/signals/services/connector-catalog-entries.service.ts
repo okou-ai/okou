@@ -166,6 +166,12 @@ export function immutableConnectorRuntimeSelection(
 }
 
 export function createImmutableConnectorRuntimeSelection(
+  input$: Computed<Promise<SelectionInput>>,
+): Computed<Promise<ImmutableConnectorRuntimeSelection>>;
+export function createImmutableConnectorRuntimeSelection(
+  input$: Computed<Promise<SelectionInput | null>>,
+): Computed<Promise<ImmutableConnectorRuntimeSelection | null>>;
+export function createImmutableConnectorRuntimeSelection(
   input$: Computed<Promise<SelectionInput | null>>,
 ): Computed<Promise<ImmutableConnectorRuntimeSelection | null>> {
   const source$ = capturedEntries(input$);
