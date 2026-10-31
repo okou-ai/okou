@@ -1289,7 +1289,7 @@
       }
     },
     {
-      "name": "valid UTF-8 prefix remains discoverable before an invalid byte",
+      "name": "invalid UTF-8 at a configured authority is rejected without an owner",
       "firewalls": [
         {
           "name": "example",
@@ -1545,7 +1545,7 @@
       }
     },
     {
-      "name": "nested encoded owner survives invalid UTF-8 in another path segment",
+      "name": "invalid UTF-8 beside a nested prefix cannot escape configured authority scope",
       "firewalls": [
         {
           "name": "example",
@@ -1586,7 +1586,7 @@
       }
     },
     {
-      "name": "nested encoded owner survives malformed escapes in another path segment",
+      "name": "malformed escapes beside a nested prefix cannot escape configured authority scope",
       "firewalls": [
         {
           "name": "example",
@@ -1668,7 +1668,7 @@
       }
     },
     {
-      "name": "encoded owner is discovered before rejecting a decoded query delimiter",
+      "name": "decoded query delimiter is invalid before prefix selection",
       "firewalls": [
         {
           "name": "example",
@@ -1709,7 +1709,7 @@
       }
     },
     {
-      "name": "encoded owner is discovered before rejecting a decoded fragment delimiter",
+      "name": "decoded fragment delimiter is invalid before prefix selection",
       "firewalls": [
         {
           "name": "example",
@@ -1750,7 +1750,7 @@
       }
     },
     {
-      "name": "nested encoded owner is discovered after an unsafe query delimiter",
+      "name": "decoded query delimiter beside a nested prefix is invalid without an owner",
       "firewalls": [
         {
           "name": "example",
@@ -1791,7 +1791,7 @@
       }
     },
     {
-      "name": "nested encoded owner is discovered after an unsafe fragment delimiter",
+      "name": "decoded fragment delimiter beside a nested prefix is invalid without an owner",
       "firewalls": [
         {
           "name": "example",
@@ -4963,7 +4963,7 @@
       }
     },
     {
-      "name": "runtime backslash path preserves relative path in unsafe block",
+      "name": "runtime backslash path is invalid without an owner",
       "firewalls": [
         {
           "name": "example",
@@ -5037,7 +5037,7 @@
       }
     },
     {
-      "name": "unsafe path blocks after base match",
+      "name": "unsafe path rejects on configured authority before prefix selection",
       "firewalls": [
         {
           "name": "example",

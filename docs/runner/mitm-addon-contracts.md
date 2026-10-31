@@ -230,20 +230,6 @@ without an API, CLI, registry or database migration.
 
 ## Ordinary connector firewall owner selection
 
-Connector path analysis keeps the raw matcher result as the authorization and
-forwarding ceiling. A bounded symbolic request graph retains independent percent
-decoding choices and URI literal aliases. Immutable typed source NFAs and exact
-request-local subset products prove possible and certain source applicability;
-matching-conditioned priority envelopes must also preserve the raw owner and
-rule. Interpretation never supplies replacement captures or credential bindings.
-
-Authority scope is established before path prefixes. Invalid input or incomplete
-analysis at a configured authority is a terminal, ownerless unsafe-path denial,
-including from header admission and custom HTTP preparation. It is not ordinary
-unmatched network traffic. Valid paths proven outside configured API prefixes
-and valid different authorities keep ordinary scope. Existing pending AWS body
-inspection remains resource admission and cannot authorize credentials.
-
 Outside the platform API admission path, the addon first gathers active firewall
 base matches, then selects an owner in this order:
 
@@ -1171,72 +1157,56 @@ usage reporting boundary.
 
 ### Authorization across encoded path interpretations
 
-Firewall authorization intersects the original path with each bounded percent-decoded
-interpretation, including URI normalization that decodes unreserved bytes while
-retaining reserved escapes and normalizing escape hex case. Configured literal path
-text uses the same URI normalization for these checks; parameter names and original
-rule/API identities are retained. Each interpretation must preserve the selected
-owner's complete applicable API and rule sets as well as its chosen owner, API base, permission
-and exact rule before a connector credential can be prepared. An encoded literal that
-falls through to a broader ID rule, an encoded separator that hides a nested resource,
-or a decoded-only owner selection is rejected with `unsafe_path`. Original denials
-are never promoted to decoded allowances. Decoding cannot introduce a query or fragment
-boundary, and query escapes are not path input.
+The raw matcher result is the authorization and forwarding ceiling. A separate
+bounded byte graph represents independent keep/decode choices, including nested
+percent triples formed across decoded spans. Request data and declaration literal
+spans share URI normalization for unreserved bytes, hex case, valid escaped UTF-8
+scalars and accepted raw-data aliases. Parse declaration operators before this
+analysis; parameter names and source API/rule identities remain opaque provenance.
 
-URI and IRI spellings of valid UTF-8 scalar values share the same literal identity.
-Normalize escaped scalar values consistently in configured literal paths and request
-interpretations, including values beside ASCII reserved escapes. Reserved ASCII
-escapes remain data; invalid UTF-8 is never replaced with a character or accepted by
-normalization. Process valid scalar values independently so malformed bytes cannot
-hide a valid literal prefix. Keep original path, API and rule text for forwarding
-and decision provenance.
+Immutable typed source NFAs and exact request-local subset products prove possible
+and certain applicability. The selected owner's complete pre-precedence API/rule
+set must be stable. Matching-conditioned priority bounds must preserve the original
+winner, including owner intent, policy ties and API binding conflicts. Keeping only
+the same selected allowance is insufficient when a restricted alias becomes
+applicable. Existing method/AWS selectors remain part of source applicability;
+pending AWS body inspection admits bounded resources, never credentials.
 
-When decoding introduces a query or fragment delimiter, retain the bounded
-interpretations solely to discover an encoded API owner before rejecting the request.
-Treat those candidates as opaque path text, never as a replacement URL or query.
-An unsafe interpretation must not authorize the request or erase a discovered
-owner into ordinary network fallback. Unowned paths and different authorities
-remain outside connector credential selection.
+Authority scope is established before path prefixes. Invalid raw/full-chain input
+or incomplete analysis at a configured authority produces a terminal, ownerless
+`unsafe_path` denial before auth or upload admission, including in both hooks and
+custom HTTP preparation. This includes malformed encoding, traversal, introduced
+query/fragment boundaries and exhausted budgets. For valid raw/full-chain input,
+only valid UTF-8 partial interpretations participate; invalid bytes are never
+replacement characters. A valid request proven outside every interpreted prefix,
+or a valid different authority, retains ordinary network scope.
 
-Decode segments independently for owner discovery. A malformed escape or invalid
-UTF-8 segment stays opaque and marks the entire interpretation unsafe; it cannot
-erase a valid encoded API prefix in another segment. Do not replace invalid bytes
-or use these rejected candidates for authorization or forwarding.
+Interpretation can reject but cannot promote an originally unmatched request or
+supply replacement captures, routes or credentials. Successful encoded Unicode,
+space and greedy-key requests retain their original URL, query, API entry,
+parameters, permission and exact rule for forwarding and signing. Request graphs
+and proof memos must be released before auth awaits or stream admission, and must
+not enter cached classifications or process-wide URL caches. Shared final-decision
+vectors cover TypeScript diagnostics and Python enforcement.
 
-An unchanged selected allowance is insufficient when a newly applicable denied or
-asked alias is hidden by another granted rule. Compare the actual matching routes,
-including API identity, permission and original rule text, after method and selector
-matching, before base/rule specificity can hide a newly applicable alias. This includes
-overlaps such as `ANY` with `GET` without classifying them
-separately. Disjoint methods/selectors, unrelated resources and non-selected owners
-retain their ordinary authorization; a URI alias does not invalidate an entire API.
-Matching API identities are retained even when they have no applicable permission
-rules, so precedence cannot hide a newly applicable unknown-endpoint boundary.
-
-Successful decisions retain the original URL, query, raw parameter captures and API
-entry for forwarding and signing. Ordinary encoded Unicode/space IDs and greedy file
-keys remain supported when their authorization agrees; ambiguous encoded IDs must use
-an unambiguous supported request. Source grammar and stored firewall formats do not
-change. Requests without escapes and catalogs without encoded literal paths still
-use one matcher evaluation. Python caches a normalized compiled view and its indexes
-with the owning firewall set only when configured literals change. Both TypeScript diagnostics
-and Python enforcement share final-decision vectors for this boundary.
-
-New enforcement accepts existing catalogs but can reject requests that old Runners
-allowed. Old or draining Runners retain their old local interpretation until replaced;
-publishing a new diagnostic package alone does not repair enforcement. No credential,
-wire-protocol or persisted-state migration is introduced.
+The source-level invalid-input result maps to the existing unsafe-input diagnostic
+response. Catalog, registry, auth-wire and persisted shapes remain compatible.
+Old or draining Runners retain their old enforcement until replaced or exited;
+publishing a new diagnostic package alone does not repair enforcement.
 
 ### Validation work limits
 
-Exhausting an interpretation budget cannot establish that a request is unowned.
-Both engines retain decode-pass exhaustion explicitly; Python also retains its
-character-budget exhaustion. If interpretation exhausts a budget and has no raw
-owner, reject on a matching configured API authority. Reuse scheme, host-template
-and port matching without further path decoding; this authority check supplies
-rejection context only, never credentials or routing. Other authorities and unowned
-requests that need no interpretation retain their scope. Budget exhaustion is distinct
-from a malformed segment whose bounded interpretations are complete.
+Declaration analysis retains at most 256 canonical typed forms per source API or
+combined API/rule. Each connector core retains at most 262,144 NFA states and
+1,048,576 transitions. Temporary graphs have the same state/edge caps and 4,194,304
+label bytes. Request subset/product proofs retain at most 262,144 subsets and
+262,144 product pairs, 1,048,576 memoized subset/byte transitions and 4,194,304
+logical subset bytes. Compilation and whole-request path analysis charge at most
+16,777,216 and 8,388,608 work units respectively.
+
+Charge scans, edge visits and allocation growth before performing the work. Do not
+truncate forms or branches to fit a budget. Incomplete analysis remains an explicit
+invalid result on the known authority, never outside scope or a partial allowance.
 
 Path safety validation accepts at most 65,536 input characters and five percent
 decoding passes. Before whole-segment NFKC, each raw or decoded segment must have
