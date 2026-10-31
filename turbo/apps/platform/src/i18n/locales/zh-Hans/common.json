@@ -1764,7 +1764,6 @@
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
       "proCard": {
-        "creditsNow": "积分 · 就现在",
         "description": "额外积分 · 高级功能 · 3 台云电脑",
         "priceUnavailable": "查看套餐及最新价格",
         "title": "大约还剩 5 个任务",

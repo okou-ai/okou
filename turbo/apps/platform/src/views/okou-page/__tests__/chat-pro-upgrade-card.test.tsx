@@ -177,12 +177,8 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
       "Additional credits · Advanced features · 3 cloud computers",
     ),
   ).toBeInTheDocument();
-  expect(within(card).getByText("20,000")).toBeInTheDocument();
-  expect(within(card).getByText("+2,000")).toBeInTheDocument();
   expect(
-    within(card).getByText(/credits · Just now/u, {
-      ignore: '[aria-hidden="true"]',
-    }),
+    within(card).getByText("20,000 credits · +2,000 bonus"),
   ).toBeInTheDocument();
   click(await findEnabledButton("Upgrade now", card));
   await expect(
@@ -221,8 +217,9 @@ test("Keep the offer usable while the catalog loads and then show its credits", 
 
   catalogReady.resolve();
 
-  await expect(within(card).findByText("+400")).resolves.toBeInTheDocument();
-  expect(within(card).getByText("20,000")).toBeInTheDocument();
+  await expect(
+    within(card).findByText("20,000 credits · +400 bonus"),
+  ).resolves.toBeInTheDocument();
   expect(within(card).getByText("$20")).toBeInTheDocument();
 });
 
@@ -240,12 +237,7 @@ test("Keep the upgrade action usable when the price catalog is unavailable", asy
     }),
   ).resolves.toBeVisible();
   expect(within(card).queryByText(/\$/u)).toBeNull();
-  expect(within(card).queryByText("20,000")).toBeNull();
-  expect(
-    within(card).queryByText(/credits · Just now/u, {
-      ignore: '[aria-hidden="true"]',
-    }),
-  ).toBeNull();
+  expect(within(card).queryByText("20,000 credits · +400 bonus")).toBeNull();
   await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
 });
 

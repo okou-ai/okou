@@ -1768,7 +1768,6 @@
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
       "proCard": {
-        "creditsNow": "credits · Just now",
         "description": "Additional credits · Advanced features · 3 cloud computers",
         "priceUnavailable": "See plans for current pricing",
         "title": "About 5 tasks left",
