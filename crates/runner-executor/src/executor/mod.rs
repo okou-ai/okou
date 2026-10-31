@@ -736,13 +736,7 @@ async fn prepare_execution_context(
 ) -> RunnerResult<env::PreparedRunPayload> {
     let payload = validate_execution_context_before_sandbox(context, &config.api_url, sandbox_id)
         .map_err(RunnerError::Internal)?;
-    // GA API/Runner rollout: remove the legacy branch after old API requests and captured
-    // claims drain and incompatible API rollback targets are excluded (#44164, Release 3).
-    if context.content_bundles.is_some() {
-        storage::prepare_content_bundles(context, config, cancel, telemetry).await?;
-    } else {
-        storage::resolve_workflow_documents(context, &config.http, cancel, telemetry).await?;
-    }
+    storage::prepare_content_bundles(context, config, cancel, telemetry).await?;
     Ok(payload)
 }
 

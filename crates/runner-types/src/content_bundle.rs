@@ -49,7 +49,7 @@ impl SkillBundle {
         }
     }
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClaimedContentBundles {
     pub format: BundleFormat,
@@ -57,8 +57,9 @@ pub struct ClaimedContentBundles {
     pub instructions: Option<BundleReference>,
     pub skills: Vec<SkillBundle>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub enum BundleFormat {
+    #[default]
     #[serde(rename = "tar-gzip-v1")]
     TarGzipV1,
 }
@@ -78,16 +79,11 @@ pub fn fingerprints(
         .as_ref()
         .map(crate::storage_fingerprints::StorageFingerprints::from_manifest)
         .unwrap_or_default();
-    if let Some(bundles) = &context.content_bundles {
-        for skill in &bundles.skills {
-            result.storages.insert(
-                skill.mount_path.clone(),
-                crate::storage_fingerprints::StorageFingerprint::new(
-                    "content-bundle",
-                    &skill.sha256,
-                ),
-            );
-        }
+    for skill in &context.content_bundles.skills {
+        result.storages.insert(
+            skill.mount_path.clone(),
+            crate::storage_fingerprints::StorageFingerprint::new("content-bundle", &skill.sha256),
+        );
     }
     result
 }

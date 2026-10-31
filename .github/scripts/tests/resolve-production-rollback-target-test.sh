@@ -203,6 +203,12 @@ case "${1:-}" in
       else
         [ "${MOCK_CONTENT_BUNDLE_ARCHIVE_API_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "c5f93ab5220486a764f9316a4496288e5bf72991" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "fc8f99468cc7946843620ff655ae22c09f9cb2ae" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_CONTENT_BUNDLE_RUNNER_VALID:-1}" = "1" ]
@@ -348,6 +354,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [[ "$*" == *rollback-floors/content-bundle-reference-only-api* ]]; then
+      [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE:-1}" = "1" ] || exit 1
+      printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-c5f93ab5220486a764f9316a4496288e5bf72991}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/run-reference-preparation" ]; then
       [ "${MOCK_RUN_REFERENCE_PREPARATION_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_RUN_REFERENCE_PREPARATION_COMMIT-66e1cae65d0468a50149f0dafab9d0d35abd0819}"
@@ -2047,6 +2058,21 @@ for run_reference_case in \
   [ ! -s "${tmp_dir}/run-reference-policy.output" ] || fail "invalid Run policy must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "invalid Run policy must reject before provider or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE=0|Cannot read the reference-only content bundle API rollback floor from main" \
+  "MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT=invalid|Missing or invalid reference-only content bundle API rollback floor" \
+  "MOCK_CONTENT_BUNDLE_REFERENCE_API_ON_MAIN=0|Reference-only content bundle API rollback floor is not on main" \
+  "MOCK_CONTENT_BUNDLE_REFERENCE_API_VALID=0|Rollback target predates reference-only content bundle claims"; do
+  : >"${tmp_dir}/boundaries.log"
+  setting=${expectation%%|*}
+  message=${expectation#*|}
+  assert_failure "$message" run_resolver "${tmp_dir}/content-bundle-reference-api.output" "$setting"
+  [ ! -s "${tmp_dir}/content-bundle-reference-api.output" ] || fail "incompatible API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "reference-only API floor must fail before artifact or host access"
   fi
 done
 

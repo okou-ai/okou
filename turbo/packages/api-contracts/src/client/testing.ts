@@ -609,7 +609,6 @@ import {
   runnersJobClaimContract as OriginalRunnersJobClaimContract,
   runnersPollContract as OriginalRunnersPollContract,
   runnersSteerContract as OriginalRunnersSteerContract,
-  runnersWorkflowDownloadContract as OriginalRunnersWorkflowDownloadContract,
 } from "../contracts/runners";
 import {
   runnersBuiltinFirewallsResolveContract,
@@ -619,7 +618,6 @@ import {
   runnersJobClaimContract,
   runnersPollContract,
   runnersSteerContract,
-  runnersWorkflowDownloadContract,
 } from "./runners";
 import { sharedThreadVisibilityContract as OriginalSharedThreadVisibilityContract } from "../contracts/shared-thread-visibility";
 import { sharedThreadVisibilityContract } from "./shared-thread-visibility";
@@ -1264,7 +1262,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [runnersJobClaimContract, OriginalRunnersJobClaimContract],
   [runnersPollContract, OriginalRunnersPollContract],
   [runnersSteerContract, OriginalRunnersSteerContract],
-  [runnersWorkflowDownloadContract, OriginalRunnersWorkflowDownloadContract],
   [sharedThreadVisibilityContract, OriginalSharedThreadVisibilityContract],
   [sharedThreadsContract, OriginalSharedThreadsContract],
   [skillImportSessionsContract, OriginalSkillImportSessionsContract],

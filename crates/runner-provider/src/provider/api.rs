@@ -5949,6 +5949,7 @@ mod tests {
                     }],
                     "billableFirewalls": [],
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -6000,6 +6001,7 @@ mod tests {
                     }],
                     "billableFirewalls": [],
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -6051,6 +6053,7 @@ mod tests {
                     }],
                     "billableFirewalls": [],
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -6105,6 +6108,7 @@ mod tests {
                     },
                     "billableFirewalls": [],
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -6150,6 +6154,7 @@ mod tests {
                 "sandboxToken": "claim-sandbox-token",
                 "cliAgentType": "claude_code",
                 "platformEnvironment": {},
+                "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                 "connectorRuntimeTargets": [],
                 "codexRuntimeConfig": {
                     "providerId": 123,
@@ -6182,6 +6187,7 @@ mod tests {
                 "sandboxToken": "claim-sandbox-token",
                 "cliAgentType": "claude_code",
                 "platformEnvironment": {},
+                "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                 "connectorRuntimeTargets": [],
                 "networkPolicyRefreshes": {
                     "secret-connector-name": {
@@ -6213,6 +6219,7 @@ mod tests {
                 "sandboxToken": "claim-sandbox-token",
                 "cliAgentType": "claude_code",
                 "platformEnvironment": {},
+                "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                 "connectorRuntimeTargets": [],
                 "environment": {"prompt": 123}
             }),
@@ -6489,10 +6496,7 @@ mod tests {
 
         assert_eq!(context.run_id, run_id);
         assert_eq!(context.prompt, "Inspect the fixture repository");
-        let bundles = context
-            .content_bundles
-            .as_ref()
-            .expect("current claims select immutable content bundles");
+        let bundles = &context.content_bundles;
         let instructions = bundles.instructions.as_ref().unwrap();
         instructions.validate().unwrap();
         assert_eq!(instructions.sha256, "a".repeat(64));
@@ -6861,7 +6865,8 @@ mod tests {
         let success = server.mock_async(|when, then| {
             when.method(POST).path(&claim_path).header_missing("X-Pi-Deferred-Sandbox");
             then.status(200).json_body(serde_json::json!({
-                "runId": run_id, "prompt": "legacy retry", "sandboxToken": "test-token", "cliAgentType": "claude_code", "platformEnvironment": {}, "connectorRuntimeTargets": []
+                "runId": run_id, "prompt": "legacy retry", "sandboxToken": "test-token", "cliAgentType": "claude_code", "platformEnvironment": {},
+            "contentBundles": {"format": "tar-gzip-v1", "skills": []}, "connectorRuntimeTargets": []
             }));
         }).await;
         let captured = CapturedEvents::default();
@@ -6927,6 +6932,7 @@ mod tests {
                     "sandboxToken": "minimal-sandbox-token",
                     "cliAgentType": "claude_code",
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -6970,6 +6976,7 @@ mod tests {
                     "sandboxToken": "pi-active-input-sandbox-token",
                     "cliAgentType": "pi",
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -7009,6 +7016,7 @@ mod tests {
                     "sandboxToken": "additive-sandbox-token",
                     "cliAgentType": "claude_code",
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": [],
                     "futureClaimMetadata": {"version": 2}
                 }));
@@ -7046,6 +7054,7 @@ mod tests {
                     "sandboxToken": "local-secret-sandbox-token",
                     "cliAgentType": "claude_code",
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": [],
                     "localSecretEnvKeys": ["ANTHROPIC_API_KEY"]
                 }));
@@ -7079,6 +7088,7 @@ mod tests {
                 "sandboxToken": "claim-sandbox-token",
                 "cliAgentType": "claude_code",
                 "platformEnvironment": {},
+                "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                 "connectorRuntimeTargets": [],
             });
             let (release, wait) = tokio::sync::oneshot::channel();
@@ -7145,7 +7155,8 @@ mod tests {
             release: wait,
             response: json_response("200 OK", &serde_json::json!({
                 "runId": run_id, "prompt": "hello", "sandboxToken": "claim-sandbox-token",
-                "cliAgentType": "claude_code", "platformEnvironment": {}, "connectorRuntimeTargets": [],
+                "cliAgentType": "claude_code", "platformEnvironment": {},
+            "contentBundles": {"format": "tar-gzip-v1", "skills": []}, "connectorRuntimeTargets": [],
             }).to_string()),
         }]).await;
         let provider = api_provider_for_test(
@@ -7244,6 +7255,7 @@ mod tests {
                     "cliAgentType": "claude_code",
                     "billableFirewalls": [],
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -7283,6 +7295,7 @@ mod tests {
                     "cliAgentType": "claude_code",
                     "billableFirewalls": [],
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -7339,6 +7352,7 @@ mod tests {
                     "cliAgentType": "claude_code",
                     "billableFirewalls": [],
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })
@@ -7353,6 +7367,7 @@ mod tests {
                     "cliAgentType": "claude_code",
                     "billableFirewalls": [],
                     "platformEnvironment": {},
+                    "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                     "connectorRuntimeTargets": []
                 }));
             })

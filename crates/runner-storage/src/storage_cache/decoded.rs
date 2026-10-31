@@ -305,7 +305,6 @@ impl DecodedCache {
             }
             drop(source);
             drop(source_lock);
-            verify_workflow_archive(&name, &version, &bytes)?;
             let files = decode(&bytes, &inner.cancel)?;
             disk::publish(
                 &inner.home,
@@ -348,7 +347,6 @@ impl DecodedCache {
         }
         let (name, version) = (name.to_owned(), version.to_owned());
         self.work(move |inner, memory| {
-            verify_workflow_archive(&name, &version, &bytes)?;
             let files = decode(&bytes, &inner.cancel)?;
             disk::publish(
                 &inner.home,
@@ -363,20 +361,6 @@ impl DecodedCache {
         .await
         .map(Option::flatten)
     }
-}
-
-fn verify_workflow_archive(name: &str, version: &str, bytes: &[u8]) -> io::Result<()> {
-    use sha2::{Digest, Sha256};
-    if let Some(expected) =
-        guest_contracts::workflow_attachments::archive_sha256(Some(name), Some(version))
-        && hex::encode(Sha256::digest(bytes)) != expected
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Workflow attachment archive integrity mismatch",
-        ));
-    }
-    Ok(())
 }
 
 fn cached_files(
@@ -865,47 +849,6 @@ mod tests {
         drop(next);
         drop(pinned);
         assert_eq!(cache.0.memory.available_permits(), CAPACITY);
-    }
-
-    #[tokio::test]
-    async fn workflow_attachment_cache_rejects_wrong_archive_bytes() {
-        use sha2::{Digest, Sha256};
-        let root = tempfile::tempdir().unwrap();
-        let home = HomePaths::with_root(root.path().to_owned());
-        let name = "workflow:7feae200-7a26-46f5-9dcb-12eaa0804414";
-        let archive = archive(b"verified attachment");
-        let correct = hex::encode(Sha256::digest(&archive));
-        let cache = DecodedCache::new(home.clone());
-        for version in ["0".repeat(64), correct.clone()] {
-            drop(
-                runner_host::lock::acquire(home.storage_lock(name, &version))
-                    .await
-                    .unwrap(),
-            );
-            let source = home
-                .storage_cache_dir(name, &version)
-                .join("archive.tar.gz");
-            std::fs::create_dir_all(source.parent().unwrap()).unwrap();
-            std::fs::write(source, &archive).unwrap();
-            let warmed = cache.warm_from_archive(name, &version).await;
-            if version == correct {
-                warmed.unwrap();
-                assert_eq!(
-                    cache
-                        .get_ready(name, &version)
-                        .await
-                        .unwrap()
-                        .unwrap()
-                        .files[0]
-                        .content,
-                    b"verified attachment"
-                );
-            } else {
-                assert_eq!(warmed.unwrap_err().kind(), io::ErrorKind::InvalidData);
-                assert!(cache.get_ready(name, &version).await.unwrap().is_none());
-            }
-        }
-        cache.shutdown().await;
     }
 
     #[tokio::test]

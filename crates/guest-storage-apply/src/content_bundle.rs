@@ -128,7 +128,7 @@ fn unpack_archive(
     let source = crate::source::verify_archive(
         crate::source::ArchiveSource::local(file, Some(archive.archive_bytes)),
         &archive.sha256,
-        Some(archive.archive_bytes),
+        archive.archive_bytes,
     )
     .map_err(|error| io::Error::other(error.to_string()))?;
     let mut paths = HashSet::<String>::new();

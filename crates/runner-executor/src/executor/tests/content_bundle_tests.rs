@@ -181,16 +181,14 @@ async fn cached_many_file_archive_crosses_real_guest_rpc_and_installs_complete_s
     )
     .unwrap();
     let mut context = minimal_context();
-    context.content_bundles = Some(
-        serde_json::from_value(serde_json::json!({
-            "format": "tar-gzip-v1", "skills": [{
-                "sha256": hash, "archiveBytes": archive.len(),
-                "downloadUrl": "https://unreachable.invalid/cached",
-                "mountPath": "/home/user/.codex/skills/example",
-            }],
-        }))
-        .unwrap(),
-    );
+    context.content_bundles = serde_json::from_value(serde_json::json!({
+        "format": "tar-gzip-v1", "skills": [{
+            "sha256": hash, "archiveBytes": archive.len(),
+            "downloadUrl": "https://unreachable.invalid/cached",
+            "mountPath": "/home/user/.codex/skills/example",
+        }],
+    }))
+    .unwrap();
     let overrides = Arc::new(MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let (mut outcome, _) = execute_job(
@@ -245,16 +243,14 @@ async fn failed_bundle_installation_prevents_agent_spawn() {
     )
     .unwrap();
     let mut context = minimal_context();
-    context.content_bundles = Some(
-        serde_json::from_value(serde_json::json!({
-            "format": "tar-gzip-v1", "skills": [{
-                "sha256": hash, "archiveBytes": archive.len(),
-                "downloadUrl": "https://unreachable.invalid/cached",
-                "mountPath": "/home/user/.codex/skills/example",
-            }],
-        }))
-        .unwrap(),
-    );
+    context.content_bundles = serde_json::from_value(serde_json::json!({
+        "format": "tar-gzip-v1", "skills": [{
+            "sha256": hash, "archiveBytes": archive.len(),
+            "downloadUrl": "https://unreachable.invalid/cached",
+            "mountPath": "/home/user/.codex/skills/example",
+        }],
+    }))
+    .unwrap();
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.add_exec_result_matcher(
         " --bundle-stdin",

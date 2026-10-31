@@ -9,116 +9,6 @@ use serde::Deserialize;
 pub struct StorageManifest {
     pub storages: Vec<StorageEntry>,
     pub artifacts: Vec<ArtifactEntry>,
-    /// Claim-selected identities awaiting an authenticated current-content read.
-    pub workflow_references: Vec<WorkflowSkillReference>,
-    /// Downloaded documents owned by this execution, including bootstrap recovery.
-    pub workflow_skills: Vec<WorkflowSkillDocument>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WorkflowSkillReference {
-    pub workflow_id: uuid::Uuid,
-    pub mount_path: String,
-}
-
-impl WorkflowSkillReference {
-    pub fn validate(&self) -> Result<(), String> {
-        validate_workflow_mount(&self.mount_path)
-    }
-}
-
-impl StorageManifest {
-    /// Resolve exactly the claimed identities before storage planning or spawn.
-    pub fn resolve_workflow_documents(
-        &mut self,
-        documents: Vec<WorkflowSkillDocument>,
-    ) -> Result<(), String> {
-        if !self.workflow_skills.is_empty() || documents.len() != self.workflow_references.len() {
-            return Err("Workflow download set does not match claim".into());
-        }
-        for (reference, document) in self.workflow_references.iter().zip(&documents) {
-            reference.validate()?;
-            document.validate()?;
-            if reference.workflow_id != document.workflow_id
-                || reference.mount_path != document.mount_path
-            {
-                return Err("Workflow download identity does not match claim".into());
-            }
-        }
-        for document in &documents {
-            if let Some(archive) = &document.attachments {
-                self.storages.push(StorageEntry {
-                    name: document.identity(),
-                    mount_path: document.mount_path.clone(),
-                    vas_storage_name: document.identity(),
-                    vas_version_id: document.version().to_owned(),
-                    archive_url: archive.archive_url.clone(),
-                    archive_size: Some(archive.archive_size),
-                });
-            }
-        }
-        self.workflow_references.clear();
-        self.workflow_skills = documents;
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WorkflowSkillDocument {
-    pub workflow_id: uuid::Uuid,
-    pub mount_path: String,
-    pub skill_md: String,
-    #[serde(deserialize_with = "required_nullable_archive")]
-    pub attachments: Option<WorkflowSkillArchive>,
-}
-
-fn required_nullable_archive<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<WorkflowSkillArchive>, D::Error> {
-    Option::<WorkflowSkillArchive>::deserialize(deserializer)
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WorkflowSkillArchive {
-    pub archive_url: String,
-    pub archive_size: u64,
-    pub archive_sha256: String,
-}
-
-impl WorkflowSkillDocument {
-    pub fn identity(&self) -> String {
-        format!("workflow:{}", self.workflow_id)
-    }
-    pub fn version(&self) -> &str {
-        self.attachments
-            .as_ref()
-            .map_or("empty", |a| a.archive_sha256.as_str())
-    }
-
-    pub fn validate(&self) -> Result<(), String> {
-        validate_workflow_mount(&self.mount_path)?;
-        if let Some(archive) = &self.attachments {
-            let url = url::Url::parse(&archive.archive_url)
-                .map_err(|_| "Invalid Workflow attachment URL")?;
-            if url.scheme() != "https"
-                || url.host_str().is_none()
-                || !url.username().is_empty()
-                || url.password().is_some()
-                || archive.archive_size == 0
-                || archive.archive_sha256.len() != 64
-                || !archive
-                    .archive_sha256
-                    .bytes()
-                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-            {
-                return Err("Invalid Workflow attachment archive".into());
-            }
-        }
-        Ok(())
-    }
 }
 
 pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
@@ -169,8 +59,6 @@ pub struct ArtifactEntry {
 #[serde(rename_all = "camelCase")]
 struct CanonicalStorageManifest {
     storage_mounts: Vec<StorageMountEntry>,
-    #[serde(default)]
-    workflow_skills: Vec<WorkflowSkillReference>,
 }
 
 impl<'de> Deserialize<'de> for StorageManifest {
@@ -179,24 +67,7 @@ impl<'de> Deserialize<'de> for StorageManifest {
         D: serde::Deserializer<'de>,
     {
         let canonical = CanonicalStorageManifest::deserialize(deserializer)?;
-        let mut manifest =
-            normalize_storage_mounts(canonical.storage_mounts).map_err(serde::de::Error::custom)?;
-        let mut paths: HashSet<String> = manifest
-            .storages
-            .iter()
-            .map(|s| s.mount_path.clone())
-            .chain(manifest.artifacts.iter().map(|a| a.mount_path.clone()))
-            .collect();
-        for skill in &canonical.workflow_skills {
-            skill.validate().map_err(serde::de::Error::custom)?;
-            if !paths.insert(skill.mount_path.clone()) {
-                return Err(serde::de::Error::custom(
-                    "Duplicate Workflow skill mount path",
-                ));
-            }
-        }
-        manifest.workflow_references = canonical.workflow_skills;
-        Ok(manifest)
+        normalize_storage_mounts(canonical.storage_mounts).map_err(serde::de::Error::custom)
     }
 }
 
@@ -254,8 +125,6 @@ fn normalize_storage_mounts(
     Ok(StorageManifest {
         storages,
         artifacts,
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
     })
 }
 
@@ -270,33 +139,4 @@ fn validate_unique_mount_paths(storage_mounts: &[StorageMountEntry]) -> Result<(
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod workflow_tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn current_downloads_resolve_claimed_identities_into_archives_and_empty_directories() {
-        let workflow_id = uuid::Uuid::new_v4();
-        let documents: Vec<WorkflowSkillDocument> = serde_json::from_value(json!([
-                {"workflowId":workflow_id,"mountPath":"/home/user/.codex/skills/with-files","skillMd":"body","attachments":{"archiveUrl":"https://objects.example/archive.tar.gz","archiveSize":100,"archiveSha256":"a".repeat(64)}},
-                {"workflowId":uuid::Uuid::new_v4(),"mountPath":"/home/user/.codex/skills/no-files","skillMd":"empty","attachments":null}
-        ])).unwrap();
-        let mut manifest: StorageManifest = serde_json::from_value(json!({"storageMounts":[],"workflowSkills":documents.iter().map(|document|json!({"workflowId":document.workflow_id,"mountPath":document.mount_path})).collect::<Vec<_>>()})).unwrap();
-        manifest.resolve_workflow_documents(documents).unwrap();
-        assert_eq!(manifest.storages.len(), 1);
-        assert!(manifest.artifacts.is_empty());
-        assert_eq!(
-            manifest.storages[0].vas_storage_name,
-            format!("workflow:{workflow_id}")
-        );
-        let fingerprints =
-            crate::storage_fingerprints::StorageFingerprints::from_manifest(&manifest);
-        assert!(
-            fingerprints.storages["/home/user/.codex/skills/no-files"].vas_version_id()
-                == Some("empty")
-        );
-    }
 }

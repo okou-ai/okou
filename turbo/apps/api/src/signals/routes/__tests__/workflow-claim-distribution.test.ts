@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { runnersWorkflowDownloadContract } from "@okouai/api-contracts/contracts/runners";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
@@ -8,7 +7,6 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { runnersRoutes } from "../runners";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -243,7 +241,7 @@ test("re-evaluates private/public precedence without exposing another member's p
     instruction: "public body",
   });
   const other = bdd.user({ orgId: actor.orgId });
-  const foreignPrivate = await createWorkflow(other, agent.agentId, {
+  await createWorkflow(other, agent.agentId, {
     instruction: "foreign private body",
   });
   const run = await runs.createThreadRun(actor, {
@@ -266,16 +264,6 @@ test("re-evaluates private/public precedence without exposing another member's p
       .get("SKILL.md")
       ?.toString(),
   ).toContain("private body");
-  const denied = await accept(
-    setupApp({ context, routes: runnersRoutes })(
-      runnersWorkflowDownloadContract,
-    ).get({
-      params: { runId: run.runId, workflowId: foreignPrivate.id },
-      headers: { authorization: `Bearer ${claim.sandboxToken}` },
-    }),
-    [404],
-  );
-  expect(denied.body).toMatchObject({ error: { code: "NOT_FOUND" } });
   await finish(run.runId, claim.sandboxToken);
 });
 
@@ -367,125 +355,6 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
   expect(skillMd.endsWith(`${instruction.trim()}\n`)).toBeTruthy();
   expect(Buffer.byteLength(skillMd)).toBeGreaterThan(4.5 * 1024 * 1024);
   await finish(run.runId, claim.sandboxToken);
-});
-
-test("reads authoritative empty text and denies foreign, deleted and ended Run downloads", async () => {
-  const { actor, agent, group } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId);
-  const otherAgent = await bdd.createAgent(actor, {
-    displayName: "Another Workflow owner",
-  });
-  const foreignWorkflow = await createWorkflow(actor, otherAgent.agentId);
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Current download authorization",
-  });
-  await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
-  const client = setupApp({ context, routes: runnersRoutes })(
-    runnersWorkflowDownloadContract,
-  );
-  const auth = { authorization: `Bearer ${claim.sandboxToken}` };
-  await accept(
-    client.get({
-      headers: auth,
-      params: { runId: run.runId, workflowId: foreignWorkflow.id },
-    }),
-    [404],
-  );
-  await accept(
-    client.get({
-      headers: auth,
-      params: { runId: randomUUID(), workflowId: workflow.id },
-    }),
-    [404],
-  );
-  await accept(
-    client.get({
-      headers: {},
-      params: { runId: run.runId, workflowId: workflow.id },
-    }),
-    [401],
-  );
-  await accept(
-    detailClient().update({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-      body: { instruction: "", files: [] },
-    }),
-    [200],
-  );
-  const empty = await accept(
-    client.get({
-      headers: auth,
-      params: { runId: run.runId, workflowId: workflow.id },
-    }),
-    [200],
-  );
-  expect(empty.body).toStrictEqual({
-    workflowId: workflow.id,
-    skillMd: `---\nname: ${workflow.name}\ndescription: ${workflow.name}\n---\n`,
-    attachments: null,
-  });
-  await accept(
-    detailClient().delete({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-    }),
-    [204],
-  );
-  await accept(
-    client.get({
-      headers: auth,
-      params: { runId: run.runId, workflowId: workflow.id },
-    }),
-    [404],
-  );
-  const survivingWorkflow = await createWorkflow(actor, agent.agentId);
-  await runs.downloadWorkflow(
-    run.runId,
-    survivingWorkflow.id,
-    claim.sandboxToken,
-  );
-  await finish(run.runId, claim.sandboxToken);
-  await accept(
-    client.get({
-      headers: auth,
-      params: { runId: run.runId, workflowId: survivingWorkflow.id },
-    }),
-    [404],
-  );
-});
-
-test("downloads authoritative empty attachments after a clear", async () => {
-  const { actor, agent, group } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "keep.md", content: "claimed attachment" }],
-  });
-  const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Use workflows",
-  });
-  await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
-  expect(
-    (await runs.downloadWorkflow(run.runId, workflow.id, claim.sandboxToken))
-      .attachments,
-  ).not.toBeNull();
-  await accept(
-    detailClient().update({
-      headers: headers(actor),
-      params: { workflowId: workflow.id },
-      body: { files: [] },
-    }),
-    [200],
-  );
-  expect(
-    (await runs.downloadWorkflow(run.runId, workflow.id, claim.sandboxToken))
-      .attachments,
-  ).toBeNull();
-  await finish(run.runId, claim.sandboxToken);
-  await bdd.deleteAgent(actor, agent.agentId);
 });
 
 test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {

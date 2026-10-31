@@ -112,6 +112,7 @@ readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600
 # #44189 prepared immutable content publishers and the hash-addressed Runner reader.
 # Rollback starts Runner before API, so both artifacts must retain that preparation.
 readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb2ae
+readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
@@ -836,12 +837,27 @@ if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT" "$
   fail "Rollback target predates the database-only Agent instructions reader: ${AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT}."
 fi
 
+# Hash-only Runners cannot execute claims from an inline/document API producer.
+# Read the activation floor from current main, independently of the Runner reader floor.
+if ! content_bundle_reference_only_api_commit=$(git show "origin/main:${CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH}"); then
+  fail "Cannot read the reference-only content bundle API rollback floor from main."
+fi
+if [[ ! "$content_bundle_reference_only_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid reference-only content bundle API rollback floor."
+fi
+if ! git merge-base --is-ancestor "$content_bundle_reference_only_api_commit" origin/main; then
+  fail "Reference-only content bundle API rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$content_bundle_reference_only_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates reference-only content bundle claims: ${content_bundle_reference_only_api_commit}."
+fi
+
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates immutable content bundle publication: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
 fi
 
 # Reference-only claims require the corrected archive reader. Keep the API
-# publisher floor independent: an older publisher can still serve this Runner.
+# producer floor independent of the selected Runner reader artifact.
 content_bundle_archive_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- "$CONTENT_BUNDLE_ARCHIVE_READER_PATH" | sed -n '1p')
 if [[ ! "$content_bundle_archive_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then

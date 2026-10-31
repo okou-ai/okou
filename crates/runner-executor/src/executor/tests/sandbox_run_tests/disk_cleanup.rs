@@ -642,7 +642,7 @@ async fn uncertain_bootstrap_write_is_not_replayed() {
 }
 
 #[tokio::test]
-async fn inline_instruction_enospc_recovers_before_private_inputs_and_agent_start() {
+async fn bootstrap_enospc_recovers_before_private_inputs_and_agent_start() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -652,8 +652,7 @@ async fn inline_instruction_enospc_recovers_before_private_inputs_and_agent_star
     full_filesystem(&overrides, DiskCleanupFilesystem::Home);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 256 * 1024 * 1024);
     let factory = retiring_factory(Arc::clone(&overrides));
-    let mut context = minimal_context();
-    context.agent_instructions = Some("Preserve these current instructions".into());
+    let context = minimal_context();
 
     let outcome = run_new_sandbox_outcome(&factory, &context, &config, &default_params())
         .await
@@ -664,11 +663,7 @@ async fn inline_instruction_enospc_recovers_before_private_inputs_and_agent_star
     let writes = overrides.private_write_files_calls();
     assert_eq!(writes.len(), 2);
     assert_eq!(writes[0].files, writes[1].files);
-    assert_eq!(writes[0].files.len(), 4);
-    assert_eq!(
-        writes[1].files[0].content,
-        context.agent_instructions.as_ref().unwrap().as_bytes()
-    );
+    assert_eq!(writes[0].files.len(), 3);
     assert_eq!(overrides.start_agent_process_calls().len(), 1);
     assert_eq!(cleanup_calls(&overrides).len(), 1);
 }
