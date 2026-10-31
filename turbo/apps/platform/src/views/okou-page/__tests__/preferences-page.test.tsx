@@ -171,21 +171,21 @@ test("Cookie theme and account-backed color theme are restored and saved", async
   expectSelected(getFastRole("button", selectedAppearance));
   expect(document.documentElement).toHaveAttribute("data-theme", resolvedTheme);
 
-  click(getFastRole("button", "Deep lagoon", colorTheme));
+  click(getFastRole("button", "Halloween", colorTheme));
 
   await waitFor(() => {
-    expect(updates).toContainEqual({ colorTheme: "deep-lagoon" });
-    expectSelected(getFastRole("button", "Deep lagoon", colorTheme));
+    expect(updates).toContainEqual({ colorTheme: "halloween" });
+    expectSelected(getFastRole("button", "Halloween", colorTheme));
   });
   expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   expect(document.documentElement).toHaveAttribute(
     "data-color-theme",
-    "deep-lagoon",
+    "halloween",
   );
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.dark; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
-  expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|deep-lagoon/u);
+  expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|halloween/u);
 });
 
 test("A workspace without a saved color theme starts on the default palette", async () => {

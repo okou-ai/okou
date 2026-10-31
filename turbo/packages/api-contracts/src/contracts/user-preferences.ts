@@ -45,6 +45,7 @@ export const COLOR_THEMES = [
   "blue-horizon",
   "daydream",
   "deep-lagoon",
+  "halloween",
 ] as const;
 export const colorThemeSchema = zEnum(COLOR_THEMES);
 export type ColorTheme = zInfer<typeof colorThemeSchema>;

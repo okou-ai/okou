@@ -91,7 +91,7 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
         sendMode: "cmd-enter",
         cloudBrowserEnabledByDefault: false,
         theme: "dark",
-        colorTheme: "golden-hour",
+        colorTheme: "halloween",
         pinnedAgentIds: [
           secondPinnedAgentId,
           firstPinnedAgentId,
@@ -108,7 +108,7 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
       sendMode: "cmd-enter",
       cloudBrowserEnabledByDefault: false,
       theme: "dark",
-      colorTheme: "golden-hour",
+      colorTheme: "halloween",
       captureNetworkBodiesRemaining: 3,
     });
     const rereadPreferences = await api.readPreferences(admin);

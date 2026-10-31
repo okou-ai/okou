@@ -871,6 +871,23 @@ body {
   --okou-color-theme-ambient-companion-dark: 13.2%;
 }
 
+/* Pumpkin fills with a violet companion and neutral tint. The dark fill lifts
+   the orange and switches to Ink so its label retains the same contrast floor. */
+[data-color-theme="halloween"] {
+  --okou-color-theme-primary: 24 84% 43%;
+  --okou-color-theme-primary-foreground: 0 0% 100%;
+  --okou-color-theme-primary-dark: 27 100% 66%;
+  --okou-color-theme-primary-dark-foreground: 40 4.3% 13.5%;
+  --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
+  --okou-color-theme-companion: #7752b5;
+  --okou-color-theme-hue: 270;
+  --okou-color-theme-ring: 24 74% 43%;
+  --okou-color-theme-ambient-anchor: 10.3%;
+  --okou-color-theme-ambient-companion: 8%;
+  --okou-color-theme-ambient-anchor-dark: 9.4%;
+  --okou-color-theme-ambient-companion-dark: 9.8%;
+}
+
 /* Card geometry and elevation. These are document-level runtime theme values, so
    they are owned at `:root` rather than inside the `.okou-app` scope, for the
    reason `--okou-composer-focus-veil` already records: a portaled surface is not
