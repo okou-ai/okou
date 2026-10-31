@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   browserSessionReclaimHint,
+  type BrowserSessionPanelState,
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -327,13 +328,31 @@ function PausedBrowserSession({
   );
 }
 
+function equalPanelSessions(
+  previous: BrowserSessionPanelState | null,
+  next: BrowserSessionPanelState | null,
+): boolean {
+  return (
+    previous === next ||
+    (previous !== null &&
+      next !== null &&
+      previous.status === next.status &&
+      previous.screenshotUrl === next.screenshotUrl &&
+      previous.liveUrl === next.liveUrl &&
+      previous.instanceId === next.instanceId &&
+      previous.windowId === next.windowId)
+  );
+}
+
 export function BrowserSessionPanel({
   signals,
   showPausedScreenshot = false,
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
-  const sessionLoadable = useLastLoadable(signals.panelSession$);
+  const sessionLoadable = useLastLoadable(signals.panelSession$, {
+    equalityFn: equalPanelSessions,
+  });
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
@@ -380,8 +399,8 @@ export function BrowserSessionPanel({
       <BrowserCdpViewer
         signals={signals}
         liveUrl={session.liveUrl}
-        instanceId={session.window?.instanceId}
-        windowId={session.window?.primaryWindowId}
+        instanceId={session.instanceId}
+        windowId={session.windowId}
         refined={refined}
         actions={actions}
         overlay={overlay}
