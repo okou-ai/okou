@@ -512,6 +512,183 @@ test("worker retirement invalidates clients and action bootstrap obtains a fresh
   }
 });
 
+async function pauseWorkerRestart(f, client) {
+  const { targetInfos } = await f.wire.request("Target.getTargets");
+  const worker = targetInfos.find((target) => {
+    return (
+      target.type === "service_worker" &&
+      new URL(target.url).hostname === f.runtimeId
+    );
+  });
+  const { sessionId } = await f.wire.request("Target.attachToTarget", {
+    targetId: worker.targetId,
+    flatten: true,
+  });
+  const paused = Promise.withResolvers();
+  let suspended = false;
+  const off = f.wire.onEvent((event) => {
+    if (event.sessionId === sessionId && event.method === "Debugger.paused") {
+      suspended = true;
+      paused.resolve(event.params.callFrames[0].callFrameId);
+      off();
+    }
+  });
+  const cdp = await f.context.newCDPSession(f.context.pages()[0]);
+  await cdp.send("ServiceWorker.enable");
+  const invalidated = new Promise((resolve) => {
+    client.signal.addEventListener("abort", resolve, { once: true });
+  });
+  await cdp.send("ServiceWorker.stopAllWorkers");
+  await invalidated;
+  // The retained inspector queues these commands for the new worker context.
+  // Nothing in the extension source or its Runtime responses is substituted.
+  const armed = Promise.all([
+    f.wire.request("Debugger.enable", {}, sessionId),
+    f.wire.request(
+      "Debugger.setBreakpointByUrl",
+      { lineNumber: 0, url: worker.url },
+      sessionId,
+    ),
+  ]);
+  const ready = Promise.all([paused.promise, armed]).then(([frame]) => {
+    return frame;
+  });
+  async function resume() {
+    if (!suspended) return;
+    suspended = false;
+    await f.wire.request("Debugger.resume", {}, sessionId);
+  }
+  return {
+    ready,
+    async bridgeType(frame) {
+      const result = await f.wire.request(
+        "Debugger.evaluateOnCallFrame",
+        {
+          callFrameId: frame,
+          expression: "typeof globalThis.__okouBrowser",
+          returnByValue: true,
+        },
+        sessionId,
+      );
+      return result.result.value;
+    },
+    resume,
+    async close() {
+      off();
+      await resume();
+      await cdp.detach();
+      await f.wire.request("Target.detachFromTarget", { sessionId });
+    },
+  };
+}
+
+for (const completion of ["resume", "abort", "timeout", "observer-loss"]) {
+  test(`a fresh client owns pending native worker startup until ${completion}`, async () => {
+    const f = await fixture();
+    const owner = new AbortController();
+    let startup;
+    let connecting;
+    let next;
+    try {
+      const previous = await f.client();
+      const epoch = (await previous.call("hello", {})).epoch;
+      const window = (await previous.call("listWindows", {})).value[0];
+      startup = await pauseWorkerRestart(f, previous);
+      const observing = Promise.withResolvers();
+      const hello = Promise.withResolvers();
+      let browserSession;
+      let readinessSession;
+      let running = false;
+      let helloCount = 0;
+      let prematureHello = false;
+      connecting = OkouBrowserClient.connect({
+        runtimeId: f.runtimeId,
+        signal: owner.signal,
+        ...(completion === "timeout" ? { readinessTimeoutMs: 500 } : {}),
+        transport: {
+          onEvent(listener) {
+            return f.wire.onEvent((event) => {
+              if (
+                event.sessionId === readinessSession &&
+                event.method === "ServiceWorker.workerVersionUpdated"
+              ) {
+                for (const version of event.params.versions) {
+                  if (new URL(version.scriptURL).hostname === f.runtimeId)
+                    running = version.runningStatus === "running";
+                }
+              }
+              listener(event);
+            });
+          },
+          async request(method, params, sessionId) {
+            const response = f.wire.request(method, params, sessionId);
+            if (method === "ServiceWorker.enable") {
+              readinessSession = sessionId;
+              observing.resolve("observing");
+            }
+            if (method === "Runtime.evaluate") {
+              helloCount++;
+              prematureHello ||= !running;
+              hello.resolve("hello");
+            }
+            const value = await response;
+            if (method === "Target.attachToBrowserTarget")
+              browserSession = value.sessionId;
+            return value;
+          },
+        },
+      });
+      // Observe rejection immediately while the native startup gate is held.
+      void connecting.catch(() => {});
+      const frame = await startup.ready;
+      expect(await startup.bridgeType(frame)).toBe("undefined");
+      expect(await Promise.race([observing.promise, hello.promise])).toBe(
+        "observing",
+      );
+      if (completion === "resume") {
+        await startup.resume();
+        next = await connecting;
+        expect(helloCount).toBe(1);
+        expect(prematureHello).toBe(false);
+        expect((await next.call("hello", {})).epoch).not.toBe(epoch);
+        expect(
+          (await next.call("getWindow", { windowId: window.id })).value.id,
+        ).toBe(window.id);
+        await next.close();
+        expect(f.wire.listeners.size).toBe(0);
+      } else {
+        if (completion === "abort") owner.abort();
+        if (completion === "observer-loss") {
+          await f.wire.request(
+            "Target.detachFromTarget",
+            { sessionId: readinessSession },
+            browserSession,
+          );
+        }
+        await expect(connecting).rejects.toHaveProperty("kind", "unavailable");
+        expect(helloCount).toBe(0);
+        expect(f.wire.listeners.size).toBe(0);
+        await startup.resume();
+        next = await f.client();
+        expect(
+          (await next.call("getWindow", { windowId: window.id })).value.id,
+        ).toBe(window.id);
+      }
+    } finally {
+      owner.abort();
+      await startup?.close();
+      await connecting?.then(
+        (client) => {
+          return client.close();
+        },
+        () => {},
+      );
+      await next?.close();
+      await f.close();
+    }
+  });
+}
+
 test("navigation during correlation rejects stale evidence; a lost close reply is never replayed", async () => {
   const f = await fixture();
   let guarded;

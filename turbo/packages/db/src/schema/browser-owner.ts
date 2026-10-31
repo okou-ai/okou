@@ -1,8 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  bigint,
   check,
-  foreignKey,
   index,
   pgTable,
   text,
@@ -22,6 +20,8 @@ export const browserOwnerProfiles = pgTable(
     providerProfileId: uuid("provider_profile_id").notNull(),
     instanceId: uuid("instance_id").notNull(),
     providerSessionId: uuid("provider_session_id"),
+    // Selected provider upload for this instance; older writers leave it unknown.
+    browserExtensionId: uuid("browser_extension_id"),
     status: varchar("status", { length: 16 })
       .$type<"creating" | "active" | "stopping" | "stopped">()
       .notNull(),
@@ -57,68 +57,6 @@ export const browserOwnerProfiles = pgTable(
         "browser_owner_profiles_deadline_check",
         sql`${table.creationExpiresAt} > ${table.createdAt}
           AND ${table.timeoutAt} >= ${table.creationExpiresAt}`,
-      ),
-    ];
-  },
-);
-
-/**
- * Empty physical relation retained for outgoing GA chat deletion/cron SQL.
- * Current API state uses browser_chat_sessions. Remove in #42932 after
- * serving and rollback consumers of the old statements have drained.
- */
-export const browserOwnerWindows = pgTable(
-  "browser_owner_windows",
-  {
-    chatThreadId: uuid("chat_thread_id").primaryKey(),
-    instanceId: uuid("instance_id").notNull(),
-    state: varchar("state", { length: 16 })
-      .$type<"active" | "closing">()
-      .notNull(),
-    primaryWindowId: bigint("primary_window_id", { mode: "number" }).notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-    // Live windows require an active parent. Closing windows retain cleanup
-    // identities without preventing a final whole-provider stop.
-    liveBrowserStatus: varchar("live_browser_status", { length: 16 })
-      .$type<"active">()
-      .generatedAlwaysAs(sql`CASE WHEN state = 'active' THEN 'active' END`),
-  },
-  (table) => {
-    return [
-      foreignKey({
-        name: "browser_owner_windows_instance_fk",
-        columns: [table.instanceId],
-        foreignColumns: [browserOwnerProfiles.instanceId],
-      }),
-      foreignKey({
-        name: "browser_owner_windows_active_instance_fk",
-        columns: [table.instanceId, table.liveBrowserStatus],
-        foreignColumns: [
-          browserOwnerProfiles.instanceId,
-          browserOwnerProfiles.status,
-        ],
-      }),
-      unique("uq_browser_owner_windows_native_window").on(
-        table.instanceId,
-        table.primaryWindowId,
-      ),
-      index("idx_browser_owner_windows_expiry").on(
-        table.state,
-        table.expiresAt,
-      ),
-      check(
-        "browser_owner_windows_state_check",
-        sql`${table.state} IN ('active', 'closing')`,
-      ),
-      check(
-        "browser_owner_windows_primary_check",
-        sql`${table.primaryWindowId} BETWEEN 0 AND 9007199254740991`,
-      ),
-      check(
-        "browser_owner_windows_deadline_check",
-        sql`${table.expiresAt} > ${table.createdAt}`,
       ),
     ];
   },

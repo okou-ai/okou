@@ -485,6 +485,18 @@ function HostedSiteShareBody({
   );
 }
 
+function HostedSiteSharePreload({
+  session,
+}: {
+  readonly session: HostedSiteShareSession;
+}) {
+  // Keep mounted-session preloads reactive without refreshing the visual frame.
+  useLoadable(session.copyUrl$);
+  useLoadable(session.visibility$);
+  useLoadable(session.banner$);
+  return null;
+}
+
 function HostedSiteSharePopover({
   session,
   ariaLabel,
@@ -497,12 +509,7 @@ function HostedSiteSharePopover({
   readonly saving: boolean;
   readonly children: ReactNode;
 }) {
-  // The preview mounts this menu before its popover, so preload the current URL here.
-  useLoadable(session.copyUrl$);
   const settings = useLoadable(session.hasSettings$);
-  // Preload permissions alongside the current address before Share opens.
-  useLoadable(session.visibility$);
-  useLoadable(session.banner$);
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
   const editing = useGet(session.editing$);
@@ -536,6 +543,7 @@ function HostedSiteSharePopover({
         }
       }}
     >
+      <HostedSiteSharePreload session={session} />
       <PopoverTrigger
         openOnHover={
           quickActions && !(settings.state === "hasData" && !settings.data)

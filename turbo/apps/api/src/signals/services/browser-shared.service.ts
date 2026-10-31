@@ -300,10 +300,14 @@ const publishSharedInstance$ = command(
     signal: AbortSignal,
   ): Promise<Result<Profile>> => {
     const { owner, profile } = args;
+    if (!profile.browserExtensionId) {
+      throw new Error("A new shared Browser has no extension upload identity");
+    }
     const creation = await settleIncludingAbort(
       createBrowserUseSession(
         {
           profileId: profile.providerProfileId,
+          extensionId: profile.browserExtensionId,
           proxyCountryCode: null,
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
           instanceId: profile.instanceId,

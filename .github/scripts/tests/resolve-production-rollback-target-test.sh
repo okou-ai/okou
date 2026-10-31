@@ -31,6 +31,8 @@ case "${1:-}" in
   merge-base)
     if [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
       [ "${MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc" ]; then
+      [ "${MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7171717171717171717171717171717171717171" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_WORKFLOW_ATTACHMENT_RUNNER_VALID:-1}" = "1" ]
@@ -266,6 +268,10 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *packages/core/src/official-workflow-artifact.ts* ]]; then
+      printf '%s\n' "${MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT-bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/content-bundle-archive-reader* ]]; then
       printf '%s\n' "${MOCK_CONTENT_BUNDLE_ARCHIVE_READER_COMMIT-7272727272727272727272727272727272727272}"
     elif [[ "$*" == *rollback-floors/workflow-attachments-direct* ]]; then
@@ -2058,6 +2064,19 @@ for run_reference_case in \
   [ ! -s "${tmp_dir}/run-reference-policy.output" ] || fail "invalid Run policy must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "invalid Run policy must reject before provider or host access"
+  fi
+done
+
+for official_artifact_case in \
+  "MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT=|Cannot resolve the merged Official Workflow artifact reader on main" \
+  "MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_COMMIT=invalid|Cannot resolve the merged Official Workflow artifact reader on main" \
+  "MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_VALID=0|Rollback target predates manifest-free Official Workflow artifacts"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${official_artifact_case#*|}" \
+    run_resolver "${tmp_dir}/official-workflow-artifact.output" "${official_artifact_case%%|*}"
+  [ ! -s "${tmp_dir}/official-workflow-artifact.output" ] || fail "incompatible Official publisher must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "Official artifact floor must reject before artifact or host access"
   fi
 done
 

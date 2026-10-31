@@ -2976,6 +2976,20 @@
       "when": 1793421342501,
       "tag": "1503_discard_preacceptance_shared_browser_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1504,
+      "version": "7",
+      "when": 1793440565800,
+      "tag": "1504_drop_browser_owner_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 1505,
+      "version": "7",
+      "when": 1793443672462,
+      "tag": "1505_browser_owner_instance_extension",
+      "breakpoints": true
     }
   ]
 }

@@ -1867,6 +1867,51 @@ describe("findMatchingPermissions", () => {
     expect(findMatchingPermissions("POST", "/", awsConfig)).toEqual([]);
   });
 
+  it.each([
+    { service: "s3", expected: { kind: "block", reason: "unsafe_path" } },
+    { service: "ec2", expected: { kind: "allow", permission: "ordinary" } },
+  ])(
+    "compares applicable URI alias routes with $service selectors",
+    ({ service, expected }) => {
+      const firewalls = [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://s3.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [
+                { name: "ordinary", rules: ["GET /files/a"] },
+                { name: "restricted", rules: ["GET /files/%61 AWS sigv4=s3"] },
+              ],
+            },
+          ],
+        },
+      ];
+      expect(
+        matchFirewallRequestDecision(
+          firewalls,
+          "GET",
+          "https://s3.example.com/files/a",
+          {
+            aws: {
+              allow: ["ordinary"],
+              deny: ["restricted"],
+              unknownPolicy: "deny",
+            },
+          },
+          { status: "absent" },
+          {
+            awsDiagnostic: {
+              context: { sigv4Service: service, query: [], headerNames: [] },
+            },
+          },
+        ),
+      ).toMatchObject(expected);
+    },
+  );
+
   it("keeps AWS rules fail-closed for default callers and supports opt-in diagnostics", () => {
     const firewalls = [
       {

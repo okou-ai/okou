@@ -2188,6 +2188,7 @@ const createAndClaimProviderInstance$ = command(
       createBrowserUseSession(
         {
           profileId: args.profile.providerProfileId,
+          extensionId: env("OKOU_BROWSER_USE_EXTENSION_ID"),
           proxyCountryCode: args.browser.proxyCountryCode,
           // Okou owns reclamation through the idle lease, so the provider only
           // needs to enforce the absolute upper bound.

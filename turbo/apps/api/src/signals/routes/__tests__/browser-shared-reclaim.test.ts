@@ -4,7 +4,9 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -117,7 +119,17 @@ describe("shared Browser expiry through public reopen", () => {
       const a = await f.start();
       const b = await f.start();
       const first = await open(a);
+      const replacementExtensionId = "22222222-2222-4222-8222-222222222222";
+      mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", replacementExtensionId);
       const sibling = await open(b);
+      const retainedViewer = await accept(
+        client().viewerConnection({
+          headers,
+          params: { threadId: b.threadId },
+        }),
+        [200],
+      );
+      expect(retainedViewer.body.extension.id).toBe(TEST_BROWSER_EXTENSION.id);
       navigate(
         f,
         first.window.primaryWindowId,
@@ -141,8 +153,14 @@ describe("shared Browser expiry through public reopen", () => {
       expect(reopened.window.instanceId).not.toBe(first.window.instanceId);
       expect(f.provider.createdIds).toHaveLength(1);
       expect(f.provider.sessionRequests).toStrictEqual([
-        expect.objectContaining({ profileId: f.provider.createdIds[0] }),
-        expect.objectContaining({ profileId: f.provider.createdIds[0] }),
+        expect.objectContaining({
+          profileId: f.provider.createdIds[0],
+          extensionIds: [TEST_BROWSER_EXTENSION.id],
+        }),
+        expect.objectContaining({
+          profileId: f.provider.createdIds[0],
+          extensionIds: [replacementExtensionId],
+        }),
       ]);
       expect(
         [...f.provider.native.targets.values()].map((page) => {
@@ -162,6 +180,14 @@ describe("shared Browser expiry through public reopen", () => {
         }),
       ).toStrictEqual(["https://b.example.test/recover"]);
       expect(f.provider.sessionRequests).toHaveLength(2);
+      const replacementViewer = await accept(
+        client().viewerConnection({
+          headers,
+          params: { threadId: b.threadId },
+        }),
+        [200],
+      );
+      expect(replacementViewer.body.extension.id).toBe(replacementExtensionId);
     });
   });
 

@@ -1018,15 +1018,7 @@ function ArtifactDialogResourceError({
   );
 }
 
-export function ArtifactPreviewBody({
-  artifact,
-  focusHtmlOnMount = true,
-  fullscreen,
-  imageCanvasSignals,
-  imageNavigation,
-  preview,
-  textMaxCharacters = 16_000,
-}: {
+interface ArtifactPreviewBodyProps {
   artifact: AttachmentArtifactMetadata | undefined;
   focusHtmlOnMount?: boolean;
   fullscreen: boolean;
@@ -1034,9 +1026,24 @@ export function ArtifactPreviewBody({
   imageNavigation?: ArtifactImageNavigationActions;
   preview: AttachmentLightboxState;
   textMaxCharacters?: number;
+}
+
+export function ArtifactPreviewBody(props: ArtifactPreviewBodyProps) {
+  return (
+    <ArtifactPreviewResourceBoundary preview={props.preview}>
+      <ArtifactPreviewContent {...props} />
+    </ArtifactPreviewResourceBoundary>
+  );
+}
+
+function ArtifactPreviewResourceBoundary({
+  children,
+  preview,
+}: {
+  children: ReactNode;
+  preview: AttachmentLightboxState;
 }) {
   const resource = useLoadable(preview.resourceUrl$);
-  const filename = artifactDialogFilename(preview);
 
   // Images keep their navigation region mounted across loading and errors.
   if (resource.state === "hasError" && preview.kind !== "image") {
@@ -1044,6 +1051,20 @@ export function ArtifactPreviewBody({
       <ArtifactDialogResourceError preview={preview} error={resource.error} />
     );
   }
+
+  return children;
+}
+
+function ArtifactPreviewContent({
+  artifact,
+  focusHtmlOnMount = true,
+  fullscreen,
+  imageCanvasSignals,
+  imageNavigation,
+  preview,
+  textMaxCharacters = 16_000,
+}: ArtifactPreviewBodyProps) {
+  const filename = artifactDialogFilename(preview);
 
   if (preview.kind === "image") {
     return (

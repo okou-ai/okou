@@ -1,15 +1,17 @@
 import { computed } from "ccstate";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
+import { agents } from "@okouai/db/schema/agent";
 
 import { notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
+import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   agentCustomConnectorGrants,
   agentEnabledConnectorSlugs,
-  agentExists,
+  visibleAgentIdentityCondition,
 } from "../services/agent-data.service";
 import { executableConnectorSlugs } from "../services/connector-action-resolver.service";
 
@@ -17,7 +19,13 @@ const agent$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const { id: agentId } = get(pathParamsOf(agentConnectorAccessContract.agent));
   const owner = { orgId: auth.orgId, userId: auth.userId, agentId };
-  if (!(await get(agentExists(owner)))) {
+  const [visibleAgent] = await get(db$)
+    .select({ id: agents.id })
+    .from(agents)
+    .where(visibleAgentIdentityCondition(owner))
+    .limit(1);
+  const exists = Boolean(visibleAgent);
+  if (!exists) {
     return notFound(`Agent not found: ${agentId}`);
   }
   const [slugs, grants] = await Promise.all([

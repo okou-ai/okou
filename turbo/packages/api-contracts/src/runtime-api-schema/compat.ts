@@ -309,6 +309,31 @@ function compareObjectSubset(
   const subsetRequired = new Set(readStringArray(subset.required) ?? []);
   const supersetRequired = new Set(readStringArray(superset.required) ?? []);
 
+  // An optional command field still carries an operation when present. Keeping
+  // the envelope open for GUI/helper data must not hide a Shell field rename.
+  const [production, current] = productionFirst(context, subset, superset);
+  if (
+    context.online.owner === "desktop" &&
+    production["x-desktop-stable-fields"] === true
+  ) {
+    const previousRequired = new Set(
+      readStringArray(production.required) ?? [],
+    );
+    const currentProperties = readProperties(current.properties);
+    for (const field of Object.keys(readProperties(production.properties))) {
+      if (previousRequired.has(field) || field in currentProperties) {
+        continue;
+      }
+      pushFinding(context, {
+        path: `${path}.${field}`,
+        kind: `${context.direction}-declared-field-removed`,
+        problem: `Declared Desktop command field ${field} was removed. Although optional, installed clients use this key when sending or executing the operation.`,
+        recommendation:
+          "Keep declaring and handling the installed Desktop field until a compatible client is published and the enforced floor excludes its old readers or writers.",
+      });
+    }
+  }
+
   for (const requiredField of supersetRequired) {
     if (!subsetRequired.has(requiredField)) {
       pushFinding(context, {

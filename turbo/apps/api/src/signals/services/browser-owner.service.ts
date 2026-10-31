@@ -58,6 +58,7 @@ type BrowserOwnerMutation =
   | {
       readonly kind: "allocate";
       readonly providerProfileId: string;
+      readonly browserExtensionId: string;
       readonly previousProfile: {
         readonly providerProfileId: string;
         readonly instanceId: string;
@@ -254,6 +255,9 @@ const allocateOwnerBrowser$ = command(
               providerSessionId: sql`NULL::uuid`
                 .mapWith(profiles.providerSessionId)
                 .as("provider_session_id"),
+              browserExtensionId: sql`${action.browserExtensionId}::uuid`
+                .mapWith(profiles.browserExtensionId)
+                .as("browser_extension_id"),
               status: sql`'creating'`.mapWith(profiles.status).as("status"),
               creationExpiresAt:
                 sql`${sql.param(creationExpiresAt, profiles.creationExpiresAt)}::timestamp`
@@ -319,6 +323,7 @@ const allocateOwnerBrowser$ = command(
             providerProfileId: action.providerProfileId,
             instanceId,
             providerSessionId: null,
+            browserExtensionId: action.browserExtensionId,
             status: "creating",
             creationExpiresAt,
             timeoutAt,

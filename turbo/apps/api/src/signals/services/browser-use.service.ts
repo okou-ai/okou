@@ -3888,6 +3888,7 @@ export async function deleteBrowserUseProfile(
 export async function createBrowserUseSession(
   args: {
     readonly profileId: string;
+    readonly extensionId: string;
     readonly proxyCountryCode: string | null;
     readonly timeoutMinutes: number;
     readonly instanceId?: string;
@@ -3906,7 +3907,7 @@ export async function createBrowserUseSession(
         browserScreenHeight: BROWSER_INITIAL_SCREEN_HEIGHT,
         allowResizing: true,
         enableRecording: false,
-        extensionIds: [env("OKOU_BROWSER_USE_EXTENSION_ID")],
+        extensionIds: [args.extensionId],
         metadata: args.instanceId
           ? { okouInstanceId: args.instanceId }
           : undefined,
