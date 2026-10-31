@@ -119,12 +119,6 @@ export function OnboardingSourcesFirstPromptPage() {
           <ProductBrandMark decorative size="hero" />
         </div>
         {promptInput}
-        <OnboardingOutputFormats
-          text={prompt}
-          output={output}
-          onSelect={selectOutput}
-          disabled={busy}
-        />
         <section
           aria-labelledby="onboarding-prompt-connectors-title"
           className="mt-3 space-y-3"
@@ -149,6 +143,12 @@ export function OnboardingSourcesFirstPromptPage() {
             variant="sheet"
           />
         </section>
+        <OnboardingOutputFormats
+          text={prompt}
+          output={output}
+          onSelect={selectOutput}
+          disabled={busy}
+        />
       </div>
     </OnboardingStepLayout>
   );
