@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { OFFICIAL_WORKFLOW_DEFINITION_MANIFEST_PATH } from "@okouai/core/official-workflow-artifact";
 
 import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
@@ -21,9 +22,6 @@ import { parseScheduledAtTime } from "@okouai/core/timezone";
 import { isValidTimeZone, safeSync, safeUrlParse } from "../utils";
 import { AUTONOMY_BUDGET_CEILING } from "../autonomy-budget-limit";
 import { calculateNextRun } from "./time-automation";
-
-export const OFFICIAL_WORKFLOW_DEFINITION_MANIFEST_PATH =
-  ".vm0/official-workflow-definition.json";
 
 interface ValidatedActiveDefinition {
   readonly source: ActiveSourceDefinition;
