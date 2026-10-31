@@ -1,13 +1,15 @@
-import {
-  browserOwnerProfiles as profiles,
-  browserOwnerWindows as windows,
-} from "@okouai/db/schema/browser-owner";
+import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   browserSessionInstances,
-  browserSessionTabSnapshots,
+  browserSessionScreenshotDeletions,
 } from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
+import {
+  browserChatWindow,
+  type BrowserChatWindow,
+} from "./browser-chat-session";
 import {
   and,
   eq,
@@ -17,6 +19,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  not,
   notExists,
   or,
 } from "drizzle-orm";
@@ -46,7 +49,7 @@ import {
 const BATCH_SIZE = 20;
 const L = logger("SharedBrowserReconcile");
 type Profile = typeof profiles.$inferSelect;
-type Window = typeof windows.$inferSelect;
+type Window = BrowserChatWindow;
 interface Owner {
   readonly orgId: string;
   readonly userId: string;
@@ -240,57 +243,43 @@ const claimSharedWindowRetirement$ = command(
         : null;
     signal.throwIfAborted();
     const at = nowDate();
-    const claimed = db.$with("retired_shared_window").as(
-      db
-        .update(windows)
-        .set({ state: "closing", updatedAt: at })
-        .where(
-          and(
-            identity,
-            eq(windows.state, "active"),
-            or(
-              lte(windows.expiresAt, at),
-              exists(
-                new QueryBuilder()
-                  .select({ id: profiles.id })
-                  .from(profiles)
-                  .where(
-                    and(exactProfile(profile), lte(profiles.timeoutAt, at)),
-                  ),
-              ),
-              orphanedWindow(),
-              nativeMissing ? eq(windows.state, "active") : undefined,
+    // Claim retirement and publish recovery in one UPDATE of this chat row.
+    const [closing] = await db
+      .update(windows)
+      .set({
+        state: "closing",
+        updatedAt: at,
+        ...(capture ? sharedSnapshotPublication(capture).set : {}),
+      })
+      .where(
+        and(
+          identity,
+          eq(windows.state, "active"),
+          or(
+            lte(windows.expiresAt, at),
+            exists(
+              new QueryBuilder()
+                .select({ id: profiles.id })
+                .from(profiles)
+                .where(and(exactProfile(profile), lte(profiles.timeoutAt, at))),
             ),
+            orphanedWindow(),
+            nativeMissing ? eq(windows.state, "active") : undefined,
           ),
-        )
-        .returning(),
-    );
-    // Enter closing and publish its complete snapshot in one statement.
-    // A concurrent loser cannot publish pages observed after partial close.
-    const publication = capture
-      ? sharedSnapshotPublication(capture, claimed)
-      : null;
-    const snapshot = publication
-      ? db
-          .$with("retired_shared_snapshot")
-          .as(
-            db
-              .insert(browserSessionTabSnapshots)
-              .select(publication.source)
-              .onConflictDoUpdate(publication.conflict)
-              .returning({ id: browserSessionTabSnapshots.chatThreadId }),
-          )
-      : null;
-    const [closing] = await (
-      snapshot ? db.with(claimed, snapshot) : db.with(claimed)
-    )
-      .select()
-      .from(claimed);
+        ),
+      )
+      .returning({
+        chatThreadId: windows.chatThreadId,
+        instanceId: windows.instanceId,
+        state: windows.state,
+        primaryWindowId: windows.primaryWindowId,
+        expiresAt: windows.expiresAt,
+      });
     signal.throwIfAborted();
     if (!closing) {
       return null;
     }
-    return closing;
+    return browserChatWindow(closing);
   },
 );
 
@@ -307,12 +296,19 @@ const retireSharedWindow$ = command(
       chatThreadId: target.window.chatThreadId,
     };
     const identity = sharedBrowserLifetime(owner, profile, target.window);
-    let [current] = await get(db$)
-      .select()
+    const [currentRow] = await get(db$)
+      .select({
+        chatThreadId: windows.chatThreadId,
+        instanceId: windows.instanceId,
+        state: windows.state,
+        primaryWindowId: windows.primaryWindowId,
+        expiresAt: windows.expiresAt,
+      })
       .from(windows)
       .where(identity)
       .limit(1);
     signal.throwIfAborted();
+    let current = currentRow ? browserChatWindow(currentRow) : null;
     if (!current) {
       return null;
     }
@@ -374,7 +370,14 @@ const retireSharedWindow$ = command(
     }
     // Recovery uses only an accepted snapshot, even if fresh capture failed.
     const [closed] = await db
-      .delete(windows)
+      .update(windows)
+      .set({
+        instanceId: null,
+        state: null,
+        primaryWindowId: null,
+        expiresAt: null,
+        updatedAt: nowDate(),
+      })
       .where(and(identity, eq(windows.state, "closing")))
       .returning({ id: windows.chatThreadId });
     signal.throwIfAborted();
@@ -461,7 +464,14 @@ const stopEmptySharedBrowser$ = command(
     );
     const closed = db.$with("closed_shared_browser_windows").as(
       db
-        .delete(windows)
+        .update(windows)
+        .set({
+          instanceId: null,
+          state: null,
+          primaryWindowId: null,
+          expiresAt: null,
+          updatedAt: nowDate(),
+        })
         .where(
           and(
             eq(windows.instanceId, candidate.instanceId),
@@ -553,10 +563,54 @@ const recoverSharedCreations$ = command(
   },
 );
 
+function sharedBrowserStopCondition(
+  owner: Owner | null,
+  closedInstances: readonly string[],
+  at: Date,
+) {
+  return and(
+    ownerScope(owner),
+    isNotNull(profiles.providerSessionId),
+    noWindows("active"),
+    or(
+      eq(profiles.status, "stopping"),
+      and(
+        eq(profiles.status, "active"),
+        or(
+          // Fresh setup keeps its deadline; final retirement stops immediately.
+          lte(profiles.creationExpiresAt, at),
+          inArray(profiles.instanceId, closedInstances),
+          exists(
+            new QueryBuilder()
+              .select({ id: windows.chatThreadId })
+              .from(windows)
+              .where(
+                and(
+                  eq(windows.instanceId, profiles.instanceId),
+                  eq(windows.state, "closing"),
+                ),
+              ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 const reconcileSharedWindows$ = command(
   async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
     const rows = await get(db$)
-      .select({ profile: profiles, window: windows, threadId: chatThreads.id })
+      .select({
+        profile: profiles,
+        window: {
+          chatThreadId: windows.chatThreadId,
+          instanceId: windows.instanceId,
+          state: windows.state,
+          primaryWindowId: windows.primaryWindowId,
+          expiresAt: windows.expiresAt,
+        },
+        threadId: chatThreads.id,
+      })
       .from(windows)
       .innerJoin(profiles, eq(profiles.instanceId, windows.instanceId))
       .leftJoin(chatThreads, eq(chatThreads.id, windows.chatThreadId))
@@ -577,7 +631,12 @@ const reconcileSharedWindows$ = command(
     signal.throwIfAborted();
     const closedInstances = new Set<string>();
     let errors = 0;
-    for (const row of rows) {
+    for (const raw of rows) {
+      const binding = browserChatWindow(raw.window);
+      if (!binding) {
+        throw new Error("A bound Browser chat has no live window");
+      }
+      const row = { ...raw, window: binding };
       const result = await settleIncludingAbort(
         set(retireSharedWindow$, row, signal),
       );
@@ -615,36 +674,7 @@ const reconcileSharedWindows$ = command(
     const empty = await get(db$)
       .select()
       .from(profiles)
-      .where(
-        and(
-          ownerScope(owner),
-          isNotNull(profiles.providerSessionId),
-          noWindows("active"),
-          or(
-            eq(profiles.status, "stopping"),
-            and(
-              eq(profiles.status, "active"),
-              or(
-                // Give a newly published instance its existing setup window.
-                // Normal final retirement stops immediately in this call.
-                lte(profiles.creationExpiresAt, nowDate()),
-                inArray(profiles.instanceId, [...closedInstances]),
-                exists(
-                  new QueryBuilder()
-                    .select({ id: windows.chatThreadId })
-                    .from(windows)
-                    .where(
-                      and(
-                        eq(windows.instanceId, profiles.instanceId),
-                        eq(windows.state, "closing"),
-                      ),
-                    ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      )
+      .where(sharedBrowserStopCondition(owner, [...closedInstances], nowDate()))
       .orderBy(profiles.updatedAt)
       .limit(BATCH_SIZE);
     signal.throwIfAborted();
@@ -676,6 +706,79 @@ const reconcileSharedWindows$ = command(
   },
 );
 
+/** Retain recovery until the chat itself is deleted, then hand off its preview. */
+const deleteOrphanedBrowserChats$ = command(
+  async ({ set }, owner: Owner | null, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const scope = owner
+      ? and(eq(windows.orgId, owner.orgId), eq(windows.userId, owner.userId))
+      : undefined;
+    const candidates = db.$with("inactive_browser_chats").as(
+      db
+        .select({ id: windows.chatThreadId })
+        .from(windows)
+        .where(and(scope, isNull(windows.instanceId)))
+        .orderBy(windows.updatedAt)
+        .limit(BATCH_SIZE),
+    );
+    const removed = db.$with("deleted_orphaned_browser_chats").as(
+      db
+        .delete(windows)
+        .where(
+          and(
+            scope,
+            isNull(windows.instanceId),
+            orphanedWindow(),
+            inArray(
+              windows.chatThreadId,
+              new QueryBuilder().select().from(candidates),
+            ),
+          ),
+        )
+        .returning({
+          screenshotObjectKey: windows.screenshotObjectKey,
+          chatThreadId: windows.chatThreadId,
+          updatedAt: windows.updatedAt,
+        }),
+    );
+    // Rotate retained chats in the same bounded observation batch. Its live
+    // parent predicate is disjoint from deletion, so each row is mutated once.
+    const retained = db.$with("retained_browser_chats").as(
+      db
+        .update(windows)
+        .set({ updatedAt: nowDate() })
+        .where(
+          and(
+            scope,
+            isNull(windows.instanceId),
+            not(orphanedWindow()),
+            inArray(
+              windows.chatThreadId,
+              new QueryBuilder().select().from(candidates),
+            ),
+          ),
+        )
+        .returning({ id: windows.chatThreadId }),
+    );
+    await db
+      .with(candidates, removed, retained)
+      .insert(browserSessionScreenshotDeletions)
+      .select(
+        new QueryBuilder()
+          .select({
+            objectKey: removed.screenshotObjectKey,
+            chatThreadId: removed.chatThreadId,
+            createdAt: removed.updatedAt,
+          })
+          .from(removed)
+          .where(isNotNull(removed.screenshotObjectKey))
+          .getSQL(),
+      )
+      .onConflictDoNothing();
+    signal.throwIfAborted();
+  },
+);
+
 /** Independent creation recovery cannot hold up existing windows or their final stop. */
 export const reconcileSharedBrowsers$ = command(
   async ({ set }, owner: Owner | null, signal: AbortSignal) => {
@@ -684,6 +787,7 @@ export const reconcileSharedBrowsers$ = command(
       set(reconcileSharedWindows$, owner, signal),
     ]);
     signal.throwIfAborted();
+    await set(deleteOrphanedBrowserChats$, owner, signal);
     return {
       checked: creation.checked + windows.checked,
       stopped: creation.stopped + windows.stopped,

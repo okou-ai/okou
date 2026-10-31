@@ -206,6 +206,62 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("shared-window native Browser input", () => {
+  it("requires a shared window before creating input after shared mode is enabled", async () => {
+    const f = await fixture(false);
+    await f.owned.run(async () => {
+      f.owned.ownsFeatureSwitches();
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserNativeInput]: true,
+        [FeatureSwitchKey.BrowserSharedOwner]: false,
+      });
+      const a = await f.start();
+      await open(a);
+      const [providerSessionId] = f.provider.sessionIds;
+      const [page] = f.provider.native.targets.values();
+      if (!providerSessionId || !page) {
+        throw new Error("Expected a live legacy Browser");
+      }
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+      });
+      let legacyUnavailable = true;
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
+          return legacyUnavailable
+            ? HttpResponse.json(
+                { detail: "Legacy provider unavailable" },
+                { status: 503 },
+              )
+            : undefined;
+        }),
+      );
+      const response = await client().create({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(a.claim)}` },
+        body: {
+          kind: "input",
+          title: "Complete the website form",
+          reason: "The website requires a password",
+          callbackPrompt: "Continue after entering the password",
+          pageTargetId: page.targetId,
+          fields: [
+            {
+              key: "password",
+              label: "Password",
+              fieldKind: "password",
+              required: true,
+              backendNodeId: 42,
+            },
+          ],
+        },
+      });
+      legacyUnavailable = false;
+      expect(response).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_BROWSER_NOT_LIVE" } },
+      });
+    });
+  });
+
   it("preserves a newer window lease when input requests arrive with older timestamps", async () => {
     const f = await fixture();
     await f.owned.run(async () => {

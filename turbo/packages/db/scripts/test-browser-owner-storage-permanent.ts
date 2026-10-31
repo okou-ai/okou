@@ -3,10 +3,8 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
-import {
-  browserOwnerProfiles,
-  browserOwnerWindows,
-} from "../src/schema/browser-owner";
+import { browserOwnerProfiles } from "../src/schema/browser-owner";
+import { browserChatSessions } from "../src/schema/browser-chat-session";
 
 /** Current schema integrity; caller-level concurrency lives in Runner route tests. */
 export async function validatePermanentBrowserOwnerStorage(
@@ -84,10 +82,10 @@ export async function validatePermanentBrowserOwnerStorage(
 
     await assert.rejects(
       client.query(
-        "INSERT INTO browser_owner_windows (instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, 'active', 0, $3)",
-        [instanceId, chatThreadId, timeoutAt],
+        "INSERT INTO browser_chat_sessions (instance_id, chat_thread_id, state, primary_window_id, expires_at, org_id, user_id) VALUES ($1, $2, 'active', 0, $3, $4, $4)",
+        [instanceId, chatThreadId, timeoutAt, orgId],
       ),
-      { code: "23503", constraint: "browser_owner_windows_active_instance_fk" },
+      { code: "23503", constraint: "browser_chat_sessions_active_instance_fk" },
     );
 
     await db
@@ -105,7 +103,12 @@ export async function validatePermanentBrowserOwnerStorage(
       ),
       { code: "23505", constraint: "uq_browser_owner_profiles_session" },
     );
-    await db.insert(browserOwnerWindows).values({
+    await db.insert(browserChatSessions).values({
+      orgId,
+      userId: orgId,
+      name: "Saved chat",
+      encryptedTabUrls: "encrypted-urls",
+      tabUrlsCapturedAt: now,
       instanceId,
       chatThreadId,
       state: "active",
@@ -114,43 +117,71 @@ export async function validatePermanentBrowserOwnerStorage(
     });
     await assert.rejects(
       client.query(
-        "INSERT INTO browser_owner_windows (instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, 'active', 0, $3)",
-        [instanceId, chatThreadId, timeoutAt],
+        "INSERT INTO browser_chat_sessions (instance_id, chat_thread_id, state, primary_window_id, expires_at, org_id, user_id) VALUES ($1, $2, 'active', 0, $3, $4, $4)",
+        [instanceId, chatThreadId, timeoutAt, orgId],
       ),
-      { code: "23505", constraint: "browser_owner_windows_pkey" },
+      { code: "23505", constraint: "browser_chat_sessions_pkey" },
     );
     await assert.rejects(
       client.query(
-        "INSERT INTO browser_owner_windows (instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, 'active', 0, $3)",
-        [instanceId, randomUUID(), timeoutAt],
+        "INSERT INTO browser_chat_sessions (instance_id, chat_thread_id, state, primary_window_id, expires_at, org_id, user_id) VALUES ($1, $2, 'active', 0, $3, $4, $4)",
+        [instanceId, randomUUID(), timeoutAt, orgId],
       ),
-      { code: "23505", constraint: "uq_browser_owner_windows_native_window" },
+      { code: "23505", constraint: "uq_browser_chat_sessions_native_window" },
     );
     await assert.rejects(
       client.query(
-        "UPDATE browser_owner_windows SET primary_window_id = -1 WHERE chat_thread_id = $1",
+        "UPDATE browser_chat_sessions SET primary_window_id = -1 WHERE chat_thread_id = $1",
         [chatThreadId],
       ),
-      { code: "23514", constraint: "browser_owner_windows_primary_check" },
+      { code: "23514", constraint: "browser_chat_sessions_primary_check" },
     );
     await assert.rejects(
       client.query(
-        "UPDATE browser_owner_windows SET expires_at = created_at WHERE chat_thread_id = $1",
+        "UPDATE browser_chat_sessions SET expires_at = created_at WHERE chat_thread_id = $1",
         [chatThreadId],
       ),
-      { code: "23514", constraint: "browser_owner_windows_deadline_check" },
+      { code: "23514", constraint: "browser_chat_sessions_deadline_check" },
+    );
+    for (const assignment of [
+      "state = NULL",
+      "instance_id = NULL",
+      "primary_window_id = NULL",
+      "expires_at = NULL",
+    ]) {
+      await assert.rejects(
+        client.query(
+          `UPDATE browser_chat_sessions SET ${assignment} WHERE chat_thread_id = $1`,
+          [chatThreadId],
+        ),
+        { code: "23514", constraint: "browser_chat_sessions_binding_check" },
+      );
+    }
+    await assert.rejects(
+      client.query(
+        "UPDATE browser_chat_sessions SET tab_urls_captured_at = NULL WHERE chat_thread_id = $1",
+        [chatThreadId],
+      ),
+      { code: "23514", constraint: "browser_chat_sessions_urls_check" },
+    );
+    await assert.rejects(
+      client.query(
+        "UPDATE browser_chat_sessions SET screenshot_object_key = 'incomplete-preview' WHERE chat_thread_id = $1",
+        [chatThreadId],
+      ),
+      { code: "23514", constraint: "browser_chat_sessions_screenshot_check" },
     );
     await assert.rejects(
       client.query(
         "UPDATE browser_owner_profiles SET status = 'stopping' WHERE id = $1",
         [profileId],
       ),
-      { code: "23503", constraint: "browser_owner_windows_active_instance_fk" },
+      { code: "23503", constraint: "browser_chat_sessions_active_instance_fk" },
     );
     await db
-      .update(browserOwnerWindows)
+      .update(browserChatSessions)
       .set({ state: "closing" })
-      .where(eq(browserOwnerWindows.chatThreadId, chatThreadId));
+      .where(eq(browserChatSessions.chatThreadId, chatThreadId));
     // Retiring authority is not proof of native closure. Its identity remains
     // while the provider is stopped, without retaining live admission.
     await db
@@ -168,11 +199,17 @@ export async function validatePermanentBrowserOwnerStorage(
         "UPDATE browser_owner_profiles SET instance_id = $1 WHERE id = $2",
         [replacementId, profileId],
       ),
-      { code: "23503", constraint: "browser_owner_windows_instance_fk" },
+      { code: "23503", constraint: "browser_chat_sessions_instance_fk" },
     );
     await db
-      .delete(browserOwnerWindows)
-      .where(eq(browserOwnerWindows.chatThreadId, chatThreadId));
+      .update(browserChatSessions)
+      .set({
+        instanceId: null,
+        state: null,
+        primaryWindowId: null,
+        expiresAt: null,
+      })
+      .where(eq(browserChatSessions.chatThreadId, chatThreadId));
     await db
       .update(browserOwnerProfiles)
       .set({ status: "stopped" })
@@ -188,6 +225,14 @@ export async function validatePermanentBrowserOwnerStorage(
       .returning();
     assert.equal(replacement?.providerProfileId, providerProfileId);
     assert.equal(replacement?.instanceId, replacementId);
+    const [retained] = await db
+      .select()
+      .from(browserChatSessions)
+      .where(eq(browserChatSessions.chatThreadId, chatThreadId));
+    assert.equal(retained?.instanceId, null);
+    assert.equal(retained?.name, "Saved chat");
+    assert.equal(retained?.encryptedTabUrls, "encrypted-urls");
+    assert.equal(retained?.tabUrlsCapturedAt?.getTime(), now.getTime());
     const stale = await client.query(
       "UPDATE browser_owner_profiles SET status = 'stopped' WHERE id = $1 AND instance_id = $2 RETURNING id",
       [profileId, instanceId],
@@ -195,8 +240,8 @@ export async function validatePermanentBrowserOwnerStorage(
     assert.equal(stale.rowCount, 0);
   } finally {
     await db
-      .delete(browserOwnerWindows)
-      .where(eq(browserOwnerWindows.instanceId, instanceId));
+      .delete(browserChatSessions)
+      .where(eq(browserChatSessions.chatThreadId, chatThreadId));
     await db
       .delete(browserOwnerProfiles)
       .where(eq(browserOwnerProfiles.id, profileId));

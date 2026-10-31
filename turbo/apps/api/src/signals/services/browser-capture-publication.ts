@@ -1,4 +1,4 @@
-import { eq, lt, or, sql } from "drizzle-orm";
+import { eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 /** A capture may refresh its observed value or supersede an older capture.
@@ -16,6 +16,7 @@ export function browserCapturePublication(input: {
 }) {
   return {
     canReplace: or(
+      isNull(input.value),
       input.previousValue === null
         ? sql`false`
         : eq(input.value, input.previousValue),

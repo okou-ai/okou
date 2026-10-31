@@ -192,6 +192,48 @@ test("reclaims replaced screenshots and their file access while the current prev
   });
 });
 
+test("retains the accepted screenshot after the shared owner and window retire", async () => {
+  const f = await fixture();
+  await f.owned.run(async () => {
+    installBrowserWindowContentCommands(f.provider.native);
+    const a = await f.start();
+    await open(a);
+    const s3 = storage();
+    await capture(a);
+    const [providerId] = f.provider.sessionIds;
+    if (!providerId) {
+      throw new Error("Expected the shared owner's live provider");
+    }
+    f.provider.sessionIds.delete(providerId);
+    f.provider.stoppedSessionIds.add(providerId);
+    f.provider.native.targets.clear();
+    await accept(
+      client().leaseByThread({
+        headers,
+        params: { threadId: a.threadId },
+        body: {},
+      }),
+      [409],
+    );
+    const inactive = await view(a);
+    expect(inactive.window).toBeUndefined();
+    if (!inactive.screenshotUrl) {
+      throw new Error("Expected the inactive chat's accepted screenshot");
+    }
+    const key = decodeURIComponent(
+      new URL(inactive.screenshotUrl).pathname.slice(1),
+    );
+    await sweep();
+    expect(s3.bytes(key)?.toString()).toMatch(/^preview:/u);
+    expect((await view(a)).screenshotUrl).toBe(inactive.screenshotUrl);
+    await createChatFilesBddApi(context).requestWebFileUrl(
+      f.owned.actor,
+      key.split("/")[1] ?? "",
+      [200],
+    );
+  });
+});
+
 test("reclaims a deleted chat's final screenshot without removing an active sibling", async () => {
   const f = await fixture();
   await f.owned.run(async () => {

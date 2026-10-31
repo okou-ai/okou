@@ -1,20 +1,14 @@
-import { randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
   and,
   desc,
   eq,
-  exists,
   getTableColumns,
   gt,
   inArray,
   isNotNull,
-  isNull,
-  notExists,
   or,
-  sql,
 } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   BROWSER_MAX_SCREEN_HEIGHT,
   BROWSER_MIN_SCREEN_HEIGHT,
@@ -28,15 +22,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
+import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
 import {
-  browserOwnerProfiles as profiles,
-  browserOwnerWindows as windows,
-} from "@okouai/db/schema/browser-owner";
-import {
-  browserSessions,
+  browserThreadProfiles,
   browserSessionInstances,
-  browserSessionScreenshots,
-  browserSessionScreenshotDeletions,
 } from "@okouai/db/schema/browser-session";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { env } from "../../lib/env";
@@ -56,8 +46,12 @@ import {
 import { allocateBrowserOwnerProfile$ } from "./browser-owner-profile.service";
 import { createBrowserOwnerWindow$ } from "./browser-owner-window.service";
 import {
-  ensureBrowserCapacity$,
-  loadBrowserScreenshotUrl$,
+  browserChatWindow,
+  type BrowserChatWindow,
+} from "./browser-chat-session";
+import {
+  ensureSharedBrowserCapacity$,
+  resolveBrowserScreenshotUrl$,
   captureAndStoreBrowserScreenshot$,
   type BrowserServiceError,
 } from "./browser.service";
@@ -90,8 +84,11 @@ interface SharedBrowserInput {
 type Result<T> =
   { readonly kind: "ok"; readonly value: T } | BrowserServiceError;
 type Profile = typeof profiles.$inferSelect;
-type Window = typeof windows.$inferSelect;
-type Metadata = typeof browserSessions.$inferSelect;
+type Window = BrowserChatWindow;
+type Metadata = Pick<
+  typeof windows.$inferSelect,
+  "chatThreadId" | "orgId" | "userId" | "name" | "createdAt" | "updatedAt"
+>;
 type Connection = { readonly browser: BrowserSession; readonly cdpUrl: string };
 const unavailable = (): BrowserServiceError => {
   return {
@@ -158,41 +155,39 @@ function liveSharedWindow(
     authorityStillCurrent(owner),
   );
 }
-function legacyBrowserPreview(
-  owner: BrowserPublicAuthority,
-  profile: Profile,
-  window: Window,
-) {
-  return new QueryBuilder()
-    .select({ objectKey: browserSessionScreenshots.objectKey })
-    .from(browserSessionScreenshots)
-    .where(
-      and(
-        eq(browserSessionScreenshots.chatThreadId, owner.chatThreadId),
-        exists(
-          new QueryBuilder()
-            .select({ id: windows.chatThreadId })
-            .from(windows)
-            .where(liveSharedWindow(owner, profile, window)),
+const loadSharedBrowserScreenshotUrl$ = command(
+  async (
+    { get, set },
+    owner: Pick<BrowserPublicAuthority, "orgId" | "userId" | "chatThreadId">,
+    signal: AbortSignal,
+  ) => {
+    const [chat] = await get(db$)
+      .select({
+        screenshotObjectKey: windows.screenshotObjectKey,
+        screenshotUrl: windows.screenshotUrl,
+      })
+      .from(windows)
+      .where(
+        and(
+          eq(windows.chatThreadId, owner.chatThreadId),
+          eq(windows.orgId, owner.orgId),
+          eq(windows.userId, owner.userId),
         ),
-        notExists(
-          new QueryBuilder()
-            .select({ id: browserSessions.id })
-            .from(browserSessions)
-            .where(
-              and(
-                eq(browserSessions.chatThreadId, owner.chatThreadId),
-                eq(browserSessions.orgId, owner.orgId),
-                eq(browserSessions.userId, owner.userId),
-                eq(browserSessions.status, "active"),
-                isNull(browserSessions.browserThreadProfileId),
-                isNull(browserSessions.browserProfileId),
-              ),
-            ),
-        ),
-      ),
-    );
-}
+      );
+    signal.throwIfAborted();
+    return chat?.screenshotObjectKey && chat.screenshotUrl
+      ? await set(
+          resolveBrowserScreenshotUrl$,
+          {
+            ...owner,
+            objectKey: chat.screenshotObjectKey,
+            url: chat.screenshotUrl,
+          },
+          signal,
+        )
+      : null;
+  },
+);
 function presentation(
   meta: Metadata,
   profile: Profile,
@@ -356,16 +351,20 @@ const provisionSharedInstance$ = command(
       .select({ id: browserSessionInstances.providerSessionId })
       .from(browserSessionInstances)
       .innerJoin(
-        browserSessions,
-        eq(browserSessions.chatThreadId, browserSessionInstances.chatThreadId),
+        browserThreadProfiles,
+        eq(
+          browserThreadProfiles.chatThreadId,
+          browserSessionInstances.chatThreadId,
+        ),
       )
       .where(
         and(
-          eq(browserSessions.orgId, args.owner.orgId),
-          eq(browserSessions.userId, args.owner.userId),
+          eq(browserThreadProfiles.orgId, args.owner.orgId),
+          eq(browserThreadProfiles.userId, args.owner.userId),
           inArray(browserSessionInstances.status, ["active", "stopping"]),
         ),
-      );
+      )
+      .limit(1);
     signal.throwIfAborted();
     if (old) {
       return {
@@ -376,7 +375,7 @@ const provisionSharedInstance$ = command(
       };
     }
     const capacity = await set(
-      ensureBrowserCapacity$,
+      ensureSharedBrowserCapacity$,
       args.owner.orgId,
       signal,
     );
@@ -448,11 +447,18 @@ const admitSharedWindow$ = command(
       return unavailable();
     }
     const [window] = await get(db$)
-      .select()
+      .select({
+        chatThreadId: windows.chatThreadId,
+        instanceId: windows.instanceId,
+        state: windows.state,
+        primaryWindowId: windows.primaryWindowId,
+        expiresAt: windows.expiresAt,
+      })
       .from(windows)
       .where(liveSharedWindow(args.owner, args.profile, result.window));
     signal.throwIfAborted();
-    return window ? { kind: "ok", value: window } : unavailable();
+    const binding = window ? browserChatWindow(window) : null;
+    return binding ? { kind: "ok", value: binding } : unavailable();
   },
 );
 
@@ -464,81 +470,23 @@ const publishSharedMetadata$ = command(
       readonly input: SharedBrowserInput;
       readonly profile: Profile;
       readonly window: Window;
-      readonly previous: Metadata | null;
     },
     signal: AbortSignal,
   ): Promise<Result<Metadata>> => {
-    const { owner, input, profile, window, previous } = args;
+    const { owner, input, profile, window } = args;
     const db = set(writeDb$);
-    if (
-      !previous ||
-      previous.browserThreadProfileId ||
-      previous.browserProfileId
-    ) {
-      // Another first open can publish shared metadata after this request's read.
-      // Match the selected immutable key so a concurrent replacement survives.
-      const removed = db.$with("previous_browser_preview").as(
-        db
-          .delete(browserSessionScreenshots)
-          .where(
-            and(
-              eq(browserSessionScreenshots.chatThreadId, owner.chatThreadId),
-              inArray(
-                browserSessionScreenshots.objectKey,
-                legacyBrowserPreview(owner, profile, window),
-              ),
-            ),
-          )
-          .returning(),
-      );
-      await db
-        .with(removed)
-        .insert(browserSessionScreenshotDeletions)
-        .select(
-          new QueryBuilder()
-            .select({
-              objectKey: removed.objectKey,
-              chatThreadId: removed.chatThreadId,
-              createdAt: removed.createdAt,
-            })
-            .from(removed),
-        )
-        .onConflictDoNothing();
-      signal.throwIfAborted();
-    }
     const [meta] = await db
-      .insert(browserSessions)
-      .values({
-        id: randomUUID(),
-        orgId: owner.orgId,
-        userId: owner.userId,
-        chatThreadId: owner.chatThreadId,
-        runId: owner.runId,
-        name: input.name ?? previous?.name ?? "browser",
-        status: "active",
-        proxyCountryCode: null,
-        timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
-      })
-      .onConflictDoUpdate({
-        target: browserSessions.chatThreadId,
-        targetWhere: sql`${browserSessions.status} IN ('creating', 'active', 'resuming', 'stopping')`,
-        set: {
-          runId: owner.runId,
-          name: input.name ?? browserSessions.name,
-          status: "active",
-          browserThreadProfileId: null,
-          browserProfileId: null,
-          proxyCountryCode: null,
-          suspendedAt: null,
-          suspensionReason: null,
-          updatedAt: nowDate(),
-        },
-        setWhere: and(
-          eq(browserSessions.orgId, owner.orgId),
-          eq(browserSessions.userId, owner.userId),
-        ),
-      })
-      .returning();
+      .update(windows)
+      .set({ name: input.name ?? windows.name, updatedAt: nowDate() })
+      .where(liveSharedWindow(owner, profile, window))
+      .returning({
+        chatThreadId: windows.chatThreadId,
+        orgId: windows.orgId,
+        userId: windows.userId,
+        name: windows.name,
+        createdAt: windows.createdAt,
+        updatedAt: windows.updatedAt,
+      });
     signal.throwIfAborted();
     if (!meta) {
       return unavailable();
@@ -689,24 +637,26 @@ function sharedBrowserView(context$: ReturnType<typeof sharedBrowserContext>) {
     const [view] = await get(db$)
       .select({
         profile: getTableColumns(profiles),
-        window: getTableColumns(windows),
-        browser: getTableColumns(browserSessions),
+        browser: {
+          chatThreadId: windows.chatThreadId,
+          instanceId: windows.instanceId,
+          state: windows.state,
+          primaryWindowId: windows.primaryWindowId,
+          expiresAt: windows.expiresAt,
+          orgId: windows.orgId,
+          userId: windows.userId,
+          name: windows.name,
+          createdAt: windows.createdAt,
+          updatedAt: windows.updatedAt,
+        },
       })
       .from(profiles)
       .leftJoin(
         windows,
         and(
-          eq(windows.instanceId, profiles.instanceId),
           eq(windows.chatThreadId, ctx.owner.chatThreadId),
-        ),
-      )
-      .leftJoin(
-        browserSessions,
-        and(
-          eq(browserSessions.chatThreadId, ctx.owner.chatThreadId),
-          eq(browserSessions.orgId, ctx.owner.orgId),
-          eq(browserSessions.userId, ctx.owner.userId),
-          eq(browserSessions.status, "active"),
+          eq(windows.orgId, ctx.owner.orgId),
+          eq(windows.userId, ctx.owner.userId),
         ),
       )
       .where(
@@ -715,7 +665,12 @@ function sharedBrowserView(context$: ReturnType<typeof sharedBrowserContext>) {
           eq(profiles.userId, ctx.owner.userId),
         ),
       );
-    return view ?? null;
+    return view
+      ? {
+          ...view,
+          window: view.browser ? browserChatWindow(view.browser) : null,
+        }
+      : null;
   });
 }
 
@@ -749,8 +704,8 @@ function sharedBrowserPresent(
                 )
               : null;
           const screenshotUrl = await set(
-            loadBrowserScreenshotUrl$,
-            ctx.owner.chatThreadId,
+            loadSharedBrowserScreenshotUrl$,
+            ctx.owner,
             signal,
           );
           return {
@@ -898,7 +853,6 @@ function sharedBrowserOpen(
               input: ctx.mode.input,
               profile,
               window,
-              previous: view?.browser ?? null,
             },
             signal,
           );
@@ -994,7 +948,7 @@ function sharedBrowserLease(
           expiresAt: result.window.expiresAt,
         },
         health.value,
-        await set(loadBrowserScreenshotUrl$, ctx.owner.chatThreadId, signal),
+        await set(loadSharedBrowserScreenshotUrl$, ctx.owner, signal),
       );
       return { kind: "ok", value: browser };
     },
@@ -1060,7 +1014,13 @@ function sharedBrowserResize(
             signal,
           );
           const [currentWindow] = await get(db$)
-            .select()
+            .select({
+              chatThreadId: windows.chatThreadId,
+              instanceId: windows.instanceId,
+              state: windows.state,
+              primaryWindowId: windows.primaryWindowId,
+              expiresAt: windows.expiresAt,
+            })
             .from(windows)
             .where(
               and(
@@ -1078,13 +1038,9 @@ function sharedBrowserResize(
             value: presentation(
               browser,
               view.profile,
-              currentWindow,
+              browserChatWindow(currentWindow),
               session,
-              await set(
-                loadBrowserScreenshotUrl$,
-                ctx.owner.chatThreadId,
-                signal,
-              ),
+              await set(loadSharedBrowserScreenshotUrl$, ctx.owner, signal),
             ),
           };
         })(),
