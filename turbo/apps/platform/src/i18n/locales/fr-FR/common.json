@@ -4597,7 +4597,6 @@
         "tooLong": "Raccourcissez la tâche pour choisir un autre format."
       },
       "prompt": {
-        "connectorsDescription": "Connectez vos outils pour qu’Okou comprenne votre travail et réalise les tâches en fonction de vos besoins. Vous pouvez aussi le faire plus tard.",
         "connectorsTitle": "Connectez vos outils de travail",
         "intro": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud."
       },

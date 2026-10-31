@@ -4597,7 +4597,6 @@
         "tooLong": "Accorcia il testo dell’attività per scegliere un altro formato."
       },
       "prompt": {
-        "connectorsDescription": "Collega i tuoi strumenti per aiutare Okou a capire il tuo lavoro e svolgere le attività in base alle tue esigenze. Puoi farlo anche più tardi.",
         "connectorsTitle": "Collega i tuoi strumenti di lavoro",
         "intro": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud."
       },

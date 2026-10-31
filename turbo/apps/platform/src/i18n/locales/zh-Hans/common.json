@@ -4528,7 +4528,6 @@
         "tooLong": "请缩短任务内容，以选择其他产出形式。"
       },
       "prompt": {
-        "connectorsDescription": "连接这些工具，让 Okou 更了解你的工作场景，更有针对性地帮你完成任务。也可以稍后再连接。",
         "connectorsTitle": "连接你的工作工具",
         "intro": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。"
       },

@@ -123,21 +123,14 @@ export function OnboardingSourcesFirstPromptPage() {
           aria-labelledby="onboarding-prompt-connectors-title"
           className="mt-3 space-y-3"
         >
-          <div className="space-y-1">
-            <h2
-              id="onboarding-prompt-connectors-title"
-              className="text-sm font-medium"
-            >
-              {t(($) => {
-                return $.onboarding.sourcesFirst.prompt.connectorsTitle;
-              })}
-            </h2>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {t(($) => {
-                return $.onboarding.sourcesFirst.prompt.connectorsDescription;
-              })}
-            </p>
-          </div>
+          <h2
+            id="onboarding-prompt-connectors-title"
+            className="text-sm font-medium"
+          >
+            {t(($) => {
+              return $.onboarding.sourcesFirst.prompt.connectorsTitle;
+            })}
+          </h2>
           <OnboardingConnectorSetup
             connectorSlugs={connectorSlugs}
             variant="sheet"

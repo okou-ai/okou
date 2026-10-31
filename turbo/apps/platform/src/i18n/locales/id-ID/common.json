@@ -4528,7 +4528,6 @@
         "tooLong": "Persingkat tugas untuk memilih format lain."
       },
       "prompt": {
-        "connectorsDescription": "Hubungkan alat kerja Anda agar Okou memahami konteks pekerjaan dan menyelesaikan tugas sesuai kebutuhan Anda. Anda juga bisa menghubungkannya nanti.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
         "intro": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud."
       },

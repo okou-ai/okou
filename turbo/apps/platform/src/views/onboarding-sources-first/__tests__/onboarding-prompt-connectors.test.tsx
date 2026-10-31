@@ -81,7 +81,6 @@ test.each([
         getConnectorAction("button", `Connect ${tool.label}`, recommendations),
       ).toBeEnabled();
     }
-    expect(recommendations).toHaveTextContent("You can also connect later.");
     expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
       `${PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
     );

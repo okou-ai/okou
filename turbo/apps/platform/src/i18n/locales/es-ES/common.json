@@ -4597,7 +4597,6 @@
         "tooLong": "Acorta la tarea para elegir otro formato."
       },
       "prompt": {
-        "connectorsDescription": "Conecta tus herramientas para que Okou entienda tu trabajo y complete las tareas según tus necesidades. También puedes hacerlo más tarde.",
         "connectorsTitle": "Conecta tus herramientas de trabajo",
         "intro": "Okou es el asistente de trabajo para ti y tu equipo. Convierte la información dispersa en trabajo hecho, en la nube."
       },
