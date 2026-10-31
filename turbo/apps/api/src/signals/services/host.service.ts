@@ -34,10 +34,14 @@ import {
 } from "@okouai/db/runtime/hosted-site";
 import {
   and,
+  count,
   desc,
   eq,
+  exists,
+  gte,
   inArray,
   isNull,
+  ne,
   notExists,
   or,
   sql,
@@ -957,32 +961,209 @@ function activeHostedBindingCondition(deploymentId: string, siteId: string) {
   );
 }
 
+const commitHostedSiteDeployment$ = command(
+  async (
+    { get, set },
+    args: HostedSiteBindingArgs,
+    site: HostedSiteRow,
+    published: HostedSitePointer | null,
+    signal: AbortSignal,
+  ): Promise<HostedSitePromotion | undefined> => {
+    const db = get(db$);
+    const writeDb = set(writeDb$);
+    const deploymentTable = args.deployment.manifest.access
+      ? privateHostedDeployments
+      : hostedDeployments;
+    const readyIds =
+      published && published.deploymentId !== args.deployment.id
+        ? [args.deployment.id, published.deploymentId]
+        : [args.deployment.id];
+    const ready = writeDb.$with("ready_hosted_deployments").as(
+      writeDb
+        .update(deploymentTable)
+        .set(hostedDeploymentReadyValues(args.readyAt))
+        .where(
+          and(
+            inArray(deploymentTable.id, readyIds),
+            eq(deploymentTable.siteId, site.id),
+            eq(deploymentTable.orgId, args.orgId),
+            eq(deploymentTable.userId, args.deployment.userId),
+            eq(
+              deploymentTable.linkLayoutSegment,
+              args.deployment.linkLayoutSegment,
+            ),
+            ne(deploymentTable.status, "deleted"),
+          ),
+        )
+        .returning({ id: deploymentTable.id }),
+    );
+    const activeBinding = db
+      .select({
+        version:
+          sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+            nullableDriverValueDecoder(pgIntegerDecoder),
+          ),
+      })
+      .from(hostedDeployments)
+      .where(
+        and(
+          eq(hostedDeployments.id, hostedSites.activeDeploymentId),
+          eq(hostedDeployments.siteId, hostedSites.id),
+        ),
+      );
+    const activeVersion = sql`(${activeBinding})`;
+    // A newer completion can bind while this one waits. Compare immutable
+    // versions against the actual Site row rather than the earlier read.
+    const nextBinding = published
+      ? sql`CASE
+          WHEN ${isNull(hostedSites.activeDeploymentId)} THEN ${published.deploymentId}::uuid
+          WHEN ${exists(activeBinding)} AND (
+            ${isNull(activeVersion)}
+            OR ${gte(sql`${published.deploymentVersion ?? null}::integer`, activeVersion)}
+          ) THEN ${published.deploymentId}::uuid
+          ELSE ${hostedSites.activeDeploymentId}
+        END`
+      : hostedSites.activeDeploymentId;
+    // Remote publication is complete before this one local atomic statement.
+    // A concurrent deletion may win; publication does not hold a site lock
+    // while waiting for storage, and does not revive a deleted version.
+    const [promotion] = await writeDb
+      .with(ready)
+      .update(hostedSites)
+      .set({
+        activeDeploymentId: nextBinding,
+        updatedAt: published ? args.readyAt : hostedSites.updatedAt,
+      })
+      .where(
+        and(
+          hostedBindingSiteCondition(site.id, args.orgId),
+          eq(hostedSites.userId, args.deployment.userId),
+          eq(hostedSites.linkLayoutSegment, args.deployment.linkLayoutSegment),
+          isNull(hostedSites.deletedAt),
+          eq(db.select({ count: count() }).from(ready), readyIds.length),
+        ),
+      )
+      .returning({
+        publicSlug: hostedSites.publicSlug,
+        activeDeploymentId: hostedSites.activeDeploymentId,
+        activeDeploymentVersion: activeVersion.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
+      });
+    signal.throwIfAborted();
+    return promotion;
+  },
+);
+
 const bindHostedSiteDeployment$ = command(
-  (
+  async (
     { get, set },
     args: HostedSiteBindingArgs,
     signal: AbortSignal,
   ): Promise<HostedSitePromotion> => {
-    const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0170; new non-billing transactions are prohibited.
-    return writeDb.transaction(async (tx) => {
-      const [ownedSite] = await tx
-        .select()
-        .from(hostedSites)
-        .where(hostedBindingSiteCondition(args.deployment.siteId, args.orgId))
-        .for("update")
+    const db = get(db$);
+    const [ownedSite] = await db
+      .select()
+      .from(hostedSites)
+      .where(hostedBindingSiteCondition(args.deployment.siteId, args.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    const site = ownedHostedBindingSite(ownedSite, args.deployment);
+    const deploymentTable = args.deployment.manifest.access
+      ? privateHostedDeployments
+      : hostedDeployments;
+    const [current] = await db
+      .select({ status: deploymentTable.status })
+      .from(deploymentTable)
+      .where(eq(deploymentTable.id, args.deployment.id))
+      .limit(1);
+    signal.throwIfAborted();
+    if (current?.status === "deleted") {
+      await get(
+        deleteHostedSitesS3Objects(
+          args.bucket,
+          deletedHostedVersionKeys(args.deployment),
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+      throw new ArtifactDeliveryAliasConflict("Hosted deployment is deleted");
+    }
+    let activeDeploymentVersion: number | null = null;
+    if (site.activeDeploymentId !== null) {
+      const [active] = await db
+        .select({
+          version:
+            sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+              nullableDriverValueDecoder(pgIntegerDecoder),
+            ),
+        })
+        .from(hostedDeployments)
+        .where(activeHostedBindingCondition(site.activeDeploymentId, site.id))
         .limit(1);
-      const site = ownedHostedBindingSite(ownedSite, args.deployment);
-      const deploymentTable = args.deployment.manifest.access
-        ? privateHostedDeployments
-        : hostedDeployments;
-      // Deleted versions withdraw their immutable address under the same site lock.
-      const [current] = await tx
+      signal.throwIfAborted();
+      activeDeploymentVersion = activeHostedBindingVersion(active);
+    }
+    signal.throwIfAborted();
+    let published: HostedSitePointer | null = null;
+    if (shouldBindHostedDeployment(args.deployment, activeDeploymentVersion)) {
+      const publication = await set(
+        readHostedPointerPublication$,
+        { site, bucket: args.bucket, pointer: args.pointer },
+        signal,
+      );
+      if (publication.retained) {
+        const [retained] = await db
+          .select()
+          .from(hostedDeployments)
+          .where(retainedHostedDeploymentCondition(site, publication.pointer));
+        signal.throwIfAborted();
+        validateRetainedHostedDeployment(retained, publication.pointer);
+      }
+      signal.throwIfAborted();
+      if (publication.previous?.kind === "publication") {
+        const [share] = await db
+          .select()
+          .from(artifactShares)
+          .where(eq(artifactShares.id, publication.previous.shareId));
+        signal.throwIfAborted();
+        const snapshot = await set(
+          readHostedSnapshotPolicy$,
+          { site, bucket: args.bucket, record: publication.previous, share },
+          signal,
+        );
+        const [source] = await db
+          .select({ id: privateHostedDeployments.id })
+          .from(privateHostedDeployments)
+          .where(hostedSnapshotSourceCondition(snapshot));
+        signal.throwIfAborted();
+        if (!source) {
+          hostedSiteAliasConflict();
+        }
+        await set(preserveHostedSnapshotToken$, snapshot, signal);
+      }
+      signal.throwIfAborted();
+      published = await set(
+        writeHostedPointerPublication$,
+        publication,
+        signal,
+      );
+    }
+    signal.throwIfAborted();
+    const promotion = await set(
+      commitHostedSiteDeployment$,
+      args,
+      site,
+      published,
+      signal,
+    );
+    if (!promotion) {
+      const [latest] = await db
         .select({ status: deploymentTable.status })
         .from(deploymentTable)
-        .where(eq(deploymentTable.id, args.deployment.id))
-        .limit(1);
-      if (current?.status === "deleted") {
+        .where(eq(deploymentTable.id, args.deployment.id));
+      signal.throwIfAborted();
+      if (latest?.status === "deleted") {
         await get(
           deleteHostedSitesS3Objects(
             args.bucket,
@@ -990,101 +1171,14 @@ const bindHostedSiteDeployment$ = command(
             signal,
           ),
         );
+        signal.throwIfAborted();
         throw new ArtifactDeliveryAliasConflict("Hosted deployment is deleted");
       }
-      let activeDeploymentVersion: number | null = null;
-      if (site.activeDeploymentId !== null) {
-        const [active] = await tx
-          .select({
-            version:
-              sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
-                nullableDriverValueDecoder(pgIntegerDecoder),
-              ),
-          })
-          .from(hostedDeployments)
-          .where(activeHostedBindingCondition(site.activeDeploymentId, site.id))
-          .limit(1);
-        activeDeploymentVersion = activeHostedBindingVersion(active);
-      }
-      signal.throwIfAborted();
-      let published: HostedSitePointer | null = null;
-      if (
-        shouldBindHostedDeployment(args.deployment, activeDeploymentVersion)
-      ) {
-        const publication = await set(
-          readHostedPointerPublication$,
-          { site, bucket: args.bucket, pointer: args.pointer },
-          signal,
-        );
-        if (publication.retained) {
-          const [retained] = await tx
-            .select()
-            .from(hostedDeployments)
-            .where(
-              retainedHostedDeploymentCondition(site, publication.pointer),
-            );
-          validateRetainedHostedDeployment(retained, publication.pointer);
-        }
-        signal.throwIfAborted();
-        if (publication.previous?.kind === "publication") {
-          const [share] = await tx
-            .select()
-            .from(artifactShares)
-            .where(eq(artifactShares.id, publication.previous.shareId))
-            .for("update");
-          signal.throwIfAborted();
-          const snapshot = await set(
-            readHostedSnapshotPolicy$,
-            { site, bucket: args.bucket, record: publication.previous, share },
-            signal,
-          );
-          const [source] = await tx
-            .select({ id: privateHostedDeployments.id })
-            .from(privateHostedDeployments)
-            .where(hostedSnapshotSourceCondition(snapshot));
-          signal.throwIfAborted();
-          if (!source) {
-            hostedSiteAliasConflict();
-          }
-          await set(preserveHostedSnapshotToken$, snapshot, signal);
-        }
-        signal.throwIfAborted();
-        published = await set(
-          writeHostedPointerPublication$,
-          publication,
-          signal,
-        );
-      }
-      signal.throwIfAborted();
-      const ready = hostedDeploymentReadyValues(args.readyAt);
-      await tx
-        .update(deploymentTable)
-        .set(ready)
-        .where(eq(deploymentTable.id, args.deployment.id));
-      if (published) {
-        // Recover an acknowledged newer pointer after its earlier SQL rollback.
-        if (published.deploymentId !== args.deployment.id) {
-          await tx
-            .update(hostedDeployments)
-            .set(ready)
-            .where(eq(hostedDeployments.id, published.deploymentId));
-        }
-        await tx
-          .update(hostedSites)
-          .set({
-            activeDeploymentId: published.deploymentId,
-            updatedAt: args.readyAt,
-          })
-          .where(eq(hostedSites.id, args.deployment.siteId));
-      }
-      return {
-        publicSlug: site.publicSlug,
-        activeDeploymentId: published?.deploymentId ?? site.activeDeploymentId,
-        activeDeploymentVersion: published
-          ? (published.deploymentVersion ?? null)
-          : activeDeploymentVersion,
-      };
-    });
+      throw new ArtifactDeliveryAliasConflict(
+        "Hosted deployment changed during publication",
+      );
+    }
+    return promotion;
   },
 );
 
