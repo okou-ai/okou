@@ -9,6 +9,26 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.33.3](https://github.com/okou-ai/okou/compare/api-v2.33.2...api-v2.33.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* **api:** reclaim obsolete browser screenshots ([#44382](https://github.com/okou-ai/okou/issues/44382)) ([e7b92f8](https://github.com/okou-ai/okou/commit/e7b92f8f39f613b1891da6369d2f62b6bc53a3ae))
+
+
+### Refactoring
+
+* **api:** consolidate shared browser chat state ([#44353](https://github.com/okou-ai/okou/issues/44353)) ([5cbbfe5](https://github.com/okou-ai/okou/commit/5cbbfe5e45070a422ac8323133e4c57080f4525e))
+* **api:** localize agent connector catalog reads ([#44368](https://github.com/okou-ai/okou/issues/44368)) ([9f5d088](https://github.com/okou-ai/okou/commit/9f5d088cb9fadb1f712f7f82626f5dadabae15c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.13.14
+
 ## [2.33.2](https://github.com/okou-ai/okou/compare/api-v2.33.1...api-v2.33.2) (2026-10-31)
 
 

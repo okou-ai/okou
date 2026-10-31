@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.18.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.4...runner-executor-v0.18.5) (2026-10-31)
+
 ## [0.18.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.3...runner-executor-v0.18.4) (2026-10-31)
 
 
