@@ -169,13 +169,11 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
   expect(
     within(completion).getByRole("group", { name: "Keep going" }),
   ).toBeInTheDocument();
-  await expect(within(card).findByText("$18")).resolves.toBeVisible();
+  const upgrade = await findEnabledButton("Upgrade from $18/month", card);
   expect(within(card).queryByText("$0")).toBeNull();
   expect(within(card).getByText("About 5 tasks left")).toBeInTheDocument();
   expect(
-    within(card).getByText(
-      "Additional credits · Advanced features · 3 cloud computers",
-    ),
+    within(card).getByText("Advanced features · 3 cloud computers"),
   ).toBeInTheDocument();
   expect(within(card).getByText("20,000")).toBeInTheDocument();
   expect(within(card).getByText("+2,000")).toBeInTheDocument();
@@ -184,7 +182,7 @@ test("Automatically offer Pro after the first task without requiring an upgrade 
       ignore: '[aria-hidden="true"], [aria-hidden="true"] *',
     }),
   ).toBeInTheDocument();
-  click(await findEnabledButton("Upgrade now", card));
+  click(upgrade);
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
   ).resolves.toBeVisible();
@@ -223,7 +221,9 @@ test("Keep the offer usable while the catalog loads and then show its credits", 
 
   await expect(within(card).findByText("+400")).resolves.toBeInTheDocument();
   expect(within(card).getByText("20,000")).toBeInTheDocument();
-  expect(within(card).getByText("$20")).toBeInTheDocument();
+  await expect(
+    findEnabledButton("Upgrade from $20/month", card),
+  ).resolves.toBeEnabled();
 });
 
 test("Keep the upgrade action usable when the price catalog is unavailable", async () => {

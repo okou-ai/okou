@@ -50,9 +50,6 @@ export const noPermissionIllustration = pageAssetUrl(
 export const planProImg = pageAssetUrl(
   "components/org-manage/assets/plan-pro.webp",
 );
-export const proUpgradeSceneImg = platformStaticAssetUrl(
-  "views/okou-page/assets/get-started-invite-09ddee851551.png",
-);
 export const planTeamImg = pageAssetUrl(
   "components/org-manage/assets/plan-team.webp",
 );

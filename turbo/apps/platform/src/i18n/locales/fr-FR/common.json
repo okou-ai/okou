@@ -1797,9 +1797,10 @@
       "outOfCredits": "Vous êtes à court de crédits",
       "proCard": {
         "creditsNow": "crédits · Maintenant",
-        "description": "Crédits supplémentaires · Fonctions avancées · 3 ordinateurs cloud",
+        "description": "Fonctions avancées · 3 ordinateurs cloud",
         "priceUnavailable": "Consultez les offres et leurs tarifs actuels",
         "title": "Environ 5 tâches restantes",
+        "upgradeFromPrice": "Passer au forfait dès {{price}}/mois",
         "upgradeNow": "Passer à Pro maintenant"
       },
       "redirecting": "Redirection...",
