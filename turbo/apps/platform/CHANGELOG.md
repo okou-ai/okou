@@ -12,6 +12,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1081.2](https://github.com/okou-ai/okou/compare/app-v0.1081.1...app-v0.1081.2) (2026-10-31)
+
+
+### Performance Improvements
+
+* **app:** isolate hosted preview resource notifications ([#44348](https://github.com/okou-ai/okou/issues/44348)) ([412870c](https://github.com/okou-ai/okou/commit/412870cace168bb2b241dc37e986cc559e5ff627))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.0
+    * @okouai/browser-extension-client bumped to 0.4.1
+    * @okouai/connectors bumped to 3.20.1
+    * @okouai/core bumped to 8.805.6
+
 ## [0.1081.1](https://github.com/okou-ai/okou/compare/app-v0.1081.0...app-v0.1081.1) (2026-10-31)
 
 

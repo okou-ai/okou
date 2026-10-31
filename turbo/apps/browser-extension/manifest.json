@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Okou Browser",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "minimum_chrome_version": "102",
   "description": "Organize source-window tabs and expose native browser capabilities over CDP.",
   "permissions": [

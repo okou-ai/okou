@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.805.6](https://github.com/okou-ai/okou/compare/core-v8.805.5...core-v8.805.6) (2026-10-31)
+
+
+### Refactoring
+
+* **workflows:** omit definition snapshots from new official artifacts ([#44406](https://github.com/okou-ai/okou/issues/44406)) ([b68e1d6](https://github.com/okou-ai/okou/commit/b68e1d6251ea1b5396fc9c28d4c1dbf578f5ac10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.0
+
 ## [8.805.5](https://github.com/okou-ai/okou/compare/core-v8.805.4...core-v8.805.5) (2026-10-31)
 
 
