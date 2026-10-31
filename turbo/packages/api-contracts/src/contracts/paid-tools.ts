@@ -1,16 +1,7 @@
 import { array, boolean, object, string, type infer as zInfer } from "zod";
-
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-
-/**
- * Paid tools whose behavior Okou owns. Web search is provided by Data Router
- * while enabled and by a personal subscription's framework tool while disabled.
- */
-export const AVAILABLE_PAID_TOOL_IDS = [
-  "web-search",
-  "image-generation",
-] as const;
+export { AVAILABLE_PAID_TOOL_IDS } from "../validators/paid-tools";
 
 /**
  * Okou-owned tools and Data Router family IDs share one sparse namespace of

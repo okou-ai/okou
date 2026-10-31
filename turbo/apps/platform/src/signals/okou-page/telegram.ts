@@ -1,9 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  integrationsTelegramContract,
-  type TelegramBot,
-} from "@okouai/api-contracts/contracts/integrations-telegram";
+import { integrationsTelegramContract } from "@okouai/api-contracts/client/integrations-telegram";
+import type { TelegramBot } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { apiClient$ } from "../api-client.ts";
 import { telegramClient$ } from "./telegram-client.ts";
 import { accept } from "../../lib/accept.ts";

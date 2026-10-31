@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  userExportContract,
-  type UserExportStatusResponse,
-} from "@okouai/api-contracts/contracts/user-export";
+import { userExportContract } from "@okouai/api-contracts/client/user-export";
+import type { UserExportStatusResponse } from "@okouai/api-contracts/contracts/user-export";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";

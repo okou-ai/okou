@@ -1,5 +1,9 @@
 import { number, object, string, type infer as zInfer } from "zod";
 
+import {
+  VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
+  VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
+} from "../validators/voice-io-transcribe";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "./voice-io-polish";
@@ -7,8 +11,10 @@ import { voiceIoQuotaErrorSchema } from "./voice-io-quota";
 
 const c = initContract();
 
-export const VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS = 1_000;
-export const VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS = 1_000;
+export {
+  VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
+  VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
+};
 export const VOICE_IO_TRANSCRIBE_MAX_SEGMENT_SECONDS = 75;
 const VOICE_IO_TRANSCRIBE_MAX_RECORDING_SECONDS = 60 * 60;
 

@@ -1,7 +1,7 @@
 import { feishuPlatform$ } from "./feishu.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
-import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
+import { feishuOauthContract } from "@okouai/api-contracts/client/feishu-oauth";
 
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";

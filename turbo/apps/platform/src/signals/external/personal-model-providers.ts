@@ -1,8 +1,8 @@
 import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersByTypeContract,
-  type ResetPersonalModelProviderSubscriptionUsageResponse,
-} from "@okouai/api-contracts/contracts/personal-model-providers";
+} from "@okouai/api-contracts/client/personal-model-providers";
+import type { ResetPersonalModelProviderSubscriptionUsageResponse } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { command } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

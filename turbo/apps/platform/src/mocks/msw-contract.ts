@@ -39,9 +39,8 @@ type AnyResponse<R extends AppRoute> = ServerInferResponses<R> & {
   readonly body?: unknown;
 };
 
-type Respond<R extends AppRoute> = <
-  Status extends keyof R["responses"] & number,
->(
+// Mocks may inject undeclared HTTP failures; declared status bodies remain typed.
+type Respond<R extends AppRoute> = <Status extends number>(
   ...args: ServerInferResponseBody<R, Status> extends undefined
     ? [status: Status]
     : [status: Status, body: ServerInferResponseBody<R, Status>]

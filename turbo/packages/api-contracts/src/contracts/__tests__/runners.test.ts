@@ -171,18 +171,6 @@ describe("runner claim response contract", () => {
     expect(context).not.toHaveProperty("experimentalProfile");
   });
 
-  it("accepts the serving inline protocol while the bundle reader is prepared", () => {
-    const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
-    );
-    const context = executionContextSchema.parse({
-      ...fixture,
-      contentBundles: undefined,
-      agentInstructions: "current Agent instructions",
-    });
-    expect(context.agentInstructions).toBe("current Agent instructions");
-  });
-
   it("rejects mixed bundle and legacy claim content", () => {
     const fixture = executionContextSchema.parse(
       loadRunnerClaimResponseFixture(),

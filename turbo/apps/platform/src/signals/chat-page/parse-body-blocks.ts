@@ -1,6 +1,6 @@
 import { getDefaults, Lexer, Tokenizer, type Token, type Tokens } from "marked";
 import { resolveApiBase } from "../api-base.ts";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   parseConnectorAuthorizeUrl,

@@ -1,9 +1,9 @@
-import {
-  chatRemoteAccessContract,
-  type RemoteAccessProtocol,
-  type RemoteHostDefault,
-  type ThreadRemoteHostAccess,
-  type InitialRemoteAccessOverride,
+import { chatRemoteAccessContract } from "@okouai/api-contracts/client/chat-remote-access";
+import type {
+  RemoteAccessProtocol,
+  RemoteHostDefault,
+  ThreadRemoteHostAccess,
+  InitialRemoteAccessOverride,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { command, computed, state, type Computed } from "ccstate";
 

@@ -4,14 +4,15 @@ import { resetRemoteLogin$ } from "./remote-login.ts";
 import type {
   InitClientReturn,
   InitClientArgs,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
 import { command, computed, state } from "ccstate";
+import { sshCredentialsContract } from "@okouai/api-contracts/client/ssh-credentials";
 import {
-  sshCredentialsContract,
   createSshCredentialRequestSchema,
   updateSshCredentialRequestSchema,
-  type SshCredentialResponse,
-} from "@okouai/api-contracts/contracts/ssh-credentials";
+  SSH_PRIVATE_KEY_MAX_LENGTH,
+} from "@okouai/api-contracts/validators/ssh-credentials";
+import type { SshCredentialResponse } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
@@ -25,14 +26,15 @@ import {
   tailscaleConfigs$,
   tailscaleFieldsFromForm,
 } from "./tailscale.ts";
+import { sshConnectionsContract } from "@okouai/api-contracts/client/ssh-connections";
+import type {
+  SshConnectionResponse,
+  SshConnectionMode,
+} from "@okouai/api-contracts/contracts/ssh-connections";
 import {
-  sshConnectionsContract,
-  type SshConnectionResponse,
-  type SshConnectionMode,
   createSshConnectionRequestSchema,
   updateSshConnectionRequestSchema,
-  SSH_PRIVATE_KEY_MAX_LENGTH,
-} from "@okouai/api-contracts/contracts/ssh-connections";
+} from "@okouai/api-contracts/validators/ssh-connections";
 import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";

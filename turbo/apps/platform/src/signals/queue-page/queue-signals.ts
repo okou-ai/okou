@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { runsQueueContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runsQueueContract } from "@okouai/api-contracts/client/run-routes";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 

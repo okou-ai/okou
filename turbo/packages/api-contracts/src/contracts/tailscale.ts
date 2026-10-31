@@ -12,42 +12,22 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { vncNetworkHostReferenceSchema } from "./vnc-transport";
 
-export const tailscaleChangedPayloadSchema = object({
-  orgId: string().min(1),
-}).strict();
-export const TAILSCALE_CREDENTIAL_MAX_LENGTH = 4_096;
-const credentialValue = string()
-  .min(1)
-  .max(TAILSCALE_CREDENTIAL_MAX_LENGTH)
-  .regex(/^[\x21-\x7e]+$/u);
-export const tailscaleCredentialsSchema = object({
-  clientId: credentialValue,
-  clientSecret: credentialValue,
-}).strict();
-export const tailscaleTagsSchema = array(
-  string().regex(/^tag:[a-z][a-z0-9-]{0,62}$/u),
-)
-  .min(1)
-  .max(16)
-  .refine(
-    (tags) => {
-      return new Set(tags).size === tags.length;
-    },
-    {
-      message: "Tags must be unique",
-    },
-  );
-const revision = int().positive().max(2_147_483_647);
-const name = string().trim().min(1).max(128);
-export const createTailscaleRequestSchema = object({
-  name,
-  credentials: tailscaleCredentialsSchema,
-  tags: tailscaleTagsSchema,
-}).strict();
-const createBody = createTailscaleRequestSchema.extend({
-  id: uuid(),
-  scope: zEnum(["personal", "organization"]).optional(),
-});
+import {
+  createTailscaleConfigRequestSchema as createBody,
+  createTailscaleRequestSchema,
+  revision,
+  tailscaleTagsSchema,
+  updateTailscaleConfigRequestSchema as updateBody,
+} from "../validators/tailscale";
+export {
+  tailscaleChangedPayloadSchema,
+  TAILSCALE_CREDENTIAL_MAX_LENGTH,
+  tailscaleCredentialsSchema,
+  tailscaleTagsSchema,
+  createTailscaleConfigRequestSchema,
+  createTailscaleRequestSchema,
+  updateTailscaleConfigRequestSchema,
+} from "../validators/tailscale";
 export const tailscaleConfigSchema = object({
   id: uuid(),
   name: string(),
@@ -60,23 +40,6 @@ export const tailscaleConfigSchema = object({
   sshHosts: array(object({ id: uuid(), displayName: string() }).strict()),
   vncHosts: array(vncNetworkHostReferenceSchema),
 }).strict();
-const updateBody = object({
-  expectedRevision: revision,
-  name: name.optional(),
-  credentials: tailscaleCredentialsSchema.optional(),
-  tags: tailscaleTagsSchema.optional(),
-})
-  .strict()
-  .refine(
-    (body) => {
-      return (
-        body.name !== undefined ||
-        body.credentials !== undefined ||
-        body.tags !== undefined
-      );
-    },
-    { message: "At least one Tailscale field must be updated" },
-  );
 const impactSnapshot = string().regex(/^[a-f0-9]{64}$/u);
 const deleteBody = object({
   expectedRevision: revision,

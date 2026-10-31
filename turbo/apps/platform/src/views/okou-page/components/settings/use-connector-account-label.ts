@@ -1,8 +1,6 @@
 import { useTranslation } from "react-i18next";
-import {
-  connectorAccountEffectiveLabel,
-  type ConnectorAccountIdentityFields,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorAccountEffectiveLabel } from "@okouai/api-contracts/validators/connector-accounts";
+import type { ConnectorAccountIdentityFields } from "@okouai/api-contracts/contracts/connector-accounts";
 
 interface ConnectorAccountLabelSource extends ConnectorAccountIdentityFields {
   readonly authMethod: string;

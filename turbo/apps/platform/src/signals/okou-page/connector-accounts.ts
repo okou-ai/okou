@@ -7,11 +7,11 @@ import {
   type State,
 } from "ccstate";
 import { debounceCommand } from "../command-scheduling.ts";
-import {
-  connectorAccountTargetKey,
-  connectorAccountsContract,
-  type ConnectorAccountConnection,
-  type ConnectorAccountTarget,
+import { connectorAccountTargetKey } from "@okouai/api-contracts/validators/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import { accept } from "../../lib/accept.ts";

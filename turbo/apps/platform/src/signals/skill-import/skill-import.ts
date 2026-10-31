@@ -1,6 +1,6 @@
 /** Session credentials and server-owned results have independent lifetimes. */
 import { command, computed, state, type Command } from "ccstate";
-import { skillImportSessionsContract } from "@okouai/api-contracts/contracts/skill-import";
+import { skillImportSessionsContract } from "@okouai/api-contracts/client/skill-import";
 import type { WorkflowImportSource } from "@okouai/api-contracts/contracts/workflows";
 import { buildSkillImportPrompt } from "@okouai/core/skill-import-prompt";
 import { accept } from "../../lib/accept.ts";

@@ -1,8 +1,8 @@
-import {
-  bankingUserContract,
-  type BankingAccessRequestStatusResponse,
-  type BankingConnectSessionRequest,
-  type BankingGrantDuration,
+import { bankingUserContract } from "@okouai/api-contracts/client/banking";
+import type {
+  BankingAccessRequestStatusResponse,
+  BankingConnectSessionRequest,
+  BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 

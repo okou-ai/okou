@@ -195,6 +195,14 @@ case "${1:-}" in
       [ "${MOCK_AGENT_INSTRUCTIONS_API_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29" ]; then
       [ "${MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7272727272727272727272727272727272727272" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CONTENT_BUNDLE_ARCHIVE_READER_ON_MAIN:-1}" = "1" ]
+      elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_CONTENT_BUNDLE_ARCHIVE_RUNNER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_CONTENT_BUNDLE_ARCHIVE_API_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "fc8f99468cc7946843620ff655ae22c09f9cb2ae" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_CONTENT_BUNDLE_RUNNER_VALID:-1}" = "1" ]
@@ -252,7 +260,9 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *rollback-floors/workflow-attachments-direct* ]]; then
+    if [[ "$*" == *rollback-floors/content-bundle-archive-reader* ]]; then
+      printf '%s\n' "${MOCK_CONTENT_BUNDLE_ARCHIVE_READER_COMMIT-7272727272727272727272727272727272727272}"
+    elif [[ "$*" == *rollback-floors/workflow-attachments-direct* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_ATTACHMENT_COMMIT-7171717171717171717171717171717171717171}"
     elif [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
       printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
@@ -1178,6 +1188,32 @@ grep -Fq 'fc8f99468cc7946843620ff655ae22c09f9cb2ae' "${tmp_dir}/failure.err" || 
 if grep -Eq '^ssh ' "${tmp_dir}/boundaries.log"; then
   fail "content bundle Runner floor must fail before host access"
 fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged content bundle archive reader" \
+    run_resolver "${tmp_dir}/bundle-archive-history.output" "MOCK_CONTENT_BUNDLE_ARCHIVE_READER_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/bundle-archive-history.output" ] || fail "invalid archive reader history must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid archive reader history must fail before provider access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Content bundle archive reader rollback floor is not on main" \
+  run_resolver "${tmp_dir}/bundle-archive-main.output" MOCK_CONTENT_BUNDLE_ARCHIVE_READER_ON_MAIN=0
+[ ! -s "${tmp_dir}/bundle-archive-main.output" ] || fail "unmerged archive reader must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "unmerged archive reader must fail before provider access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates bounded content bundle archive delivery" \
+  run_resolver "${tmp_dir}/bundle-archive-runner.output" MOCK_CONTENT_BUNDLE_ARCHIVE_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/bundle-archive-runner.output" ] || fail "per-file archive Runner must not publish outputs"
+if grep -Eq '^ssh |api.github.com/repos/' "${tmp_dir}/boundaries.log"; then
+  fail "per-file archive Runner must fail before Runner artifact or host access"
+fi
+run_resolver "${tmp_dir}/bundle-archive-older-api.output" MOCK_CONTENT_BUNDLE_ARCHIVE_API_VALID=0 >/dev/null
+grep -Fq "target_commit=${target_commit}" "${tmp_dir}/bundle-archive-older-api.output" || fail "older compatible API with corrected Runner must remain eligible"
 
 for preparation_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"

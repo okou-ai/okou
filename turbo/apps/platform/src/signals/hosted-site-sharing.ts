@@ -1,10 +1,8 @@
 import { command, computed, state, type Computed, type State } from "ccstate";
 import type { infer as zInfer } from "zod";
-import {
-  hostContract,
-  hostedSiteUrlSlugSchema,
-  type hostedSiteUrlSchema,
-} from "@okouai/api-contracts/contracts/host";
+import { hostContract } from "@okouai/api-contracts/client/host";
+import { hostedSiteUrlSlugSchema } from "@okouai/api-contracts/validators/host";
+import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilitySchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";

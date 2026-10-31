@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
+import { agentsByIdContract } from "@okouai/api-contracts/client/agents";
 import { apiClient$ } from "../../api-client.ts";
 import { accept } from "../../../lib/accept.ts";
 import { agentDetail$ } from "./detail.ts";

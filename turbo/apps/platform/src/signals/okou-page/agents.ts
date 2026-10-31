@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { agentSetupPromptsContract } from "@okouai/api-contracts/contracts/agent-setup-prompts";
+import { agentSetupPromptsContract } from "@okouai/api-contracts/client/agent-setup-prompts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";

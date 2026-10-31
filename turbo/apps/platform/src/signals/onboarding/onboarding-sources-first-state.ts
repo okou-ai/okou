@@ -2,8 +2,8 @@ import { command, computed, state } from "ccstate";
 import {
   onboardingIndustrySchema,
   onboardingSubscriptionProviderSchema,
-  type OnboardingSubscriptionProvider,
-} from "@okouai/api-contracts/contracts/onboarding";
+} from "@okouai/api-contracts/validators/onboarding";
+import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import {
   boolean,

@@ -1,9 +1,9 @@
 import { command, computed, state, type Command } from "ccstate";
-import {
-  chatThreadMetadataContract,
-  type ChatThreadEvent,
-  type ChatThreadMetadata,
-  type ChatThreadSnapshotProjection,
+import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
+import type {
+  ChatThreadEvent,
+  ChatThreadMetadata,
+  ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";

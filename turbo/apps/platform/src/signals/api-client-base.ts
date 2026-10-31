@@ -1,12 +1,14 @@
 import {
   initClient,
   trpcRestFetchApi,
-  validateResponse,
-  type AppRouter,
-  type ApiFetcherArgs,
-  type InitClientArgs,
-  type InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/transport";
+import type {
+  ClientRouter,
+  ApiFetcherArgs,
+  InitClientArgs,
+  InitClientReturn,
+} from "@okouai/api-contracts/client/types";
+import { validateClientResponse } from "@okouai/api-contracts/client/response-validation";
 
 import { IN_VITEST } from "../env.ts";
 import type { AuthTokenProvider } from "../lib/auth-token-provider.ts";
@@ -97,7 +99,7 @@ function takeBootstrapResponse(
   return { status: 200, body, headers };
 }
 
-export function createAuthedContractClient<T extends AppRouter>(
+export function createAuthedContractClient<T extends ClientRouter>(
   contract: T,
   options: AuthedClientOptions,
 ): InitClientReturn<T, InitClientArgs> {
@@ -181,10 +183,7 @@ export function createAuthedContractClient<T extends AppRouter>(
       }
 
       if (IN_VITEST || options.validateResponse) {
-        return validateResponse({
-          appRoute: args.route,
-          response,
-        });
+        return validateClientResponse(args.route, response);
       }
 
       return response;

@@ -1,7 +1,7 @@
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { feishuPlatform$ } from "./feishu.ts";
 import { command, computed } from "ccstate";
-import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
+import { feishuBrowserConnectContract } from "@okouai/api-contracts/client/feishu-browser-connect";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

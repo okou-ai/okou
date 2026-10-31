@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
-import { billingRedeemContract } from "@okouai/api-contracts/contracts/billing";
+import { billingRedeemContract } from "@okouai/api-contracts/client/billing";
 import { RedeemCampaignPage } from "../../views/redeem-campaign-page/redeem-campaign-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";

@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
-import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
+import { integrationsDiscordContract } from "@okouai/api-contracts/client/integrations-discord";
+import { discordOauthContract } from "@okouai/api-contracts/client/discord-oauth";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

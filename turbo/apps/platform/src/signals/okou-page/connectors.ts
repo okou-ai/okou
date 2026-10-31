@@ -6,8 +6,8 @@ import type {
   ConnectedConnectors,
   BuiltinConnectorBrief,
 } from "@okouai/api-contracts/contracts/connected-connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/client/agent-custom-connectors";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pageSignal$ } from "../page-signal.ts";

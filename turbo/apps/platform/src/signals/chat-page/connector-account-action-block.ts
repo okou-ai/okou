@@ -1,14 +1,16 @@
 import {
   connectorAccountSelectionSchema,
   connectorAccountTargetKey,
-  connectorAccountsContract,
-  type ConnectorAccountConnection,
-  type ConnectorAccountSelection,
-  type ConnectorAccountTarget,
+} from "@okouai/api-contracts/validators/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountSelection,
+  ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/client/chat-threads";
 import { command, computed, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";

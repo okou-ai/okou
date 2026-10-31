@@ -5,13 +5,11 @@ import {
   resolveEditableHostedSiteDomain,
 } from "../lib/platform-host.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
-import {
-  artifactReferencesContract,
-  parseArtifactReference,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
+import { hostContract } from "@okouai/api-contracts/client/host";
 import { clerk$ } from "./auth.ts";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { webFilesContract } from "@okouai/api-contracts/client/web-files";
 import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import { accept } from "../lib/accept.ts";
 import { resolveApiBase } from "./api-base.ts";

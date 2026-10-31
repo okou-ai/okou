@@ -22,10 +22,11 @@ import {
   computerUseCommandNotificationsSchema,
   realtimeSubscriptionSchema,
 } from "./realtime";
+import { computerUseHostStatusSchema } from "../validators/computer-use";
+
+export { computerUseHostStatusSchema } from "../validators/computer-use";
 
 const c = initContract();
-
-export const computerUseHostStatusSchema = zEnum(["online", "offline"]);
 
 export const computerUseReadCommandKindSchema = zEnum([
   "apps.list",

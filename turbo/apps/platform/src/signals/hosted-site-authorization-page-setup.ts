@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { object, url, uuid } from "zod";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { hostContract } from "@okouai/api-contracts/client/host";
 import {
   HOSTED_SITE_AUTH_CALLBACK_PATH,
   hostedSiteAuthCodeSchema,

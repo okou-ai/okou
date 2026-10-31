@@ -1,7 +1,5 @@
-import {
-  chatEventsContract,
-  type ChatEventSendBody,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatEventsContract } from "@okouai/api-contracts/client/chat-threads";
+import type { ChatEventSendBody } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { accept } from "../../lib/accept.ts";
 import type { ApiClientFactory } from "../api-client.ts";

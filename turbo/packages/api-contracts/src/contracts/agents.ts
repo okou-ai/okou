@@ -1,12 +1,9 @@
-import {
-  array,
-  boolean,
-  object,
-  string,
-  enum as zEnum,
-  type infer as zInfer,
-} from "zod";
+import { array, object, string, type infer as zInfer } from "zod";
 
+import {
+  agentResponseSchema,
+  agentVisibilitySchema,
+} from "../validators/agents";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { CANONICAL_WORKING_DIR } from "./runner-primitives";
@@ -32,22 +29,8 @@ export const agentNameSchema = string()
     "Agent name must start and end with letter or number, and contain only letters, numbers, and hyphens",
   );
 
-export const agentVisibilitySchema = zEnum(["public", "private"]);
+export { agentResponseSchema, agentVisibilitySchema };
 export type AgentVisibility = zInfer<typeof agentVisibilitySchema>;
-
-/**
- * Agent response schema
- */
-export const agentResponseSchema = object({
-  agentId: string(),
-  isDefaultAgent: boolean(),
-  ownerId: string(),
-  description: string().nullable(),
-  displayName: string().nullable(),
-  sound: string().nullable(),
-  avatarUrl: string().nullable(),
-  visibility: agentVisibilitySchema,
-});
 
 /**
  * Create/update agent request schema

@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  featureGuidesContract,
-  type FeatureGuideEdition,
-} from "@okouai/api-contracts/contracts/feature-guides";
+import { featureGuidesContract } from "@okouai/api-contracts/client/feature-guides";
+import type { FeatureGuideEdition } from "@okouai/api-contracts/contracts/feature-guides";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../lib/accept.ts";
 import { searchParams$, pathname$ } from "./route.ts";

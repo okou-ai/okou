@@ -1,14 +1,10 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  jobsContract,
-  type JobInputCreate,
-} from "@okouai/api-contracts/contracts/jobs";
-import {
-  userPermissionGrantsContract,
-  userPermissionGrantExpiresInSchema,
-  type UserPermissionGrantExpiresIn,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import { jobsContract } from "@okouai/api-contracts/client/jobs";
+import type { JobInputCreate } from "@okouai/api-contracts/contracts/jobs";
+import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
+import { userPermissionGrantExpiresInSchema } from "@okouai/api-contracts/validators/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";

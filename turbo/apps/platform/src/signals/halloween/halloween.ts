@@ -1,10 +1,10 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { delay } from "signal-timers";
-import {
-  halloweenContract,
-  type HalloweenRound,
-  type HalloweenPhase,
+import { halloweenContract } from "@okouai/api-contracts/client/halloween";
+import type {
+  HalloweenRound,
+  HalloweenPhase,
 } from "@okouai/api-contracts/contracts/halloween";
 import { accept } from "../../lib/accept.ts";
 import { ensureHalloweenI18nResources } from "../../i18n/index.ts";

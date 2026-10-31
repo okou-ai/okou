@@ -9,49 +9,26 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import {
+  cloudflareAccessCredentialsSchema,
+  createCloudflareAccessConfigRequestSchema as createBody,
+  createCloudflareAccessRequestSchema,
+  name,
+  revision,
+  scopedCloudflareAccessConfigSchema,
+  type cloudflareAccessConfigSchema,
+} from "../validators/cloudflare-access";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { vncNetworkHostReferenceSchema } from "./vnc-transport";
 
-export const CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH = 4_096;
-// Service-token values become HTTP headers. Preserve bytes, but reject controls,
-// whitespace and non-ASCII rather than silently changing the credential.
-const tokenValueSchema = string()
-  .min(1)
-  .max(CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH)
-  .regex(/^[\x21-\x7e]+$/u);
-export const cloudflareAccessCredentialsSchema = object({
-  clientId: tokenValueSchema,
-  clientSecret: tokenValueSchema,
-}).strict();
-const revision = int().positive().max(2_147_483_647);
-const name = string().trim().min(1).max(128);
-export const createCloudflareAccessRequestSchema = object({
-  name,
-  credentials: cloudflareAccessCredentialsSchema,
-}).strict();
-const cloudflareAccessConfigMetadataSchema = object({
-  id: uuid(),
-  name: string(),
-  revision,
-  generation: revision,
-  createdAt: string().datetime(),
-  updatedAt: string().datetime(),
-}).strict();
-const sshHostReferenceSchema = object({
-  id: uuid(),
-  displayName: string(),
-}).strict();
-export const cloudflareAccessConfigSchema = cloudflareAccessConfigMetadataSchema
-  .extend({
-    sshHosts: array(sshHostReferenceSchema),
-    vncHosts: array(vncNetworkHostReferenceSchema),
-  })
-  .strict();
-export const scopedCloudflareAccessConfigSchema =
-  cloudflareAccessConfigSchema.extend({
-    scope: zEnum(["personal", "organization"]),
-  });
+export {
+  CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
+  cloudflareAccessConfigSchema,
+  cloudflareAccessCredentialsSchema,
+  createCloudflareAccessConfigRequestSchema,
+  createCloudflareAccessRequestSchema,
+  scopedCloudflareAccessConfigSchema,
+} from "../validators/cloudflare-access";
 const configResponseSchema = scopedCloudflareAccessConfigSchema;
 const viewQuery = object({ view: literal("scoped").optional() }).strict();
 const c = initContract();
@@ -64,10 +41,6 @@ const errors = {
   500: apiErrorSchema,
 };
 const pathParams = object({ configId: uuid() }).strict();
-const createBody = createCloudflareAccessRequestSchema.extend({
-  id: uuid(),
-  scope: zEnum(["personal", "organization"]).optional(),
-});
 const updateBody = object({
   expectedRevision: revision,
   name: name.optional(),

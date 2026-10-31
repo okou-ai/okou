@@ -10,13 +10,15 @@ import {
   generationTemplateRequestSchema,
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
-  type FeedbackNotePart,
-  type GenerationTemplateRequest,
-  type ImageAnnotation,
-  type PersistedAttachment,
-  type UserMessageDocument,
-  type UserMessageInputDocument,
-  type UserMessagePart,
+} from "@okouai/api-contracts/validators/chat-threads";
+import type {
+  FeedbackNotePart,
+  GenerationTemplateRequest,
+  ImageAnnotation,
+  PersistedAttachment,
+  UserMessageDocument,
+  UserMessageInputDocument,
+  UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { i18n } from "../../i18n/index.ts";

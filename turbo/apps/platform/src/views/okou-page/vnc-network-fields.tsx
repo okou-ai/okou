@@ -15,7 +15,7 @@ import {
 import {
   VNC_CA_BUNDLE_MAX_LENGTH,
   VNC_HOST_MAX_LENGTH,
-} from "@okouai/api-contracts/contracts/vnc-connections";
+} from "@okouai/api-contracts/contracts/vnc-transport";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import {

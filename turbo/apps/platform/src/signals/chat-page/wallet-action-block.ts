@@ -1,5 +1,5 @@
-import { walletUserContract } from "@okouai/api-contracts/contracts/wallet";
-import { walletChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
+import { walletUserContract } from "@okouai/api-contracts/client/wallet";
+import { walletChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import { command, computed, state, type Command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 

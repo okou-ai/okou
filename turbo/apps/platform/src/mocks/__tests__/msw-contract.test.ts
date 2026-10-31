@@ -1,5 +1,5 @@
 import { initContract } from "@okouai/api-contracts/contracts/base";
-import { expect, test } from "vitest";
+import { expect, expectTypeOf, test } from "vitest";
 import { coerce, literal, number, object, string } from "zod";
 
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
@@ -95,6 +95,24 @@ test("Contract mocks dispatch methods and decode path, query, and JSON inputs", 
   await expect(replaced.json()).resolves.toStrictEqual({
     id: "entry one",
     limit: 3,
+  });
+});
+
+test("Contract mocks can inject undeclared failures without weakening declared bodies", async () => {
+  context.mocks.api(contracts.read, ({ respond }) => {
+    expectTypeOf<Parameters<typeof respond<200>>>().toEqualTypeOf<
+      [status: 200, body: { id: string; limit: number }]
+    >();
+    expectTypeOf<Parameters<typeof respond<500>>>().toEqualTypeOf<
+      [status: 500, body: unknown]
+    >();
+    return respond(500, { error: { message: "Upstream unavailable" } });
+  });
+
+  const response = await fetch("http://localhost/api/mock-contracts/entry");
+  expect(response.status).toBe(500);
+  await expect(response.json()).resolves.toStrictEqual({
+    error: { message: "Upstream unavailable" },
   });
 });
 

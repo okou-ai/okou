@@ -1,7 +1,7 @@
 import {
   ORG_OPENROUTER_PRESETS,
   orgOpenrouterPresetSchema,
-} from "@okouai/api-contracts/contracts/org-openrouter-preset";
+} from "@okouai/api-contracts/validators/org-openrouter-preset";
 import {
   Select,
   SelectContent,

@@ -1,4 +1,4 @@
-import { CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES } from "@okouai/api-contracts/contracts/custom-connectors";
+import { CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES } from "@okouai/api-contracts/validators/custom-connectors";
 import { toast } from "@okouai/ui/components/ui/sonner";
 
 import { i18n } from "../i18n/index.ts";

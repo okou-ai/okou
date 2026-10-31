@@ -1,14 +1,14 @@
 import { command, computed, state } from "ccstate";
-import {
-  type UsagePackMigrationPreviewResponse,
-  type UsagePackMigrationRevisionPreviewResponse,
-  USAGE_PACKS_USD,
-  type UsagePackManagementResponse,
-  type UsagePackSubscriptionChangePreviewResponse,
-  type UsagePackUsd,
-  type MemberUsagePack,
-  type UsagePackCatalogItem,
+import type {
+  UsagePackMigrationPreviewResponse,
+  UsagePackMigrationRevisionPreviewResponse,
+  UsagePackManagementResponse,
+  UsagePackSubscriptionChangePreviewResponse,
+  UsagePackUsd,
+  MemberUsagePack,
+  UsagePackCatalogItem,
 } from "@okouai/api-contracts/contracts/billing";
+import { USAGE_PACKS_USD } from "@okouai/api-contracts/validators/billing";
 
 import { onRef } from "../../utils.ts";
 

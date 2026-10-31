@@ -5,10 +5,8 @@ import { RemoteNetworkCredentialHelp } from "./remote-network-help.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Input, Checkbox } from "@okouai/ui";
-import {
-  TAILSCALE_CREDENTIAL_MAX_LENGTH,
-  type TailscaleConfig,
-} from "@okouai/api-contracts/contracts/tailscale";
+import { TAILSCALE_CREDENTIAL_MAX_LENGTH } from "@okouai/api-contracts/validators/tailscale";
+import type { TailscaleConfig } from "@okouai/api-contracts/contracts/tailscale";
 import {
   mountTailscaleSecrets$,
   replaceTailscaleCredentials$,
