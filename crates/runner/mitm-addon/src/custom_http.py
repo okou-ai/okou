@@ -33,9 +33,12 @@ _DNS_TIMEOUT_SECONDS = 10
 
 
 class InvalidFirewallInputError(Exception):
-    def __init__(self, result: matching.FirewallInvalidInput) -> None:
+    def __init__(
+        self, result: matching.FirewallInvalidInput, *, authority: TrustedAuthority
+    ) -> None:
         super().__init__("invalid firewall path analysis")
         self.result = result
+        self.authority = authority
 
 
 def _destination_error(flow: http.HTTPFlow) -> AuthorityValidationError:
@@ -79,10 +82,11 @@ def prepare(flow: http.HTTPFlow, *, registry_path: str) -> Awaitable[None] | Non
             is_asterisk_form=flow.request.path == "*",
         )
         if isinstance(result, matching.FirewallInvalidInput):
-            raise InvalidFirewallInputError(result)
+            raise InvalidFirewallInputError(result, authority=original_authority)
         return result is not None
 
-    original_url = get_trusted_authority(flow).url
+    original_authority = get_trusted_authority(flow)
+    original_url = original_authority.url
     try:
         asserted = get_http_authority_assertion(flow)
     except AuthorityValidationError:

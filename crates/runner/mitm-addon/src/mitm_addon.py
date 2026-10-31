@@ -891,9 +891,7 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
     try:
         preparation = custom_http.prepare(flow, registry_path=get_registry_path())
     except custom_http.InvalidFirewallInputError as error:
-        _classify_request_for_flow(flow)
-        _start_request_timing(flow)
-        http_local_responses.set_firewall_invalid_input_response(flow, error.result)
+        _block_custom_http_invalid_input(flow, error)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
         header_auth_response.mark(flow)
         return None
@@ -905,6 +903,19 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             flow, preparation=preparation, request_end_stream=request_end_stream
         )
     return _requestheaders_after_authority(flow, request_end_stream=request_end_stream)
+
+
+def _block_custom_http_invalid_input(
+    flow: http.HTTPFlow, error: custom_http.InvalidFirewallInputError
+) -> None:
+    _classify_request_for_flow(flow)
+    # Classification may observe a newer registry without this sandbox. The
+    # rejecting preparation already validated this immutable diagnostic target.
+    authority = error.authority
+    flow.metadata[metadata_keys.ORIGINAL_URL] = authority.url
+    http_network_log.set_target(flow, url=authority.url, host=authority.host, port=authority.port)
+    _start_request_timing(flow)
+    http_local_responses.set_firewall_invalid_input_response(flow, error.result)
 
 
 def _reject_custom_http_requestheaders(
@@ -1892,9 +1903,7 @@ async def request(flow: http.HTTPFlow) -> None:
             if preparation is not None:
                 await preparation
         except custom_http.InvalidFirewallInputError as error:
-            _classify_request_for_flow(flow)
-            _start_request_timing(flow)
-            http_local_responses.set_firewall_invalid_input_response(flow, error.result)
+            _block_custom_http_invalid_input(flow, error)
             return
         except AuthorityValidationError as error:
             _classify_request_for_flow(flow)

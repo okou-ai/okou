@@ -501,3 +501,39 @@ async def test_invalid_http_request_hook_rejects_before_dns(
     assert metadata_keys.CUSTOM_HTTP_BINDING not in flow.metadata
     fetch.assert_not_awaited()
     dns.assert_not_awaited()
+
+
+@pytest.mark.parametrize("headers_phase", [False, True])
+async def test_invalid_http_path_retains_target_when_registry_changes_between_reads(
+    tmp_path, real_flow, headers, mitm_ctx, fake_firewall_headers, dns, monkeypatch, headers_phase
+):
+    reg = _write_registry(tmp_path, sandbox_info=_sandbox(tmp_path))
+    flow = _flow(real_flow, headers)
+    flow.request.path = "/outside/%ZZ?caller=private"
+    real_load = registry.load_registry_state
+    replaced = False
+
+    def replace_after_read(path):
+        nonlocal replaced
+        snapshot = real_load(path)
+        if not replaced:
+            # Schedule an external registry replacement between the two real
+            # reads; return the actual first snapshot, not fabricated state.
+            _write_registry(tmp_path, client_ip="10.200.0.6", sandbox_info=_sandbox(tmp_path))
+            replaced = True
+        return snapshot
+
+    with mitm_ctx(registry_path=str(reg)), fake_firewall_headers() as fetch:
+        monkeypatch.setattr(registry, "load_registry_state", replace_after_read)
+        if headers_phase:
+            assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    body = json.loads(flow.response.content)
+    assert body["reason"] == "unsafe_path"
+    assert body["url"] == f"http://{_IP}/outside/%ZZ"
+    assert metadata_keys.CUSTOM_HTTP_BINDING not in flow.metadata
+    assert "Authorization" not in flow.request.headers
+    fetch.assert_not_awaited()
+    dns.assert_not_awaited()
