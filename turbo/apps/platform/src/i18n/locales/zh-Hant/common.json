@@ -2099,6 +2099,18 @@
       "threads": "聊天",
       "title": "轉發到"
     },
+    "landingFiles": {
+      "back": "返回選擇檔案",
+      "description": "需求和檔案已準備好。將檔案上傳到工作區後開始處理。",
+      "failed": "未能完成，檔案和需求已保留。請重試。",
+      "loading": "正在恢復檔案…",
+      "missing": "無法讀取檔案。請在同一瀏覽器返回原頁面重新選擇。",
+      "prompt": "你的需求",
+      "retry": "重試",
+      "start": "上傳並開始",
+      "title": "使用你的檔案開始",
+      "uploading": "正在上傳檔案 {{current}} / {{total}}…"
+    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",

@@ -2140,6 +2140,18 @@
       "threads": "Conversaciones",
       "title": "Reenviar a"
     },
+    "landingFiles": {
+      "back": "Volver a los archivos",
+      "description": "Tu solicitud y tus archivos están listos. Súbelos a tu espacio de trabajo para empezar.",
+      "failed": "No se pudo completar. Tus archivos y tu solicitud se conservan aquí. Inténtalo de nuevo.",
+      "loading": "Restaurando tus archivos…",
+      "missing": "Tus archivos no están disponibles. Vuelve a la página en el mismo navegador y selecciónalos de nuevo.",
+      "prompt": "Tu solicitud",
+      "retry": "Reintentar",
+      "start": "Subir y empezar",
+      "title": "Empieza con tus archivos",
+      "uploading": "Subiendo archivo {{current}} de {{total}}…"
+    },
     "mail": {
       "bcc": "BCC",
       "cc": "cc",

@@ -2140,6 +2140,18 @@
       "threads": "Conversas",
       "title": "Encaminhar para"
     },
+    "landingFiles": {
+      "back": "Voltar aos arquivos",
+      "description": "Sua solicitação e seus arquivos estão prontos. Envie-os ao seu espaço de trabalho para começar.",
+      "failed": "Não foi possível concluir. Seus arquivos e sua solicitação foram mantidos aqui. Tente novamente.",
+      "loading": "Restaurando seus arquivos…",
+      "missing": "Seus arquivos não estão disponíveis. Volte à página no mesmo navegador e selecione-os novamente.",
+      "prompt": "Sua solicitação",
+      "retry": "Tentar novamente",
+      "start": "Enviar e começar",
+      "title": "Comece com seus arquivos",
+      "uploading": "Enviando arquivo {{current}} de {{total}}…"
+    },
     "mail": {
       "bcc": "cco",
       "cc": "cc",

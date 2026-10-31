@@ -2099,6 +2099,18 @@
       "threads": "Chat",
       "title": "Teruskan ke"
     },
+    "landingFiles": {
+      "back": "Kembali ke file",
+      "description": "Permintaan dan file Anda siap. Unggah ke ruang kerja untuk memulai.",
+      "failed": "Tidak dapat menyelesaikan. File dan permintaan Anda disimpan di sini. Coba lagi.",
+      "loading": "Memulihkan file Anda…",
+      "missing": "File Anda tidak tersedia. Kembali ke halaman di browser yang sama dan pilih lagi.",
+      "prompt": "Permintaan Anda",
+      "retry": "Coba lagi",
+      "start": "Unggah dan mulai",
+      "title": "Mulai dengan file Anda",
+      "uploading": "Mengunggah file {{current}} dari {{total}}…"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

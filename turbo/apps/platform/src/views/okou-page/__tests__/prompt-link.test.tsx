@@ -1,3 +1,4 @@
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
@@ -8,11 +9,12 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
   fill,
+  queryAllByRoleFast,
   setupPage,
   startPage,
 } from "../../../__tests__/page-helper.ts";
@@ -426,4 +428,214 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   expect(capture.createdThreads).toHaveLength(0);
   expect(capture.sends).toHaveLength(0);
   expect(draftUpdates).toHaveLength(0);
+});
+
+const LANDING_DRAFT_ID = "f0000000-0000-4000-a000-000000000001";
+
+function landingPath(source = "https://www.okou.ai/en/tools/pdf-to-ppt") {
+  return `/onboarding?${new URLSearchParams({ prompt: "Turn this report into slides", landingFiles: LANDING_DRAFT_ID, landingSource: source })}`;
+}
+
+async function deliverLandingFiles(
+  files: File[] | null,
+  origin = "https://www.okou.ai",
+  id = LANDING_DRAFT_ID,
+) {
+  let frame: HTMLIFrameElement | null = null;
+  await waitFor(() => {
+    frame = document.querySelector<HTMLIFrameElement>(
+      'iframe[src$="/file-handoff"]',
+    );
+    expect(frame).toBeInTheDocument();
+  });
+  const loadedFrame = document.querySelector<HTMLIFrameElement>(
+    'iframe[src$="/file-handoff"]',
+  );
+  if (!loadedFrame) {
+    throw new Error("Missing file transfer frame");
+  }
+  // happy-dom disables iframe page loading; provide only its Window boundary.
+  vi.spyOn(loadedFrame, "contentWindow", "get").mockReturnValue(window);
+  const source = loadedFrame.contentWindow;
+  await act(() => {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin,
+        source,
+        data: { type: "okou:landing-files:result", id, files },
+      }),
+    );
+  });
+}
+
+test("A landing-page request waits for its files and sends them with the edited prompt after onboarding", async () => {
+  const user = userEvent.setup();
+  const capture = capturePromptLaunch();
+  context.mocks.upload.success({
+    id: "a0000000-0000-4000-a000-000000000081",
+    filename: "report.pdf",
+    contentType: "application/pdf",
+    size: 6,
+    url: "https://cdn.vm7.io/artifacts/tests/report.pdf",
+  });
+  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
+  await expect(
+    screen.findByRole("heading", { name: "Start with your files" }),
+  ).resolves.toBeVisible();
+  expect(capture.sends).toHaveLength(0);
+  const file = new File(["report"], "report.pdf", { type: "application/pdf" });
+  await deliverLandingFiles([file], "https://attacker.example");
+  expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+  await deliverLandingFiles(
+    [file],
+    "https://www.okou.ai",
+    "f0000000-0000-4000-a000-000000000002",
+  );
+  expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+  await deliverLandingFiles([file]);
+  await expect(screen.findByText("report.pdf")).resolves.toBeVisible();
+  await fill(
+    screen.getByRole("textbox", { name: "Your request" }),
+    "Create a board presentation",
+  );
+  await user.click(await findButton("Upload and start"));
+  const send = await waitForPromptLaunch(
+    "Create a board presentation",
+    capture,
+  );
+  expect(JSON.stringify(userMessageParts(send))).toContain(
+    "a0000000-0000-4000-a000-000000000081",
+  );
+  expect(JSON.stringify(userMessageParts(send))).toContain("report.pdf");
+  expect(search()).not.toContain("landingFiles");
+  expect(document.querySelector('iframe[src$="/file-handoff"]')).toBeNull();
+});
+
+test("Missing landing files do not silently start a text-only task", async () => {
+  const capture = capturePromptLaunch();
+  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
+  await deliverLandingFiles(null);
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Your files are unavailable",
+  );
+  await expect(findButton("Upload and start")).resolves.toBeDisabled();
+  const back = new URL(
+    queryAllByRoleFast("link")
+      .find((link) => {
+        return link.textContent === "Back to files";
+      })!
+      .getAttribute("href") ?? "",
+  );
+  expect(back.origin).toBe("https://www.okou.ai");
+  expect(back.pathname).toBe("/en/tools/pdf-to-ppt");
+  expect(back.searchParams.get("fileDraft")).toBe(LANDING_DRAFT_ID);
+  expect(capture.sends).toHaveLength(0);
+});
+
+test("An untrusted landing source is rejected without loading its frame or starting a task", async () => {
+  const capture = capturePromptLaunch();
+  await setupPage({
+    context,
+    path: landingPath("https://attacker.example/files"),
+    host: "app.okou.ai",
+  });
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Your files are unavailable",
+  );
+  expect(document.querySelector('iframe[src$="/file-handoff"]')).toBeNull();
+  expect(
+    queryAllByRoleFast("link").find((link) => {
+      return link.textContent === "Back to files";
+    }),
+  ).toBeUndefined();
+  expect(capture.sends).toHaveLength(0);
+});
+
+test("A new user keeps the landing file handoff while completing onboarding", async () => {
+  const capture = capturePromptLaunch();
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
+  const input = await screen.findByRole("textbox", {
+    name: "Onboarding prompt",
+  });
+  await fill(input, "Create slides for our board");
+  expect(document.querySelector('iframe[src$="/file-handoff"]')).toBeNull();
+  click(await findButton("Next"));
+  await expect(
+    screen.findByRole("heading", { name: "Start with your files" }),
+  ).resolves.toBeVisible();
+  await deliverLandingFiles([
+    new File(["report"], "report.pdf", { type: "application/pdf" }),
+  ]);
+  await expect(screen.findByText("report.pdf")).resolves.toBeVisible();
+  const requestInput = screen.getByRole("textbox", { name: "Your request" });
+  if (!(requestInput instanceof HTMLTextAreaElement)) {
+    throw new Error("Expected request input");
+  }
+  expect(requestInput.value).toContain("Create slides for our board");
+  expect(capture.sends).toHaveLength(0);
+});
+
+test("A failed upload stops launch and retries only the failed file", async () => {
+  const user = userEvent.setup();
+  const capture = capturePromptLaunch();
+  const report = {
+    id: "a0000000-0000-4000-a000-000000000081",
+    filename: "report.pdf",
+    contentType: "application/pdf",
+    size: 6,
+    url: "https://cdn.vm7.io/artifacts/tests/report.pdf",
+  };
+  const notes = {
+    id: "a0000000-0000-4000-a000-000000000082",
+    filename: "notes.txt",
+    contentType: "text/plain",
+    size: 5,
+    url: "https://cdn.vm7.io/artifacts/tests/notes.txt",
+  };
+  context.mocks.upload.success(report);
+  context.mocks.upload.success(notes);
+  const attempts: string[] = [];
+  let failNotes = true;
+  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+    attempts.push(body.filename);
+    if (body.filename === notes.filename && failNotes) {
+      return respond(500, {
+        error: { message: "Upload unavailable", code: "INTERNAL_SERVER_ERROR" },
+      });
+    }
+    const result = body.filename === notes.filename ? notes : report;
+    return respond(200, {
+      ...result,
+      uploadUrl: `https://mock-upload.r2.test/${result.id}`,
+      uploadHeaders: {},
+    });
+  });
+  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
+  await deliverLandingFiles([
+    new File(["report"], report.filename, { type: report.contentType }),
+    new File(["notes"], notes.filename, { type: notes.contentType }),
+  ]);
+  await user.click(await findButton("Upload and start"));
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Your files and request are kept here",
+  );
+  expect(capture.sends).toHaveLength(0);
+  expect(attempts).toStrictEqual([report.filename, notes.filename]);
+  failNotes = false;
+  await user.click(await findButton("Retry"));
+  await waitFor(() => {
+    expect(capture.sends).toHaveLength(1);
+  });
+  expect(attempts).toStrictEqual([
+    report.filename,
+    notes.filename,
+    notes.filename,
+  ]);
+  const payload = JSON.stringify(capture.sends[0].userMessage);
+  expect(payload).toContain(report.id);
+  expect(payload).toContain(notes.id);
 });

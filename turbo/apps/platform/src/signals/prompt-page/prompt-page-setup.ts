@@ -1,4 +1,11 @@
 import { command } from "ccstate";
+import { createElement } from "react";
+import { hideAppSkeleton$ } from "../app-skeleton.ts";
+import { updatePage$ } from "../react-router.ts";
+import { LandingFilesPage } from "../../views/prompt-page/landing-files-page.tsx";
+import { landingFileSource } from "./landing-file-handoff.ts";
+import { createLandingFilesSignals } from "./landing-files.ts";
+import { detach, Reason } from "../utils.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
@@ -173,7 +180,40 @@ export const setupPromptPage$ = command(
     cleaned.delete("model");
     cleaned.delete("template");
     cleaned.delete("connector");
+    cleaned.delete("landingFiles");
+    cleaned.delete("landingSource");
     const rootSignal = get(rootSignal$);
+    if (params.has("landingFiles") || params.has("landingSource")) {
+      const files = createLandingFilesSignals(
+        landingFileSource(params.get("landingSource") ?? "", location.origin),
+        params.get("landingFiles") ?? "",
+        prompt,
+        {
+          agentId,
+          prompt,
+          modelSelection: resolvedRequestedModel
+            ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
+            : null,
+          generationTemplate: resolvedGenerationTemplate?.template,
+          generationTemplateTitleSnapshot:
+            resolvedGenerationTemplate?.titleSnapshot,
+          computerUseHostId: null,
+          routeSearchParams: cleaned,
+        },
+      );
+      detach(
+        set(files.load$, signal),
+        Reason.Daemon,
+        "Restore browser-local landing files",
+      );
+      set(
+        updatePage$,
+        createElement(LandingFilesPage, { signals: files }),
+        "none",
+      );
+      await set(hideAppSkeleton$, signal);
+      return;
+    }
     await set(
       sendNewThread$,
       {

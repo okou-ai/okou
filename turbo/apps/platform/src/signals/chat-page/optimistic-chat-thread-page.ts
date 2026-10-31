@@ -76,7 +76,7 @@ export const newChatThreadDisabled$ = computed(() => {
   return false;
 });
 
-interface SendNewThreadMessageRequest {
+export interface SendNewThreadMessageRequest {
   agentId: string;
   draft?: DraftSignals;
   /** Send from an isolated draft without clearing the Agent's saved composer. */

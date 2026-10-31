@@ -2106,6 +2106,18 @@
       "threads": "Chats",
       "title": "Forward to"
     },
+    "landingFiles": {
+      "back": "Back to files",
+      "description": "Your request and files are ready. Upload them to your workspace to start.",
+      "failed": "Could not finish. Your files and request are kept here. Try again.",
+      "loading": "Restoring your files…",
+      "missing": "Your files are unavailable. Return to the page in the same browser and select them again.",
+      "prompt": "Your request",
+      "retry": "Retry",
+      "start": "Upload and start",
+      "title": "Start with your files",
+      "uploading": "Uploading file {{current}} of {{total}}…"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

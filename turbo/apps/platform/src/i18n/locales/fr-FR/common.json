@@ -2140,6 +2140,18 @@
       "threads": "Chats",
       "title": "Transférer vers"
     },
+    "landingFiles": {
+      "back": "Retour aux fichiers",
+      "description": "Votre demande et vos fichiers sont prêts. Importez-les dans votre espace de travail pour commencer.",
+      "failed": "Impossible de terminer. Vos fichiers et votre demande sont conservés ici. Réessayez.",
+      "loading": "Restauration de vos fichiers…",
+      "missing": "Vos fichiers sont indisponibles. Revenez à la page dans le même navigateur et sélectionnez-les à nouveau.",
+      "prompt": "Votre demande",
+      "retry": "Réessayer",
+      "start": "Importer et commencer",
+      "title": "Commencer avec vos fichiers",
+      "uploading": "Importation du fichier {{current}} sur {{total}}…"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
