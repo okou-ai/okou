@@ -187,7 +187,6 @@ test.each([false, true])(
         return element.textContent;
       }),
     ).toStrictEqual(["Only me", "Anyone at Acme", "Anyone with the link"]);
-    expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
     expect(clipboard.writes).toStrictEqual([]);

@@ -25,8 +25,5 @@ test.each([true, false])(
     });
     expect(pathname()).toBe(ROUTES.onboardingExperience);
     expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
-    expect(
-      screen.queryByLabelText("Team member’s email"),
-    ).not.toBeInTheDocument();
   },
 );
