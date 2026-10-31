@@ -1,4 +1,4 @@
-import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
+import { discordSnowflakeSchema } from "@okouai/api-contracts/validators/integrations-discord-read";
 import { enum as zEnum } from "zod";
 
 // Presentation only. These values never authorize approval or completion.

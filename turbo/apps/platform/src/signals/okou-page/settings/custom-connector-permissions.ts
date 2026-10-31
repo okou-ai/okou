@@ -1,12 +1,12 @@
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorPermissionBundleResponse,
-  type CustomConnectorResponse,
-  customConnectorByIdContract,
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/validators/custom-connectors";
+import type {
+  CustomConnectorPermissionBundleResponse,
+  CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import { customConnectorByIdContract } from "@okouai/api-contracts/client/custom-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/client/agent-custom-connectors";
 
 import { apiClient$ } from "../../api-client.ts";
 import { i18n } from "../../../i18n/index.ts";

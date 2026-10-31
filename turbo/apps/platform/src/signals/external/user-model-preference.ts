@@ -3,15 +3,13 @@ import {
   DEFAULT_IMAGE_MODEL,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
-import {
-  type UserPreferenceChangedPayload,
-  userPreferenceChangedPayloadSchema,
-} from "@okouai/api-contracts/contracts/realtime";
-import {
-  type UpdateUserModelPreferenceRequest,
-  type UserModelPreferenceResponse,
-  userModelPreferenceContract,
+import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
+import { userPreferenceChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
+import type {
+  UpdateUserModelPreferenceRequest,
+  UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
+import { userModelPreferenceContract } from "@okouai/api-contracts/client/user-model-preference";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";

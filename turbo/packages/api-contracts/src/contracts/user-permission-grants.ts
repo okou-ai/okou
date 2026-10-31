@@ -9,23 +9,28 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import {
+  permissionSchema,
+  userPermissionGrantBatchItemsSchema,
+  userPermissionGrantExpiresInSchema,
+  type userPermissionGrantBatchItemSchema,
+} from "../validators/user-permission-grants";
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
 
+export {
+  userPermissionGrantBatchItemSchema,
+  userPermissionGrantBatchItemsSchema,
+  userPermissionGrantExpiresInSchema,
+} from "../validators/user-permission-grants";
+
 const c = initContract();
 
 const agentIdSchema = string().uuid();
-const permissionSchema = string().min(1).max(128);
 
 export const userPermissionGrantActionSchema = zEnum(["allow", "deny"]);
 export const userPermissionGrantApplyModeSchema = zEnum(["patch", "replace"]);
-export const userPermissionGrantExpiresInSchema = zEnum([
-  "1h",
-  "24h",
-  "7d",
-  "always",
-]);
 
 const agentPermissionGrantScopeSchema = object({
   agentId: agentIdSchema,
@@ -70,31 +75,6 @@ export const applyUserPermissionGrantsRequestSchema = object({
   mode: userPermissionGrantApplyModeSchema,
   grants: array(applyUserPermissionGrantSchema),
 }).strict();
-
-export const userPermissionGrantBatchItemSchema = object({
-  connectorSlug: connectorSlugSchema,
-  permission: permissionSchema,
-}).strict();
-
-export const userPermissionGrantBatchItemsSchema = array(
-  userPermissionGrantBatchItemSchema,
-)
-  .min(1)
-  .max(20)
-  .superRefine((items, ctx) => {
-    const seen = new Set<string>();
-    for (const [index, item] of items.entries()) {
-      const key = `${item.connectorSlug}\0${item.permission}`;
-      if (seen.has(key)) {
-        ctx.addIssue({
-          code: "custom",
-          message: "Duplicate connector permission",
-          path: [index],
-        });
-      }
-      seen.add(key);
-    }
-  });
 
 export const applyUserPermissionGrantsBatchRequestSchema = object({
   agentId: agentIdSchema,

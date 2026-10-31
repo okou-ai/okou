@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
+import { integrationsGithubContract } from "@okouai/api-contracts/client/integrations-github";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { searchParams$ } from "../route.ts";

@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  connectorAgentAccessContract,
-  type ConnectorAgentAccess,
-} from "@okouai/api-contracts/contracts/connector-agent-access";
+import { connectorAgentAccessContract } from "@okouai/api-contracts/client/connector-agent-access";
+import type { ConnectorAgentAccess } from "@okouai/api-contracts/contracts/connector-agent-access";
 
 import { apiClient$ } from "../../api-client.ts";
 import { accept } from "../../../lib/accept.ts";

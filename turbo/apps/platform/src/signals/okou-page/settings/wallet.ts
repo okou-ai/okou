@@ -1,5 +1,5 @@
-import { walletUserContract } from "@okouai/api-contracts/contracts/wallet";
-import { walletChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
+import { walletUserContract } from "@okouai/api-contracts/client/wallet";
+import { walletChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import { command, computed, state } from "ccstate";
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";

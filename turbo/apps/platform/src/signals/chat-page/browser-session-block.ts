@@ -1,9 +1,7 @@
-import {
-  BROWSER_IDLE_LEASE_MINUTES,
-  browserContract,
-  type BrowserSession,
-} from "@okouai/api-contracts/contracts/browser";
-import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
+import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/validators/browser";
+import { browserContract } from "@okouai/api-contracts/client/browser";
+import type { BrowserSession } from "@okouai/api-contracts/contracts/browser";
+import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import type { BrowserConnection } from "../browser-viewer/viewer/types.ts";
 import {
   createBrowserViewerSignals,

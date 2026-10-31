@@ -1,11 +1,12 @@
 import { object, string, type infer as zInfer } from "zod";
 
+import { AGENT_SETUP_RESPONSIBILITY_MAX_CHARS } from "../validators/agent-setup-prompts";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const AGENT_SETUP_RESPONSIBILITY_MAX_CHARS = 4000;
+export { AGENT_SETUP_RESPONSIBILITY_MAX_CHARS };
 export const AGENT_SETUP_PROMPT_MAX_CHARS = 8000;
 
 export const agentSetupPromptRequestSchema = object({

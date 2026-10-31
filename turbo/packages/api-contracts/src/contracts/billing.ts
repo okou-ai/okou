@@ -12,11 +12,17 @@ import {
   enum as zEnum,
   null as zNull,
   type infer as zInfer,
-  type ZodType,
 } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { usagePackUsdSchema } from "../validators/billing";
+
+export {
+  USAGE_PACKS_USD,
+  type UsagePackUsd,
+  usagePackUsdSchema,
+} from "../validators/billing";
 
 const c = initContract();
 
@@ -194,16 +200,6 @@ const checkoutRequestSchema = object({
   cancelUrl: stripeRedirectUrlSchema,
   trialDays: literal(7).optional(),
 });
-
-export const USAGE_PACKS_USD = [20, 50, 100, 200] as const;
-export type UsagePackUsd = (typeof USAGE_PACKS_USD)[number];
-
-export const usagePackUsdSchema: ZodType<UsagePackUsd> = union([
-  literal(20),
-  literal(50),
-  literal(100),
-  literal(200),
-]);
 
 const usagePackCatalogItemSchema = object({
   usagePackUsd: usagePackUsdSchema,

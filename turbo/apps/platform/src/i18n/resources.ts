@@ -2,8 +2,8 @@ import { fetchResource } from "../lib/resource-fetch.ts";
 import {
   DEFAULT_USER_LOCALE,
   SUPPORTED_USER_LOCALES,
-  type UserLocale,
-} from "@okouai/api-contracts/contracts/user-preferences";
+} from "@okouai/api-contracts/validators/user-preferences";
+import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import deDEAgentsUrl from "./locales/de-DE/agents.json?url";
 import deDECommonUrl from "./locales/de-DE/common.json?url";
 import deDEHalloweenUrl from "./locales/de-DE/halloween.json?url";

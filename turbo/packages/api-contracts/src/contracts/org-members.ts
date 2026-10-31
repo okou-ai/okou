@@ -10,7 +10,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { usagePackUsdSchema } from "./billing";
+import { usagePackUsdSchema } from "../validators/billing";
 
 /**
  * Org role enum

@@ -1020,8 +1020,11 @@ describe("shared Browser capture publication and admission", () => {
           }
           return result.value;
         });
-        const [successful, conflict] = results.sort((left, right) => {
-          return left.status - right.status;
+        const successful = results.find((result) => {
+          return result.status === 200;
+        });
+        const conflict = results.find((result) => {
+          return result.status === 409;
         });
         expect(results).toHaveLength(2);
         expect(successful?.status).toBe(200);

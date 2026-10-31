@@ -1,11 +1,13 @@
 import { literal, object, strictObject, string, url, enum as zEnum } from "zod";
+import {
+  discordOauthApprovalBodySchema,
+  discordOauthProofSchema as proofSchema,
+} from "../validators/discord-oauth";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { discordSnowflakeSchema } from "./integrations-discord-read";
 
-const proofSchema = string()
-  .length(43)
-  .regex(/^[A-Za-z0-9_-]+$/u);
+export { discordOauthApprovalBodySchema } from "../validators/discord-oauth";
 
 const c = initContract();
 
@@ -38,7 +40,7 @@ export const discordOauthContract = c.router({
     method: "POST",
     path: "/api/integrations/discord/oauth/approve",
     headers: authHeadersSchema,
-    body: strictObject({ state: proofSchema, approvalProof: proofSchema }),
+    body: discordOauthApprovalBodySchema,
     responses: {
       200: object({ approved: literal(true) }),
       400: apiErrorSchema,

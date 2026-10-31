@@ -9,8 +9,8 @@ import { command, computed, type Computed, state } from "ccstate";
 import {
   agentsByIdContract,
   agentsMainContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
+} from "@okouai/api-contracts/client/agents";
+import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { onboardingStatus$ } from "./okou-page/onboarding.ts";

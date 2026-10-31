@@ -1,5 +1,5 @@
 import { command, type Command } from "ccstate";
-import { sshChangedPayloadSchema } from "@okouai/api-contracts/contracts/ssh-access";
+import { sshChangedPayloadSchema } from "@okouai/api-contracts/validators/ssh-access";
 
 import { currentOrgInfo$ } from "./auth.ts";
 import { invalidateCloudflareAccess$ } from "./cloudflare-access.ts";

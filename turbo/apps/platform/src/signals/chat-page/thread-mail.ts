@@ -6,10 +6,8 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import {
-  mailContract,
-  type ThreadMailSummary,
-} from "@okouai/api-contracts/contracts/mail";
+import { mailContract } from "@okouai/api-contracts/client/mail";
+import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

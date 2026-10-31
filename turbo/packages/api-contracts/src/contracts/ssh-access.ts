@@ -1,14 +1,13 @@
-import { array, discriminatedUnion, literal, object, string } from "zod";
+import { array, discriminatedUnion, literal, object } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { sshConnectionMetadataSchema } from "./ssh-connections";
 import { remoteHostIdentitySchema } from "./remote-host-identity";
 
+export { sshChangedPayloadSchema } from "../validators/ssh-access";
+
 const c = initContract();
-export const sshChangedPayloadSchema = object({
-  orgId: string().min(1),
-}).strict();
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,

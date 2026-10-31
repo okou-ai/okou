@@ -1,8 +1,8 @@
 import { command, computed, state } from "ccstate";
-import {
-  presentationTemplatesContract,
-  type PresentationTemplateCatalogEntry,
-  type PresentationTemplateSummary,
+import { presentationTemplatesContract } from "@okouai/api-contracts/client/presentation-templates";
+import type {
+  PresentationTemplateCatalogEntry,
+  PresentationTemplateSummary,
 } from "@okouai/api-contracts/contracts/presentation-templates";
 
 import { accept } from "../../lib/accept.ts";

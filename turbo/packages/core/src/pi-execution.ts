@@ -2,7 +2,7 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import {
   isPiRouteClass,
   type PiRouteClass,
-} from "@okouai/api-contracts/contracts/model-catalog";
+} from "@okouai/api-contracts/validators/model-catalog";
 import {
   AUTO_SELECTED_MODEL,
   AUTO_RUN_PROVIDER,

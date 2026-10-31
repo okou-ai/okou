@@ -1,5 +1,6 @@
 import { array, object, string, type infer as zInfer } from "zod";
 
+import { VOICE_IO_POLISH_MAX_SEGMENTS } from "../validators/voice-io-polish";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { voiceIoQuotaErrorSchema } from "./voice-io-quota";
@@ -7,7 +8,7 @@ import { voiceIoQuotaErrorSchema } from "./voice-io-quota";
 const c = initContract();
 
 export const VOICE_IO_POLISH_MAX_TEXT_CHARS = 262_144;
-export const VOICE_IO_POLISH_MAX_SEGMENTS = 128;
+export { VOICE_IO_POLISH_MAX_SEGMENTS };
 
 export const voiceIoPolishSegmentsRequestSchema = object({
   segments: array(string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS))

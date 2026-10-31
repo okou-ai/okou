@@ -1,4 +1,4 @@
-import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
+import { emailSubscriptionContract } from "@okouai/api-contracts/client/email-subscription";
 import { command, computed, state } from "ccstate";
 
 import { accept } from "../../../lib/accept.ts";

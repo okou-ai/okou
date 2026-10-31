@@ -5,13 +5,13 @@ import {
   orgContract,
   orgDeleteContract,
   orgLeaveContract,
-} from "@okouai/api-contracts/contracts/org-routes";
-import { orgLogoContract } from "@okouai/api-contracts/contracts/org-logo";
+} from "@okouai/api-contracts/client/org-routes";
+import { orgLogoContract } from "@okouai/api-contracts/client/org-logo";
 import {
   orgInviteContract,
   orgMembersContract,
   orgMembershipRequestsContract,
-} from "@okouai/api-contracts/contracts/org-member-routes";
+} from "@okouai/api-contracts/client/org-member-routes";
 import type {
   OrgInvitationPurchasePreviewResponse,
   OrgRole,

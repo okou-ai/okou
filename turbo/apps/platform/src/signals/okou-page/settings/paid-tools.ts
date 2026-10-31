@@ -1,9 +1,7 @@
-import {
-  AVAILABLE_PAID_TOOL_IDS,
-  paidToolsContract,
-  type PaidToolId,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { AVAILABLE_PAID_TOOL_IDS } from "@okouai/api-contracts/validators/paid-tools";
+import { paidToolsContract } from "@okouai/api-contracts/client/paid-tools";
+import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
+import { userModelPreferenceContract } from "@okouai/api-contracts/client/user-model-preference";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { command, computed, state, type Computed } from "ccstate";
 import { accept } from "../../../lib/accept.ts";

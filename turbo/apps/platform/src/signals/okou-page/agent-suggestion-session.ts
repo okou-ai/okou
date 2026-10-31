@@ -1,10 +1,10 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  suggestionsContract,
-  getSuggestionExpiresAt,
-  type Suggestion,
-  type SuggestionFeedbackRequest,
+import { suggestionsContract } from "@okouai/api-contracts/client/suggestions";
+import { getSuggestionExpiresAt } from "@okouai/api-contracts/validators/suggestions";
+import type {
+  Suggestion,
+  SuggestionFeedbackRequest,
 } from "@okouai/api-contracts/contracts/suggestions";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";

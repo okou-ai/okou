@@ -1,6 +1,6 @@
 import { array, iso, object, type infer as zInfer } from "zod";
 
-import { agentResponseSchema } from "./agents";
+import { agentResponseSchema } from "../validators/agents";
 import { initContract } from "./base";
 import { CHAT_SEARCH_RESULT_LIMIT, chatSearchContract } from "./chat-threads";
 import { mcpRunIdSchema, mcpThreadIdSchema } from "./mcp-identifiers";

@@ -1,9 +1,38 @@
+import { resolve } from "node:path";
 import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { clientContractsPlugin } from "@okouai/eslint-rules/client-contracts";
+import { clientContractImportManifest } from "./src/client/imports.ts";
 import { config, oxlint } from "@okouai/eslint-config/base";
 
 export default [
   ...config,
   namedZodImportsConfig,
+  {
+    files: [
+      "src/validators/**/*.ts",
+      "src/client/types.ts",
+      "src/client/transport.ts",
+      "src/client/response-validation.ts",
+      ...clientContractImportManifest.map(({ module }) => {
+        return `src/client/${module}.ts`;
+      }),
+    ],
+    ignores: [
+      "src/**/__tests__/**",
+      "src/**/__benches__/**",
+      "src/**/*.{test,spec,bench}.ts",
+    ],
+    plugins: { "client-contracts": clientContractsPlugin },
+    rules: {
+      "client-contracts/prefer-client-descriptors": [
+        "error",
+        {
+          modules: clientContractImportManifest,
+          contractsDirectory: resolve(import.meta.dirname, "src/contracts"),
+        },
+      ],
+    },
+  },
   {
     ignores: ["**/dist/**"],
   },

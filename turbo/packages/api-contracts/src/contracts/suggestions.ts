@@ -13,9 +13,14 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { composerDraftSchema } from "./chat-threads";
 import { apiErrorSchema } from "./errors";
+import { SUGGESTION_RETENTION_MS } from "../validators/suggestions";
+
+export {
+  SUGGESTION_RETENTION_MS,
+  getSuggestionExpiresAt,
+} from "../validators/suggestions";
 
 const SUGGESTION_LIMIT = 10;
-export const SUGGESTION_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const SUGGESTION_FEEDBACK_RETENTION_MS = 30 * SUGGESTION_RETENTION_MS;
 export const suggestionFeedbackScopeSchema = object({
   key: string()
@@ -199,16 +204,6 @@ const suggestionConsumeSchema = object({
   snapshot: suggestionSchema.optional(),
 });
 export type SuggestionConsume = zInfer<typeof suggestionConsumeSchema>;
-
-/** An explicit deadline can shorten the 24-hour window after the last update. */
-export function getSuggestionExpiresAt(
-  suggestion: Pick<Suggestion, "updatedAt" | "expiresAt">,
-): number {
-  const maximum = Date.parse(suggestion.updatedAt) + SUGGESTION_RETENTION_MS;
-  return suggestion.expiresAt === undefined
-    ? maximum
-    : Math.min(maximum, Date.parse(suggestion.expiresAt));
-}
 
 const c = initContract();
 const errors = {

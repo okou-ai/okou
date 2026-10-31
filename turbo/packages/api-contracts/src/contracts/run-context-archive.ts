@@ -4,7 +4,7 @@ import {
   runContextResponseSchema,
   runContextStorageMountSchema,
   type RunContextStorageMount,
-} from "./run-routes";
+} from "../validators/run-routes";
 
 const retainedStorageSchema = object({
   storageMounts: array(runContextStorageMountSchema).optional(),

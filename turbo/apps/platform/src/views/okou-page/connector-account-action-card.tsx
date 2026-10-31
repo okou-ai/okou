@@ -2,8 +2,8 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import {
   connectorAccountEffectiveLabel,
   connectorAccountExternalIdentity,
-  type ConnectorAccountConnection,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+} from "@okouai/api-contracts/validators/connector-accounts";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Button, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { AlertCircle, Check, Loader2 } from "lucide-react";

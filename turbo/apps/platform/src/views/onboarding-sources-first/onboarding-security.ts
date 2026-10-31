@@ -1,7 +1,5 @@
-import {
-  userLocaleSchema,
-  type UserLocale,
-} from "@okouai/api-contracts/contracts/user-preferences";
+import { userLocaleSchema } from "@okouai/api-contracts/validators/user-preferences";
+import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 
 const SECURITY_PAGE_LOCALES: Readonly<Record<UserLocale, string>> = {
   "de-DE": "de",

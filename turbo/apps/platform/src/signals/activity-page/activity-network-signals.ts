@@ -1,10 +1,10 @@
 import { state, computed, command } from "ccstate";
-import { runNetworkLogsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runNetworkLogsContract } from "@okouai/api-contracts/client/run-routes";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
 import type {
   InitClientArgs,
   InitClientReturn,
-} from "@okouai/api-contracts/contracts/trpc-contract";
+} from "@okouai/api-contracts/client/types";
 import { apiClient$ } from "../api-client.ts";
 import { currentRunId$ } from "./activity-signals.ts";
 import { accept } from "../../lib/accept.ts";

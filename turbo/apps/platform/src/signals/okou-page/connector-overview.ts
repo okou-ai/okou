@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
-import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
+import { connectedConnectorsContract } from "@okouai/api-contracts/client/connected-connectors";
+import { remotesContract } from "@okouai/api-contracts/client/remotes";
 
 import { accept } from "../../lib/accept.ts";
 import { sortRemoteHosts } from "../../lib/remote-resource-order.ts";

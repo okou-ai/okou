@@ -2,8 +2,8 @@ import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   BROWSER_USER_ACTION_MAX_FILE_BYTES,
   BROWSER_USER_ACTION_MAX_FILES,
-  type BrowserUserActionResponse,
-} from "@okouai/api-contracts/contracts/browser-user-actions";
+} from "@okouai/api-contracts/validators/browser-user-actions";
+import type { BrowserUserActionResponse } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { cn } from "@okouai/ui";
 import { Button } from "@okouai/ui/components/ui/button";
 import {

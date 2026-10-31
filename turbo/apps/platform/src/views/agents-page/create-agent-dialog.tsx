@@ -1,7 +1,7 @@
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { AGENT_SETUP_RESPONSIBILITY_MAX_CHARS } from "@okouai/api-contracts/contracts/agent-setup-prompts";
+import { AGENT_SETUP_RESPONSIBILITY_MAX_CHARS } from "@okouai/api-contracts/validators/agent-setup-prompts";
 import { Loader2, Wand } from "lucide-react";
 import {
   Dialog,

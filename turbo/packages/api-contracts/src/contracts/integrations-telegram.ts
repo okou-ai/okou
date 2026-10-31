@@ -11,12 +11,13 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { OFFICIAL_TELEGRAM_BOT_ID } from "../validators/integrations-telegram";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const OFFICIAL_TELEGRAM_BOT_ID = "official" as const;
+export { OFFICIAL_TELEGRAM_BOT_ID };
 
 const telegramTokenStatusSchema = zEnum(["valid", "invalid", "unknown"]);
 

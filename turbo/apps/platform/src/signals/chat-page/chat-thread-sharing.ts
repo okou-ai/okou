@@ -1,14 +1,12 @@
-import {
-  sharedThreadVisibilityContract,
-  type SharedThreadAudience,
-} from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import { sharedThreadVisibilityContract } from "@okouai/api-contracts/client/shared-thread-visibility";
+import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   createSharedThreadVisibilitySignals,
   type SharedThreadVisibilitySignals,
 } from "../shared-thread-visibility.ts";
-import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
+import { sharedThreadsContract } from "@okouai/api-contracts/client/shared-threads";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   command,

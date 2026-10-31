@@ -7,8 +7,10 @@ import { command, computed, state } from "ccstate";
 import {
   feishuConnectContract,
   larkConnectContract,
-  type FeishuConnectStatus,
-  type FeishuInstallationStatus,
+} from "@okouai/api-contracts/client/feishu-connect";
+import type {
+  FeishuConnectStatus,
+  FeishuInstallationStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { toast } from "@okouai/ui/components/ui/sonner";
 

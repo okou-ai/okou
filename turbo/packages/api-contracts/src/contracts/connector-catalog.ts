@@ -11,6 +11,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { publicConnectorCatalogIconSchema } from "../validators/connector-catalog";
 import { authHeadersSchema, initContract } from "./base";
 import {
   connectorAuthMethodIdSchema,
@@ -19,6 +20,7 @@ import {
 import { apiErrorSchema } from "./errors";
 
 export { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-catalog/contracts";
+export { publicConnectorCatalogIconSchema } from "../validators/connector-catalog";
 
 const c = initContract();
 
@@ -44,12 +46,6 @@ const publicConnectorCatalogPermissionSummarySchema = object({
   permissionCount: number().int().nonnegative(),
   hasCategories: boolean(),
   hasDefaultPolicyOverrides: boolean(),
-});
-
-export const publicConnectorCatalogIconSchema = object({
-  url: url({ protocol: /^https$/u }).max(2048),
-  invertInDarkMode: boolean(),
-  scale: number().min(1).max(3).optional(),
 });
 
 const publicConnectorCatalogItemSchema = object({

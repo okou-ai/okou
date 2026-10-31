@@ -7,22 +7,16 @@ import {
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
-
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { PI_ROUTE_CLASSES } from "../validators/model-catalog";
+export {
+  isPiRouteClass,
+  type PiRouteClass,
+  PI_ROUTE_CLASSES,
+} from "../validators/model-catalog";
 
 const c = initContract();
-
-/** The Pi route classes `run_model_catalog.pi_route_class` may hold. */
-export const PI_ROUTE_CLASSES = ["gpt-codex"] as const;
-
-export type PiRouteClass = (typeof PI_ROUTE_CLASSES)[number];
-
-export function isPiRouteClass(value: unknown): value is PiRouteClass {
-  return PI_ROUTE_CLASSES.some((routeClass) => {
-    return routeClass === value;
-  });
-}
 
 const modelCatalogModelSchema = object({
   model: string(),

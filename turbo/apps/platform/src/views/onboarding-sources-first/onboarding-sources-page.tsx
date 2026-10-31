@@ -12,7 +12,7 @@ import {
   DialogTrigger,
 } from "@okouai/ui";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/validators/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";

@@ -1,11 +1,11 @@
 import { command, computed, state, type Computed } from "ccstate";
-import {
-  type ApplyUserPermissionGrant,
-  type UserPermissionGrantApplyMode,
-  type UserPermissionGrantExpiresIn,
-  type UserPermissionGrantAction,
-  userPermissionGrantsContract,
+import type {
+  ApplyUserPermissionGrant,
+  UserPermissionGrantApplyMode,
+  UserPermissionGrantExpiresIn,
+  UserPermissionGrantAction,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
+import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
 import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicyValue,

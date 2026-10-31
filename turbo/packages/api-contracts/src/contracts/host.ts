@@ -15,6 +15,10 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import {
+  hostedSiteUrlSlugSchema,
+  isHostedSiteDocument,
+} from "../validators/host";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -31,6 +35,8 @@ import {
 
 const c = initContract();
 
+export { hostedSiteUrlSlugSchema, isHostedSiteDocument };
+
 export const hostedSiteTitleSchema = string().trim().min(1).max(200);
 
 export const hostedSiteTitleResponseSchema = object({
@@ -38,14 +44,6 @@ export const hostedSiteTitleResponseSchema = object({
   publicSlug: string(),
   title: hostedSiteTitleSchema,
 });
-
-export const hostedSiteUrlSlugSchema = string()
-  .min(3)
-  .max(63)
-  .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/)
-  .refine((value) => {
-    return !/^(?:dpl|pv|ps|sh)-/u.test(value);
-  }, "This website prefix is reserved");
 
 export const hostedSiteUrlSchema = object({
   siteId: string().uuid(),
@@ -113,21 +111,6 @@ export const hostedSiteFileSchema = object({
   contentType: string().min(1).max(200),
   immutable: boolean().optional(),
 });
-
-/**
- * HTML documents are a publication's mutable entry points: a redeploy replaces
- * them in place under the same address, so delivery never caches them and their
- * bytes may differ between publications of one site.
- */
-export function isHostedSiteDocument(file: {
-  readonly path: string;
-  readonly contentType: string;
-}): boolean {
-  return (
-    /\.html?$/iu.test(file.path) ||
-    file.contentType.toLowerCase().startsWith("text/html")
-  );
-}
 
 /**
  * Agents and browsers address these by a fixed name, so they cannot carry a

@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/client/integrations-agentphone";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pathname$, searchParams$ } from "../route.ts";
@@ -8,7 +8,7 @@ import {
   reloadAgentPhoneLinkStatus$,
   agentPhoneLinkStatus$,
 } from "./agentphone.ts";
-import { integrationsWhatsappContract } from "@okouai/api-contracts/contracts/integrations-whatsapp";
+import { integrationsWhatsappContract } from "@okouai/api-contracts/client/integrations-whatsapp";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
