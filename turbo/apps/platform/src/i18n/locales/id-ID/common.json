@@ -4527,7 +4527,7 @@
         "tooLong": "Persingkat tugas untuk memilih format lain."
       },
       "prompt": {
-        "connectorsDescription": "Hubungkan alat yang dibutuhkan untuk tugas ini. Anda juga dapat melakukannya nanti.",
+        "connectorsDescription": "Hubungkan aplikasi Anda agar Okou lebih memahami pekerjaan Anda.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
         "intro": "Hubungkan alat Anda untuk hasil yang lebih baik dan pilih format untuk menambahkan instruksi yang dapat diedit ke prompt."
       },

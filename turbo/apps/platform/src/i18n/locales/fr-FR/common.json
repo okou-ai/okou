@@ -4596,7 +4596,7 @@
         "tooLong": "Raccourcissez la tâche pour choisir un autre format."
       },
       "prompt": {
-        "connectorsDescription": "Connectez les outils nécessaires à cette tâche. Vous pouvez aussi le faire plus tard.",
+        "connectorsDescription": "Connectez vos applications pour aider Okou à mieux comprendre votre travail.",
         "connectorsTitle": "Connectez vos outils de travail",
         "intro": "Connectez vos outils pour de meilleurs résultats et choisissez un format pour ajouter des consignes modifiables à votre prompt."
       },

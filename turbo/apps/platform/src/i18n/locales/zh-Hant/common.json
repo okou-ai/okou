@@ -4527,7 +4527,7 @@
         "tooLong": "請縮短任務內容，以選擇其他產出形式。"
       },
       "prompt": {
-        "connectorsDescription": "連接本次任務需要的工具，也可以稍後再連接。",
+        "connectorsDescription": "連接應用程式，讓 Okou 更了解你的工作。",
         "connectorsTitle": "連接你的工作工具",
         "intro": "連接工具，讓成果更符合需求；選擇格式後，輸出要求會填入提示詞，供你編輯。"
       },
