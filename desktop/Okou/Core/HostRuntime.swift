@@ -460,7 +460,8 @@ public actor HostRuntime {
           if running && acceptingCommands && generation == current {
             state.commands.insert(
               CommandLog(
-                id: command.id, kind: command.kind.rawValue, payload: .object(command.payload),
+                id: command.id, kind: command.kind.rawValue,
+                payload: try JSONValue(encoding: command.payload),
                 startedAt: Date()), at: 0)
             state.commands = Array(state.commands.prefix(100))
             state.lastCommand = Date()

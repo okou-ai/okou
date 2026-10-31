@@ -554,6 +554,7 @@ function resolveObject(
         [],
         context,
         path,
+        allowsUnknownFields(schema),
       ),
     };
   }
@@ -574,6 +575,36 @@ function resolveObject(
   return primitive("[String: JSONValue]");
 }
 
+function allowsUnknownFields(schema: JsonObject): boolean {
+  const additional = schema.additionalProperties;
+  return (
+    additional === true ||
+    (isJsonObject(additional) && Object.keys(additional).length === 0)
+  );
+}
+
+function resolveStructMemberType(
+  propertySchema: JsonObject,
+  typeName: string,
+  context: RenderContext,
+  path: string,
+  siblingObjects: Map<string, string>,
+): ResolvedType {
+  const schema = resolveRef(propertySchema, context, path);
+  const item =
+    schema.type === "array" && isJsonObject(schema.items)
+      ? resolveRef(schema.items, context, `${path}[]`)
+      : undefined;
+  const sibling = item ? siblingObjects.get(JSON.stringify(item)) : undefined;
+  const resolved = sibling
+    ? { swiftType: `[${sibling}]`, nullable: false, declarations: [] }
+    : resolveType(propertySchema, typeName, context, path);
+  if (schema.type === "object" && resolved.declarations.length > 0) {
+    siblingObjects.set(JSON.stringify(schema), resolved.swiftType);
+  }
+  return resolved;
+}
+
 function renderStruct(
   properties: JsonObject,
   required: ReadonlySet<string>,
@@ -581,6 +612,7 @@ function renderStruct(
   doc: readonly string[],
   context: RenderContext,
   path: string,
+  passthrough = false,
 ): readonly string[] {
   if (!swiftTypeNamePattern.test(typeName)) {
     throw new Error(
@@ -593,17 +625,19 @@ function renderStruct(
   const parameters: string[] = [];
   const assignments: string[] = [];
   const members: StructMember[] = [];
+  const siblingObjects = new Map<string, string>();
   for (const [wireName, propertySchema] of Object.entries(properties)) {
     if (!isJsonObject(propertySchema)) {
       throw new Error(`${context.label}.${path}.${wireName} is malformed`);
     }
     const name = swiftIdentifier(wireName, `${context.label}.${path}`);
     const nestedName = nestedTypeName(wireName, `${context.label}.${path}`);
-    const resolved = resolveType(
+    const resolved = resolveStructMemberType(
       propertySchema,
       nestedName,
       context,
       `${path}.${wireName}`,
+      siblingObjects,
     );
     if (resolved.declarations.length > 0) {
       if (nestedNames.has(nestedName)) {
@@ -617,7 +651,7 @@ function renderStruct(
     const optional = !required.has(wireName);
     const swiftType = optionalMarker(resolved, optional);
     fields.push(`public let ${name}: ${swiftType}`);
-    parameters.push(`${name}: ${swiftType}`);
+    parameters.push(`${name}: ${swiftType}${optional ? " = nil" : ""}`);
     assignments.push(`self.${name} = ${name}`);
     members.push({
       wireName,
@@ -629,6 +663,16 @@ function renderStruct(
           ? "nullable"
           : "required",
     });
+  }
+  if (passthrough) {
+    if ("additionalFields" in properties) {
+      throw new Error(
+        `${context.label}.${path} reserves additionalFields for open objects`,
+      );
+    }
+    fields.push("public let additionalFields: [String: JSONValue]");
+    parameters.push("additionalFields: [String: JSONValue] = [:]");
+    assignments.push("self.additionalFields = additionalFields");
   }
   const body: string[] = [];
   const nestedLines = joinDeclarations(nested);
@@ -647,11 +691,12 @@ function renderStruct(
     );
   }
   if (
+    passthrough ||
     members.some((member) => {
       return member.presence === "nullable";
     })
   ) {
-    body.push("", ...renderExplicitCodable(members));
+    body.push("", ...renderExplicitCodable(members, passthrough));
   }
   return [
     ...docLines(doc),
@@ -677,6 +722,7 @@ interface StructMember {
  */
 function renderExplicitCodable(
   members: readonly StructMember[],
+  passthrough: boolean,
 ): readonly string[] {
   const decodeLines = members.flatMap((member) => {
     const key = `.${member.name}`;
@@ -710,7 +756,35 @@ function renderExplicitCodable(
       member.presence === "optional" ? "encodeIfPresent" : "encode";
     return `try container.${method}(${member.name}, forKey: .${member.name})`;
   });
+  const additionalKeys = passthrough
+    ? [
+        "private struct AdditionalKey: CodingKey {",
+        "  let stringValue: String",
+        "  var intValue: Int? { nil }",
+        "  init(stringValue: String) { self.stringValue = stringValue }",
+        "  init?(intValue: Int) { return nil }",
+        "}",
+        "",
+      ]
+    : [];
+  if (passthrough) {
+    decodeLines.push(
+      "let additional = try decoder.container(keyedBy: AdditionalKey.self)",
+      "var fields: [String: JSONValue] = [:]",
+      "for key in additional.allKeys where CodingKeys(stringValue: key.stringValue) == nil {",
+      "  fields[key.stringValue] = try additional.decode(JSONValue.self, forKey: key)",
+      "}",
+      "additionalFields = fields",
+    );
+    encodeLines.push(
+      "var additional = encoder.container(keyedBy: AdditionalKey.self)",
+      "for (key, value) in additionalFields where CodingKeys(stringValue: key) == nil {",
+      "  try additional.encode(value, forKey: AdditionalKey(stringValue: key))",
+      "}",
+    );
+  }
   return [
+    ...additionalKeys,
     "private enum CodingKeys: String, CodingKey {",
     ...members.map((member) => {
       return `  case ${member.name} = ${swiftStringLiteral(member.wireName)}`;
@@ -941,6 +1015,7 @@ function renderTypeBinding(binding: SwiftTypeBinding): readonly string[] {
     binding.doc,
     context,
     "$",
+    allowsUnknownFields(schema),
   );
 }
 

@@ -4,7 +4,12 @@ import ShellProcess
 
 /// Computer-local PTYs. Runs are callers of this owner, never session owners.
 public actor ShellSessions {
-  public static let capabilities = ["shell.cmd", "shell.list", "shell.status", "shell.close"]
+  public static let capabilities = [
+    ComputerUseCommandClaim.Command.Kind.shellCmd.rawValue,
+    ComputerUseCommandClaim.Command.Kind.shellList.rawValue,
+    ComputerUseCommandClaim.Command.Kind.shellStatus.rawValue,
+    ComputerUseCommandClaim.Command.Kind.shellClose.rawValue,
+  ]
   private final class Session {
     let id = UUID().uuidString.lowercased()
     let pid: pid_t
@@ -92,30 +97,31 @@ public actor ShellSessions {
   public func stop(reason: String = "host_stopped") { closeAll(reason: reason) }
   public func count() -> Int { sessions.values.filter(\.live).count }
 
-  public func execute(kind: String, payload: JSONValue, budget: TimeInterval) async -> JSONValue {
+  public func execute(
+    kind: ComputerUseCommandClaim.Command.Kind, payload: ComputerUseCommandClaim.Command.Payload,
+    budget: TimeInterval
+  ) async -> JSONValue {
     do {
-      guard enabled, let permissionId, payload["shellPermissionId"].string == permissionId else {
+      guard enabled, let permissionId, payload.shellPermissionId == permissionId else {
         throw DesktopFailure(
           "permission_denied", "Shell Access is disabled or its permission changed")
       }
       reap()
       switch kind {
-      case "shell.list":
-        return success(
-          .object([
-            "sessions": .array(sessions.values.filter(\.live).sorted { $0.id < $1.id }.map(info))
-          ]))
-      case "shell.status":
-        return success(.object(["session": info(try selected(payload))]))
-      case "shell.close":
-        if payload["all"].bool == true {
+      case .shellList:
+        return try success(
+          .init(sessions: sessions.values.filter(\.live).sorted { $0.id < $1.id }.map(info)))
+      case .shellStatus:
+        return try success(.init(session: info(try selected(payload))))
+      case .shellClose:
+        if payload.all == true {
           closeAll(reason: "closed")
-          return success(.object(["closed": .bool(true)]))
+          return try success(.init(closed: true))
         }
         let session = try selected(payload)
         close(session, reason: "closed")
-        return success(.object(["session": info(session)]))
-      case "shell.cmd":
+        return try success(.init(session: info(session)))
+      case .shellCmd:
         return try await interact(payload, budget: budget)
       default: throw DesktopFailure("unsupported_command", "Unsupported Shell operation")
       }
@@ -128,46 +134,48 @@ public actor ShellSessions {
     }
   }
 
-  private func selected(_ payload: JSONValue) throws -> Session {
-    guard let id = payload["sessionId"].string, let session = sessions[id] else {
+  private func selected(_ payload: ComputerUseCommandClaim.Command.Payload) throws -> Session {
+    guard let id = payload.sessionId, let session = sessions[id] else {
       throw DesktopFailure(
         "shell_unavailable", "Session unavailable; use shell list to inspect this computer")
     }
     return session
   }
-  private func interact(_ payload: JSONValue, budget: TimeInterval) async throws -> JSONValue {
+  private func interact(_ payload: ComputerUseCommandClaim.Command.Payload, budget: TimeInterval)
+    async throws -> JSONValue
+  {
     let started = now()
-    let command = payload["command"].string
-    let input = payload["input"].string
-    let key = payload["key"].string
+    let command = payload.command
+    let input = payload.input
+    let key = payload.key
     guard [command, input, key].compactMap({ $0 }).count <= 1 else {
       throw DesktopFailure("invalid_arguments", "Command, input and key are mutually exclusive")
     }
     let live = sessions.values.filter(\.live)
     let session: Session
-    if payload["sessionId"].string != nil {
-      guard payload["newSession"].bool != true, payload["cwd"].string == nil else {
+    if payload.sessionId != nil {
+      guard payload.newSession != true, payload.cwd == nil else {
         throw DesktopFailure("invalid_arguments", "Use cwd only when creating a session")
       }
       session = try selected(payload)
-    } else if payload["newSession"].bool == true || live.isEmpty {
+    } else if payload.newSession == true || live.isEmpty {
       guard command != nil else {
         throw DesktopFailure("invalid_arguments", "Creating a session requires a command")
       }
-      session = try create(cwd: payload["cwd"].string)
+      session = try create(cwd: payload.cwd)
     } else {
       guard live.count == 1, let existing = live.first else {
         throw DesktopFailure(
           "invalid_arguments", "Multiple sessions; select an exact ID with --session")
       }
-      guard payload["cwd"].string == nil else {
+      guard payload.cwd == nil else {
         throw DesktopFailure(
           "invalid_arguments", "Use --new with --cwd, or cd in the existing session")
       }
       session = existing
     }
     guard session.live else {
-      return reply(session, cursor: payload["cursor"].number ?? 0, reason: "session_closed")
+      return try reply(session, cursor: payload.cursor ?? 0, reason: "session_closed")
     }
     guard !session.observing else {
       throw DesktopFailure(
@@ -185,7 +193,7 @@ public actor ShellSessions {
       session.activity = now()
     }
     let wait = min(
-      30, max(0, payload["waitMs"].number.map { $0 / 1000 } ?? 10), max(0, budget - 0.25))
+      30, max(0, payload.waitMs.map { Double($0) / 1000 } ?? 10), max(0, budget - 0.25))
     let deadline = started.advanced(by: .seconds(wait))
     while session.live && session.phase == "starting" && now() < deadline {
       try await Task.sleep(for: .milliseconds(10))
@@ -199,9 +207,9 @@ public actor ShellSessions {
       )
     }
     let cursor =
-      payload["cursor"].number
-      ?? (command != nil || input != nil || key != nil ? Double(session.endCursor) : 0)
-    guard cursor >= 0, Int(exactly: cursor) != nil, cursor <= Double(session.endCursor) else {
+      payload.cursor
+      ?? (command != nil || input != nil || key != nil ? session.endCursor : 0)
+    guard cursor >= 0, cursor <= session.endCursor else {
       throw DesktopFailure("invalid_arguments", "Invalid output cursor; no input was delivered")
     }
     if let command {
@@ -236,17 +244,18 @@ public actor ShellSessions {
       drain(session)
       let instant = now()
       if let finished = session.finished, finished.duration(to: instant) >= .milliseconds(50) {
-        return reply(session, cursor: cursor, reason: "command_completed")
+        return try reply(session, cursor: cursor, reason: "command_completed")
       }
-      if session.endCursor > Int(cursor), session.commandState != "completed",
+      if session.endCursor > cursor, session.commandState != "completed",
         session.lastOutput.duration(to: instant) >= .milliseconds(300)
       {
-        return reply(session, cursor: cursor, reason: "output_idle")
+        return try reply(session, cursor: cursor, reason: "output_idle")
       }
       try await Task.sleep(for: .milliseconds(10))
     }
     drain(session)
-    return reply(session, cursor: cursor, reason: session.live ? "wait_elapsed" : "session_closed")
+    return try reply(
+      session, cursor: cursor, reason: session.live ? "wait_elapsed" : "session_closed")
   }
 
   private func prepareInput(_ session: Session) {
@@ -532,25 +541,22 @@ public actor ShellSessions {
     session.sources.removeAll()
     try? FileManager.default.removeItem(at: session.directory)
   }
-  private func info(_ session: Session) -> JSONValue {
-    .object([
-      "id": .string(session.id), "state": .string(session.live ? "open" : "closed"),
-      "initialCwd": .string(session.initialCwd), "cwd": .string(session.cwd),
-      "commandState": .string(session.commandState),
-      "exitCode": session.exitCode.map { .number(Double($0)) } ?? .null,
-      "shellExitCode": session.shellExitCode.map { .number(Double($0)) } ?? .null,
-      "shellExitSignal": session.shellExitSignal.map { .number(Double($0)) } ?? .null,
-      "closeReason": session.closeReason.map(JSONValue.string) ?? .null,
-      "oldestCursor": .number(Double(session.endCursor - session.output.count)),
-      "endCursor": .number(Double(session.endCursor)),
-      "idleRemainingSeconds": .number(
-        session.live ? max(0, (idleTimeout - session.activity.duration(to: now())).seconds) : 0),
-      "cols": .number(120), "rows": .number(40),
-    ])
+  private func info(_ session: Session) -> ComputerUseShellResult.Session {
+    .init(
+      id: session.id, state: .init(rawValue: session.live ? "open" : "closed"),
+      initialCwd: session.initialCwd, cwd: session.cwd,
+      commandState: .init(rawValue: session.commandState), exitCode: session.exitCode,
+      shellExitCode: session.shellExitCode, shellExitSignal: session.shellExitSignal,
+      closeReason: session.closeReason, oldestCursor: session.endCursor - session.output.count,
+      endCursor: session.endCursor,
+      idleRemainingSeconds: session.live
+        ? max(0, (idleTimeout - session.activity.duration(to: now())).seconds) : 0,
+      cols: 120, rows: 40)
   }
-  private func reply(_ session: Session, cursor requested: Double?, reason: String) -> JSONValue {
+  private func reply(_ session: Session, cursor requested: Int?, reason: String) throws -> JSONValue
+  {
     let oldest = session.endCursor - session.output.count
-    guard let requested, requested >= 0, let cursor = Int(exactly: requested),
+    guard let cursor = requested, cursor >= 0,
       cursor <= session.endCursor
     else {
       return DesktopFailure("invalid_arguments", "Invalid output cursor").response
@@ -558,15 +564,14 @@ public actor ShellSessions {
     let start = max(oldest, cursor)
     let end = min(session.endCursor, start + maximumRead)
     let bytes = session.output.subdata(in: (start - oldest)..<(end - oldest))
-    return success(
-      .object([
-        "session": info(session), "outputBase64": .string(bytes.base64EncodedString()),
-        "nextCursor": .number(Double(end)), "lostBytes": .number(Double(max(0, oldest - cursor))),
-        "moreAvailable": .bool(end < session.endCursor),
-        "reason": .string(end < session.endCursor ? "output_limit" : reason),
-      ]))
+    return try success(
+      .init(
+        session: info(session), outputBase64: bytes.base64EncodedString(), nextCursor: end,
+        lostBytes: max(0, oldest - cursor), moreAvailable: end < session.endCursor,
+        reason: .init(rawValue: end < session.endCursor ? "output_limit" : reason)))
   }
-  private func success(_ result: JSONValue) -> JSONValue {
-    .object(["status": .string("succeeded"), "result": result])
+
+  private func success(_ result: ComputerUseShellResult) throws -> JSONValue {
+    .object(["status": .string("succeeded"), "result": try JSONValue(encoding: result)])
   }
 }
