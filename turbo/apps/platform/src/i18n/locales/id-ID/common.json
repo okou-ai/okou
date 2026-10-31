@@ -2101,10 +2101,11 @@
     },
     "landingFiles": {
       "back": "Kembali ke file",
-      "description": "Permintaan dan file Anda siap. Unggah ke ruang kerja untuk memulai.",
+      "description": "Tinjau permintaan Anda, lalu unggah file yang dipilih untuk memulai.",
       "failed": "Tidak dapat menyelesaikan. File dan permintaan Anda disimpan di sini. Coba lagi.",
       "loading": "Memulihkan file Anda…",
       "missing": "File Anda tidak tersedia. Kembali ke halaman di browser yang sama dan pilih lagi.",
+      "popupBlocked": "Izinkan pop-up untuk situs ini, lalu coba lagi untuk mentransfer file Anda.",
       "prompt": "Permintaan Anda",
       "retry": "Coba lagi",
       "start": "Unggah dan mulai",

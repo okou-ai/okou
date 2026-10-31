@@ -2142,10 +2142,11 @@
     },
     "landingFiles": {
       "back": "Torna ai file",
-      "description": "La richiesta e i file sono pronti. Caricali nel tuo spazio di lavoro per iniziare.",
+      "description": "Controlla la richiesta, poi carica i file selezionati per iniziare.",
       "failed": "Impossibile completare. I file e la richiesta restano qui. Riprova.",
       "loading": "Ripristino dei file…",
       "missing": "I file non sono disponibili. Torna alla pagina nello stesso browser e selezionali di nuovo.",
+      "popupBlocked": "Consenti i popup per questo sito, poi riprova a trasferire i file.",
       "prompt": "La tua richiesta",
       "retry": "Riprova",
       "start": "Carica e inizia",

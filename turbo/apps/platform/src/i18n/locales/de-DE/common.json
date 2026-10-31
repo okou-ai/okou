@@ -2108,10 +2108,11 @@
     },
     "landingFiles": {
       "back": "Zurück zu den Dateien",
-      "description": "Deine Anfrage und Dateien sind bereit. Lade sie in deinen Arbeitsbereich hoch, um zu starten.",
+      "description": "Prüfe deine Anfrage und lade dann die ausgewählten Dateien hoch, um zu starten.",
       "failed": "Der Vorgang konnte nicht abgeschlossen werden. Dateien und Anfrage bleiben erhalten. Versuche es erneut.",
       "loading": "Dateien werden wiederhergestellt…",
       "missing": "Deine Dateien sind nicht verfügbar. Kehre im selben Browser zur Seite zurück und wähle sie erneut aus.",
+      "popupBlocked": "Erlaube Pop-ups für diese Website und versuche erneut, deine Dateien zu übertragen.",
       "prompt": "Deine Anfrage",
       "retry": "Erneut versuchen",
       "start": "Hochladen und starten",

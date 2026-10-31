@@ -2142,10 +2142,11 @@
     },
     "landingFiles": {
       "back": "Volver a los archivos",
-      "description": "Tu solicitud y tus archivos están listos. Súbelos a tu espacio de trabajo para empezar.",
+      "description": "Revisa tu solicitud y sube los archivos seleccionados para empezar.",
       "failed": "No se pudo completar. Tus archivos y tu solicitud se conservan aquí. Inténtalo de nuevo.",
       "loading": "Restaurando tus archivos…",
       "missing": "Tus archivos no están disponibles. Vuelve a la página en el mismo navegador y selecciónalos de nuevo.",
+      "popupBlocked": "Permite las ventanas emergentes de este sitio y vuelve a intentar transferir tus archivos.",
       "prompt": "Tu solicitud",
       "retry": "Reintentar",
       "start": "Subir y empezar",

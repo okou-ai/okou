@@ -1,8 +1,12 @@
 import { Button, Textarea, buttonVariants } from "@okouai/ui";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import type { LandingFilesSignals } from "../../signals/prompt-page/landing-files.ts";
+import {
+  LandingFilePopupBlockedError,
+  LandingFilesUnavailableError,
+} from "../../signals/prompt-page/landing-file-handoff.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
@@ -13,15 +17,20 @@ export function LandingFilesPage({
   signals: LandingFilesSignals;
 }) {
   const { t } = useTranslation();
-  const files = useLoadable(signals.files$);
+  const files = useGet(signals.files$);
   const prompt = useGet(signals.input$);
   const edit = useSet(signals.edit$);
   const [starting, start] = useLoadableSet(signals.start$);
   const signal = useGet(pageSignal$);
   const busy = starting.state === "loading";
   const attachments = useGet(signals.attachments$);
-  const back = signals.source ? new URL(signals.source) : null;
-  back?.searchParams.set("fileDraft", signals.id);
+  const popupBlocked =
+    starting.state === "hasError" &&
+    starting.error instanceof LandingFilePopupBlockedError;
+  const missing =
+    !signals.source ||
+    (starting.state === "hasError" &&
+      starting.error instanceof LandingFilesUnavailableError);
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background p-6">
@@ -48,16 +57,16 @@ export function LandingFilesPage({
           })}
           className="min-h-32"
         />
-        {files.state === "loading" && (
+        {busy && !files && (
           <p role="status">
             {t(($) => {
               return $.chat.landingFiles.loading;
             })}
           </p>
         )}
-        {files.state === "hasData" && (
+        {files && (
           <ul className="flex flex-col gap-2">
-            {files.data.map(({ id, file }) => {
+            {files.map(({ id, file }) => {
               return (
                 <li
                   key={id}
@@ -69,7 +78,7 @@ export function LandingFilesPage({
             })}
           </ul>
         )}
-        {busy && (
+        {busy && files && (
           <p role="status" className="text-sm text-muted-foreground">
             {t(
               ($) => {
@@ -77,24 +86,30 @@ export function LandingFilesPage({
               },
               {
                 current: attachments.length,
-                total: files.state === "hasData" ? files.data.length : 0,
+                total: files.length,
               },
             )}
           </p>
         )}
-        {(files.state === "hasError" || starting.state === "hasError") && (
+        {(!signals.source || starting.state === "hasError") && (
           <p role="alert" className="text-sm text-destructive">
-            {t(($) => {
-              return files.state === "hasError"
-                ? $.chat.landingFiles.missing
-                : $.chat.landingFiles.failed;
-            })}
+            {popupBlocked
+              ? t(($) => {
+                  return $.chat.landingFiles.popupBlocked;
+                })
+              : missing
+                ? t(($) => {
+                    return $.chat.landingFiles.missing;
+                  })
+                : t(($) => {
+                    return $.chat.landingFiles.failed;
+                  })}
           </p>
         )}
         <div className="flex flex-wrap justify-end gap-2">
-          {back && !busy && (
+          {signals.back && !busy && (
             <a
-              href={back.toString()}
+              href={signals.back}
               className={buttonVariants({ variant: "outline" })}
             >
               {t(($) => {
@@ -105,7 +120,7 @@ export function LandingFilesPage({
           <Button
             pending={busy}
             className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
-            disabled={files.state !== "hasData" || busy || !prompt.trim()}
+            disabled={!signals.source || busy || !prompt.trim()}
             onClick={() => {
               detach(start(signal), Reason.DomCallback);
             }}

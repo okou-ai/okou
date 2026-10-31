@@ -5,7 +5,8 @@ import { updatePage$ } from "../react-router.ts";
 import { LandingFilesPage } from "../../views/prompt-page/landing-files-page.tsx";
 import { landingFileSource } from "./landing-file-handoff.ts";
 import { createLandingFilesSignals } from "./landing-files.ts";
-import { detach, Reason } from "../utils.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
@@ -174,6 +175,9 @@ export const setupPromptPage$ = command(
     const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const resolvedRequestedModel = catalog.resolve(requestedModel);
+    const modelSelection = resolvedRequestedModel
+      ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
+      : null;
 
     const cleaned = new URLSearchParams(params);
     cleaned.delete("prompt");
@@ -184,16 +188,21 @@ export const setupPromptPage$ = command(
     cleaned.delete("landingSource");
     const rootSignal = get(rootSignal$);
     if (params.has("landingFiles") || params.has("landingSource")) {
+      const switches = await get(featureSwitch$);
+      signal.throwIfAborted();
       const files = createLandingFilesSignals(
-        landingFileSource(params.get("landingSource") ?? "", location.origin),
+        switches[FeatureSwitchKey.LandingFileHandoff]
+          ? landingFileSource(
+              params.get("landingSource") ?? "",
+              location.origin,
+            )
+          : null,
         params.get("landingFiles") ?? "",
         prompt,
         {
           agentId,
           prompt,
-          modelSelection: resolvedRequestedModel
-            ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
-            : null,
+          modelSelection,
           generationTemplate: resolvedGenerationTemplate?.template,
           generationTemplateTitleSnapshot:
             resolvedGenerationTemplate?.titleSnapshot,
@@ -201,14 +210,9 @@ export const setupPromptPage$ = command(
           routeSearchParams: cleaned,
         },
       );
-      detach(
-        set(files.load$, signal),
-        Reason.Daemon,
-        "Restore browser-local landing files",
-      );
       set(
         updatePage$,
-        createElement(LandingFilesPage, { signals: files }),
+        createElement(LandingFilesPage, { key: files.back, signals: files }),
         "none",
       );
       await set(hideAppSkeleton$, signal);
@@ -219,9 +223,7 @@ export const setupPromptPage$ = command(
       {
         agentId,
         prompt,
-        modelSelection: resolvedRequestedModel
-          ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
-          : null,
+        modelSelection,
         generationTemplate: resolvedGenerationTemplate?.template,
         generationTemplateTitleSnapshot:
           resolvedGenerationTemplate?.titleSnapshot,
