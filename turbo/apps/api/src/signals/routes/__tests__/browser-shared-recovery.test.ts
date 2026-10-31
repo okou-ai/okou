@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { object, uuid } from "zod";
+import { object, tuple, uuid } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
@@ -252,12 +252,14 @@ describe("server-owned shared Browser recovery", () => {
           }
           loseResponse = false;
           const input: unknown = await request.json();
-          const { metadata } = object({
+          const { metadata, extensionIds } = object({
             metadata: object({ okouInstanceId: uuid() }),
+            extensionIds: tuple([uuid()]),
           }).parse(input);
           f.provider.sessionRequests.push(input);
           f.provider.sessionIds.add(lostId);
           f.provider.sessionMetadata.set(lostId, metadata);
+          f.provider.sessionExtensionIds.set(lostId, extensionIds[0]);
           return HttpResponse.error();
         }),
         http.get(`${PROVIDER_URL}/browsers`, () => {
