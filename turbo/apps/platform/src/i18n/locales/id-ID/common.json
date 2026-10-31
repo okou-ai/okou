@@ -4211,6 +4211,49 @@
       "promptTitle": "Coba prompt ini"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Perkuat agen Anda dengan data khusus, wawasan sosial, dan pembuatan gambar. Pilih kemampuan yang dibutuhkan. Okou menggunakannya untuk pekerjaan Anda.",
+        "items": {
+          "data-search": {
+            "description": "Bandingkan perusahaan, trafik situs, dan iklan untuk menemukan peluang.",
+            "name": "Riset data lanjutan"
+          },
+          "finance": {
+            "description": "Bandingkan harga saham dan tren pasar untuk riset investasi.",
+            "name": "Data keuangan"
+          },
+          "image-generation": {
+            "description": "Buat visual orisinal untuk postingan, kampanye, dan presentasi.",
+            "name": "Pembuatan gambar"
+          },
+          "maps": {
+            "description": "Cari bisnis dan lokasi, bandingkan tempat, dan rencanakan rute.",
+            "name": "Peta dan tempat"
+          },
+          "people-search": {
+            "description": "Temukan calon pelanggan, mitra, atau kandidat berdasarkan jabatan dan perusahaan.",
+            "name": "Pencarian orang"
+          },
+          "scrape": {
+            "description": "Ambil fakta penting dari halaman web untuk ringkasan dan perbandingan.",
+            "name": "Ekstraksi halaman"
+          },
+          "seo": {
+            "description": "Temukan kata kunci pelanggan dan peringkat pesaing.",
+            "name": "Riset SEO"
+          },
+          "social": {
+            "description": "Teliti kreator, postingan, dan interaksi untuk mengarahkan konten Anda.",
+            "name": "Pencarian sosial"
+          },
+          "web-search": {
+            "description": "Temukan berita dan fakta terbaru dengan sumber yang dapat diperiksa.",
+            "name": "Pencarian web"
+          }
+        },
+        "listLabel": "Kemampuan bawaan",
+        "title": "Kenali alat rahasia Okou"
+      },
       "chatChannels": {
         "connectedTitle": "Chat Anda terhubung",
         "copy": "Kirim pesan ke Okou atau tambahkan ke chat tim Anda. Pilih cara kerja yang sudah biasa Anda gunakan.",
@@ -4233,8 +4276,7 @@
         "industry": "Pilih bidang Anda",
         "ready": "Okou sudah siap",
         "skills": "Impor skill Anda",
-        "sources": "Hubungkan pekerjaan Anda",
-        "team": "Undang anggota tim"
+        "sources": "Hubungkan pekerjaan Anda"
       },
       "experience": {
         "copy": "Mulai dengan panduan, atau gunakan paket Codex atau Claude Code yang sudah Anda miliki.",
@@ -4324,9 +4366,7 @@
         "skillsCopy": "Gunakan {{provider}} di komputer.",
         "skillsTitle": "Impor keterampilan",
         "sourcesCopy": "Hubungkan satu alat untuk tugas pertama.",
-        "startTask": "Mulai tugas",
-        "teamCopy": "Bekerja bersama di satu ruang kerja.",
-        "teamTitle": "Undang rekan tim"
+        "startTask": "Mulai tugas"
       },
       "outcomes": {
         "accessibleLabel": "Contoh {{title}} yang disusun dari {{source}}. Semua konten adalah data contoh.",
@@ -4898,24 +4938,6 @@
         "failedNote": "Kami tidak dapat menghubungkan {{provider}}. Anda dapat melanjutkan dan menghubungkannya nanti.",
         "rowCopy": "Hubungkan agar tugas memakai paket Anda, bukan kredit Okou.",
         "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Anda dapat melanjutkan dan menghubungkannya nanti."
-      },
-      "team": {
-        "copy": "Undang anggota tim untuk berbagi alur kerja Anda, sementara setiap orang menghubungkan alatnya sendiri.",
-        "invalidEmail": "Masukkan alamat email yang valid",
-        "invite": "Kirim undangan",
-        "invited": "Diundang",
-        "label": "Email anggota tim",
-        "note": "Mereka dapat langsung mulai bekerja dengan Okou.",
-        "notSent": "Tidak terkirim",
-        "panelTitle": "Undang anggota tim",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "Menghubungkan alat mereka sendiri saat dibutuhkan.",
-          "workflows": "Dapat menjalankan semua alur kerja tim Anda.",
-          "workspace": "Bergabung ke workspace Anda."
-        },
-        "sending": "Mengirim…",
-        "title": "Buat Okou berguna bagi seluruh tim Anda"
       },
       "welcome": {
         "copy": "Tinjau tugas yang disarankan untuk pekerjaan Anda, sesuaikan dengan tujuan, lalu biarkan Okou memulai.",

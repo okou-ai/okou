@@ -27,11 +27,9 @@ const context = testContext();
 
 const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Connect a work tool";
-const TEAM_QUESTION = "Make Okou useful to your whole team";
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const READY_TITLE = "Start with a task that matters";
 const MARKETING_FIELD = "Marketing & content";
-const TEAMMATE_EMAIL = "teammate@example.test";
 
 function mockOnboardingNeeded(): void {
   context.mocks.data.onboardingStatus({
@@ -156,7 +154,7 @@ test("Skipping sources reports the step skip and keeps a single onboarding start
   click(getButtonByName("Skip for now"));
 
   await expect(
-    screen.findByRole("heading", { name: TEAM_QUESTION }),
+    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
   // The steps and the guard all belong to the same run.
   expect(tags).toStrictEqual(["onboarding-start"]);
@@ -173,7 +171,7 @@ test("Skipping sources reports the step skip and keeps a single onboarding start
   ]);
 });
 
-test("Each step reports its own funnel event, counting invitees rather than naming them", async () => {
+test("Each step reports its position in the flow without an invitation step", async () => {
   const posthog = context.mocks.posthog();
   mockOnboardingNeeded();
   mockCatalog();
@@ -205,15 +203,6 @@ test("Each step reports its own funnel event, counting invitees rather than nami
   click(getButtonByName("Continue"));
 
   await expect(
-    screen.findByRole("heading", { name: TEAM_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  await fill(screen.getByLabelText("Team member’s email"), TEAMMATE_EMAIL);
-  click(getButtonByName("Send invite"));
-
-  await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
-  click(getButtonByName("Continue"));
-
-  await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
   click(choiceRadio("I'm new to AI agents"));
@@ -242,22 +231,17 @@ test("Each step reports its own funnel event, counting invitees rather than nami
         route_path: ROUTES.onboardingSources,
       }),
       onboardingEvent("StepViewed", {
-        step_key: "team",
+        step_key: "experience",
         step_index: 2,
         step_count: 6,
       }),
-      onboardingEvent("InviteAdded", {
-        step_key: "team",
-        invite_count: 1,
-      }),
     ]),
   );
-  // An invite was sent, so leaving the step is not a skip.
   expect(posthog.events).not.toStrictEqual(
-    expect.arrayContaining([onboardingEvent("Skip", { step_key: "team" })]),
+    expect.arrayContaining([
+      onboardingEvent("StepViewed", { step_key: "team" }),
+    ]),
   );
-  // Who was invited stays in the browser; the funnel only counts them.
-  expect(JSON.stringify(posthog.events)).not.toContain(TEAMMATE_EMAIL);
 });
 
 test.each([false, true])(

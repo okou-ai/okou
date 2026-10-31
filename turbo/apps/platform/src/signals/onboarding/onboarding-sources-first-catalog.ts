@@ -13,7 +13,6 @@ import {
   nextSourcesFirstStep,
   SOURCES_FIRST_STEP_ROUTES,
   sourcesFirstDraft$,
-  sourcesFirstFlow$,
 } from "./onboarding-sources-first-state.ts";
 
 /**
@@ -36,7 +35,6 @@ export const continueSourcesFirstIndustry$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const next = nextSourcesFirstStep(
       "industry",
-      get(sourcesFirstFlow$),
       get(sourcesFirstDraft$).provider,
     );
     const searchParams = new URLSearchParams(get(searchParams$));

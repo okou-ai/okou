@@ -67,6 +67,7 @@ export const ROUTES = {
   onboardingExperience: "/onboarding/experience",
   onboardingSkills: "/onboarding/skills",
   onboardingSlack: "/onboarding/slack",
+  onboardingCapabilities: "/onboarding/capabilities",
   onboardingReady: "/onboarding/ready",
   signIn: "/sign-in",
   signInCatchAll: "/sign-in{/*path}",

@@ -136,7 +136,7 @@ test("Linking iMessage replaces the QR and enables Continue without Slack", asyn
   expect(getButton("Continue")).toBeEnabled();
   click(getButton("Continue"));
   await waitFor(() => {
-    return expect(pathname()).toBe(ROUTES.onboardingReady);
+    return expect(pathname()).toBe(ROUTES.onboardingCapabilities);
   });
 });
 
@@ -175,7 +175,7 @@ test("Mobile shows the iMessage connection inline and advances only after linkin
   });
   click(getButton("Continue"));
   await expect(
-    screen.findByRole("heading", { name: "Start your first task" }),
+    screen.findByRole("heading", { name: "Meet Okou’s secret tools" }),
   ).resolves.toBeInTheDocument();
 });
 
@@ -197,10 +197,10 @@ test("A pending connection code does not prevent skipping the step", async () =>
   ).resolves.toBeInTheDocument();
   click(getButton("Not now"));
   await expect(
-    screen.findByRole("heading", { name: "Start with a task that matters" }),
+    screen.findByRole("heading", { name: "Meet Okou’s secret tools" }),
   ).resolves.toBeInTheDocument();
   releaseCode.resolve();
-  expect(pathname()).toBe(ROUTES.onboardingReady);
+  expect(pathname()).toBe(ROUTES.onboardingCapabilities);
 });
 
 test("An already linked phone needs no new connection code", async () => {
