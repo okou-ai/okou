@@ -1,27 +1,4 @@
-use runner_types::storage_manifest::{
-    ArtifactEntry, StorageEntry, StorageManifest, WorkflowSkillDocument,
-};
-
-/// Existing application tests start at the post-download value boundary.
-pub(in crate::executor::tests) fn downloaded_workflow_manifest(
-    mut value: serde_json::Value,
-) -> serde_json::Result<StorageManifest> {
-    let documents: Vec<WorkflowSkillDocument> =
-        serde_json::from_value(value["workflowSkills"].take())?;
-    value["workflowSkills"] = serde_json::json!(
-        documents
-            .iter()
-            .map(|document| serde_json::json!({
-                "workflowId": document.workflow_id, "mountPath": document.mount_path,
-            }))
-            .collect::<Vec<_>>()
-    );
-    let mut manifest: StorageManifest = serde_json::from_value(value)?;
-    manifest
-        .resolve_workflow_documents(documents)
-        .map_err(<serde_json::Error as serde::de::Error>::custom)?;
-    Ok(manifest)
-}
+use runner_types::storage_manifest::{ArtifactEntry, StorageEntry};
 
 pub(in crate::executor::tests) fn api_storage(
     name: &str,

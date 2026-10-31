@@ -334,6 +334,13 @@ error code, declare that response's `error.code` as an enum of every code the
 handler returns, as the command-completion `409` does, so that a renamed or
 added code becomes a finding.
 
+Open command envelopes can retain opaque helper fields while declaring the
+fields Desktop reads or writes. Mark those objects with
+`x-desktop-stable-fields: true`: removing even an optional declared field then
+becomes a finding, because an installed client still uses its name when that
+operation is present. Keep those fields in the actual queue contracts and
+generate their Swift readers and writers from the same schemas.
+
 The published Desktop version is the release tag version in the redirect from
 `GET https://api.okou.ai/api/desktop/updates/stable/darwin/arm64/release`.
 This native release selector reads the published update manifest and excludes

@@ -7,7 +7,7 @@ import {
 } from "@okouai/db/schema/chat-thread-event";
 import { DrizzleQueryError, asc, eq, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { object, number, string } from "zod";
+import { number, object, uuid } from "zod";
 import {
   canonicalChatEventInsertSql,
   type PreparedChatEventRow,
@@ -26,7 +26,7 @@ import {
 } from "./workflow-schedule-queue.service";
 
 export const workflowInputCommitRowSchema = object({
-  eventId: string().uuid(),
+  eventId: uuid(),
   tickCount: number().int().nonnegative(),
   guard: number().int(),
 });

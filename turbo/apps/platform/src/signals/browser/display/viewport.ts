@@ -1,12 +1,8 @@
 import { command, computed, state } from "ccstate";
 import type { Protocol } from "devtools-protocol";
-import {
-  scheduleTimeout,
-  createDeferredPromise,
-  type DeferredPromise,
-} from "../../utils.ts";
+import { createDeferredPromise, type DeferredPromise } from "../../utils.ts";
 import { CdpFault, isRecord } from "../cdp/errors.ts";
-import { frameTimeoutMs, maximumFrameDimension } from "./limits.ts";
+import { maximumFrameDimension } from "./limits.ts";
 import {
   frameViewport,
   captureRaster,
@@ -107,13 +103,6 @@ function same(actual: Viewport, wanted: Viewport): boolean {
   return (
     Math.abs(actual.width - wanted.width) <= 1 &&
     Math.abs(actual.height - wanted.height) <= 1
-  );
-}
-
-function presentationTimeout(): CdpFault {
-  return new CdpFault(
-    "display",
-    "The synchronized image did not arrive. Try synchronizing again.",
   );
 }
 
@@ -522,38 +511,23 @@ function createViewportWaits(context: ViewportState & ViewportNotifications) {
     async (
       { get, set },
       request: FrameWait,
-      budget: number,
       signal: AbortSignal,
     ): Promise<Presentation> => {
       signal.throwIfAborted();
       if (get(presentationSuspended$)) {
         throw cancelled();
       }
-      if (budget <= 0) {
-        throw presentationTimeout();
-      }
       const completion = createDeferredPromise<Presentation>(signal);
       const waiter: FrameWaiter = { request, completion };
       set(waiters$, new Set([...get(waiters$), waiter]));
       set(notifyWaiters$);
-      const cancelDeadline = scheduleTimeout(
-        () => {
-          if (!completion.settled()) {
-            completion.reject(presentationTimeout());
-          }
-        },
-        budget,
-        signal,
-      );
       const [result] = await Promise.allSettled([completion.promise]);
       if (signal.aborted) {
-        cancelDeadline();
         const remaining = new Set(get(waiters$));
         remaining.delete(waiter);
         set(waiters$, remaining);
         signal.throwIfAborted();
       }
-      cancelDeadline();
       const remaining = new Set(get(waiters$));
       remaining.delete(waiter);
       set(waiters$, remaining);
@@ -567,7 +541,6 @@ function createViewportWaits(context: ViewportState & ViewportNotifications) {
   const waitForPresentation$ = command(
     (
       { get, set },
-      budget: number | undefined,
       recoverInconsistent: boolean,
       signal: AbortSignal,
     ): Promise<Presentation> => {
@@ -582,22 +555,16 @@ function createViewportWaits(context: ViewportState & ViewportNotifications) {
               : null,
           recoverInconsistent,
         },
-        budget ?? frameTimeoutMs,
         signal,
       );
     },
   );
 
   const waitForNativeFrame$ = command(
-    (
-      { get, set },
-      budget: number | undefined,
-      signal: AbortSignal,
-    ): Promise<Presentation> => {
+    ({ get, set }, signal: AbortSignal): Promise<Presentation> => {
       return set(
         waitForFrame$,
         { kind: "native", capture: get(nativeCapture$) },
-        budget ?? frameTimeoutMs,
         signal,
       );
     },

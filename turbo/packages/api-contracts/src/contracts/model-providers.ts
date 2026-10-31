@@ -13,6 +13,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { runModelIdSchema } from "./run-model-id";
 import {
   MODEL_PROVIDER_TYPE_IDS,
   modelProviderTypeSchema,
@@ -105,7 +106,7 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES: Partial<
  * the ID against it, so clients can pass catalog models this package does
  * not list.
  */
-export const runModelIdSchema = string().trim().min(1).max(255);
+export { runModelIdSchema };
 
 export const modelProviderCredentialScopeSchema = zEnum(["org", "member"]);
 

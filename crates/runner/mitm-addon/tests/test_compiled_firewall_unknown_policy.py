@@ -198,9 +198,7 @@ def test_compiled_blocks_unsafe_path(url):
         policies,
     )
 
-    assert isinstance(compiled, matching.FirewallBlock)
-    assert compiled.reason == "unsafe_path"
-    assert compiled.permissions == ()
+    assert isinstance(compiled, matching.FirewallInvalidInput)
 
 
 def test_compiled_blocks_path_beyond_validation_budget():
@@ -226,8 +224,7 @@ def test_compiled_blocks_path_beyond_validation_budget():
         policies,
     )
 
-    assert isinstance(result, matching.FirewallBlock)
-    assert result.reason == "unsafe_path"
+    assert isinstance(result, matching.FirewallInvalidInput)
 
 
 def test_compiled_allows_encoded_backslash_in_query():
@@ -279,9 +276,8 @@ def test_compiled_blocks_unsafe_path_consumed_by_parameterized_base():
         policies,
     )
 
-    assert isinstance(compiled, matching.FirewallBlock)
-    assert compiled.reason == "unsafe_path"
-    assert compiled.path == "/admin"
+    assert isinstance(compiled, matching.FirewallInvalidInput)
+    assert compiled.path == "/api/%2e%2e/admin"
 
 
 def _same_base_read_write_firewall():

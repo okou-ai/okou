@@ -1769,9 +1769,10 @@
       "outOfCredits": "Ihre Credits sind aufgebraucht",
       "proCard": {
         "creditsNow": "Credits · Jetzt gleich",
-        "description": "Zusätzliche Credits · Erweiterte Funktionen · 3 Cloud-Computer",
+        "description": "Erweiterte Funktionen · 3 Cloud-Computer",
         "priceUnavailable": "Aktuelle Preise in den Tarifen ansehen",
         "title": "Noch etwa 5 Aufgaben",
+        "upgradeFromPrice": "Upgrade ab {{price}}/Monat",
         "upgradeNow": "Jetzt upgraden"
       },
       "redirecting": "Weiterleitung...",
@@ -2105,6 +2106,22 @@
       "sent": "Erfolgreich weitergeleitet",
       "threads": "Chats",
       "title": "Weiterleiten an"
+    },
+    "landingFiles": {
+      "back": "Zurück zu den Dateien",
+      "description": "Prüfe deine Anfrage und lade dann die ausgewählten Dateien hoch, um zu starten.",
+      "editFailed": "Die Dateien konnten nicht aktualisiert werden. Bitte erneut versuchen.",
+      "failed": "Der Vorgang konnte nicht abgeschlossen werden. Dateien und Anfrage bleiben erhalten. Versuche es erneut.",
+      "limit": "Bis zu 10 Dateien hinzufügen (insgesamt 1 GB).",
+      "loading": "Dateien werden wiederhergestellt…",
+      "missing": "Deine Dateien sind nicht verfügbar. Kehre im selben Browser zur Seite zurück und wähle sie erneut aus.",
+      "popupBlocked": "Erlaube Pop-ups für diese Website und versuche erneut, deine Dateien zu übertragen.",
+      "prompt": "Deine Anfrage",
+      "retry": "Erneut versuchen",
+      "selected": "Ausgewählte Dateien",
+      "start": "Hochladen und starten",
+      "title": "Mit deinen Dateien starten",
+      "uploading": "Datei {{current}} von {{total}} wird hochgeladen…"
     },
     "mail": {
       "bcc": "BCC",
@@ -4221,11 +4238,53 @@
       "make": "Willkommen bei {{brandName}}"
     },
     "make": {
-      "promptDescription": "Passen Sie es unten an oder führen Sie es unverändert aus. {{assistantName}} übernimmt es von hier aus. Ihre Tools bleiben in der Sandbox und nichts verlässt Ihren Arbeitsbereich.",
       "promptLabel": "Onboarding-Eingabeaufforderung",
-      "promptTitle": "Versuchen Sie es mit dieser Eingabeaufforderung"
+      "promptTitle": "Passe diese Aufgabe an"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Stärke deinen Agenten mit Fachdaten, Social-Media-Einblicken und Bildgenerierung. Wähle die Fähigkeiten aus. Okou setzt sie für deine Arbeit ein.",
+        "items": {
+          "data-search": {
+            "description": "Vergleiche Unternehmen, Website-Traffic und Anzeigen, um Chancen zu erkennen.",
+            "name": "Erweiterte Datenrecherche"
+          },
+          "finance": {
+            "description": "Vergleiche Aktienkurse und Markttrends für deine Investmentrecherche.",
+            "name": "Finanzdaten"
+          },
+          "image-generation": {
+            "description": "Erstelle eigene Bilder für Social Media, Kampagnen und Präsentationen.",
+            "name": "Bildgenerierung"
+          },
+          "maps": {
+            "description": "Finde Unternehmen und Veranstaltungsorte, vergleiche Standorte und plane Routen.",
+            "name": "Karten und Orte"
+          },
+          "people-search": {
+            "description": "Finde Kunden, Partner oder Bewerber nach Position und Unternehmen.",
+            "name": "Personensuche"
+          },
+          "scrape": {
+            "description": "Extrahiere Fakten aus Webseiten für Briefings und Vergleiche.",
+            "name": "Seitenextraktion"
+          },
+          "seo": {
+            "description": "Finde Suchbegriffe deiner Kunden und prüfe die Rankings der Konkurrenz.",
+            "name": "SEO-Recherche"
+          },
+          "social": {
+            "description": "Untersuche Creator, Beiträge und Interaktionen für deine Inhalte.",
+            "name": "Social-Media-Suche"
+          },
+          "web-search": {
+            "description": "Finde aktuelle Nachrichten und Fakten mit überprüfbaren Quellen.",
+            "name": "Websuche"
+          }
+        },
+        "listLabel": "Integrierte Fähigkeiten",
+        "title": "Okous geheime Werkzeuge"
+      },
       "chatChannels": {
         "connectedTitle": "Dein Chat ist verbunden",
         "copy": "Schreibe Okou direkt oder füge es zum Teamchat hinzu. Wähle die Art, wie du bereits arbeitest.",
@@ -4248,8 +4307,7 @@
         "industry": "Bereich wählen",
         "ready": "Okou ist bereit",
         "skills": "Skills importieren",
-        "sources": "Arbeit verbinden",
-        "team": "Teammitglied einladen"
+        "sources": "Arbeit verbinden"
       },
       "experience": {
         "copy": "Lass dich beim Einstieg begleiten oder nutze deinen vorhandenen Codex- oder Claude-Code-Tarif.",
@@ -4339,9 +4397,7 @@
         "skillsCopy": "Nutze {{provider}} auf deinem Computer.",
         "skillsTitle": "Skills importieren",
         "sourcesCopy": "Verbinde ein Tool für die erste Aufgabe.",
-        "startTask": "Aufgabe starten",
-        "teamCopy": "Arbeitet im selben Workspace.",
-        "teamTitle": "Teammitglied einladen"
+        "startTask": "Aufgabe starten"
       },
       "outcomes": {
         "accessibleLabel": "Beispiel: {{title}}, erstellt aus {{source}}. Alle Inhalte sind Beispieldaten.",
@@ -4499,13 +4555,13 @@
             "label": "Website"
           }
         },
-        "title": "Format wählen",
+        "title": "Ausgabeformat wählen",
         "tooLong": "Kürze deine Aufgabe, um ein anderes Format zu wählen."
       },
       "prompt": {
-        "connectorsDescription": "Verbinde deine Tools, damit Okou deinen Arbeitskontext versteht und Aufgaben passend zu deinen Bedürfnissen erledigt. Du kannst das auch später tun.",
+        "connectorsDescription": "Verbinde deine Apps, damit Okou deine Arbeit besser versteht.",
         "connectorsTitle": "Verbinde deine Arbeitstools",
-        "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."
+        "intro": "Verbinde deine Apps für bessere Ergebnisse und wähle ein Format."
       },
       "skills": {
         "copied": "Kopiert",
@@ -4914,24 +4970,6 @@
         "failedNote": "{{provider}} konnte nicht verbunden werden. Du kannst fortfahren und die Verbindung später herstellen.",
         "rowCopy": "Verbinde deinen Plan, damit Aufgaben statt mit Okou-Credits darüber laufen.",
         "unconfirmedNote": "Deine Verbindung zu {{provider}} konnte nicht geprüft werden. Du kannst fortfahren und die Verbindung später herstellen."
-      },
-      "team": {
-        "copy": "Lade ein Teammitglied ein, deine Workflows zu teilen – jede Person verbindet dabei ihre eigenen Tools.",
-        "invalidEmail": "Bitte gib eine gültige E-Mail-Adresse ein",
-        "invite": "Einladung senden",
-        "invited": "Eingeladen",
-        "label": "E-Mail des Teammitglieds",
-        "note": "Es kann sofort mit Okou loslegen.",
-        "notSent": "Nicht gesendet",
-        "panelTitle": "Teammitglied einladen",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "Verbindet bei Bedarf eigene Tools.",
-          "workflows": "Kann alle Workflows deines Teams ausführen.",
-          "workspace": "Tritt deinem Workspace bei."
-        },
-        "sending": "Wird gesendet…",
-        "title": "Mach Okou für dein ganzes Team nützlich"
       },
       "welcome": {
         "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",

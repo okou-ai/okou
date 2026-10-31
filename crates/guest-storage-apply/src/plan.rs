@@ -136,22 +136,16 @@ fn append_storage_download_tasks(tasks: &mut Vec<DownloadTask>, entries: &[Stora
         let Some(url) = entry.archive_url.as_ref() else {
             continue;
         };
-        tasks.push(
-            DownloadTask::storage(
-                format_entry_label(
-                    ManifestEntryKind::Storage,
-                    idx + 1,
-                    EntryLabel::storage(entry, url),
-                ),
-                url.clone(),
-                entry.mount_path.clone(),
-                false,
-            )
-            .with_workflow_archive(
-                entry.vas_storage_name.as_deref(),
-                entry.vas_version_id.as_deref(),
+        tasks.push(DownloadTask::storage(
+            format_entry_label(
+                ManifestEntryKind::Storage,
+                idx + 1,
+                EntryLabel::storage(entry, url),
             ),
-        );
+            url.clone(),
+            entry.mount_path.clone(),
+            false,
+        ));
     }
 }
 

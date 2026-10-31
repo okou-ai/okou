@@ -1,12 +1,12 @@
 import { object, record } from "zod";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
 import {
-  chatEventNormalSendBodySchema,
   chatEventsContract,
   chatThreadModelSelectionContract,
   chatThreadRenameContract,
   indicatorsSchema,
 } from "./chat-threads";
+import { chatEventNormalSendBodySchema } from "./chat-event-send";
 import {
   mcpEventIdSchema,
   mcpRunIdSchema,

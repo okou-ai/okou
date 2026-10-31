@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.241.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.16...runner-rs-v0.241.17) (2026-10-31)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.241.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.15...runner-rs-v0.241.16) (2026-10-31)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.241.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.14...runner-rs-v0.241.15) (2026-10-31)
+
+
+### Bug Fixes
+
+* **connectors:** prove encoded path authorization with bounded languages ([#44318](https://github.com/okou-ai/okou/issues/44318)) ([90e4fda](https://github.com/okou-ai/okou/commit/90e4fdad526da623c952241b51d2bc8081cc7cb2))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.241.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.13...runner-rs-v0.241.14) (2026-10-31)
+
+## [0.241.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.12...runner-rs-v0.241.13) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.241.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.11...runner-rs-v0.241.12) (2026-10-31)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.241.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.10...runner-rs-v0.241.11) (2026-10-30)
 
 ### Release Dependencies

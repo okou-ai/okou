@@ -1,4 +1,4 @@
-import { array, object, string, type infer as zInfer } from "zod";
+import { array, object, uuid, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
@@ -23,7 +23,7 @@ export const agentDraftContract = c.router({
     method: "GET",
     path: "/api/agents/:id/draft",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: agentDraftResponseSchema,
       400: apiErrorSchema,
@@ -37,7 +37,7 @@ export const agentDraftContract = c.router({
     method: "PATCH",
     path: "/api/agents/:id/draft",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentDraftRequestSchema,
     responses: {
       204: c.noBody(),

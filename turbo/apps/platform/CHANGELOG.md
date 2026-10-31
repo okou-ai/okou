@@ -12,6 +12,103 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1082.0](https://github.com/okou-ai/okou/compare/app-v0.1081.3...app-v0.1082.0) (2026-10-31)
+
+
+### Features
+
+* **app:** preserve landing page files through onboarding ([#44425](https://github.com/okou-ai/okou/issues/44425)) ([5ae758c](https://github.com/okou-ai/okou/commit/5ae758cf6bb113218c9a0247354bbe60cc1f85f8))
+
+
+### Refactoring
+
+* **platform:** remove browser async wrappers and defensive timeouts ([#44416](https://github.com/okou-ai/okou/issues/44416)) ([1db5a82](https://github.com/okou-ai/okou/commit/1db5a82d3f6b8b0bfd07ad3b47bc2df5dd861091))
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.1
+    * @okouai/connectors bumped to 3.20.2
+    * @okouai/core bumped to 8.806.0
+    * @okouai/ui bumped to 1.18.7
+
+## [0.1081.3](https://github.com/okou-ai/okou/compare/app-v0.1081.2...app-v0.1081.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* **app:** simplify the first-task upgrade banner ([#44401](https://github.com/okou-ai/okou/issues/44401)) ([a819442](https://github.com/okou-ai/okou/commit/a819442a7dc799af1f62229110adddc4dd51d16b))
+* **app:** support output formats across onboarding ([#44372](https://github.com/okou-ai/okou/issues/44372)) ([75a5079](https://github.com/okou-ai/okou/commit/75a507925052b2e00c52c447044024e000195e8b))
+
+
+### Refactoring
+
+* **platform:** drive cloud browser display sync from explicit commands ([#44415](https://github.com/okou-ai/okou/issues/44415)) ([9514bbe](https://github.com/okou-ai/okou/commit/9514bbee398757439f9e31e119ebbbda3f0c5278))
+
+## [0.1081.2](https://github.com/okou-ai/okou/compare/app-v0.1081.1...app-v0.1081.2) (2026-10-31)
+
+
+### Performance Improvements
+
+* **app:** isolate hosted preview resource notifications ([#44348](https://github.com/okou-ai/okou/issues/44348)) ([412870c](https://github.com/okou-ai/okou/commit/412870cace168bb2b241dc37e986cc559e5ff627))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.0
+    * @okouai/browser-extension-client bumped to 0.4.1
+    * @okouai/connectors bumped to 3.20.1
+    * @okouai/core bumped to 8.805.6
+
+## [0.1081.1](https://github.com/okou-ai/okou/compare/app-v0.1081.0...app-v0.1081.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **platform:** load earlier chat history after scrolling settles ([#44374](https://github.com/okou-ai/okou/issues/44374)) ([469686e](https://github.com/okou-ai/okou/commit/469686ed85a261a48a7744a388262114a26e1aa3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.2
+    * @okouai/core bumped to 8.805.5
+
+## [0.1081.0](https://github.com/okou-ai/okou/compare/app-v0.1080.3...app-v0.1081.0) (2026-10-31)
+
+
+### Features
+
+* add onboarding capabilities and remove team invitations ([#44373](https://github.com/okou-ai/okou/issues/44373)) ([f905e56](https://github.com/okou-ai/okou/commit/f905e561cecb59879c54ced8f5e2f952645990be))
+
+
+### Refactoring
+
+* **platform:** rebuild cloud browser as signal factories ([#44322](https://github.com/okou-ai/okou/issues/44322)) ([e4ef854](https://github.com/okou-ai/okou/commit/e4ef8545bbe764407ffdd4f38700ad5fce0fc884))
+
+
+### Performance Improvements
+
+* **app:** replace browser http contracts with schema-free descriptors ([#44306](https://github.com/okou-ai/okou/issues/44306)) ([ce8f7fc](https://github.com/okou-ai/okou/commit/ce8f7fc59e52c4da702aced0d641d41f57a63139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.1
+    * @okouai/core bumped to 8.805.4
+
 ## [0.1080.3](https://github.com/okou-ai/okou/compare/app-v0.1080.2...app-v0.1080.3) (2026-10-30)
 
 

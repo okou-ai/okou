@@ -44,6 +44,7 @@ import {
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { mapConcurrent } from "../../lib/map-concurrent";
 import {
   bestEffort,
   readBoundedResponseText,
@@ -64,6 +65,7 @@ const MAX_BROWSER_USE_TAB_URLS = 50;
 const MAX_BROWSER_USE_TAB_URL_CHARS = 8192;
 const BROWSER_USE_SCREENSHOT_WIDTH = 640;
 const BROWSER_USE_SCREENSHOT_QUALITY = 80;
+const BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY = 4;
 const browserUseLiveUrlSchema = zUrl().refine((value) => {
   return new URL(value).origin === "https://live.browser-use.com";
 });
@@ -83,6 +85,7 @@ const browserUseCdpResponseSchema = object({
   id: number().int(),
   result: zUnknown().optional(),
   error: object({
+    code: number().int().optional(),
     message: string(),
   }).optional(),
 });
@@ -97,6 +100,11 @@ const browserUseCdpTargetsSchema = object({
 });
 const browserUseCdpWindowSchema = object({
   windowId: number().int().nonnegative().safe(),
+});
+const browserUseCdpWindowBoundsSchema = object({
+  bounds: object({
+    windowState: zEnum(["normal", "minimized", "maximized", "fullscreen"]),
+  }),
 });
 const browserUseCdpAttachedTargetSchema = object({
   sessionId: string().min(1),
@@ -147,7 +155,10 @@ interface BrowserUseCdpCommand {
 }
 
 class BrowserUseCdpCommandError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+  ) {
     super(message);
     this.name = "BrowserUseCdpCommandError";
   }
@@ -456,7 +467,7 @@ async function sendBrowserUseCdpCommand(
     const error = response.data.error;
     if (error) {
       finish(() => {
-        reject(new BrowserUseCdpCommandError(error.message));
+        reject(new BrowserUseCdpCommandError(error.message, error.code));
       });
       return;
     }
@@ -884,8 +895,37 @@ export async function browserUseWindowExists(
   primaryWindowId: number,
   signal: AbortSignal,
 ): Promise<boolean> {
-  return await withBrowserUseBridge(connection, signal, async (client) => {
-    return (await nativeBrowserWindow(client, primaryWindowId)) !== null;
+  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    return await withBrowserUseCdpSocket(
+      connection.cdpUrl,
+      deadline,
+      async (socket) => {
+        const result = await settle(
+          sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: 1,
+              method: "Browser.getWindowBounds",
+              params: { windowId: primaryWindowId },
+            },
+            deadline,
+          ),
+        );
+        deadline.throwIfAborted();
+        if (!result.ok) {
+          if (
+            result.error instanceof BrowserUseCdpCommandError &&
+            result.error.code === -32_000 &&
+            result.error.message === "Browser window not found"
+          ) {
+            return false;
+          }
+          throw result.error;
+        }
+        browserUseCdpWindowBoundsSchema.parse(result.value);
+        return true;
+      },
+    );
   });
 }
 
@@ -1095,21 +1135,27 @@ export async function captureBrowserUseScreenshot(
       ),
       { reportInput: true },
     );
-    const pageTargets = [];
+    let pageTargets = targets.targetInfos.filter((target) => {
+      return target.type === "page";
+    });
     const sequence = { next: 2 };
-    for (const target of targets.targetInfos) {
-      if (
-        target.type === "page" &&
-        (primaryWindowId === undefined ||
-          (await nativeWindowForTarget(
+    if (primaryWindowId !== undefined) {
+      const windowIds = await mapConcurrent(
+        pageTargets,
+        BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY,
+        async (target) => {
+          return await nativeWindowForTarget(
             socket,
             target.targetId,
             sequence,
             cdpSignal,
-          )) === primaryWindowId)
-      ) {
-        pageTargets.push(target);
-      }
+          );
+        },
+      );
+      cdpSignal.throwIfAborted();
+      pageTargets = pageTargets.filter((_target, index) => {
+        return windowIds[index] === primaryWindowId;
+      });
     }
     if (pageTargets.length === 0) {
       throw new Error("Browser Use CDP returned no page target");
@@ -3888,6 +3934,7 @@ export async function deleteBrowserUseProfile(
 export async function createBrowserUseSession(
   args: {
     readonly profileId: string;
+    readonly extensionId: string;
     readonly proxyCountryCode: string | null;
     readonly timeoutMinutes: number;
     readonly instanceId?: string;
@@ -3906,7 +3953,7 @@ export async function createBrowserUseSession(
         browserScreenHeight: BROWSER_INITIAL_SCREEN_HEIGHT,
         allowResizing: true,
         enableRecording: false,
-        extensionIds: [env("OKOU_BROWSER_USE_EXTENSION_ID")],
+        extensionIds: [args.extensionId],
         metadata: args.instanceId
           ? { okouInstanceId: args.instanceId }
           : undefined,

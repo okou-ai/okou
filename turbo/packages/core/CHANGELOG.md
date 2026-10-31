@@ -1,5 +1,61 @@
 # Changelog
 
+## [8.806.0](https://github.com/okou-ai/okou/compare/core-v8.805.6...core-v8.806.0) (2026-10-31)
+
+
+### Features
+
+* **app:** preserve landing page files through onboarding ([#44425](https://github.com/okou-ai/okou/issues/44425)) ([5ae758c](https://github.com/okou-ai/okou/commit/5ae758cf6bb113218c9a0247354bbe60cc1f85f8))
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.1
+
+## [8.805.6](https://github.com/okou-ai/okou/compare/core-v8.805.5...core-v8.805.6) (2026-10-31)
+
+
+### Refactoring
+
+* **workflows:** omit definition snapshots from new official artifacts ([#44406](https://github.com/okou-ai/okou/issues/44406)) ([b68e1d6](https://github.com/okou-ai/okou/commit/b68e1d6251ea1b5396fc9c28d4c1dbf578f5ac10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.0
+
+## [8.805.5](https://github.com/okou-ai/okou/compare/core-v8.805.4...core-v8.805.5) (2026-10-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.2
+
+## [8.805.4](https://github.com/okou-ai/okou/compare/core-v8.805.3...core-v8.805.4) (2026-10-31)
+
+
+### Performance Improvements
+
+* **app:** replace browser http contracts with schema-free descriptors ([#44306](https://github.com/okou-ai/okou/issues/44306)) ([ce8f7fc](https://github.com/okou-ai/okou/commit/ce8f7fc59e52c4da702aced0d641d41f57a63139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.1
+
 ## [8.805.3](https://github.com/okou-ai/okou/compare/core-v8.805.2...core-v8.805.3) (2026-10-30)
 
 

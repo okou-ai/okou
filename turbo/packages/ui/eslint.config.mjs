@@ -1,10 +1,10 @@
-import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { zodConfig } from "@okouai/eslint-rules/zod";
 import { config, oxlint } from "@okouai/eslint-config/react-internal";
 
 /** @type {import("eslint").Linter.Config} */
 export default [
   ...config,
-  namedZodImportsConfig,
+  zodConfig,
   // Public package entry points may aggregate implementation modules.
   {
     files: ["src/index.ts"],

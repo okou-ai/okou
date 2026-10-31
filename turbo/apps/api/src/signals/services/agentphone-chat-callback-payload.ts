@@ -2,6 +2,7 @@ import {
   boolean,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -17,8 +18,8 @@ export const agentphoneDeliveryTargetSchema = object({
   phoneHandle: string().min(1),
   fromNumber: string().min(1),
   toNumber: string().min(1),
-  userLinkId: string().uuid(),
-  agentId: string().uuid(),
+  userLinkId: uuid(),
+  agentId: uuid(),
   agentphoneAgentId: string().min(1),
 });
 
@@ -28,5 +29,5 @@ export type AgentPhoneDeliveryTarget = zInfer<
 
 export const agentphoneChatCallbackPayloadSchema =
   agentphoneDeliveryTargetSchema.extend({
-    chatEventId: string().uuid(),
+    chatEventId: uuid(),
   });

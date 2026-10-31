@@ -6,6 +6,7 @@ import {
   number,
   object,
   string,
+  url,
   type infer as zInfer,
 } from "zod";
 
@@ -17,7 +18,7 @@ const timestampSchema = string().regex(/^\d+(?:\.\d{1,6})?$/);
 
 const slackReadErrorSchema = apiErrorSchema.extend({
   error: apiErrorSchema.shape.error.extend({
-    channelUrl: string().url().optional(),
+    channelUrl: url().optional(),
     retryAfterSeconds: number().int().nonnegative().optional(),
   }),
 });
@@ -49,7 +50,7 @@ const slackListedChannelSchema = object({
   name: string(),
   isPrivate: boolean(),
   isMember: boolean(),
-  channelUrl: string().url(),
+  channelUrl: url(),
 });
 
 export const slackRepliesQuerySchema = slackHistoryQuerySchema.safeExtend({
@@ -75,7 +76,7 @@ const slackChannelListResponseSchema = object({
 
 const slackHistoryResponseSchema = object({
   channel: string(),
-  channelUrl: string().url(),
+  channelUrl: url(),
   messages: array(slackHistoryMessageSchema),
   hasMore: boolean(),
   nextCursor: string().nullable(),

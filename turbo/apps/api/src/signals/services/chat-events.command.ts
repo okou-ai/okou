@@ -14,12 +14,12 @@ import {
 } from "./chat-thread-request-facts";
 
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
-import {
-  chatEventsContract,
-  resolveChatEventRecommendedFollowups,
-  type CodexServiceTier,
-  type UserMessageDocument,
+import type {
+  CodexServiceTier,
+  UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   modelSettingsSchema,
@@ -51,7 +51,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { literal, object, string, type infer as zInfer } from "zod";
+import { literal, object, uuid, type infer as zInfer } from "zod";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
   normalChatInputConditionalValues,
@@ -1420,7 +1420,7 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
 }
 
 const normalSendPublicationRowSchema = object({
-  id: string().uuid().nullable(),
+  id: uuid().nullable(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
   seqId: pgInt8ToSafeIntegerSchema.nullable(),
   atomicGuard: literal(0),

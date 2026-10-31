@@ -185,7 +185,7 @@ function executableMethod(args: {
   };
 }
 
-function createConnectorActionResolver(
+export function createConnectorActionResolver(
   snapshot: ConnectorRuntimeSelection,
 ): ConnectorActionResolver {
   const resolveSlug: ConnectorActionResolver["resolveSlug"] = (input) => {

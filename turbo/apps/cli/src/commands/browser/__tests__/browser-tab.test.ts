@@ -51,6 +51,7 @@ describe("chat-window Browser commands", () => {
   let selections: string[];
   let protocolFailure: string | undefined;
   let lookupErrors: Map<string, string>;
+  let replyWindow: ((targetId: string, reply: () => void) => void) | undefined;
 
   function browser(): BrowserSession {
     return {
@@ -107,6 +108,7 @@ describe("chat-window Browser commands", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
+    vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     window = { instanceId: INSTANCE_ID, primaryWindowId: 0 };
     tabs = [
       {
@@ -134,6 +136,7 @@ describe("chat-window Browser commands", () => {
     selections = [];
     protocolFailure = undefined;
     lookupErrors = new Map();
+    replyWindow = undefined;
     spawnSyncMock.mockImplementation(
       (_command: string, args: readonly string[]) => {
         const connect = args.indexOf("connect");
@@ -216,13 +219,20 @@ describe("chat-window Browser commands", () => {
                     message: "No target with given id",
                   }
                 : undefined;
-          client.send(
-            JSON.stringify(
-              failure
-                ? { id: command.id, error: failure }
-                : { id: command.id, result: { windowId: native } },
-            ),
-          );
+          const reply = () => {
+            client.send(
+              JSON.stringify(
+                failure
+                  ? { id: command.id, error: failure }
+                  : { id: command.id, result: { windowId: native } },
+              ),
+            );
+          };
+          if (replyWindow) {
+            replyWindow(command.params.targetId, reply);
+          } else {
+            reply();
+          }
         });
       }),
     );
@@ -265,6 +275,43 @@ describe("chat-window Browser commands", () => {
     await run("use");
     expect(selected).toBe(OWNER_TWO);
     expect(selections).toStrictEqual([OWNER_TWO]);
+  });
+
+  it("uses driver order when window membership replies arrive out of order", async () => {
+    let held: (() => void) | undefined;
+    let released = false;
+    replyWindow = (targetId, reply) => {
+      if (targetId === OWNER && !released) {
+        held = reply;
+        return;
+      }
+      reply();
+      if (targetId === OWNER_TWO && held) {
+        released = true;
+        held();
+        held = undefined;
+      }
+    };
+    await run("use");
+    expect(selected).toBe(OWNER);
+    expect(selections).toStrictEqual([OWNER]);
+    expect(output()).not.toContain("private-");
+  });
+
+  it("requires a fresh attachment when a candidate moves during the membership batch", async () => {
+    replyWindow = (targetId, reply) => {
+      reply();
+      if (targetId === OWNER_TWO) {
+        nativeWindows.set(OWNER, 99);
+      }
+    };
+    await expect(run("use")).rejects.toThrow("process.exit called");
+    expect(selected).toBe(SIBLING);
+    expect(selections).toStrictEqual([]);
+    expect(error.mock.calls.flat().join("\n")).toContain(
+      "moved or closed before attachment",
+    );
+    expect(output()).toBe("");
   });
 
   it.each([SIBLING, OWNER_TWO])(

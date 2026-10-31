@@ -1,5 +1,63 @@
 # Changelog
 
+## [10.11.9](https://github.com/okou-ai/okou/compare/cli-v10.11.8...cli-v10.11.9) (2026-10-31)
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.27.1
+    * @okouai/connectors bumped to 3.20.2
+    * @okouai/core bumped to 8.806.0
+    * @okouai/pi-agent-runtime bumped to 1.51.41
+
+## [10.11.8](https://github.com/okou-ai/okou/compare/cli-v10.11.7...cli-v10.11.8) (2026-10-31)
+
+
+### Performance Improvements
+
+* **browser:** reduce api and cli window lookup latency ([#44426](https://github.com/okou-ai/okou/issues/44426)) ([23b55e3](https://github.com/okou-ai/okou/commit/23b55e3fb6722d25917e69610d2d14f6a73020a9))
+
+## [10.11.7](https://github.com/okou-ai/okou/compare/cli-v10.11.6...cli-v10.11.7) (2026-10-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.27.0
+    * @okouai/connectors bumped to 3.20.1
+    * @okouai/core bumped to 8.805.6
+    * @okouai/pi-agent-runtime bumped to 1.51.40
+
+## [10.11.6](https://github.com/okou-ai/okou/compare/cli-v10.11.5...cli-v10.11.6) (2026-10-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.26.2
+    * @okouai/core bumped to 8.805.5
+    * @okouai/pi-agent-runtime bumped to 1.51.39
+
+## [10.11.5](https://github.com/okou-ai/okou/compare/cli-v10.11.4...cli-v10.11.5) (2026-10-31)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.26.1
+    * @okouai/core bumped to 8.805.4
+    * @okouai/pi-agent-runtime bumped to 1.51.38
+
 ## [10.11.4](https://github.com/okou-ai/okou/compare/cli-v10.11.3...cli-v10.11.4) (2026-10-30)
 
 

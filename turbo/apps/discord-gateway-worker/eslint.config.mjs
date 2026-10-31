@@ -1,11 +1,11 @@
-import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { zodConfig } from "@okouai/eslint-rules/zod";
 import { config, oxlint } from "@okouai/eslint-config/base";
 import ccstatePlugin from "@okouai/eslint-rules/ccstate";
 
 export default [
   { ignores: ["dist/**", ".wrangler/**"] },
   ...config,
-  namedZodImportsConfig,
+  zodConfig,
   ...oxlint.buildFromOxlintConfigFile("./.oxlintrc.json"),
   {
     files: ["src/__tests__/application-capabilities.test.ts"],

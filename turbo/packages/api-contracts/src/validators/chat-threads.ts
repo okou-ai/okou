@@ -7,6 +7,7 @@ import {
   array,
   boolean,
   discriminatedUnion,
+  iso,
   literal,
   number,
   object,
@@ -20,6 +21,9 @@ import {
   type infer as zInfer,
 } from "zod";
 import { requireUserMessageForDraftAttachments } from "../contracts/draft-user-message";
+
+/** Maximum run ids accepted by one chat thread usage request. */
+export const CHAT_THREAD_USAGE_RUN_LIMIT = 100;
 
 export const MODEL_FIRST_SELECTION_PROVIDER_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -181,13 +185,13 @@ export const indicatorSchema = zEnum(["active", "unread"]);
  * indicators or event history does not advance the thread's read watermark.
  */
 export const indicatorsSchema = object({
-  agents: record(string().uuid(), indicatorSchema),
-  threads: record(string().uuid(), indicatorSchema),
+  agents: record(uuid(), indicatorSchema),
+  threads: record(uuid(), indicatorSchema),
   /** Latest unread marker for each thread marked unread above. */
-  unreadAt: record(string().uuid(), string().datetime()),
+  unreadAt: record(uuid(), iso.datetime()),
 });
 
-export const chatThreadEventIdSchema = string().uuid();
+export const chatThreadEventIdSchema = uuid();
 export const chatThreadServiceTierSchema = zEnum(["priority"]);
 /**
  * Persisted thread events, snapshot archives, and client caches can still carry
@@ -202,8 +206,8 @@ const persistedChatThreadServiceTierSchema = zEnum(["priority", "ultrafast"])
   .pipe(chatThreadServiceTierSchema.nullable());
 
 export const chatThreadSnapshotProjectionSchema = object({
-  id: string().uuid(),
-  agentId: string().uuid(),
+  id: uuid(),
+  agentId: uuid(),
   title: string().nullable(),
   sortAt: string(),
   createdAt: string(),
@@ -220,7 +224,7 @@ export const chatThreadSnapshotProjectionSchema = object({
   /** Legacy pre-GA projection. Ignored by current clients. */
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
   serviceTier: persistedChatThreadServiceTierSchema,
-  computerUseHostId: string().uuid().nullable().default(null),
+  computerUseHostId: uuid().nullable().default(null),
   cloudBrowserEnabled: boolean().optional(),
 });
 
@@ -245,10 +249,10 @@ export const chatThreadEventSchema = object({
     "archived",
     "unarchived",
   ]),
-  chatThreadId: string().uuid(),
-  agentId: string().uuid(),
+  chatThreadId: uuid(),
+  agentId: uuid(),
   /** On sort_touched, an explicit canonical agent reassignment. */
-  reassignedAgentId: string().uuid().optional(),
+  reassignedAgentId: uuid().optional(),
   title: string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: string().nullable().optional(),
@@ -264,7 +268,7 @@ export const chatThreadEventSchema = object({
   /** Legacy pre-GA projection. Ignored by current clients. */
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
   serviceTier: persistedChatThreadServiceTierSchema,
-  computerUseHostId: string().uuid().nullable().default(null),
+  computerUseHostId: uuid().nullable().default(null),
   cloudBrowserEnabled: boolean().optional(),
   createdAt: string(),
 });
@@ -274,7 +278,7 @@ export const presentationGenerationTemplateRequestSchema = object({
   selection: object({
     templateId: string().min(1),
     colorSystemId: string().min(1).optional(),
-    previewUrl: string().url().optional(),
+    previewUrl: url().optional(),
   }).strict(),
 });
 
@@ -401,13 +405,13 @@ const userMessageTextPartSchema = object({
 
 const userMessageChatThreadPartSchema = object({
   type: literal("chat_thread"),
-  threadId: string().uuid(),
+  threadId: uuid(),
   titleSnapshot: string().min(1),
 }).strict();
 
 const userMessageAgentPartSchema = object({
   type: literal("agent"),
-  agentId: string().uuid(),
+  agentId: uuid(),
   nameSnapshot: string().min(1),
 }).strict();
 
@@ -451,7 +455,7 @@ const userMessageExternalSourcePartSchema = object({
     "github",
     "agentphone",
   ]),
-  href: string().url().optional(),
+  href: url().optional(),
 }).strict();
 
 const userMessageMcpSourcePartSchema = object({
@@ -471,9 +475,9 @@ const userMessageMcpSourcePartSchema = object({
 const userMessageAgentSourcePartSchema = object({
   type: literal("source"),
   kind: literal("agent"),
-  runId: string().uuid(),
-  threadId: string().uuid(),
-  agentId: string().uuid(),
+  runId: uuid(),
+  threadId: uuid(),
+  agentId: uuid(),
   titleSnapshot: string().min(1),
   href: string().min(1),
 }).strict();
@@ -498,7 +502,7 @@ export const userMessageInputPartSchema = discriminatedUnion("type", [
   object({
     type: literal("automation"),
     workflowName: string().min(1),
-    workflowId: string().uuid().optional(),
+    workflowId: uuid().optional(),
     automationBrief: string().optional(),
   }).strict(),
   object({

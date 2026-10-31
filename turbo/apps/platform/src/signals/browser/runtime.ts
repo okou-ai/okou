@@ -11,7 +11,7 @@ import {
 import { pageSignal$ } from "../page-signal.ts";
 import type { BrowserSignals } from "./browser.ts";
 import { CdpFault, diagnostic } from "./cdp/errors.ts";
-import { observeDisplay } from "./display.ts";
+import { measureDisplay, observeDisplay } from "./display.ts";
 import type { DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus } from "./focus.ts";
 import { navigationAddress } from "./input/address.ts";
@@ -536,10 +536,12 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
           cleanups.push(() => {
             viewport.disconnect();
           });
-          cleanups.push(
-            observeDisplay(nodes.canvas.node, (size) => {
+          observeDisplay(
+            nodes.canvas.node,
+            (size) => {
               set(observations.measure$, lease, size);
-            }),
+            },
+            owner,
           );
           const strip = observeTabStrip(
             nodes.toolbar.node,
@@ -652,7 +654,7 @@ function createNativeLifecycle(context: RuntimeState, graph: RuntimeGraph) {
 }
 type NativeLifecycle = ReturnType<typeof createNativeLifecycle>;
 
-/** Revalidation drains before reuse, not before learning a replacement identity. */
+/** Revalidation revokes old admission before learning a replacement identity. */
 function createConnectionResolution(context: RuntimeState) {
   const { installed$, confirmedRequest$ } = context;
   return command(
@@ -663,15 +665,12 @@ function createConnectionResolution(context: RuntimeState) {
     ): Promise<BrowserConnection | null> => {
       signal.throwIfAborted();
       const previous = get(installed$);
-      // The synchronous prefix revokes old admission immediately. Its original
-      // cleanup remains controller-owned even when this reader stops waiting.
-      // allSettled observes rejection even on the distinct-identity branch;
-      // actual disposal/drain is also retained by the retiring lease receipt.
-      const revocation = Promise.allSettled([
-        previous && request !== get(confirmedRequest$)
-          ? set(previous.controller.revokeAuthority$, signal)
-          : Promise.resolve(),
-      ]);
+      // Revoking old admission writes its input releases immediately. Original
+      // cleanup stays controller-owned; a reused target waits for its own
+      // retirement when it is attached again.
+      if (previous && request !== get(confirmedRequest$)) {
+        set(previous.controller.revokeAuthority$);
+      }
       const interrupted = createDeferredPromise<never>(signal);
       using _interruption = {
         [Symbol.dispose]() {
@@ -682,17 +681,6 @@ function createConnectionResolution(context: RuntimeState) {
       };
       const connection = await Promise.race([request, interrupted.promise]);
       signal.throwIfAborted();
-      if (
-        connection &&
-        previous &&
-        sameConnection(previous.identity.connection, connection)
-      ) {
-        const [revoked] = await Promise.race([revocation, interrupted.promise]);
-        signal.throwIfAborted();
-        if (revoked.status === "rejected") {
-          throw revoked.reason;
-        }
-      }
       return connection;
     },
   );
@@ -1109,6 +1097,20 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   };
 }
 
+/** Application layout commits name their change; no observer infers it later. */
+function createLayoutSync(context: RuntimeState) {
+  const { installed$ } = context;
+  return command(({ get, set }) => {
+    const lease = get(installed$);
+    if (lease) {
+      set(
+        lease.controller.measure$,
+        measureDisplay(lease.identity.nodes.canvas.node),
+      );
+    }
+  });
+}
+
 /** Compose private graphs in the existing App Store; expose only the public API. */
 export function createBrowserRuntime(
   connection$: Computed<Promise<BrowserConnection | null>>,
@@ -1148,6 +1150,7 @@ export function createBrowserRuntime(
     ...configurationActions,
     ...presentation,
     connectionChanged$: context.connectionChanged$,
+    syncLayout$: createLayoutSync(context),
     refs: {
       root$: observers.root$,
       canvas$: graph.canvas.ref$,

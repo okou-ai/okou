@@ -11,6 +11,7 @@ import {
   literal,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -55,7 +56,7 @@ const CLAUDE_CODE_DEVICE_AUTH_SOURCE = "claude-code-device-auth";
 
 const claudeCodeDeviceAuthSessionTokenSchema = object({
   version: literal(1),
-  sessionId: string().uuid(),
+  sessionId: uuid(),
 });
 
 const claudeCodeDeviceAuthProviderStateSchema = object({
@@ -63,7 +64,7 @@ const claudeCodeDeviceAuthProviderStateSchema = object({
   type: literal("claude-code"),
   scope: literal("personal"),
   mode: zEnum(["add", "reconnect"]).optional(),
-  modelProviderId: string().uuid().optional(),
+  modelProviderId: uuid().optional(),
   state: string().min(1),
   codeVerifier: string().min(1),
 });

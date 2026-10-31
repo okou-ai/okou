@@ -22,7 +22,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { array, object, string, type infer as zInfer } from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import {
   pgBooleanDecoder,
@@ -43,9 +43,9 @@ import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 const threadSelectionRowsSchema = array(
   object({
-    connectorId: string().uuid(),
+    connectorId: uuid(),
     connectorSlug: string().nullable(),
-    customConnectorId: string().uuid().nullable(),
+    customConnectorId: uuid().nullable(),
   }),
 );
 const threadSelectionRowsDecoder = zodDriverValueDecoder(

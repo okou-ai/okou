@@ -1,12 +1,10 @@
-import {
-  browserOwnerProfiles as profiles,
-  browserOwnerWindows as windows,
-} from "@okouai/db/schema/browser-owner";
+import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { browserSessionTabSnapshots } from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
-import { and, eq, exists, inArray, sql, type Subquery } from "drizzle-orm";
-import { QueryBuilder, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { and, eq, exists, inArray, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import type { BrowserChatWindow } from "./browser-chat-session";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
@@ -19,7 +17,7 @@ import {
 import { encryptPersistentSecretValue } from "./crypto.utils";
 
 type Profile = typeof profiles.$inferSelect;
-type Window = typeof windows.$inferSelect;
+type Window = BrowserChatWindow;
 const RETIREMENT_CAPTURE_TIMEOUT_MS = 15_000;
 interface SnapshotOwner {
   readonly orgId: string;
@@ -73,7 +71,7 @@ export const captureSharedSnapshot$ = command(
     signal: AbortSignal,
   ): Promise<SharedSnapshotCapture | null> => {
     const { owner, window } = args;
-    const t = browserSessionTabSnapshots;
+    const t = windows;
     const [previous] = await get(db$)
       .select({ encryptedTabUrls: t.encryptedTabUrls })
       .from(t)
@@ -134,46 +132,19 @@ export const captureSharedSnapshot$ = command(
   },
 );
 
-/** The source selects only windows whose owning claim/read may publish. */
-export function sharedSnapshotPublication(
-  capture: SharedSnapshotCapture,
-  source: Subquery & { readonly chatThreadId: AnyPgColumn },
-) {
-  const t = browserSessionTabSnapshots;
+/** Publish independent capture fields without touching the binding twice. */
+export function sharedSnapshotPublication(capture: SharedSnapshotCapture) {
   const publication = browserCapturePublication({
-    value: t.encryptedTabUrls,
-    updatedAt: t.updatedAt,
+    value: windows.encryptedTabUrls,
+    updatedAt: windows.tabUrlsCapturedAt,
     previousValue: capture.previousValue,
     capturedAt: capture.capturedAt,
   });
   return {
-    source: new QueryBuilder()
-      .select({
-        chatThreadId: source.chatThreadId,
-        encryptedTabUrls: sql`${capture.encryptedTabUrls}`
-          .mapWith(t.encryptedTabUrls)
-          .as("encrypted_tab_urls"),
-        createdAt: sql`${sql.param(capture.capturedAt, t.createdAt)}::timestamp`
-          .mapWith(t.createdAt)
-          .as("created_at"),
-        updatedAt: sql`${sql.param(capture.capturedAt, t.updatedAt)}::timestamp`
-          .mapWith(t.updatedAt)
-          .as("updated_at"),
-      })
-      .from(source)
-      .getSQL(),
-    conflict: {
-      target: t.chatThreadId,
-      set: {
-        encryptedTabUrls: capture.encryptedTabUrls,
-        updatedAt: publication.updatedAt,
-      },
-      setWhere: and(
-        exists(
-          new QueryBuilder().select({ id: source.chatThreadId }).from(source),
-        ),
-        publication.canReplace,
-      ),
+    canReplace: publication.canReplace,
+    set: {
+      encryptedTabUrls: sql`CASE WHEN ${publication.canReplace} THEN ${capture.encryptedTabUrls} ELSE ${windows.encryptedTabUrls} END`,
+      tabUrlsCapturedAt: sql`CASE WHEN ${publication.canReplace} THEN ${publication.updatedAt} ELSE ${windows.tabUrlsCapturedAt} END`,
     },
   };
 }
@@ -215,17 +186,12 @@ export const saveSharedSnapshot$ = command(
           ),
       ),
     );
-    const source = new QueryBuilder()
-      .select({ chatThreadId: windows.chatThreadId })
-      .from(windows)
-      .where(captureOwner)
-      .as("captured_shared_window");
-    const publication = sharedSnapshotPublication(capture, source);
+    const publication = sharedSnapshotPublication(capture);
     const saved = await set(writeDb$)
-      .insert(browserSessionTabSnapshots)
-      .select(publication.source)
-      .onConflictDoUpdate(publication.conflict)
-      .returning({ id: browserSessionTabSnapshots.chatThreadId });
+      .update(windows)
+      .set(publication.set)
+      .where(and(captureOwner, publication.canReplace))
+      .returning({ id: windows.chatThreadId });
     signal.throwIfAborted();
     return saved.length === 1;
   },

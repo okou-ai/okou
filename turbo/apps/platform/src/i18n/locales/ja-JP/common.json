@@ -1765,9 +1765,10 @@
       "outOfCredits": "クレジットが不足しています",
       "proCard": {
         "creditsNow": "クレジット · 今すぐ",
-        "description": "追加クレジット · 高度な機能 · 3 台のクラウドコンピューター",
+        "description": "高度な機能 · 3 台のクラウドコンピューター",
         "priceUnavailable": "プランで最新の料金を確認",
         "title": "残り約 5 件のタスク",
+        "upgradeFromPrice": "月額{{price}}からアップグレード",
         "upgradeNow": "今すぐアップグレード"
       },
       "redirecting": "リダイレクト中...",
@@ -2098,6 +2099,22 @@
       "sent": "転送しました",
       "threads": "チャット",
       "title": "転送先"
+    },
+    "landingFiles": {
+      "back": "ファイル選択に戻る",
+      "description": "リクエストを確認し、選択したファイルをアップロードして開始してください。",
+      "editFailed": "ファイルを更新できませんでした。もう一度お試しください。",
+      "failed": "完了できませんでした。ファイルとリクエストは保持されています。再試行してください。",
+      "limit": "最大10個のファイルを追加できます（合計1 GB）。",
+      "loading": "ファイルを復元中…",
+      "missing": "ファイルを読み込めません。同じブラウザーで元のページに戻り、選択し直してください。",
+      "popupBlocked": "このサイトのポップアップを許可してから、ファイルの転送を再試行してください。",
+      "prompt": "リクエスト",
+      "retry": "再試行",
+      "selected": "選択したファイル",
+      "start": "アップロードして開始",
+      "title": "ファイルを使って開始",
+      "uploading": "ファイルをアップロード中（{{current}} / {{total}}）…"
     },
     "mail": {
       "bcc": "BCC",
@@ -4206,11 +4223,53 @@
       "make": "{{brandName}} へようこそ"
     },
     "make": {
-      "promptDescription": "以下で調整するか、そのまま実行します。 {{assistantName}} はここから取得します。ツールはサンドボックスに保たれ、ワークスペースから何も出なくなります。",
       "promptLabel": "オンボーディングプロンプト",
-      "promptTitle": "このプロンプトを試してください"
+      "promptTitle": "タスクを自分に合わせて調整"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "専門データ、ソーシャル分析、画像生成でエージェントをもっと強力に。必要な機能を選ぶと、Okou が仕事に活用します。",
+        "items": {
+          "data-search": {
+            "description": "企業、サイトのアクセス数、広告を比較して機会を発見。",
+            "name": "高度なデータ調査"
+          },
+          "finance": {
+            "description": "株価と市場動向を比較して投資調査に活用。",
+            "name": "金融データ"
+          },
+          "image-generation": {
+            "description": "SNS 投稿、キャンペーン、スライド用の画像を作成。",
+            "name": "画像生成"
+          },
+          "maps": {
+            "description": "店舗や会場を探し、場所を比較して経路を計画。",
+            "name": "地図と場所"
+          },
+          "people-search": {
+            "description": "役職や会社から見込み客、パートナー、採用候補者を検索。",
+            "name": "人物検索"
+          },
+          "scrape": {
+            "description": "ウェブページから要点を抽出し、資料や比較に活用。",
+            "name": "ページ抽出"
+          },
+          "seo": {
+            "description": "顧客が検索するキーワードや競合の順位を調査。",
+            "name": "SEO 調査"
+          },
+          "social": {
+            "description": "クリエイター、投稿、反応を調べてコンテンツに活用。",
+            "name": "ソーシャル検索"
+          },
+          "web-search": {
+            "description": "最新のニュースや情報を、確認できる出典付きで検索。",
+            "name": "ウェブ検索"
+          }
+        },
+        "listLabel": "内蔵機能",
+        "title": "Okou の秘密のツール"
+      },
       "chatChannels": {
         "connectedTitle": "チャットが接続されました",
         "copy": "Okou に直接メッセージを送るか、チームのチャットに追加しましょう。使い慣れた方法を選べます。",
@@ -4233,8 +4292,7 @@
         "industry": "分野を選ぶ",
         "ready": "Okou の準備ができました",
         "skills": "スキルをインポート",
-        "sources": "仕事をつなぐ",
-        "team": "チームメンバーを招待"
+        "sources": "仕事をつなぐ"
       },
       "experience": {
         "copy": "ガイド付きで始めるか、利用中の Codex または Claude Code のプランを使えます。",
@@ -4324,9 +4382,7 @@
         "skillsCopy": "パソコンで {{provider}} を使用します。",
         "skillsTitle": "スキルをインポート",
         "sourcesCopy": "最初のタスク用に1つ接続。",
-        "startTask": "タスクを開始",
-        "teamCopy": "同じワークスペースで共同作業。",
-        "teamTitle": "メンバーを招待"
+        "startTask": "タスクを開始"
       },
       "outcomes": {
         "accessibleLabel": "{{source}} から作成する {{title}} のイメージ。内容はすべてサンプルです。",
@@ -4488,9 +4544,9 @@
         "tooLong": "別の形式を選ぶには、タスクを短くしてください。"
       },
       "prompt": {
-        "connectorsDescription": "ツールを接続すると、Okou が仕事の状況を理解し、あなたに合った方法でタスクを進められます。後から接続することもできます。",
+        "connectorsDescription": "アプリを接続すると、Okou があなたの仕事をより深く理解できます。",
         "connectorsTitle": "仕事で使うツールを接続",
-        "intro": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。"
+        "intro": "アプリを接続してより良い成果につなげ、出力形式を選びましょう。"
       },
       "skills": {
         "copied": "コピーしました",
@@ -4898,24 +4954,6 @@
         "failedNote": "{{provider}} に接続できませんでした。このまま進み、後から接続できます。",
         "rowCopy": "接続すると、Okouクレジットではなく自分のプランで実行できます。",
         "unconfirmedNote": "{{provider}} の接続を確認できませんでした。このまま進み、後から接続できます。"
-      },
-      "team": {
-        "copy": "チームメンバーを招待してワークフローを共有しましょう。ツールはそれぞれが自分で接続します。",
-        "invalidEmail": "有効なメールアドレスを入力してください",
-        "invite": "招待を送る",
-        "invited": "招待済み",
-        "label": "チームメンバーのメールアドレス",
-        "note": "すぐに Okou を使い始められます。",
-        "notSent": "未送信",
-        "panelTitle": "チームメンバーを招待",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "必要に応じて自分のツールを接続します。",
-          "workflows": "チームが作成したワークフローをすべて実行できます。",
-          "workspace": "あなたのワークスペースに参加します。"
-        },
-        "sending": "送信中…",
-        "title": "チーム全員で Okou を活用しましょう"
       },
       "welcome": {
         "copy": "仕事に合わせた提案を確認し、目的に合わせて調整してから Okou に任せましょう。",

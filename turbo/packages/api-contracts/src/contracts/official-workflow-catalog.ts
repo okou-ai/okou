@@ -10,6 +10,7 @@ import {
   string,
   union,
   url,
+  uuid,
   enum as zEnum,
   null as zNull,
   type infer as zInfer,
@@ -243,7 +244,7 @@ const fingerprintSchema = string().regex(/^[0-9a-f]{64}$/);
 
 export const officialWorkflowArtifactReferenceSchema = object({
   storageName: string().min(1).max(256),
-  storageId: string().uuid(),
+  storageId: uuid(),
   storageVersion: fingerprintSchema,
 }).strict();
 export type OfficialWorkflowArtifactReference = zInfer<

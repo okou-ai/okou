@@ -1,14 +1,8 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import {
-  scheduleTimeout,
-  createDeferredPromise,
-  detach,
-  Reason,
-} from "../../utils.ts";
+import { createDeferredPromise, detach, Reason } from "../../utils.ts";
 
 import type { CdpClient } from "../cdp/client.ts";
 import { CdpFault } from "../cdp/errors.ts";
-import { frameTimeoutMs } from "../display/limits.ts";
 import type { FrameSink } from "../render/canvas.ts";
 import type { Viewport } from "../display/geometry.ts";
 import { sameCaptureSettings, type CaptureSettings } from "./capture.ts";
@@ -53,15 +47,12 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
   const halted$ = state(false);
   const accepting$ = state(false);
   const revision$ = state(0);
-  const painted$ = state(false);
-  const monitor$ = state(true);
   const desired$ = state(settings);
   const applied$ = state<CaptureSettings | null>(null);
   const native$ = state<NativeCapture>({ kind: "stopped" });
   const lane$ = state<CaptureLane | null>(null);
   const reservation$ = state<object | null>(null);
   const laneWaiters$ = state<readonly LaneWaiter[]>([]);
-  const deadline$ = state<(() => void) | null>(null);
   const navigationRevision$ = state(0);
   const navigating$ = state<ReadonlySet<string>>(new Set());
   const navigationListeners$ = state<ReadonlySet<(done: boolean) => void>>(
@@ -85,15 +76,12 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
     halted$,
     accepting$,
     revision$,
-    painted$,
-    monitor$,
     desired$,
     applied$,
     native$,
     lane$,
     reservation$,
     laneWaiters$,
-    deadline$,
     navigationRevision$,
     navigating$,
     navigationListeners$,
@@ -172,20 +160,13 @@ function createCaptureLane(graph: CaptureState) {
 
 function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
   const {
-    deadline$,
     navigationListeners$,
     halted$,
     disposed$,
     accepting$,
     revision$,
     current$,
-    painted$,
-    monitor$,
   } = graph;
-  const cancelDeadline$ = command(({ get, set }) => {
-    get(deadline$)?.();
-    set(deadline$, null);
-  });
   const navigationSettled$ = command(({ get, set }, done: boolean) => {
     const listeners = get(navigationListeners$);
     set(navigationListeners$, new Set());
@@ -200,7 +181,6 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
     set(halted$, true);
     set(accepting$, false);
     set(revision$, get(revision$) + 1);
-    set(cancelDeadline$);
     owner.sink.invalidate();
     set(navigationSettled$, false);
   });
@@ -219,66 +199,16 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
       signal.throwIfAborted();
     },
   );
-  const frameExpired$ = command(
-    async (
-      { get, set },
-      revision: number,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      if (
-        get(current$) &&
-        !get(painted$) &&
-        get(accepting$) &&
-        get(revision$) === revision
-      ) {
-        await set(
-          fail$,
-          new CdpFault("frame", "The browser did not produce a live frame."),
-          signal,
-        );
-      }
-    },
-  );
-  const waitForFrame$ = command(({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(cancelDeadline$);
-    if (!get(current$) || get(painted$) || !get(monitor$)) {
-      return;
-    }
-    const revision = get(revision$);
-    const cancel = scheduleTimeout(
-      () => {
-        detach(
-          set(frameExpired$, revision, signal),
-          Reason.DomCallback,
-          "browser frame deadline",
-        );
-      },
-      frameTimeoutMs,
-      signal,
-    );
-    set(deadline$, () => {
-      return cancel;
-    });
-  });
 
   return {
-    cancelDeadline$,
     navigationSettled$,
     suspend$,
     fail$,
-    waitForFrame$,
   };
 }
 
-function createCaptureStop(
-  owner: ScreencastOwner,
-  graph: CaptureState,
-  core: CaptureCore,
-) {
+function createCaptureStop(owner: ScreencastOwner, graph: CaptureState) {
   const { native$, accepting$, revision$ } = graph;
-  const { cancelDeadline$ } = core;
   const stopConfirmed$ = command(({ get, set }, native: NativeCapture) => {
     const latest = get(native$);
     if (
@@ -295,7 +225,6 @@ function createCaptureStop(
       const native = get(native$);
       set(accepting$, false);
       set(revision$, get(revision$) + 1);
-      set(cancelDeadline$);
       owner.sink.invalidate();
       await owner.client.request(
         "Page.stopScreencast",
@@ -317,19 +246,10 @@ function createCaptureStop(
 function createCaptureBegin(
   owner: ScreencastOwner,
   graph: CaptureState,
-  ports: CaptureCore & CaptureLaneCommands & CaptureStop,
+  ports: CaptureLaneCommands & CaptureStop,
 ) {
-  const {
-    native$,
-    current$,
-    halted$,
-    painted$,
-    monitor$,
-    accepting$,
-    applied$,
-    stopped$,
-  } = graph;
-  const { acquireLane$, releaseLane$, stop$, waitForFrame$ } = ports;
+  const { native$, current$, halted$, accepting$, applied$, stopped$ } = graph;
+  const { acquireLane$, releaseLane$, stop$ } = ports;
   const cleanupLateStart$ = command(
     async (
       { get, set },
@@ -358,7 +278,6 @@ function createCaptureBegin(
     async (
       { get, set },
       next: CaptureSettings,
-      monitor: boolean,
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
@@ -369,8 +288,6 @@ function createCaptureBegin(
         throw new CdpFault("frame", "The live image is unavailable.");
       }
       const native: NativeCapture = { kind: "possible", epoch: {} };
-      set(painted$, false);
-      set(monitor$, monitor);
       set(accepting$, true);
       set(native$, native);
       if (owner.starting$) {
@@ -401,7 +318,6 @@ function createCaptureBegin(
         return;
       }
       set(applied$, next);
-      set(waitForFrame$, signal);
     },
   );
   const resume$ = command(({ get, set }, signal: AbortSignal) => {
@@ -410,7 +326,6 @@ function createCaptureBegin(
       return;
     }
     set(accepting$, true);
-    set(waitForFrame$, signal);
   });
 
   return { begin$, resume$ };
@@ -438,22 +353,13 @@ function createCaptureNavigation(graph: CaptureState, core: CaptureCore) {
         }
       };
       set(navigationListeners$, new Set(get(navigationListeners$)).add(finish));
-      const cancel = scheduleTimeout(
-        () => {
-          finish(false);
-        },
-        frameTimeoutMs,
-        signal,
-      );
       const [result] = await Promise.allSettled([event.promise]);
       if (signal.aborted) {
-        cancel();
         const listeners = new Set(get(navigationListeners$));
         listeners.delete(finish);
         set(navigationListeners$, listeners);
         signal.throwIfAborted();
       }
-      cancel();
       const listeners = new Set(get(navigationListeners$));
       listeners.delete(finish);
       set(navigationListeners$, listeners);
@@ -503,7 +409,6 @@ function createCaptureConfiguration(
   const {
     stop$,
     begin$,
-    cancelDeadline$,
     waitForNavigation$,
     acquireLane$,
     releaseLane$,
@@ -528,9 +433,7 @@ function createCaptureConfiguration(
         // Coalesce every preference received before the stop receipt.
         const next = get(desired$);
         const navigation = get(navigationRevision$);
-        const [started] = await Promise.allSettled([
-          set(begin$, next, true, signal),
-        ]);
+        const [started] = await Promise.allSettled([set(begin$, next, signal)]);
         signal.throwIfAborted();
         if (started.status === "rejected") {
           const error: unknown = started.reason;
@@ -546,7 +449,6 @@ function createCaptureConfiguration(
           recoveredNavigation = true;
           set(accepting$, false);
           set(revision$, get(revision$) + 1);
-          set(cancelDeadline$);
           owner.sink.invalidate();
           if (!(await set(waitForNavigation$, signal))) {
             throw error;
@@ -600,12 +502,11 @@ function createCaptureLifecycle(
     desired$,
     navigating$,
   } = graph;
-  const { cancelDeadline$, navigationSettled$, reconcile$, quiesce$ } = ports;
+  const { navigationSettled$, reconcile$, quiesce$ } = ports;
   const abort$ = command(({ get, set }) => {
     set(ownerActive$, false);
     set(accepting$, false);
     set(revision$, get(revision$) + 1);
-    set(cancelDeadline$);
     set(navigationSettled$, false);
     owner.sink.invalidate();
   });
@@ -656,7 +557,6 @@ function createCaptureLifecycle(
         set(ownerActive$, false);
         set(accepting$, false);
         set(revision$, get(revision$) + 1);
-        set(cancelDeadline$);
         set(navigationSettled$, false);
         set(navigating$, new Set());
         owner.sink.invalidate();
@@ -819,7 +719,7 @@ function createCaptureRetry(
       }
       set(halted$, false);
       set(applied$, null);
-      await set(begin$, get(desired$), true, signal);
+      await set(begin$, get(desired$), signal);
     },
   );
   const retry$ = command(
@@ -879,8 +779,8 @@ function createCaptureFrames(
   graph: CaptureState,
   core: CaptureCore,
 ) {
-  const { acceptingFrames$, revision$, painted$ } = graph;
-  const { cancelDeadline$, fail$ } = core;
+  const { acceptingFrames$, revision$ } = graph;
+  const { fail$ } = core;
   const acceptPaint$ = command(
     (
       { get },
@@ -897,7 +797,7 @@ function createCaptureFrames(
   );
   const framePainted$ = command(
     (
-      { get, set },
+      { get },
       revision: number,
       raster: Viewport,
       painted: (raster: Viewport) => void,
@@ -905,8 +805,6 @@ function createCaptureFrames(
       if (!get(acceptingFrames$) || get(revision$) !== revision) {
         return;
       }
-      set(painted$, true);
-      set(cancelDeadline$);
       painted(raster);
     },
   );
@@ -968,8 +866,8 @@ export function createScreencast(
   const graph = createCaptureState(owner, settings);
   const lane = createCaptureLane(graph);
   const core = createCaptureCore(owner, graph);
-  const stop = createCaptureStop(owner, graph, core);
-  const begin = createCaptureBegin(owner, graph, { ...core, ...lane, ...stop });
+  const stop = createCaptureStop(owner, graph);
+  const begin = createCaptureBegin(owner, graph, { ...lane, ...stop });
   const navigation = createCaptureNavigation(graph, core);
   const configuration = createCaptureConfiguration(owner, graph, {
     ...core,

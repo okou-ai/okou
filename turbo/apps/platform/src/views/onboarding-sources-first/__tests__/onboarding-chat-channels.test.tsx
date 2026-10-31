@@ -580,6 +580,8 @@ test("A pending Teams installation keeps onboarding in place until real status i
   expect(getButtonByName("Continue")).toBeEnabled();
   expect(pathname()).toBe(ROUTES.onboardingSlack);
   click(getButtonByName("Continue"));
+  await screen.findByRole("heading", { name: "Meet Okou’s secret tools" });
+  click(getButtonByName("Continue"));
   await expect(
     screen.findByLabelText("Your starting prompt"),
   ).resolves.toHaveValue("Keep my launch plan");

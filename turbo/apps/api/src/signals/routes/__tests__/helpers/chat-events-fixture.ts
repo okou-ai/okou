@@ -1105,7 +1105,6 @@ export function createChatEventsFixture(context: TestContext) {
       user: bdd.user,
     },
     api: {
-      downloadWorkflow: api.downloadWorkflow,
       acceptStorageDownloads: api.acceptStorageDownloads,
       acceptTelemetryIngest: api.acceptTelemetryIngest,
       claimRunnerJob: api.claimRunnerJob,

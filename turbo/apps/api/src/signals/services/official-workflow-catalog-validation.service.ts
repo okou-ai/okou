@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { OFFICIAL_WORKFLOW_DEFINITION_MANIFEST_PATH } from "@okouai/core/official-workflow-artifact";
 
 import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
@@ -21,9 +22,7 @@ import { parseScheduledAtTime } from "@okouai/core/timezone";
 import { isValidTimeZone, safeSync, safeUrlParse } from "../utils";
 import { AUTONOMY_BUDGET_CEILING } from "../autonomy-budget-limit";
 import { calculateNextRun } from "./time-automation";
-
-export const OFFICIAL_WORKFLOW_DEFINITION_MANIFEST_PATH =
-  ".vm0/official-workflow-definition.json";
+import { canonicalJsonString, compareStrings } from "../../lib/canonical-json";
 
 interface ValidatedActiveDefinition {
   readonly source: ActiveSourceDefinition;
@@ -56,29 +55,6 @@ type JsonObject = Readonly<Record<string, unknown>>;
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function compareStrings(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
-export function canonicalJsonString(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJsonString).join(",")}]`;
-  }
-  if (isJsonObject(value)) {
-    return `{${Object.keys(value)
-      .sort(compareStrings)
-      .map((key) => {
-        return `${JSON.stringify(key)}:${canonicalJsonString(value[key])}`;
-      })
-      .join(",")}}`;
-  }
-  const encoded = JSON.stringify(value);
-  if (encoded === undefined) {
-    throw new Error("Canonical JSON received an unsupported value");
-  }
-  return encoded;
 }
 
 export function officialWorkflowFingerprint(value: unknown): string {

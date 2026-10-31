@@ -98,7 +98,6 @@ import {
   recordSandboxOperations,
 } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
-import { runnerWorkflowRoutes } from "./runner-workflows";
 import {
   declareSteeredInput$,
   loadNextSteerableInput$,
@@ -2385,7 +2384,6 @@ const observeClaimJsonResponse: JsonResponseObserver = (
 };
 
 export const runnersRoutes: readonly RouteEntry[] = [
-  ...runnerWorkflowRoutes,
   {
     route: runnersHeartbeatContract.heartbeat,
     handler: heartbeatInner$,

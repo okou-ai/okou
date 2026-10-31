@@ -33,7 +33,6 @@ describe("Runner claim-time Agent instructions", () => {
         queued.runId,
       );
       const selected = claim.contentBundles.instructions!;
-      expect(claim).not.toHaveProperty("agentInstructions");
       expect(
         readClaimedContentBundle(s3.objects, selected)
           .get("instructions.md")

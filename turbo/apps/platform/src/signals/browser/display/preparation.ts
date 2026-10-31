@@ -33,10 +33,7 @@ export interface DisplaySnapshot {
 }
 
 export interface DisplayPreparation {
-  readonly acquire$: Command<
-    Promise<DisplaySnapshot | null>,
-    [number | undefined, AbortSignal]
-  >;
+  readonly acquire$: Command<Promise<DisplaySnapshot | null>, [AbortSignal]>;
   readonly confirm$: Command<
     Promise<Protocol.Browser.GetWindowForTargetResponse>,
     [number, AbortSignal]
@@ -254,14 +251,13 @@ function createSnapshotAcquisition(
   const acquireSnapshot$ = command(
     async (
       { get, set },
-      budget: number | undefined,
       signal: AbortSignal,
     ): Promise<DisplaySnapshot | null> => {
       if (signal.aborted || !set(current$)) {
         return null;
       }
       if (get(calibration$).kind === "unbound") {
-        await set(target.geometry.waitForNativeFrame$, budget, signal);
+        await set(target.geometry.waitForNativeFrame$, signal);
         if (signal.aborted || !set(current$)) {
           return null;
         }
@@ -295,7 +291,7 @@ function createSnapshotAcquisition(
         });
       }
       if (get(calibration$).kind === "captured") {
-        await set(target.geometry.waitForNativeFrame$, budget, signal);
+        await set(target.geometry.waitForNativeFrame$, signal);
       }
       if (signal.aborted || !set(current$)) {
         return null;
@@ -340,11 +336,10 @@ function createPreparationCommands(
   const acquire$ = command(
     async (
       { get, set },
-      budget: number | undefined,
       signal: AbortSignal,
     ): Promise<DisplaySnapshot | null> => {
       const [result] = await Promise.allSettled([
-        set(acquireSnapshot$, budget, signal),
+        set(acquireSnapshot$, signal),
       ]);
       if (signal.aborted) {
         const calibration = get(calibration$);

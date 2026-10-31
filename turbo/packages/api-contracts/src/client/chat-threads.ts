@@ -2,7 +2,6 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:client
 
 import type {
-  chatEventsContract as OriginalChatEventsContract,
   chatSearchContract as OriginalChatSearchContract,
   chatThreadArchiveContract as OriginalChatThreadArchiveContract,
   chatThreadArtifactsContract as OriginalChatThreadArtifactsContract,
@@ -25,27 +24,6 @@ import type {
   chatThreadsContract as OriginalChatThreadsContract,
 } from "../contracts/chat-threads";
 import type { ClientDescriptor } from "./types";
-
-export const chatEventsContract: ClientDescriptor<
-  typeof OriginalChatEventsContract
-> = {
-  send: {
-    method: "POST",
-    path: "/api/chat/events",
-    statuses: {
-      201: true,
-      400: true,
-      401: true,
-      402: true,
-      403: true,
-      404: true,
-      409: true,
-      422: true,
-      429: true,
-      503: true,
-    },
-  },
-};
 
 export const chatSearchContract: ClientDescriptor<
   typeof OriginalChatSearchContract

@@ -5,7 +5,6 @@ import type {
   cronBrowserReconcileContract as OriginalCronBrowserReconcileContract,
   cronCleanupSandboxesContract as OriginalCronCleanupSandboxesContract,
   cronCleanupSuggestionsContract as OriginalCronCleanupSuggestionsContract,
-  cronCleanupXResourceReadsContract as OriginalCronCleanupXResourceReadsContract,
   cronCompactChatThreadSnapshotsContract as OriginalCronCompactChatThreadSnapshotsContract,
   cronCompactUsageEventsContract as OriginalCronCompactUsageEventsContract,
   cronComputerUseScreenshotCleanupContract as OriginalCronComputerUseScreenshotCleanupContract,
@@ -68,19 +67,6 @@ export const cronCleanupSuggestionsContract: ClientDescriptor<
   cleanup: {
     method: "GET",
     path: "/api/cron/cleanup-suggestions",
-    statuses: {
-      200: true,
-      401: true,
-    },
-  },
-};
-
-export const cronCleanupXResourceReadsContract: ClientDescriptor<
-  typeof OriginalCronCleanupXResourceReadsContract
-> = {
-  cleanup: {
-    method: "GET",
-    path: "/api/cron/cleanup-x-resource-reads",
     statuses: {
       200: true,
       401: true,

@@ -11,7 +11,7 @@ import {
 } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
-import { composerDraftSchema } from "./chat-threads";
+import { composerDraftSchema } from "../validators/chat-threads";
 import { apiErrorSchema } from "./errors";
 import { SUGGESTION_RETENTION_MS } from "../validators/suggestions";
 

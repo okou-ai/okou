@@ -6,13 +6,13 @@ import {
   type Computed,
   type State,
 } from "ccstate";
+import { timeout } from "signal-timers";
 import {
   createDeferredPromise,
   detach,
   isAbortError,
   Reason,
   resetSignal,
-  scheduleTimeout,
 } from "../../utils.ts";
 import {
   createCdpClient,
@@ -268,7 +268,6 @@ function createSelectedSession(
     current$,
     settings$,
     stream,
-    painted$,
     captureFailed$,
   });
   return {
@@ -294,7 +293,6 @@ interface SessionRefreshNodes {
   readonly current$: Computed<boolean>;
   readonly settings$: Computed<CaptureSettings>;
   readonly stream: ReturnType<typeof createScreencast>;
-  readonly painted$: State<boolean>;
   readonly captureFailed$: Command<Promise<void>, [unknown, AbortSignal]>;
 }
 type RefreshIntent = { readonly prepare$: Command<Promise<void>, []> };
@@ -303,8 +301,7 @@ function createSessionRestart(
   nodes: SessionRefreshNodes,
   refreshIntent$: State<RefreshIntent | null>,
 ) {
-  const { attached, current$, settings$, stream, painted$, captureFailed$ } =
-    nodes;
+  const { attached, current$, settings$, stream, captureFailed$ } = nodes;
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
     const intent = get(refreshIntent$);
@@ -328,7 +325,7 @@ function createSessionRestart(
           throw cancelled();
         }
         progress.phase = "starting";
-        await set(stream.begin$, get(settings$), !get(painted$), signal);
+        await set(stream.begin$, get(settings$), signal);
       })(),
     ]);
     signal.throwIfAborted();
@@ -352,7 +349,7 @@ function createSessionRestart(
             if (!get(current$)) {
               throw cancelled();
             }
-            await set(stream.begin$, get(settings$), !get(painted$), signal);
+            await set(stream.begin$, get(settings$), signal);
           })(),
         ]);
         signal.throwIfAborted();
@@ -479,7 +476,7 @@ interface ControllerLinks {
   readonly syncDisplay$: Command<Promise<void>, [AbortSignal]>;
   readonly restoreSelection$: Command<Promise<void>, [AbortSignal]>;
   readonly pause$: Command<Promise<void>, [boolean, AbortSignal]>;
-  readonly revokeAuthority$: Command<Promise<void>, [AbortSignal]>;
+  readonly revokeAuthority$: Command<void, []>;
   readonly refreshAuthority$: Command<Promise<void>, [AbortSignal]>;
   readonly rejectFavicon$: Command<void, [string, string]>;
   readonly dispose$: Command<void, []>;
@@ -510,7 +507,7 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
   const captureStartedState$ = state<CaptureSettings | null>(null);
   const captureUpdated$ = state(-Infinity);
   const captureChange$ = state<CaptureChange | null>(null);
-  const captureDeadline$ = state<(() => void) | null>(null);
+  const captureScheduled$ = state(false);
   const faviconPending$ = state<object | null>(null);
   const faviconAvailable$ = state(true);
   const targetRevision$ = state(0);
@@ -544,7 +541,7 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
     captureStartedState$,
     captureUpdated$,
     captureChange$,
-    captureDeadline$,
+    captureScheduled$,
     faviconPending$,
     faviconAvailable$,
     targetRevision$,
@@ -1075,15 +1072,16 @@ function createCaptureGraph(
     captureStartedState$,
     captureUpdated$,
     captureChange$,
-    captureDeadline$,
+    captureScheduled$,
     settings$,
     capturePending$,
     assertAvailable$,
     nativeHost,
   } = context;
-  const cancelCapture$ = command(({ get, set }) => {
-    get(captureDeadline$)?.();
-    set(captureDeadline$, null);
+  const resetCaptureDeadline$ = resetSignal();
+  const cancelCapture$ = command(({ set }) => {
+    set(resetCaptureDeadline$);
+    set(captureScheduled$, false);
     set(captureChange$, null);
   });
   const configureCapture$ = command(
@@ -1138,23 +1136,20 @@ function createCaptureGraph(
     if (
       previous &&
       sameCaptureSettings(previous.settings, settings) &&
-      get(captureDeadline$)
+      get(captureScheduled$)
     ) {
       return;
     }
     const change = { settings, first: previous?.first ?? now, last: now };
     set(captureChange$, change);
-    get(captureDeadline$)?.();
     const deadline = Math.max(
       get(captureUpdated$) + 150,
       Math.min(change.last + 200, change.first + 1000),
     );
-    const cancel = scheduleTimeout(
+    // Each schedule replaces the previous deadline; only the latest can fire.
+    timeout(
       () => {
-        if (get(captureDeadline$) !== cancel) {
-          return;
-        }
-        set(captureDeadline$, null);
+        set(captureScheduled$, false);
         if (!get(selected.current$)) {
           return;
         }
@@ -1169,17 +1164,22 @@ function createCaptureGraph(
         }
       },
       Math.max(0, Math.ceil(deadline - now)),
-      selected.attached.frames.signal,
+      { signal: set(resetCaptureDeadline$, selected.attached.frames.signal) },
     );
-    set(captureDeadline$, () => {
-      return cancel;
-    });
+    set(captureScheduled$, true);
   });
   return { cancelCapture$, configureCapture$, scheduleCapture$ };
 }
 
 function createRetirementReceiptsGraph(context: ControllerContext) {
-  const { model, disposedState$, retirements$, wake$, waitEvent$ } = context;
+  const {
+    model,
+    disposedState$,
+    closingState$,
+    retirements$,
+    wake$,
+    waitEvent$,
+  } = context;
   const waitRetirement$ = command(
     async (
       { get, set },
@@ -1238,7 +1238,10 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
           return receipt.status === "rejected";
         },
       );
-      set(detachAttached$, selected.attached);
+      // Once closing begins, the transport close owns session detachment.
+      if (!get(closingState$)) {
+        set(detachAttached$, selected.attached);
+      }
       if (get(retirements$).get(targetId) === retirement) {
         const fences = new Map(get(retirements$));
         if (!result) {
@@ -2371,11 +2374,7 @@ function createConnectionBootstrap(
     set(display.setMode$, get(model.windowSizeSync$));
     set(display.measure$, get(displaySize$));
     set(display.setSuspended$, !get(authority$) || get(model.intent$).paused);
-    detach(
-      set(display.start$, client.signal),
-      Reason.Daemon,
-      "browser automatic display synchronization",
-    );
+    set(display.start$, client.signal);
     await set(get(get(links$).discovery$)!.start$, client.signal);
     signal.throwIfAborted();
     set(bootstrapping$, false);
@@ -3085,40 +3084,27 @@ function createAuthoritySettingsGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const {
-    model,
-    authority$,
-    disposedState$,
-    retirements$,
-    authorityRevoked$,
-    wake$,
-  } = context;
-  const revokeAuthority$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      if (get(disposedState$)) {
-        return;
-      }
-      set(authorityRevoked$, true);
-      set(get(links$).retireCurrent$, "target-replaced", true);
-      const display = get(get(links$).displayGraph$);
-      if (display) {
-        set(display.setSuspended$, true);
-      }
-      set(wake$);
-      // Admission is already false. These waits are original resource cleanup, not new business writes.
-      await Promise.all(
-        [...get(retirements$).keys()].map((targetId) => {
-          return set(get(links$).waitRetirement$, targetId, signal);
-        }),
-      );
-      signal.throwIfAborted();
-    },
-  );
+  const { model, authority$, disposedState$, authorityRevoked$, wake$ } =
+    context;
+  // Retirement writes its releases synchronously. Reattaching a target still
+  // waits for that target's own retirement; revocation never does.
+  const revokeAuthority$ = command(({ get, set }) => {
+    if (get(disposedState$)) {
+      return;
+    }
+    set(authorityRevoked$, true);
+    set(get(links$).retireCurrent$, "target-replaced", true);
+    const display = get(get(links$).displayGraph$);
+    if (display) {
+      set(display.setSuspended$, true);
+    }
+    set(wake$);
+  });
   const refreshAuthority$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       signal.throwIfAborted();
       if (!get(authority$)) {
-        await set(revokeAuthority$, signal);
+        set(revokeAuthority$);
         return;
       }
       if (get(disposedState$)) {
@@ -3195,22 +3181,15 @@ function createDisposalGraph(
           while (get(startedState$) && get(bootstrapping$)) {
             await set(waitEvent$, signal);
           }
-          const receipts = await Promise.allSettled(
-            [...get(retirements$).keys()].map((targetId) => {
-              return set(get(links$).waitRetirement$, targetId, signal);
-            }),
-          );
-          const native = get(nativeState$);
-          const [nativeClose] = await Promise.allSettled([native?.close()]);
-          if (nativeClose.status === "rejected") {
-            throw nativeClose.reason;
+          // Retirement wrote its input releases when it began, so detaching
+          // now follows them on the wire. The peer can vanish at any moment, so
+          // closing never waits for their acknowledgement.
+          for (const retirement of get(retirements$).values()) {
+            if (retirement.phase === "pending") {
+              set(get(links$).detachAttached$, retirement.session.attached);
+            }
           }
-          const rejected = receipts.find((receipt) => {
-            return receipt.status === "rejected";
-          });
-          if (rejected?.status === "rejected") {
-            throw rejected.reason;
-          }
+          await get(nativeState$)?.close();
         })(),
       ]);
       signal.throwIfAborted();

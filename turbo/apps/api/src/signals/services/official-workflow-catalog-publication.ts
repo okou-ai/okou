@@ -23,8 +23,8 @@ import {
   OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
+import { canonicalJsonString } from "../../lib/canonical-json";
 import {
-  canonicalJsonString,
   officialWorkflowFingerprint,
   type ValidatedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-validation.service";

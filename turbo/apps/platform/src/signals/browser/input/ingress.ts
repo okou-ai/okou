@@ -7,7 +7,7 @@ import {
   type State,
 } from "ccstate";
 import type { Protocol } from "devtools-protocol";
-import { scheduleAnimationFrame } from "../../utils.ts";
+import { animationFrame } from "signal-timers";
 import type { InputOwner } from "./lifecycle.ts";
 import type { NativeInputPort, PointerDetails } from "./port.ts";
 import type { Point } from "../display/geometry.ts";
@@ -192,15 +192,11 @@ function createContinuousIngress(
   current$: Command<InputBinding | null, []>,
 ) {
   const pending$ = state<Pending | null>(null);
-  const frame$ = state<{
-    readonly id: object;
-    readonly cancel: () => void;
-  } | null>(null);
-  const reset$ = command(({ get, set }) => {
+  // A frame id that no longer matches makes its callback a no-op.
+  const frame$ = state<object | null>(null);
+  const reset$ = command(({ set }) => {
     set(pending$, null);
-    const frame = get(frame$);
     set(frame$, null);
-    frame?.cancel();
   });
   const send$ = command(({ get, set }, pending: Pending) => {
     if (!get(pending.input.owner$)) {
@@ -225,7 +221,7 @@ function createContinuousIngress(
   });
   const coalesce$ = createPendingCoalescing(pending$);
   const frameReady$ = command(({ get, set }, id: object) => {
-    if (get(frame$)?.id !== id) {
+    if (get(frame$) !== id) {
       return;
     }
     set(frame$, null);
@@ -258,10 +254,13 @@ function createContinuousIngress(
       set(pending$, { ...sample, input });
       if (get(frame$) === null) {
         const id = {};
-        const cancel = scheduleAnimationFrame(() => {
-          set(frameReady$, id);
-        }, signal);
-        set(frame$, { id, cancel });
+        animationFrame(
+          () => {
+            set(frameReady$, id);
+          },
+          { signal },
+        );
+        set(frame$, id);
       }
     },
   );

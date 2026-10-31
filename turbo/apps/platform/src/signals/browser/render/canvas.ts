@@ -1,4 +1,4 @@
-import { callAsync, detach, Reason } from "../../utils.ts";
+import { detach, Reason } from "../../utils.ts";
 
 import { CdpFault } from "../cdp/errors.ts";
 import type { BrowserByteArrayConstructor } from "../native-types.ts";
@@ -129,6 +129,35 @@ export function createCanvasRenderer(
     reset();
   }
 
+  /** Decoding, validation and painting fail as one frame; images close here. */
+  async function render(frame: QueuedFrame): Promise<void> {
+    const image = await decode(frame.data);
+    using _image = {
+      [Symbol.dispose]: () => {
+        return image.close();
+      },
+    };
+    if (disposed || frame.generation !== generation) {
+      return;
+    }
+    const raster = frameRaster(image);
+    if (frame.accept && !frame.accept(raster)) {
+      return;
+    }
+    // Admission can synchronously invalidate or dispose this sink.
+    if (disposed || frame.generation !== generation) {
+      return;
+    }
+    if (canvas.width !== image.width) {
+      canvas.width = image.width;
+    }
+    if (canvas.height !== image.height) {
+      canvas.height = image.height;
+    }
+    context.drawImage(image.source, 0, 0);
+    frame.painted(raster);
+  }
+
   async function drain(): Promise<void> {
     decoding = true;
     // Native decode ownership must end even if a resource or callback throws.
@@ -140,55 +169,15 @@ export function createCanvasRenderer(
     while (queued && !disposed) {
       const frame = queued;
       queued = null;
-      const [decoded] = await Promise.allSettled([decode(frame.data)]);
-      if (disposed || frame.generation !== generation) {
-        if (decoded.status === "fulfilled") {
-          decoded.value.close();
-        }
-        continue;
-      }
-      if (decoded.status === "rejected") {
-        frame.failed(
-          decoded.reason instanceof CdpFault
-            ? decoded.reason
-            : new CdpFault("frame", "The browser frame could not be decoded."),
-        );
-        continue;
-      }
-      const image = decoded.value;
-      using _image = {
-        [Symbol.dispose]: () => {
-          return image.close();
-        },
-      };
-      const [painted] = await Promise.allSettled([
-        callAsync(() => {
-          const raster = frameRaster(image);
-          if (frame.accept && !frame.accept(raster)) {
-            return;
-          }
-          // Admission can synchronously invalidate or dispose this sink.
-          if (disposed || frame.generation !== generation) {
-            return;
-          }
-          if (canvas.width !== image.width) {
-            canvas.width = image.width;
-          }
-          if (canvas.height !== image.height) {
-            canvas.height = image.height;
-          }
-          context.drawImage(image.source, 0, 0);
-          frame.painted(raster);
-        }),
-      ]);
+      const [rendered] = await Promise.allSettled([render(frame)]);
       if (
-        painted.status === "rejected" &&
+        rendered.status === "rejected" &&
         !disposed &&
         frame.generation === generation
       ) {
         frame.failed(
-          painted.reason instanceof CdpFault
-            ? painted.reason
+          rendered.reason instanceof CdpFault
+            ? rendered.reason
             : new CdpFault("frame", "The browser frame could not be decoded."),
         );
       }

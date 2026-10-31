@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.10.11](https://github.com/okou-ai/okou/compare/runner-host-v0.10.10...runner-host-v0.10.11) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate bounded command test source ownership ([#44436](https://github.com/okou-ai/okou/issues/44436)) ([71c7638](https://github.com/okou-ai/okou/commit/71c763839ef67e45520e0ca5e3a8573d04f582ba))
+
+## [0.10.10](https://github.com/okou-ai/okou/compare/runner-host-v0.10.9...runner-host-v0.10.10) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate process ancestry test source ownership ([#44410](https://github.com/okou-ai/okou/issues/44410)) ([6842db7](https://github.com/okou-ai/okou/commit/6842db7e0cde9801d9e953bcb64c7fa0a4e20371))
+
+## [0.10.9](https://github.com/okou-ai/okou/compare/runner-host-v0.10.8...runner-host-v0.10.9) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate process discovery test source ownership ([#44393](https://github.com/okou-ai/okou/issues/44393)) ([93bb0f7](https://github.com/okou-ai/okou/commit/93bb0f782ef320e03576475df691c5f42dfa1c1d))
+
+## [0.10.8](https://github.com/okou-ai/okou/compare/runner-host-v0.10.7...runner-host-v0.10.8) (2026-10-31)
+
+## [0.10.7](https://github.com/okou-ai/okou/compare/runner-host-v0.10.6...runner-host-v0.10.7) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate log file test source ownership ([#44365](https://github.com/okou-ai/okou/issues/44365)) ([2cbcfc5](https://github.com/okou-ai/okou/commit/2cbcfc594acacee115255664de8c61d1f0ce6d34))
+* **runner-host:** separate process identity test source ownership ([#44371](https://github.com/okou-ai/okou/issues/44371)) ([8ca1dda](https://github.com/okou-ai/okou/commit/8ca1ddaf96642cd8ff8f050fa1b77d0b648dee69))
+
 ## [0.10.6](https://github.com/okou-ai/okou/compare/runner-host-v0.10.5...runner-host-v0.10.6) (2026-10-30)
 
 

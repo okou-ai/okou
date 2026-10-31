@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.10...runner-storage-v0.8.11) (2026-10-31)
+
+## [0.8.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.9...runner-storage-v0.8.10) (2026-10-31)
+
+## [0.8.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.8...runner-storage-v0.8.9) (2026-10-31)
+
+## [0.8.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.7...runner-storage-v0.8.8) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.8.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.6...runner-storage-v0.8.7) (2026-10-31)
+
 ## [0.8.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.5...runner-storage-v0.8.6) (2026-10-30)
 
 ## [0.8.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.4...runner-storage-v0.8.5) (2026-10-30)

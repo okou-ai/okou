@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { createStore } from "ccstate";
 import { bootstrap$ } from "../signals/bootstrap.ts";
 import { captureDiscordApprovalFragment$ } from "../signals/okou-page/discord-oauth-approval.ts";
+import { captureLandingFilePreview$ } from "../signals/prompt-page/landing-file-preview.ts";
 import { ASSISTANT_NAME } from "../signals/branding.ts";
 import { detach, Reason } from "../signals/utils.ts";
 import { setupRouter } from "../views/main.tsx";
@@ -57,6 +58,7 @@ export function startPlatformEntrypoint(): void {
   }
   rootSignal.throwIfAborted();
   const store = createStore();
+  store.set(captureLandingFilePreview$, rootSignal);
   store.set(captureDiscordApprovalFragment$, rootSignal);
   window.__appBootstrapModuleReady = performance.now();
   const browserUpgrade = browserUpgradeRequired();

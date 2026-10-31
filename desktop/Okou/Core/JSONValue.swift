@@ -8,6 +8,10 @@ public enum JSONValue: Codable, Sendable, Equatable {
   case bool(Bool)
   case null
 
+  public init<Value: Encodable>(encoding value: Value) throws {
+    self = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
+  }
+
   public init(from decoder: Decoder) throws {
     let container = try decoder.singleValueContainer()
     if container.decodeNil() {

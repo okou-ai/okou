@@ -389,8 +389,6 @@ async fn assert_archive_overlaps_create(case: ArchiveOverlapCase) {
         Vec::new()
     };
     ctx.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages,
         artifacts,
     });
@@ -509,8 +507,6 @@ async fn fresh_decoded_delivery_pins_before_prefetch_and_retires_only_after_spaw
         let mut storage = api_storage("decoded", "/data", "v1", &server.url("/decoded.tar.gz"));
         storage.archive_size = Some(body.len() as u64);
         ctx.storage_manifest = Some(StorageManifest {
-            workflow_references: Vec::new(),
-            workflow_skills: Vec::new(),
             storages: vec![storage],
             artifacts: Vec::new(),
         });
@@ -597,8 +593,6 @@ async fn cancelled_storage_preparation_releases_pinned_files_without_retirement(
         .unwrap();
     let mut ctx = minimal_context();
     ctx.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![api_storage(
             "decoded",
             "/data",
@@ -647,8 +641,6 @@ async fn fresh_archive_planning_failure_records_apply_and_prepare_failures() {
     );
     artifact.archive_url = None;
     ctx.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: Vec::new(),
         artifacts: vec![artifact],
     });
@@ -1186,8 +1178,6 @@ async fn dns_readiness_retry_keeps_one_fresh_archive_owner() {
     );
     storage.archive_size = Some(body.len() as u64);
     ctx.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage],
         artifacts: Vec::new(),
     });
@@ -1353,8 +1343,6 @@ async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failur
         storage.archive_size = Some(archive.len() as u64);
         let mut ctx = minimal_context();
         ctx.storage_manifest = Some(StorageManifest {
-            workflow_references: Vec::new(),
-            workflow_skills: Vec::new(),
             storages: vec![storage],
             artifacts: Vec::new(),
         });
@@ -2184,8 +2172,6 @@ async fn execute_inner_with_storage_manifest() {
     let mut storage = api_storage("data", "/data", "v1", &server.url("/data.tar.gz"));
     storage.archive_size = Some(b"storage archive".len() as u64);
     ctx.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage],
         artifacts: vec![],
     });

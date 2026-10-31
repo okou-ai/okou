@@ -2,6 +2,8 @@ import {
   boolean,
   object,
   string,
+  url,
+  uuid,
   enum as zEnum,
   undefined as zUndefined,
   type infer as zInfer,
@@ -20,12 +22,12 @@ const exportJobStatusSchema = zEnum([
 ]);
 
 const userExportJobSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   status: exportJobStatusSchema,
   createdAt: string(),
   completedAt: string().nullable(),
   expiresAt: string().nullable(),
-  downloadUrl: string().url().nullable(),
+  downloadUrl: url().nullable(),
   error: string().nullable(),
 });
 
@@ -36,7 +38,7 @@ const userExportStatusResponseSchema = object({
 });
 
 const userExportStartResponseSchema = object({
-  jobId: string().uuid(),
+  jobId: uuid(),
   status: zEnum(["pending", "running"]),
 });
 

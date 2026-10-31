@@ -101,6 +101,8 @@ import { buildInfoContract as OriginalBuildInfoContract } from "../contracts/bui
 import { buildInfoContract } from "./build-info";
 import { builtInGenerationContract as OriginalBuiltInGenerationContract } from "../contracts/built-in-generation";
 import { builtInGenerationContract } from "./built-in-generation";
+import { chatEventsContract as OriginalChatEventsContract } from "../contracts/chat-event-send";
+import { chatEventsContract } from "./chat-event-send";
 import { chatInputStatusContract as OriginalChatInputStatusContract } from "../contracts/chat-input-status";
 import { chatInputStatusContract } from "./chat-input-status";
 import { chatRelationsContract as OriginalChatRelationsContract } from "../contracts/chat-relations";
@@ -110,7 +112,6 @@ import { chatRemoteAccessContract } from "./chat-remote-access";
 import { chatThreadActivitySummaryContract as OriginalChatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
 import {
-  chatEventsContract as OriginalChatEventsContract,
   chatSearchContract as OriginalChatSearchContract,
   chatThreadArchiveContract as OriginalChatThreadArchiveContract,
   chatThreadArtifactsContract as OriginalChatThreadArtifactsContract,
@@ -133,7 +134,6 @@ import {
   chatThreadsContract as OriginalChatThreadsContract,
 } from "../contracts/chat-threads";
 import {
-  chatEventsContract,
   chatSearchContract,
   chatThreadArchiveContract,
   chatThreadArtifactsContract,
@@ -221,11 +221,12 @@ import {
   builtinConnectorsMainContract,
   builtinConnectorsSearchContract,
 } from "./connectors";
+import { cronCleanupXResourceReadsContract as OriginalCronCleanupXResourceReadsContract } from "../contracts/cron-cleanup-x-resource-reads";
+import { cronCleanupXResourceReadsContract } from "./cron-cleanup-x-resource-reads";
 import {
   cronBrowserReconcileContract as OriginalCronBrowserReconcileContract,
   cronCleanupSandboxesContract as OriginalCronCleanupSandboxesContract,
   cronCleanupSuggestionsContract as OriginalCronCleanupSuggestionsContract,
-  cronCleanupXResourceReadsContract as OriginalCronCleanupXResourceReadsContract,
   cronCompactChatThreadSnapshotsContract as OriginalCronCompactChatThreadSnapshotsContract,
   cronCompactUsageEventsContract as OriginalCronCompactUsageEventsContract,
   cronComputerUseScreenshotCleanupContract as OriginalCronComputerUseScreenshotCleanupContract,
@@ -257,7 +258,6 @@ import {
   cronBrowserReconcileContract,
   cronCleanupSandboxesContract,
   cronCleanupSuggestionsContract,
-  cronCleanupXResourceReadsContract,
   cronCompactChatThreadSnapshotsContract,
   cronCompactUsageEventsContract,
   cronComputerUseScreenshotCleanupContract,
@@ -609,7 +609,6 @@ import {
   runnersJobClaimContract as OriginalRunnersJobClaimContract,
   runnersPollContract as OriginalRunnersPollContract,
   runnersSteerContract as OriginalRunnersSteerContract,
-  runnersWorkflowDownloadContract as OriginalRunnersWorkflowDownloadContract,
 } from "../contracts/runners";
 import {
   runnersBuiltinFirewallsResolveContract,
@@ -619,7 +618,6 @@ import {
   runnersJobClaimContract,
   runnersPollContract,
   runnersSteerContract,
-  runnersWorkflowDownloadContract,
 } from "./runners";
 import { sharedThreadVisibilityContract as OriginalSharedThreadVisibilityContract } from "../contracts/shared-thread-visibility";
 import { sharedThreadVisibilityContract } from "./shared-thread-visibility";
@@ -831,6 +829,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [browserContract, OriginalBrowserContract],
   [buildInfoContract, OriginalBuildInfoContract],
   [builtInGenerationContract, OriginalBuiltInGenerationContract],
+  [chatEventsContract, OriginalChatEventsContract],
   [chatInputStatusContract, OriginalChatInputStatusContract],
   [chatRelationsContract, OriginalChatRelationsContract],
   [chatRemoteAccessContract, OriginalChatRemoteAccessContract],
@@ -838,7 +837,6 @@ export const clientDescriptorContracts: readonly (readonly [
     chatThreadActivitySummaryContract,
     OriginalChatThreadActivitySummaryContract,
   ],
-  [chatEventsContract, OriginalChatEventsContract],
   [chatSearchContract, OriginalChatSearchContract],
   [chatThreadArchiveContract, OriginalChatThreadArchiveContract],
   [chatThreadArtifactsContract, OriginalChatThreadArtifactsContract],
@@ -919,13 +917,13 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [builtinConnectorsMainContract, OriginalBuiltinConnectorsMainContract],
   [builtinConnectorsSearchContract, OriginalBuiltinConnectorsSearchContract],
-  [cronBrowserReconcileContract, OriginalCronBrowserReconcileContract],
-  [cronCleanupSandboxesContract, OriginalCronCleanupSandboxesContract],
-  [cronCleanupSuggestionsContract, OriginalCronCleanupSuggestionsContract],
   [
     cronCleanupXResourceReadsContract,
     OriginalCronCleanupXResourceReadsContract,
   ],
+  [cronBrowserReconcileContract, OriginalCronBrowserReconcileContract],
+  [cronCleanupSandboxesContract, OriginalCronCleanupSandboxesContract],
+  [cronCleanupSuggestionsContract, OriginalCronCleanupSuggestionsContract],
   [
     cronCompactChatThreadSnapshotsContract,
     OriginalCronCompactChatThreadSnapshotsContract,
@@ -1264,7 +1262,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [runnersJobClaimContract, OriginalRunnersJobClaimContract],
   [runnersPollContract, OriginalRunnersPollContract],
   [runnersSteerContract, OriginalRunnersSteerContract],
-  [runnersWorkflowDownloadContract, OriginalRunnersWorkflowDownloadContract],
   [sharedThreadVisibilityContract, OriginalSharedThreadVisibilityContract],
   [sharedThreadsContract, OriginalSharedThreadsContract],
   [skillImportSessionsContract, OriginalSkillImportSessionsContract],

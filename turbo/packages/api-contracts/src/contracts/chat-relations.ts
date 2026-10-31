@@ -1,8 +1,10 @@
 import {
   array,
+  iso,
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -12,29 +14,29 @@ import { apiErrorSchema } from "./errors";
 import { userMessageDocumentSchema } from "./chat-threads";
 
 const relatedChatSchema = object({
-  threadId: string().uuid(),
+  threadId: uuid(),
   title: string().nullable(),
   status: zEnum(["running", "queued", "idle", "unavailable"]),
 });
 const createdChatSchema = relatedChatSchema.extend({
-  id: string().uuid(),
-  sourceRunId: string().uuid(),
-  createdAt: string().datetime(),
+  id: uuid(),
+  sourceRunId: uuid(),
+  createdAt: iso.datetime(),
 });
 const communicationSchema = relatedChatSchema.extend({
   sentCount: number().int().nonnegative(),
   receivedCount: number().int().nonnegative(),
-  lastMessageAt: string().datetime(),
+  lastMessageAt: iso.datetime(),
 });
 const messageSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   direction: zEnum(["sent", "received"]),
-  sourceChatThreadId: string().uuid(),
-  targetChatThreadId: string().uuid(),
-  sourceRunId: string().uuid(),
-  targetRunId: string().uuid().nullable(),
-  messageEventId: string().uuid(),
-  createdAt: string().datetime(),
+  sourceChatThreadId: uuid(),
+  targetChatThreadId: uuid(),
+  sourceRunId: uuid(),
+  targetRunId: uuid().nullable(),
+  messageEventId: uuid(),
+  createdAt: iso.datetime(),
   userMessage: userMessageDocumentSchema.nullable(),
 });
 const errors = {
@@ -50,7 +52,7 @@ export const chatRelationsContract = c.router({
     method: "GET",
     path: "/api/chat-threads/:id/relations/children",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: object({
         items: array(createdChatSchema),
@@ -62,7 +64,7 @@ export const chatRelationsContract = c.router({
     method: "GET",
     path: "/api/chat-threads/:id/relations/communications",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: object({
         items: array(communicationSchema),
@@ -74,7 +76,7 @@ export const chatRelationsContract = c.router({
     method: "GET",
     path: "/api/chat-threads/:id/relations/communications/:peerId/messages",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid(), peerId: string().uuid() }),
+    pathParams: object({ id: uuid(), peerId: uuid() }),
     responses: {
       200: object({
         items: array(messageSchema),

@@ -38,7 +38,7 @@ import {
   type OrgCustomConnectorOAuthTokenEndpointAuthMethod,
 } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { command, computed, type Computed } from "ccstate";
-import { boolean, object, string } from "zod";
+import { boolean, object, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
@@ -3368,7 +3368,7 @@ function customConnectorValueConnectionMetadata(
 
 const customConnectorValuesPublicationRow = object({
   definition_current: boolean(),
-  connection_id: string().uuid().nullable(),
+  connection_id: uuid().nullable(),
 });
 
 type SetCustomConnectorValuesResponse =

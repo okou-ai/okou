@@ -203,10 +203,10 @@ function billingAndMessagingEnvSchema() {
     DISCORD_PUBLIC_KEY: string()
       .regex(/^[a-fA-F0-9]{64}$/)
       .optional(),
-    LINK_APPROVAL_WORKER_URL: string().url().optional(),
+    LINK_APPROVAL_WORKER_URL: url().optional(),
     LINK_APPROVAL_WORKER_SECRET: string().optional(),
     LINK_APPROVAL_CONTROL_SECRET: string().optional(),
-    WECHAT_GATEWAY_URL: string().url().optional(),
+    WECHAT_GATEWAY_URL: url().optional(),
     WECHAT_GATEWAY_SECRET: string().optional(),
     WECHAT_GATEWAY_CONTROL_SECRET: string().optional(),
     DISCORD_GATEWAY_SECRET: string().min(32).optional(),

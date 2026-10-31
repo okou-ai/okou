@@ -6,14 +6,18 @@ export const TEST_BROWSER_EXTENSION = Object.freeze({
   version: "0.3.0",
 });
 
+const WORKER_URL = `chrome-extension://${TEST_BROWSER_EXTENSION.runtimeId}/background.js`;
+
 export const TEST_EXTENSION_TARGETS = Object.freeze([
   {
     targetId: "extension-worker",
     type: "service_worker",
-    url: `chrome-extension://${TEST_BROWSER_EXTENSION.runtimeId}/background.js`,
+    url: WORKER_URL,
   },
   { targetId: "extension-tab", type: "tab", url: "about:blank" },
 ]);
+
+const READINESS_SESSION = "extension-page-session";
 
 interface Command {
   readonly method: string;
@@ -31,6 +35,12 @@ export function browserExtensionBootstrap(command: Command): unknown {
   ) {
     return { sessionId: "extension-worker-session" };
   }
+  if (
+    command.method === "Target.attachToTarget" &&
+    command.sessionId === "extension-browser-session"
+  ) {
+    return { sessionId: READINESS_SESSION };
+  }
   if (command.method === "Extensions.triggerAction") {
     return command.params.id === TEST_BROWSER_EXTENSION.runtimeId
       ? {}
@@ -39,6 +49,8 @@ export function browserExtensionBootstrap(command: Command): unknown {
   if (
     command.method === "Target.detachFromTarget" ||
     command.method === "Target.setDiscoverTargets" ||
+    (command.method === "ServiceWorker.enable" &&
+      command.sessionId === READINESS_SESSION) ||
     (command.sessionId === "extension-worker-session" &&
       (command.method === "Runtime.enable" ||
         command.method === "Runtime.addBinding" ||
@@ -47,6 +59,37 @@ export function browserExtensionBootstrap(command: Command): unknown {
     return {};
   }
   return undefined;
+}
+
+export function browserExtensionBootstrapEvents(
+  command: Command,
+  available = true,
+) {
+  if (
+    !available ||
+    command.method !== "ServiceWorker.enable" ||
+    command.sessionId !== READINESS_SESSION
+  ) {
+    return [];
+  }
+  return [
+    {
+      method: "ServiceWorker.workerVersionUpdated",
+      sessionId: command.sessionId,
+      params: {
+        versions: [
+          {
+            versionId: "0",
+            registrationId: "0",
+            scriptURL: WORKER_URL,
+            targetId: "extension-worker",
+            runningStatus: "running",
+            status: "activated",
+          },
+        ],
+      },
+    },
+  ];
 }
 
 const requestSchema = object({

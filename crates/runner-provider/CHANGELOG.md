@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.13.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.6...runner-provider-v0.13.7) (2026-10-31)
+
+## [0.13.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.5...runner-provider-v0.13.6) (2026-10-31)
+
+## [0.13.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.4...runner-provider-v0.13.5) (2026-10-31)
+
+## [0.13.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.3...runner-provider-v0.13.4) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.13.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.2...runner-provider-v0.13.3) (2026-10-31)
+
 ## [0.13.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.1...runner-provider-v0.13.2) (2026-10-30)
 
 ## [0.13.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.13.0...runner-provider-v0.13.1) (2026-10-30)

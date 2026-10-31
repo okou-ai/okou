@@ -42,9 +42,10 @@ const START_ACTION = "Start with Okou";
 const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
-const PROMPT_TITLE = "Try this prompt";
+const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`;
+const PROMPT_TITLE = "Make this task your own";
 const PROMPT_INTRO =
-  "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud.";
+  "Connect your apps for better results and choose a format.";
 const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 function generatedProfile() {
   return {
@@ -145,6 +146,8 @@ async function leaveSlackStepWithNotNow(): Promise<void> {
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingSlack);
   click(getButtonByName("Not now"));
+  await screen.findByRole("heading", { name: "Meet Okou’s secret tools" });
+  click(getButtonByName("Continue"));
 }
 
 /** One catalog entry, so the source step has a grid to render. */
@@ -397,10 +400,10 @@ test.each([false, true])(
 
     await screen.findByRole("heading", {
       name: mobile
-        ? "Invite a teammate"
-        : "Make Okou useful to your whole team",
+        ? "Choose how to start"
+        : "How would you like to start with Okou?",
     });
-    expect(pathname()).toBe(ROUTES.onboardingTeam);
+    expect(pathname()).toBe(ROUTES.onboardingExperience);
     expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
 
     click(getButtonByName("Back"));
@@ -805,9 +808,6 @@ test("A member skips sources, completes their own onboarding and enters chat", a
     name: "How would you like to start with Okou?",
   });
   expect(pathname()).toBe(ROUTES.onboardingExperience);
-  expect(
-    screen.queryByLabelText("Team member’s email"),
-  ).not.toBeInTheDocument();
   click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
@@ -874,7 +874,7 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
     HANDOFF_PROMPT,
   );
-  // The first question's introduction and compliance beside the prompt.
+  // Task guidance and compliance sit beside the prompt.
   expect(screen.getByText(PROMPT_INTRO)).toBeInTheDocument();
   expect(
     screen.getByRole("region", { name: COMPLIANCE_TITLE }),
@@ -992,7 +992,7 @@ test("A prompt with a showcase carries the showcase into the chat", async () => 
   click(getButtonByName("Next"));
 
   await waitFor(() => {
-    expect(runPrompt).toBe(HANDOFF_PROMPT);
+    expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(new URLSearchParams(search()).get("showcase")).toBe(showcase);
@@ -1035,7 +1035,9 @@ test("The prompt step completes onboarding, then runs the prompt as edited", asy
   click(getButtonByName("Next"));
 
   await waitFor(() => {
-    expect(runPrompt).toBe(editedPrompt);
+    expect(runPrompt).toBe(
+      `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+    );
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboarding]);
@@ -1068,7 +1070,9 @@ test("The prompt step keeps the edited prompt on screen until the first chat ope
 
   handoff.release();
   await waitFor(() => {
-    expect(runPrompt).toBe(editedPrompt);
+    expect(runPrompt).toBe(
+      `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+    );
     expect(pathname()).toMatch(/^\/chats\//u);
   });
 });
@@ -1148,7 +1152,7 @@ test("A prompt link's redeem code is redeemed before completion and left out of 
   click(getButtonByName("Next"));
 
   await waitFor(() => {
-    expect(runPrompt).toBe(HANDOFF_PROMPT);
+    expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(requests).toStrictEqual(["redeem:LAUNCH50", "complete"]);

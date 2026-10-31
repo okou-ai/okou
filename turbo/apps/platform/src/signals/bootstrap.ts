@@ -54,6 +54,7 @@ import { setupAgentChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
+import { captureLandingFilePreview$ } from "./prompt-page/landing-file-preview.ts";
 import {
   setupOnboardingEntryPage$,
   setupOnboardingExperiencePage$,
@@ -62,6 +63,7 @@ import {
   setupOnboardingSkillsPage$,
   setupOnboardingSlackPage$,
   setupOnboardingTeamPage$,
+  setupOnboardingCapabilitiesPage$,
 } from "./onboarding/onboarding-sources-first-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
@@ -475,6 +477,10 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
   },
   {
+    path: ROUTES.onboardingCapabilities,
+    setup: setupAuthPageWrapper(setupOnboardingCapabilitiesPage$),
+  },
+  {
     path: ROUTES.onboardingReady,
     setup: setupAuthPageWrapper(setupOnboardingReadyPage$),
   },
@@ -639,6 +645,7 @@ export const bootstrap$ = command(
     setupVisualViewportKeyboardState(signal, () => {
       return set(resetViewportSettleSignal$, signal);
     });
+    set(captureLandingFilePreview$, signal);
     set(captureDiscordApprovalFragment$, signal);
     set(initializeAppVersion$, appVersion);
     set(initBootstrapPhaseTiming$);

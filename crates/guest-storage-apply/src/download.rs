@@ -27,7 +27,6 @@ pub(crate) struct DownloadTask {
     normalized_mount_path: PathBuf,
     telemetry: DownloadTaskTelemetry,
     files: Option<Vec<guest_contracts::storage_files::StorageFile>>,
-    expected_archive_sha256: Option<String>,
 }
 
 impl DownloadTask {
@@ -39,16 +38,6 @@ impl DownloadTask {
         self.files = Some(files);
         self.telemetry.decoded();
         self.label.push_str(" delivery=decoded_files");
-    }
-
-    pub(crate) fn with_workflow_archive(
-        mut self,
-        name: Option<&str>,
-        version: Option<&str>,
-    ) -> Self {
-        self.expected_archive_sha256 =
-            guest_contracts::workflow_attachments::archive_sha256(name, version).map(str::to_owned);
-        self
     }
 
     pub(crate) fn storage(
@@ -67,7 +56,6 @@ impl DownloadTask {
             normalized_mount_path,
             telemetry,
             files: None,
-            expected_archive_sha256: None,
         }
     }
 
@@ -81,7 +69,6 @@ impl DownloadTask {
             normalized_mount_path,
             telemetry,
             files: None,
-            expected_archive_sha256: None,
         }
     }
 
@@ -486,7 +473,6 @@ fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadEr
         &mut download.opened_file_compressed_bytes,
         download.remote_metrics.as_mut(),
         download.local_metrics.as_mut(),
-        download.task.task.expected_archive_sha256.as_deref(),
     )
 }
 
@@ -496,7 +482,6 @@ fn download_and_extract(
     opened_file_compressed_bytes: &mut Option<u64>,
     remote_metrics: Option<&mut RemoteArchiveTaskMetrics>,
     local_metrics: Option<&mut LocalArchiveTaskMetrics>,
-    expected_archive_sha256: Option<&str>,
 ) -> Result<(), DownloadError> {
     fs::create_dir_all(target_path).map_err(|e| {
         DownloadError::new(format!(
@@ -526,11 +511,7 @@ fn download_and_extract(
     };
     *opened_file_compressed_bytes = reader.compressed_bytes();
     let extract_start = Instant::now();
-    let result = match expected_archive_sha256 {
-        Some(expected) => source::verify_archive(reader, expected, None),
-        None => Ok(reader),
-    }
-    .and_then(|reader| archive::extract_tar_gz(reader, target_path));
+    let result = archive::extract_tar_gz(reader, target_path);
     let extract_wall = extract_start.elapsed();
     if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
         metrics.record_attempt(attempt_metrics.snapshot(), extract_wall);

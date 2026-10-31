@@ -64,6 +64,7 @@ const relativePathMatchExpectedSchema = discriminatedUnion("kind", [
 ]);
 
 const firewallDecisionExpectedSchema = discriminatedUnion("kind", [
+  object({ kind: literal("invalid_input"), method: string(), path: string() }),
   object({
     kind: literal("no_match"),
   }),

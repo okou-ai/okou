@@ -18,20 +18,18 @@ import {
 
 import {
   STARTING_PROMPT_MAX_LENGTH,
-  startingPromptOutputSchema,
-  editedStartingPromptOutput,
-  withStartingPromptOutput,
+  persistedStartingPromptOutputSchema,
   type OnboardingOutputFormat,
   type StartingPromptOutput,
 } from "./onboarding-output-format.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
-import { jsonParseOr, onRef } from "../utils.ts";
+import { jsonParseOr } from "../utils.ts";
 
 /**
  * Source-first onboarding draft. Unsaved answers survive a browser refresh in
- * local storage, scoped to the current user and organization. Connections and
- * invitations keep their own server-backed state; their transient UI status
+ * local storage, scoped to the current user and organization. Connections
+ * keep their own server-backed state; their transient UI status
  * belongs to this application start.
  */
 
@@ -40,10 +38,10 @@ export type SourcesFirstFlow = "owner" | "member";
 const sourcesFirstStepSchema = zEnum([
   "sources",
   "industry",
-  "team",
   "experience",
   "skills",
   "slack",
+  "capabilities",
   "ready",
 ]);
 
@@ -54,7 +52,7 @@ export const SOURCES_FIRST_STEP_ROUTES: Readonly<
 > = {
   industry: ROUTES.onboarding,
   sources: ROUTES.onboardingSources,
-  team: ROUTES.onboardingTeam,
+  capabilities: ROUTES.onboardingCapabilities,
   experience: ROUTES.onboardingExperience,
   skills: ROUTES.onboardingSkills,
   slack: ROUTES.onboardingSlack,
@@ -66,23 +64,8 @@ export type SubscriptionProvider = OnboardingSubscriptionProvider;
 /** The other places a mention works, offered beside Slack on the same step. */
 export type ChatChannelId = "telegram" | "imessage" | "teams" | "discord";
 
-/**
- * The invitation API result for an address. Request lifecycle belongs to
- * the command loadable; only an API answer makes an address invited.
- */
-export type SourcesFirstInviteStatus = "invited" | "failed";
-
-export interface SourcesFirstInvite {
-  readonly email: string;
-  readonly status: SourcesFirstInviteStatus;
-  /** Why the invitation was refused, as the API put it; null otherwise. */
-  readonly failure: string | null;
-}
-
 export interface SourcesFirstDraft {
   readonly industry: OnboardingIndustry | null;
-  /** One entry per address this run tried, with what the API answered. */
-  readonly invites: readonly SourcesFirstInvite[];
   /** Null until the step is answered, so nothing is pre-chosen for the user. */
   readonly experienced: boolean | null;
   /**
@@ -94,7 +77,7 @@ export interface SourcesFirstDraft {
   readonly startingPromptDraft: string;
   /** The displayed seed the edit belongs to; any non-empty key owns later text. */
   readonly startingPromptKey: string;
-  /** The editable output paragraph inside startingPromptDraft, never a hidden instruction. */
+  /** Selected format, kept separate from the task until submission. */
   readonly startingPromptOutput: StartingPromptOutput | null;
   /** The durable context-generation job started when the source step continues. */
   readonly recommendationJobId: string | null;
@@ -105,7 +88,6 @@ export interface SourcesFirstDraft {
 function emptyDraft(): SourcesFirstDraft {
   return {
     industry: null,
-    invites: [],
     experienced: null,
     provider: null,
     startingPromptDraft: "",
@@ -127,7 +109,8 @@ const persistedDraftIdentitySchema = object({
 });
 
 const persistedStepSchema = persistedDraftIdentitySchema.extend({
-  step: sourcesFirstStepSchema,
+  // Existing browser drafts can still point at the retired invitation step.
+  step: zEnum([...sourcesFirstStepSchema.options, "team"]),
 });
 
 const persistedDraftSchema = persistedDraftIdentitySchema.extend({
@@ -139,7 +122,9 @@ const persistedDraftSchema = persistedDraftIdentitySchema.extend({
   startingPromptKey: string(),
   // Selection metadata is optional in version-2 drafts; the complete prompt
   // remains authoritative when no format has been recorded.
-  startingPromptOutput: startingPromptOutputSchema.nullable().default(null),
+  startingPromptOutput: persistedStartingPromptOutputSchema
+    .nullable()
+    .default(null),
   recommendationJobId: uuid().nullable(),
   recommendationStartedAt: number().finite().nonnegative().nullable(),
 });
@@ -174,14 +159,25 @@ function restoredDraft(
   if (saved === null) {
     return emptyDraft();
   }
+  const text = saved.startingPromptDraft;
+  const range = saved.startingPromptOutput;
+  // Only a valid recorded range owns format text; all other text stays editable.
+  const output =
+    range && range.start <= range.end && range.end <= text.length
+      ? range
+      : null;
   return {
     ...emptyDraft(),
     industry: saved.industry,
     experienced: saved.experienced,
     provider: saved.provider,
-    startingPromptDraft: saved.startingPromptDraft,
+    startingPromptDraft: output
+      ? text.slice(0, output.start) + text.slice(output.end)
+      : text,
     startingPromptKey: saved.startingPromptKey,
-    startingPromptOutput: saved.startingPromptOutput,
+    startingPromptOutput: output
+      ? { format: output.format, suffix: text.slice(output.start, output.end) }
+      : null,
     recommendationJobId: saved.recommendationJobId,
     recommendationStartedAt: saved.recommendationStartedAt,
   };
@@ -216,7 +212,9 @@ export const restoreSourcesFirstDraft$ = command(
     return step.success &&
       step.data.orgId === identity.orgId &&
       step.data.userId === identity.userId
-      ? step.data.step
+      ? step.data.step === "team"
+        ? "experience"
+        : step.data.step
       : null;
   },
 );
@@ -252,8 +250,7 @@ export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
 });
 
 /**
- * Owner runs the full flow; a member invited into an existing org runs the
- * same steps except the invite, which only an admin can send.
+ * Keep workspace role for funnel telemetry; both roles use the same steps.
  */
 const internalFlow$ = state<SourcesFirstFlow>("owner");
 
@@ -275,15 +272,10 @@ export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
 
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
-  readonly inviteEmail: string;
-  /** The field was left since it last changed, so its address is final. */
-  readonly inviteEmailLeft: boolean;
   readonly importPromptShown: boolean;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
-  inviteEmail: "",
-  inviteEmailLeft: false,
   importPromptShown: false,
 });
 
@@ -329,6 +321,10 @@ export const updateSourcesFirstDraft$ = command(
     if (identity === null) {
       return;
     }
+    // Keep the version-2 wire format readable by older app builds. Runtime
+    // state and the textarea contain only the task; restore splits them again.
+    const persistedPrompt =
+      next.startingPromptDraft + (next.startingPromptOutput?.suffix ?? "");
     set(
       draftStorage.set$,
       JSON.stringify({
@@ -337,9 +333,15 @@ export const updateSourcesFirstDraft$ = command(
         industry: next.industry,
         experienced: next.experienced,
         provider: next.provider,
-        startingPromptDraft: next.startingPromptDraft,
+        startingPromptDraft: persistedPrompt,
         startingPromptKey: next.startingPromptKey,
-        startingPromptOutput: next.startingPromptOutput,
+        startingPromptOutput: next.startingPromptOutput
+          ? {
+              format: next.startingPromptOutput.format,
+              start: next.startingPromptDraft.length,
+              end: persistedPrompt.length,
+            }
+          : null,
         recommendationJobId: next.recommendationJobId,
         recommendationStartedAt: next.recommendationStartedAt,
       }),
@@ -347,28 +349,11 @@ export const updateSourcesFirstDraft$ = command(
   },
 );
 
-const startingPromptInput$ = state<HTMLTextAreaElement | null>(null);
-
-export const setStartingPromptInput$ = onRef(
-  command(({ set }, element: HTMLTextAreaElement, signal: AbortSignal) => {
-    set(startingPromptInput$, element);
-    signal.addEventListener("abort", () => {
-      set(startingPromptInput$, null);
-    });
-  }),
-);
-
 export const editStartingPrompt$ = command(
-  ({ get, set }, previous: string, next: string, promptKey: string): void => {
-    const draft = get(internalDraft$);
+  ({ set }, next: string, promptKey: string): void => {
     set(updateSourcesFirstDraft$, {
       startingPromptKey: promptKey,
       startingPromptDraft: next,
-      startingPromptOutput: editedStartingPromptOutput(
-        previous,
-        next,
-        draft.startingPromptOutput,
-      ),
     });
   },
 );
@@ -385,59 +370,40 @@ export const selectStartingPromptOutput$ = command(
     if (output?.format === format) {
       return;
     }
-    const next = withStartingPromptOutput(text, output, instruction);
+    const suffix = format ? `\n\n${instruction}` : "";
     // A format must never truncate the user's task or exceed the persisted limit.
-    if (next.text.length > STARTING_PROMPT_MAX_LENGTH) {
+    if (text.length + suffix.length > STARTING_PROMPT_MAX_LENGTH) {
       return;
     }
     set(updateSourcesFirstDraft$, {
       startingPromptKey: promptKey,
-      startingPromptDraft: next.text,
-      startingPromptOutput: format
-        ? { format, start: next.start, end: next.end }
-        : null,
+      startingPromptDraft: text,
+      startingPromptOutput: format ? { format, suffix } : null,
     });
-    // Keep editing at the visible prompt, including when Clear selection unmounts.
-    get(startingPromptInput$)?.focus();
   },
 );
 
-const OWNER_BASE_STEPS = [
-  "industry",
-  "sources",
-  "team",
-  "experience",
-] as const satisfies readonly SourcesFirstStep[];
-
-const MEMBER_BASE_STEPS = [
-  "industry",
-  "sources",
-  "experience",
-] as const satisfies readonly SourcesFirstStep[];
-
-/**
- * Step order for one run. Members skip the invite; answering the AI
- * experience question with a selected plan adds the skills step after it.
- * Everyone reaches Slack: a member who cannot add it is told to ask an admin
- * and can leave the step with Not now.
- */
+/** A subscription adds Skills; everyone chooses Capabilities before the first task. */
 export function sourcesFirstSteps(
-  flow: SourcesFirstFlow,
   provider: SubscriptionProvider | null,
 ): readonly SourcesFirstStep[] {
-  const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
-  const skillSteps: readonly SourcesFirstStep[] =
-    provider === null ? [] : ["skills"];
-  return [...base, ...skillSteps, "slack", "ready"];
+  return [
+    "industry",
+    "sources",
+    "experience",
+    ...(provider === null ? [] : ["skills" as const]),
+    "slack",
+    "capabilities",
+    "ready",
+  ];
 }
 
 /** Progress markers: one per step of this run. */
 export function sourcesFirstProgress(
   step: SourcesFirstStep,
-  flow: SourcesFirstFlow,
   provider: SubscriptionProvider | null,
 ): { readonly current: number; readonly total: number } {
-  const steps = sourcesFirstSteps(flow, provider);
+  const steps = sourcesFirstSteps(provider);
   const index = steps.indexOf(step);
   return { current: (index === -1 ? 0 : index) + 1, total: steps.length };
 }
@@ -445,10 +411,9 @@ export function sourcesFirstProgress(
 /** The step before `step`, or null when it is the first one. */
 export function previousSourcesFirstStep(
   step: SourcesFirstStep,
-  flow: SourcesFirstFlow,
   provider: SubscriptionProvider | null,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, provider);
+  const steps = sourcesFirstSteps(provider);
   const index = steps.indexOf(step);
   return index > 0 ? (steps[index - 1] ?? null) : null;
 }
@@ -456,10 +421,9 @@ export function previousSourcesFirstStep(
 /** The step after `step`, or null when the flow is finished. */
 export function nextSourcesFirstStep(
   step: SourcesFirstStep,
-  flow: SourcesFirstFlow,
   provider: SubscriptionProvider | null,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, provider);
+  const steps = sourcesFirstSteps(provider);
   const index = steps.indexOf(step);
   return index === -1 ? null : (steps[index + 1] ?? null);
 }

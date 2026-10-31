@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.11...runner-supervisor-v0.21.12) (2026-10-31)
+
+## [0.21.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.10...runner-supervisor-v0.21.11) (2026-10-31)
+
+## [0.21.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.9...runner-supervisor-v0.21.10) (2026-10-31)
+
+## [0.21.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.8...runner-supervisor-v0.21.9) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.21.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.7...runner-supervisor-v0.21.8) (2026-10-31)
+
 ## [0.21.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.6...runner-supervisor-v0.21.7) (2026-10-30)
 
 ## [0.21.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.5...runner-supervisor-v0.21.6) (2026-10-30)

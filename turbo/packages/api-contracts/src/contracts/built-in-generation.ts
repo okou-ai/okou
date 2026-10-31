@@ -3,6 +3,7 @@ import {
   object,
   record,
   string,
+  uuid,
   enum as zEnum,
   unknown as zUnknown,
   type infer as zInfer,
@@ -32,7 +33,7 @@ export const builtInGenerationRealtimeSubscriptionSchema =
   realtimeSubscriptionSchema;
 
 export const builtInGenerationAcceptedResponseSchema = object({
-  generationId: string().uuid(),
+  generationId: uuid(),
   type: builtInGenerationTypeSchema,
   status: literal("queued"),
   realtime: builtInGenerationRealtimeSubscriptionSchema,
@@ -47,7 +48,7 @@ export const builtInGenerationErrorSchema = object({
 });
 
 export const builtInGenerationResponseSchema = object({
-  generationId: string().uuid(),
+  generationId: uuid(),
   type: builtInGenerationTypeSchema,
   status: builtInGenerationStatusSchema,
   result: record(string(), zUnknown()).optional(),
@@ -76,7 +77,7 @@ export const builtInGenerationContract = c.router({
     method: "POST",
     path: "/api/built-in-generations/:generationId/reconcile",
     headers: authHeadersSchema,
-    pathParams: object({ generationId: string().uuid() }),
+    pathParams: object({ generationId: uuid() }),
     body: object({}),
     responses: {
       200: builtInGenerationResponseSchema,
@@ -92,7 +93,7 @@ export const builtInGenerationContract = c.router({
     path: "/api/built-in-generations/:generationId",
     headers: authHeadersSchema,
     pathParams: object({
-      generationId: string().uuid(),
+      generationId: uuid(),
     }),
     responses: {
       200: builtInGenerationResponseSchema,

@@ -10,6 +10,7 @@ import {
   string,
   tuple,
   union,
+  url,
   uuid,
   enum as zEnum,
   never as zNever,
@@ -95,8 +96,8 @@ export const customConnectorOAuthPkceMethodSchema = zEnum(["none", "S256"]);
 export const customConnectorOAuthConfigSchema = object({
   providerAdapter: customConnectorOAuthProviderAdapterSchema,
   clientId: string().min(1).max(255),
-  authorizationUrl: string().url().max(2048),
-  tokenUrl: string().url().max(2048),
+  authorizationUrl: url().max(2048),
+  tokenUrl: url().max(2048),
   tokenEndpointAuthMethod: customConnectorOAuthTokenEndpointAuthMethodSchema,
   pkceMethod: customConnectorOAuthPkceMethodSchema,
   scopes: array(string().min(1).max(256)).max(100),
@@ -125,7 +126,7 @@ export const customConnectorMcpTransportSchema = literal("streamable-http");
  * Never includes any secret material.
  */
 const customConnectorResponseBaseSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   slug: string(),
   displayName: string(),
   fields: array(customConnectorFieldSchema),
@@ -280,7 +281,7 @@ export const customConnectorListResponseSchema = object({
 
 const startCustomConnectorOAuth2AuthorizationResponseSchema = object({
   result: literal("authorization"),
-  authorizationUrl: string().url(),
+  authorizationUrl: url(),
   connectionId: uuid().optional(),
   oauthAttemptId: uuid(),
 });

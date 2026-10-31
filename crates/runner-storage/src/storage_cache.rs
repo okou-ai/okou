@@ -4701,8 +4701,6 @@ mod tests {
     ) -> StoragePlan {
         build_storage_plan(
             &StorageManifest {
-                workflow_references: Vec::new(),
-                workflow_skills: Vec::new(),
                 storages,
                 artifacts,
             },

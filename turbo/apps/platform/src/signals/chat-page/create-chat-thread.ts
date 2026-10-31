@@ -2303,20 +2303,44 @@ function createReadyScrollAfterRenderRequest(
   });
 }
 
-function createLoadMoreRenderedChatGroups(
+const EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX = 100;
+// Safari reverts a scrollTop write made while its scrolling thread still
+// animates a gesture, momentum, or smooth scroll. Every animated frame delivers
+// a scroll event, so a quiet interval means the compensation write will stick.
+const EARLIER_GROUPS_LOAD_SCROLL_SETTLE_MS = 150;
+
+/**
+ * Loads earlier groups once scrolling settles near the top. Every scroll
+ * restarts the wait, so the prepend and its scroll compensation never land
+ * while the browser is still moving the viewport.
+ */
+function createLoadEarlierGroupsAfterScroll(
   scroll: ChatThreadScrollSignals,
   loadMoreGroups$: Command<Promise<boolean>, [AbortSignal]>,
 ) {
-  return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
-    const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
-    const didPrepend = await set(loadMoreGroups$, signal);
-    signal.throwIfAborted();
-    if (didPrepend) {
-      await set(scroll.autoScroll$, scrollPosition, signal);
+  const loadEarlierGroupsNearTop$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+      const container = get(scroll.scrollContainer$);
+      if (
+        !container ||
+        container.scrollTop > EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX
+      ) {
+        return false;
+      }
+      const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
+      const didPrepend = await set(loadMoreGroups$, signal);
       signal.throwIfAborted();
-    }
-    return didPrepend;
-  });
+      if (didPrepend) {
+        await set(scroll.autoScroll$, scrollPosition, signal);
+        signal.throwIfAborted();
+      }
+      return didPrepend;
+    },
+  );
+  return debounceCommand(
+    loadEarlierGroupsNearTop$,
+    EARLIER_GROUPS_LOAD_SCROLL_SETTLE_MS,
+  );
 }
 
 interface ChatThreadMessagePipelineOptions {
@@ -2408,7 +2432,7 @@ function createChatThreadMessagePipeline({
     scroll.pendingScrollAfterRenderRequest$,
     renderWindow.visibleRenderedChatGroups$,
   );
-  const loadMoreRenderedChatGroups$ = createLoadMoreRenderedChatGroups(
+  const loadEarlierGroupsAfterScroll$ = createLoadEarlierGroupsAfterScroll(
     scroll,
     renderWindow.loadMoreRenderedChatGroups$,
   );
@@ -2426,7 +2450,7 @@ function createChatThreadMessagePipeline({
     visibleRunUsageSignals$: usage.visibleRunUsageSignals$,
     ...renderWindow,
     readyScrollAfterRenderRequest$,
-    loadMoreRenderedChatGroups$,
+    loadEarlierGroupsAfterScroll$,
   };
 }
 
@@ -3547,7 +3571,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     runFinished$: events.runFinished$,
     recommendedFollowupSource$: events.recommendedFollowupSource$,
     donePhrase$: events.donePhrase$,
-    loadMoreRenderedChatGroups$: events.loadMoreRenderedChatGroups$,
+    loadEarlierGroupsAfterScroll$: events.loadEarlierGroupsAfterScroll$,
     resetRenderedChatGroupsIfAtBottom$:
       events.resetRenderedChatGroupsIfAtBottom$,
   };

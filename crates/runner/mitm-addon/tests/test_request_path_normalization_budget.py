@@ -10,6 +10,7 @@ import pytest
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+from path_security import MAX_PATH_VALIDATION_CHARACTERS
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import await_requestheaders_result
 
@@ -90,7 +91,7 @@ async def test_path_normalization_budget_blocks_before_unbounded_work(
         assert "Authorization" not in flow.request.headers
 
         await mitm_addon.request(flow)
-        assert decomposed_characters > header_characters
+        assert decomposed_characters == header_characters
 
     auth_fetch.assert_not_called()
     assert flow.response is not None
@@ -99,6 +100,45 @@ async def test_path_normalization_budget_blocks_before_unbounded_work(
     assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
     assert flow.request.path == path
     assert "Authorization" not in flow.request.headers
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v%2532/files/" + "a" * MAX_PATH_VALIDATION_CHARACTERS,
+        "/v%25252525252532/files/id",
+    ],
+    ids=["character-budget", "decode-budget"],
+)
+async def test_exhausted_path_budget_rejects_before_connector_credentials(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, path
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            firewall_name="example",
+            api_entry={
+                "base": "https://api.example.com/v2",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.API_TOKEN }}"}},
+                "permissions": [{"name": "read", "rules": ["GET /files/{path+}"]}],
+            },
+            network_policy={"allow": ["read"], "deny": [], "unknownPolicy": "allow"},
+        ),
+    )
+    flow = real_flow(with_response=False, client_ip="10.200.0.5", host="api.example.com", path=path)
+    with mitm_ctx(registry_path=str(reg_path)), fake_firewall_headers() as auth_fetch:
+        header_result = mitm_addon.requestheaders(flow)
+        if header_result is not None:
+            await await_requestheaders_result(header_result)
+        await mitm_addon.request(flow)
+
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert json.loads(flow.response.content)["reason"] == "unsafe_path"
+    assert flow.request.path == path
+    assert "Authorization" not in flow.request.headers
+    auth_fetch.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

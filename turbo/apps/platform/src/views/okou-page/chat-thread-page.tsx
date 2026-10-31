@@ -3015,8 +3015,6 @@ function resolveSessionError(
   return null;
 }
 
-const CHAT_RENDER_LOAD_MORE_TOP_THRESHOLD_PX = 100;
-
 function renderedChatEventKeys(
   groups: readonly ChatEventGroup[],
 ): readonly string[] {
@@ -3833,17 +3831,14 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
 
 function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   const scrollContainerOnRef = useSet(thread.scrollContainerOnRef$);
-  const loadMoreRenderedChatGroups = useSet(thread.loadMoreRenderedChatGroups$);
+  const loadEarlierGroupsAfterScroll = useSet(
+    thread.loadEarlierGroupsAfterScroll$,
+  );
   const pageSignal = useGet(pageSignal$);
   const standalonePwa = isStandalonePwa();
 
-  const handleScroll = (event: ReactUIEvent<HTMLDivElement>) => {
-    if (
-      event.currentTarget.scrollTop > CHAT_RENDER_LOAD_MORE_TOP_THRESHOLD_PX
-    ) {
-      return;
-    }
-    detach(loadMoreRenderedChatGroups(pageSignal), Reason.DomCallback);
+  const handleScroll = () => {
+    detach(loadEarlierGroupsAfterScroll(pageSignal), Reason.DomCallback);
   };
 
   // This scroll area isolates its local overlays. The masked viewport contains

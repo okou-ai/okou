@@ -67,22 +67,23 @@ async function readDataRouterFamilies(
   });
 }
 
-// The anonymous catalog belongs to one Settings visit, not to a member's
-// preference resource. Keep the operation itself so loadables own its status;
-// derived values never capture the Settings AbortSignal.
-const dataRouterCatalogRequest$ = state<Promise<DataRouterFamily[]>>(
-  NEVER_RESOLVED_PROMISE,
-);
-
-export const dataRouterCatalog$ = computed((get) => {
-  return get(dataRouterCatalogRequest$);
-});
-
-export const startPaidToolsCatalogDiscovery$ = command(
-  ({ set }, signal: AbortSignal): void => {
+/** Settings and onboarding own independent discoveries and cancellation. */
+export function createPaidToolsCatalogSignals() {
+  // Keep the operation itself so loadables own its status; derived values
+  // never capture the owning page or Settings AbortSignal.
+  const request$ = state<Promise<DataRouterFamily[]>>(NEVER_RESOLVED_PROMISE);
+  const catalog$ = computed((get) => {
+    return get(request$);
+  });
+  const startDiscovery$ = command(({ set }, signal: AbortSignal): void => {
     signal.throwIfAborted();
     const request = readDataRouterFamilies(signal);
-    set(dataRouterCatalogRequest$, request);
-    detach(request, Reason.Daemon, "Settings public tool catalog discovery");
-  },
-);
+    set(request$, request);
+    detach(request, Reason.Daemon, "Public tool catalog discovery");
+  });
+  return { catalog$, startDiscovery$ };
+}
+
+const settingsCatalog = createPaidToolsCatalogSignals();
+export const dataRouterCatalog$ = settingsCatalog.catalog$;
+export const startPaidToolsCatalogDiscovery$ = settingsCatalog.startDiscovery$;

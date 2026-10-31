@@ -1,11 +1,11 @@
 import { command, computed, state, type Computed } from "ccstate";
 import {
-  callAsync,
   createDeferredPromise,
   detach,
   Reason,
   type DeferredPromise,
 } from "../../utils.ts";
+import { writeToClipboard } from "../../okou-page/clipboard.ts";
 import { clipboardTextLimit } from "./selection.ts";
 import type { InputBinding, InputIngress } from "./ingress.ts";
 import type { NativeInputPort } from "./port.ts";
@@ -150,6 +150,11 @@ function createClipboardObservation(
 }
 type ClipboardObservation = ReturnType<typeof createClipboardObservation>;
 
+/** Starts inside the trusted gesture; an unavailable API rejects like a denial. */
+async function writeClipboardData(data: Promise<Blob>): Promise<void> {
+  await navigator.clipboard.write([new ClipboardItem({ "text/plain": data })]);
+}
+
 /** Trusted activation starts local writing before the ordered remote read. */
 function createClipboardTransfer(observation: ClipboardObservation) {
   const {
@@ -165,13 +170,9 @@ function createClipboardTransfer(observation: ClipboardObservation) {
       data: DeferredPromise<Blob>,
       signal: AbortSignal,
     ): Promise<void> => {
-      // callAsync invokes write synchronously, before this command first yields.
+      // The write starts synchronously, before this command first yields.
       const [result] = await Promise.allSettled([
-        callAsync(() => {
-          return navigator.clipboard.write([
-            new ClipboardItem({ "text/plain": data.promise }),
-          ]);
-        }),
+        writeClipboardData(data.promise),
       ]);
       if (signal.aborted) {
         return;
@@ -352,16 +353,12 @@ function createClipboardActions(
       if (!recovery || recovery.text === null) {
         return;
       }
-      const [result] = await Promise.allSettled([
-        callAsync(() => {
-          return navigator.clipboard.writeText(recovery.text!);
-        }),
-      ]);
+      const copied = await writeToClipboard(recovery.text);
       signal.throwIfAborted();
       if (get(recovery$) !== recovery) {
         return;
       }
-      if (result.status === "fulfilled") {
+      if (copied) {
         set(reset$);
       } else {
         const input = set(ingress.current$);

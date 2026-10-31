@@ -9,6 +9,138 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.34.2](https://github.com/okou-ai/okou/compare/api-v2.34.1...api-v2.34.2) (2026-10-31)
+
+
+### Refactoring
+
+* **api:** localize agent detail read ownership ([#44432](https://github.com/okou-ai/okou/issues/44432)) ([5892f2a](https://github.com/okou-ai/okou/commit/5892f2a0f4a0c8efb55c61bb3b9d8cb16ba4a394))
+* **browser:** make retention cleanup one atomic statement ([#44431](https://github.com/okou-ai/okou/issues/44431)) ([d272d29](https://github.com/okou-ai/okou/commit/d272d29b98bfaf797a04e1b9f28a781d60ca98ca))
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.1
+    * @okouai/connectors bumped to 3.20.2
+    * @okouai/core bumped to 8.806.0
+    * @okouai/db bumped to 2.14.2
+    * @okouai/pi-agent-runtime bumped to 1.51.41
+
+## [2.34.1](https://github.com/okou-ai/okou/compare/api-v2.34.0...api-v2.34.1) (2026-10-31)
+
+
+### Refactoring
+
+* **api:** localize agent connector read ownership ([#44422](https://github.com/okou-ai/okou/issues/44422)) ([97b23ee](https://github.com/okou-ai/okou/commit/97b23eef735fef263abc68803130577f9609466e))
+
+
+### Performance Improvements
+
+* **browser:** reduce api and cli window lookup latency ([#44426](https://github.com/okou-ai/okou/issues/44426)) ([23b55e3](https://github.com/okou-ai/okou/commit/23b55e3fb6722d25917e69610d2d14f6a73020a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.14.1
+
+## [2.34.0](https://github.com/okou-ai/okou/compare/api-v2.33.3...api-v2.34.0) (2026-10-31)
+
+
+### Features
+
+* **api-contracts:** type desktop shell queue payloads and results ([#44396](https://github.com/okou-ai/okou/issues/44396)) ([f0aaf57](https://github.com/okou-ai/okou/commit/f0aaf57f4dbf5be154a733ae92dfcfdc14ef866a))
+* **browser:** track owner instance extension ids ([#44411](https://github.com/okou-ai/okou/issues/44411)) ([26fdcc9](https://github.com/okou-ai/okou/commit/26fdcc914bf4faeb8c3ce20ef512c4b09e74f368))
+
+
+### Bug Fixes
+
+* **api:** set minimum supported ios version to 0.22.5 ([#44413](https://github.com/okou-ai/okou/issues/44413)) ([77815fd](https://github.com/okou-ai/okou/commit/77815fdeb20d8452e31cbcde9fedf89d4dfdfa5e))
+* **browser:** wait for worker startup before bridge hello ([#44408](https://github.com/okou-ai/okou/issues/44408)) ([c5f1bb2](https://github.com/okou-ai/okou/commit/c5f1bb23f8a3871e1956eaef744a5d5b19de8e8b))
+* **connectors:** prove encoded path authorization with bounded languages ([#44318](https://github.com/okou-ai/okou/issues/44318)) ([90e4fda](https://github.com/okou-ai/okou/commit/90e4fdad526da623c952241b51d2bc8081cc7cb2))
+
+
+### Refactoring
+
+* **api:** delete hosted sites without a transaction ([#44412](https://github.com/okou-ai/okou/issues/44412)) ([8315dea](https://github.com/okou-ai/okou/commit/8315dea9fc065741612af8124e3b82ce7c435604))
+* **api:** localize visible agent existence preflights ([#44399](https://github.com/okou-ai/okou/issues/44399)) ([a8225d0](https://github.com/okou-ai/okou/commit/a8225d0824a982f465f72038f4e4d7709983e62b))
+* **api:** publish hosted deployments without a transaction ([#44405](https://github.com/okou-ai/okou/issues/44405)) ([20a802b](https://github.com/okou-ai/okou/commit/20a802bb589e49b344c22da3d2d21769cb8bf227))
+* **workflows:** omit definition snapshots from new official artifacts ([#44406](https://github.com/okou-ai/okou/issues/44406)) ([b68e1d6](https://github.com/okou-ai/okou/commit/b68e1d6251ea1b5396fc9c28d4c1dbf578f5ac10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.0
+    * @okouai/browser-extension-client bumped to 0.4.1
+    * @okouai/connectors bumped to 3.20.1
+    * @okouai/core bumped to 8.805.6
+    * @okouai/db bumped to 2.14.0
+    * @okouai/pi-agent-runtime bumped to 1.51.40
+
+## [2.33.3](https://github.com/okou-ai/okou/compare/api-v2.33.2...api-v2.33.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* **api:** reclaim obsolete browser screenshots ([#44382](https://github.com/okou-ai/okou/issues/44382)) ([e7b92f8](https://github.com/okou-ai/okou/commit/e7b92f8f39f613b1891da6369d2f62b6bc53a3ae))
+
+
+### Refactoring
+
+* **api:** consolidate shared browser chat state ([#44353](https://github.com/okou-ai/okou/issues/44353)) ([5cbbfe5](https://github.com/okou-ai/okou/commit/5cbbfe5e45070a422ac8323133e4c57080f4525e))
+* **api:** localize agent connector catalog reads ([#44368](https://github.com/okou-ai/okou/issues/44368)) ([9f5d088](https://github.com/okou-ai/okou/commit/9f5d088cb9fadb1f712f7f82626f5dadabae15c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.13.14
+
+## [2.33.2](https://github.com/okou-ai/okou/compare/api-v2.33.1...api-v2.33.2) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.2
+    * @okouai/core bumped to 8.805.5
+    * @okouai/db bumped to 2.13.13
+    * @okouai/pi-agent-runtime bumped to 1.51.39
+
+## [2.33.1](https://github.com/okou-ai/okou/compare/api-v2.33.0...api-v2.33.1) (2026-10-31)
+
+
+### Performance Improvements
+
+* **app:** replace browser http contracts with schema-free descriptors ([#44306](https://github.com/okou-ai/okou/issues/44306)) ([ce8f7fc](https://github.com/okou-ai/okou/commit/ce8f7fc59e52c4da702aced0d641d41f57a63139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.1
+    * @okouai/core bumped to 8.805.4
+    * @okouai/db bumped to 2.13.12
+    * @okouai/pi-agent-runtime bumped to 1.51.38
+
 ## [2.33.0](https://github.com/okou-ai/okou/compare/api-v2.32.1...api-v2.33.0) (2026-10-30)
 
 

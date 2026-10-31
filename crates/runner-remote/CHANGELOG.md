@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.30.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.11...runner-remote-v0.30.12) (2026-10-31)
+
+## [0.30.11](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.10...runner-remote-v0.30.11) (2026-10-31)
+
+## [0.30.10](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.9...runner-remote-v0.30.10) (2026-10-31)
+
+## [0.30.9](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.8...runner-remote-v0.30.9) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+## [0.30.8](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.7...runner-remote-v0.30.8) (2026-10-31)
+
 ## [0.30.7](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.6...runner-remote-v0.30.7) (2026-10-30)
 
 ## [0.30.6](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.5...runner-remote-v0.30.6) (2026-10-30)

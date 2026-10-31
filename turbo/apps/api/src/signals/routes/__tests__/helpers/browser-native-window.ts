@@ -6,6 +6,7 @@ import { detach, Mechanism } from "../../../utils";
 import {
   TEST_EXTENSION_TARGETS,
   browserExtensionBootstrap,
+  browserExtensionBootstrapEvents,
   browserExtensionRequest,
   browserExtensionReply,
 } from "../../../../__tests__/browser-extension";
@@ -39,6 +40,8 @@ export function createNativeWindowProvider(context: TestContext) {
     beforeNativeWindowReply?: (windowId: number) => Promise<void> | void;
     afterNativeWindowReply?: (windowId: number) => Promise<void> | void;
     beforeCloseWindowReply?: (windowId: number) => Promise<void> | void;
+    beforeWindowForTargetReply?: (targetId: string) => Promise<void> | void;
+    windowBoundsError?: { readonly code: number; readonly message: string };
     bridgeAvailable: boolean;
     snapshotEventWindowId?: number;
     emptySnapshot: boolean;
@@ -196,11 +199,18 @@ export function createNativeWindowProvider(context: TestContext) {
     sessionId: string().optional(),
   });
   const handler = ws.link(url).addEventListener("connection", ({ client }) => {
-    const sendResult = (id: number, result: unknown) => {
+    const sendResult = (
+      id: number,
+      result: unknown,
+      events: readonly Readonly<Record<string, unknown>>[] = [],
+    ) => {
+      for (const event of events) {
+        client.send(JSON.stringify(event));
+      }
       client.send(
         JSON.stringify(
           result instanceof Error
-            ? { id, error: { message: result.message } }
+            ? { id, error: { code: -32_000, message: result.message } }
             : { id, result },
         ),
       );
@@ -268,7 +278,65 @@ export function createNativeWindowProvider(context: TestContext) {
         request && !(value instanceof Error)
           ? browserExtensionReply(value, nativeSequence, startedSequence)
           : value;
-      sendResult(command.id, result);
+      sendResult(
+        command.id,
+        result,
+        browserExtensionBootstrapEvents(command, state.bridgeAvailable),
+      );
+      return true;
+    };
+    const replyWindowLookup = async (
+      command: ReturnType<typeof commandSchema.parse>,
+    ): Promise<boolean> => {
+      if (
+        command.method !== "Browser.getWindowForTarget" &&
+        command.method !== "Browser.getWindowBounds"
+      ) {
+        return false;
+      }
+      if (state.windowReply === "withhold") {
+        return true;
+      }
+      if (command.method === "Browser.getWindowForTarget") {
+        const targetId = String(command.params.targetId);
+        await state.beforeWindowForTargetReply?.(targetId);
+        context.signal.throwIfAborted();
+        const target = state.targets.get(targetId);
+        const error = state.windowErrors.get(targetId) ?? state.windowError;
+        sendResult(
+          command.id,
+          !target || error
+            ? new Error(error ?? "No target with this ID")
+            : { windowId: target.windowId },
+        );
+        return true;
+      }
+      const windowId = Number(command.params.windowId);
+      await state.beforeNativeWindowReply?.(windowId);
+      context.signal.throwIfAborted();
+      if (state.windowBoundsError) {
+        client.send(
+          JSON.stringify({ id: command.id, error: state.windowBoundsError }),
+        );
+        return true;
+      }
+      const error = state.nativeWindowErrors.get(windowId) ?? state.windowError;
+      sendResult(
+        command.id,
+        error
+          ? new Error(error)
+          : windowInfo(windowId, false)
+            ? {
+                bounds: {
+                  left: 0,
+                  top: 0,
+                  width: 800,
+                  height: 600,
+                  windowState: "normal",
+                },
+              }
+            : new Error("Browser window not found"),
+      );
       return true;
     };
     const reply = async (event: { readonly data: unknown }) => {
@@ -276,6 +344,9 @@ export function createNativeWindowProvider(context: TestContext) {
       state.commands.push(command);
       let result: unknown;
       if (await replyBridge(command)) {
+        return;
+      }
+      if (await replyWindowLookup(command)) {
         return;
       }
       if (command.method === "Target.createTarget") {
@@ -298,17 +369,6 @@ export function createNativeWindowProvider(context: TestContext) {
           return;
         }
         result = { targetId: target.targetId };
-      } else if (command.method === "Browser.getWindowForTarget") {
-        const targetId = String(command.params.targetId);
-        if (state.windowReply === "withhold") {
-          return;
-        }
-        const target = state.targets.get(targetId);
-        const error = state.windowErrors.get(targetId) ?? state.windowError;
-        result =
-          !target || error
-            ? new Error(error ?? "No target with this ID")
-            : { windowId: target.windowId };
       } else if (command.method === "Browser.setContentsSize") {
         state.contentsSizes.set(Number(command.params.windowId), {
           width: Number(command.params.width),
@@ -325,7 +385,13 @@ export function createNativeWindowProvider(context: TestContext) {
                 url: target.url ?? "about:blank",
               };
             })
-            .concat(state.bridgeAvailable ? [...TEST_EXTENSION_TARGETS] : []),
+            .concat(
+              TEST_EXTENSION_TARGETS.filter((target) => {
+                return (
+                  state.bridgeAvailable || target.type !== "service_worker"
+                );
+              }),
+            ),
         };
       } else if (command.method === "Target.closeTarget") {
         const targetId = String(command.params.targetId);

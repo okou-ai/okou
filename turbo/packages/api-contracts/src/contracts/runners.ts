@@ -4,6 +4,7 @@ import {
   boolean,
   coerce,
   discriminatedUnion,
+  iso,
   literal,
   number,
   object,
@@ -19,11 +20,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import {
-  workflowDownloadSchema,
-  workflowSkillReferenceSchema,
-} from "./workflow-attachments";
-
+import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
@@ -43,6 +40,11 @@ import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
 } from "./runner-primitives";
+
+export {
+  MIN_EPOCH_MS_TIMESTAMP,
+  elapsedSinceApiStartMs,
+} from "./api-start-time";
 
 export { BUILTIN_FIREWALL_CATALOG_MAX_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 
@@ -66,7 +68,6 @@ export {
 
 const c = initContract();
 
-export const MIN_EPOCH_MS_TIMESTAMP = 1_000_000_000_000;
 const apiStartTimeSchema = number().int().min(MIN_EPOCH_MS_TIMESTAMP);
 
 export const CANONICAL_CLAUDE_CONFIG_DIR = `${CANONICAL_GUEST_HOME_DIR}/.claude`;
@@ -147,20 +148,6 @@ export const releaseVersionSchema = string().regex(
   /^\d+\.\d+\.\d+$/,
   "Release versions are MAJOR.MINOR.PATCH",
 );
-export function elapsedSinceApiStartMs(
-  apiStartTimeMs: number | undefined,
-  nowMs: number,
-): number | undefined {
-  if (
-    apiStartTimeMs === undefined ||
-    !Number.isInteger(apiStartTimeMs) ||
-    apiStartTimeMs < MIN_EPOCH_MS_TIMESTAMP
-  ) {
-    return undefined;
-  }
-
-  return Math.max(0, nowMs - apiStartTimeMs);
-}
 
 export const runnerClaimPollReasonSchema = zEnum([
   "immediate",
@@ -208,7 +195,7 @@ export const runnerPreferenceSchema = union([
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
     tier: zEnum(["exactSandbox", "finalizingPredecessor"]),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
     predecessorRunId: uuid(),
   }).strict(),
   object({
@@ -216,12 +203,12 @@ export const runnerPreferenceSchema = union([
     runnerIdentity: runnerProcessIdentitySchema,
     tier: literal("predecessorHome"),
     predecessorRunId: uuid(),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
     home: discriminatedUnion("evidence", [
       object({ evidence: literal("advertised") }).strict(),
       object({
         evidence: literal("expected"),
-        homeWaitUntil: string().datetime({ offset: true }),
+        homeWaitUntil: iso.datetime({ offset: true }),
       }).strict(),
       object({ evidence: literal("location") }).strict(),
     ]),
@@ -230,7 +217,7 @@ export const runnerPreferenceSchema = union([
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
     tier: zEnum(["reusableSandbox", "homeCache"]),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
   }).strict(),
   object({
     kind: literal("noPreference"),
@@ -272,7 +259,7 @@ const runnerSupportedProfileListSchema = runnerProfileListSchema.min(1);
 export const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX = 128;
 
 const networkPolicyRefreshSchema = object({
-  nextRefreshAt: string().datetime({ offset: true }),
+  nextRefreshAt: iso.datetime({ offset: true }),
 });
 
 const networkPolicyRefreshesSchema = record(
@@ -371,7 +358,7 @@ export const connectorRuntimeCustomAbsentReasonSchema = literal(
 );
 
 const connectorRuntimeResultBaseSchema = object({
-  nextSyncAt: string().datetime({ offset: true }).optional(),
+  nextSyncAt: iso.datetime({ offset: true }).optional(),
 });
 
 export const connectorRuntimeBuiltinAvailableResultSchema =
@@ -483,7 +470,7 @@ export const jobSchema = object({
 
 export const heldSandboxStateSchema = object({
   reuseKey: string(),
-  lastCompletedAt: string().datetime({ offset: true }),
+  lastCompletedAt: iso.datetime({ offset: true }),
   reusableSandbox: object({
     profile: string(),
     sourceRunId: uuid(),
@@ -498,7 +485,7 @@ export const activeReuseProducerSchema = object({
 
 export const heldHomeStateSchema = object({
   reuseKey: string(),
-  lastCompletedAt: string().datetime({ offset: true }),
+  lastCompletedAt: iso.datetime({ offset: true }),
   homeCaches: array(
     object({
       profile: string(),
@@ -612,7 +599,6 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
 
 /** Canonical Runner wire representation. */
 export const storageManifestSchema = object({
-  workflowSkills: array(workflowSkillReferenceSchema).optional(),
   storageMounts: array(storageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
   ),
@@ -1049,10 +1035,8 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = object({
-  // Selected immutable packages; old API claims are handled by prepared Runners.
+  // Selected immutable packages, including an empty set for agentless jobs.
   contentBundles: claimedContentBundlesSchema,
-  // Legacy API producer field; retire with old claim readers in #44164 Release 3.
-  agentInstructions: string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: boolean().optional(),
   runId: uuid(),
@@ -1139,16 +1123,6 @@ const executionContextObjectSchema = object({
 
 export const executionContextSchema = executionContextObjectSchema.superRefine(
   (context, refinement) => {
-    if (
-      context.agentInstructions !== undefined ||
-      (context.storageManifest?.workflowSkills?.length ?? 0) > 0
-    ) {
-      refinement.addIssue({
-        code: "custom",
-        path: ["contentBundles"],
-        message: "Content bundles cannot be mixed with legacy claim content",
-      });
-    }
     const piFields = [
       context.piSessionId,
       context.piLaunchConfig,
@@ -1208,22 +1182,6 @@ export const runnersJobClaimContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Claim a pending job for execution",
-  },
-});
-
-export const runnersWorkflowDownloadContract = c.router({
-  get: {
-    method: "GET",
-    path: "/api/runners/runs/:runId/workflows/:workflowId",
-    headers: authHeadersSchema,
-    pathParams: object({ runId: uuid(), workflowId: uuid() }),
-    responses: {
-      200: workflowDownloadSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Download current Workflow content for an authenticated Run",
   },
 });
 

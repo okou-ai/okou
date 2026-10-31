@@ -2,12 +2,14 @@ import {
   array,
   boolean,
   discriminatedUnion,
+  iso,
   literal,
   number,
   object,
   string,
   union,
   url,
+  uuid,
   enum as zEnum,
   null as zNull,
   type infer as zInfer,
@@ -160,7 +162,7 @@ export type ChatRunFinishedRunStatus = zInfer<
 export const chatRunFinishedEventConfigSchema = object({
   provider: literal("chat"),
   event: literal("run_finished"),
-  chatThreadId: string().uuid(),
+  chatThreadId: uuid(),
   runStatuses: array(chatRunFinishedRunStatusSchema).min(1).optional(),
   outputPattern: string().trim().min(1).max(512).optional(),
 }).strict();
@@ -523,7 +525,7 @@ export type GoogleFormsFormReference = zInfer<
 export const googleFormsResponseSubmittedEventConfigSchema = object({
   provider: literal("google-forms"),
   event: literal("response_submitted"),
-  connectorId: string().uuid(),
+  connectorId: uuid(),
   form: googleFormsFormReferenceSchema,
 }).strict();
 export type GoogleFormsResponseSubmittedEventConfig = zInfer<
@@ -543,7 +545,7 @@ export type GoogleFormsAutomationEventConfig =
   GoogleFormsResponseSubmittedEventConfig;
 
 export const notionPageReferenceSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   url: url(),
   title: string().nullable(),
   rawUrl: string().min(1).max(2048).optional(),
@@ -551,7 +553,7 @@ export const notionPageReferenceSchema = object({
 export type NotionPageReference = zInfer<typeof notionPageReferenceSchema>;
 
 export const notionDataSourceReferenceSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   url: url(),
   title: string().nullable(),
   rawUrl: string().min(1).max(2048).optional(),
@@ -563,7 +565,7 @@ export type NotionDataSourceReference = zInfer<
 export const notionChildPageCreatedEventConfigSchema = object({
   provider: literal("notion"),
   event: literal("child_page_created"),
-  connectorId: string().uuid(),
+  connectorId: uuid(),
   parentPage: notionPageReferenceSchema,
 }).strict();
 export type NotionChildPageCreatedEventConfig = zInfer<
@@ -582,7 +584,7 @@ export type NotionChildPageCreatedEventCreateConfig = zInfer<
 export const notionDatabaseItemCreatedEventConfigSchema = object({
   provider: literal("notion"),
   event: literal("database_item_created"),
-  connectorId: string().uuid(),
+  connectorId: uuid(),
   dataSource: notionDataSourceReferenceSchema,
 }).strict();
 export type NotionDatabaseItemCreatedEventConfig = zInfer<
@@ -615,7 +617,7 @@ export type NotionPageContentUpdatedScope = zInfer<
 export const notionPageContentUpdatedEventConfigSchema = object({
   provider: literal("notion"),
   event: literal("page_content_updated"),
-  connectorId: string().uuid(),
+  connectorId: uuid(),
   scope: notionPageContentUpdatedScopeSchema,
 }).strict();
 export type NotionPageContentUpdatedEventConfig = zInfer<
@@ -681,8 +683,8 @@ const workflowAutomationSummaryBaseSchema = object({
   ownerUserId: string(),
   enabled: boolean(),
   chatThreadId: string().nullable(),
-  nextRunAt: string().datetime().nullable(),
-  lastRunAt: string().datetime().nullable(),
+  nextRunAt: iso.datetime().nullable(),
+  lastRunAt: iso.datetime().nullable(),
   official: object({
     blueprintKey: officialWorkflowBlueprintKeySchema,
     appliedFingerprint: string().regex(/^[0-9a-f]{64}$/),
@@ -873,7 +875,7 @@ export const workflowWebhookReceivedAutomationSummarySchema =
     webhookUrl: url().optional(),
     secretLastFour: string().length(4),
     disabledReason: literal("paid_plan_required").nullable().optional(),
-    lastReceivedAt: string().datetime().nullable(),
+    lastReceivedAt: iso.datetime().nullable(),
     webhookSecret: string().min(1).optional(),
   });
 
@@ -907,8 +909,8 @@ export type WorkflowAutomationSummary = zInfer<
 >;
 
 const chatThreadWorkflowSchema = object({
-  id: string().uuid(),
-  agentId: string().uuid(),
+  id: uuid(),
+  agentId: uuid(),
   name: workflowNameSchema,
   displayName: string().nullable(),
   description: string().nullable(),
@@ -916,7 +918,7 @@ const chatThreadWorkflowSchema = object({
 
 const chatThreadWorkflowAutomationBaseSchema =
   workflowAutomationSummaryBaseSchema.extend({
-    id: string().uuid(),
+    id: uuid(),
     chatThreadId: string().min(1),
     workflow: chatThreadWorkflowSchema,
   });
@@ -1083,7 +1085,7 @@ export const chatThreadWorkflowNotionPageContentUpdatedAutomationSchema =
 
 export const chatThreadWorkflowWebhookReceivedAutomationSchema =
   workflowWebhookReceivedAutomationSummarySchema.extend({
-    id: string().uuid(),
+    id: uuid(),
     chatThreadId: string().min(1),
     workflow: chatThreadWorkflowSchema,
   });
@@ -1339,8 +1341,8 @@ export type WorkflowAutomationUpdateRequest = zInfer<
  * for public workflows; ownership for private ones).
  */
 export const workflowSummarySchema = object({
-  id: string().uuid(),
-  agentId: string().uuid(),
+  id: uuid(),
+  agentId: uuid(),
   agentName: string().nullable(),
   agentDisplayName: string().nullable(),
   name: workflowNameSchema,
@@ -1348,7 +1350,7 @@ export const workflowSummarySchema = object({
   description: string().max(1024).nullable(),
   visibility: workflowVisibilitySchema,
   ownerUserId: string(),
-  createdAt: string().datetime(),
+  createdAt: iso.datetime(),
   canManage: boolean(),
   canPublish: boolean(),
   official: object({
@@ -1360,7 +1362,7 @@ export const workflowSummarySchema = object({
     .strict()
     .nullable(),
   shadowedBy: object({
-    id: string().uuid(),
+    id: uuid(),
     name: workflowNameSchema,
     displayName: string().max(256).nullable(),
   })
@@ -1372,7 +1374,7 @@ export const workflowSummarySchema = object({
 export const workflowDetailResponseSchema = workflowSummarySchema.extend({
   createdByUserId: string(),
   updatedByUserId: string(),
-  updatedAt: string().datetime(),
+  updatedAt: iso.datetime(),
   instruction: string().nullable(),
   files: array(workflowFileMetadataSchema).nullable(),
   // Updates return metadata without reading R2. GET supplies file bodies.
@@ -1404,8 +1406,8 @@ export const workflowAutomationsListResponseSchema = array(
 );
 
 export const workflowCreateRequestSchema = object({
-  agentId: string().uuid(),
-  chatThreadId: string().uuid().optional(),
+  agentId: uuid(),
+  chatThreadId: uuid().optional(),
   name: workflowNameSchema,
   instruction: workflowInstructionSchema.optional(),
   files: workflowFilesSchema.optional(),
@@ -1434,29 +1436,29 @@ export const workflowUpdateRequestSchema = object({
 );
 
 export const workflowCopyRequestSchema = object({
-  toAgentId: string().uuid(),
+  toAgentId: uuid(),
 });
 
 export const workflowRunResponseSchema = object({
-  chatThreadId: string().uuid(),
+  chatThreadId: uuid(),
   // Null means the manual invocation is waiting in the chat thread queue and
   // no run has been created for it yet.
   runId: string().nullable(),
 });
 
 export const workflowChatThreadResponseSchema = object({
-  chatThreadId: string().uuid(),
+  chatThreadId: uuid(),
   prompt: string(),
 });
 
-const workflowIdParams = object({ workflowId: string().uuid() });
+const workflowIdParams = object({ workflowId: uuid() });
 
 export const workflowsCollectionContract = c.router({
   list: {
     method: "GET",
     path: "/api/workflows",
     headers: authHeadersSchema,
-    query: object({ agentId: string().uuid().optional() }),
+    query: object({ agentId: uuid().optional() }),
     responses: {
       200: workflowListResponseSchema,
       401: apiErrorSchema,
@@ -1468,7 +1470,7 @@ export const workflowsCollectionContract = c.router({
     method: "GET",
     path: "/api/workflows/for-composer",
     headers: authHeadersSchema,
-    query: object({ agentId: string().uuid() }),
+    query: object({ agentId: uuid() }),
     responses: {
       200: composerWorkflowListResponseSchema,
       400: apiErrorSchema,
@@ -1650,7 +1652,7 @@ export const workflowVisibilityContract = c.router({
   },
 });
 
-const automationIdParams = object({ id: string().uuid() });
+const automationIdParams = object({ id: uuid() });
 const chatThreadIdParams = object({ threadId: string().min(1) });
 
 export const workflowWebhookSecretResponseSchema = object({

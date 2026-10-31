@@ -1,11 +1,12 @@
 import {
   array,
   boolean,
-  enum as zEnum,
   literal,
   object,
   string,
   union,
+  uuid,
+  enum as zEnum,
 } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { UsagePackPendingSnapshotConflict } from "./usage-pack-pending-snapshot-plan";
@@ -161,7 +162,7 @@ const pendingSnapshotSqlResultSchema = union([
       object({ kind: literal("redirect"), url: string() }),
       object({
         kind: literal("snapshot"),
-        usagePackSubscriptionId: string().uuid(),
+        usagePackSubscriptionId: uuid(),
       }),
     ]),
   }),

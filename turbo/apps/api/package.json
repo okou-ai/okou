@@ -1,12 +1,12 @@
 {
   "name": "api",
-  "version": "2.33.0",
+  "version": "2.34.2",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "vite build",
     "build:worker": "node scripts/build-worker.mjs",
-    "test:worker-build": "node --test scripts/build-worker.node-test.mjs",
+    "test:worker-build": "node --test scripts/build-worker.node-test.mjs scripts/worker-contract-boundaries.node-test.mjs",
     "check-types:worker": "bash scripts/check-types.sh worker",
     "dev": "bash scripts/dev.sh",
     "env:validate": "tsx src/scripts/validate-env.ts",

@@ -1,8 +1,5 @@
-import {
-  browserOwnerProfiles,
-  browserOwnerWindows,
-} from "@okouai/db/schema/browser-owner";
-import { browserSessionTabSnapshots } from "@okouai/db/schema/browser-session";
+import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
 import {
   BROWSER_INITIAL_SCREEN_HEIGHT,
   BROWSER_SCREEN_WIDTH,
@@ -51,14 +48,14 @@ const cleanupWindowCandidate$ = command(
     }
     const references = await get(db$)
       .select({
-        primaryWindowId: browserOwnerWindows.primaryWindowId,
+        primaryWindowId: browserChatSessions.primaryWindowId,
       })
-      .from(browserOwnerWindows)
+      .from(browserChatSessions)
       .where(
         and(
-          eq(browserOwnerWindows.instanceId, args.instanceId),
+          eq(browserChatSessions.instanceId, args.instanceId),
           eq(
-            browserOwnerWindows.primaryWindowId,
+            browserChatSessions.primaryWindowId,
             args.candidate.primaryWindowId,
           ),
         ),
@@ -115,11 +112,15 @@ export const createBrowserOwnerWindow$ = command(
     signal: AbortSignal,
   ): Promise<BrowserOwnerResult> => {
     const [snapshot] = await get(db$)
-      .select({ encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls })
+      .select({ encryptedTabUrls: browserChatSessions.encryptedTabUrls })
       .from(browserOwnerProfiles)
       .leftJoin(
-        browserSessionTabSnapshots,
-        eq(browserSessionTabSnapshots.chatThreadId, input.owner.chatThreadId),
+        browserChatSessions,
+        and(
+          eq(browserChatSessions.chatThreadId, input.owner.chatThreadId),
+          eq(browserChatSessions.orgId, input.owner.orgId),
+          eq(browserChatSessions.userId, input.owner.userId),
+        ),
       )
       .where(
         and(
@@ -133,9 +134,9 @@ export const createBrowserOwnerWindow$ = command(
             ? undefined
             : exists(
                 new QueryBuilder()
-                  .select({ chatThreadId: browserOwnerWindows.chatThreadId })
-                  .from(browserOwnerWindows)
-                  .where(eq(browserOwnerWindows.instanceId, input.instanceId)),
+                  .select({ chatThreadId: browserChatSessions.chatThreadId })
+                  .from(browserChatSessions)
+                  .where(eq(browserChatSessions.instanceId, input.instanceId)),
               ),
         ),
       );

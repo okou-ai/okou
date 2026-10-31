@@ -1,9 +1,10 @@
 import { command, computed, state } from "ccstate";
+import { timeout } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
 import { writeToClipboard } from "./okou-page/clipboard.ts";
-import { resetSignal, scheduleTimeout } from "./utils.ts";
+import { resetSignal } from "./utils.ts";
 
 // The same two seconds the shared CopyButton confirms for.
 const COPIED_CONFIRMATION_MS = 2000;
@@ -40,12 +41,12 @@ export function createShareLinkCopy() {
       }
       set(internalCopiedUrl$, url);
       // Confirmation must not keep the save operation busy for two seconds.
-      scheduleTimeout(
+      timeout(
         () => {
           set(internalCopiedUrl$, null);
         },
         COPIED_CONFIRMATION_MS,
-        signal,
+        { signal },
       );
     },
   );

@@ -91,8 +91,6 @@ impl DeliveryFixture {
             root,
             config,
             manifest: StorageManifest {
-                workflow_references: Vec::new(),
-                workflow_skills: Vec::new(),
                 storages,
                 artifacts: Vec::new(),
             },
@@ -143,8 +141,6 @@ impl DeliveryFixture {
             root,
             config,
             manifest: StorageManifest {
-                workflow_references: Vec::new(),
-                workflow_skills: Vec::new(),
                 storages: Vec::new(),
                 artifacts,
             },
@@ -947,8 +943,6 @@ async fn decoded_entry_admission_obeys_exact_canonical_json_boundary() {
             .unwrap()
             .into();
         let single = StorageManifest {
-            workflow_references: Vec::new(),
-            workflow_skills: Vec::new(),
             storages: vec![entry.clone()],
             artifacts: Vec::new(),
         };

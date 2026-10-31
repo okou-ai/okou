@@ -766,28 +766,6 @@ impl PreparedRequiredAgentFiles {
         ]
     }
 
-    pub(super) fn batch_with<'a>(
-        &'a self,
-        source: WriteFileEntry<'a>,
-    ) -> Option<[WriteFileEntry<'a>; 4]> {
-        let [context, environment, payload] = self.entries();
-        let entries = [source, context, environment, payload];
-        let content_len = entries
-            .iter()
-            .try_fold(0usize, |total, file| total.checked_add(file.content.len()))?;
-        if content_len > guest_contracts::file_write::WRITE_FILES_BATCH_CONTENT_LIMIT {
-            return None;
-        }
-        let protocol_entries = entries.map(|file| guest_control_proto::WriteFileBatchEntry {
-            path: file.path,
-            content: file.content,
-        });
-        // Avoid turning two fitting requests into four individual writes when
-        // their combination exceeds either the content or encoded-frame bound.
-        guest_control_proto::validate_write_files(&protocol_entries).ok()?;
-        Some(entries)
-    }
-
     pub(super) fn into_paths(self) -> RequiredAgentFiles {
         self.paths
     }

@@ -101,9 +101,9 @@ test("Skipping sources in a preview continues onboarding", async () => {
   click(buttonNamed("Skip for now"));
 
   await screen.findByRole("heading", {
-    name: "Make Okou useful to your whole team",
+    name: "How would you like to start with Okou?",
   });
-  expect(pathname()).toBe(ROUTES.onboardingTeam);
+  expect(pathname()).toBe(ROUTES.onboardingExperience);
 });
 
 test("Skip waits for completion and remains retryable after a failure", async () => {
@@ -172,7 +172,7 @@ test("Skipping a preview prompt handoff opens the app without running the prompt
   });
 
   expect(
-    screen.getByRole("heading", { name: "Try this prompt" }),
+    screen.getByRole("heading", { name: "Make this task your own" }),
   ).toBeInTheDocument();
   click(buttonNamed("Skip"));
 

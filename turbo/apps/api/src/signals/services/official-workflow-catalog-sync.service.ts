@@ -8,7 +8,7 @@ import {
   getOfficialWorkflowDefinitionStorageName,
   SYSTEM_ORG_ID,
 } from "@okouai/core/storage-names";
-import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
+import { officialWorkflowArtifactFiles } from "@okouai/core/official-workflow-artifact";
 import {
   officialWorkflowCatalogReleases,
   officialWorkflowCatalogState,
@@ -40,9 +40,8 @@ import {
   releaseDiagnostics,
   type PreparedOfficialWorkflowDefinition,
 } from "./official-workflow-catalog-publication";
+import { canonicalJsonString } from "../../lib/canonical-json";
 import {
-  canonicalJsonString,
-  OFFICIAL_WORKFLOW_DEFINITION_MANIFEST_PATH,
   validateOfficialWorkflowCatalog,
   type ValidatedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-validation.service";
@@ -141,6 +140,17 @@ const prepareDefinitionArtifact$ = command(
     ) {
       return artifactPreparationRejected(definition.name, path);
     }
+    const files = officialWorkflowArtifactFiles(
+      definition,
+      expectedArtifact && {
+        storageId: expectedArtifact.storageId,
+        storageVersion: expectedArtifact.storageVersion,
+        definitionManifest: `${canonicalJsonString(definition)}\n`,
+      },
+    );
+    if (files === null) {
+      return artifactPreparationRejected(definition.name, path);
+    }
     const volumeResult = await settle(
       set(
         prepareVolumeServerSide$,
@@ -148,21 +158,7 @@ const prepareDefinitionArtifact$ = command(
           orgId: SYSTEM_ORG_ID,
           storageName,
           piResourceIndex: true,
-          files: [
-            {
-              path: "SKILL.md",
-              content: synthesizeWorkflowSkillMd({
-                name: definition.name,
-                description: definition.workflow.description,
-                instruction: definition.workflow.instruction,
-              }),
-            },
-            ...definition.workflow.files,
-            {
-              path: OFFICIAL_WORKFLOW_DEFINITION_MANIFEST_PATH,
-              content: `${canonicalJsonString(definition)}\n`,
-            },
-          ],
+          files,
         },
         signal,
       ),

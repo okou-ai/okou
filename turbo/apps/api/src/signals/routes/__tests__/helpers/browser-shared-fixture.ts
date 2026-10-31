@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
-import { object, record, strictObject, string } from "zod";
+import { object, record, strictObject, string, tuple, uuid } from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import { server } from "../../../../mocks/server";
-import { withNowScopeForTest } from "../../../../lib/time";
+import { now, withNowScopeForTest } from "../../../../lib/time";
 import { browserRoutes } from "../../browser";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
@@ -29,6 +29,8 @@ export function createSharedBrowserFixtures(context: TestContext) {
     const sessionIds = new Set<string>();
     const stoppedSessionIds = new Set<string>();
     const sessionMetadata = new Map<string, Record<string, string>>();
+    const sessionExtensionIds = new Map<string, string>();
+    const sessionStartedAt = new Map<string, number>();
     const profiles = new Map<
       string,
       { readonly id: string; readonly name: string }
@@ -49,12 +51,14 @@ export function createSharedBrowserFixtures(context: TestContext) {
         const input: unknown = await request.json();
         sessionRequests.push(input);
         const id = randomUUID();
-        sessionMetadata.set(
-          id,
-          object({ metadata: record(string(), string()).optional() }).parse(
-            input,
-          ).metadata ?? {},
-        );
+        const startedAt = now();
+        sessionStartedAt.set(id, startedAt);
+        const { metadata, extensionIds } = object({
+          metadata: record(string(), string()).optional(),
+          extensionIds: tuple([uuid()]),
+        }).parse(input);
+        sessionMetadata.set(id, metadata ?? {});
+        sessionExtensionIds.set(id, extensionIds[0]);
         sessionIds.add(id);
         const initialPage = {
           targetId: randomUUID(),
@@ -67,12 +71,12 @@ export function createSharedBrowserFixtures(context: TestContext) {
           {
             id,
             status: "active",
-            startedAt: new Date(START).toISOString(),
-            timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+            startedAt: new Date(startedAt).toISOString(),
+            timeoutAt: new Date(startedAt + 240 * MINUTE).toISOString(),
             finishedAt: null,
             liveUrl: "https://live.browser-use.com/owned-fixture",
             cdpUrl: native.url,
-            extensions: [TEST_BROWSER_EXTENSION],
+            extensions: [{ ...TEST_BROWSER_EXTENSION, id: extensionIds[0] }],
           },
           { status: 201 },
         );
@@ -104,11 +108,12 @@ export function createSharedBrowserFixtures(context: TestContext) {
         stoppedSessionIds.add(String(params.id));
         native.targets.clear();
         native.nativeWindowErrors.clear();
+        const startedAt = sessionStartedAt.get(String(params.id)) ?? START;
         return HttpResponse.json({
           id: String(params.id),
           status: "stopped",
-          startedAt: new Date(START).toISOString(),
-          timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+          startedAt: new Date(startedAt).toISOString(),
+          timeoutAt: new Date(startedAt + 240 * MINUTE).toISOString(),
           finishedAt: new Date(START).toISOString(),
           liveUrl: null,
           cdpUrl: null,
@@ -119,15 +124,21 @@ export function createSharedBrowserFixtures(context: TestContext) {
         if (!active && !stoppedSessionIds.has(String(params.id))) {
           return;
         }
+        const startedAt = sessionStartedAt.get(String(params.id)) ?? START;
         return HttpResponse.json({
           id: String(params.id),
           status: active ? "active" : "stopped",
-          startedAt: new Date(START).toISOString(),
-          timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+          startedAt: new Date(startedAt).toISOString(),
+          timeoutAt: new Date(startedAt + 240 * MINUTE).toISOString(),
           finishedAt: active ? null : new Date(START).toISOString(),
           liveUrl: active ? "https://live.browser-use.com/owned-fixture" : null,
           cdpUrl: active ? native.url : null,
-          extensions: [TEST_BROWSER_EXTENSION],
+          extensions: [
+            {
+              ...TEST_BROWSER_EXTENSION,
+              id: sessionExtensionIds.get(String(params.id)),
+            },
+          ],
         });
       }),
       http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
@@ -160,6 +171,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
       sessionRequests,
       stoppedSessionIds,
       sessionMetadata,
+      sessionExtensionIds,
     };
   }
 

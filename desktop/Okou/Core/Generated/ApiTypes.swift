@@ -108,6 +108,382 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       ]
     }
 
+    public struct Payload: Codable, Equatable, Sendable {
+      public let sessionId: String?
+      public let command: String?
+      public let input: String?
+      public let key: String?
+      public let newSession: Bool?
+      public let cwd: String?
+      public let cursor: Int?
+      public let waitMs: Int?
+      public let all: Bool?
+      public let shellPermissionId: String?
+      public let additionalFields: [String: JSONValue]
+
+      public init(
+        sessionId: String? = nil,
+        command: String? = nil,
+        input: String? = nil,
+        key: String? = nil,
+        newSession: Bool? = nil,
+        cwd: String? = nil,
+        cursor: Int? = nil,
+        waitMs: Int? = nil,
+        all: Bool? = nil,
+        shellPermissionId: String? = nil,
+        additionalFields: [String: JSONValue] = [:]
+      ) {
+        self.sessionId = sessionId
+        self.command = command
+        self.input = input
+        self.key = key
+        self.newSession = newSession
+        self.cwd = cwd
+        self.cursor = cursor
+        self.waitMs = waitMs
+        self.all = all
+        self.shellPermissionId = shellPermissionId
+        self.additionalFields = additionalFields
+      }
+
+      private struct AdditionalKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+      }
+
+      private enum CodingKeys: String, CodingKey {
+        case sessionId = "sessionId"
+        case command = "command"
+        case input = "input"
+        case key = "key"
+        case newSession = "newSession"
+        case cwd = "cwd"
+        case cursor = "cursor"
+        case waitMs = "waitMs"
+        case all = "all"
+        case shellPermissionId = "shellPermissionId"
+      }
+
+      public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        command = try container.decodeIfPresent(String.self, forKey: .command)
+        input = try container.decodeIfPresent(String.self, forKey: .input)
+        key = try container.decodeIfPresent(String.self, forKey: .key)
+        newSession = try container.decodeIfPresent(Bool.self, forKey: .newSession)
+        cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
+        cursor = try container.decodeIfPresent(Int.self, forKey: .cursor)
+        waitMs = try container.decodeIfPresent(Int.self, forKey: .waitMs)
+        all = try container.decodeIfPresent(Bool.self, forKey: .all)
+        shellPermissionId = try container.decodeIfPresent(String.self, forKey: .shellPermissionId)
+        let additional = try decoder.container(keyedBy: AdditionalKey.self)
+        var fields: [String: JSONValue] = [:]
+        for key in additional.allKeys where CodingKeys(stringValue: key.stringValue) == nil {
+          fields[key.stringValue] = try additional.decode(JSONValue.self, forKey: key)
+        }
+        additionalFields = fields
+      }
+
+      public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(sessionId, forKey: .sessionId)
+        try container.encodeIfPresent(command, forKey: .command)
+        try container.encodeIfPresent(input, forKey: .input)
+        try container.encodeIfPresent(key, forKey: .key)
+        try container.encodeIfPresent(newSession, forKey: .newSession)
+        try container.encodeIfPresent(cwd, forKey: .cwd)
+        try container.encodeIfPresent(cursor, forKey: .cursor)
+        try container.encodeIfPresent(waitMs, forKey: .waitMs)
+        try container.encodeIfPresent(all, forKey: .all)
+        try container.encodeIfPresent(shellPermissionId, forKey: .shellPermissionId)
+        var additional = encoder.container(keyedBy: AdditionalKey.self)
+        for (key, value) in additionalFields where CodingKeys(stringValue: key) == nil {
+          try additional.encode(value, forKey: AdditionalKey(stringValue: key))
+        }
+      }
+    }
+
+    public struct ResultValue: Codable, Equatable, Sendable {
+      public struct Session: Codable, Equatable, Sendable {
+        /// Known wire values are constants; unknown values decode with their raw string.
+        public struct State: RawRepresentable, Codable, Hashable, Sendable {
+          public let rawValue: String
+
+          public init(rawValue: String) {
+            self.rawValue = rawValue
+          }
+
+          public static let `open` = Self(rawValue: "open")
+          public static let closed = Self(rawValue: "closed")
+
+          /// Every value the contract declared when this file was generated.
+          public static let knownValues: [State] = [
+            .`open`,
+            .closed,
+          ]
+        }
+
+        /// Known wire values are constants; unknown values decode with their raw string.
+        public struct CommandState: RawRepresentable, Codable, Hashable, Sendable {
+          public let rawValue: String
+
+          public init(rawValue: String) {
+            self.rawValue = rawValue
+          }
+
+          public static let unknown = Self(rawValue: "unknown")
+          public static let running = Self(rawValue: "running")
+          public static let completed = Self(rawValue: "completed")
+
+          /// Every value the contract declared when this file was generated.
+          public static let knownValues: [CommandState] = [
+            .unknown,
+            .running,
+            .completed,
+          ]
+        }
+
+        public let id: String
+        public let state: State
+        public let initialCwd: String
+        public let cwd: String
+        public let commandState: CommandState
+        public let exitCode: Int?
+        public let shellExitCode: Int?
+        public let shellExitSignal: Int?
+        public let closeReason: String?
+        public let oldestCursor: Int
+        public let endCursor: Int
+        public let idleRemainingSeconds: Double
+        public let cols: Int
+        public let rows: Int
+
+        public init(
+          id: String,
+          state: State,
+          initialCwd: String,
+          cwd: String,
+          commandState: CommandState,
+          exitCode: Int?,
+          shellExitCode: Int?,
+          shellExitSignal: Int?,
+          closeReason: String?,
+          oldestCursor: Int,
+          endCursor: Int,
+          idleRemainingSeconds: Double,
+          cols: Int,
+          rows: Int
+        ) {
+          self.id = id
+          self.state = state
+          self.initialCwd = initialCwd
+          self.cwd = cwd
+          self.commandState = commandState
+          self.exitCode = exitCode
+          self.shellExitCode = shellExitCode
+          self.shellExitSignal = shellExitSignal
+          self.closeReason = closeReason
+          self.oldestCursor = oldestCursor
+          self.endCursor = endCursor
+          self.idleRemainingSeconds = idleRemainingSeconds
+          self.cols = cols
+          self.rows = rows
+        }
+
+        private enum CodingKeys: String, CodingKey {
+          case id = "id"
+          case state = "state"
+          case initialCwd = "initialCwd"
+          case cwd = "cwd"
+          case commandState = "commandState"
+          case exitCode = "exitCode"
+          case shellExitCode = "shellExitCode"
+          case shellExitSignal = "shellExitSignal"
+          case closeReason = "closeReason"
+          case oldestCursor = "oldestCursor"
+          case endCursor = "endCursor"
+          case idleRemainingSeconds = "idleRemainingSeconds"
+          case cols = "cols"
+          case rows = "rows"
+        }
+
+        public init(from decoder: any Decoder) throws {
+          let container = try decoder.container(keyedBy: CodingKeys.self)
+          id = try container.decode(String.self, forKey: .id)
+          state = try container.decode(State.self, forKey: .state)
+          initialCwd = try container.decode(String.self, forKey: .initialCwd)
+          cwd = try container.decode(String.self, forKey: .cwd)
+          commandState = try container.decode(CommandState.self, forKey: .commandState)
+          guard container.contains(.exitCode) else {
+            throw DecodingError.keyNotFound(
+              CodingKeys.exitCode,
+              DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "exitCode is required"))
+          }
+          exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
+          guard container.contains(.shellExitCode) else {
+            throw DecodingError.keyNotFound(
+              CodingKeys.shellExitCode,
+              DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "shellExitCode is required"))
+          }
+          shellExitCode = try container.decodeIfPresent(Int.self, forKey: .shellExitCode)
+          guard container.contains(.shellExitSignal) else {
+            throw DecodingError.keyNotFound(
+              CodingKeys.shellExitSignal,
+              DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "shellExitSignal is required"))
+          }
+          shellExitSignal = try container.decodeIfPresent(Int.self, forKey: .shellExitSignal)
+          guard container.contains(.closeReason) else {
+            throw DecodingError.keyNotFound(
+              CodingKeys.closeReason,
+              DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "closeReason is required"))
+          }
+          closeReason = try container.decodeIfPresent(String.self, forKey: .closeReason)
+          oldestCursor = try container.decode(Int.self, forKey: .oldestCursor)
+          endCursor = try container.decode(Int.self, forKey: .endCursor)
+          idleRemainingSeconds = try container.decode(Double.self, forKey: .idleRemainingSeconds)
+          cols = try container.decode(Int.self, forKey: .cols)
+          rows = try container.decode(Int.self, forKey: .rows)
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+          var container = encoder.container(keyedBy: CodingKeys.self)
+          try container.encode(id, forKey: .id)
+          try container.encode(state, forKey: .state)
+          try container.encode(initialCwd, forKey: .initialCwd)
+          try container.encode(cwd, forKey: .cwd)
+          try container.encode(commandState, forKey: .commandState)
+          try container.encode(exitCode, forKey: .exitCode)
+          try container.encode(shellExitCode, forKey: .shellExitCode)
+          try container.encode(shellExitSignal, forKey: .shellExitSignal)
+          try container.encode(closeReason, forKey: .closeReason)
+          try container.encode(oldestCursor, forKey: .oldestCursor)
+          try container.encode(endCursor, forKey: .endCursor)
+          try container.encode(idleRemainingSeconds, forKey: .idleRemainingSeconds)
+          try container.encode(cols, forKey: .cols)
+          try container.encode(rows, forKey: .rows)
+        }
+      }
+
+      /// Known wire values are constants; unknown values decode with their raw string.
+      public struct Reason: RawRepresentable, Codable, Hashable, Sendable {
+        public let rawValue: String
+
+        public init(rawValue: String) {
+          self.rawValue = rawValue
+        }
+
+        public static let commandCompleted = Self(rawValue: "command_completed")
+        public static let outputIdle = Self(rawValue: "output_idle")
+        public static let outputLimit = Self(rawValue: "output_limit")
+        public static let waitElapsed = Self(rawValue: "wait_elapsed")
+        public static let sessionClosed = Self(rawValue: "session_closed")
+
+        /// Every value the contract declared when this file was generated.
+        public static let knownValues: [Reason] = [
+          .commandCompleted,
+          .outputIdle,
+          .outputLimit,
+          .waitElapsed,
+          .sessionClosed,
+        ]
+      }
+
+      public let session: Session?
+      public let sessions: [Session]?
+      public let closed: Bool?
+      public let outputBase64: String?
+      public let nextCursor: Int?
+      public let lostBytes: Int?
+      public let moreAvailable: Bool?
+      public let reason: Reason?
+      public let additionalFields: [String: JSONValue]
+
+      public init(
+        session: Session? = nil,
+        sessions: [Session]? = nil,
+        closed: Bool? = nil,
+        outputBase64: String? = nil,
+        nextCursor: Int? = nil,
+        lostBytes: Int? = nil,
+        moreAvailable: Bool? = nil,
+        reason: Reason? = nil,
+        additionalFields: [String: JSONValue] = [:]
+      ) {
+        self.session = session
+        self.sessions = sessions
+        self.closed = closed
+        self.outputBase64 = outputBase64
+        self.nextCursor = nextCursor
+        self.lostBytes = lostBytes
+        self.moreAvailable = moreAvailable
+        self.reason = reason
+        self.additionalFields = additionalFields
+      }
+
+      private struct AdditionalKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+      }
+
+      private enum CodingKeys: String, CodingKey {
+        case session = "session"
+        case sessions = "sessions"
+        case closed = "closed"
+        case outputBase64 = "outputBase64"
+        case nextCursor = "nextCursor"
+        case lostBytes = "lostBytes"
+        case moreAvailable = "moreAvailable"
+        case reason = "reason"
+      }
+
+      public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        session = try container.decodeIfPresent(Session.self, forKey: .session)
+        sessions = try container.decodeIfPresent([Session].self, forKey: .sessions)
+        closed = try container.decodeIfPresent(Bool.self, forKey: .closed)
+        outputBase64 = try container.decodeIfPresent(String.self, forKey: .outputBase64)
+        nextCursor = try container.decodeIfPresent(Int.self, forKey: .nextCursor)
+        lostBytes = try container.decodeIfPresent(Int.self, forKey: .lostBytes)
+        moreAvailable = try container.decodeIfPresent(Bool.self, forKey: .moreAvailable)
+        reason = try container.decodeIfPresent(Reason.self, forKey: .reason)
+        let additional = try decoder.container(keyedBy: AdditionalKey.self)
+        var fields: [String: JSONValue] = [:]
+        for key in additional.allKeys where CodingKeys(stringValue: key.stringValue) == nil {
+          fields[key.stringValue] = try additional.decode(JSONValue.self, forKey: key)
+        }
+        additionalFields = fields
+      }
+
+      public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(session, forKey: .session)
+        try container.encodeIfPresent(sessions, forKey: .sessions)
+        try container.encodeIfPresent(closed, forKey: .closed)
+        try container.encodeIfPresent(outputBase64, forKey: .outputBase64)
+        try container.encodeIfPresent(nextCursor, forKey: .nextCursor)
+        try container.encodeIfPresent(lostBytes, forKey: .lostBytes)
+        try container.encodeIfPresent(moreAvailable, forKey: .moreAvailable)
+        try container.encodeIfPresent(reason, forKey: .reason)
+        var additional = encoder.container(keyedBy: AdditionalKey.self)
+        for (key, value) in additionalFields where CodingKeys(stringValue: key) == nil {
+          try additional.encode(value, forKey: AdditionalKey(stringValue: key))
+        }
+      }
+    }
+
     public struct ErrorValue: Codable, Equatable, Sendable {
       /// Known wire values are constants; unknown values decode with their raw string.
       public struct Code: RawRepresentable, Codable, Hashable, Sendable {
@@ -173,8 +549,8 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
     public let status: Status
     public let hostId: String?
     public let hostName: String?
-    public let payload: [String: JSONValue]
-    public let result: [String: JSONValue]?
+    public let payload: Payload
+    public let result: ResultValue?
     public let error: ErrorValue?
     public let timeoutMs: Int?
     public let createdAt: String
@@ -187,9 +563,9 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       status: Status,
       hostId: String?,
       hostName: String?,
-      payload: [String: JSONValue],
-      result: [String: JSONValue]?,
-      error: ErrorValue?,
+      payload: Payload,
+      result: ResultValue? = nil,
+      error: ErrorValue? = nil,
       timeoutMs: Int?,
       createdAt: String,
       claimedAt: String?,
@@ -245,8 +621,8 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
             debugDescription: "hostName is required"))
       }
       hostName = try container.decodeIfPresent(String.self, forKey: .hostName)
-      payload = try container.decode([String: JSONValue].self, forKey: .payload)
-      result = try container.decodeIfPresent([String: JSONValue].self, forKey: .result)
+      payload = try container.decode(Payload.self, forKey: .payload)
+      result = try container.decodeIfPresent(ResultValue.self, forKey: .result)
       error = try container.decodeIfPresent(ErrorValue.self, forKey: .error)
       guard container.contains(.timeoutMs) else {
         throw DecodingError.keyNotFound(
@@ -326,6 +702,230 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
   }
 }
 
+/// Shell result sent in the command-completion request.
+public struct ComputerUseShellResult: Codable, Equatable, Sendable {
+  public struct Session: Codable, Equatable, Sendable {
+    /// Known wire values are constants; unknown values decode with their raw string.
+    public struct State: RawRepresentable, Codable, Hashable, Sendable {
+      public let rawValue: String
+
+      public init(rawValue: String) {
+        self.rawValue = rawValue
+      }
+
+      public static let `open` = Self(rawValue: "open")
+      public static let closed = Self(rawValue: "closed")
+
+      /// Every value the contract declared when this file was generated.
+      public static let knownValues: [State] = [
+        .`open`,
+        .closed,
+      ]
+    }
+
+    /// Known wire values are constants; unknown values decode with their raw string.
+    public struct CommandState: RawRepresentable, Codable, Hashable, Sendable {
+      public let rawValue: String
+
+      public init(rawValue: String) {
+        self.rawValue = rawValue
+      }
+
+      public static let unknown = Self(rawValue: "unknown")
+      public static let running = Self(rawValue: "running")
+      public static let completed = Self(rawValue: "completed")
+
+      /// Every value the contract declared when this file was generated.
+      public static let knownValues: [CommandState] = [
+        .unknown,
+        .running,
+        .completed,
+      ]
+    }
+
+    public let id: String
+    public let state: State
+    public let initialCwd: String
+    public let cwd: String
+    public let commandState: CommandState
+    public let exitCode: Int?
+    public let shellExitCode: Int?
+    public let shellExitSignal: Int?
+    public let closeReason: String?
+    public let oldestCursor: Int
+    public let endCursor: Int
+    public let idleRemainingSeconds: Double
+    public let cols: Int
+    public let rows: Int
+
+    public init(
+      id: String,
+      state: State,
+      initialCwd: String,
+      cwd: String,
+      commandState: CommandState,
+      exitCode: Int?,
+      shellExitCode: Int?,
+      shellExitSignal: Int?,
+      closeReason: String?,
+      oldestCursor: Int,
+      endCursor: Int,
+      idleRemainingSeconds: Double,
+      cols: Int,
+      rows: Int
+    ) {
+      self.id = id
+      self.state = state
+      self.initialCwd = initialCwd
+      self.cwd = cwd
+      self.commandState = commandState
+      self.exitCode = exitCode
+      self.shellExitCode = shellExitCode
+      self.shellExitSignal = shellExitSignal
+      self.closeReason = closeReason
+      self.oldestCursor = oldestCursor
+      self.endCursor = endCursor
+      self.idleRemainingSeconds = idleRemainingSeconds
+      self.cols = cols
+      self.rows = rows
+    }
+
+    private enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case state = "state"
+      case initialCwd = "initialCwd"
+      case cwd = "cwd"
+      case commandState = "commandState"
+      case exitCode = "exitCode"
+      case shellExitCode = "shellExitCode"
+      case shellExitSignal = "shellExitSignal"
+      case closeReason = "closeReason"
+      case oldestCursor = "oldestCursor"
+      case endCursor = "endCursor"
+      case idleRemainingSeconds = "idleRemainingSeconds"
+      case cols = "cols"
+      case rows = "rows"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      id = try container.decode(String.self, forKey: .id)
+      state = try container.decode(State.self, forKey: .state)
+      initialCwd = try container.decode(String.self, forKey: .initialCwd)
+      cwd = try container.decode(String.self, forKey: .cwd)
+      commandState = try container.decode(CommandState.self, forKey: .commandState)
+      guard container.contains(.exitCode) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.exitCode,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "exitCode is required"))
+      }
+      exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
+      guard container.contains(.shellExitCode) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.shellExitCode,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "shellExitCode is required"))
+      }
+      shellExitCode = try container.decodeIfPresent(Int.self, forKey: .shellExitCode)
+      guard container.contains(.shellExitSignal) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.shellExitSignal,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "shellExitSignal is required"))
+      }
+      shellExitSignal = try container.decodeIfPresent(Int.self, forKey: .shellExitSignal)
+      guard container.contains(.closeReason) else {
+        throw DecodingError.keyNotFound(
+          CodingKeys.closeReason,
+          DecodingError.Context(
+            codingPath: container.codingPath,
+            debugDescription: "closeReason is required"))
+      }
+      closeReason = try container.decodeIfPresent(String.self, forKey: .closeReason)
+      oldestCursor = try container.decode(Int.self, forKey: .oldestCursor)
+      endCursor = try container.decode(Int.self, forKey: .endCursor)
+      idleRemainingSeconds = try container.decode(Double.self, forKey: .idleRemainingSeconds)
+      cols = try container.decode(Int.self, forKey: .cols)
+      rows = try container.decode(Int.self, forKey: .rows)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var container = encoder.container(keyedBy: CodingKeys.self)
+      try container.encode(id, forKey: .id)
+      try container.encode(state, forKey: .state)
+      try container.encode(initialCwd, forKey: .initialCwd)
+      try container.encode(cwd, forKey: .cwd)
+      try container.encode(commandState, forKey: .commandState)
+      try container.encode(exitCode, forKey: .exitCode)
+      try container.encode(shellExitCode, forKey: .shellExitCode)
+      try container.encode(shellExitSignal, forKey: .shellExitSignal)
+      try container.encode(closeReason, forKey: .closeReason)
+      try container.encode(oldestCursor, forKey: .oldestCursor)
+      try container.encode(endCursor, forKey: .endCursor)
+      try container.encode(idleRemainingSeconds, forKey: .idleRemainingSeconds)
+      try container.encode(cols, forKey: .cols)
+      try container.encode(rows, forKey: .rows)
+    }
+  }
+
+  /// Known wire values are constants; unknown values decode with their raw string.
+  public struct Reason: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+      self.rawValue = rawValue
+    }
+
+    public static let commandCompleted = Self(rawValue: "command_completed")
+    public static let outputIdle = Self(rawValue: "output_idle")
+    public static let outputLimit = Self(rawValue: "output_limit")
+    public static let waitElapsed = Self(rawValue: "wait_elapsed")
+    public static let sessionClosed = Self(rawValue: "session_closed")
+
+    /// Every value the contract declared when this file was generated.
+    public static let knownValues: [Reason] = [
+      .commandCompleted,
+      .outputIdle,
+      .outputLimit,
+      .waitElapsed,
+      .sessionClosed,
+    ]
+  }
+
+  public let session: Session?
+  public let sessions: [Session]?
+  public let closed: Bool?
+  public let outputBase64: String?
+  public let nextCursor: Int?
+  public let lostBytes: Int?
+  public let moreAvailable: Bool?
+  public let reason: Reason?
+
+  public init(
+    session: Session? = nil,
+    sessions: [Session]? = nil,
+    closed: Bool? = nil,
+    outputBase64: String? = nil,
+    nextCursor: Int? = nil,
+    lostBytes: Int? = nil,
+    moreAvailable: Bool? = nil,
+    reason: Reason? = nil
+  ) {
+    self.session = session
+    self.sessions = sessions
+    self.closed = closed
+    self.outputBase64 = outputBase64
+    self.nextCursor = nextCursor
+    self.lostBytes = lostBytes
+    self.moreAvailable = moreAvailable
+    self.reason = reason
+  }
+}
+
 /// `426` body of the Desktop-gated Computer Use routes.
 public struct DesktopUpgradeRequired: Codable, Equatable, Sendable {
   public struct ErrorValue: Codable, Equatable, Sendable {
@@ -385,7 +985,7 @@ public struct AuthenticatedUser: Codable, Equatable, Sendable {
   public let orgId: String?
   public let sessionId: String?
 
-  public init(userId: String, email: String, orgId: String?, sessionId: String?) {
+  public init(userId: String, email: String, orgId: String?, sessionId: String? = nil) {
     self.userId = userId
     self.email = email
     self.orgId = orgId
@@ -449,7 +1049,9 @@ public struct CurrentOrganization: Codable, Equatable, Sendable {
   public let role: Role?
   public let createdBy: String?
 
-  public init(id: String, name: String, tier: String?, role: Role?, createdBy: String?) {
+  public init(
+    id: String, name: String, tier: String? = nil, role: Role? = nil, createdBy: String? = nil
+  ) {
     self.id = id
     self.name = name
     self.tier = tier

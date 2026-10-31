@@ -1765,9 +1765,10 @@
       "outOfCredits": "크레딧이 부족합니다",
       "proCard": {
         "creditsNow": "크레딧 · 바로 지금",
-        "description": "추가 크레딧 · 고급 기능 · 클라우드 컴퓨터 3대",
+        "description": "고급 기능 · 클라우드 컴퓨터 3대",
         "priceUnavailable": "요금제에서 현재 가격 확인",
         "title": "남은 작업 약 5개",
+        "upgradeFromPrice": "월 {{price}}부터 업그레이드",
         "upgradeNow": "지금 업그레이드"
       },
       "redirecting": "리디렉션 중...",
@@ -2098,6 +2099,22 @@
       "sent": "전달했습니다",
       "threads": "채팅",
       "title": "전달 대상"
+    },
+    "landingFiles": {
+      "back": "파일 선택으로 돌아가기",
+      "description": "요청을 확인한 후 선택한 파일을 업로드하여 시작하세요.",
+      "editFailed": "파일을 업데이트하지 못했습니다. 다시 시도해 주세요.",
+      "failed": "완료하지 못했습니다. 파일과 요청은 유지됩니다. 다시 시도하세요.",
+      "limit": "파일을 최대 10개 추가하세요(총 1GB).",
+      "loading": "파일 복원 중…",
+      "missing": "파일을 사용할 수 없습니다. 같은 브라우저에서 원래 페이지로 돌아가 다시 선택하세요.",
+      "popupBlocked": "이 사이트의 팝업을 허용한 다음 파일 전송을 다시 시도하세요.",
+      "prompt": "요청 내용",
+      "retry": "다시 시도",
+      "selected": "선택한 파일",
+      "start": "업로드하고 시작",
+      "title": "파일로 시작하기",
+      "uploading": "파일 업로드 중 ({{current}} / {{total}})…"
     },
     "mail": {
       "bcc": "숨은 참조",
@@ -4206,11 +4223,53 @@
       "make": "{{brandName}}에 오신 것을 환영합니다"
     },
     "make": {
-      "promptDescription": "아래에서 조정하거나 그대로 실행하세요. {{assistantName}}가 처리합니다. 도구는 샌드박스에 유지되고 워크스페이스를 벗어나지 않습니다.",
       "promptLabel": "온보딩 프롬프트",
-      "promptTitle": "이 프롬프트를 사용해 보세요"
+      "promptTitle": "필요에 맞게 작업 조정하기"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "전문 데이터, 소셜 인사이트, 이미지 생성으로 에이전트의 능력을 높이세요. 필요한 기능을 선택하면 Okou가 업무에 활용합니다.",
+        "items": {
+          "data-search": {
+            "description": "회사, 웹사이트 트래픽, 광고를 비교해 기회를 발견하세요.",
+            "name": "고급 데이터 조사"
+          },
+          "finance": {
+            "description": "주가와 시장 동향을 비교해 투자 조사에 활용하세요.",
+            "name": "금융 데이터"
+          },
+          "image-generation": {
+            "description": "소셜 게시물, 캠페인, 슬라이드에 쓸 이미지를 만드세요.",
+            "name": "이미지 생성"
+          },
+          "maps": {
+            "description": "업체와 장소를 찾고 위치를 비교하며 경로를 계획하세요.",
+            "name": "지도와 장소"
+          },
+          "people-search": {
+            "description": "직책과 회사로 잠재 고객, 파트너, 채용 후보자를 찾으세요.",
+            "name": "인물 검색"
+          },
+          "scrape": {
+            "description": "웹페이지에서 핵심 정보를 추출해 보고서와 비교에 활용하세요.",
+            "name": "페이지 추출"
+          },
+          "seo": {
+            "description": "고객의 검색 키워드와 경쟁사의 순위를 확인하세요.",
+            "name": "SEO 조사"
+          },
+          "social": {
+            "description": "크리에이터, 게시물, 반응을 조사해 콘텐츠에 활용하세요.",
+            "name": "소셜 검색"
+          },
+          "web-search": {
+            "description": "최신 뉴스와 정보를 확인 가능한 출처와 함께 찾으세요.",
+            "name": "웹 검색"
+          }
+        },
+        "listLabel": "내장 기능",
+        "title": "Okou의 숨겨진 도구"
+      },
       "chatChannels": {
         "connectedTitle": "채팅이 연결되었어요",
         "copy": "Okou에게 직접 메시지를 보내거나 팀 채팅에 추가하세요. 익숙한 방식을 선택하세요.",
@@ -4233,8 +4292,7 @@
         "industry": "분야 선택",
         "ready": "Okou 준비 완료",
         "skills": "스킬 가져오기",
-        "sources": "업무 연결",
-        "team": "팀원 초대"
+        "sources": "업무 연결"
       },
       "experience": {
         "copy": "안내를 받으며 시작하거나 기존 Codex 또는 Claude Code 요금제를 가져올 수 있습니다.",
@@ -4324,9 +4382,7 @@
         "skillsCopy": "컴퓨터에서 {{provider}}를 사용하세요.",
         "skillsTitle": "스킬 가져오기",
         "sourcesCopy": "첫 작업에 사용할 도구 하나를 연결하세요.",
-        "startTask": "작업 시작",
-        "teamCopy": "같은 워크스페이스에서 협업하세요.",
-        "teamTitle": "팀원 초대"
+        "startTask": "작업 시작"
       },
       "outcomes": {
         "accessibleLabel": "{{source}}에서 정리한 {{title}} 예시입니다. 모든 내용은 샘플 데이터입니다.",
@@ -4488,9 +4544,9 @@
         "tooLong": "다른 형식을 선택하려면 작업 내용을 줄여 주세요."
       },
       "prompt": {
-        "connectorsDescription": "업무 도구를 연결하면 Okou가 업무 맥락을 이해하고 상황에 맞게 작업을 수행할 수 있어요. 나중에 연결해도 됩니다.",
+        "connectorsDescription": "앱을 연결하면 Okou가 업무를 더 잘 이해할 수 있어요.",
         "connectorsTitle": "업무 도구 연결",
-        "intro": "Okou는 나와 팀을 위한 업무 어시스턴트입니다. 흩어진 정보를 클라우드에서 완료된 업무로 바꿉니다."
+        "intro": "앱을 연결해 더 나은 결과를 얻고, 원하는 형식을 선택하세요."
       },
       "skills": {
         "copied": "복사됨",
@@ -4898,24 +4954,6 @@
         "failedNote": "{{provider}}을(를) 연결하지 못했습니다. 계속 진행하고 나중에 연결할 수 있습니다.",
         "rowCopy": "연결하면 Okou 크레딧 대신 내 요금제로 실행할 수 있습니다.",
         "unconfirmedNote": "{{provider}} 연결 상태를 확인하지 못했습니다. 계속 진행하고 나중에 연결할 수 있습니다."
-      },
-      "team": {
-        "copy": "팀원을 초대해 워크플로를 공유하세요. 도구는 각자 자신의 것을 연결합니다.",
-        "invalidEmail": "유효한 이메일 주소를 입력하세요",
-        "invite": "초대 보내기",
-        "invited": "초대함",
-        "label": "팀원 이메일",
-        "note": "바로 Okou와 함께 일을 시작할 수 있습니다.",
-        "notSent": "보내지 못함",
-        "panelTitle": "팀원 초대",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "필요할 때 자신의 도구를 연결합니다.",
-          "workflows": "팀이 만든 모든 워크플로를 실행할 수 있습니다.",
-          "workspace": "워크스페이스에 참여합니다."
-        },
-        "sending": "보내는 중…",
-        "title": "팀 전체가 Okou를 활용하세요"
       },
       "welcome": {
         "copy": "업무에 맞춰 제안된 작업을 확인하고 목표에 맞게 조정한 뒤 Okou를 시작하세요.",

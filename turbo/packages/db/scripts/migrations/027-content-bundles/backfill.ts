@@ -2,10 +2,11 @@ import { parseArgs } from "node:util";
 import { open, readFile } from "node:fs/promises";
 import {
   array,
-  object,
-  string,
   literal,
   number,
+  object,
+  string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -37,7 +38,7 @@ class BackfillError extends Error {
 }
 
 const sourceSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   orgId: string(),
   xmin: string(),
   kind: zEnum(["agent", "workflow"]),
@@ -48,7 +49,7 @@ const sourceSchema = object({
   bundle: contentBundleSchema.nullable(),
 });
 const receiptSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   kind: zEnum(["agent", "workflow"]),
   xmin: string(),
   bundle: contentBundleSchema,
@@ -91,8 +92,7 @@ function parseOptions() {
   const limit = Number(values.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new BackfillError("InvalidBatchLimit");
-  const after =
-    values.after === undefined ? null : string().uuid().parse(values.after);
+  const after = values.after === undefined ? null : uuid().parse(values.after);
   if (!values.output) throw new BackfillError("OutputReceiptRequired");
   if (
     values.migrate &&

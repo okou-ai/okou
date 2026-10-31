@@ -1769,9 +1769,10 @@
       "outOfCredits": "You're out of credits",
       "proCard": {
         "creditsNow": "credits · Just now",
-        "description": "Additional credits · Advanced features · 3 cloud computers",
+        "description": "Advanced features · 3 cloud computers",
         "priceUnavailable": "See plans for current pricing",
         "title": "About 5 tasks left",
+        "upgradeFromPrice": "Upgrade from {{price}}/month",
         "upgradeNow": "Upgrade now"
       },
       "redirecting": "Redirecting...",
@@ -2105,6 +2106,22 @@
       "sent": "Forwarded successfully",
       "threads": "Chats",
       "title": "Forward to"
+    },
+    "landingFiles": {
+      "back": "Back to files",
+      "description": "Review your request, then upload your selected files to start.",
+      "editFailed": "Couldn’t update the files. Please try again.",
+      "failed": "Could not finish. Your files and request are kept here. Try again.",
+      "limit": "Add up to 10 files (1 GB total).",
+      "loading": "Restoring your files…",
+      "missing": "Your files are unavailable. Return to the page in the same browser and select them again.",
+      "popupBlocked": "Allow pop-ups for this site, then retry to transfer your files.",
+      "prompt": "Your request",
+      "retry": "Retry",
+      "selected": "Selected files",
+      "start": "Upload and start",
+      "title": "Start with your files",
+      "uploading": "Uploading file {{current}} of {{total}}…"
     },
     "mail": {
       "bcc": "bcc",
@@ -4219,11 +4236,53 @@
       "make": "Welcome to {{brandName}}"
     },
     "make": {
-      "promptDescription": "Tweak it below or run it as-is. {{assistantName}} takes it from here. Your tools stay sandboxed and nothing leaves your workspace.",
       "promptLabel": "Onboarding prompt",
-      "promptTitle": "Try this prompt"
+      "promptTitle": "Make this task your own"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Give your agent more power with specialist data, social insights, and image creation. Choose your capabilities. Okou puts them to work for you.",
+        "items": {
+          "data-search": {
+            "description": "Compare companies, website traffic, and ads to spot opportunities.",
+            "name": "Advanced data research"
+          },
+          "finance": {
+            "description": "Compare stock prices and market trends for investment research.",
+            "name": "Financial data"
+          },
+          "image-generation": {
+            "description": "Create original visuals for social posts, campaigns, and slides.",
+            "name": "Image generation"
+          },
+          "maps": {
+            "description": "Find businesses and venues, compare locations, and plan routes.",
+            "name": "Maps and places"
+          },
+          "people-search": {
+            "description": "Find potential customers, partners, or hires by role and company.",
+            "name": "People search"
+          },
+          "scrape": {
+            "description": "Turn web pages into key facts for briefs and comparisons.",
+            "name": "Page extraction"
+          },
+          "seo": {
+            "description": "Find keywords customers search for and see where competitors rank.",
+            "name": "SEO research"
+          },
+          "social": {
+            "description": "Research creators, posts, and engagement to guide your content.",
+            "name": "Social search"
+          },
+          "web-search": {
+            "description": "Find up-to-date news and facts, with sources you can check.",
+            "name": "Web search"
+          }
+        },
+        "listLabel": "Built-in capabilities",
+        "title": "Meet Okou’s secret tools"
+      },
       "chatChannels": {
         "connectedTitle": "Your chat is connected",
         "copy": "Text Okou for yourself, or add it to your team’s chat. Choose the way you already work.",
@@ -4246,8 +4305,7 @@
         "industry": "Choose your field",
         "ready": "Okou is ready",
         "skills": "Import your skills",
-        "sources": "Connect your work",
-        "team": "Invite a team member"
+        "sources": "Connect your work"
       },
       "experience": {
         "copy": "Start with guidance, or bring the Codex or Claude Code plan you already use.",
@@ -4337,9 +4395,7 @@
         "skillsCopy": "Use {{provider}} on your computer.",
         "skillsTitle": "Import your skills",
         "sourcesCopy": "Choose one for your first task.",
-        "startTask": "Start task",
-        "teamCopy": "Work together in one workspace.",
-        "teamTitle": "Invite a teammate"
+        "startTask": "Start task"
       },
       "outcomes": {
         "accessibleLabel": "Illustrative {{title}} prepared from {{source}}. All content is sample data.",
@@ -4497,13 +4553,13 @@
             "label": "Website"
           }
         },
-        "title": "Choose a format",
+        "title": "Choose an output format",
         "tooLong": "Shorten your task to choose another format."
       },
       "prompt": {
-        "connectorsDescription": "Connect your tools so Okou can understand your work and tailor how it completes tasks for you. You can also connect later.",
+        "connectorsDescription": "Connect your apps to help Okou understand your work.",
         "connectorsTitle": "Connect your work tools",
-        "intro": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud."
+        "intro": "Connect your apps for better results and choose a format."
       },
       "skills": {
         "copied": "Copied",
@@ -4912,24 +4968,6 @@
         "failedNote": "We couldn’t connect {{provider}}. You can continue and connect it later.",
         "rowCopy": "Connect to run on your plan instead of Okou credits.",
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can continue and connect it later."
-      },
-      "team": {
-        "copy": "Invite a team member to share your workflows, while each of you connects your own tools.",
-        "invalidEmail": "Enter a valid email address",
-        "invite": "Send invite",
-        "invited": "Invited",
-        "label": "Team member’s email",
-        "note": "They can start working with Okou right away.",
-        "notSent": "Not sent",
-        "panelTitle": "Invite a team member",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "They connect their own tools when they need them.",
-          "workflows": "They can run any workflow your team has built.",
-          "workspace": "They join your workspace."
-        },
-        "sending": "Sending…",
-        "title": "Make Okou useful to your whole team"
       },
       "welcome": {
         "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",
