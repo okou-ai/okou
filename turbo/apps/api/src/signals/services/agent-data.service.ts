@@ -1,16 +1,11 @@
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import {
-  connectorSlugSchema,
-  type ConnectorSlug,
-} from "@okouai/api-contracts/contracts/connector-identity";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { agents } from "@okouai/db/schema/agent";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, asc, count, desc, eq, notExists, or } from "drizzle-orm";
+import { and, count, desc, eq, notExists, or } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 
@@ -150,67 +145,35 @@ export function agentDetail(args: {
   });
 }
 
-export function agentEnabledConnectorSlugs(args: {
+export function agentEnabledConnectorSlugsCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
-}): Computed<Promise<readonly ConnectorSlug[]>> {
-  return computed(async (get): Promise<readonly ConnectorSlug[]> => {
-    const rows = await get(db$)
-      .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
-      .from(userBuiltinConnectors)
-      .where(
-        and(
-          eq(userBuiltinConnectors.orgId, args.orgId),
-          eq(userBuiltinConnectors.userId, args.userId),
-          eq(userBuiltinConnectors.agentId, args.agentId),
-        ),
-      )
-      .orderBy(asc(userBuiltinConnectors.connectorSlug));
-
-    return rows.map((row) => {
-      return connectorSlugSchema.parse(row.connectorSlug);
-    });
-  });
+}) {
+  return and(
+    eq(userBuiltinConnectors.orgId, args.orgId),
+    eq(userBuiltinConnectors.userId, args.userId),
+    eq(userBuiltinConnectors.agentId, args.agentId),
+  );
 }
 
-export function agentCustomConnectorGrants(args: {
+export function agentCustomConnectorGrantJoinCondition() {
+  return and(
+    eq(orgCustomConnectors.id, userCustomConnectors.customConnectorId),
+    eq(orgCustomConnectors.orgId, userCustomConnectors.orgId),
+  );
+}
+
+export function agentCustomConnectorGrantsCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
-}): Computed<Promise<readonly AgentCustomConnectorGrant[]>> {
-  return computed(
-    async (get): Promise<readonly AgentCustomConnectorGrant[]> => {
-      const rows = await get(db$)
-        .select({
-          customConnectorId: userCustomConnectors.customConnectorId,
-          permissionNames: userCustomConnectors.permissionNames,
-        })
-        .from(userCustomConnectors)
-        .innerJoin(
-          orgCustomConnectors,
-          and(
-            eq(orgCustomConnectors.id, userCustomConnectors.customConnectorId),
-            eq(orgCustomConnectors.orgId, userCustomConnectors.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(userCustomConnectors.orgId, args.orgId),
-            eq(userCustomConnectors.userId, args.userId),
-            eq(userCustomConnectors.agentId, args.agentId),
-            eq(orgCustomConnectors.enabled, true),
-          ),
-        )
-        .orderBy(asc(userCustomConnectors.customConnectorId));
-
-      return rows.map((row) => {
-        return {
-          customConnectorId: row.customConnectorId,
-          permissionNames: [...row.permissionNames],
-        };
-      });
-    },
+}) {
+  return and(
+    eq(userCustomConnectors.orgId, args.orgId),
+    eq(userCustomConnectors.userId, args.userId),
+    eq(userCustomConnectors.agentId, args.agentId),
+    eq(orgCustomConnectors.enabled, true),
   );
 }
 
