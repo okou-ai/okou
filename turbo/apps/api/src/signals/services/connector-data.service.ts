@@ -54,7 +54,7 @@ import {
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
+import { createImmutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import { nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
@@ -336,31 +336,6 @@ export const readStoredBuiltinConnectorRuntimeSnapshot$ = command(
     return null;
   },
 );
-
-/**
- * Loads only the catalog entries for the given stored connectors from the
- * immutable entries, instead of decoding the full catalog. Empty stored
- * sets retain the local null contract; a missing current row fails fast. This
- * list is presentation, so a stored connection without an entry is omitted.
- */
-function loadStoredBuiltinConnectorRuntimeSelection(
-  connectorSlugs: readonly string[],
-): Computed<Promise<ConnectorRuntimeLookup | null>> {
-  return computed(async (get) => {
-    const requestedConnectorSlugs = connectorSlugs.flatMap((connectorSlug) => {
-      const slug = connectorSlugSchema.safeParse(connectorSlug);
-      return slug.success ? [slug.data] : [];
-    });
-    if (requestedConnectorSlugs.length === 0) {
-      return null;
-    }
-    return await get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs,
-      }),
-    );
-  });
-}
 
 function parseOauthScopes(value: string | null): string[] | null {
   return value ? oauthScopesSchema.parse(JSON.parse(value)) : null;
@@ -697,15 +672,24 @@ export function builtinConnectorList(args: {
     };
   });
   const markers$ = connectorAccountFieldMarkers(markerScope$);
+  const catalogInput$ = computed(async (get) => {
+    const storedRows = await get(storedRows$);
+    const requestedConnectorSlugs = storedRows
+      .map((row) => {
+        return row.connectorSlug;
+      })
+      .flatMap((connectorSlug) => {
+        const slug = connectorSlugSchema.safeParse(connectorSlug);
+        return slug.success ? [slug.data] : [];
+      });
+    return requestedConnectorSlugs.length === 0
+      ? null
+      : { requestedConnectorSlugs };
+  });
+  const snapshot$ = createImmutableConnectorRuntimeSelection(catalogInput$);
   return computed(async (get): Promise<BuiltinConnectorListResponse> => {
     const storedRows = await get(storedRows$);
-    const snapshot = await get(
-      loadStoredBuiltinConnectorRuntimeSelection(
-        storedRows.map((row) => {
-          return row.connectorSlug;
-        }),
-      ),
-    );
+    const snapshot = await get(snapshot$);
     const now = nowDate();
     const storedConnectors =
       snapshot === null
