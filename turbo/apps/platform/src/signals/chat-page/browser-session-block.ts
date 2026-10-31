@@ -2,11 +2,6 @@ import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/validators/bro
 import { browserContract } from "@okouai/api-contracts/client/browser";
 import type { BrowserSession } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
-import type { BrowserConnection } from "../browser-viewer/viewer/types.ts";
-import {
-  createBrowserViewerSignals,
-  type BrowserViewerSignals,
-} from "../browser-viewer/browser-viewer.ts";
 import {
   command,
   computed,
@@ -20,6 +15,11 @@ import { formatAppNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import {
+  createBrowserSignals,
+  type BrowserConnection,
+  type BrowserSignals,
+} from "../browser/browser.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { onRef, setLoop, withCleanup } from "../utils.ts";
 import {
@@ -51,7 +51,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
       readonly extension: BrowserConnection["extension"];
     } | null>
   >;
-  readonly viewer: BrowserViewerSignals;
+  readonly browser: BrowserSignals;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -111,12 +111,14 @@ interface BrowserMutationSignalContext {
   readonly descriptor: BrowserSessionDescriptor;
   readonly sessionOverride$: State<BrowserSession | null | undefined>;
   readonly reload$: Command<void, []>;
+  readonly connectionChanged$: BrowserSignals["connectionChanged$"];
 }
 
 function createStartBrowserSignals({
   descriptor,
   sessionOverride$,
   reload$,
+  connectionChanged$,
 }: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
@@ -136,6 +138,7 @@ function createStartBrowserSignals({
     );
     signal.throwIfAborted();
     set(sessionOverride$, started.body.browser);
+    set(connectionChanged$);
   });
   return { start$: openBrowser$ };
 }
@@ -295,14 +298,6 @@ export function createBrowserSessionSignals(
   const session$ = computed(async (get): Promise<BrowserSession | null> => {
     return get(leaseOverride$) ?? (await get(lifecycleSession$));
   });
-  const reload$ = command(({ set }) => {
-    set(leaseOverride$, undefined);
-    set(sessionOverride$, undefined);
-    set(reloadVersion$, (version) => {
-      return version + 1;
-    });
-  });
-
   // Lifecycle reloads (including open/close) can replace the connection. Lease
   // responses only refresh presentation and must not interrupt live input.
   const viewerConnection$ = computed(async (get) => {
@@ -327,23 +322,33 @@ export function createBrowserSessionSignals(
       : null;
   });
 
-  const browserConnection$ = computed(async (get) => {
-    const connection = await get(viewerConnection$);
-    return connection
-      ? {
-          cdpUrl: connection.cdpUrl,
-          extension: connection.extension,
-          ...(connection.windowId === null
-            ? {}
-            : { windowId: connection.windowId }),
-        }
-      : null;
+  const browserConnection$ = computed(
+    async (get): Promise<BrowserConnection | null> => {
+      const connection = await get(viewerConnection$);
+      return connection
+        ? {
+            cdpUrl: connection.cdpUrl,
+            instanceId: connection.instanceId,
+            windowId: connection.windowId,
+            extension: connection.extension,
+          }
+        : null;
+    },
+  );
+  const browser = createBrowserSignals(browserConnection$);
+  const reload$ = command(({ set }) => {
+    set(leaseOverride$, undefined);
+    set(sessionOverride$, undefined);
+    set(reloadVersion$, (version) => {
+      return version + 1;
+    });
+    set(browser.connectionChanged$);
   });
-  const viewer = createBrowserViewerSignals(browserConnection$);
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,
     reload$,
+    connectionChanged$: browser.connectionChanged$,
   };
   const startSignals = createStartBrowserSignals(mutationContext);
   const closeSignals = createCloseBrowserSignals(mutationContext);
@@ -366,7 +371,7 @@ export function createBrowserSessionSignals(
     session$,
     panelSession$: session$,
     viewerConnection$,
-    viewer,
+    browser,
     ...startSignals,
     ...closeSignals,
     reload$,

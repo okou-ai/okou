@@ -70,6 +70,11 @@ export function mockBrowserCdp(
   const detached: string[] = [];
   const captures: unknown[] = [];
   const heldReplies = new Map<string, (response: string) => void>();
+  const heldFrames = new Map<string, () => void>();
+  const nextResponses = new Map<
+    string,
+    (request: BrowserRequest) => BrowserResponse
+  >();
 
   function event(method: string, params: unknown, sessionId?: string) {
     socket.receive(cdpUrl, JSON.stringify({ method, params, sessionId }));
@@ -372,6 +377,23 @@ export function mockBrowserCdp(
     return {};
   }
 
+  function navigate(request: BrowserRequest, url: string) {
+    const target = targetForSession(request.sessionId);
+    target.url = url;
+    delete target.pendingUrl;
+    target.title = url === "about:blank" ? url : new URL(url).hostname;
+    event(
+      "Page.frameNavigated",
+      { frame: { id: "example-frame", loaderId: "navigated-loader", url } },
+      request.sessionId,
+    );
+    event("Target.targetInfoChanged", {
+      targetInfo: { ...target, type: "page" },
+    });
+    event("Page.loadEventFired", { timestamp: 2 }, request.sessionId);
+    return { frameId: "example-frame" };
+  }
+
   function pageResult(request: BrowserRequest): unknown {
     switch (request.method) {
       case "Page.createIsolatedWorld": {
@@ -379,26 +401,19 @@ export function mockBrowserCdp(
       }
       case "Page.navigate": {
         const { url } = object({ url: string() }).parse(request.params);
-        const target = targetForSession(request.sessionId);
-        target.url = url;
-        delete target.pendingUrl;
-        target.title = url === "about:blank" ? url : new URL(url).hostname;
-        event(
-          "Page.frameNavigated",
-          { frame: { id: "example-frame", loaderId: "navigated-loader", url } },
-          request.sessionId,
-        );
-        event("Target.targetInfoChanged", {
-          targetInfo: { ...target, type: "page" },
-        });
-        event("Page.loadEventFired", { timestamp: 2 }, request.sessionId);
-        return { frameId: "example-frame" };
+        return navigate(request, url);
       }
       case "Page.startScreencast": {
         captures.push(request.params);
         if (options.streaming !== false) {
           queueMicrotask(() => {
-            frame("AAAA", request.sessionId);
+            const sessionId = request.sessionId ?? "example-page-session";
+            const held = heldFrames.get(sessionId);
+            if (held) {
+              held();
+            } else {
+              frame("AAAA", sessionId);
+            }
           });
         }
         return {};
@@ -454,6 +469,11 @@ export function mockBrowserCdp(
   }
 
   function respond(request: BrowserRequest): BrowserResponse {
+    const next = nextResponses.get(request.method);
+    if (next) {
+      nextResponses.delete(request.method);
+      return next(request);
+    }
     switch (request.method.split(".")[0]) {
       case "Target": {
         return { result: targetResult(request) };
@@ -495,13 +515,32 @@ export function mockBrowserCdp(
     if (request.id === undefined) {
       return null;
     }
+    // Native effects and notifications precede a held protocol receipt.
     const response = JSON.stringify({ id: request.id, ...respond(request) });
-    const held = heldReplies.get(request.method);
+    let receiptKey = request.method;
+    if (request.method === "Runtime.evaluate") {
+      const { expression } = object({ expression: string() }).parse(
+        request.params,
+      );
+      if (expression.startsWith("globalThis.__okouBrowser?.invoke(")) {
+        const raw = expression.slice(expression.indexOf(".invoke(") + 8, -1);
+        const { method } = object({ method: string() }).parse(JSON.parse(raw));
+        if (heldReplies.has(`native:${method}`)) {
+          receiptKey = `native:${method}`;
+        }
+      }
+    } else if (
+      request.method === "Browser.getWindowForTarget" &&
+      heldReplies.has(`membership:${request.params?.targetId}`)
+    ) {
+      receiptKey = `membership:${request.params?.targetId}`;
+    }
+    const held = heldReplies.get(receiptKey);
     if (
       held &&
       !(request.method === "Target.getTargets" && request.sessionId)
     ) {
-      heldReplies.delete(request.method);
+      heldReplies.delete(receiptKey);
       held(response);
       return null;
     }
@@ -516,6 +555,34 @@ export function mockBrowserCdp(
     detached,
     captures,
     viewport,
+    connections: socket.connections,
+    failNext(method: string, message: string, code = -32_000) {
+      nextResponses.set(method, () => {
+        return { error: { code, message } };
+      });
+    },
+    downloadNextNavigation() {
+      nextResponses.set("Page.navigate", () => {
+        // CDP accepts the download without replacing the current document.
+        return { result: { frameId: "example-frame", isDownload: true } };
+      });
+    },
+    redirectNextNavigation(url: string) {
+      nextResponses.set("Page.navigate", (request) => {
+        return { result: navigate(request, url) };
+      });
+    },
+    holdFrames(sessionId: string) {
+      const requested = context.mocks.deferred<void>();
+      heldFrames.set(sessionId, requested.resolve);
+      return {
+        received: requested.promise,
+        release(data = "AAAA") {
+          heldFrames.delete(sessionId);
+          frame(data, sessionId);
+        },
+      };
+    },
     requests,
     nativeEvent,
     resetWorker() {
@@ -552,6 +619,38 @@ export function mockBrowserCdp(
     },
     updateBeforeNextTabRead() {
       updateBeforeTabRead = true;
+    },
+    holdNextNative(method: string) {
+      const response = context.mocks.deferred<string>();
+      heldReplies.set(`native:${method}`, response.resolve);
+      return {
+        received: response.promise,
+        async release() {
+          socket.receive(cdpUrl, await response.promise);
+        },
+      };
+    },
+    holdNextMembership(targetId: string) {
+      const response = context.mocks.deferred<string>();
+      heldReplies.set(`membership:${targetId}`, response.resolve);
+      return {
+        received: response.promise,
+        async release() {
+          socket.receive(cdpUrl, await response.promise);
+        },
+        async releaseFailure(
+          message = "Target no longer exists",
+          code = -32_000,
+        ) {
+          const { id } = object({ id: number() }).parse(
+            JSON.parse(await response.promise),
+          );
+          socket.receive(
+            cdpUrl,
+            JSON.stringify({ id, error: { code, message } }),
+          );
+        },
+      };
     },
     holdNext(method: string) {
       const response = context.mocks.deferred<string>();

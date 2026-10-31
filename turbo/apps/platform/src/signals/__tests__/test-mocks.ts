@@ -1504,6 +1504,7 @@ function mockBrowserWebSocket(
   respond: (data: string, url: string) => string | null,
 ) {
   const sockets = new Set<TestWebSocket>();
+  let connectionCount = 0;
   class TestWebSocket extends EventTarget {
     static readonly CONNECTING = 0;
     static readonly OPEN = 1;
@@ -1513,6 +1514,7 @@ function mockBrowserWebSocket(
 
     constructor(readonly url: string) {
       super();
+      connectionCount += 1;
       sockets.add(this);
       queueMicrotask(() => {
         if (this.readyState !== TestWebSocket.CONNECTING) {
@@ -1556,6 +1558,9 @@ function mockBrowserWebSocket(
     restoreWindowProperty(globalThis, "WebSocket", descriptor);
   });
   return {
+    connections(): number {
+      return connectionCount;
+    },
     receive(url: string, data: string): void {
       for (const socket of sockets) {
         if (socket.url === url && socket.readyState === TestWebSocket.OPEN) {
