@@ -2105,9 +2105,11 @@
       "failed": "Tidak dapat menyelesaikan. File dan permintaan Anda disimpan di sini. Coba lagi.",
       "loading": "Memulihkan file Anda…",
       "missing": "File Anda tidak tersedia. Kembali ke halaman di browser yang sama dan pilih lagi.",
+      "pending": "Diunggah saat Anda memulai tugas.",
       "popupBlocked": "Izinkan pop-up untuk situs ini, lalu coba lagi untuk mentransfer file Anda.",
       "prompt": "Permintaan Anda",
       "retry": "Coba lagi",
+      "selected": "File yang dipilih",
       "start": "Unggah dan mulai",
       "title": "Mulai dengan file Anda",
       "uploading": "Mengunggah file {{current}} dari {{total}}…"

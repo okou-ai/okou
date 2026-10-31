@@ -7,7 +7,7 @@ import {
   type ChatEventSendBody,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
@@ -19,7 +19,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname, search } from "../../../signals/location.ts";
+import { hash, pathname, search } from "../../../signals/location.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   closeModelPanel,
@@ -432,8 +432,14 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
 
 const LANDING_DRAFT_ID = "f0000000-0000-4000-a000-000000000001";
 
-function landingPath(source = "https://www.okou.ai/en/tools/pdf-to-ppt") {
-  return `/onboarding?${new URLSearchParams({ prompt: "Turn this report into slides", landingFiles: LANDING_DRAFT_ID, landingSource: source })}`;
+function landingPath(
+  source = "https://www.okou.ai/en/tools/pdf-to-ppt",
+  preview?: unknown,
+) {
+  const path = `/onboarding?${new URLSearchParams({ prompt: "Turn this report into slides", landingFiles: LANDING_DRAFT_ID, landingSource: source })}`;
+  return preview === undefined
+    ? path
+    : `${path}#${new URLSearchParams({ landingFilePreview: JSON.stringify(preview) })}`;
 }
 
 function mockLandingPopup() {
@@ -569,18 +575,54 @@ test("An untrusted landing source is rejected without opening a window or starti
 test("A new user keeps the landing file handoff while completing onboarding", async () => {
   const popup = mockLandingPopup();
   const capture = capturePromptLaunch();
-  context.mocks.upload.success({
+  const report = {
     id: "a0000000-0000-4000-a000-000000000081",
     filename: "report.pdf",
     contentType: "application/pdf",
     size: 6,
     url: "https://cdn.vm7.io/artifacts/tests/report.pdf",
+  };
+  const notes = {
+    id: "a0000000-0000-4000-a000-000000000082",
+    filename: "董事会笔记.txt",
+    contentType: "text/plain",
+    size: 5,
+    url: "https://cdn.vm7.io/artifacts/tests/notes.txt",
+  };
+  context.mocks.upload.success(report);
+  context.mocks.upload.success(notes);
+  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+    const result = body.filename === notes.filename ? notes : report;
+    return respond(200, {
+      ...result,
+      uploadUrl: `https://mock-upload.r2.test/${result.id}`,
+      uploadHeaders: {},
+    });
   });
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: landingPath(undefined, [
+      { name: "report.pdf", size: 6, type: "application/pdf" },
+      { name: "董事会笔记.txt", size: 5, type: "text/plain" },
+    ]),
+    host: "app.okou.ai",
+  });
+  const selected = await screen.findByRole("region", {
+    name: "Selected files",
+  });
+  expect(within(selected).getByText("report.pdf")).toBeInTheDocument();
+  expect(within(selected).getByText("董事会笔记.txt")).toBeInTheDocument();
+  expect(within(selected).getByText("6B")).toBeInTheDocument();
+  expect(within(selected).getByText("5B")).toBeInTheDocument();
+  expect(
+    within(selected).getByText("Uploads when you start the task."),
+  ).toBeInTheDocument();
+  expect(hash()).toBe("");
+  expect(search()).not.toContain("report.pdf");
   const input = await screen.findByRole("textbox", {
     name: "Onboarding prompt",
   });
@@ -590,6 +632,9 @@ test("A new user keeps the landing file handoff while completing onboarding", as
   await expect(
     screen.findByRole("heading", { name: "Start with your files" }),
   ).resolves.toBeVisible();
+  await expect(
+    screen.findByText("董事会笔记.txt"),
+  ).resolves.toBeInTheDocument();
   const requestInput = screen.getByRole("textbox", { name: "Your request" });
   if (!(requestInput instanceof HTMLTextAreaElement)) {
     throw new Error("Expected request input");
@@ -599,12 +644,16 @@ test("A new user keeps the landing file handoff while completing onboarding", as
   click(await findButton("Upload and start"));
   await popup.deliver([
     new File(["report"], "report.pdf", { type: "application/pdf" }),
+    new File(["notes"], "董事会笔记.txt", { type: "text/plain" }),
   ]);
   await waitFor(() => {
     expect(capture.sends).toHaveLength(1);
   });
   expect(capture.sends[0].prompt).toContain("Create slides for our board");
   expect(JSON.stringify(capture.sends[0].userMessage)).toContain("report.pdf");
+  expect(JSON.stringify(capture.sends[0].userMessage)).toContain(
+    "董事会笔记.txt",
+  );
 });
 
 test("A failed upload stops launch and retries only the failed file", async () => {
@@ -700,4 +749,75 @@ test("A blocked file popup can be retried without losing the edited request", as
   });
   expect(capture.sends[0].prompt).toBe("Summarize for the board");
   expect(popup.open).toHaveBeenCalledTimes(2);
+});
+
+test.each([
+  {
+    name: "malformed metadata",
+    source: "https://www.okou.ai/en/tools/pdf-to-ppt",
+    preview: "not an array",
+    enabled: true,
+  },
+  {
+    name: "untrusted source",
+    source: "https://attacker.example/files",
+    preview: [{ name: "private.pdf", size: 2, type: "application/pdf" }],
+    enabled: true,
+  },
+  {
+    name: "too many files",
+    source: "https://www.okou.ai/en/tools/pdf-to-ppt",
+    preview: Array.from({ length: 11 }, (_, index) => {
+      return { name: `${index}.pdf`, size: 2, type: "application/pdf" };
+    }),
+    enabled: true,
+  },
+  {
+    name: "disabled handoff",
+    source: "https://www.okou.ai/en/tools/pdf-to-ppt",
+    preview: [{ name: "private.pdf", size: 2, type: "application/pdf" }],
+    enabled: false,
+  },
+])(
+  "Onboarding ignores $name and removes it from the URL",
+  async ({ source, preview, enabled }) => {
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: true,
+      onboardingComplete: false,
+    });
+    await setupPage({
+      context,
+      host: "app.okou.ai",
+      path: landingPath(source, preview),
+      featureSwitches: { landingFileHandoff: enabled },
+    });
+    await expect(
+      screen.findByRole("textbox", { name: "Onboarding prompt" }),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Selected files" }),
+    ).not.toBeInTheDocument();
+    expect(hash()).toBe("");
+  },
+);
+
+test("File names are removed before the sign-in redirect", async () => {
+  await startPage({
+    context,
+    host: "app.okou.ai",
+    auth: null,
+    path: landingPath(undefined, [
+      { name: "private-board-report.pdf", size: 2, type: "application/pdf" },
+    ]),
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe("/sign-in");
+  });
+  const destination = new URL(location.href);
+  expect(destination.pathname).toBe("/sign-in");
+  expect(destination.href).not.toContain("private-board-report");
+  expect(destination.href).not.toContain("landingFilePreview");
+  expect(hash()).toBe("");
+  expect(search()).not.toContain("private-board-report");
+  expect(search()).not.toContain("landingFilePreview");
 });

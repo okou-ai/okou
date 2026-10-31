@@ -2112,9 +2112,11 @@
       "failed": "Could not finish. Your files and request are kept here. Try again.",
       "loading": "Restoring your files…",
       "missing": "Your files are unavailable. Return to the page in the same browser and select them again.",
+      "pending": "Uploads when you start the task.",
       "popupBlocked": "Allow pop-ups for this site, then retry to transfer your files.",
       "prompt": "Your request",
       "retry": "Retry",
+      "selected": "Selected files",
       "start": "Upload and start",
       "title": "Start with your files",
       "uploading": "Uploading file {{current}} of {{total}}…"

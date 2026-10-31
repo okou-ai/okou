@@ -21,6 +21,7 @@ import {
 import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { OnboardingOutputFormats } from "./onboarding-output-formats.tsx";
+import { LandingFilePreview } from "../prompt-page/landing-file-list.tsx";
 
 /**
  * What the prompt handoff does: the prompt the visitor brought stays editable,
@@ -111,6 +112,7 @@ export function OnboardingSourcesFirstPromptPage() {
           <ProductBrandMark decorative size="hero" />
         </div>
         {promptInput}
+        <LandingFilePreview />
         <section
           aria-labelledby="onboarding-prompt-connectors-title"
           className="mt-3 space-y-3"

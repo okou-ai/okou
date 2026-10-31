@@ -2146,9 +2146,11 @@
       "failed": "Impossibile completare. I file e la richiesta restano qui. Riprova.",
       "loading": "Ripristino dei file…",
       "missing": "I file non sono disponibili. Torna alla pagina nello stesso browser e selezionali di nuovo.",
+      "pending": "Verranno caricati quando avvii il compito.",
       "popupBlocked": "Consenti i popup per questo sito, poi riprova a trasferire i file.",
       "prompt": "La tua richiesta",
       "retry": "Riprova",
+      "selected": "File selezionati",
       "start": "Carica e inizia",
       "title": "Inizia con i tuoi file",
       "uploading": "Caricamento del file {{current}} di {{total}}…"

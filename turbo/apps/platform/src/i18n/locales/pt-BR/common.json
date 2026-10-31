@@ -2146,9 +2146,11 @@
       "failed": "Não foi possível concluir. Seus arquivos e sua solicitação foram mantidos aqui. Tente novamente.",
       "loading": "Restaurando seus arquivos…",
       "missing": "Seus arquivos não estão disponíveis. Volte à página no mesmo navegador e selecione-os novamente.",
+      "pending": "Serão enviados quando você iniciar a tarefa.",
       "popupBlocked": "Permita pop-ups neste site e tente transferir seus arquivos novamente.",
       "prompt": "Sua solicitação",
       "retry": "Tentar novamente",
+      "selected": "Arquivos selecionados",
       "start": "Enviar e começar",
       "title": "Comece com seus arquivos",
       "uploading": "Enviando arquivo {{current}} de {{total}}…"

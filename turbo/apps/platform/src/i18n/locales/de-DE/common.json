@@ -2112,9 +2112,11 @@
       "failed": "Der Vorgang konnte nicht abgeschlossen werden. Dateien und Anfrage bleiben erhalten. Versuche es erneut.",
       "loading": "Dateien werden wiederhergestellt…",
       "missing": "Deine Dateien sind nicht verfügbar. Kehre im selben Browser zur Seite zurück und wähle sie erneut aus.",
+      "pending": "Wird beim Start der Aufgabe hochgeladen.",
       "popupBlocked": "Erlaube Pop-ups für diese Website und versuche erneut, deine Dateien zu übertragen.",
       "prompt": "Deine Anfrage",
       "retry": "Erneut versuchen",
+      "selected": "Ausgewählte Dateien",
       "start": "Hochladen und starten",
       "title": "Mit deinen Dateien starten",
       "uploading": "Datei {{current}} von {{total}} wird hochgeladen…"

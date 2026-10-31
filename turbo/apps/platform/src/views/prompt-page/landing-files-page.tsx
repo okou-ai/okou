@@ -10,6 +10,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
+import { LandingFileList, LandingFilePreview } from "./landing-file-list.tsx";
 
 export function LandingFilesPage({
   signals,
@@ -64,19 +65,10 @@ export function LandingFilesPage({
             })}
           </p>
         )}
-        {files && (
-          <ul className="flex flex-col gap-2">
-            {files.map(({ id, file }) => {
-              return (
-                <li
-                  key={id}
-                  className="truncate rounded-lg bg-muted px-3 py-2 text-sm"
-                >
-                  {file.name}
-                </li>
-              );
-            })}
-          </ul>
+        {files ? (
+          <LandingFileList files={files} pending={false} />
+        ) : (
+          <LandingFilePreview />
         )}
         {busy && files && (
           <p role="status" className="text-sm text-muted-foreground">

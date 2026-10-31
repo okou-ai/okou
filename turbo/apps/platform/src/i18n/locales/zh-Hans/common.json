@@ -2105,9 +2105,11 @@
       "failed": "未能完成，文件和需求已保留。请重试。",
       "loading": "正在恢复文件…",
       "missing": "无法读取文件。请在同一浏览器返回原页面重新选择。",
+      "pending": "开始任务时上传。",
       "popupBlocked": "请允许此网站弹出窗口，然后重试以传递文件。",
       "prompt": "你的需求",
       "retry": "重试",
+      "selected": "已选文件",
       "start": "上传并开始",
       "title": "使用你的文件开始",
       "uploading": "正在上传文件 {{current}} / {{total}}…"

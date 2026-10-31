@@ -2146,9 +2146,11 @@
       "failed": "No se pudo completar. Tus archivos y tu solicitud se conservan aquí. Inténtalo de nuevo.",
       "loading": "Restaurando tus archivos…",
       "missing": "Tus archivos no están disponibles. Vuelve a la página en el mismo navegador y selecciónalos de nuevo.",
+      "pending": "Se subirán al iniciar la tarea.",
       "popupBlocked": "Permite las ventanas emergentes de este sitio y vuelve a intentar transferir tus archivos.",
       "prompt": "Tu solicitud",
       "retry": "Reintentar",
+      "selected": "Archivos seleccionados",
       "start": "Subir y empezar",
       "title": "Empieza con tus archivos",
       "uploading": "Subiendo archivo {{current}} de {{total}}…"
