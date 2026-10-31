@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.11.8](https://github.com/okou-ai/okou/compare/cli-v10.11.7...cli-v10.11.8) (2026-10-31)
+
+
+### Performance Improvements
+
+* **browser:** reduce api and cli window lookup latency ([#44426](https://github.com/okou-ai/okou/issues/44426)) ([23b55e3](https://github.com/okou-ai/okou/commit/23b55e3fb6722d25917e69610d2d14f6a73020a9))
+
 ## [10.11.7](https://github.com/okou-ai/okou/compare/cli-v10.11.6...cli-v10.11.7) (2026-10-31)
 
 
