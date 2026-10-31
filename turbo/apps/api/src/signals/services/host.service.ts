@@ -2084,6 +2084,65 @@ const ownedDeliveryRecordKeys$ = command(
   },
 );
 
+const takeHostedSiteOffline$ = command(
+  async (
+    { get, set },
+    args: DeleteHostedSiteArgs,
+    siteId: string,
+    signal: AbortSignal,
+  ): Promise<HostedSiteRow | undefined> => {
+    const db = get(db$);
+    const writeDb = set(writeDb$);
+    const ownership = and(
+      eq(hostedSites.id, siteId),
+      eq(hostedSites.orgId, args.orgId),
+      eq(hostedSites.userId, args.userId),
+      isNull(hostedSites.deletedAt),
+    );
+    const owned = db
+      .select({ id: hostedSites.id })
+      .from(hostedSites)
+      .where(ownership);
+    const deleted = { status: "deleted" as const, updatedAt: nowDate() };
+    const publicVersions = writeDb.$with("deleted_public_hosted_versions").as(
+      writeDb
+        .update(hostedDeployments)
+        .set(deleted)
+        .where(
+          and(
+            eq(hostedDeployments.siteId, siteId),
+            inArray(hostedDeployments.status, ["uploading", "ready"]),
+            exists(owned),
+          ),
+        )
+        .returning({ id: hostedDeployments.id }),
+    );
+    const privateVersions = writeDb.$with("deleted_private_hosted_versions").as(
+      writeDb
+        .update(privateHostedDeployments)
+        .set(deleted)
+        .where(
+          and(
+            eq(privateHostedDeployments.siteId, siteId),
+            inArray(privateHostedDeployments.status, ["uploading", "ready"]),
+            exists(owned),
+          ),
+        )
+        .returning({ id: privateHostedDeployments.id }),
+    );
+    // Both version tables and the live binding change in one local statement.
+    // Address changes do not change the captured, owned Site identity.
+    const [site] = await writeDb
+      .with(publicVersions, privateVersions)
+      .update(hostedSites)
+      .set({ activeDeploymentId: null, updatedAt: deleted.updatedAt })
+      .where(ownership)
+      .returning();
+    signal.throwIfAborted();
+    return site;
+  },
+);
+
 /**
  * Soft-delete a site: every version stops serving while its rows and bytes are
  * kept. Current-domain sites keep their name for redeployment; legacy-domain
@@ -2111,94 +2170,55 @@ export const deleteHostedSite$ = command(
     await set(revokeHostedSiteShare$, candidate, signal);
     signal.throwIfAborted();
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0171; new non-billing transactions are prohibited.
-    const deleted = await set(writeDb$).transaction(async (tx) => {
-      // The publisher binds under this lock, so a completion cannot reactivate
-      // a version after deletion commits.
-      const [site] = await tx
-        .select()
-        .from(hostedSites)
-        .where(
-          and(
-            eq(hostedSites.publicSlug, args.publicSlug),
-            eq(hostedSites.orgId, args.orgId),
-            eq(hostedSites.userId, args.userId),
-            isNull(hostedSites.deletedAt),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (!site) {
-        return null;
-      }
-      const layout = rowLinkLayout(site);
-      const deployments = await tx
-        .select({
-          id: hostedDeployments.id,
-          artifactUrl: hostedDeployments.artifactUrl,
-          readyAt: hostedDeployments.readyAt,
-        })
-        .from(hostedDeployments)
-        .where(eq(hostedDeployments.siteId, site.id))
-        .orderBy(desc(hostedDeployments.createdAt));
-      signal.throwIfAborted();
-      const aliases = [
-        {
-          alias: site.publicSlug,
-          pointerKey: `${hostedSitePointerNamespace(layout)}/${site.publicSlug}/active.json`,
-        },
-        ...deployments.map((deployment) => {
-          return {
-            alias: `dpl-${deployment.id}`,
-            pointerKey: immutableDeploymentPointerKey(layout, deployment.id),
-          };
-        }),
-      ];
-      const recordKeys = await set(
-        ownedDeliveryRecordKeys$,
-        { bucket: hostedR2.config.bucket, layout, aliases },
-        signal,
-      );
-      // Pointers decide what serves; registry records only route to them.
-      // Repeating the delete after a partial failure is safe.
-      await get(
-        deleteHostedSitesS3Objects(
-          hostedR2.config.bucket,
-          [
-            ...aliases.map(({ pointerKey }) => {
-              return pointerKey;
-            }),
-            ...recordKeys,
-          ],
-          signal,
-        ),
-      );
-      signal.throwIfAborted();
-
-      const now = nowDate();
-      for (const table of [hostedDeployments, privateHostedDeployments]) {
-        await tx
-          .update(table)
-          .set({ status: "deleted", updatedAt: now })
-          .where(
-            and(
-              eq(table.siteId, site.id),
-              inArray(table.status, ["uploading", "ready"]),
-            ),
-          );
-      }
-      await tx
-        .update(hostedSites)
-        .set({ activeDeploymentId: null, updatedAt: now })
-        .where(eq(hostedSites.id, site.id));
-      return { site, layout, deployments };
-    });
+    const db = get(db$);
+    const layout = rowLinkLayout(candidate);
+    const deployments = await db
+      .select({
+        id: hostedDeployments.id,
+        artifactUrl: hostedDeployments.artifactUrl,
+        readyAt: hostedDeployments.readyAt,
+      })
+      .from(hostedDeployments)
+      .where(eq(hostedDeployments.siteId, candidate.id))
+      .orderBy(desc(hostedDeployments.createdAt));
     signal.throwIfAborted();
-    if (!deleted) {
+    const aliases = [
+      {
+        alias: candidate.publicSlug,
+        pointerKey: `${hostedSitePointerNamespace(layout)}/${candidate.publicSlug}/active.json`,
+      },
+      ...deployments.map((deployment) => {
+        return {
+          alias: `dpl-${deployment.id}`,
+          pointerKey: immutableDeploymentPointerKey(layout, deployment.id),
+        };
+      }),
+    ];
+    const recordKeys = await set(
+      ownedDeliveryRecordKeys$,
+      { bucket: hostedR2.config.bucket, layout, aliases },
+      signal,
+    );
+    // Keep database state available for retry if storage deletion fails.
+    // Overlapping publication and deletion no longer wait on a Site lock.
+    await get(
+      deleteHostedSitesS3Objects(
+        hostedR2.config.bucket,
+        [
+          ...aliases.map(({ pointerKey }) => {
+            return pointerKey;
+          }),
+          ...recordKeys,
+        ],
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    const site = await set(takeHostedSiteOffline$, args, candidate.id, signal);
+    if (!site) {
       return notFound;
     }
 
-    const { site, layout, deployments } = deleted;
     const aliasUrl = hostedLinkOrigin(layout, site.publicSlug);
     return {
       status: "ok",
