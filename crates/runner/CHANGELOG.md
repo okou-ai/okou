@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.241.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.12...runner-rs-v0.241.13) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.241.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.11...runner-rs-v0.241.12) (2026-10-31)
 
 ### Release Dependencies

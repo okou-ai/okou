@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.2...guest-storage-apply-v0.28.3) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
 ## [0.28.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.1...guest-storage-apply-v0.28.2) (2026-10-30)
 
 

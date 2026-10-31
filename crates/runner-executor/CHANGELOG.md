@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.3...runner-executor-v0.18.4) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
 ## [0.18.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.2...runner-executor-v0.18.3) (2026-10-31)
 
 ## [0.18.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.1...runner-executor-v0.18.2) (2026-10-30)

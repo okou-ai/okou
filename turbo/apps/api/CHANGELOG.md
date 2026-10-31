@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.33.2](https://github.com/okou-ai/okou/compare/api-v2.33.1...api-v2.33.2) (2026-10-31)
+
+
+### Refactoring
+
+* **runner:** retire legacy content delivery ([#44383](https://github.com/okou-ai/okou/issues/44383)) ([aa52387](https://github.com/okou-ai/okou/commit/aa52387e9a4e19abdae3d5ab7a7be54f6b10fafd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.2
+    * @okouai/core bumped to 8.805.5
+    * @okouai/db bumped to 2.13.13
+    * @okouai/pi-agent-runtime bumped to 1.51.39
+
 ## [2.33.1](https://github.com/okou-ai/okou/compare/api-v2.33.0...api-v2.33.1) (2026-10-31)
 
 
