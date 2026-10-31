@@ -4544,7 +4544,7 @@
       "prompt": {
         "connectorsDescription": "Verbinde die Tools für diese Aufgabe. Das geht auch später.",
         "connectorsTitle": "Verbinde deine Arbeitstools",
-        "intro": "Wenn du deine Arbeitstools verbindest, erhält Okou Kontext aus deinen E-Mails, Dateien und Daten. Das hilft Okou, deine Arbeit besser zu verstehen und passendere Ergebnisse zu liefern. Wenn du ein Format auswählst, werden seine Ausgabevorgaben automatisch in das Prompt-Feld eingefügt, damit du sie vor dem Start prüfen und bearbeiten kannst."
+        "intro": "Verbinde deine Tools für bessere Ergebnisse und wähle ein Format, um bearbeitbare Vorgaben in deinen Prompt einzufügen."
       },
       "skills": {
         "copied": "Kopiert",

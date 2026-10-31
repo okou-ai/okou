@@ -4542,7 +4542,7 @@
       "prompt": {
         "connectorsDescription": "Connect the tools this task needs. You can also do this later.",
         "connectorsTitle": "Connect your work tools",
-        "intro": "Connecting your work tools gives Okou context from your emails, files, and data, helping it understand your work and deliver more relevant results. Choosing a format automatically adds its output instructions to the prompt box, so you can review and edit them before starting."
+        "intro": "Connect your tools for better results and choose a format to add editable instructions to your prompt."
       },
       "skills": {
         "copied": "Copied",
