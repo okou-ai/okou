@@ -1,8 +1,10 @@
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -37,6 +39,9 @@ const EXPIRES_AT = SUSPENDED_AT + 7 * 24 * 60 * MINUTE;
 
 function screenshotStorage() {
   const previous = context.mocks.s3.send.getMockImplementation();
+  if (!previous) {
+    throw new Error("Expected the shared storage transport");
+  }
   const objects = new Map<string, Buffer>();
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
     if (command instanceof PutObjectCommand) {
@@ -50,6 +55,21 @@ function screenshotStorage() {
         return { ETag: "browser-preview-etag" };
       }
     }
+    if (
+      command instanceof GetObjectCommand ||
+      command instanceof HeadObjectCommand
+    ) {
+      const bytes = command.input.Key
+        ? objects.get(command.input.Key)
+        : undefined;
+      if (bytes) {
+        return {
+          ETag: "browser-preview-etag",
+          ContentLength: bytes.length,
+          Body: Readable.from([bytes]),
+        };
+      }
+    }
     if (command instanceof DeleteObjectsCommand) {
       for (const { Key } of command.input.Delete?.Objects ?? []) {
         if (Key) {
@@ -58,7 +78,7 @@ function screenshotStorage() {
       }
       return {};
     }
-    return previous ? await previous(command) : {};
+    return await previous(command);
   });
   context.mocks.s3.getSignedUrl.mockImplementation(
     (_client: unknown, command: unknown) => {
