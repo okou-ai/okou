@@ -91,22 +91,6 @@ export function visibleAgentIdentityCondition(scope: {
   );
 }
 
-export function agentExists(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}): Computed<Promise<boolean>> {
-  return computed(async (get): Promise<boolean> => {
-    const [agent] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(visibleAgentIdentityCondition(args))
-      .limit(1);
-
-    return Boolean(agent);
-  });
-}
-
 export function agentList(
   orgId: string,
   userId: string,
