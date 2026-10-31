@@ -11,7 +11,7 @@ import {
 import { pageSignal$ } from "../page-signal.ts";
 import type { BrowserSignals } from "./browser.ts";
 import { CdpFault, diagnostic } from "./cdp/errors.ts";
-import { observeDisplay } from "./display.ts";
+import { measureDisplay, observeDisplay } from "./display.ts";
 import type { DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus } from "./focus.ts";
 import { navigationAddress } from "./input/address.ts";
@@ -536,10 +536,12 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
           cleanups.push(() => {
             viewport.disconnect();
           });
-          cleanups.push(
-            observeDisplay(nodes.canvas.node, (size) => {
+          observeDisplay(
+            nodes.canvas.node,
+            (size) => {
               set(observations.measure$, lease, size);
-            }),
+            },
+            owner,
           );
           const strip = observeTabStrip(
             nodes.toolbar.node,
@@ -1109,6 +1111,20 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   };
 }
 
+/** Application layout commits name their change; no observer infers it later. */
+function createLayoutSync(context: RuntimeState) {
+  const { installed$ } = context;
+  return command(({ get, set }) => {
+    const lease = get(installed$);
+    if (lease) {
+      set(
+        lease.controller.measure$,
+        measureDisplay(lease.identity.nodes.canvas.node),
+      );
+    }
+  });
+}
+
 /** Compose private graphs in the existing App Store; expose only the public API. */
 export function createBrowserRuntime(
   connection$: Computed<Promise<BrowserConnection | null>>,
@@ -1148,6 +1164,7 @@ export function createBrowserRuntime(
     ...configurationActions,
     ...presentation,
     connectionChanged$: context.connectionChanged$,
+    syncLayout$: createLayoutSync(context),
     refs: {
       root$: observers.root$,
       canvas$: graph.canvas.ref$,

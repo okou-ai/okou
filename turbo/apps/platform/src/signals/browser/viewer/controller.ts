@@ -2371,11 +2371,7 @@ function createConnectionBootstrap(
     set(display.setMode$, get(model.windowSizeSync$));
     set(display.measure$, get(displaySize$));
     set(display.setSuspended$, !get(authority$) || get(model.intent$).paused);
-    detach(
-      set(display.start$, client.signal),
-      Reason.Daemon,
-      "browser automatic display synchronization",
-    );
+    set(display.start$, client.signal);
     await set(get(get(links$).discovery$)!.start$, client.signal);
     signal.throwIfAborted();
     set(bootstrapping$, false);
