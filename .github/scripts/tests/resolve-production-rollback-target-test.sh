@@ -195,6 +195,12 @@ case "${1:-}" in
       [ "${MOCK_AGENT_INSTRUCTIONS_API_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29" ]; then
       [ "${MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "fc8f99468cc7946843620ff655ae22c09f9cb2ae" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_CONTENT_BUNDLE_RUNNER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_CONTENT_BUNDLE_API_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5858585858585858585858585858585858585858" ]; then
@@ -1155,6 +1161,23 @@ fi
 assert_failure "predates inline Agent instructions" \
   run_resolver "${tmp_dir}/agent-instructions-runner-floor.output" MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID=0
 [ ! -s "${tmp_dir}/agent-instructions-runner-floor.output" ] || fail "old instruction Runner must not publish rollback outputs"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates immutable content bundle publication" \
+  run_resolver "${tmp_dir}/content-bundle-api-floor.output" MOCK_CONTENT_BUNDLE_API_VALID=0
+grep -Fq 'fc8f99468cc7946843620ff655ae22c09f9cb2ae' "${tmp_dir}/failure.err" || fail "content bundle API rejection must identify the preparation commit"
+[ ! -s "${tmp_dir}/content-bundle-api-floor.output" ] || fail "legacy-only publisher must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+  fail "content bundle API floor must fail before artifact or host access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates hash-addressed content bundles" \
+  run_resolver "${tmp_dir}/content-bundle-runner-floor.output" MOCK_CONTENT_BUNDLE_RUNNER_VALID=0
+grep -Fq 'fc8f99468cc7946843620ff655ae22c09f9cb2ae' "${tmp_dir}/failure.err" || fail "content bundle Runner rejection must identify the preparation commit"
+[ ! -s "${tmp_dir}/content-bundle-runner-floor.output" ] || fail "legacy-only Runner must not publish rollback outputs"
+if grep -Eq '^ssh ' "${tmp_dir}/boundaries.log"; then
+  fail "content bundle Runner floor must fail before host access"
+fi
 
 for preparation_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"

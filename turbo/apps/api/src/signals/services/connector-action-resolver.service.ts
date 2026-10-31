@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -313,6 +313,28 @@ export function connectorActionResolver(
     return createConnectorActionResolver(snapshot);
   });
 }
+
+/** Fresh action-time selection; callers retain their complete-read abort check. */
+export const readConnectorResolver$ = command(
+  async (
+    { get },
+    connectorSlugs: readonly ConnectorSlug[],
+  ): Promise<ConnectorActionResolver> => {
+    const catalogDb = get(db$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs,
+    });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
+    return createConnectorActionResolver(snapshot);
+  },
+);
 
 /**
  * Filters the given slugs to connectors that exist in the catalog and have an

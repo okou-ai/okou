@@ -1731,7 +1731,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           NATIVE_RUNNER_ROUTE,
         );
         const prompt = "storage manifest dimensions should not leak prompt";
-        // An Agent workflow is the run's read-only organization Storage mount.
+        // Selected Workflows remain read-only inputs during reader preparation.
         const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
         const workflow = await createMiscRoutesApi(context).createWorkflow(
           actor,

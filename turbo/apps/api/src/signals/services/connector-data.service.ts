@@ -1,18 +1,8 @@
 import {
-  deletionResolutionQueries,
-  deletionAccountQuery,
-  deletionSiblingQuery,
-  deletionDefaultWrite,
-  deletionSelectionsWrite,
-  reconnectNotionWrite,
-  projectionNotionWrite,
-  deletionProjectionQuery,
-  deletionAccountLookups,
-  deletionProjectionWrite,
-  deletionCredentialQuery,
-  deletionRevokeQuery,
-  deletionScope,
-  deletionTokenRevokePreparation,
+  builtinDeletionSqlResultSchema,
+  deletionProjectionPreparationRead,
+  deletionPreparedProjections,
+  deletionPreparedRevocations,
   type BuiltinConnectorDeletionContext,
 } from "./connector-account-deletion-queries";
 import { randomUUID } from "node:crypto";
@@ -52,7 +42,7 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { array, literal, object, string } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { contextProjectionSchema } from "./context-rowset";
@@ -62,11 +52,10 @@ import {
 } from "./builtin-manual-grant-publication";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
-import { nowDate } from "../../lib/time";
+import { nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
 import {
@@ -79,7 +68,6 @@ import {
 } from "./builtin-connector-credential-access.service";
 import {
   connectorAccountFieldMarkers,
-  connectorAccountDeletionResult,
   type PreparedConnectorAccountDeletion,
 } from "./connector-account-lifecycle.service";
 import {
@@ -87,10 +75,6 @@ import {
   connectorAccountSetupMarkerKey,
   connectorAccountStatus,
 } from "./connector-account-setup";
-import {
-  builtinDeletionFromRows,
-  builtinDeletionResult,
-} from "./connector-account-resolution.service";
 import { connectorAccountReconciliationIdentity as connectionIdentity } from "./connector-account-state.service";
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import {
@@ -124,9 +108,6 @@ import {
   builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
 import {
-  connectorCredentialStorageConnectionDeletionPlan,
-  connectorCredentialStorageSelectionDeletionPlan,
-  connectorCredentialStorageCursorDeletionPlan,
   type PreparedBuiltinConnectorTokenState,
   manualGrantConnectionMetadata,
   manualGrantCredentialArgs,
@@ -163,7 +144,6 @@ import {
 
 import { workflowAutomationOwnerProjectionReadPlan } from "./workflow-automation-account-projection.service";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { builtinTokenConnectionPublicationSql } from "./builtin-token-connection-publication";
 import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
 import type { TokenAutomationProjection } from "./builtin-token-connection-projection";
@@ -935,47 +915,6 @@ const prepareDeletedConnectorMeetCleanup$ = command(
   },
 );
 
-type DeleteBuiltinConnectorAccountLocalStateArgs =
-  DeleteBuiltinConnectorLocalStateArgs & {
-    readonly account: { readonly connectionId: string };
-    readonly deletion: Extract<
-      PreparedConnectorAccountDeletion,
-      { kind: "ready" }
-    >;
-  };
-
-function builtinConnectorDeletedAccountCursorWrite(
-  deleted: readonly { readonly id: string }[],
-) {
-  const cursor = connectorCredentialStorageCursorDeletionPlan(deleted);
-  return {
-    from: cursor.from,
-    where: inArray(
-      cursor.automationId,
-      new QueryBuilder()
-        .select(cursor.automations.columns)
-        .from(cursor.automations.from)
-        .where(cursor.automations.where),
-    ),
-  };
-}
-
-function builtinConnectorLocalAccountDeletionResult(args: {
-  readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
-  readonly deletion: DeleteBuiltinConnectorAccountLocalStateArgs["deletion"];
-  readonly lateSelectionCount: number;
-}) {
-  return {
-    kind: "deleted" as const,
-    pendingTokenRevoke: args.pendingTokenRevoke,
-    deletion: {
-      ...args.deletion,
-      resolvedSelectionCount:
-        args.deletion.resolvedSelectionCount + args.lateSelectionCount,
-    },
-  };
-}
-
 const stopDeletedWatches$ = command(
   async (
     { set },
@@ -1133,9 +1072,13 @@ const finalizeBuiltinConnectorLocalDeletion$ = command(
     { set },
     input: {
       readonly args: DeleteBuiltinConnectorLocalStateArgs;
-      readonly deleteResult: ReturnType<
-        typeof builtinConnectorLocalAccountDeletionResult
-      >;
+      readonly deleteResult: {
+        readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+        readonly deletion: Extract<
+          PreparedConnectorAccountDeletion,
+          { kind: "ready" }
+        >;
+      };
       readonly automationCleanup: PendingConnectorAutomationCleanup;
       readonly formsCleanup: Parameters<
         typeof stopPendingGoogleFormsAutomationCleanup
@@ -1215,135 +1158,88 @@ const finalizeBuiltinConnectorLocalDeletion$ = command(
   },
 );
 
+/** Finish the admitted atomic cleanup and return its opaque revocation receipt.
+ * The caller captures post-commit cancellation before running existing cleanup. */
 const deleteBuiltinConnectorLocalState$ = command(
-  ({ set }, args: BuiltinConnectorDeletionContext, signal: AbortSignal) => {
+  async (
+    { set },
+    args: BuiltinConnectorDeletionContext,
+    signal: AbortSignal,
+  ) => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0116; new non-billing transactions are prohibited.
-    return db.transaction(async (tx) => {
-      const { request } = args;
-      const reads = deletionResolutionQueries(request);
-      const rows = await Promise.all([
-        reads.exact ? tx.select().from(reads.exact) : [],
-        reads.default ? tx.select().from(reads.default) : [],
-      ]);
-      const account = builtinDeletionResult(
-        builtinDeletionFromRows(reads.read, rows),
+    const read = deletionProjectionPreparationRead(args.request);
+    const projections = read
+      ? deletionPreparedProjections(
+          await db.select(read.columns).from(read.from).where(read.where),
+          args.request.sourceId,
+        )
+      : {};
+    signal.throwIfAborted();
+    const revocations = deletionPreparedRevocations(args);
+    const payload = JSON.stringify({
+      ...args.request,
+      projections,
+      revocations: revocations.map(({ preparation, read }) => {
+        return {
+          authMethod: preparation.access.authMethodId,
+          storageVersion: preparation.access.storageVersion,
+          anyStorageVersion:
+            preparation.access.runtimeMethod.method.grant.kind === "none",
+          invalid: read === null,
+          names:
+            read?.kind === "read"
+              ? read.inputEntries.map(([, entry]) => {
+                  return entry.secretName;
+                })
+              : [],
+        };
+      }),
+    });
+    const [row] = parseRawRows(
+      object({ result: builtinDeletionSqlResultSchema }),
+      await db.execute(sql`SELECT public.delete_builtin_connector_local_state(
+        ${payload}::jsonb, ${nowDateSql(sql`NULL::timestamp`)}
+      ) AS result`),
+    );
+    if (!row) {
+      throw new Error("Connector deletion returned no result");
+    }
+    const result = row.result;
+    if (result.kind === "missing") {
+      return { kind: "missing" as const, pendingTokenRevoke: null };
+    }
+    const revoke =
+      result.revokeIndex === null ? null : revocations[result.revokeIndex];
+    if (revoke === undefined) {
+      throw new Error(
+        "Connector deletion returned an unknown revocation method",
       );
-      signal.throwIfAborted();
-      if (account.kind !== "resolved") {
-        return { kind: account.kind, pendingTokenRevoke: null };
+    }
+    const pendingTokenRevoke = (() => {
+      if (revoke === null) {
+        return null;
       }
-      const scope = deletionScope(args, account.connectionId);
-      const [current] = await tx.select().from(deletionAccountQuery(scope));
-      if (!current) {
-        signal.throwIfAborted();
-        return { kind: "missing" as const, pendingTokenRevoke: null };
-      }
-      let promotedDefaultConnectionId: string | null = null;
-      if (current.isDefault) {
-        const [sibling] = await tx.select().from(deletionSiblingQuery(scope));
-        if (sibling) {
-          await tx.execute(deletionDefaultWrite(scope.connectionId, false));
-          await tx.execute(deletionDefaultWrite(sibling.id, true));
-          promotedDefaultConnectionId = sibling.id;
-        }
-      }
-      const resolvedSelectionCount =
-        (await tx.execute(deletionSelectionsWrite(scope.connectionId)))
-          .rowCount ?? 0;
-      if (request.connectorSlug === "notion") {
-        await tx.execute(reconnectNotionWrite(scope.connectionId));
-      }
-      const projection = deletionProjectionQuery(scope);
-      if (projection) {
-        const automations = await tx.select().from(projection.query);
-        for (const automation of automations) {
-          const lookup = deletionAccountLookups(scope, projection, automation);
-          const [selected] = await tx.select().from(lookup.selected);
-          const chosen =
-            selected ?? (await tx.select().from(lookup.default))[0];
-          const write = deletionProjectionWrite(automation, chosen, projection);
-          if (write === null) {
-            continue;
-          }
-          await tx.execute(write);
-          if (projection.connectorSlug === "notion") {
-            await tx.execute(projectionNotionWrite(automation.id));
-          }
-        }
-        signal.throwIfAborted();
-      } else if (request.connectorSlug === "google-forms") {
-        await tx.execute(googleFormsAccountProjectionStatement(scope));
-        signal.throwIfAborted();
-      }
-      const deletion = connectorAccountDeletionResult(
-        resolvedSelectionCount,
-        promotedDefaultConnectionId,
-      );
-      if (deletion.kind !== "ready") {
-        signal.throwIfAborted();
-        return { kind: deletion.kind, pendingTokenRevoke: null };
-      }
-      signal.throwIfAborted();
-      const [existing] = await tx
-        .select()
-        .from(deletionCredentialQuery(account.connectionId));
-      signal.throwIfAborted();
-      if (!existing) {
+      const read = revoke.read;
+      if (read === null) {
         throw new Error(
-          "Claimed connector account disappeared before deletion",
+          "Connector deletion returned an invalid revocation method",
         );
       }
-      const revoke = deletionTokenRevokePreparation(args, existing);
-      const pendingTokenRevoke = revoke
-        ? await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
-            const read = builtinConnectorTokenRevokeReadPlan(revoke.access);
-            if (read.kind !== "read") {
-              return builtinTokenRevokeFromRows(revoke, read, []);
-            }
-            const secretRows = await tx
-              .select()
-              .from(deletionRevokeQuery(read));
-            signal.throwIfAborted();
-            return builtinTokenRevokeFromRows(revoke, read, secretRows);
-          })()
-        : null;
-      signal.throwIfAborted();
-      // Retain the next-snapshot cleanup and exact count of late FK references.
-      const lateSelectionCount = await (async () => {
-        const plan = connectorCredentialStorageConnectionDeletionPlan({
-          connectorId: existing.id,
-        });
-        for (const write of [plan.secrets, plan.variables]) {
-          await tx.delete(write.from).where(write.where);
-          signal.throwIfAborted();
-        }
-        await tx.execute(plan.deferSelections);
-        const deleted = await tx
-          .delete(plan.account.from)
-          .where(plan.account.where)
-          .returning(plan.account.returning);
-        let lateSelectionCount = 0;
-        if (deleted.length > 0) {
-          const selection =
-            connectorCredentialStorageSelectionDeletionPlan(deleted);
-          const selections = await tx
-            .delete(selection.from)
-            .where(selection.where)
-            .returning(selection.returning);
-          lateSelectionCount = selections.length;
-        }
-        await tx.execute(plan.enforceSelections);
-        if (deleted.length > 0) {
-          const cursor = builtinConnectorDeletedAccountCursorWrite(deleted);
-          await tx.delete(cursor.from).where(cursor.where);
-        }
-        signal.throwIfAborted();
-        return lateSelectionCount;
-      })();
-      const result = { pendingTokenRevoke, deletion, lateSelectionCount };
-      return builtinConnectorLocalAccountDeletionResult(result);
-    });
+      return builtinTokenRevokeFromRows(
+        revoke.preparation,
+        read,
+        result.secretRows,
+      );
+    })();
+    return {
+      kind: "deleted" as const,
+      pendingTokenRevoke,
+      deletion: {
+        kind: "ready" as const,
+        resolvedSelectionCount: result.resolvedSelectionCount,
+        promotedDefaultConnectionId: result.promotedDefaultConnectionId,
+      },
+    };
   },
 );
 

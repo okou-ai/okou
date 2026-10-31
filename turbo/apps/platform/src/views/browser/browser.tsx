@@ -953,7 +953,7 @@ export function Browser({
   const controls = useGet(signals.controls$);
   const pageSignal = useGet(pageSignal$);
   const imageRecovery = useGet(signals.imageRecovery$);
-  const rootRef = useSet(useGet(signals.refs.root$));
+  const rootRef = useSet(signals.refs.root$);
   const surfaceRef = useSet(signals.refs.surface$);
   const canvasRef = useSet(signals.refs.canvas$);
   const inputRef = useSet(signals.refs.input$);

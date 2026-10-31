@@ -234,6 +234,175 @@ test("native window operations and event subscriptions preserve independent clie
   }
 });
 
+test("events overtaking the hello response establish a contiguous fresh baseline", async () => {
+  const f = await fixture();
+  const captured = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let client;
+  try {
+    let held = false;
+    const connecting = OkouBrowserClient.connect({
+      runtimeId: f.runtimeId,
+      transport: {
+        onEvent: (listener) => {
+          return f.wire.onEvent(listener);
+        },
+        async request(method, params, sessionId) {
+          const value = await f.wire.request(method, params, sessionId);
+          if (
+            !held &&
+            method === "Runtime.evaluate" &&
+            params.expression?.includes('"method":"hello"')
+          ) {
+            held = true;
+            captured.resolve();
+            await release.promise;
+          }
+          return value;
+        },
+      },
+    });
+    await captured.promise;
+    await f.worker.evaluate(async () => {
+      await chrome.tabs.create({ url: "about:blank" });
+    });
+    release.resolve();
+    client = await connecting;
+    const events = [];
+    client.onEvent((event) => {
+      return events.push(event);
+    });
+    const created = (await client.call("createTab", { url: "about:blank" }))
+      .value;
+    expect(created.id).toBeGreaterThan(0);
+    expect(client.signal.aborted).toBe(false);
+    expect(
+      events.some((event) => {
+        return event.kind === "tab-created" && event.tabId === created.id;
+      }),
+    ).toBe(true);
+  } finally {
+    release.resolve();
+    await client?.close();
+    await f.close();
+  }
+});
+
+test("native tab observations retain an uncommitted navigation destination", async () => {
+  const f = await fixture();
+  const entered = Promise.withResolvers();
+  let held;
+  const pending = createServer((_request, response) => {
+    held = response;
+    entered.resolve();
+  });
+  try {
+    await new Promise((resolve) => {
+      return pending.listen(0, "127.0.0.1", resolve);
+    });
+    const client = await f.client();
+    const created = (await client.call("createTab", { url: "about:blank" }))
+      .value;
+    const destination = `http://127.0.0.1:${pending.address().port}/pending`;
+    await f.worker.evaluate(
+      ({ tabId, url }) => {
+        return chrome.tabs.update(tabId, { url });
+      },
+      { tabId: created.id, url: destination },
+    );
+    await entered.promise;
+    const observed = (await client.call("getTab", { tabId: created.id })).value;
+    expect(observed.pendingUrl).toBe(destination);
+    expect(observed.url).not.toBe(destination);
+  } finally {
+    held?.end("<!doctype html><title>Completed</title>");
+    pending.closeAllConnections();
+    await new Promise((resolve) => {
+      return pending.close(resolve);
+    });
+    await f.close();
+  }
+});
+
+test("a missing binding event retires only its client without mutation replay", async () => {
+  const f = await fixture();
+  let client;
+  try {
+    const sibling = await f.client();
+    let drop = false;
+    let ownedWorker;
+    client = await OkouBrowserClient.connect({
+      runtimeId: f.runtimeId,
+      transport: {
+        async request(...args) {
+          const value = await f.wire.request(...args);
+          if (args[0] === "Target.attachToTarget")
+            ownedWorker = value.sessionId;
+          return value;
+        },
+        onEvent: (listener) => {
+          return f.wire.onEvent((event) => {
+            if (
+              drop &&
+              event.method === "Runtime.bindingCalled" &&
+              event.sessionId === ownedWorker
+            ) {
+              drop = false;
+              return;
+            }
+            listener(event);
+          });
+        },
+      },
+    });
+    drop = true;
+    await f.worker.evaluate(async () => {
+      await chrome.tabs.create({ url: "about:blank" });
+      await chrome.tabs.create({ url: "about:blank" });
+    });
+    await expect
+      .poll(() => {
+        return client.signal.aborted;
+      })
+      .toBe(true);
+    expect((await sibling.call("hello", {})).value.protocol).toBe(1);
+  } finally {
+    await client?.close();
+    await f.close();
+  }
+});
+
+test("a failed native response cannot conceal a missing event sequence", async () => {
+  const f = await fixture();
+  let client;
+  try {
+    let corrupt = false;
+    client = await OkouBrowserClient.connect({
+      runtimeId: f.runtimeId,
+      transport: {
+        onEvent: (listener) => {
+          return f.wire.onEvent(listener);
+        },
+        async request(method, params, sessionId) {
+          const result = await f.wire.request(method, params, sessionId);
+          if (corrupt && method === "Runtime.evaluate") {
+            result.result.value.sequence += 1000000;
+          }
+          return result;
+        },
+      },
+    });
+    corrupt = true;
+    await expect(
+      client.call("closeWindow", { windowId: 1073741824 }),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+    expect(client.signal.aborted).toBe(true);
+  } finally {
+    await client?.close();
+    await f.close();
+  }
+});
+
 test("one-shot native evidence distinguishes duplicate URLs and rejects webpage control", async () => {
   const f = await fixture();
   try {

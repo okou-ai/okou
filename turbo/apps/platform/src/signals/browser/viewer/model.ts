@@ -242,7 +242,11 @@ function recoverySnapshot(snapshot: ViewerSnapshot): boolean {
       snapshot.error.kind !== "target-unavailable")
   );
 }
-function createModelPresentation(atoms: ModelAtoms, values: ModelValues) {
+function createModelPresentation(
+  atoms: ModelAtoms,
+  values: ModelValues,
+  creationReadySource$: Computed<boolean>,
+) {
   const { loadingPreviewState$, scopedState$ } = atoms;
   const { snapshot$, imageRecovery$, connected$, intent$ } = values;
   const presentation$ = computed((get) => {
@@ -269,9 +273,10 @@ function createModelPresentation(atoms: ModelAtoms, values: ModelValues) {
       emptyScoped: empty && scoped,
       recovery,
       showRecovery: recovery || empty || imageVisible,
-      showEmptyCreate: empty && !scoped,
+      showEmptyCreate: empty,
       canMutateTabs,
-      canCreate: canMutateTabs && (streaming || (empty && !scoped)),
+      canCreate:
+        canMutateTabs && get(creationReadySource$) && (streaming || empty),
       tabsDisabled: !get(connected$),
       canSyncDisplay: streaming,
       showImageRetry: imageVisible && image.phase !== "blocked",
@@ -649,6 +654,7 @@ function createConfigurationActions(atoms: ModelAtoms) {
 export function createViewerSignals(
   navigationSource$: Computed<ViewerNavigation | null>,
   navigationScopeSource$: Computed<object | null>,
+  creationReadySource$: Computed<boolean>,
 ) {
   const atoms = createModelAtoms();
   const values = createModelValues(
@@ -656,7 +662,11 @@ export function createViewerSignals(
     navigationSource$,
     navigationScopeSource$,
   );
-  const presentation = createModelPresentation(atoms, values);
+  const presentation = createModelPresentation(
+    atoms,
+    values,
+    creationReadySource$,
+  );
   const publication = createModelPublication(atoms);
   const transitions = createModelTransitions(atoms, publication);
   const address = createAddressActions(atoms, values);

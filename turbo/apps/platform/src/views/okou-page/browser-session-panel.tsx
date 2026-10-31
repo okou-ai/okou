@@ -1,6 +1,5 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { Browser } from "../browser/browser.tsx";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -15,6 +14,7 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { Browser } from "../browser/browser.tsx";
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 
 interface BrowserSessionPanelProps {
@@ -160,7 +160,7 @@ function BrowserCdpViewer({
   overlay,
 }: {
   readonly signals: BrowserSessionSignals;
-  readonly liveUrl: string;
+  readonly liveUrl: string | null;
   readonly instanceId?: string;
   readonly windowId?: number;
   /** The Cloud browser panel switch: app tokens and presence. */
@@ -354,8 +354,7 @@ export function BrowserSessionPanel({
   }
 
   const session = sessionLoadable.data;
-  const liveUrl = session?.status === "active" ? session.liveUrl : null;
-  if (liveUrl === null) {
+  if (session?.status !== "active") {
     return (
       <PausedBrowserSession
         screenshotUrl={session?.screenshotUrl}
@@ -371,14 +370,11 @@ export function BrowserSessionPanel({
     );
   }
 
-  if (!session) {
-    throw new Error("Live managed browser session is unavailable");
-  }
   return (
     <PanelFrame panelRef={keepAliveRef}>
       <BrowserCdpViewer
         signals={signals}
-        liveUrl={liveUrl}
+        liveUrl={session.liveUrl}
         instanceId={session.window?.instanceId}
         windowId={session.window?.primaryWindowId}
         refined={refined}

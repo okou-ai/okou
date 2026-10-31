@@ -5,8 +5,6 @@ import {
 } from "../../__tests__/test-helpers.ts";
 import { createCdpClient } from "../cdp/client.ts";
 import { isRecord } from "../cdp/errors.ts";
-import { createTargetDirectory } from "../cdp/targets.ts";
-import { CreatedTabFault, openTab } from "../cdp/tabs.ts";
 import { releaseRuntimeObjects } from "../cdp/runtime-objects.ts";
 import { createCanvasRenderer, type DecodedFrame } from "../render/canvas.ts";
 
@@ -29,7 +27,11 @@ test("a late attach receipt releases only its original session after the deadlin
     }
     return null;
   });
-  const client = createCdpClient(endpoint, context.signal, undefined, 20);
+  const client = createCdpClient(
+    endpoint,
+    { requestTimeout: 20 },
+    context.signal,
+  );
   await client.opened;
   const result = client.request(
     "Target.attachToTarget",
@@ -68,7 +70,7 @@ test("closing a viewer rejects pending requests without closing the remote brows
     received.push(request.method);
     return null;
   });
-  const client = createCdpClient(endpoint, context.signal);
+  const client = createCdpClient(endpoint, {}, context.signal);
   await client.opened;
   const results = Promise.allSettled([
     client.request("Target.getTargets", undefined),
@@ -85,36 +87,61 @@ test("closing a viewer rejects pending requests without closing the remote brows
   expect(received).toStrictEqual(["Target.getTargets", "Browser.getVersion"]);
 });
 
-test("a failed created-tab preparation retains its receipt without replaying creation", async () => {
-  const methods: string[] = [];
-  context.mocks.browser.webSocket((data) => {
+test("raw native attachment cancellation preserves its original parent session", async () => {
+  const operation = createTestRuntime(context);
+  const sent = context.mocks.deferred<number>();
+  const released = context.mocks.deferred<unknown>();
+  const socket = context.mocks.browser.webSocket((data) => {
     const request: unknown = JSON.parse(data);
-    if (!isRecord(request) || typeof request.method !== "string") {
+    if (!isRecord(request) || typeof request.id !== "number") {
       throw new Error("Invalid fixture request");
     }
-    methods.push(request.method);
+    if (request.method === "Target.attachToBrowserTarget") {
+      sent.resolve(request.id);
+      return null;
+    }
+    if (request.method === "Target.detachFromTarget") {
+      released.resolve({
+        sessionId: request.sessionId,
+        params: request.params,
+      });
+    }
     return JSON.stringify({
       id: request.id,
-      result:
-        request.method === "Target.createTarget"
-          ? { targetId: "already-created" }
-          : { windowId: 1 },
+      result: { product: "original-browser" },
     });
   });
-  const client = createCdpClient(endpoint, context.signal);
+  const client = createCdpClient(endpoint, {}, context.signal);
   await client.opened;
-  const result = openTab(client, createTargetDirectory(client, 0), null, () => {
-    return !context.signal.aborted;
+  const result = client.requestRaw(
+    "Target.attachToBrowserTarget",
+    {},
+    "original-parent",
+    async (value) => {
+      if (isRecord(value) && typeof value.sessionId === "string") {
+        await client.requestRaw(
+          "Target.detachFromTarget",
+          { sessionId: value.sessionId },
+          "original-parent",
+        );
+      }
+    },
+    operation.signal,
+  );
+  const id = await sent.promise;
+  operation.dispose();
+  await expect(result).rejects.toMatchObject({ name: "AbortError" });
+  await expect(
+    client.request("Browser.getVersion", undefined),
+  ).resolves.toMatchObject({ product: "original-browser" });
+  socket.receive(
+    endpoint,
+    JSON.stringify({ id, result: { sessionId: "late-browser-session" } }),
+  );
+  await expect(released.promise).resolves.toStrictEqual({
+    sessionId: "original-parent",
+    params: { sessionId: "late-browser-session" },
   });
-  await expect(result).rejects.toBeInstanceOf(CreatedTabFault);
-  await expect(result).rejects.toMatchObject({
-    targetId: "already-created",
-    kind: "scope",
-  });
-  expect(methods).toStrictEqual([
-    "Target.createTarget",
-    "Browser.getWindowForTarget",
-  ]);
   client.close();
 });
 
@@ -130,7 +157,7 @@ test("an ambiguous CDP response rejects its pending request", async () => {
       error: { code: -32_000, message: "private provider details" },
     });
   });
-  const client = createCdpClient(endpoint, context.signal);
+  const client = createCdpClient(endpoint, {}, context.signal);
   await client.opened;
   await expect(
     client.request("Target.getTargets", undefined),
@@ -148,8 +175,8 @@ test("native events remain private to the originating connection", async () => {
     return null;
   });
   const otherEndpoint = "wss://browser.example/other";
-  const first = createCdpClient(endpoint, context.signal);
-  const second = createCdpClient(otherEndpoint, context.signal);
+  const first = createCdpClient(endpoint, {}, context.signal);
+  const second = createCdpClient(otherEndpoint, {}, context.signal);
   await Promise.all([first.opened, second.opened]);
   const firstEvents: string[] = [];
   const secondEvents: string[] = [];
@@ -212,7 +239,7 @@ test("parallel requests keep independent results when replies arrive out of orde
     }
     return null;
   });
-  const client = createCdpClient(endpoint, context.signal);
+  const client = createCdpClient(endpoint, {}, context.signal);
   await client.opened;
   const first = client.request(
     "Page.navigate",
@@ -263,7 +290,7 @@ test("cancelling one request preserves its socket and releases a late original a
       result: { product: "same-browser" },
     });
   });
-  const client = createCdpClient(endpoint, context.signal);
+  const client = createCdpClient(endpoint, {}, context.signal);
   await client.opened;
   const result = client.request(
     "Target.attachToTarget",
@@ -311,7 +338,7 @@ test("an already-cancelled request never writes to the native connection", async
       result: { product: "same-browser" },
     });
   });
-  const client = createCdpClient(endpoint, context.signal);
+  const client = createCdpClient(endpoint, {}, context.signal);
   await client.opened;
   operation.dispose();
   await expect(
@@ -348,9 +375,10 @@ test("cancelling one connection rejects its request while another stays usable",
       result: { product: "remaining-browser" },
     });
   });
-  const first = createCdpClient(endpoint, runtime.signal);
+  const first = createCdpClient(endpoint, {}, runtime.signal);
   const second = createCdpClient(
     "wss://browser.example/remaining",
+    {},
     context.signal,
   );
   first.onClose((fault) => {
@@ -391,9 +419,14 @@ test("late Runtime objects are released on their original connection and session
     }
     return null;
   });
-  const original = createCdpClient(endpoint, context.signal, undefined, 20);
+  const original = createCdpClient(
+    endpoint,
+    { requestTimeout: 20 },
+    context.signal,
+  );
   const replacement = createCdpClient(
     "wss://browser.example/replacement",
+    {},
     context.signal,
   );
   await Promise.all([original.opened, replacement.opened]);

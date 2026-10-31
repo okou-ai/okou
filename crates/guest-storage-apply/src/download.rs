@@ -526,8 +526,11 @@ fn download_and_extract(
     };
     *opened_file_compressed_bytes = reader.compressed_bytes();
     let extract_start = Instant::now();
-    let result = verify_workflow_archive(reader, expected_archive_sha256)
-        .and_then(|reader| archive::extract_tar_gz(reader, target_path));
+    let result = match expected_archive_sha256 {
+        Some(expected) => source::verify_archive(reader, expected, None),
+        None => Ok(reader),
+    }
+    .and_then(|reader| archive::extract_tar_gz(reader, target_path));
     let extract_wall = extract_start.elapsed();
     if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
         metrics.record_attempt(attempt_metrics.snapshot(), extract_wall);
@@ -536,35 +539,6 @@ fn download_and_extract(
         metrics.record_extraction(attempt_metrics.body_read(), extract_wall);
     }
     result
-}
-
-fn verify_workflow_archive(
-    reader: source::ArchiveSource,
-    expected: Option<&str>,
-) -> Result<source::ArchiveSource, DownloadError> {
-    use sha2::{Digest, Sha256};
-    use std::io::{Cursor, Read};
-    let Some(expected) = expected else {
-        return Ok(reader);
-    };
-    // The API permits 5 MiB of supplementary bytes. This generous transport
-    // bound includes tar metadata and gzip overhead without reducing that limit.
-    const MAX_WORKFLOW_ARCHIVE_BYTES: u64 = 32 * 1024 * 1024;
-    let (reader, _) = reader.into_parts();
-    let mut bytes = Vec::new();
-    reader
-        .take(MAX_WORKFLOW_ARCHIVE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| DownloadError::new("Workflow attachment archive read failed"))?;
-    if bytes.len() as u64 > MAX_WORKFLOW_ARCHIVE_BYTES
-        || hex::encode(Sha256::digest(&bytes)) != expected
-    {
-        return Err(DownloadError::new(
-            "Workflow attachment archive integrity mismatch",
-        ));
-    }
-    let size = bytes.len() as u64;
-    Ok(source::ArchiveSource::local(Cursor::new(bytes), Some(size)))
 }
 
 #[cfg(test)]

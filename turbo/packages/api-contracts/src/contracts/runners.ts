@@ -1139,6 +1139,17 @@ const executionContextObjectSchema = object({
 
 export const executionContextSchema = executionContextObjectSchema.superRefine(
   (context, refinement) => {
+    if (
+      context.contentBundles !== undefined &&
+      (context.agentInstructions !== undefined ||
+        (context.storageManifest?.workflowSkills?.length ?? 0) > 0)
+    ) {
+      refinement.addIssue({
+        code: "custom",
+        path: ["contentBundles"],
+        message: "Content bundles cannot be mixed with legacy claim content",
+      });
+    }
     const piFields = [
       context.piSessionId,
       context.piLaunchConfig,

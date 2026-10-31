@@ -5,6 +5,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
@@ -31,7 +32,7 @@ import {
 } from "./helpers/browser-shared-fixture";
 
 const context = testContext();
-const { fixture, view } = createSharedBrowserFixtures(context);
+const { fixture, view, renew } = createSharedBrowserFixtures(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
@@ -47,6 +48,43 @@ async function use(chat: Chat) {
 }
 
 describe("shared Browser public consumers", () => {
+  it("authorizes native viewing of an active Browser without a provider live URL", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const a = await f.start();
+      await use(a);
+      const [providerSessionId] = f.provider.sessionIds;
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
+          return HttpResponse.json({
+            id: providerSessionId,
+            status: "active",
+            liveUrl: null,
+            cdpUrl: f.provider.native.url,
+            extensions: [TEST_BROWSER_EXTENSION],
+            startedAt: new Date(START).toISOString(),
+            timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+            finishedAt: null,
+          });
+        }),
+      );
+      const params = { threadId: a.threadId };
+      const session = await accept(client().get({ headers, params }), [200]);
+      expect(session.body.browser).toMatchObject({
+        status: "active",
+        liveUrl: null,
+      });
+      const viewer = await accept(
+        client().viewerConnection({ headers, params }),
+        [200],
+      );
+      expect(viewer.body).toStrictEqual({
+        cdpUrl: f.provider.native.url,
+        extension: TEST_BROWSER_EXTENSION,
+      });
+    });
+  });
+
   it("bounds a silent initial-window lookup and recovers through confirmed instance cleanup", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
@@ -1025,6 +1063,281 @@ describe("shared Browser capture publication and admission", () => {
         expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
         expect(siblingAfter.idleExpiresAt).toBe(sibling.browser.idleExpiresAt);
         expect(f.provider.sessionRequests).toHaveLength(1);
+      });
+    },
+  );
+
+  it.each([
+    { previous: false, retirement: "missing" },
+    { previous: true, retirement: "missing" },
+    { previous: true, retirement: "healthy" },
+    { previous: true, retirement: "unavailable" },
+  ] as const)(
+    "keeps newer recovery URLs after a delayed native reply with previous=$previous and retirement=$retirement",
+    async ({ previous, retirement }) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        installBrowserWindowContentCommands(f.provider.native);
+        const a = await f.start();
+        const b = await f.start();
+        const first = await use(a);
+        const sibling = await use(b);
+        const window = first.browser.window;
+        const page = [...f.provider.native.targets.values()].find((target) => {
+          return target.windowId === window?.primaryWindowId;
+        });
+        if (!window || !page) {
+          throw new Error("Expected A's live native page");
+        }
+        const close = () => {
+          return accept(
+            client().close({
+              headers,
+              params: { threadId: a.threadId },
+              body: {},
+            }),
+            [200],
+          );
+        };
+        if (previous) {
+          page.url = "https://a.example.test/previous";
+          await close();
+        }
+        const entered = createDeferredPromise<void>(context.signal);
+        const release = createDeferredPromise<void>(context.signal);
+        let hold = true;
+        f.provider.native.afterNativeWindowReply = async (windowId) => {
+          if (hold && windowId === window.primaryWindowId) {
+            hold = false;
+            entered.resolve();
+            await release.promise;
+          }
+        };
+        mockNow(START + 1000);
+        page.url = "https://a.example.test/older-observation";
+        const earlier = settleIncludingAbort(close());
+        const newer = await settleIncludingAbort(async () => {
+          await Promise.race([
+            entered.promise,
+            earlier.then((result) => {
+              if (!result.ok) {
+                throw result.error;
+              }
+              throw new Error("Expected a held native URL response");
+            }),
+          ]);
+          mockNow(START + 2000);
+          page.url = "https://a.example.test/newer-accepted";
+          await close();
+        });
+        mockNow(START + 3000);
+        release.resolve();
+        const completed = await earlier;
+        if (!newer.ok) {
+          throw newer.error;
+        }
+        if (!completed.ok) {
+          throw completed.error;
+        }
+        if (retirement === "missing") {
+          // Native loss must restore accepted data without a fresh recapture.
+          for (const [id, target] of f.provider.native.targets) {
+            if (target.windowId === window.primaryWindowId) {
+              f.provider.native.targets.delete(id);
+            }
+          }
+        } else {
+          mockNow(START + 9 * MINUTE);
+          await renew(b);
+          if (retirement === "unavailable") {
+            f.provider.native.nativeWindowErrors.set(
+              window.primaryWindowId,
+              "Retirement capture unavailable",
+            );
+          }
+          mockNow(START + 11 * MINUTE);
+        }
+        const restored = await use(a);
+        expect(restored.browser.window?.instanceId).toBe(window.instanceId);
+        expect(restored.browser.window?.primaryWindowId).not.toBe(
+          window.primaryWindowId,
+        );
+        const siblingAfter = await view(b);
+        expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
+        expect(siblingAfter.idleExpiresAt).toBe(
+          retirement === "missing"
+            ? sibling.browser.idleExpiresAt
+            : new Date(START + 19 * MINUTE).toISOString(),
+        );
+        expect(
+          [...f.provider.native.targets.values()]
+            .filter((target) => {
+              return (
+                target.windowId === restored.browser.window?.primaryWindowId
+              );
+            })
+            .map((target) => {
+              return target.url;
+            }),
+        ).toStrictEqual(["https://a.example.test/newer-accepted"]);
+      });
+    },
+  );
+
+  it("keeps newer close URLs when a delayed native retirement capture wins closing", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await use(a);
+      const sibling = await use(b);
+      const window = first.browser.window;
+      const page = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === window?.primaryWindowId;
+      });
+      if (!window || !page) {
+        throw new Error("Expected A's live native page");
+      }
+      mockNow(START + 9 * MINUTE);
+      const leased = await renew(b);
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let hold = true;
+      f.provider.native.afterNativeWindowReply = async (windowId) => {
+        if (hold && windowId === window.primaryWindowId) {
+          hold = false;
+          entered.resolve();
+          await release.promise;
+        }
+      };
+      mockNow(START + 11 * MINUTE);
+      page.url = "https://a.example.test/older-retirement";
+      const earlier = settleIncludingAbort(use(a));
+      const newer = await settleIncludingAbort(async () => {
+        await Promise.race([
+          entered.promise,
+          earlier.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error("Expected a held native retirement response");
+          }),
+        ]);
+        mockNow(START + 11 * MINUTE + 1000);
+        page.url = "https://a.example.test/newer-accepted";
+        await accept(
+          client().close({
+            headers,
+            params: { threadId: a.threadId },
+            body: {},
+          }),
+          [200],
+        );
+      });
+      mockNow(START + 11 * MINUTE + 2000);
+      release.resolve();
+      const completed = await earlier;
+      if (!newer.ok) {
+        throw newer.error;
+      }
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      const restored = completed.value;
+      expect(restored.browser.window?.instanceId).toBe(window.instanceId);
+      expect(restored.browser.window?.primaryWindowId).not.toBe(
+        window.primaryWindowId,
+      );
+      expect(
+        [...f.provider.native.targets.values()]
+          .filter((target) => {
+            return target.windowId === restored.browser.window?.primaryWindowId;
+          })
+          .map((target) => {
+            return target.url;
+          }),
+      ).toStrictEqual(["https://a.example.test/newer-accepted"]);
+      const siblingAfter = await view(b);
+      expect(siblingAfter.window).toStrictEqual(sibling.browser.window);
+      expect(siblingAfter.idleExpiresAt).toBe(leased.idleExpiresAt);
+    });
+  });
+
+  it.each([false, true])(
+    "keeps the newer preview after a delayed native screenshot with previous=%s",
+    async (previous) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        installBrowserWindowContentCommands(f.provider.native);
+        const a = await f.start();
+        await use(a);
+        const close = () => {
+          return accept(
+            client().close({
+              headers,
+              params: { threadId: a.threadId },
+              body: {},
+            }),
+            [200],
+          );
+        };
+        if (previous) {
+          await close();
+          expect((await view(a)).screenshotUrl).not.toBeNull();
+        }
+        const native = f.provider.native.command;
+        if (!native) {
+          throw new Error("Expected external CDP fixture");
+        }
+        const entered = createDeferredPromise<void>(context.signal);
+        const release = createDeferredPromise<void>(context.signal);
+        let hold = true;
+        f.provider.native.command = async (command) => {
+          if (command.method !== "Page.captureScreenshot") {
+            return await native(command);
+          }
+          const earlier = hold;
+          const result = {
+            data: Buffer.from(
+              earlier ? "earlier image" : "later image",
+            ).toString("base64"),
+          };
+          if (earlier) {
+            hold = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return result;
+        };
+        mockNow(START + 1000);
+        const earlier = settleIncludingAbort(close());
+        const newer = await settleIncludingAbort(async () => {
+          await Promise.race([
+            entered.promise,
+            earlier.then((result) => {
+              if (!result.ok) {
+                throw result.error;
+              }
+              throw new Error("Expected a held native screenshot response");
+            }),
+          ]);
+          mockNow(START + 2000);
+          await close();
+          const preview = (await view(a)).screenshotUrl;
+          expect(preview).not.toBeNull();
+          return preview;
+        });
+        mockNow(START + 3000);
+        release.resolve();
+        const completed = await earlier;
+        if (!newer.ok) {
+          throw newer.error;
+        }
+        if (!completed.ok) {
+          throw completed.error;
+        }
+        expect((await view(a)).screenshotUrl).toBe(newer.value);
       });
     },
   );

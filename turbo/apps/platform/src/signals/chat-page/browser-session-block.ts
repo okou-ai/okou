@@ -5,11 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 import {
-  createBrowserSignals,
-  type BrowserConnection,
-  type BrowserSignals,
-} from "../browser/browser.ts";
-import {
   command,
   computed,
   state,
@@ -22,6 +17,11 @@ import { formatAppNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import {
+  createBrowserSignals,
+  type BrowserConnection,
+  type BrowserSignals,
+} from "../browser/browser.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { onRef, setLoop, withCleanup } from "../utils.ts";
 import {
@@ -46,10 +46,11 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly panelSession$: Computed<Promise<BrowserSession | null>>;
   readonly viewerConnection$: Computed<
     Promise<{
-      readonly liveUrl: string;
+      readonly liveUrl: string | null;
       readonly instanceId: string | null;
       readonly windowId: number | null;
       readonly cdpUrl: string;
+      readonly extension: BrowserConnection["extension"];
     } | null>
   >;
   readonly browser: BrowserSignals;
@@ -98,12 +99,6 @@ async function fetchBrowserSession(
   return response.status === 200 ? response.body.browser : null;
 }
 
-function activeBrowserLiveUrl(session: BrowserSession | null): string | null {
-  return session?.status === "active" && session.liveUrl
-    ? session.liveUrl
-    : null;
-}
-
 function sameBrowserWindow(
   left: BrowserSession["window"],
   right: BrowserSession["window"],
@@ -118,12 +113,14 @@ interface BrowserMutationSignalContext {
   readonly descriptor: BrowserSessionDescriptor;
   readonly sessionOverride$: State<BrowserSession | null | undefined>;
   readonly reload$: Command<void, []>;
+  readonly connectionChanged$: BrowserSignals["connectionChanged$"];
 }
 
 function createStartBrowserSignals({
   descriptor,
   sessionOverride$,
   reload$,
+  connectionChanged$,
 }: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
@@ -143,6 +140,7 @@ function createStartBrowserSignals({
     );
     signal.throwIfAborted();
     set(sessionOverride$, started.body.browser);
+    set(connectionChanged$);
   });
   return { start$: openBrowser$ };
 }
@@ -269,7 +267,7 @@ function createBrowserSessionKeepAliveSignals(
           set(reload$);
           const reloadedSession = await get(session$);
           signal.throwIfAborted();
-          return activeBrowserLiveUrl(reloadedSession) === null;
+          return reloadedSession?.status !== "active";
         },
         LEASE_HEARTBEAT_INTERVAL_MS,
         signal,
@@ -302,20 +300,11 @@ export function createBrowserSessionSignals(
   const session$ = computed(async (get): Promise<BrowserSession | null> => {
     return get(leaseOverride$) ?? (await get(lifecycleSession$));
   });
-  const reload$ = command(({ set }) => {
-    set(leaseOverride$, undefined);
-    set(sessionOverride$, undefined);
-    set(reloadVersion$, (version) => {
-      return version + 1;
-    });
-  });
-
   // Lifecycle reloads (including open/close) can replace the connection. Lease
   // responses only refresh presentation and must not interrupt live input.
   const viewerConnection$ = computed(async (get) => {
     const lifecycleSession = await get(lifecycleSession$);
-    const liveUrl = activeBrowserLiveUrl(lifecycleSession);
-    if (!liveUrl) {
+    if (lifecycleSession?.status !== "active") {
       return null;
     }
     const response = await accept(
@@ -327,9 +316,10 @@ export function createBrowserSessionSignals(
     return response.status === 200
       ? {
           cdpUrl: response.body.cdpUrl,
-          liveUrl,
-          instanceId: lifecycleSession?.window?.instanceId ?? null,
-          windowId: lifecycleSession?.window?.primaryWindowId ?? null,
+          extension: response.body.extension,
+          liveUrl: lifecycleSession.liveUrl,
+          instanceId: lifecycleSession.window?.instanceId ?? null,
+          windowId: lifecycleSession.window?.primaryWindowId ?? null,
         }
       : null;
   });
@@ -342,15 +332,25 @@ export function createBrowserSessionSignals(
             cdpUrl: connection.cdpUrl,
             instanceId: connection.instanceId,
             windowId: connection.windowId,
+            extension: connection.extension,
           }
         : null;
     },
   );
   const browser = createBrowserSignals(browserConnection$);
+  const reload$ = command(({ set }) => {
+    set(leaseOverride$, undefined);
+    set(sessionOverride$, undefined);
+    set(reloadVersion$, (version) => {
+      return version + 1;
+    });
+    set(browser.connectionChanged$);
+  });
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,
     reload$,
+    connectionChanged$: browser.connectionChanged$,
   };
   const startSignals = createStartBrowserSignals(mutationContext);
   const closeSignals = createCloseBrowserSignals(mutationContext);

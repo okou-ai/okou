@@ -11,7 +11,8 @@ interface BrowserTarget {
   readonly targetId: string;
   title: string;
   url: string;
-  readonly windowId?: number;
+  pendingUrl?: string;
+  windowId?: number;
 }
 
 const requestSchema = object({
@@ -33,6 +34,8 @@ export function mockBrowserCdp(
     readonly streaming?: boolean;
     readonly targets?: readonly BrowserTarget[];
     readonly unavailableTargets?: readonly string[];
+    readonly extensionAvailable?: boolean;
+    readonly extensionRuntimeId?: string;
   } = {},
 ) {
   context.mocks.browser.canvasRendering();
@@ -54,6 +57,15 @@ export function mockBrowserCdp(
     return { ...target };
   });
   let created = 0;
+  let corruptPageAttachment = false;
+  let updateBeforeTabRead = false;
+  let sessionSequence = 0;
+  let nativeSequence = 0;
+  let nativeEpoch = "fixture-worker";
+  const bindings = new Set<string>();
+  const nativeIds = new Map<string, number>();
+  let nextNativeId = 1;
+  const requests: BrowserRequest[] = [];
   const input: { method: string; params: unknown; sessionId?: string }[] = [];
   const detached: string[] = [];
   const captures: unknown[] = [];
@@ -97,7 +109,123 @@ export function mockBrowserCdp(
     };
     targets.push(target);
     event("Target.targetCreated", { targetInfo: { ...target, type: "page" } });
+    nativeEvent("tab-created", target);
     return target;
+  }
+
+  function nativeTab(target: BrowserTarget) {
+    let id = nativeIds.get(target.targetId);
+    if (id === undefined) {
+      id = nextNativeId++;
+      nativeIds.set(target.targetId, id);
+    }
+    return {
+      id,
+      windowId: target.windowId ?? 0,
+      index: targets.indexOf(target),
+      active: true,
+      pinned: false,
+      discarded: false,
+      url: target.url,
+      ...(target.pendingUrl ? { pendingUrl: target.pendingUrl } : {}),
+      title: target.title,
+    };
+  }
+
+  function nativeEvent(
+    kind: string,
+    target?: BrowserTarget,
+    extra: Record<string, unknown> = {},
+  ) {
+    const payload = JSON.stringify({
+      epoch: nativeEpoch,
+      sequence: ++nativeSequence,
+      kind,
+      ...(target
+        ? { tabId: nativeTab(target).id, windowId: target.windowId ?? 0 }
+        : {}),
+      ...extra,
+    });
+    for (const session of bindings) {
+      event(
+        "Runtime.bindingCalled",
+        { name: "__okouBrowserEvent", payload },
+        session,
+      );
+    }
+  }
+
+  function nativeResult(expression: string) {
+    const raw = expression.slice(expression.indexOf(".invoke(") + 8, -1);
+    const request = object({
+      method: string(),
+      windowId: number().optional(),
+      tabId: number().optional(),
+      url: string().optional(),
+    }).parse(JSON.parse(raw));
+    if (request.method === "getTab" && updateBeforeTabRead) {
+      updateBeforeTabRead = false;
+      const target = targets.find((target) => {
+        return nativeTab(target).id === request.tabId;
+      });
+      if (target) {
+        nativeEvent("tab-updated", target);
+      }
+    }
+    const startedSequence = nativeSequence;
+    let value: unknown;
+    switch (request.method) {
+      case "hello": {
+        value = { protocol: 1, capabilities: ["windows", "tabs", "events"] };
+        break;
+      }
+      case "getWindow": {
+        value = { id: request.windowId, focused: false };
+        break;
+      }
+      case "createTab": {
+        value = {
+          ...nativeTab(addTarget(request.url!, request.windowId ?? 0)),
+          url: "",
+          pendingUrl: request.url,
+        };
+        break;
+      }
+      case "getTab": {
+        value =
+          targets.map(nativeTab).find((tab) => {
+            return tab.id === request.tabId;
+          }) ?? null;
+        break;
+      }
+      case "closeTab": {
+        const index = targets.findIndex((target) => {
+          return nativeTab(target).id === request.tabId;
+        });
+        if (index !== -1) {
+          const target = targets.splice(index, 1)[0]!;
+          event("Target.targetDestroyed", { targetId: target.targetId });
+          nativeEvent("tab-removed", target);
+        }
+        value = null;
+        break;
+      }
+      default: {
+        throw new Error("Unknown native browser operation");
+      }
+    }
+    return {
+      result: {
+        type: "object",
+        value: {
+          ok: true,
+          epoch: nativeEpoch,
+          startedSequence,
+          sequence: nativeSequence,
+          value,
+        },
+      },
+    };
   }
 
   function targetForSession(sessionId: string | undefined) {
@@ -114,14 +242,32 @@ export function mockBrowserCdp(
     switch (request.method) {
       case "Target.getTargets": {
         return {
-          targetInfos: targets.map((target) => {
-            return { ...target, type: "page", attached: false };
-          }),
+          targetInfos: request.sessionId
+            ? [
+                {
+                  type: "service_worker",
+                  targetId: "okou-worker",
+                  url: `chrome-extension://${options.extensionRuntimeId ?? TEST_BROWSER_EXTENSION.runtimeId}/background.js`,
+                },
+                { type: "tab", targetId: "browser-tab", url: "about:blank" },
+              ]
+            : targets.map((target) => {
+                return { ...target, type: "page", attached: false };
+              }),
         };
       }
       case "Target.createTarget": {
         const { url } = object({ url: string() }).parse(request.params);
         return { targetId: addTarget(url).targetId };
+      }
+      case "Target.getTargetInfo": {
+        const target = targets.find((target) => {
+          return target.targetId === request.params?.targetId;
+        });
+        if (!target) {
+          throw new Error("Unknown browser target");
+        }
+        return { targetInfo: { ...target, type: "page", attached: false } };
       }
       case "Target.closeTarget": {
         const index = targets.findIndex((target) => {
@@ -132,6 +278,7 @@ export function mockBrowserCdp(
         }
         const target = targets.splice(index, 1)[0]!;
         event("Target.targetDestroyed", { targetId: target.targetId });
+        nativeEvent("tab-removed", target);
         return { success: true };
       }
       case "Target.detachFromTarget": {
@@ -141,9 +288,22 @@ export function mockBrowserCdp(
         return {};
       }
       case "Target.attachToTarget": {
+        if (
+          request.params?.targetId !== "okou-worker" &&
+          corruptPageAttachment
+        ) {
+          corruptPageAttachment = false;
+          return { sessionId: "" };
+        }
         return {
-          sessionId: `${request.params?.targetId ?? "example-page"}-session`,
+          sessionId:
+            request.params?.targetId === "okou-worker"
+              ? `worker-${++sessionSequence}`
+              : `${request.params?.targetId ?? "example-page"}-session`,
         };
+      }
+      case "Target.attachToBrowserTarget": {
+        return { sessionId: `native-browser-${++sessionSequence}` };
       }
       default: {
         return {};
@@ -180,6 +340,14 @@ export function mockBrowserCdp(
   }
 
   function runtimeResult(request: BrowserRequest): unknown {
+    if (request.method === "Runtime.addBinding") {
+      bindings.add(request.sessionId!);
+      return {};
+    }
+    if (request.method === "Runtime.removeBinding") {
+      bindings.delete(request.sessionId!);
+      return {};
+    }
     if (request.method === "Runtime.callFunctionOn") {
       const params = object({
         arguments: array(object({ value: unknown() })).optional(),
@@ -193,6 +361,11 @@ export function mockBrowserCdp(
       const { expression } = object({ expression: string() }).parse(
         request.params,
       );
+      if (expression.startsWith("globalThis.__okouBrowser?.invoke(")) {
+        return options.extensionAvailable === false
+          ? { result: { type: "undefined" } }
+          : nativeResult(expression);
+      }
       return {
         result: expression.includes("const fence =")
           ? { type: "object", value: { fence: 1000, now: 1001 } }
@@ -207,6 +380,7 @@ export function mockBrowserCdp(
   function navigate(request: BrowserRequest, url: string) {
     const target = targetForSession(request.sessionId);
     target.url = url;
+    delete target.pendingUrl;
     target.title = url === "about:blank" ? url : new URL(url).hostname;
     event(
       "Page.frameNavigated",
@@ -337,14 +511,36 @@ export function mockBrowserCdp(
       throw new Error("Unexpected viewer endpoint");
     }
     const request = requestSchema.parse(JSON.parse(data));
+    requests.push(request);
     if (request.id === undefined) {
       return null;
     }
     // Native effects and notifications precede a held protocol receipt.
     const response = JSON.stringify({ id: request.id, ...respond(request) });
-    const held = heldReplies.get(request.method);
-    if (held) {
-      heldReplies.delete(request.method);
+    let receiptKey = request.method;
+    if (request.method === "Runtime.evaluate") {
+      const { expression } = object({ expression: string() }).parse(
+        request.params,
+      );
+      if (expression.startsWith("globalThis.__okouBrowser?.invoke(")) {
+        const raw = expression.slice(expression.indexOf(".invoke(") + 8, -1);
+        const { method } = object({ method: string() }).parse(JSON.parse(raw));
+        if (heldReplies.has(`native:${method}`)) {
+          receiptKey = `native:${method}`;
+        }
+      }
+    } else if (
+      request.method === "Browser.getWindowForTarget" &&
+      heldReplies.has(`membership:${request.params?.targetId}`)
+    ) {
+      receiptKey = `membership:${request.params?.targetId}`;
+    }
+    const held = heldReplies.get(receiptKey);
+    if (
+      held &&
+      !(request.method === "Target.getTargets" && request.sessionId)
+    ) {
+      heldReplies.delete(receiptKey);
       held(response);
       return null;
     }
@@ -384,6 +580,75 @@ export function mockBrowserCdp(
         release(data = "AAAA") {
           heldFrames.delete(sessionId);
           frame(data, sessionId);
+        },
+      };
+    },
+    requests,
+    nativeEvent,
+    resetWorker() {
+      nativeEpoch = "replacement-worker";
+      nativeEvent("tab-updated");
+    },
+    skipNativeEvent() {
+      nativeSequence++;
+    },
+    move(targetId: string, windowId: number) {
+      const target = targets.find((target) => {
+        return target.targetId === targetId;
+      })!;
+      const oldWindowId = target.windowId ?? 0;
+      target.windowId = windowId;
+      nativeEvent("tab-detached", target, { oldWindowId });
+      nativeEvent("tab-attached", target);
+    },
+    beginNavigation(targetId: string, url: string) {
+      const target = targets.find((target) => {
+        return target.targetId === targetId;
+      })!;
+      target.pendingUrl = url;
+      nativeEvent("tab-updated", target);
+    },
+    duplicate(targetId: string) {
+      const target = targets.find((target) => {
+        return target.targetId === targetId;
+      })!;
+      addTarget(target.url, target.windowId);
+    },
+    corruptNextPageAttachment() {
+      corruptPageAttachment = true;
+    },
+    updateBeforeNextTabRead() {
+      updateBeforeTabRead = true;
+    },
+    holdNextNative(method: string) {
+      const response = context.mocks.deferred<string>();
+      heldReplies.set(`native:${method}`, response.resolve);
+      return {
+        received: response.promise,
+        async release() {
+          socket.receive(cdpUrl, await response.promise);
+        },
+      };
+    },
+    holdNextMembership(targetId: string) {
+      const response = context.mocks.deferred<string>();
+      heldReplies.set(`membership:${targetId}`, response.resolve);
+      return {
+        received: response.promise,
+        async release() {
+          socket.receive(cdpUrl, await response.promise);
+        },
+        async releaseFailure(
+          message = "Target no longer exists",
+          code = -32_000,
+        ) {
+          const { id } = object({ id: number() }).parse(
+            JSON.parse(await response.promise),
+          );
+          socket.receive(
+            cdpUrl,
+            JSON.stringify({ id, error: { code, message } }),
+          );
         },
       };
     },

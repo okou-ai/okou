@@ -89,6 +89,11 @@ export interface BrowserConnection {
   readonly cdpUrl: string;
   readonly instanceId: string | null;
   readonly windowId: number | null;
+  readonly extension: {
+    readonly id: string;
+    readonly runtimeId: string;
+    readonly version: string;
+  };
 }
 export type ViewerTransport = "shared" | "split";
 export type WindowSizeSync = "off" | "initial" | "live";

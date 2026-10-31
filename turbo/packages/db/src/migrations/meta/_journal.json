@@ -2934,6 +2934,34 @@
       "when": 1793356291934,
       "tag": "1497_atomic_chat_thread_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 1498,
+      "version": "7",
+      "when": 1793359349592,
+      "tag": "1498_atomic_run_builtin_admission",
+      "breakpoints": true
+    },
+    {
+      "idx": 1499,
+      "version": "7",
+      "when": 1793375625566,
+      "tag": "1499_atomic_chat_event_search_projection",
+      "breakpoints": true
+    },
+    {
+      "idx": 1500,
+      "version": "7",
+      "when": 1793392088046,
+      "tag": "1500_write_usage_pack_pending_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 1501,
+      "version": "7",
+      "when": 1793398192619,
+      "tag": "1501_delete_builtin_connector_local_state",
+      "breakpoints": true
     }
   ]
 }

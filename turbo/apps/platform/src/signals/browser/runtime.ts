@@ -6,7 +6,9 @@ import {
   onRef,
   Reason,
   resetSignal,
+  type DeferredPromise,
 } from "../utils.ts";
+import { pageSignal$ } from "../page-signal.ts";
 import type { BrowserSignals } from "./browser.ts";
 import { CdpFault, diagnostic } from "./cdp/errors.ts";
 import { observeDisplay } from "./display.ts";
@@ -50,15 +52,11 @@ type Controller = ReturnType<typeof createBrowserController>;
 interface NativeLease {
   readonly identity: BrowserIdentity;
   readonly controller: Controller;
+  readonly resetRetirement$: ReturnType<typeof resetSignal>;
 }
 type ConnectionObservation = Command<
   Promise<void>,
-  [
-    Promise<BrowserConnection | null>,
-    BrowserNodes | null,
-    HTMLDivElement,
-    AbortSignal,
-  ]
+  [Promise<BrowserConnection | null>, BrowserNodes | null, AbortSignal]
 >;
 
 function cancelled(): DOMException {
@@ -71,7 +69,10 @@ function sameConnection(
   return (
     left?.cdpUrl === right.cdpUrl &&
     left.instanceId === right.instanceId &&
-    left.windowId === right.windowId
+    left.windowId === right.windowId &&
+    left.extension.id === right.extension.id &&
+    left.extension.runtimeId === right.extension.runtimeId &&
+    left.extension.version === right.extension.version
   );
 }
 function sameIdentity(
@@ -97,33 +98,10 @@ function sameIdentity(
   );
 }
 
-/** Observing a parent request does not acquire ownership of that request. */
-async function awaitOwned<T>(
-  pending: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  signal.throwIfAborted();
-  const deferred = createDeferredPromise<T>(signal);
-  const [result] = await Promise.allSettled([
-    Promise.race([pending, deferred.promise]),
-  ]);
-  if (!deferred.settled()) {
-    if (result.status === "fulfilled") {
-      deferred.resolve(result.value);
-    } else {
-      deferred.reject(result.reason);
-    }
-  }
-  signal.throwIfAborted();
-  if (result.status === "rejected") {
-    throw result.reason;
-  }
-  return result.value;
-}
-
 /** Real ref owners publish DOM identity, never AbortSignals, into state. */
 function createNodeRef<E extends HTMLElement>(
   released$: Command<void, [object]>,
+  connectionChanged$: Command<void, []>,
 ) {
   const mountedState$ = state<Mounted<E> | null>(null);
   const mounted$ = computed((get) => {
@@ -137,6 +115,7 @@ function createNodeRef<E extends HTMLElement>(
       }
       const mounted = { node };
       set(mountedState$, mounted);
+      set(connectionChanged$);
       signal.addEventListener(
         "abort",
         () => {
@@ -144,6 +123,7 @@ function createNodeRef<E extends HTMLElement>(
             set(mountedState$, null);
           }
           set(released$, mounted);
+          set(connectionChanged$);
         },
         { once: true },
       );
@@ -152,23 +132,11 @@ function createNodeRef<E extends HTMLElement>(
   return { mounted$, ref$ };
 }
 
-/** Factory selected in computed; its command receives the actual ref owner. */
-function createRequestRef(
-  request: Promise<BrowserConnection | null>,
-  nodes: BrowserNodes | null,
-  observe$: ConnectionObservation,
-) {
-  return onRef(
-    command(({ set }, root: HTMLDivElement, signal: AbortSignal) => {
-      return set(observe$, request, nodes, root, signal);
-    }),
-  );
-}
-
 function createRuntimeState(
   connection$: Computed<Promise<BrowserConnection | null>>,
 ) {
   const installed$ = state<NativeLease | null>(null);
+  const retiring$ = state<ReadonlySet<NativeLease>>(new Set());
   const remoteNavigation$ = computed((get) => {
     const lease = get(installed$);
     return lease ? get(lease.controller.navigation$) : null;
@@ -177,7 +145,15 @@ function createRuntimeState(
     const lease = get(installed$);
     return lease ? get(lease.controller.navigationScope$) : null;
   });
-  const model = createViewerSignals(remoteNavigation$, remoteNavigationScope$);
+  const creationReadySource$ = computed((get) => {
+    const lease = get(installed$);
+    return lease !== null && get(lease.controller.canCreate$);
+  });
+  const model = createViewerSignals(
+    remoteNavigation$,
+    remoteNavigationScope$,
+    creationReadySource$,
+  );
   const confirmedRequest$ = state<
     Promise<BrowserConnection | null> | undefined
   >(undefined);
@@ -187,6 +163,15 @@ function createRuntimeState(
   const inViewport$ = state(true);
   const documentHidden$ = state(document.hidden);
   const resetNativeOwner$ = resetSignal();
+  const resetObservation$ = resetSignal();
+  const changeNotification$ = state<DeferredPromise<void> | null>(null);
+  const connectionChanged$ = command(({ get, set }) => {
+    set(resetObservation$, AbortSignal.abort(cancelled()));
+    const notification = get(changeNotification$);
+    if (notification && !notification.settled()) {
+      notification.resolve();
+    }
+  });
   // Pending parent authority is revoked synchronously, before React ref commit.
   const authority$ = computed((get) => {
     return (
@@ -208,9 +193,13 @@ function createRuntimeState(
     generation$,
     observer$,
     installed$,
+    retiring$,
     inViewport$,
     documentHidden$,
     resetNativeOwner$,
+    resetObservation$,
+    changeNotification$,
+    connectionChanged$,
     authority$,
     pending$,
     paused$,
@@ -218,13 +207,25 @@ function createRuntimeState(
 }
 type RuntimeState = ReturnType<typeof createRuntimeState>;
 
-function createMountedNodeGraph(released$: Command<void, [object]>) {
-  const surface = createNodeRef<HTMLDivElement>(released$);
-  const canvas = createNodeRef<HTMLCanvasElement>(released$);
-  const inputNode = createNodeRef<HTMLTextAreaElement>(released$);
-  const toolbar = createNodeRef<HTMLDivElement>(released$);
-  const tabs = createNodeRef<HTMLDivElement>(released$);
-  const address = createNodeRef<HTMLInputElement>(released$);
+function createMountedNodeGraph(
+  released$: Command<void, [object]>,
+  connectionChanged$: Command<void, []>,
+) {
+  const surface = createNodeRef<HTMLDivElement>(released$, connectionChanged$);
+  const canvas = createNodeRef<HTMLCanvasElement>(
+    released$,
+    connectionChanged$,
+  );
+  const inputNode = createNodeRef<HTMLTextAreaElement>(
+    released$,
+    connectionChanged$,
+  );
+  const toolbar = createNodeRef<HTMLDivElement>(released$, connectionChanged$);
+  const tabs = createNodeRef<HTMLDivElement>(released$, connectionChanged$);
+  const address = createNodeRef<HTMLInputElement>(
+    released$,
+    connectionChanged$,
+  );
   const nodes$ = computed((get): BrowserNodes | null => {
     const canvasNode = get(canvas.mounted$);
     const proxy = get(inputNode.mounted$);
@@ -315,7 +316,7 @@ function createDOMGraph(context: RuntimeState) {
     address,
     nodes$,
     toolbarNodes$,
-  } = createMountedNodeGraph(released$);
+  } = createMountedNodeGraph(released$, context.connectionChanged$);
   const focus = createToolbarFocus(toolbarNodes$);
   const identity$ = computed((get): BrowserIdentity | null => {
     const connection = get(liveConnection$);
@@ -334,6 +335,7 @@ function createDOMGraph(context: RuntimeState) {
     return identity
       ? {
           identity,
+          resetRetirement$: resetSignal(),
           controller: createBrowserController(
             model,
             identity.connection,
@@ -379,10 +381,41 @@ type RuntimeGraph = ReturnType<typeof createDOMGraph>;
 
 /** Native event boundaries pass their original owner explicitly to commands. */
 function createNativeObservations(context: RuntimeState, graph: RuntimeGraph) {
-  const { model, installed$, documentHidden$, inViewport$, paused$ } = context;
+  const {
+    model,
+    installed$,
+    retiring$,
+    documentHidden$,
+    inViewport$,
+    paused$,
+  } = context;
   const { native, focus } = graph;
+  const finishRetirement$ = command(
+    async ({ get, set }, lease: NativeLease, signal: AbortSignal) => {
+      const [closed] = await Promise.allSettled([
+        set(lease.controller.waitForClosed$, signal),
+      ]);
+      signal.throwIfAborted();
+      const remaining = new Set(get(retiring$));
+      remaining.delete(lease);
+      set(retiring$, remaining);
+      set(lease.resetRetirement$, AbortSignal.abort(cancelled()));
+      if (closed.status === "rejected") {
+        throw closed.reason;
+      }
+    },
+  );
   const releaseNative$ = command(({ get, set }, lease: NativeLease) => {
     set(lease.controller.dispose$);
+    if (!get(retiring$).has(lease)) {
+      set(retiring$, new Set(get(retiring$)).add(lease));
+      const retirement = set(lease.resetRetirement$);
+      detach(
+        set(finishRetirement$, lease, retirement),
+        Reason.DomCallback,
+        "browser native retirement",
+      );
+    }
     if (get(installed$) !== lease) {
       return;
     }
@@ -548,8 +581,8 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
 
 /** Required onRef owners cancel this stable reset; no signal enters state. */
 function createNativeLifecycle(context: RuntimeState, graph: RuntimeGraph) {
-  const { installed$, authority$, resetNativeOwner$ } = context;
-  const { controllerGraph$, retireLease$ } = graph;
+  const { installed$, retiring$, authority$, resetNativeOwner$ } = context;
+  const { controllerGraph$, identity$, retireLease$ } = graph;
   const mount$ = createNativeMount(context, graph);
   const install$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<NativeLease> => {
@@ -568,12 +601,48 @@ function createNativeLifecycle(context: RuntimeState, graph: RuntimeGraph) {
       if (previous) {
         set(retireLease$, previous);
       }
+      // A retiring incarnation of this resource must finish before reuse. A
+      // confirmed distinct resource owns independent sockets and must not wait.
+      for (const retiring of get(retiring$)) {
+        if (
+          sameConnection(
+            retiring.identity.connection,
+            resource.identity.connection,
+          )
+        ) {
+          await set(retiring.controller.waitForClosed$, signal);
+          signal.throwIfAborted();
+        }
+      }
+      signal.throwIfAborted();
+      if (
+        !get(authority$) ||
+        !sameIdentity(resource.identity, get(identity$))
+      ) {
+        throw cancelled();
+      }
       const owner = set(resetNativeOwner$);
       const lease: NativeLease = resource;
       set(installed$, lease);
-      await awaitOwned(set(mount$, lease, owner), signal);
+      // The mount retains its DOM/native owner if this request reader is replaced.
+      const interrupted = createDeferredPromise<void>(signal);
+      const [mounted] = await Promise.allSettled([
+        Promise.race([set(mount$, lease, owner), interrupted.promise]),
+      ]);
       signal.throwIfAborted();
-      if (get(installed$) !== lease || !get(authority$)) {
+      if (!interrupted.settled()) {
+        interrupted.resolve();
+      }
+      if (mounted.status === "rejected") {
+        set(retireLease$, lease);
+        await set(lease.controller.waitForClosed$, signal);
+        throw mounted.reason;
+      }
+      if (
+        get(installed$) !== lease ||
+        !get(authority$) ||
+        !sameIdentity(lease.identity, get(identity$))
+      ) {
         throw cancelled();
       }
       return lease;
@@ -583,6 +652,101 @@ function createNativeLifecycle(context: RuntimeState, graph: RuntimeGraph) {
 }
 type NativeLifecycle = ReturnType<typeof createNativeLifecycle>;
 
+/** Revalidation drains before reuse, not before learning a replacement identity. */
+function createConnectionResolution(context: RuntimeState) {
+  const { installed$, confirmedRequest$ } = context;
+  return command(
+    async (
+      { get, set },
+      request: Promise<BrowserConnection | null>,
+      signal: AbortSignal,
+    ): Promise<BrowserConnection | null> => {
+      signal.throwIfAborted();
+      const previous = get(installed$);
+      // The synchronous prefix revokes old admission immediately. Its original
+      // cleanup remains controller-owned even when this reader stops waiting.
+      // allSettled observes rejection even on the distinct-identity branch;
+      // actual disposal/drain is also retained by the retiring lease receipt.
+      const revocation = Promise.allSettled([
+        previous && request !== get(confirmedRequest$)
+          ? set(previous.controller.revokeAuthority$, signal)
+          : Promise.resolve(),
+      ]);
+      const interrupted = createDeferredPromise<never>(signal);
+      using _interruption = {
+        [Symbol.dispose]() {
+          if (!interrupted.settled()) {
+            interrupted.reject(cancelled());
+          }
+        },
+      };
+      const connection = await Promise.race([request, interrupted.promise]);
+      signal.throwIfAborted();
+      if (
+        connection &&
+        previous &&
+        sameConnection(previous.identity.connection, connection)
+      ) {
+        const [revoked] = await Promise.race([revocation, interrupted.promise]);
+        signal.throwIfAborted();
+        if (revoked.status === "rejected") {
+          throw revoked.reason;
+        }
+      }
+      return connection;
+    },
+  );
+}
+
+/** Publish only confirmed descriptors; disposal precedes successor model setup. */
+function createConnectionPublication(
+  context: RuntimeState,
+  graph: RuntimeGraph,
+  lifecycle: NativeLifecycle,
+) {
+  const { installed$, liveConnection$, confirmedRequest$, model } = context;
+  const { retireLease$, identity$ } = graph;
+  return command(
+    async (
+      { get, set },
+      request: Promise<BrowserConnection | null>,
+      connection: BrowserConnection | null,
+      nodes: BrowserNodes | null,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      if (!connection) {
+        const old = get(installed$);
+        if (old) {
+          set(retireLease$, old);
+        }
+        set(liveConnection$, null);
+        set(confirmedRequest$, request);
+        set(model.transition$, { type: "target-lost", error: null });
+        return;
+      }
+      if (!sameConnection(get(liveConnection$), connection)) {
+        const old = get(installed$);
+        if (old) {
+          set(retireLease$, old);
+        }
+        set(liveConnection$, connection);
+      }
+      set(confirmedRequest$, request);
+      if (!nodes) {
+        return;
+      }
+      const existing = get(installed$);
+      if (existing && sameIdentity(existing.identity, get(identity$))) {
+        await set(existing.controller.refreshAuthority$, signal);
+      } else {
+        await set(lifecycle.install$, signal);
+      }
+      signal.throwIfAborted();
+    },
+  );
+}
+
 /** Current request equality is the authority fence; no mirrored loading state. */
 function createConnectionObservers(
   context: RuntimeState,
@@ -591,19 +755,20 @@ function createConnectionObservers(
 ) {
   const {
     connection$,
-    confirmedRequest$,
-    liveConnection$,
     observer$,
     installed$,
+    liveConnection$,
+    confirmedRequest$,
     model,
   } = context;
-  const { nodes$, identity$, retireLease$ } = graph;
+  const { nodes$, retireLease$ } = graph;
+  const resolve$ = createConnectionResolution(context);
+  const publish$ = createConnectionPublication(context, graph, lifecycle);
   const observeConnection$: ConnectionObservation = command(
     async (
       { get, set },
       request: Promise<BrowserConnection | null>,
       nodes: BrowserNodes | null,
-      _root: HTMLDivElement,
       signal: AbortSignal,
     ) => {
       const observation = {};
@@ -626,26 +791,15 @@ function createConnectionObservers(
         },
         { once: true },
       );
-      const previous = get(installed$);
-      const revocation =
-        previous && request !== get(confirmedRequest$)
-          ? set(previous.controller.revokeAuthority$, signal)
-          : Promise.resolve();
-      const [resolved, revoked] = await Promise.allSettled([
-        awaitOwned(request, signal),
-        awaitOwned(revocation, signal),
+      const [resolved] = await Promise.allSettled([
+        set(resolve$, request, signal),
       ]);
       signal.throwIfAborted();
       if (!current()) {
         throw cancelled();
       }
-      if (resolved.status === "rejected" || revoked.status === "rejected") {
-        const error: unknown =
-          resolved.status === "rejected"
-            ? resolved.reason
-            : revoked.status === "rejected"
-              ? revoked.reason
-              : cancelled();
+      if (resolved.status === "rejected") {
+        const error: unknown = resolved.reason;
         const old = get(installed$);
         if (old) {
           set(retireLease$, old);
@@ -658,46 +812,78 @@ function createConnectionObservers(
         set(model.transition$, { type: "failed", error: diagnostic(error) });
         throw error;
       }
-      const connection = resolved.value;
-      if (!connection) {
-        const old = get(installed$);
-        if (old) {
-          set(retireLease$, old);
-        }
-        set(liveConnection$, null);
-        set(confirmedRequest$, request);
-        set(model.transition$, { type: "target-lost", error: null });
-        return;
-      }
-      if (!sameConnection(get(liveConnection$), connection)) {
-        const old = get(installed$);
-        if (old) {
-          set(retireLease$, old);
-        }
-        set(liveConnection$, connection);
-      }
-      if (!current()) {
-        throw cancelled();
-      }
-      set(confirmedRequest$, request);
-      if (!nodes) {
-        return;
-      }
-      const existing = get(installed$);
-      if (existing && sameIdentity(existing.identity, get(identity$))) {
-        await set(existing.controller.refreshAuthority$, signal);
-      } else {
-        await set(lifecycle.install$, signal);
-      }
+      await set(publish$, request, resolved.value, nodes, signal);
+      signal.throwIfAborted();
       if (!current()) {
         throw cancelled();
       }
     },
   );
-  const root$ = computed((get) => {
-    return createRequestRef(get(connection$), get(nodes$), observeConnection$);
-  });
-  return { root$ };
+  return { root$: createRootObservation(context, graph, observeConnection$) };
+}
+
+/** The stable real DOM owner and page lifetime settle every parked receipt. */
+function createRootObservation(
+  context: RuntimeState,
+  graph: RuntimeGraph,
+  observeConnection$: ConnectionObservation,
+) {
+  const { installed$, observer$, connection$ } = context;
+  const { nodes$, retireLease$ } = graph;
+  return onRef(
+    command(
+      async ({ get, set }, root: HTMLDivElement, mountSignal: AbortSignal) => {
+        const signal = AbortSignal.any([mountSignal, get(pageSignal$)]);
+        signal.throwIfAborted();
+        signal.addEventListener(
+          "abort",
+          () => {
+            set(context.resetObservation$, AbortSignal.abort(cancelled()));
+            set(context.changeNotification$, null);
+            const lease = get(installed$);
+            if (lease && root.contains(lease.identity.nodes.surface.node)) {
+              set(retireLease$, lease);
+            }
+          },
+          { once: true },
+        );
+        // Only actual mount and semantic publishers wake reconciliation. Registration
+        // precedes the snapshot so notifications cannot fall between read and wait.
+        while (!signal.aborted) {
+          const notification = createDeferredPromise<void>(signal);
+          set(context.changeNotification$, notification);
+          const observation = set(context.resetObservation$, signal);
+          const nodes = get(nodes$);
+          const mountedNodes =
+            nodes &&
+            Object.values(nodes).every((mounted) => {
+              return root.contains(mounted.node);
+            })
+              ? nodes
+              : null;
+          const [result] = await Promise.allSettled([
+            set(
+              observeConnection$,
+              get(connection$),
+              mountedNodes,
+              observation,
+            ),
+          ]);
+          signal.throwIfAborted();
+          if (result.status === "rejected" && !isAbortError(result.reason)) {
+            // Reconciliation already published its current failure. A future actual
+            // notification, not an automatic retry, owns the next attempt.
+            set(observer$, null);
+          }
+          await notification.promise;
+          signal.throwIfAborted();
+          if (get(context.changeNotification$) === notification) {
+            set(context.changeNotification$, null);
+          }
+        }
+      },
+    ),
+  );
 }
 
 function createTabActions(graph: RuntimeGraph) {
@@ -720,7 +906,7 @@ function createTabActions(graph: RuntimeGraph) {
         set(focus.cancelCreate$);
         throw created.reason;
       }
-      set(focus.created$);
+      await set(focus.created$, signal);
       return created.value;
     },
   );
@@ -961,6 +1147,7 @@ export function createBrowserRuntime(
     ...navigationActions,
     ...configurationActions,
     ...presentation,
+    connectionChanged$: context.connectionChanged$,
     refs: {
       root$: observers.root$,
       canvas$: graph.canvas.ref$,

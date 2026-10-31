@@ -25,8 +25,21 @@ import {
   isRecord,
   validateConfiguration,
 } from "../cdp/errors.ts";
-import { createTargetDirectory, type TargetDirectory } from "../cdp/targets.ts";
-import { CreatedTabFault, openTab } from "../cdp/tabs.ts";
+import {
+  createTargetDirectory,
+  pageTarget,
+  type TargetDirectory,
+} from "../cdp/targets.ts";
+import { CreatedTabFault, createTabCreation } from "../cdp/tabs.ts";
+import {
+  changesMembership,
+  connectNative,
+  nativeFault,
+} from "../cdp/native.ts";
+import type {
+  OkouBrowserClient,
+  NativeEvent,
+} from "@okouai/browser-extension-client";
 import { createInputSession } from "../input/session.ts";
 import type { NativeInputHost } from "../input/port.ts";
 import { createNavigationData } from "../navigation/data.ts";
@@ -227,7 +240,7 @@ function createSelectedSession(
       if (!get(current$)) {
         throw cancelled();
       }
-      await directory.assertMember(attached.owner.targetId);
+      await set(directory.assertMember$, attached.owner.targetId, signal);
       signal.throwIfAborted();
       if (!get(current$)) {
         throw cancelled();
@@ -241,7 +254,7 @@ function createSelectedSession(
       if (boundary === null || !get(current$)) {
         throw cancelled();
       }
-      await directory.assertMember(attached.owner.targetId);
+      await set(directory.assertMember$, attached.owner.targetId, signal);
       signal.throwIfAborted();
       if (!get(current$)) {
         throw cancelled();
@@ -390,6 +403,9 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
 
 interface ControllerLinks {
   readonly discoveryFailed$: Command<void, [unknown, AbortSignal]>;
+  readonly nativeEvent$: Command<void, [NativeEvent]>;
+  readonly beginClosing$: Command<void, []>;
+  readonly waitForClosed$: Command<Promise<void>, [AbortSignal]>;
   readonly discoveryChanged$: Command<void, [AbortSignal]>;
   readonly discovery$: Computed<ReturnType<
     typeof createTargetDiscovery
@@ -412,6 +428,7 @@ interface ControllerLinks {
   readonly displayGraph$: Computed<ReturnType<typeof createDisplaySync> | null>;
   readonly display$: Computed<DisplayState>;
   readonly input$: Computed<ReturnType<typeof createInputSession> | null>;
+  readonly canCreate$: Computed<boolean>;
   readonly navigation$: Computed<ViewerNavigation | null>;
   readonly history$: Computed<Promise<ViewerHistory | null>>;
   readonly navigationScope$: Computed<object | null>;
@@ -424,7 +441,7 @@ interface ControllerLinks {
     Promise<void>,
     [SelectedSession, Retirement, InputStop, AbortSignal]
   >;
-  readonly retireCurrent$: Command<void, [InputStop, boolean]>;
+  readonly retireCurrent$: Command<void, [InputStop, boolean, boolean?]>;
   readonly streaming$: Command<void, [SelectedSession]>;
   readonly waitReady$: Command<Promise<void>, [SelectionOwner, AbortSignal]>;
   readonly attach$: Command<Promise<void>, [SelectionOwner, AbortSignal]>;
@@ -474,6 +491,10 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
   const resetCreate$ = resetSignal();
   const sink = createCanvasRenderer(canvas);
   const clientState$ = state<CdpClient | null>(null);
+  const nativeState$ = state<OkouBrowserClient | null>(null);
+  const closingState$ = state(false);
+  const disconnectingState$ = state(false);
+  const closedState$ = state<PromiseSettledResult<void> | null>(null);
   const framesState$ = state<CdpClient | null>(null);
   const connectedState$ = state(false);
   const disposedState$ = state(false);
@@ -504,6 +525,10 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
     resetCreate$,
     sink,
     clientState$,
+    nativeState$,
+    closingState$,
+    disconnectingState$,
+    closedState$,
     framesState$,
     connectedState$,
     disposedState$,
@@ -596,8 +621,21 @@ function createControllerState(
   });
   const directory$ = computed((get) => {
     const client = get(clientState$);
-    return client
-      ? createTargetDirectory(client, connection.windowId ?? undefined)
+    const native = get(atoms.nativeState$);
+    return client && native
+      ? createTargetDirectory(client, connection.windowId, native)
+      : null;
+  });
+  const creation$ = computed((get) => {
+    const client = get(clientState$);
+    const directory = get(directory$);
+    const native = get(atoms.nativeState$);
+    return client && directory && native
+      ? createTabCreation(client, directory, {
+          native,
+          windowId: connection.windowId,
+          current$: available$,
+        })
       : null;
   });
   return {
@@ -614,6 +652,7 @@ function createControllerState(
     waitEvent$,
     assertAvailable$,
     directory$,
+    creation$,
   };
 }
 type ControllerContext = ReturnType<typeof createControllerState>;
@@ -627,7 +666,6 @@ function createDiscoveryGraph(
 > {
   const {
     model,
-    connection,
     bootstrapping$,
     chosenOnce$,
     readinessFailure$,
@@ -644,12 +682,15 @@ function createDiscoveryGraph(
         return;
       }
       set(readinessFailure$, error);
+      set(context.connectedState$, false);
+      set(model.setConnected$, false);
       set(get(links$).retireCurrent$, "target-replaced", false);
       set(model.transition$, {
         type: "discovery-failed",
         error: diagnostic(error),
       });
       set(wake$);
+      set(get(links$).beginClosing$);
     },
   );
   const discoveryChanged$ = command(
@@ -666,7 +707,7 @@ function createDiscoveryGraph(
         }) &&
         !get(closingTargets$).has(selected)
       ) {
-        set(get(links$).retireCurrent$, "target-replaced", false);
+        set(get(links$).retireCurrent$, "target-replaced", false, true);
         set(model.transition$, {
           type: "target-lost",
           error: diagnostic(
@@ -677,7 +718,19 @@ function createDiscoveryGraph(
           ),
         });
       } else if (
+        selected &&
+        !get(get(links$).selectedSession$) &&
+        !get(context.creationOwner$) &&
+        get(available$)
+      ) {
+        detach(
+          set(get(links$).selectTab$, selected, signal),
+          Reason.DomCallback,
+          "browser revalidated selection",
+        );
+      } else if (
         !selected &&
+        !get(context.creationOwner$) &&
         !get(chosenOnce$) &&
         !get(bootstrapping$) &&
         snapshot.targets[0] &&
@@ -688,13 +741,24 @@ function createDiscoveryGraph(
           Reason.DomCallback,
           "browser discovered selection",
         );
-      } else if (!selected && !snapshot.targets.length) {
+      } else if (
+        !selected &&
+        !snapshot.targets.length &&
+        !get(context.creationOwner$)
+      ) {
         set(model.transition$, { type: "target-lost", error: null });
       }
       set(nativeHost.synchronize$);
       set(wake$);
     },
   );
+  const invalidated$ = command(({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    if (!get(connected$)) {
+      return;
+    }
+    set(get(links$).retireCurrent$, "target-replaced", true, true);
+  });
   const discovery$ = computed((get) => {
     const directory = get(directory$);
     return directory
@@ -706,8 +770,7 @@ function createDiscoveryGraph(
             inventory$: model.inventoryUpdate$,
           },
           {
-            scoped:
-              connection.windowId !== null && connection.windowId !== undefined,
+            invalidated$,
             changed$: discoveryChanged$,
             failed$: discoveryFailed$,
           },
@@ -757,7 +820,7 @@ function createCaptureRecoveryGraph(
         )
       ) {
         set(readinessFailure$, error);
-        set(get(links$).retireCurrent$, "target-replaced", false);
+        set(get(links$).retireCurrent$, "target-replaced", false, true);
         set(model.transition$, { type: "failed", error: fault });
         set(wake$);
         return;
@@ -845,7 +908,6 @@ function createSelectedSessionsGraph(
   links$: Computed<ControllerLinks>,
 ): Pick<ControllerLinks, "captureStarted$" | "selectedSession$"> {
   const {
-    connection,
     sink,
     selectedOwner$,
     attachedState$,
@@ -884,10 +946,8 @@ function createSelectedSessionsGraph(
         get(available$) &&
         get(selectedOwner$) === attached.owner &&
         !!discovery &&
-        get(discovery.active$) &&
-        (connection.windowId === null ||
-          connection.windowId === undefined ||
-          get(discovery.selectedTargetId$) === attached.owner.targetId)
+        get(discovery.ready$) &&
+        get(discovery.selectedTargetId$) === attached.owner.targetId
       );
     });
     return createSelectedSession(attached, current$, {
@@ -913,9 +973,16 @@ function createDisplayGraph(
   | "displayGraph$"
   | "display$"
   | "input$"
+  | "canCreate$"
 > {
-  const { model, connection, clientState$, connected$, capturePending$ } =
-    context;
+  const {
+    model,
+    connection,
+    clientState$,
+    connected$,
+    available$,
+    capturePending$,
+  } = context;
   const refreshCapture$ = command(
     async (
       { get, set },
@@ -969,6 +1036,22 @@ function createDisplayGraph(
       ? selected.input
       : null;
   });
+  const canCreate$ = computed((get) => {
+    if (!get(available$)) {
+      return false;
+    }
+    if (get(input$) !== null) {
+      return true;
+    }
+    const discovery = get(get(links$).discovery$);
+    const snapshot = get(model.snapshot$);
+    return (
+      !!discovery &&
+      get(discovery.ready$) &&
+      snapshot.selectedTargetId === null &&
+      snapshot.targets.length === 0
+    );
+  });
   return {
     refreshCapture$,
     displaySettled$,
@@ -976,6 +1059,7 @@ function createDisplayGraph(
     displayGraph$,
     display$,
     input$,
+    canCreate$,
   };
 }
 
@@ -1195,7 +1279,6 @@ function createRetirementsGraph(
     resetSelection$,
     resetCreate$,
     sink,
-    clientState$,
     disposedState$,
     selectedOwner$,
     attachedState$,
@@ -1206,8 +1289,13 @@ function createRetirementsGraph(
     nativeHost,
   } = context;
   const receipts = createRetirementReceiptsGraph(context);
-  const retireCurrent$: Command<void, [InputStop, boolean]> = command(
-    ({ get, set }, reason: InputStop, retainFrame: boolean) => {
+  const retireCurrent$: Command<void, [InputStop, boolean, boolean?]> = command(
+    (
+      { get, set },
+      reason: InputStop,
+      retainFrame: boolean,
+      preserveCreation = false,
+    ) => {
       const selected = get(get(links$).selectedSession$);
       if (selected) {
         const image = get(model.imageRecovery$);
@@ -1253,17 +1341,14 @@ function createRetirementsGraph(
         );
       }
       set(resetSelection$);
-      set(resetCreate$);
-      set(creationOwner$, null);
+      if (!preserveCreation) {
+        set(resetCreate$);
+        set(creationOwner$, null);
+      }
       set(selectedOwner$, null);
       set(attachedState$, null);
       set(captureStartedState$, null);
       set(get(links$).cancelCapture$);
-      const discovery = get(get(links$).discovery$);
-      const client = get(clientState$);
-      if (discovery && client) {
-        set(discovery.watch$, null, client.signal);
-      }
       const display = get(get(links$).displayGraph$);
       if (display) {
         set(display.setTarget$, null);
@@ -1469,7 +1554,7 @@ function createAttachmentGraph(
       const directory = get(directory$)!;
       await set(get(links$).waitRetirement$, owner.targetId, signal);
       set(assertCurrent$, owner, signal);
-      await directory.assertMember(owner.targetId);
+      await set(directory.assertMember$, owner.targetId, signal);
       signal.throwIfAborted();
       set(assertCurrent$, owner, signal);
       await client.request(
@@ -1480,7 +1565,7 @@ function createAttachmentGraph(
         signal,
       );
       set(assertCurrent$, owner, signal);
-      await directory.assertMember(owner.targetId);
+      await set(directory.assertMember$, owner.targetId, signal);
       signal.throwIfAborted();
       set(assertCurrent$, owner, signal);
       let sessionId: string | null = null;
@@ -1519,7 +1604,7 @@ function createAttachmentGraph(
       if (frames === client) {
         frameSessionId = sessionId;
       } else {
-        await directory.assertMember(owner.targetId);
+        await set(directory.assertMember$, owner.targetId, signal);
         signal.throwIfAborted();
         set(assertCurrent$, owner, signal);
         const frameAttached: unknown = await frames.request(
@@ -1537,7 +1622,7 @@ function createAttachmentGraph(
         );
         set(assertCurrent$, owner, signal);
       }
-      await directory.assertMember(owner.targetId);
+      await set(directory.assertMember$, owner.targetId, signal);
       signal.throwIfAborted();
       set(assertCurrent$, owner, signal);
       await client.request(
@@ -1627,10 +1712,6 @@ function createSelectionGraph(
       set(selectedOwner$, owner);
       const client = get(clientState$)!;
       const operation = set(resetSelection$, client.signal, signal);
-      const discovery = get(get(links$).discovery$);
-      if (discovery) {
-        set(discovery.watch$, targetId, client.signal);
-      }
       const abort = () => {
         if (get(selectedOwner$) === owner) {
           set(get(links$).retireCurrent$, "target-replaced", false);
@@ -1927,7 +2008,7 @@ function createDetachedEvent(
         event.params.sessionId === expected &&
         !get(closingTargets$).has(selected.attached.owner.targetId)
       ) {
-        set(get(links$).retireCurrent$, "target-replaced", false);
+        set(get(links$).retireCurrent$, "target-replaced", false, true);
         set(model.transition$, {
           type: "target-lost",
           error: diagnostic(
@@ -1937,27 +2018,6 @@ function createDetachedEvent(
       }
     },
   );
-}
-
-function createVideoLossCleanup(
-  context: ControllerContext,
-  links$: Computed<ControllerLinks>,
-) {
-  const { clientState$, retirements$ } = context;
-  return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const original = get(clientState$);
-    using _original = {
-      [Symbol.dispose]: () => {
-        original?.close();
-      },
-    };
-    await Promise.allSettled(
-      [...get(retirements$).keys()].map((targetId) => {
-        return set(get(links$).waitRetirement$, targetId, signal);
-      }),
-    );
-    signal.throwIfAborted();
-  });
 }
 
 function createProtocolEventDispatch(
@@ -1977,9 +2037,6 @@ function createProtocolEventDispatch(
       source: CdpClient,
       signal: AbortSignal,
     ): Promise<void> => {
-      if (get(disposedState$)) {
-        return;
-      }
       const selected = get(get(links$).selectedSession$);
       for (const retirement of get(retirements$).values()) {
         const original = retirement.session;
@@ -1990,6 +2047,9 @@ function createProtocolEventDispatch(
         ) {
           set(original.input.event$, event);
         }
+      }
+      if (get(disposedState$)) {
+        return;
       }
       if (
         source === get(clientState$) &&
@@ -2017,6 +2077,7 @@ function createProtocolEventDispatch(
         return;
       }
       if (
+        event.sessionId === undefined &&
         [
           "Target.targetCreated",
           "Target.targetInfoChanged",
@@ -2096,7 +2157,7 @@ function createActiveTargetFollowing(
           ) {
             return;
           }
-          await get(directory$)!.assertMember(targetId);
+          await set(get(directory$)!.assertMember$, targetId, signal);
           if (current()) {
             await set(get(links$).selectTab$, targetId, signal);
           }
@@ -2120,14 +2181,16 @@ function createDisconnectionHandling(
     framesState$,
     connectedState$,
     disposedState$,
+    closingState$,
+    disconnectingState$,
     readinessFailure$,
     wake$,
   } = context;
-  const videoLossCleanup$ = createVideoLossCleanup(context, links$);
   return command(({ get, set }, fault: CdpFault, source: CdpClient) => {
-    if (get(disposedState$)) {
+    if (get(disposedState$) || get(closingState$) || get(disconnectingState$)) {
       return;
     }
+    set(disconnectingState$, true);
     const established = get(connectedState$);
     set(connectedState$, false);
     set(readinessFailure$, fault);
@@ -2146,25 +2209,25 @@ function createDisconnectionHandling(
       error: diagnostic(fault),
     });
     set(wake$);
-    if (source === get(clientState$)) {
+    // A dead control cannot drain. Native/scope/video loss keeps live control until releases finish.
+    if (
+      source === get(clientState$) &&
+      fault.kind !== "extension" &&
+      fault.kind !== "scope"
+    ) {
       get(framesState$)?.close();
-    } else {
-      const original = get(clientState$);
-      if (original) {
-        detach(
-          set(videoLossCleanup$, original.signal),
-          Reason.DomCallback,
-          "browser original control cleanup after video loss",
-        );
-      }
     }
+    set(get(links$).beginClosing$);
   });
 }
 
 function createEventsGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
-): Pick<ControllerLinks, "event$" | "followActiveTarget$" | "disconnected$"> {
+): Pick<
+  ControllerLinks,
+  "event$" | "followActiveTarget$" | "disconnected$" | "nativeEvent$"
+> {
   const followActiveTarget$ = createActiveTargetFollowing(context, links$);
   const event$ = createProtocolEventDispatch(
     context,
@@ -2172,7 +2235,42 @@ function createEventsGraph(
     followActiveTarget$,
   );
   const disconnected$ = createDisconnectionHandling(context, links$);
-  return { event$, followActiveTarget$, disconnected$ };
+  const nativeEvent$ = command(({ get, set }, event: NativeEvent) => {
+    if (get(context.disposedState$) || get(context.closingState$)) {
+      return;
+    }
+    const client = get(context.clientState$);
+    const directory = get(context.directory$);
+    if (!client || !directory) {
+      return;
+    }
+    const windowId = context.connection.windowId;
+    if (
+      event.kind === "window-removed" &&
+      windowId !== null &&
+      event.windowId === windowId
+    ) {
+      set(
+        disconnected$,
+        new CdpFault("scope", "The assigned browser window is unavailable."),
+        client,
+      );
+      return;
+    }
+    if (!changesMembership(event, windowId ?? undefined)) {
+      return;
+    }
+    set(directory.invalidate$);
+    const discovery = get(get(links$).discovery$);
+    if (discovery) {
+      detach(
+        set(discovery.refresh$, client.signal),
+        Reason.DomCallback,
+        "browser native membership validation",
+      );
+    }
+  });
+  return { event$, followActiveTarget$, disconnected$, nativeEvent$ };
 }
 
 function createConnectionBootstrap(
@@ -2185,6 +2283,8 @@ function createConnectionBootstrap(
     authority$,
     resetOwner$,
     clientState$,
+    nativeState$,
+    closingState$,
     framesState$,
     connectedState$,
     bootstrapping$,
@@ -2202,8 +2302,9 @@ function createConnectionBootstrap(
       model.configure$,
       connection.windowId !== null && connection.windowId !== undefined,
     );
-    const lifetime = set(resetOwner$, signal);
-    const client = createCdpClient(connection.cdpUrl, lifetime);
+    // The wire must survive admission/DOM cancellation until original releases drain.
+    const lifetime = set(resetOwner$);
+    const client = createCdpClient(connection.cdpUrl, {}, lifetime);
     set(clientState$, client);
     set(framesState$, client);
     client.onEvent((event) => {
@@ -2217,7 +2318,7 @@ function createConnectionBootstrap(
       set(get(links$).disconnected$, fault, client);
     });
     if (transport === "split") {
-      const frames = createCdpClient(connection.cdpUrl, lifetime);
+      const frames = createCdpClient(connection.cdpUrl, {}, lifetime);
       set(framesState$, frames);
       frames.onEvent((event) => {
         detach(
@@ -2232,6 +2333,31 @@ function createConnectionBootstrap(
     }
     await Promise.all([client.opened, get(framesState$)!.opened]);
     signal.throwIfAborted();
+    const native = await connectNative(
+      client,
+      connection.extension.runtimeId,
+      signal,
+    );
+    if (get(closingState$) || signal.aborted) {
+      await native.close();
+      signal.throwIfAborted();
+      throw cancelled();
+    }
+    set(nativeState$, native);
+    native.onEvent((event) => {
+      set(get(links$).nativeEvent$, event);
+    });
+    const unavailable = () => {
+      set(get(links$).disconnected$, nativeFault(), client);
+    };
+    native.signal.addEventListener("abort", unavailable, {
+      once: true,
+      signal: client.signal,
+    });
+    if (native.signal.aborted) {
+      unavailable();
+      throw nativeFault();
+    }
     await client.request(
       "Target.setDiscoverTargets",
       { discover: true },
@@ -2302,9 +2428,14 @@ function createConnectionGraph(
         },
         { once: true },
       );
+      using _bootstrap = {
+        [Symbol.dispose]: () => {
+          set(bootstrapping$, false);
+          set(wake$);
+        },
+      };
       const [result] = await Promise.allSettled([set(bootstrap$, signal)]);
       signal.throwIfAborted();
-      set(bootstrapping$, false);
       if (result.status === "rejected") {
         if (!get(disposedState$) && !isAbortError(result.reason)) {
           set(readinessFailure$, result.reason);
@@ -2316,6 +2447,7 @@ function createConnectionGraph(
           }
         }
         set(wake$);
+        set(get(links$).dispose$);
         if (signal.aborted) {
           throw cancelled();
         }
@@ -2329,12 +2461,8 @@ function createConnectionGraph(
 
 interface CreatedTabPublication {
   readonly client: CdpClient;
-  readonly directory: TargetDirectory;
-  readonly source: SelectedSession | null;
-  readonly sourceDocument: number | undefined;
   readonly intent: ViewerIntent;
   readonly creation: object;
-  readonly unwatch: () => void;
 }
 
 function createTabPublication(
@@ -2349,39 +2477,37 @@ function createTabPublication(
       publication: CreatedTabPublication,
       signal: AbortSignal,
     ): Promise<string> => {
-      const {
-        client,
-        directory,
-        source,
-        sourceDocument,
-        intent,
-        creation,
-        unwatch,
-      } = publication;
+      const { client, intent, creation } = publication;
       signal.throwIfAborted();
       set(assertAvailable$, signal);
       if (
         get(creationOwner$) !== creation ||
-        get(model.intent$) !== intent ||
-        (source &&
-          (get(get(links$).selectedSession$) !== source ||
-            get(source.input.owner$)?.document !== sourceDocument))
+        get(model.intent$).selection !== intent.selection
       ) {
         throw cancelled();
       }
       const discovery = get(get(links$).discovery$)!;
       const observation = set(discovery.beginCreation$, createdId);
-      const targets = await directory.list();
+      const reply = await client.request(
+        "Target.getTargetInfo",
+        { targetId: createdId },
+        undefined,
+        undefined,
+        signal,
+      );
       signal.throwIfAborted();
       set(assertAvailable$, signal);
-      if (get(creationOwner$) !== creation || get(model.intent$) !== intent) {
+      if (
+        get(creationOwner$) !== creation ||
+        get(model.intent$).selection !== intent.selection
+      ) {
         throw cancelled();
       }
-      const created = targets.find((target) => {
-        return target.id === createdId;
-      });
+      const created = pageTarget(reply.targetInfo);
       if (
         !created ||
+        created.id !== createdId ||
+        reply.targetInfo.url !== "about:blank" ||
         !set(discovery.created$, created, observation, client.signal)
       ) {
         throw new CdpFault(
@@ -2389,14 +2515,63 @@ function createTabPublication(
           "The new tab is no longer available in this scope.",
         );
       }
+      await set(discovery.refresh$, client.signal);
+      signal.throwIfAborted();
+      set(assertAvailable$, signal);
+      if (
+        get(creationOwner$) !== creation ||
+        get(model.intent$).selection !== intent.selection
+      ) {
+        throw cancelled();
+      }
       set(creationOwner$, null);
-      unwatch();
       set(targetRevision$, (value) => {
         return value + 1;
       });
       set(model.resetAddress$);
       await set(get(links$).selectTab$, createdId, signal);
       return createdId;
+    },
+  );
+}
+
+function createCreationResumption(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+) {
+  const { model, creationOwner$, clientState$, available$ } = context;
+  return command(
+    async (
+      { get, set },
+      creation: object,
+      intent: ViewerIntent,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      if (
+        get(creationOwner$) !== creation ||
+        get(model.intent$).selection !== intent.selection ||
+        !get(available$)
+      ) {
+        return;
+      }
+      const discovery = get(get(links$).discovery$);
+      const client = get(clientState$);
+      if (!discovery || !client) {
+        return;
+      }
+      // The validation itself stays on the original wire; this observer may cancel.
+      await set(discovery.refresh$, client.signal);
+      signal.throwIfAborted();
+      if (
+        get(creationOwner$) !== creation ||
+        get(model.intent$).selection !== intent.selection ||
+        !get(available$)
+      ) {
+        return;
+      }
+      set(creationOwner$, null);
+      await set(get(links$).restoreSelection$, signal);
     },
   );
 }
@@ -2411,9 +2586,10 @@ function createTabCreationGraph(
     clientState$,
     creationOwner$,
     assertAvailable$,
-    directory$,
+    creation$,
   } = context;
   const publish$ = createTabPublication(context, links$);
+  const resume$ = createCreationResumption(context, links$);
   const cancelCreation$ = command(({ get, set }, owner: object) => {
     if (get(creationOwner$) === owner) {
       set(resetCreate$);
@@ -2423,46 +2599,17 @@ function createTabCreationGraph(
   const createTab$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<string> => {
       set(assertAvailable$, signal);
-      const source = get(get(links$).selectedSession$);
-      if (source && !get(get(links$).input$)) {
-        throw new CdpFault(
-          "tab",
-          "The selected page is not ready to create a tab.",
-        );
-      }
-      if (!source && !get(model.controls$).emptyUnscoped) {
-        throw new CdpFault(
-          "tab",
-          "A tab cannot be created in the current scope.",
-        );
+      if (!get(get(links$).canCreate$)) {
+        throw cancelled();
       }
       const intent = get(model.intent$);
       const client = get(clientState$)!;
-      const directory = get(directory$)!;
+      const nativeCreation = get(creation$)!;
       const operation = set(resetCreate$, client.signal, signal);
       const creation = {};
       set(creationOwner$, creation);
-      const current = () => {
-        return !operation.aborted;
-      };
-      const sourceDocument = source
-        ? get(source.input.owner$)?.document
-        : undefined;
-      const unwatch = client.onEvent((event) => {
-        if (
-          source &&
-          event.sessionId === source.attached.sessionId &&
-          ((event.method === "Page.frameNavigated" &&
-            isRecord(event.params.frame) &&
-            !event.params.frame.parentId) ||
-            event.method === "Runtime.executionContextsCleared")
-        ) {
-          set(cancelCreation$, creation);
-        }
-      });
       using _creation = {
         [Symbol.dispose]: () => {
-          unwatch();
           if (get(creationOwner$) === creation) {
             set(creationOwner$, null);
           }
@@ -2471,28 +2618,14 @@ function createTabCreationGraph(
       let createdId: string | null = null;
       const [result] = await Promise.allSettled([
         (async (): Promise<string> => {
-          createdId = await openTab(
-            client,
-            directory,
-            source
-              ? {
-                  targetId: source.attached.owner.targetId,
-                  sessionId: source.attached.sessionId,
-                }
-              : null,
-            current,
-          );
+          createdId = await set(nativeCreation.open$, operation);
           return set(
             publish$,
             createdId,
             {
               client,
-              directory,
-              source,
-              sourceDocument,
               intent,
               creation,
-              unwatch,
             },
             signal,
           );
@@ -2512,6 +2645,17 @@ function createTabCreationGraph(
       }
       if (result.status === "fulfilled") {
         return result.value;
+      }
+      if (createdId === null) {
+        // Rejected native opens never authorize publication of a merely known target ID.
+        // Native invalidation may have retired Example while creation suppressed restore.
+        const [resumed] = await Promise.allSettled([
+          set(resume$, creation, intent, signal),
+        ]);
+        signal.throwIfAborted();
+        if (resumed.status === "rejected" && isAbortError(resumed.reason)) {
+          throw resumed.reason;
+        }
       }
       if (createdId && !(result.reason instanceof CreatedTabFault)) {
         throw new CreatedTabFault(createdId, result.reason);
@@ -2567,7 +2711,7 @@ function createTabClosingGraph(
           set(get(links$).discoveryChanged$, client.signal);
         },
       };
-      await directory.assertMember(targetId);
+      await set(directory.assertMember$, targetId, signal);
       signal.throwIfAborted();
       set(assertAvailable$, signal);
       const receipt = await client.request(
@@ -2581,7 +2725,7 @@ function createTabClosingGraph(
         throw new CdpFault("tab", "The browser did not close the tab.");
       }
       set(assertAvailable$, signal);
-      set(model.inventoryUpdate$, { type: "closed", id: targetId });
+      set(model.inventoryUpdate$, { type: "retired", id: targetId });
       set(targetRevision$, (value) => {
         return value + 1;
       });
@@ -2611,11 +2755,7 @@ function createTabClosingGraph(
           set(model.transition$, { type: "target-lost", error: null });
         }
       }
-      detach(
-        set(discovery.removed$, targetId, client.signal),
-        Reason.DomCallback,
-        "browser closed inventory refresh",
-      );
+      set(discovery.removed$, targetId, client.signal);
       if (
         get(model.snapshot$).targets.some((target) => {
           return target.id === targetId;
@@ -2899,7 +3039,8 @@ function createSelectionSettingsGraph(
       }
       const discovery = get(get(links$).discovery$);
       if (discovery) {
-        await set(discovery.refresh$, signal);
+        await set(discovery.refresh$, get(context.clientState$)!.signal);
+        signal.throwIfAborted();
       }
       const owner = get(selectedOwner$);
       if (owner) {
@@ -3027,17 +3168,74 @@ function createSettingsGraph(
 function createDisposalGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
-): Pick<ControllerLinks, "dispose$"> {
+): Pick<ControllerLinks, "dispose$" | "beginClosing$" | "waitForClosed$"> {
   const {
     model,
     resetOwner$,
     sink,
     clientState$,
+    nativeState$,
     framesState$,
     connectedState$,
     disposedState$,
+    closingState$,
+    closedState$,
+    bootstrapping$,
+    startedState$,
+    retirements$,
     wake$,
+    waitEvent$,
   } = context;
+  const resetClosing$ = resetSignal();
+  const closeTransport$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const [result] = await Promise.allSettled([
+        (async () => {
+          // Startup may still return a real native handle after admission was revoked.
+          while (get(startedState$) && get(bootstrapping$)) {
+            await set(waitEvent$, signal);
+          }
+          const receipts = await Promise.allSettled(
+            [...get(retirements$).keys()].map((targetId) => {
+              return set(get(links$).waitRetirement$, targetId, signal);
+            }),
+          );
+          const native = get(nativeState$);
+          const [nativeClose] = await Promise.allSettled([native?.close()]);
+          if (nativeClose.status === "rejected") {
+            throw nativeClose.reason;
+          }
+          const rejected = receipts.find((receipt) => {
+            return receipt.status === "rejected";
+          });
+          if (rejected?.status === "rejected") {
+            throw rejected.reason;
+          }
+        })(),
+      ]);
+      signal.throwIfAborted();
+      // This signal is the independent original closure owner, never a finite observer.
+      // Native close precedes both CDP closure and the final wire-owner cancellation.
+      get(framesState$)?.close();
+      get(clientState$)?.close();
+      set(resetOwner$, AbortSignal.abort());
+      set(closedState$, result);
+      set(wake$);
+      set(resetClosing$, AbortSignal.abort());
+    },
+  );
+  const beginClosing$ = command(({ get, set }) => {
+    if (get(closingState$)) {
+      return;
+    }
+    set(closingState$, true);
+    const signal = set(resetClosing$);
+    detach(
+      set(closeTransport$, signal),
+      Reason.DomCallback,
+      "browser original transport retirement",
+    );
+  });
   const dispose$: Command<void, []> = command(({ get, set }) => {
     if (get(disposedState$)) {
       return;
@@ -3055,12 +3253,25 @@ function createDisposalGraph(
     set(connectedState$, false);
     set(model.transition$, { type: "closed" });
     sink.dispose();
-    set(resetOwner$);
-    get(framesState$)?.close();
-    get(clientState$)?.close();
     set(wake$);
+    set(beginClosing$);
   });
-  return { dispose$ };
+  const waitForClosed$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      while (true) {
+        signal.throwIfAborted();
+        const result = get(closedState$);
+        if (result?.status === "fulfilled") {
+          return;
+        }
+        if (result?.status === "rejected") {
+          throw result.reason;
+        }
+        await set(waitEvent$, signal);
+      }
+    },
+  );
+  return { dispose$, beginClosing$, waitForClosed$ };
 }
 
 /** Compose static domain graphs, never a Store or accessor facade. */
@@ -3120,6 +3331,7 @@ export function createBrowserController(
   return {
     start$: graph.start$,
     dispose$: graph.dispose$,
+    waitForClosed$: graph.waitForClosed$,
     selectTab$: graph.selectTab$,
     createTab$: graph.createTab$,
     closeTab$: graph.closeTab$,
@@ -3134,6 +3346,7 @@ export function createBrowserController(
     refreshAuthority$: graph.refreshAuthority$,
     rejectFavicon$: graph.rejectFavicon$,
     input$: graph.input$,
+    canCreate$: graph.canCreate$,
     navigation$: graph.navigation$,
     history$: graph.history$,
     navigationScope$: graph.navigationScope$,

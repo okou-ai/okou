@@ -20,6 +20,11 @@ export interface BrowserConnection {
   readonly cdpUrl: string;
   readonly instanceId: string | null;
   readonly windowId: number | null;
+  readonly extension: {
+    readonly id: string;
+    readonly runtimeId: string;
+    readonly version: string;
+  };
 }
 
 export interface BrowserTab {
@@ -99,8 +104,10 @@ export interface BrowserSignals {
   readonly syncDisplay$: Command<Promise<void>, [AbortSignal]>;
   readonly copyClipboard$: Command<Promise<void>, [AbortSignal]>;
   readonly dismissClipboardRecovery$: Command<void, []>;
+  /** Notify after the owner invalidates/publishes connection$; not for lease-only updates. */
+  readonly connectionChanged$: Command<void, []>;
   readonly refs: {
-    readonly root$: Computed<Ref<HTMLDivElement>>;
+    readonly root$: Ref<HTMLDivElement>;
     readonly canvas$: Ref<HTMLCanvasElement>;
     readonly input$: Ref<HTMLTextAreaElement>;
     readonly toolbar$: Ref<HTMLDivElement>;

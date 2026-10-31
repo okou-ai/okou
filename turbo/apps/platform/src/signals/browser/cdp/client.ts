@@ -29,7 +29,7 @@ export interface CdpEvent {
   sessionId?: string;
 }
 interface Pending {
-  readonly method: Method;
+  readonly method: string;
   readonly resolve: (result: unknown) => void;
   readonly reject: (error: unknown) => void;
   timer: (() => void) | undefined;
@@ -48,6 +48,13 @@ export interface CdpClient {
     late?: (result: unknown) => void | Promise<void>,
     signal?: AbortSignal,
   ): Promise<Result<M>>;
+  requestRaw(
+    method: string,
+    params: unknown,
+    sessionId?: string,
+    late?: (result: unknown) => void | Promise<void>,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
   notify<M extends Method>(
     method: M,
     params: Params<M>,
@@ -73,7 +80,7 @@ interface Connection {
 }
 interface Message {
   id: number;
-  method: Method;
+  method: string;
   params?: unknown;
   sessionId?: string | undefined;
 }
@@ -150,13 +157,13 @@ function createRequests(
   requestTimeout: number,
   signal: AbortSignal,
 ) {
-  async function request<M extends Method>(
-    method: M,
-    params: Params<M>,
+  async function requestRaw(
+    method: string,
+    params: unknown,
     sessionId?: string,
     late?: (result: unknown) => void | Promise<void>,
     operation?: AbortSignal,
-  ): Promise<Result<M>> {
+  ): Promise<unknown> {
     operation?.throwIfAborted();
     if (connection.ended || connection.socket.readyState !== 1) {
       throw new CdpFault(
@@ -175,12 +182,12 @@ function createRequests(
       throw fault;
     }
     const id = connection.nextId++;
-    const deferred = createDeferredPromise<Result<M>>(signal);
+    const deferred = createDeferredPromise<unknown>(signal);
     const entry: Pending = {
       method,
       resolve: (result) => {
         if (!deferred.settled()) {
-          deferred.resolve(result as Result<M>);
+          deferred.resolve(result);
         }
       },
       reject: (error) => {
@@ -250,7 +257,22 @@ function createRequests(
       "browser native notification",
     );
   }
-  return { request, notify };
+  async function request<M extends Method>(
+    method: M,
+    params: Params<M>,
+    sessionId?: string,
+    late?: (result: unknown) => void | Promise<void>,
+    operation?: AbortSignal,
+  ): Promise<Result<M>> {
+    return (await requestRaw(
+      method,
+      params,
+      sessionId,
+      late,
+      operation,
+    )) as Result<M>;
+  }
+  return { request, requestRaw, notify };
 }
 
 async function releaseLate(
@@ -410,13 +432,19 @@ function listen(
 /** One mounted surface owns this native socket adapter and its protocol receipts. */
 export function createCdpClient(
   url: string,
-  signal: AbortSignal,
-  factory: SocketFactory = (endpoint) => {
-    return new WebSocket(endpoint);
+  options: {
+    readonly factory?: SocketFactory;
+    readonly requestTimeout?: number;
   },
-  requestTimeout = 10_000,
+  signal: AbortSignal,
 ): CdpClient {
   signal.throwIfAborted();
+  const factory =
+    options.factory ??
+    ((endpoint: string) => {
+      return new WebSocket(endpoint);
+    });
+  const requestTimeout = options.requestTimeout ?? 10_000;
   const connection: Connection = {
     socket: factory(url),
     opening: createDeferredPromise<void>(signal),

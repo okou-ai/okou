@@ -1,15 +1,5 @@
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
-import {
-  and,
-  eq,
-  gt,
-  isNotNull,
-  isNull,
-  ne,
-  notInArray,
-  or,
-} from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne, notInArray, or } from "drizzle-orm";
 
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
@@ -82,21 +72,6 @@ export function inFlightUsagePackPurchaseQuery(args: {
                 ),
           ),
         ),
-      ),
-    );
-}
-
-/** A fresh, unpublished Plan purchase claim on the organization row. */
-export function inFlightPlanPurchaseQuery(orgId: string, staleBefore: Date) {
-  return new QueryBuilder()
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(
-      and(
-        eq(orgMetadata.orgId, orgId),
-        eq(orgMetadata.subscriptionStatus, PLAN_PURCHASE_CLAIM_STATUS),
-        isNull(orgMetadata.stripeSubscriptionId),
-        gt(orgMetadata.updatedAt, staleBefore),
       ),
     );
 }

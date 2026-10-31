@@ -1077,6 +1077,47 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${chatThreadDeletion}`,
   );
+  const runBuiltInAdmission = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/start-run-built-in-admission.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${runBuiltInAdmission}`,
+  );
+  const chatEventSearchProjection = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/publish-chat-event-search-projection.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${chatEventSearchProjection}`,
+  );
+  const usagePackPendingSnapshot = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/write-usage-pack-pending-snapshot.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${usagePackPendingSnapshot}`,
+  );
+  const builtinConnectorDeletion = await fs.readFile(
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/delete-builtin-connector-local-state.sql",
+    ),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${builtinConnectorDeletion}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1365,6 +1406,26 @@ const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
   {
     schemaName: "public",
+    functionName: "delete_builtin_connector_local_state",
+    identityArguments: "p_input jsonb, p_clock timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "ed000b1509cf1ab0dedf32fab614c7b9",
+  },
+  {
+    schemaName: "public",
+    functionName: "write_usage_pack_pending_snapshot",
+    identityArguments: "p_input jsonb, p_clock timestamp without time zone",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "7401f5cb04ba3cc021f8c39b3dce1b8d",
+  },
+  {
+    schemaName: "public",
     functionName: "update_agent_metadata",
     identityArguments:
       "p_org_id text, p_agent_id uuid, p_member_id text, p_is_admin boolean, p_identity_changes boolean, p_visibility text, p_public_limit integer, p_body bytea, p_now timestamp without time zone",
@@ -1417,6 +1478,28 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "6c1bccc08d6ef1bfd6f65c4042f82575",
+  },
+  {
+    schemaName: "public",
+    functionName: "start_run_built_in_admission",
+    identityArguments:
+      "p_run_id uuid, p_now timestamp without time zone, p_max_in_flight integer, p_max_started integer, p_ttl_ms integer",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "c0151c83c8e52d965b9764bc702adf35",
+  },
+  {
+    schemaName: "public",
+    functionName: "publish_chat_event_search_projection",
+    identityArguments:
+      "p_messages jsonb, p_revoked_event_ids uuid[], p_watermark_thread_id uuid, p_watermark_seq_id bigint",
+    kind: "f",
+    volatility: "v",
+    securityDefiner: false,
+    parallel: "u",
+    bodyHash: "50a2fe216ae85095eb34b877a41d9093",
   },
 ];
 

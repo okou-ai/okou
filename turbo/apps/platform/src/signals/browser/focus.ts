@@ -1,4 +1,5 @@
 import { command, state, type Command, type Computed } from "ccstate";
+import { createDeferredPromise, resetSignal } from "../utils.ts";
 
 export interface ToolbarNodes {
   readonly toolbar: HTMLDivElement;
@@ -10,6 +11,7 @@ function createFocusState(nodes$: Computed<ToolbarNodes | null>) {
   return {
     nodes$,
     createOrigin$: state<Element | null>(null),
+    resetCreateFocus$: resetSignal(),
     closing$: state<{
       readonly targetId: string;
       readonly origin: HTMLElement;
@@ -21,7 +23,14 @@ function createFocusState(nodes$: Computed<ToolbarNodes | null>) {
 type FocusState = ReturnType<typeof createFocusState>;
 
 function createFocusTargets(graph: FocusState) {
-  const { nodes$, createOrigin$, closing$, restore$, toolbarFocus$ } = graph;
+  const {
+    nodes$,
+    createOrigin$,
+    resetCreateFocus$,
+    closing$,
+    restore$,
+    toolbarFocus$,
+  } = graph;
   const release$ = command(({ get }) => {
     const nodes = get(nodes$);
     if (!nodes) {
@@ -37,26 +46,74 @@ function createFocusTargets(graph: FocusState) {
     )?.focus({ preventScroll: true });
   });
   const beginCreate$ = command(({ set }) => {
-    return set(createOrigin$, document.activeElement);
+    set(resetCreateFocus$, AbortSignal.abort());
+    set(createOrigin$, document.activeElement);
   });
-  const created$ = command(({ get, set }) => {
+  const created$ = command(async ({ get, set }, signal: AbortSignal) => {
     const origin = get(createOrigin$);
+    const nodes = get(nodes$);
     if (
-      document.activeElement === origin ||
-      document.activeElement === document.body
+      !origin ||
+      !nodes ||
+      (document.activeElement !== origin &&
+        document.activeElement !== document.body)
     ) {
-      get(nodes$)?.address.focus({ preventScroll: true });
+      set(createOrigin$, null);
+      return;
+    }
+    const owner = set(resetCreateFocus$, signal);
+    if (nodes.address.disabled) {
+      // One actual disabled-attribute commit acknowledges this create's focus
+      // handoff; this is not a broad observer of application state.
+      const enabled = createDeferredPromise<void>(owner);
+      const observer = new MutationObserver(() => {
+        if (!nodes.address.disabled && !enabled.settled()) {
+          enabled.resolve();
+        }
+      });
+      observer.observe(nodes.address, {
+        attributes: true,
+        attributeFilter: ["disabled"],
+      });
+      using _observer = {
+        [Symbol.dispose]: () => {
+          observer.disconnect();
+        },
+      };
+      const [committed] = await Promise.allSettled([enabled.promise]);
+      signal.throwIfAborted();
+      if (owner.aborted) {
+        signal.throwIfAborted();
+        return;
+      }
+      if (committed.status === "rejected") {
+        throw committed.reason;
+      }
+    }
+    if (owner.aborted) {
+      signal.throwIfAborted();
+      return;
+    }
+    if (
+      get(createOrigin$) === origin &&
+      (document.activeElement === origin ||
+        document.activeElement === document.body)
+    ) {
+      nodes.address.focus({ preventScroll: true });
     }
     set(createOrigin$, null);
+    set(resetCreateFocus$, AbortSignal.abort());
   });
   const reset$ = command(({ set }) => {
+    set(resetCreateFocus$, AbortSignal.abort());
     set(createOrigin$, null);
     set(closing$, null);
     set(restore$, false);
     set(toolbarFocus$, null);
   });
   const cancelCreate$ = command(({ set }) => {
-    return set(createOrigin$, null);
+    set(resetCreateFocus$, AbortSignal.abort());
+    set(createOrigin$, null);
   });
   return { release$, beginCreate$, created$, reset$, cancelCreate$ };
 }
@@ -119,8 +176,9 @@ function createCloseFocus(graph: FocusState, release$: Command<void, []>) {
 function createFocusObservations(
   graph: FocusState,
   release$: Command<void, []>,
+  cancelCreate$: Command<void, []>,
 ) {
-  const { nodes$, closing$, restore$, toolbarFocus$ } = graph;
+  const { nodes$, createOrigin$, closing$, restore$, toolbarFocus$ } = graph;
   const restoreLayout$ = command(({ get, set }) => {
     const origin = get(toolbarFocus$);
     if (
@@ -138,6 +196,14 @@ function createFocusObservations(
       (event) => {
         const nodes = get(nodes$);
         const active = event.target;
+        const createOrigin = get(createOrigin$);
+        if (
+          createOrigin &&
+          active !== createOrigin &&
+          active !== document.body
+        ) {
+          set(cancelCreate$);
+        }
         set(
           toolbarFocus$,
           active instanceof HTMLElement && nodes?.toolbar.contains(active)
@@ -177,6 +243,7 @@ function createFocusObservations(
           event.target instanceof Node &&
           !nodes?.toolbar.contains(event.target)
         ) {
+          set(cancelCreate$);
           set(toolbarFocus$, null);
           set(closing$, null);
           set(restore$, false);
@@ -193,6 +260,10 @@ export function createToolbarFocus(nodes$: Computed<ToolbarNodes | null>) {
   const graph = createFocusState(nodes$);
   const targets = createFocusTargets(graph);
   const closing = createCloseFocus(graph, targets.release$);
-  const observations = createFocusObservations(graph, targets.release$);
+  const observations = createFocusObservations(
+    graph,
+    targets.release$,
+    targets.cancelCreate$,
+  );
   return { ...targets, ...closing, ...observations };
 }
