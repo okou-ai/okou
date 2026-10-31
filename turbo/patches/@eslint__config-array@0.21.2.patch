@@ -1,6 +1,0 @@
-diff --git a/dist/esm/index.js b/dist/esm/index.js
---- a/dist/esm/index.js
-+++ b/dist/esm/index.js
-@@ -4,1 +4,1 @@
--import minimatch from 'minimatch';
-+import * as minimatch from 'minimatch';
