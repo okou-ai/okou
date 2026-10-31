@@ -119,10 +119,10 @@ claim framework merely to remove a lock.
 
 ## Transaction Boundaries
 
-Do not introduce new explicit database transactions except for necessary
+Do not introduce new explicit application database transactions except for necessary
 billing-related atomicity. The exception is limited to operations that directly
 protect financial correctness, such as charges, refunds, credit or balance
-accounting, and usage settlement. All new non-billing transactions are
+accounting, and usage settlement. All new non-billing application transactions are
 prohibited, even for short multi-statement writes, consistent read snapshots,
 or transaction-local settings.
 
@@ -131,6 +131,13 @@ boundaries, and new execution paths through transaction-opening helpers.
 Aliases, wrappers, or nested transactions do not create an exemption. Existing
 non-billing transactions are cleanup work, not patterns to copy or extend into
 new operations.
+
+The deployment migration executor at
+`turbo/packages/db/scripts/migration-runner.ts` is release infrastructure. Its
+ordinary migrations keep schema changes, data changes, and the migration journal
+atomic within each migration file. This executor is outside the application
+transaction prohibition and cleanup inventory. It remains subject to normal
+code-quality checks; do not use it as a transaction helper for runtime services.
 
 Billing is not a blanket exemption. Document the financial invariant and why a
 simpler atomic SQL operation cannot reasonably preserve it. A billing filename,
@@ -229,7 +236,7 @@ not proof that the final database has no executable advisory acquisition.
 
 ## Transaction Lint
 
-The [transaction policy](#transaction-boundaries) prohibits new explicit non-billing transactions. Billing is not a directory-level exemption: the transaction must directly protect necessary financial correctness and demonstrate why a simple atomic SQL statement is insufficient.
+The [transaction policy](#transaction-boundaries) prohibits new explicit non-billing application transactions. Billing is not a directory-level exemption: the transaction must directly protect necessary financial correctness and demonstrate why a simple atomic SQL statement is insufficient.
 
 ### Enforcement
 
@@ -243,7 +250,12 @@ Detection includes:
 
 SQL boundaries are recognized using PostgreSQL parsing and statement splitting outside comments, quoted strings/identifiers and dollar bodies. PL/pgSQL `BEGIN` blocks, quoted data, financial `transaction` fields, type references, `COMMIT`, and `ROLLBACK` are not transaction-opening violations. A valid opening statement before invalid trailing SQL remains detectable.
 
-There is no billing-directory, test-directory or new migration exemption. The independent CI scan includes historical DB scripts that normal package lint already ignores; an existing ignored path cannot hide a new transaction.
+The deployment migration executor described above is excluded by the shared
+detector used by both package lint and the independent CI scan. There is no
+billing-directory, test-directory, migration-directory, or general script
+exemption. The independent CI scan includes historical DB scripts that normal
+package lint already ignores; an existing ignored path cannot hide a new
+application transaction.
 
 ### Deletion-only Legacy Inventory
 

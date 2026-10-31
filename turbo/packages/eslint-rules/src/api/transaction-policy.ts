@@ -130,6 +130,14 @@ export function transactionVisitors(
   file: string,
   report: (node: TSESTree.Node) => void,
 ): TSESLint.RuleListener {
+  // The deployment runner needs per-migration schema/data/journal atomicity.
+  // Keep this release-only boundary out of the application transaction policy.
+  if (
+    file
+      .replaceAll("\\", "/")
+      .endsWith("/turbo/packages/db/scripts/migration-runner.ts")
+  )
+    return {};
   if (file.endsWith(".sql")) {
     return {
       Program(node): void {

@@ -10,11 +10,6 @@
       "id": "TX-0314",
       "file": "turbo/apps/api/src/signals/services/user-permission-grants.service.ts",
       "owner": "applyVisibleAgentGrantRows"
-    },
-    {
-      "id": "TX-0357",
-      "file": "turbo/packages/db/scripts/migration-runner.ts",
-      "owner": "applyPendingMigrations"
     }
   ]
 }
