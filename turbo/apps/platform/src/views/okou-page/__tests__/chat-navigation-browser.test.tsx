@@ -383,9 +383,10 @@ test("Resizing the browser sidebar synchronizes the remote display to the commit
   });
   resizeContainer = handle.parentElement;
 
-  // The widened panel commits its layout; only then does the canvas grow.
+  // The committed wider panel gives the canvas its new box.
   canvasBox = new DOMRect(0, 0, 916, 600);
-  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  handle.focus();
+  await userEvent.keyboard("{ArrowLeft}");
 
   await waitFor(() => {
     expect(native.viewport).toStrictEqual({ width: 916, height: 600 });

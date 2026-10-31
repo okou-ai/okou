@@ -546,7 +546,7 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
       <BrowserOperationError
         failed={failed}
-        className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+        className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
       />
     </div>
   );
@@ -1007,7 +1007,7 @@ export function Browser({
               )
             );
           })}
-          className="absolute inset-x-3 top-3 z-20 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+          className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
         />
         <div
           ref={surfaceRef}

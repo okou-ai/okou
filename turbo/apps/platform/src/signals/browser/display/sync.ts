@@ -504,21 +504,28 @@ function createSyncScheduler(
   const { client, selection$, policy$, run$ } = context;
   // Idle requests start immediately; bursts keep 150ms between native writes.
   const throttledRun$ = throttleCommand(run$, minimumSyncIntervalMs);
-  const schedule$: Command<void, []> = command(({ get, set }) => {
+  const schedulable$ = command(({ get }): boolean => {
     const selection = get(selection$);
-    if (
-      client.signal.aborted ||
-      !selection?.target.current() ||
-      !canBeginDisplay(get(policy$))
-    ) {
+    return (
+      !client.signal.aborted &&
+      !!selection?.target.current() &&
+      canBeginDisplay(get(policy$))
+    );
+  });
+  const runScheduled$ = command(
+    async ({ set }, signal: AbortSignal): Promise<void> => {
+      await set(throttledRun$, signal);
+      signal.throwIfAborted();
+      // A deferred outcome keeps its intent pending without a new trigger.
+      set(schedule$);
+    },
+  );
+  const schedule$: Command<void, []> = command(({ set }) => {
+    if (!set(schedulable$)) {
       return;
     }
     detach(
-      (async () => {
-        await set(throttledRun$, client.signal);
-        // A deferred outcome keeps its intent pending without a new trigger.
-        set(schedule$);
-      })(),
+      set(runScheduled$, client.signal),
       Reason.Daemon,
       "browser display synchronization",
     );

@@ -11,7 +11,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -343,6 +343,72 @@ test.each(["url", "instance", "window"] as const)(
     ).resolves.toBeInTheDocument();
   },
 );
+
+test("Revealing a replacement viewer synchronizes the display measured while it was concealed", async () => {
+  let canvasBox = new DOMRect(0, 0, 900, 600);
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (!(this instanceof HTMLCanvasElement)) {
+        return original.call(this);
+      }
+      // A hidden ancestor removes the canvas box, as browser layout does.
+      return this.closest("[hidden]") ? new DOMRect(0, 0, 0, 0) : canvasBox;
+    },
+  );
+  let currentSession = browserSession();
+  let replacing = false;
+  const connectionStarted = context.mocks.deferred<void>();
+  const releaseConnection = context.mocks.deferred<void>();
+  const cdpUrl = "wss://cdp.browser-use.com/original";
+  const browser = mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: currentSession });
+  });
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    if (replacing) {
+      connectionStarted.resolve();
+      await releaseConnection.promise;
+    }
+    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+  });
+  act(() => {
+    browser.frame("AAAA");
+  });
+
+  currentSession = browserSession({
+    liveUrl: "https://viewer.example/live?token=replacement",
+  });
+  replacing = true;
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId: THREAD_ID,
+    });
+  });
+  await connectionStarted.promise;
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Remote browser viewer" }),
+    ).not.toBeInTheDocument();
+  });
+  // The window changes while the viewer is concealed, so it measures no box.
+  canvasBox = new DOMRect(0, 0, 720, 480);
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
+  releaseConnection.resolve();
+
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 720, height: 480 });
+  });
+});
 
 test.each(["cdp", "runtime"] as const)(
   "A null-URL viewer replaces its %s connection without reusing old input authority",
