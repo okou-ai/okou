@@ -51,11 +51,11 @@ export function ProUpgradeCard({
       </div>
 
       {/* Reserve localized price and credit geometry before the catalog loads. */}
-      <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 pt-2 pb-3 @[480px]:col-span-1 @[480px]:col-start-2 @[640px]:grid-cols-[minmax(0,8rem)_minmax(0,1fr)_auto] @[640px]:gap-x-2">
+      <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-4 pt-2 pb-3 @[480px]:col-span-1 @[480px]:col-start-2 @[640px]:grid-cols-[minmax(0,8rem)_minmax(0,1fr)_auto]">
         <div className="col-start-1 row-start-2 grid min-h-10 min-w-0 items-center text-xs text-muted-foreground @[640px]:row-start-1">
           <p
             aria-hidden="true"
-            className="invisible flex flex-wrap items-baseline gap-1 [grid-area:1/1]"
+            className="invisible flex flex-wrap items-baseline gap-0.5 [grid-area:1/1]"
           >
             {t(($) => {
               return $.billing.plans.usagePacks.priceFrom;
@@ -70,7 +70,7 @@ export function ProUpgradeCard({
               return $.chat.billing.proCard.priceUnavailable;
             })}
           </p>
-          <p className="flex min-w-0 flex-wrap items-baseline gap-1 [grid-area:1/1]">
+          <p className="flex min-w-0 flex-wrap items-baseline gap-0.5 [grid-area:1/1]">
             {monthlyPriceUsd !== undefined ? (
               <>
                 {t(($) => {
