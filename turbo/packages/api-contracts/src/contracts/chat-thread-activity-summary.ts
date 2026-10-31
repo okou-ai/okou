@@ -1,4 +1,4 @@
-import { object, string, type infer as zInfer } from "zod";
+import { object, uuid, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -24,8 +24,8 @@ export const chatThreadActivitySummaryContract = c.router({
     method: "POST",
     path: "/api/chat-threads/:id/activity-summary",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
-    body: object({ runId: string().uuid() }).strict(),
+    pathParams: object({ id: uuid() }),
+    body: object({ runId: uuid() }).strict(),
     responses: {
       200: activitySummaryResponseSchema,
       400: apiErrorSchema,

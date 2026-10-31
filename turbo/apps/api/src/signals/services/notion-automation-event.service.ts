@@ -37,9 +37,11 @@ import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   array,
+  iso,
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -110,7 +112,7 @@ const notionAuthorSchema = object({
 }).passthrough();
 
 const notionEntitySchema = object({
-  id: string().uuid(),
+  id: uuid(),
   type: string(),
 }).passthrough();
 
@@ -149,12 +151,12 @@ const notionWebhookLogMetadataSchema = object({
   });
 
 const notionWebhookEventSchema = object({
-  id: string().uuid(),
-  timestamp: string().datetime(),
-  workspace_id: string().uuid(),
+  id: uuid(),
+  timestamp: iso.datetime(),
+  workspace_id: uuid(),
   workspace_name: string().optional(),
-  subscription_id: string().uuid(),
-  integration_id: string().uuid(),
+  subscription_id: uuid(),
+  integration_id: uuid(),
   type: notionWebhookEventTypeSchema,
   authors: array(notionAuthorSchema).default([]),
   attempt_number: number().int().positive().optional(),

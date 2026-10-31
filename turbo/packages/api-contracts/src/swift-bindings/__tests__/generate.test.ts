@@ -10,6 +10,7 @@ import {
   record,
   string,
   union,
+  uuid,
   enum as zEnum,
   unknown as zUnknown,
 } from "zod";
@@ -145,7 +146,7 @@ describe("renderSwiftTypes", () => {
     const swift = renderSwiftTypes([
       {
         schema: object({
-          id: string().uuid(),
+          id: uuid(),
           count: number().int(),
           ratio: number(),
           label: string().nullable(),

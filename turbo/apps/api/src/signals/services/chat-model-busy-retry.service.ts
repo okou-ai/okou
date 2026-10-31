@@ -23,7 +23,7 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { v5 as uuidv5 } from "uuid";
-import { number, object, string, type infer as zInfer } from "zod";
+import { number, object, uuid, type infer as zInfer } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -50,8 +50,8 @@ const JOB_VERSION = 1;
 const RETRY_NAMESPACE = "ac2eae18-dd8a-48f0-9732-201888ca3c4b";
 const RETRY_DELAYS_MS = [60_000, 180_000, 300_000] as const;
 const retryInputSchema = object({
-  chatThreadId: string().uuid(),
-  runId: string().uuid(),
+  chatThreadId: uuid(),
+  runId: uuid(),
   failedSeqId: number().int().positive(),
   modelSelection: chatInputModelSelectionSchema,
   attempt: number().int().min(1).max(RETRY_DELAYS_MS.length),

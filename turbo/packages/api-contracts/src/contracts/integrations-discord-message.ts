@@ -4,6 +4,7 @@ import {
   object,
   string,
   union,
+  url,
   type infer as zInfer,
 } from "zod";
 
@@ -37,7 +38,7 @@ export const sendDiscordMessageBodySchema = object({
 export const discordSentMessageSchema = object({
   id: discordSnowflakeSchema,
   channelId: discordSnowflakeSchema,
-  url: string().url(),
+  url: url(),
 });
 
 export const discordSendErrorSchema = discordNativeErrorSchema.extend({

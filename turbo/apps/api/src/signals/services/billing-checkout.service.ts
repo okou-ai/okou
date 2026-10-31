@@ -20,6 +20,7 @@ import {
   string,
   uuid,
   enum as zEnum,
+  url as zUrl,
   type infer as zInfer,
 } from "zod";
 
@@ -216,8 +217,8 @@ const creditPurchasePreviewTokenSchema = object({
   credits: number().int().positive(),
   amountCents: number().int().nonnegative(),
   currency: string().length(3),
-  successUrl: string().url().optional(),
-  cancelUrl: string().url().optional(),
+  successUrl: zUrl().optional(),
+  cancelUrl: zUrl().optional(),
   expiresAt: iso.datetime(),
 });
 
@@ -234,8 +235,8 @@ const planPurchasePreviewTokenSchema = object({
   immediateAmountCents: number().int().nonnegative(),
   nextRecurringAmountCents: number().int().nonnegative(),
   currency: string().length(3),
-  successUrl: string().url(),
-  cancelUrl: string().url(),
+  successUrl: zUrl(),
+  cancelUrl: zUrl(),
   expiresAt: iso.datetime(),
 });
 

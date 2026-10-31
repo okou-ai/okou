@@ -20,6 +20,7 @@ import {
   object,
   record,
   string,
+  uuid,
   enum as zEnum,
   unknown as zUnknown,
   type infer as zInfer,
@@ -576,7 +577,7 @@ const commitPlacedEntries$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      object({ id: string().uuid() }),
+      object({ id: uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
@@ -732,7 +733,7 @@ const scanStep$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      object({ id: string().uuid() }),
+      object({ id: uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
@@ -853,7 +854,7 @@ const inventoryStep$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      object({ id: string().uuid() }),
+      object({ id: uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
@@ -951,7 +952,7 @@ const manifestStep$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      object({ id: string().uuid() }),
+      object({ id: uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
@@ -1052,7 +1053,7 @@ const assembleStep$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      object({ id: string().uuid() }),
+      object({ id: uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),

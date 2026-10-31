@@ -1,4 +1,4 @@
-import { literal, object, string, union, uuid } from "zod";
+import { literal, object, string, union, url, uuid } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -19,12 +19,12 @@ const invitationPurchaseConfirmResponseSchema = union([
   orgMessageResponseSchema,
   object({
     status: literal("pending_payment"),
-    hostedInvoiceUrl: string().url(),
+    hostedInvoiceUrl: url(),
     message: string().optional(),
   }),
   object({
     status: literal("checkout_required"),
-    checkoutUrl: string().url(),
+    checkoutUrl: url(),
     message: string().optional(),
   }),
 ]);

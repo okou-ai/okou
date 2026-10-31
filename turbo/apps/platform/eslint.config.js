@@ -1,4 +1,4 @@
-import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { zodConfig } from "@okouai/eslint-rules/zod";
 import { clientContractsPlugin } from "@okouai/eslint-rules/client-contracts";
 import { clientContractImportManifest } from "@okouai/api-contracts/client/imports";
 import { createHash } from "node:crypto";
@@ -67,7 +67,7 @@ const runtimeImportRestrictions = Object.freeze([
 /** @type {import("eslint").Linter.Config[]} */
 export default [
   ...baseConfig,
-  namedZodImportsConfig,
+  zodConfig,
   {
     files: ["src/**/*.{ts,tsx}"],
     ignores: [

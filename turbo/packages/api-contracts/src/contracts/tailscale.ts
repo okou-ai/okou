@@ -1,6 +1,7 @@
 import {
   array,
   int,
+  iso,
   object,
   string,
   uuid,
@@ -35,8 +36,8 @@ export const tailscaleConfigSchema = object({
   tags: tailscaleTagsSchema,
   revision,
   generation: revision,
-  createdAt: string().datetime(),
-  updatedAt: string().datetime(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
   sshHosts: array(object({ id: uuid(), displayName: string() }).strict()),
   vncHosts: array(vncNetworkHostReferenceSchema),
 }).strict();

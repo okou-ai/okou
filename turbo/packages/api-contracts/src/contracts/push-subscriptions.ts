@@ -1,4 +1,4 @@
-import { literal, object, string } from "zod";
+import { literal, object, string, url } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -10,7 +10,7 @@ export const pushSubscriptionsContract = c.router({
     path: "/api/push-subscriptions",
     headers: authHeadersSchema,
     body: object({
-      endpoint: string().url(),
+      endpoint: url(),
       keys: object({
         p256dh: string().min(1),
         auth: string().min(1),

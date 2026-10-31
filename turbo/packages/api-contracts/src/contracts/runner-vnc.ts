@@ -3,6 +3,7 @@ import {
   base64,
   discriminatedUnion,
   int,
+  iso,
   literal,
   object,
   string,
@@ -366,8 +367,8 @@ const checkResponseSchema = discriminatedUnion("outcome", [
 ]);
 
 const observationRequestSchema = checkRequestSchema.extend({
-  expectedCreatedAt: string().datetime(),
-  observedAt: string().datetime(),
+  expectedCreatedAt: iso.datetime(),
+  observedAt: iso.datetime(),
   failureReason: vncConnectionFailureReasonSchema.nullable(),
 });
 

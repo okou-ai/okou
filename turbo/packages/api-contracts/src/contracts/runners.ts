@@ -4,6 +4,7 @@ import {
   boolean,
   coerce,
   discriminatedUnion,
+  iso,
   literal,
   number,
   object,
@@ -194,7 +195,7 @@ export const runnerPreferenceSchema = union([
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
     tier: zEnum(["exactSandbox", "finalizingPredecessor"]),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
     predecessorRunId: uuid(),
   }).strict(),
   object({
@@ -202,12 +203,12 @@ export const runnerPreferenceSchema = union([
     runnerIdentity: runnerProcessIdentitySchema,
     tier: literal("predecessorHome"),
     predecessorRunId: uuid(),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
     home: discriminatedUnion("evidence", [
       object({ evidence: literal("advertised") }).strict(),
       object({
         evidence: literal("expected"),
-        homeWaitUntil: string().datetime({ offset: true }),
+        homeWaitUntil: iso.datetime({ offset: true }),
       }).strict(),
       object({ evidence: literal("location") }).strict(),
     ]),
@@ -216,7 +217,7 @@ export const runnerPreferenceSchema = union([
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
     tier: zEnum(["reusableSandbox", "homeCache"]),
-    expiresAt: string().datetime({ offset: true }),
+    expiresAt: iso.datetime({ offset: true }),
   }).strict(),
   object({
     kind: literal("noPreference"),
@@ -258,7 +259,7 @@ const runnerSupportedProfileListSchema = runnerProfileListSchema.min(1);
 export const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX = 128;
 
 const networkPolicyRefreshSchema = object({
-  nextRefreshAt: string().datetime({ offset: true }),
+  nextRefreshAt: iso.datetime({ offset: true }),
 });
 
 const networkPolicyRefreshesSchema = record(
@@ -357,7 +358,7 @@ export const connectorRuntimeCustomAbsentReasonSchema = literal(
 );
 
 const connectorRuntimeResultBaseSchema = object({
-  nextSyncAt: string().datetime({ offset: true }).optional(),
+  nextSyncAt: iso.datetime({ offset: true }).optional(),
 });
 
 export const connectorRuntimeBuiltinAvailableResultSchema =
@@ -469,7 +470,7 @@ export const jobSchema = object({
 
 export const heldSandboxStateSchema = object({
   reuseKey: string(),
-  lastCompletedAt: string().datetime({ offset: true }),
+  lastCompletedAt: iso.datetime({ offset: true }),
   reusableSandbox: object({
     profile: string(),
     sourceRunId: uuid(),
@@ -484,7 +485,7 @@ export const activeReuseProducerSchema = object({
 
 export const heldHomeStateSchema = object({
   reuseKey: string(),
-  lastCompletedAt: string().datetime({ offset: true }),
+  lastCompletedAt: iso.datetime({ offset: true }),
   homeCaches: array(
     object({
       profile: string(),

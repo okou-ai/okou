@@ -6,6 +6,7 @@ import {
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -53,7 +54,7 @@ const cleanupResponseSchema = object({
     failed: number().int().nonnegative(),
     errors: array(
       object({
-        runId: string().uuid(),
+        runId: uuid(),
         error: string(),
       }),
     ),

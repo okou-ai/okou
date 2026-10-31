@@ -1,4 +1,4 @@
-import { literal, object, string } from "zod";
+import { literal, object, string, url } from "zod";
 
 import type {
   ExternalCodeConnectorAuthProvider,
@@ -20,7 +20,7 @@ const awsExternalCodeProviderStateSchema = object({
   state: string().min(1).max(128),
   codeVerifier: string().min(43).max(128),
   dpopKey: string().min(1),
-  redirectUri: string().url(),
+  redirectUri: url(),
   signinRegion: string().regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/),
   runtimeRegion: string().regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/),
 });

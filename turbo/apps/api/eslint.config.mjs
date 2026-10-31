@@ -1,4 +1,4 @@
-import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { zodConfig } from "@okouai/eslint-rules/zod";
 import fs from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -325,7 +325,7 @@ export default [
     ignores: [".typecheck/**"],
   },
   ...config,
-  namedZodImportsConfig,
+  zodConfig,
   {
     files: [
       "src/signals/services/pick-chat-run.service.ts",

@@ -1,5 +1,6 @@
 import {
   array,
+  iso,
   object,
   string,
   uuid,
@@ -35,8 +36,8 @@ export const sshCredentialResponseSchema = object({
   username: string(),
   authMethod: zEnum(["private_key", "password"]),
   revision: revisionSchema,
-  createdAt: string().datetime(),
-  updatedAt: string().datetime(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
   hosts: array(object({ id: uuid(), displayName: string() }).strict()),
 }).strict();
 const c = initContract();

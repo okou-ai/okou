@@ -3,6 +3,7 @@ import {
   object,
   string,
   union,
+  uuid,
   undefined as zUndefined,
   type infer as zInfer,
 } from "zod";
@@ -24,7 +25,7 @@ const chatNormalSendBodyShape = {
   agentId: string().min(1),
   prompt: string().min(1),
   threadId: string().optional(),
-  clientThreadId: string().uuid().optional(),
+  clientThreadId: uuid().optional(),
   chatThreadEventId: chatThreadEventIdSchema.optional(),
   // Client-generated UUID for the sort touch created by direct user sends.
   // Lets event-sourced clients reconcile optimistic sidebar recency by id.
@@ -33,7 +34,7 @@ const chatNormalSendBodyShape = {
    * Run whose selected output the user is forwarding. The server resolves the
    * run to authoritative thread and agent provenance before persisting it.
    */
-  sourceRunId: string().uuid().optional(),
+  sourceRunId: uuid().optional(),
   /**
    * Selected model id, or null for Auto. The API resolves the effective
    * provider from org policy and available credentials. Existing threads may
@@ -42,7 +43,7 @@ const chatNormalSendBodyShape = {
   model: selectedModelRequestSchema.nullable().optional(),
   runOptions: chatRunOptionsRequestSchema.optional(),
   userMessage: userMessageDocumentSchema,
-  computerUseHostId: string().uuid().nullable().optional(),
+  computerUseHostId: uuid().nullable().optional(),
   cloudBrowserEnabled: boolean().optional(),
   hasTextContent: boolean(),
   // Preview evaluation escape hatch: when enabled, the request asks the
@@ -56,7 +57,7 @@ const chatNormalSendBodyShape = {
 export const chatEventNormalSendBodySchema = object({
   ...chatNormalSendBodyShape,
   // Client-generated UUID used as the user event's primary key.
-  clientEventId: string().uuid().optional(),
+  clientEventId: uuid().optional(),
   revokesEventId: string().min(1).optional(),
   interruptsRunId: zUndefined().optional(),
 })
@@ -98,7 +99,7 @@ export const chatEventsContract = c.router({
         agentId: string().min(1),
         threadId: string().min(1),
         revokesEventId: string().min(1),
-        clientEventId: string().uuid().optional(),
+        clientEventId: uuid().optional(),
         prompt: zUndefined().optional(),
         clientThreadId: zUndefined().optional(),
         chatThreadEventId: zUndefined().optional(),
@@ -116,8 +117,8 @@ export const chatEventsContract = c.router({
       object({
         agentId: string().min(1),
         threadId: string().min(1),
-        interruptsRunId: string().uuid().toLowerCase(),
-        clientEventId: string().uuid().optional(),
+        interruptsRunId: uuid().toLowerCase(),
+        clientEventId: uuid().optional(),
         prompt: zUndefined().optional(),
         clientThreadId: zUndefined().optional(),
         chatThreadEventId: zUndefined().optional(),

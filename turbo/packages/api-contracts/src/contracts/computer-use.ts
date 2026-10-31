@@ -11,6 +11,8 @@ import {
   object,
   record,
   string,
+  url,
+  uuid,
   enum as zEnum,
   unknown as zUnknown,
   type infer as zInfer,
@@ -89,7 +91,7 @@ export const computerUseCommandErrorCodeSchema = zEnum([
 ]);
 
 const hostNameSchema = string().trim().min(1).max(253);
-const hostInstallationIdSchema = string().trim().uuid();
+const hostInstallationIdSchema = string().trim().check(uuid());
 const hostVersionSchema = string().trim().min(1).max(64);
 const hostOsVersionSchema = string().trim().min(1).max(128);
 const authorizationRequestTokenPathParamsSchema = object({
@@ -437,7 +439,7 @@ export const computerUseAuthorizationSourceSchema = zEnum([
 const computerUseAuthorizationRequestCreateBodySchema = object({});
 
 export const computerUseAuthorizationRequestCreateResponseSchema = object({
-  authorizationUrl: string().url(),
+  authorizationUrl: url(),
   source: computerUseAuthorizationSourceSchema,
   expiresAt: string(),
 });
@@ -446,18 +448,18 @@ export const computerUseAuthorizationRequestResponseSchema = object({
   source: computerUseAuthorizationSourceSchema,
   expiresAt: string(),
   completedAt: string().nullable(),
-  computerUseHostId: string().uuid().nullable(),
+  computerUseHostId: uuid().nullable(),
   hosts: array(computerUseHostSchema),
 });
 
 const computerUseAuthorizationRequestApplyBodySchema = object({
-  computerUseHostId: string().uuid(),
+  computerUseHostId: uuid(),
 });
 
 export const computerUseAuthorizationRequestApplyResponseSchema = object({
   ok: literal(true),
   source: computerUseAuthorizationSourceSchema,
-  computerUseHostId: string().uuid(),
+  computerUseHostId: uuid(),
 });
 
 export const computerUseCommandCreateResponseSchema = object({
@@ -730,7 +732,7 @@ export type ComputerUseWriteCommandContract =
   typeof computerUseWriteCommandContract;
 
 // Native Desktop hosts authenticate with their Clerk session and connection generation.
-const sessionHostPathParamsSchema = object({ hostId: string().uuid() });
+const sessionHostPathParamsSchema = object({ hostId: uuid() });
 const sessionHostGenerationSchema = object({
   connectionGeneration: number().int().positive(),
 });
@@ -760,7 +762,7 @@ export const computerUseSessionHostsContract = c.router({
     body: computerUseHostStartBodySchema,
     responses: {
       200: sessionHostGenerationSchema.extend({
-        hostId: string().uuid(),
+        hostId: uuid(),
         commandNotifications: computerUseCommandNotificationsSchema,
       }),
       426: desktopUpgradeRequiredSchema,

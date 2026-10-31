@@ -9,6 +9,7 @@ import {
   literal,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -51,7 +52,7 @@ const CODEX_DEVICE_AUTH_SOURCE = "codex-device-auth";
 
 const codexDeviceAuthSessionTokenSchema = object({
   version: literal(1),
-  sessionId: string().uuid(),
+  sessionId: uuid(),
 });
 
 const codexDeviceAuthProviderStateSchema = object({
@@ -59,7 +60,7 @@ const codexDeviceAuthProviderStateSchema = object({
   type: literal("codex"),
   scope: literal("personal"),
   mode: zEnum(["add", "reconnect"]).optional(),
-  modelProviderId: string().uuid().optional(),
+  modelProviderId: uuid().optional(),
   deviceAuthId: string().min(1),
   userCode: string().min(1),
 });

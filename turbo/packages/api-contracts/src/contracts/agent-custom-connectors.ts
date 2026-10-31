@@ -2,6 +2,7 @@ import {
   array,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -12,7 +13,7 @@ import { apiErrorSchema } from "./errors";
 const c = initContract();
 
 export const agentCustomConnectorGrantSchema = object({
-  customConnectorId: string().uuid(),
+  customConnectorId: uuid(),
   permissionNames: array(string().min(1).max(128)).max(500),
 });
 export type AgentCustomConnectorGrant = zInfer<
@@ -48,7 +49,7 @@ export const agentCustomConnectorsContract = c.router({
     method: "GET",
     path: "/api/agents/:id/custom-connectors",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: agentCustomConnectorGrantsSchema,
       401: apiErrorSchema,
@@ -61,7 +62,7 @@ export const agentCustomConnectorsContract = c.router({
     method: "PUT",
     path: "/api/agents/:id/custom-connectors",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentCustomConnectorUpdateSchema,
     responses: {
       200: agentCustomConnectorGrantsSchema,

@@ -19,6 +19,7 @@ import {
   string,
   tuple,
   union,
+  url,
   uuid,
   enum as zEnum,
   never as zNever,
@@ -106,12 +107,12 @@ const chatEventCursorSchema = union([
     lastSeqId: literal(0),
   }).strict(),
   object({
-    lastEventId: string().uuid(),
+    lastEventId: uuid(),
     lastSeqId: number().int().positive(),
   }).strict(),
 ]);
 const chatEventSnapshotResponseBaseSchema = object({
-  url: string().url(),
+  url: url(),
   expiresInSeconds: number().int().positive(),
 });
 const chatEventSnapshotResponseSchema = union([
@@ -120,16 +121,16 @@ const chatEventSnapshotResponseSchema = union([
     lastSeqId: literal(0),
   }),
   chatEventSnapshotResponseBaseSchema.extend({
-    lastEventId: string().uuid(),
+    lastEventId: uuid(),
     lastSeqId: number().int().positive(),
   }),
 ]);
 const chatEventCatchUpBodySchema = array(
-  tuple([string().uuid(), number().int().nonnegative()]),
+  tuple([uuid(), number().int().nonnegative()]),
 );
 const chatEventCatchUpResponseSchema = object({
-  events: record(string().uuid(), array(chatEventRowSchema)),
-  notFoundThreads: array(string().uuid()),
+  events: record(uuid(), array(chatEventRowSchema)),
+  notFoundThreads: array(uuid()),
 });
 
 /** File attachment metadata stored alongside user messages. */
@@ -156,7 +157,7 @@ const assetMaterializationSchema = discriminatedUnion("status", [
 ]);
 
 const assetRefSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   classification: zEnum(["input", "published-output"]),
   access: zEnum(["private", "published"]),
   materialization: assetMaterializationSchema,
@@ -395,7 +396,7 @@ const chatThreadDetailSchema = object({
 
 const chatThreadMetadataSchema = object({
   id: string(),
-  agentId: string().uuid(),
+  agentId: uuid(),
   title: string().nullable(),
   selectedModel: string().nullable(),
   modelSettings: modelSettingsSchema,
@@ -406,14 +407,14 @@ const chatThreadMetadataSchema = object({
   archived: boolean(),
   hidden: boolean().optional(),
   muted: boolean(),
-  computerUseHostId: string().uuid().nullable(),
+  computerUseHostId: uuid().nullable(),
   cloudBrowserEnabled: boolean(),
 });
 export type ComposerDraft = zInfer<typeof composerDraftSchema>;
 
 const chatThreadCreateBodySchema = object({
   agentId: string().min(1),
-  clientThreadId: string().uuid().optional(),
+  clientThreadId: uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
   connectorSelections: array(connectorAccountSelectionSchema).optional(),
   /** Opt in after the client preserves its draft until creation is accepted. */
@@ -485,7 +486,7 @@ export const chatThreadsContract = c.router({
         // Every compacted snapshot lives in R2; clients download the
         // archive from this short-lived URL.
         object({
-          url: string().url(),
+          url: url(),
           expiresInSeconds: number().int().positive(),
           latestEventId: chatThreadEventIdSchema.nullable(),
           latestSeqId: number().int().positive().nullable(),
@@ -568,9 +569,9 @@ export const chatThreadsContract = c.router({
 /**
  * Chat thread by ID route contract (/api/chat-threads/[id])
  */
-const chatThreadIdPathParamsSchema = object({ id: string().uuid() });
+const chatThreadIdPathParamsSchema = object({ id: uuid() });
 const chatThreadThreadIdPathParamsSchema = object({
-  threadId: string().uuid(),
+  threadId: uuid(),
 });
 
 /** Bounded read: money comes from settled usage, independent of chat hints. */
@@ -581,13 +582,13 @@ export const chatThreadUsageContract = c.router({
     headers: authHeadersSchema,
     pathParams: chatThreadIdPathParamsSchema,
     body: object({
-      runIds: array(string().uuid()).min(1).max(CHAT_THREAD_USAGE_RUN_LIMIT),
+      runIds: array(uuid()).min(1).max(CHAT_THREAD_USAGE_RUN_LIMIT),
     }),
     responses: {
       200: object({
         runs: array(
           object({
-            runId: string().uuid(),
+            runId: uuid(),
             usage: chatEventUsagePayloadSchema,
           }),
         ),
@@ -1011,7 +1012,7 @@ export const chatThreadComputerUseHostContract = c.router({
     headers: authHeadersSchema,
     pathParams: chatThreadIdPathParamsSchema,
     body: object({
-      computerUseHostId: string().uuid().nullable(),
+      computerUseHostId: uuid().nullable(),
       cloudBrowserEnabled: boolean().optional(),
       eventId: chatThreadEventIdSchema.optional(),
     }).refine(
@@ -1093,7 +1094,7 @@ export const chatSearchContract = c.router({
     headers: authHeadersSchema,
     query: object({
       keyword: string().trim().min(1),
-      agentId: string().uuid().optional(),
+      agentId: uuid().optional(),
       since: coerce.number().optional(),
     }),
     responses: {
@@ -1168,7 +1169,7 @@ export const chatThreadEventsContract = c.router({
       }),
       object({
         sinceSeqId: coerce.number().int().positive(),
-        sinceEventId: string().uuid(),
+        sinceEventId: uuid(),
         limit: coerce.number().min(1).max(50).default(50),
       }),
     ]),

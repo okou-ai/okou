@@ -359,7 +359,7 @@ export type UpdateCustomConnectorBody = zInfer<
 >;
 
 export const startCustomConnectorOAuth2BodySchema = object({
-  agentId: string().uuid().optional(),
+  agentId: uuid().optional(),
   account: connectorAccountMutationIntentSchema,
 }).strict();
 
@@ -382,7 +382,7 @@ export type SetCustomConnectorValuesBody = zInfer<
 
 export const customConnectorProposalSchema = object({
   operation: zEnum(["create", "update"]),
-  connectorId: string().uuid().optional(),
+  connectorId: uuid().optional(),
   displayName: string().min(1).max(128),
   prefixTemplates: array(string().min(1)).min(1),
   fields: array(customConnectorFieldSchema),
@@ -397,7 +397,7 @@ export type CustomConnectorProposal = zInfer<
 export const saveCustomConnectorProposalBodySchema = object({
   proposal: customConnectorProposalSchema,
   values: array(customConnectorValueInputSchema),
-  agentId: string().uuid().optional(),
+  agentId: uuid().optional(),
 });
 export type SaveCustomConnectorProposalBody = zInfer<
   typeof saveCustomConnectorProposalBodySchema
@@ -406,7 +406,7 @@ export type SaveCustomConnectorProposalBody = zInfer<
 export const saveCustomConnectorProposalResponseSchema = object({
   connector: customConnectorResponseSchema,
   connectionId: uuid().optional(),
-  authorizedAgentId: string().uuid().optional(),
+  authorizedAgentId: uuid().optional(),
 });
 export type SaveCustomConnectorProposalResponse = zInfer<
   typeof saveCustomConnectorProposalResponseSchema
@@ -456,7 +456,7 @@ export const customConnectorByIdContract = c.router({
     method: "GET",
     path: "/api/custom-connectors/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: customConnectorResponseSchema,
       401: apiErrorSchema,
@@ -470,7 +470,7 @@ export const customConnectorByIdContract = c.router({
     method: "DELETE",
     path: "/api/custom-connectors/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       204: c.noBody(),
       401: apiErrorSchema,
@@ -484,7 +484,7 @@ export const customConnectorByIdContract = c.router({
     method: "PUT",
     path: "/api/custom-connectors/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: updateCustomConnectorBodySchema,
     responses: {
       200: customConnectorResponseSchema,
@@ -500,7 +500,7 @@ export const customConnectorByIdContract = c.router({
     method: "GET",
     path: "/api/custom-connectors/:id/permissions",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: customConnectorPermissionBundleSchema,
       401: apiErrorSchema,
@@ -518,7 +518,7 @@ export const customConnectorValuesContract = c.router({
     method: "PUT",
     path: "/api/custom-connectors/:id/values",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: setCustomConnectorValuesBodySchema,
     responses: {
       200: setCustomConnectorValuesResponseSchema,
@@ -540,7 +540,7 @@ export const customConnectorOAuth2Contract = c.router({
     method: "POST",
     path: "/api/custom-connectors/:id/oauth2/start",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: startCustomConnectorOAuth2BodySchema,
     responses: {
       200: startCustomConnectorOAuth2ResponseSchema,
