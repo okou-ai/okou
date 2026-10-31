@@ -240,6 +240,13 @@ class FirewallAmbiguous:
 
 
 @dataclass(frozen=True)
+class FirewallInvalidInput:
+    sandbox_info: dict
+    firewall_invalid_input: matching.FirewallInvalidInput
+    kind: Literal["firewall_invalid_input"] = field(init=False, default="firewall_invalid_input")
+
+
+@dataclass(frozen=True)
 class FirewallBlock:
     sandbox_info: dict
     firewall_block: matching.FirewallBlock
@@ -296,6 +303,7 @@ BlockingRequestClassification = (
     | OutlookSendBlocked
     | FirewallAmbiguous
     | FirewallBlock
+    | FirewallInvalidInput
     | PublicDestinationDenied
 )
 RequestClassification = (
@@ -618,6 +626,8 @@ def _classify_request(
             _aws_firewall_request_context(flow),
             is_asterisk_form=is_asterisk_form,
         )
+        if isinstance(result, matching.FirewallInvalidInput):
+            return FirewallInvalidInput(sandbox_info=sandbox_info, firewall_invalid_input=result)
         if isinstance(result, matching.FirewallAmbiguous):
             if platform_connector_api_fallback is not None:
                 return platform_connector_api_fallback
@@ -713,6 +723,7 @@ def classification_needs_request_timing(classification: RequestClassification) -
         "outlook_send_blocked",
         "firewall_ambiguous",
         "firewall_block",
+        "firewall_invalid_input",
         "firewall_allow",
         "firewall_policy_allow",
         "public_destination_denied",

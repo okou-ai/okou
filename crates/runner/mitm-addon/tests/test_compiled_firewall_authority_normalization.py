@@ -46,7 +46,7 @@ def test_runtime_url_raw_whitespace_controls_or_invalid_unicode_are_not_matched(
         policies,
     )
 
-    assert result is None
+    assert isinstance(result, matching.FirewallInvalidInput)
 
 
 @pytest.mark.parametrize(

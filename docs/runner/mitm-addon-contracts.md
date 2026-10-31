@@ -1155,6 +1155,59 @@ usage reporting boundary.
 
 ## Path normalization work boundary
 
+### Authorization across encoded path interpretations
+
+The raw matcher result is the authorization and forwarding ceiling. A separate
+bounded byte graph represents independent keep/decode choices, including nested
+percent triples formed across decoded spans. Request data and declaration literal
+spans share URI normalization for unreserved bytes, hex case, valid escaped UTF-8
+scalars and accepted raw-data aliases. Parse declaration operators before this
+analysis; parameter names and source API/rule identities remain opaque provenance.
+
+Immutable typed source NFAs and exact request-local subset products prove possible
+and certain applicability. The selected owner's complete pre-precedence API/rule
+set must be stable. Matching-conditioned priority bounds must preserve the original
+winner, including owner intent, policy ties and API binding conflicts. Keeping only
+the same selected allowance is insufficient when a restricted alias becomes
+applicable. Existing method/AWS selectors remain part of source applicability;
+pending AWS body inspection admits bounded resources, never credentials.
+
+Authority scope is established before path prefixes. Invalid raw/full-chain input
+or incomplete analysis at a configured authority produces a terminal, ownerless
+`unsafe_path` denial before auth or upload admission, including in both hooks and
+custom HTTP preparation. This includes malformed encoding, traversal, introduced
+query/fragment boundaries and exhausted budgets. For valid raw/full-chain input,
+only valid UTF-8 partial interpretations participate; invalid bytes are never
+replacement characters. A valid request proven outside every interpreted prefix,
+or a valid different authority, retains ordinary network scope.
+
+Interpretation can reject but cannot promote an originally unmatched request or
+supply replacement captures, routes or credentials. Successful encoded Unicode,
+space and greedy-key requests retain their original URL, query, API entry,
+parameters, permission and exact rule for forwarding and signing. Request graphs
+and proof memos must be released before auth awaits or stream admission, and must
+not enter cached classifications or process-wide URL caches. Shared final-decision
+vectors cover TypeScript diagnostics and Python enforcement.
+
+The source-level invalid-input result maps to the existing unsafe-input diagnostic
+response. Catalog, registry, auth-wire and persisted shapes remain compatible.
+Old or draining Runners retain their old enforcement until replaced or exited;
+publishing a new diagnostic package alone does not repair enforcement.
+
+### Validation work limits
+
+Declaration analysis retains at most 256 canonical typed forms per source API or
+combined API/rule. Each connector core retains at most 262,144 NFA states and
+1,048,576 transitions. Temporary graphs have the same state/edge caps and 4,194,304
+label bytes. Request subset/product proofs retain at most 262,144 subsets and
+262,144 product pairs, 1,048,576 memoized subset/byte transitions and 4,194,304
+logical subset bytes. Compilation and whole-request path analysis charge at most
+16,777,216 and 8,388,608 work units respectively.
+
+Charge scans, edge visits and allocation growth before performing the work. Do not
+truncate forms or branches to fit a budget. Incomplete analysis remains an explicit
+invalid result on the known authority, never outside scope or a partial allowance.
+
 Path safety validation accepts at most 65,536 input characters and five percent
 decoding passes. Before whole-segment NFKC, each raw or decoded segment must have
 at most 30 consecutive non-starters after compatibility decomposition (NFKD).

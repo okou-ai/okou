@@ -386,6 +386,22 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
   });
 
+  it("retains encoded API prefixes during global catalog selection", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await bdd.readOnboardingStatus(actor);
+    await connectReap(actor, "https://prod.api.reap.global/v%31");
+    const result = await checkWithSession(actor, {
+      mode: "url",
+      method: "GET",
+      url: "https://prod.api.reap.global/v1/users",
+    });
+    expect(result.body).toStrictEqual({
+      outcome: "unsafe-input",
+      reason: "unsafe-path",
+    });
+  });
+
   it("returns canonical identities for both URL request forms", async () => {
     const actor = bdd.user();
     const base = {
@@ -1436,6 +1452,42 @@ describe("POST /api/connectors/diagnostics/check", () => {
   });
 
   describe("run-admitted custom connector diagnostics", () => {
+    it("returns unsafe input when a configured prefix exceeds analysis capacity", async () => {
+      const actor = bdd.user();
+      bdd.acceptAgentStorageWrites();
+      await bdd.readOnboardingStatus(actor);
+      const authority = `https://${randomUUID()}.analysis-capacity.test`;
+      const definition = await connectorsApi.createCustomConnector(
+        actor,
+        manualHttpCustomConnectorCreateBody({
+          displayName: "Encoded prefix",
+          prefixTemplates: [`${authority}/${"a%2Fb".repeat(9)}/`],
+        }),
+      );
+      await trackCustomFixture(
+        Promise.resolve({ actor, connectorId: definition.id }),
+      );
+      await connectorsApi.setCustomConnectorValues(actor, definition.id, [
+        { key: "secret", kind: "secret", value: "analysis-fixture-secret" },
+      ]);
+      const { runId } = await createOwnedRun(actor, {
+        customConnectorIds: [definition.id],
+      });
+      const result = await checkWithToken(
+        okouToken(actor, runId, ["connector:read", "agent-run:read"]),
+        {
+          mode: "url",
+          method: "GET",
+          url: `${authority}/outside`,
+          target: { kind: "custom", customConnectorId: definition.id },
+        },
+      );
+      expect(result.body).toStrictEqual({
+        outcome: "unsafe-input",
+        reason: "unsafe-path",
+      });
+    });
+
     it("requires an explicit identity for shared custom prefixes and retains deletion isolation", async () => {
       const actor = bdd.user();
       bdd.acceptAgentStorageWrites();

@@ -93,6 +93,31 @@ def _assert_unknown(result: object) -> None:
     assert result.permissions == ()
 
 
+@pytest.mark.parametrize("indexed", [True, False])
+@pytest.mark.parametrize(("service", "expected"), [("s3", "unsafe_path"), ("ec2", "allow")])
+def test_uri_alias_compares_applicable_conditional_routes(
+    indexed: bool, service: str, expected: str
+) -> None:
+    result = _match(
+        base="https://s3.example.com",
+        permissions=[
+            firewall_permission("ordinary", "GET /files/a"),
+            firewall_permission("restricted", "GET /files/%61 AWS sigv4=s3"),
+        ],
+        url="https://s3.example.com/files/a",
+        method="GET",
+        headers=_headers(host="s3.example.com", service=service),
+        allow=("ordinary",),
+        deny=("restricted",),
+        indexed=indexed,
+    )
+    if expected == "allow":
+        _assert_allowed(result, "ordinary")
+    else:
+        assert isinstance(result, matching.FirewallBlock)
+        assert result.reason == "unsafe_path"
+
+
 def test_query_action_distinguishes_ec2_permissions_with_index_parity() -> None:
     permissions = [
         firewall_permission(
@@ -201,6 +226,22 @@ def test_target_rule_also_requires_declared_url_query(indexed: bool) -> None:
         "https://dynamodb.us-east-1.amazonaws.com/?Version=2012-08-10&Version=2012-08-10",
     ):
         _assert_unknown(_match(**args, url=url))
+
+
+def test_path_only_rule_does_not_inspect_aws_query_context(monkeypatch) -> None:
+    def reject_query_inspection(*args, **kwargs):
+        raise AssertionError("path-only matching must not parse AWS selector context")
+
+    monkeypatch.setattr(matching, "parse_qsl", reject_query_inspection)
+    result = _match(
+        base="https://s3.example.com",
+        permissions=[firewall_permission("ordinary", "GET /files/{id}")],
+        url="https://s3.example.com/files/object?caller=opaque%2Fdata",
+        method="GET",
+        headers=(),
+        allow=("ordinary",),
+    )
+    _assert_allowed(result, "ordinary")
 
 
 def test_query_action_inspects_form_body_at_most_once(monkeypatch) -> None:
