@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.11](https://github.com/okou-ai/okou/compare/runner-host-v0.10.10...runner-host-v0.10.11) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate bounded command test source ownership ([#44436](https://github.com/okou-ai/okou/issues/44436)) ([71c7638](https://github.com/okou-ai/okou/commit/71c763839ef67e45520e0ca5e3a8573d04f582ba))
+
 ## [0.10.10](https://github.com/okou-ai/okou/compare/runner-host-v0.10.9...runner-host-v0.10.10) (2026-10-31)
 
 

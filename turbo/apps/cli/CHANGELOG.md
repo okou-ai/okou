@@ -1,5 +1,22 @@
 # Changelog
 
+## [10.11.9](https://github.com/okou-ai/okou/compare/cli-v10.11.8...cli-v10.11.9) (2026-10-31)
+
+
+### Performance Improvements
+
+* **api-contracts:** split send/data contracts and use zod 4 top-level string formats ([#44419](https://github.com/okou-ai/okou/issues/44419)) ([381bd6b](https://github.com/okou-ai/okou/commit/381bd6be3712a60db5135c776f3e6aa4bb7b94cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.27.1
+    * @okouai/connectors bumped to 3.20.2
+    * @okouai/core bumped to 8.806.0
+    * @okouai/pi-agent-runtime bumped to 1.51.41
+
 ## [10.11.8](https://github.com/okou-ai/okou/compare/cli-v10.11.7...cli-v10.11.8) (2026-10-31)
 
 
