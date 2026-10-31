@@ -2,7 +2,7 @@ import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, eq, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, lt, or, sql } from "drizzle-orm";
 import { enum as zodEnum, int, object, string } from "zod";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
@@ -12,10 +12,14 @@ import {
   type AgentVisibility,
 } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
+import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -35,8 +39,9 @@ import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wak
 import {
   agentResponse,
   agentDetail,
-  agentEnabledConnectorSlugs,
-  agentCustomConnectorGrants,
+  agentEnabledConnectorSlugsCondition,
+  agentCustomConnectorGrantJoinCondition,
+  agentCustomConnectorGrantsCondition,
   visibleAgentIdentityCondition,
   agentList,
   visibleJoinedAgentCondition,
@@ -465,13 +470,19 @@ const getAgentUserConnectorsInner$ = computed(async (get) => {
     return agentNotFound(params.id);
   }
 
-  const enabledConnectorSlugs = await get(
-    agentEnabledConnectorSlugs({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const connectorScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const rows = await get(db$)
+    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+    .from(userBuiltinConnectors)
+    .where(agentEnabledConnectorSlugsCondition(connectorScope))
+    .orderBy(asc(userBuiltinConnectors.connectorSlug));
+  const enabledConnectorSlugs = rows.map((row) => {
+    return connectorSlugSchema.parse(row.connectorSlug);
+  });
   const resolver = await get(connectorActionResolver(enabledConnectorSlugs));
   const availableEnabledConnectorSlugs: (typeof enabledConnectorSlugs)[number][] =
     [];
@@ -510,13 +521,26 @@ const getAgentCustomConnectorsInner$ = computed(async (get) => {
     return agentNotFound(params.id);
   }
 
-  const grants = await get(
-    agentCustomConnectorGrants({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const connectorScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const rows = await get(db$)
+    .select({
+      customConnectorId: userCustomConnectors.customConnectorId,
+      permissionNames: userCustomConnectors.permissionNames,
+    })
+    .from(userCustomConnectors)
+    .innerJoin(orgCustomConnectors, agentCustomConnectorGrantJoinCondition())
+    .where(agentCustomConnectorGrantsCondition(connectorScope))
+    .orderBy(asc(userCustomConnectors.customConnectorId));
+  const grants = rows.map((row) => {
+    return {
+      customConnectorId: row.customConnectorId,
+      permissionNames: [...row.permissionNames],
+    };
+  });
   return {
     status: 200 as const,
     body: {
