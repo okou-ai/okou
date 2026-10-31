@@ -1466,11 +1466,15 @@ jobs:
         run: |
           node --test .github/scripts/api-worker-workflow.test.cjs .github/scripts/api-worker-preview.test.cjs
           pnpm --dir turbo/apps/api test:worker-build
+          pnpm --dir turbo/apps/api build:worker-roles
+          pnpm --dir turbo/apps/api build:worker-domains
 
       - name: Build and deploy API Worker using the shared preview database
         id: api-worker-deploy
         continue-on-error: true
+        # This experiment uses separately authorized inactive uploads, not preview deployment.
         if: >-
+          (github.event_name != 'pull_request' || github.head_ref != 'perf/api-nine-worker-split') &&
           steps.api-worker-checks.outcome == 'success' && (
             (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
             (github.event_name == 'push' && github.ref == 'refs/heads/main')

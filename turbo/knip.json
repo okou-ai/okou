@@ -25,6 +25,8 @@
         "src/index.ts",
         "src/server.ts",
         "src/worker.ts",
+        "src/worker-roles/*.ts",
+        "src/worker-domains/*.ts",
         "src/worker-unsupported-pg-native.ts",
         "src/worker-unsupported-react-email.ts",
         "src/worker-unsupported-vercel-functions.ts",

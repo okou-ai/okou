@@ -8,7 +8,6 @@ import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/a
 import {
   agentsByIdContract,
   agentsMainContract,
-  type AgentResponse,
   type AgentVisibility,
 } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -38,7 +37,6 @@ import {
   agentEnabledConnectorSlugs,
   agentCustomConnectorGrants,
   agentExists,
-  agentList,
   visibleJoinedAgentCondition,
   nonDefaultAgentCondition,
   publicAgentCountReadPlan,
@@ -50,6 +48,7 @@ import {
   updateUserCustomConnectors$,
 } from "../services/user-connectors.service";
 import type { RouteEntry } from "../route-entry";
+import { agentListRoutes } from "./agents-list";
 
 // This is a soft limit: concurrent requests may both observe an available slot.
 const PUBLIC_AGENT_LIMIT = 7;
@@ -417,16 +416,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   return { status: 201 as const, body: agentResponse(agent) };
 });
-
-const agentListResponse$ = computed(
-  async (
-    get,
-  ): Promise<{ readonly status: 200; readonly body: AgentResponse[] }> => {
-    const auth = get(organizationAuthContext$);
-    const agents = await get(agentList(auth.orgId, auth.userId));
-    return { status: 200 as const, body: [...agents] };
-  },
-);
 
 const getAgentInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -995,13 +984,7 @@ export const agentsRoutes: readonly RouteEntry[] = [
     route: agentsMainContract.create,
     handler: authRoute(agentWriteAuth, createAgentInner$),
   },
-  {
-    route: agentsMainContract.list,
-    handler: authRoute(
-      { ...agentReadAuth, oauthScope: "okou:chat:read" },
-      agentListResponse$,
-    ),
-  },
+  ...agentListRoutes,
   {
     route: agentsByIdContract.get,
     handler: authRoute(agentReadAuth, getAgentInner$),

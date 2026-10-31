@@ -6,7 +6,9 @@
   "scripts": {
     "build": "vite build",
     "build:worker": "node scripts/build-worker.mjs",
-    "test:worker-build": "node --test scripts/build-worker.node-test.mjs",
+    "build:worker-roles": "node scripts/build-worker.mjs --roles",
+    "build:worker-domains": "node scripts/build-worker.mjs --domains",
+    "test:worker-build": "node --test scripts/build-worker.node-test.mjs scripts/worker-role-build.node-test.mjs scripts/worker-roles.node-test.mjs",
     "check-types:worker": "bash scripts/check-types.sh worker",
     "dev": "bash scripts/dev.sh",
     "env:validate": "tsx src/scripts/validate-env.ts",
