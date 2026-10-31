@@ -4,7 +4,7 @@ import type {
   NativeTab,
   NativeEvent,
 } from "@okouai/browser-extension-client";
-import { createDeferredPromise, scheduleTimeout } from "../../utils.ts";
+import { createDeferredPromise } from "../../utils.ts";
 import type { CdpClient, CdpEvent } from "./client.ts";
 import { CdpFault, isRecord } from "./errors.ts";
 import type { TargetDirectory } from "./targets.ts";
@@ -198,20 +198,6 @@ function createCreationEvidence(resources: CreationResources) {
         client.onEvent((event) => {
           observeTarget(attempt, event);
         }),
-        scheduleTimeout(
-          () => {
-            if (!attempt.changed.settled()) {
-              attempt.changed.reject(
-                new CdpFault(
-                  "tab",
-                  "The new tab could not be identified. Check the browser before trying again.",
-                ),
-              );
-            }
-          },
-          10_000,
-          signal,
-        ),
       ];
       return () => {
         for (const release of releases) {

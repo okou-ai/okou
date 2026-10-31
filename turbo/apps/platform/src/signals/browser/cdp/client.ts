@@ -1,6 +1,4 @@
 import {
-  callAsync,
-  scheduleTimeout,
   createDeferredPromise,
   detach,
   jsonParseOr,
@@ -32,7 +30,6 @@ interface Pending {
   readonly method: string;
   readonly resolve: (result: unknown) => void;
   readonly reject: (error: unknown) => void;
-  timer: (() => void) | undefined;
   unwatch: (() => void) | undefined;
   settled: boolean;
   late?: (result: unknown) => void | Promise<void>;
@@ -74,7 +71,6 @@ interface Connection {
   readonly pending: Map<number, Pending>;
   readonly listeners: Set<(event: CdpEvent) => void>;
   readonly closeListeners: Set<(fault: CdpFault) => void>;
-  openingTimer: (() => void) | undefined;
   nextId: number;
   ended: boolean;
 }
@@ -93,27 +89,16 @@ function createWire(connection: Connection) {
       return;
     }
     connection.ended = true;
-    connection.openingTimer?.();
     if (!connection.opening.settled()) {
       connection.opening.reject(fault);
     }
     for (const entry of connection.pending.values()) {
-      entry.timer?.();
       entry.unwatch?.();
       if (!entry.settled) {
         entry.reject(fault);
       }
     }
     connection.pending.clear();
-    detach(
-      Promise.allSettled([
-        callAsync(() => {
-          connection.socket.close();
-        }),
-      ]),
-      Reason.DomCallback,
-      "browser socket close",
-    );
     // Native subscribers may remove themselves or reenter while close publishes.
     const subscribers = [...connection.closeListeners];
     for (const listener of subscribers) {
@@ -121,8 +106,10 @@ function createWire(connection: Connection) {
     }
     connection.closeListeners.clear();
     connection.listeners.clear();
+    // Last, so a failing native close cannot skip the protocol teardown above.
+    connection.socket.close();
   }
-  async function send(message: Message): Promise<boolean> {
+  function send(message: Message): boolean {
     if (connection.ended || connection.socket.readyState !== 1) {
       return false;
     }
@@ -132,20 +119,8 @@ function createWire(connection: Connection) {
       );
       return false;
     }
-    const [sent] = await Promise.allSettled([
-      callAsync(() => {
-        connection.socket.send(JSON.stringify(message));
-      }),
-    ]);
-    if (sent.status === "rejected") {
-      close(
-        new CdpFault(
-          "connection",
-          "WebSocket connection failed. Check endpoint access, Origin and TLS policy.",
-        ),
-      );
-    }
-    return sent.status === "fulfilled";
+    connection.socket.send(JSON.stringify(message));
+    return true;
   }
   return { close, send };
 }
@@ -154,7 +129,6 @@ type Wire = ReturnType<typeof createWire>;
 function createRequests(
   connection: Connection,
   wire: Wire,
-  requestTimeout: number,
   signal: AbortSignal,
 ) {
   async function requestRaw(
@@ -182,6 +156,11 @@ function createRequests(
       throw fault;
     }
     const id = connection.nextId++;
+    // Responses arrive in a later task, so a request is pending only once its
+    // message was written; a failed write rejects without leaving an entry.
+    if (!wire.send({ id, method, params, sessionId })) {
+      throw new CdpFault("connection", "The connection is closed.");
+    }
     const deferred = createDeferredPromise<unknown>(signal);
     const entry: Pending = {
       method,
@@ -195,38 +174,17 @@ function createRequests(
           deferred.reject(error);
         }
       },
-      timer: undefined,
       unwatch: undefined,
       settled: false,
       ...(late ? { late } : {}),
     };
     connection.pending.set(id, entry);
-    entry.timer = scheduleTimeout(
-      () => {
-        entry.settled = true;
-        entry.unwatch?.();
-        if (!entry.late) {
-          connection.pending.delete(id);
-        }
-        entry.reject(
-          new CdpFault(
-            "protocol",
-            "The browser request timed out.",
-            undefined,
-            Object.freeze({ method }),
-          ),
-        );
-      },
-      requestTimeout,
-      signal,
-    );
     if (operation) {
       const abortRequest = () => {
         if (entry.settled) {
           return;
         }
         entry.settled = true;
-        entry.timer?.();
         entry.unwatch?.();
         if (!entry.late) {
           connection.pending.delete(id);
@@ -238,24 +196,14 @@ function createRequests(
         operation.removeEventListener("abort", abortRequest);
       };
     }
-    if (!(await wire.send({ id, method, params, sessionId }))) {
-      connection.pending.delete(id);
-      entry.timer?.();
-      entry.unwatch?.();
-      entry.reject(new CdpFault("connection", "The connection is closed."));
-    }
-    return deferred.promise;
+    return await deferred.promise;
   }
   function notify<M extends Method>(
     method: M,
     params: Params<M>,
     sessionId?: string,
   ): void {
-    detach(
-      wire.send({ id: connection.nextId++, method, params, sessionId }),
-      Reason.DomCallback,
-      "browser native notification",
-    );
+    wire.send({ id: connection.nextId++, method, params, sessionId });
   }
   async function request<M extends Method>(
     method: M,
@@ -280,16 +228,22 @@ async function releaseLate(
   value: unknown,
   wire: Wire,
 ): Promise<void> {
-  const [released] = await Promise.allSettled([
-    callAsync(() => {
-      return entry.late?.(value);
-    }),
-  ]);
-  if (released.status === "rejected") {
-    wire.close(
-      new CdpFault("protocol", "A late browser session could not be released."),
-    );
-  }
+  // An unreleased late session must not outlive its connection.
+  let released = false;
+  using _release = {
+    [Symbol.dispose]: () => {
+      if (!released) {
+        wire.close(
+          new CdpFault(
+            "protocol",
+            "A late browser session could not be released.",
+          ),
+        );
+      }
+    },
+  };
+  await entry.late?.(value);
+  released = true;
 }
 
 function receiveResponse(
@@ -308,7 +262,6 @@ function receiveResponse(
     return;
   }
   connection.pending.delete(value.id);
-  entry.timer?.();
   entry.unwatch?.();
   if (isRecord(value.error)) {
     if (!entry.settled) {
@@ -379,14 +332,8 @@ function receiveMessage(
   }
 }
 
-function listen(
-  connection: Connection,
-  wire: Wire,
-  requestTimeout: number,
-  signal: AbortSignal,
-): void {
+function listen(connection: Connection, wire: Wire, signal: AbortSignal): void {
   const opened = () => {
-    connection.openingTimer?.();
     if (!connection.opening.settled()) {
       connection.opening.resolve();
     }
@@ -412,13 +359,6 @@ function listen(
   connection.socket.addEventListener("message", message);
   connection.socket.addEventListener("error", error);
   connection.socket.addEventListener("close", closed);
-  connection.openingTimer = scheduleTimeout(
-    () => {
-      wire.close(new CdpFault("connection", "The connection timed out."));
-    },
-    requestTimeout,
-    signal,
-  );
   signal.addEventListener("abort", abort, { once: true });
   connection.closeListeners.add(() => {
     signal.removeEventListener("abort", abort);
@@ -432,10 +372,7 @@ function listen(
 /** One mounted surface owns this native socket adapter and its protocol receipts. */
 export function createCdpClient(
   url: string,
-  options: {
-    readonly factory?: SocketFactory;
-    readonly requestTimeout?: number;
-  },
+  options: { readonly factory?: SocketFactory },
   signal: AbortSignal,
 ): CdpClient {
   signal.throwIfAborted();
@@ -444,19 +381,17 @@ export function createCdpClient(
     ((endpoint: string) => {
       return new WebSocket(endpoint);
     });
-  const requestTimeout = options.requestTimeout ?? 10_000;
   const connection: Connection = {
     socket: factory(url),
     opening: createDeferredPromise<void>(signal),
     pending: new Map(),
     listeners: new Set(),
     closeListeners: new Set(),
-    openingTimer: undefined,
     nextId: 1,
     ended: false,
   };
   const wire = createWire(connection);
-  const requests = createRequests(connection, wire, requestTimeout, signal);
+  const requests = createRequests(connection, wire, signal);
   const on = (listener: (event: CdpEvent) => void) => {
     connection.listeners.add(listener);
     return () => {
@@ -469,7 +404,7 @@ export function createCdpClient(
       return connection.closeListeners.delete(listener);
     };
   };
-  listen(connection, wire, requestTimeout, signal);
+  listen(connection, wire, signal);
   if (signal.aborted) {
     wire.close();
   }

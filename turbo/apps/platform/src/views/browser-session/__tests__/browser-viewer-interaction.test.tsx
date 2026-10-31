@@ -365,7 +365,7 @@ test("An unavailable required extension never admits CDP-only viewing", async ()
   ).toBeDisabled();
 });
 
-test("Bridge loss waits for the original modifier release before detaching its page", async () => {
+test("Bridge loss detaches its page after writing an unacknowledged modifier release", async () => {
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
@@ -378,18 +378,73 @@ test("Bridge loss waits for the original modifier release before detaching its p
       }),
     );
   });
+  // The remote never acknowledges the release while the viewer closes.
   const release = browser.holdNext("Input.dispatchKeyEvent");
   act(() => {
     browser.resetWorker();
   });
   await release.received;
   await screen.findByText("Browser disconnected");
-  expect(browser.detached).not.toContain("example-page-session");
-  await release.release();
   await waitFor(() => {
     expect(browser.detached).toContain("example-page-session");
   });
+  // The release was written before its page was detached.
+  const keyUp = browser.requests.findIndex((request) => {
+    return (
+      request.method === "Input.dispatchKeyEvent" &&
+      request.params?.type === "keyUp"
+    );
+  });
+  const pageDetach = browser.requests.findIndex((request) => {
+    return (
+      request.method === "Target.detachFromTarget" &&
+      request.params?.sessionId === "example-page-session"
+    );
+  });
+  expect(keyUp).toBeGreaterThan(-1);
+  expect(keyUp).toBeLessThan(pageDetach);
   expect(browser.targets).toHaveLength(2);
+  // The closed incarnation no longer blocks reconnecting to the same browser.
+  const reconnect = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Missing reconnect control");
+  }
+  click(reconnect);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("Revalidation does not wait for an unacknowledged release before another tab can be used", async () => {
+  const browser = await setupViewer();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.dispatchKeyEvent",
+        params: expect.objectContaining({ type: "rawKeyDown", key: "Shift" }),
+      }),
+    );
+  });
+  // Revalidation revokes admission; the remote never acknowledges the release.
+  const release = browser.holdNext("Input.dispatchKeyEvent");
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await release.received;
+  await userEvent.click(
+    await screen.findByLabelText("Other", { selector: '[role="tab"]' }),
+  );
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
 });
 
 test.each(["movement", "pending navigation"])(

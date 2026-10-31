@@ -1,5 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { createDeferredPromise, scheduleTimeout } from "../../utils.ts";
+import { createDeferredPromise } from "../../utils.ts";
 import { CdpFault, isRecord } from "../cdp/errors.ts";
 import { pageTarget, type TargetDirectory } from "../cdp/targets.ts";
 import type { CdpEvent } from "../cdp/client.ts";
@@ -33,7 +33,6 @@ function createDiscoveryState(model: DiscoveryModel) {
   const initialized$ = state(false);
   const validating$ = state(true);
   const epoch$ = state<number | null>(null);
-  const deadline$ = state<(() => void) | null>(null);
   const unwatchAbort$ = state<(() => void) | null>(null);
   const listeners$ = state<
     ReadonlySet<(result: PromiseSettledResult<void>) => void>
@@ -67,7 +66,6 @@ function createDiscoveryState(model: DiscoveryModel) {
     initialized$,
     validating$,
     epoch$,
-    deadline$,
     unwatchAbort$,
     listeners$,
     active$,
@@ -84,7 +82,6 @@ function createDiscoveryLifecycle(
 ) {
   const {
     closed$,
-    deadline$,
     unwatchAbort$,
     dirty$,
     fullWanted$,
@@ -98,8 +95,6 @@ function createDiscoveryLifecycle(
       return;
     }
     set(closed$, true);
-    get(deadline$)?.();
-    set(deadline$, null);
     get(unwatchAbort$)?.();
     set(unwatchAbort$, null);
     set(dirty$, new Set());
@@ -215,7 +210,7 @@ function createMembershipReads(
   options: DiscoveryOptions,
 ) {
   const readMembership$ = createMembershipReader(directory, model, lifecycle);
-  const { initialized$, validating$, deadline$ } = nodes;
+  const { initialized$, validating$ } = nodes;
   const { roundCurrent$, commit$ } = lifecycle;
   const readRound$ = command(
     async (
@@ -265,8 +260,6 @@ function createMembershipReads(
       }
       set(model.inventory$, { type: "complete-round", round });
       set(validating$, false);
-      get(deadline$)?.();
-      set(deadline$, null);
       set(options.changed$, signal);
     },
   );
@@ -385,26 +378,11 @@ function createDiscoveryDrain(
 
 function createDiscoveryRefresh(
   nodes: DiscoveryState,
-  lifecycle: DiscoveryLifecycle,
   model: DiscoveryModel,
   options: DiscoveryOptions,
   drain$: Command<Promise<void>, [AbortSignal]>,
 ) {
-  const { active$, validating$, deadline$, fullWanted$ } = nodes;
-  const expired$ = command(
-    ({ get, set }, deadline: () => void, signal: AbortSignal) => {
-      if (get(deadline$) === deadline) {
-        set(
-          lifecycle.fail$,
-          new CdpFault(
-            "scope",
-            "Window inventory could not be verified in time.",
-          ),
-          signal,
-        );
-      }
-    },
-  );
+  const { active$, validating$, fullWanted$ } = nodes;
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
     if (!get(active$)) {
@@ -417,19 +395,6 @@ function createDiscoveryRefresh(
     }
     if (!get(active$)) {
       return;
-    }
-    // Repeated native events cannot extend the authority deadline.
-    if (!get(deadline$)) {
-      const deadline = scheduleTimeout(
-        () => {
-          set(expired$, deadline, signal);
-        },
-        10_000,
-        signal,
-      );
-      set(deadline$, () => {
-        return deadline;
-      });
     }
     set(fullWanted$, true);
     await set(drain$, signal);
@@ -598,13 +563,7 @@ export function createTargetDiscovery(
     readMembership$,
     waitForDrain$,
   );
-  const refresh$ = createDiscoveryRefresh(
-    nodes,
-    lifecycle,
-    model,
-    options,
-    drain$,
-  );
+  const refresh$ = createDiscoveryRefresh(nodes, model, options, drain$);
   const start$ = createDiscoveryStart(
     nodes,
     model,
