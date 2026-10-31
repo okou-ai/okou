@@ -333,8 +333,9 @@ test.each(["https://viewer.example/live", null])(
         return tab.getAttribute("aria-label");
       }),
     ).toStrictEqual(["Example"]);
-    await fill(within(sidebar).getByLabelText("Address"), "next.example/path");
-    await userEvent.keyboard("{Enter}");
+    const address = within(sidebar).getByLabelText<HTMLInputElement>("Address");
+    await fill(address, "next.example/path");
+    fireEvent.submit(address.form!);
     await waitFor(() => {
       expect(within(sidebar).getByLabelText("Address")).toHaveValue(
         "http://next.example/path",

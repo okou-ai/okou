@@ -98,6 +98,24 @@ async function enterRemoteText(
   expect(input).toHaveFocus();
 }
 
+test.each([
+  ["google.com", "http://google.com/"],
+  ["https://google.com", "https://google.com/"],
+])(
+  "The address bar submits %s through the native form without a keydown",
+  async (value, expected) => {
+    mockViewer();
+    const viewer = await openViewer();
+    const address = within(viewer).getByLabelText<HTMLInputElement>("Address");
+    await fill(address, value);
+    fireEvent.submit(address.form!);
+    await waitFor(() => {
+      expect(address).toHaveValue(expected);
+      expect(address).toBeEnabled();
+    });
+  },
+);
+
 test("A pending initial history response does not block live remote input", async () => {
   const browser = mockViewer();
   const history = browser.holdNext("Page.getNavigationHistory");
