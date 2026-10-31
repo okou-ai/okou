@@ -793,7 +793,18 @@ export const clientContractImportManifest = [
   {
     module: "desktop-shell",
     contracts: ["desktopShellContract"],
-    bindings: [],
+    bindings: [
+      {
+        name: "desktopShellResultSchema",
+        source: "contracts/desktop-shell-schemas",
+        imported: "desktopShellResultSchema",
+      },
+      {
+        name: "desktopShellSessionSchema",
+        source: "contracts/desktop-shell-schemas",
+        imported: "desktopShellSessionSchema",
+      },
+    ],
   },
   {
     module: "desktop-shell-authorization",
