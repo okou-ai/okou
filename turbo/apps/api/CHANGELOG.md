@@ -9,6 +9,41 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.34.0](https://github.com/okou-ai/okou/compare/api-v2.33.3...api-v2.34.0) (2026-10-31)
+
+
+### Features
+
+* **api-contracts:** type desktop shell queue payloads and results ([#44396](https://github.com/okou-ai/okou/issues/44396)) ([f0aaf57](https://github.com/okou-ai/okou/commit/f0aaf57f4dbf5be154a733ae92dfcfdc14ef866a))
+* **browser:** track owner instance extension ids ([#44411](https://github.com/okou-ai/okou/issues/44411)) ([26fdcc9](https://github.com/okou-ai/okou/commit/26fdcc914bf4faeb8c3ce20ef512c4b09e74f368))
+
+
+### Bug Fixes
+
+* **api:** set minimum supported ios version to 0.22.5 ([#44413](https://github.com/okou-ai/okou/issues/44413)) ([77815fd](https://github.com/okou-ai/okou/commit/77815fdeb20d8452e31cbcde9fedf89d4dfdfa5e))
+* **browser:** wait for worker startup before bridge hello ([#44408](https://github.com/okou-ai/okou/issues/44408)) ([c5f1bb2](https://github.com/okou-ai/okou/commit/c5f1bb23f8a3871e1956eaef744a5d5b19de8e8b))
+* **connectors:** prove encoded path authorization with bounded languages ([#44318](https://github.com/okou-ai/okou/issues/44318)) ([90e4fda](https://github.com/okou-ai/okou/commit/90e4fdad526da623c952241b51d2bc8081cc7cb2))
+
+
+### Refactoring
+
+* **api:** delete hosted sites without a transaction ([#44412](https://github.com/okou-ai/okou/issues/44412)) ([8315dea](https://github.com/okou-ai/okou/commit/8315dea9fc065741612af8124e3b82ce7c435604))
+* **api:** localize visible agent existence preflights ([#44399](https://github.com/okou-ai/okou/issues/44399)) ([a8225d0](https://github.com/okou-ai/okou/commit/a8225d0824a982f465f72038f4e4d7709983e62b))
+* **api:** publish hosted deployments without a transaction ([#44405](https://github.com/okou-ai/okou/issues/44405)) ([20a802b](https://github.com/okou-ai/okou/commit/20a802bb589e49b344c22da3d2d21769cb8bf227))
+* **workflows:** omit definition snapshots from new official artifacts ([#44406](https://github.com/okou-ai/okou/issues/44406)) ([b68e1d6](https://github.com/okou-ai/okou/commit/b68e1d6251ea1b5396fc9c28d4c1dbf578f5ac10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.27.0
+    * @okouai/browser-extension-client bumped to 0.4.1
+    * @okouai/connectors bumped to 3.20.1
+    * @okouai/core bumped to 8.805.6
+    * @okouai/db bumped to 2.14.0
+    * @okouai/pi-agent-runtime bumped to 1.51.40
+
 ## [2.33.3](https://github.com/okou-ai/okou/compare/api-v2.33.2...api-v2.33.3) (2026-10-31)
 
 

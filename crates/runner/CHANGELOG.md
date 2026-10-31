@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.241.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.14...runner-rs-v0.241.15) (2026-10-31)
+
+
+### Bug Fixes
+
+* **connectors:** prove encoded path authorization with bounded languages ([#44318](https://github.com/okou-ai/okou/issues/44318)) ([90e4fda](https://github.com/okou-ai/okou/commit/90e4fdad526da623c952241b51d2bc8081cc7cb2))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.241.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.13...runner-rs-v0.241.14) (2026-10-31)
 
 ## [0.241.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.241.12...runner-rs-v0.241.13) (2026-10-31)
