@@ -4275,7 +4275,6 @@
       "make": "Te damos la bienvenida a {{brandName}}"
     },
     "make": {
-      "promptDescription": "Revisa la tarea y añade los detalles o requisitos que quieres que Okou siga.",
       "promptLabel": "Prompt de incorporación",
       "promptTitle": "Haz tuya esta tarea"
     },
@@ -4599,9 +4598,7 @@
       "prompt": {
         "connectorsDescription": "Conecta las herramientas que necesita esta tarea. También puedes hacerlo más tarde.",
         "connectorsTitle": "Conecta tus herramientas de trabajo",
-        "formatDescription": "Elige cómo quieres el resultado: por ejemplo, un informe, una presentación o un sitio web.",
-        "intro": "Parte de este prompt y adáptalo al resultado que necesitas.",
-        "toolsDescription": "Conecta las herramientas necesarias para que Okou trabaje con tus correos, archivos y datos."
+        "intro": "Adapta este prompt al resultado que necesitas añadiendo los detalles o requisitos que te importan, y conecta las herramientas que Okou necesita para trabajar con tus correos, archivos y datos. Elige cómo quieres recibir el resultado, por ejemplo, en un informe, una presentación o un sitio web."
       },
       "skills": {
         "copied": "Copiado",

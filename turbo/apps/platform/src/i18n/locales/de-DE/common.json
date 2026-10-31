@@ -4221,7 +4221,6 @@
       "make": "Willkommen bei {{brandName}}"
     },
     "make": {
-      "promptDescription": "Prüfe die Aufgabe und ergänze Details oder Anforderungen, die Okou beachten soll.",
       "promptLabel": "Onboarding-Eingabeaufforderung",
       "promptTitle": "Passe diese Aufgabe an"
     },
@@ -4545,9 +4544,7 @@
       "prompt": {
         "connectorsDescription": "Verbinde die Tools für diese Aufgabe. Das geht auch später.",
         "connectorsTitle": "Verbinde deine Arbeitstools",
-        "formatDescription": "Wähle das Format für dein Ergebnis, zum Beispiel einen Bericht, eine Präsentation oder eine Website.",
-        "intro": "Nutze diesen Prompt als Ausgangspunkt und passe ihn an dein gewünschtes Ergebnis an.",
-        "toolsDescription": "Verbinde die benötigten Tools, damit Okou mit deinen E-Mails, Dateien und Daten arbeiten kann."
+        "intro": "Passe diesen Prompt an dein gewünschtes Ergebnis an, indem du Details oder Anforderungen ergänzt. Verbinde dann die Tools, die Okou für deine E-Mails, Dateien und Daten braucht, und wähle das Format für dein Ergebnis, zum Beispiel einen Bericht, eine Präsentation oder eine Website."
       },
       "skills": {
         "copied": "Kopiert",

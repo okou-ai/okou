@@ -45,7 +45,7 @@ const HANDOFF_PROMPT = "Draft the launch plan";
 const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`;
 const PROMPT_TITLE = "Make this task your own";
 const PROMPT_INTRO =
-  "Start with this prompt and tailor it to the result you need.";
+  "Tailor this prompt to the result you need by adding any details or requirements, then connect the tools Okou needs to work with your emails, files, and data. Choose how you want the result delivered, such as a report, presentation, or website.";
 const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 function generatedProfile() {
   return {

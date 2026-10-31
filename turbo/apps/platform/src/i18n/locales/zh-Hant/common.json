@@ -4206,7 +4206,6 @@
       "make": "歡迎使用 {{brandName}}"
     },
     "make": {
-      "promptDescription": "檢查任務內容，補充你希望 Okou 遵循的細節和要求。",
       "promptLabel": "新手引導提示詞",
       "promptTitle": "依你的需求調整任務"
     },
@@ -4530,9 +4529,7 @@
       "prompt": {
         "connectorsDescription": "連接本次任務需要的工具，也可以稍後再連接。",
         "connectorsTitle": "連接你的工作工具",
-        "formatDescription": "選擇你想要的成果形式，例如報告、簡報或網站。",
-        "intro": "從這段提示詞開始，調整成你想完成的任務。",
-        "toolsDescription": "連接任務需要的工具，讓 Okou 使用相關郵件、檔案和資料。"
+        "intro": "從這段提示詞開始，補充你需要的細節和要求，再連接相關工具，讓 Okou 使用你的郵件、檔案和資料完成任務。你也可以選擇想要的成果形式，例如報告、簡報或網站。"
       },
       "skills": {
         "copied": "已複製",

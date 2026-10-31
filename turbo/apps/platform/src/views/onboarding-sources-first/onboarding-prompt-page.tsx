@@ -97,17 +97,6 @@ export function OnboardingSourcesFirstPromptPage() {
       })}
       mobileDescription=""
       mobileFooter={<OnboardingSecurityLink />}
-      trustPoints={[
-        t(($) => {
-          return $.onboarding.make.promptDescription;
-        }),
-        t(($) => {
-          return $.onboarding.sourcesFirst.prompt.toolsDescription;
-        }),
-        t(($) => {
-          return $.onboarding.sourcesFirst.prompt.formatDescription;
-        }),
-      ]}
       supplement={<OnboardingCompliance />}
       primaryLabel={t(($) => {
         return mobile

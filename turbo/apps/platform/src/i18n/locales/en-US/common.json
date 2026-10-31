@@ -4219,7 +4219,6 @@
       "make": "Welcome to {{brandName}}"
     },
     "make": {
-      "promptDescription": "Review the task and add any details or requirements you want Okou to follow.",
       "promptLabel": "Onboarding prompt",
       "promptTitle": "Make this task your own"
     },
@@ -4543,9 +4542,7 @@
       "prompt": {
         "connectorsDescription": "Connect the tools this task needs. You can also do this later.",
         "connectorsTitle": "Connect your work tools",
-        "formatDescription": "Choose how you want the result, such as a report, presentation, or website.",
-        "intro": "Start with this prompt and tailor it to the result you need.",
-        "toolsDescription": "Connect the tools it needs so Okou can work with your emails, files, and data."
+        "intro": "Tailor this prompt to the result you need by adding any details or requirements, then connect the tools Okou needs to work with your emails, files, and data. Choose how you want the result delivered, such as a report, presentation, or website."
       },
       "skills": {
         "copied": "Copied",

@@ -4206,7 +4206,6 @@
       "make": "Selamat datang di {{brandName}}"
     },
     "make": {
-      "promptDescription": "Tinjau tugas dan tambahkan detail atau persyaratan yang perlu diikuti Okou.",
       "promptLabel": "Prompt onboarding",
       "promptTitle": "Sesuaikan tugas ini"
     },
@@ -4530,9 +4529,7 @@
       "prompt": {
         "connectorsDescription": "Hubungkan alat yang dibutuhkan untuk tugas ini. Anda juga dapat melakukannya nanti.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
-        "formatDescription": "Pilih bentuk hasil yang Anda inginkan, seperti laporan, presentasi, atau situs web.",
-        "intro": "Mulai dari prompt ini dan sesuaikan dengan hasil yang Anda butuhkan.",
-        "toolsDescription": "Hubungkan alat yang dibutuhkan agar Okou dapat bekerja dengan email, file, dan data Anda."
+        "intro": "Sesuaikan prompt ini dengan hasil yang Anda butuhkan dengan menambahkan detail atau persyaratan, lalu hubungkan alat yang diperlukan Okou untuk bekerja dengan email, file, dan data Anda. Pilih bentuk hasil yang Anda inginkan, seperti laporan, presentasi, atau situs web."
       },
       "skills": {
         "copied": "Tersalin",

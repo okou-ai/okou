@@ -4275,7 +4275,6 @@
       "make": "Bienvenue chez {{brandName}}"
     },
     "make": {
-      "promptDescription": "Relisez la tâche et ajoutez les détails ou les consignes qu’Okou doit suivre.",
       "promptLabel": "Prompt d’onboarding",
       "promptTitle": "Adaptez cette tâche à vos besoins"
     },
@@ -4599,9 +4598,7 @@
       "prompt": {
         "connectorsDescription": "Connectez les outils nécessaires à cette tâche. Vous pouvez aussi le faire plus tard.",
         "connectorsTitle": "Connectez vos outils de travail",
-        "formatDescription": "Choisissez le format du résultat, par exemple un rapport, une présentation ou un site web.",
-        "intro": "Partez de ce prompt et adaptez-le au résultat souhaité.",
-        "toolsDescription": "Connectez les outils nécessaires pour qu’Okou puisse utiliser vos e-mails, fichiers et données."
+        "intro": "Adaptez ce prompt au résultat souhaité en ajoutant vos détails ou vos consignes, puis connectez les outils dont Okou a besoin pour utiliser vos e-mails, fichiers et données. Choisissez le format du résultat, par exemple un rapport, une présentation ou un site web."
       },
       "skills": {
         "copied": "Copié",
