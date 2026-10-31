@@ -1,4 +1,4 @@
-import { array, object, string, enum as zEnum } from "zod";
+import { array, object, string, uuid, enum as zEnum } from "zod";
 
 export const thinkingMessageSchema = object({
   id: string().min(1),
@@ -6,7 +6,7 @@ export const thinkingMessageSchema = object({
 });
 
 export const activitySummaryResponseSchema = object({
-  runId: string().uuid(),
+  runId: uuid(),
   messages: array(thinkingMessageSchema).max(4),
   status: zEnum(["available", "ineligible", "unavailable"]),
 });

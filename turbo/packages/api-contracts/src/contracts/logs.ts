@@ -129,7 +129,7 @@ export const logsListContract = c.router({
     headers: authHeadersSchema,
     query: listQuerySchema.extend({
       search: string().optional(),
-      agentId: string().uuid().optional(),
+      agentId: uuid().optional(),
       name: string().optional(),
       since: timestampQueryNumberSchema.optional(),
 
@@ -156,7 +156,7 @@ export const logsByIdContract = c.router({
     path: "/api/logs/:id",
     headers: authHeadersSchema,
     pathParams: object({
-      id: string().uuid("Invalid log ID"),
+      id: string().check(uuid("Invalid log ID")),
     }),
     responses: {
       200: logDetailSchema,

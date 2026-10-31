@@ -9,6 +9,7 @@ import {
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
   type ZodType,
@@ -72,7 +73,7 @@ const awsDpopPayloadSchema = object({
   htm: literal("POST"),
   htu: literal(AWS_TOKEN_URL),
   iat: number().int().positive(),
-  jti: string().uuid(),
+  jti: uuid(),
 });
 
 const server = setupServer();

@@ -1,9 +1,11 @@
 import {
   array,
   boolean,
+  iso,
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -43,21 +45,21 @@ export const GET_STARTED_REWARDS = {
 } as const;
 
 export const getStartedClaimSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   questKey: getStartedQuestKeySchema,
   status: getStartedClaimStatusSchema,
   rewardAmount: number().int().nonnegative(),
   rewardTarget: zEnum(["user", "org"]),
   reason: string().nullable(),
-  submittedAt: string().datetime(),
-  grantedAt: string().datetime().nullable(),
-  expiresAt: string().datetime().nullable(),
+  submittedAt: iso.datetime(),
+  grantedAt: iso.datetime().nullable(),
+  expiresAt: iso.datetime().nullable(),
 });
 export type GetStartedClaim = zInfer<typeof getStartedClaimSchema>;
 
 export const getStartedStatusSchema = object({
-  serverNow: string().datetime(),
-  nextResetAt: string().datetime(),
+  serverNow: iso.datetime(),
+  nextResetAt: iso.datetime(),
   claimedToday: boolean(),
   /** Consecutive UTC days the user has checked in, counting back from today. */
   checkinStreak: number().int().nonnegative(),

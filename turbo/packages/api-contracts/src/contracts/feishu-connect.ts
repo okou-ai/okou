@@ -4,6 +4,7 @@ import {
   literal,
   object,
   string,
+  uuid,
   type infer as zInfer,
 } from "zod";
 
@@ -20,7 +21,7 @@ export {
 } from "../validators/feishu-connect";
 
 const feishuInstallationStatusSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   platform: feishuPlatformSchema.optional(),
   isConnected: boolean(),
   connectedUserName: string().nullable().optional(),
@@ -36,7 +37,7 @@ const feishuInstallationStatusSchema = object({
   messageReceived: boolean(),
   tenantKey: string().nullable(),
   tenantName: string().nullable(),
-  defaultAgentId: string().uuid().nullable(),
+  defaultAgentId: uuid().nullable(),
   defaultAgentName: string().nullable(),
 });
 
@@ -57,9 +58,9 @@ const feishuConnectStatusSchema = object({
   messageReceived: boolean(),
   tenantKey: string().nullable(),
   tenantName: string().nullable(),
-  defaultAgentId: string().uuid().nullable(),
+  defaultAgentId: uuid().nullable(),
   defaultAgentName: string().nullable(),
-  installationId: string().uuid().nullable().optional(),
+  installationId: uuid().nullable().optional(),
   installations: array(feishuInstallationStatusSchema).optional(),
 });
 
@@ -99,7 +100,7 @@ export const feishuConnectContract = c.router({
       appSecret: string().trim().min(1),
       verificationToken: string().trim().min(1),
       encryptKey: string().trim().optional().default(""),
-      installationId: string().uuid().optional(),
+      installationId: uuid().optional(),
       createNew: boolean().optional(),
     }),
     responses: {
@@ -115,7 +116,7 @@ export const feishuConnectContract = c.router({
     method: "PATCH",
     path: "/api/integrations/feishu/installations/:installationId",
     headers: authHeadersSchema,
-    pathParams: object({ installationId: string().uuid() }),
+    pathParams: object({ installationId: uuid() }),
     body: object({
       setupCompleted: boolean().optional(),
     }),
@@ -133,7 +134,7 @@ export const feishuConnectContract = c.router({
     method: "DELETE",
     path: "/api/integrations/feishu/installations/:installationId",
     headers: authHeadersSchema,
-    pathParams: object({ installationId: string().uuid() }),
+    pathParams: object({ installationId: uuid() }),
     body: c.noBody(),
     responses: {
       200: object({ success: literal(true) }),
@@ -147,7 +148,7 @@ export const feishuConnectContract = c.router({
     method: "DELETE",
     path: "/api/integrations/feishu/installations/:installationId/connect",
     headers: authHeadersSchema,
-    pathParams: object({ installationId: string().uuid() }),
+    pathParams: object({ installationId: uuid() }),
     body: c.noBody(),
     responses: {
       200: object({ success: literal(true) }),

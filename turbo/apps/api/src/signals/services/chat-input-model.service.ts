@@ -3,10 +3,8 @@ import {
   type ChatInputModelSelection,
 } from "@okouai/api-contracts/contracts/chat-input-model";
 import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
-import {
-  MODEL_FIRST_SELECTION_PROVIDER_ID,
-  type CodexServiceTier,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import { MODEL_FIRST_SELECTION_PROVIDER_ID } from "@okouai/api-contracts/validators/chat-threads";
 import {
   modelSettingsSchema,
   type ModelSettings,

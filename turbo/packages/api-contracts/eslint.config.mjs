@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
-import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
+import { zodConfig } from "@okouai/eslint-rules/zod";
 import { clientContractsPlugin } from "@okouai/eslint-rules/client-contracts";
 import { clientContractImportManifest } from "./src/client/imports.ts";
 import { config, oxlint } from "@okouai/eslint-config/base";
 
 export default [
   ...config,
-  namedZodImportsConfig,
+  zodConfig,
   {
     files: [
       "src/validators/**/*.ts",

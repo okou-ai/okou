@@ -24,7 +24,7 @@ import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { object, string } from "zod";
+import { object, string, uuid } from "zod";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 import { agents } from "@okouai/db/schema/agent";
 import { nowDate } from "../../lib/time";
@@ -904,12 +904,12 @@ export function chatEventsInsertSql(values: readonly AppendChatEvent[]): SQL {
 }
 
 export const chatEventReplacementTargetSchema = object({
-  id: string().uuid(),
-  chatThreadId: string().uuid(),
+  id: uuid(),
+  chatThreadId: uuid(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema,
   eventType: chatEventTypeSchema,
   contextType: string().nullable(),
-  contextId: string().uuid().nullable(),
+  contextId: uuid().nullable(),
   modelSelection: chatInputModelSelectionSchema.nullable(),
 });
 

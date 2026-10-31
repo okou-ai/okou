@@ -73,6 +73,44 @@ uses requires resolving the imported binding, preserving type positions and
 nested members, and choosing aliases that cannot capture local identifiers.
 A text replacement of `z.` cannot establish those properties.
 
+## String formats
+
+Use Zod 4's top-level format schemas instead of the format methods that Zod 4
+deprecates on `string()`:
+
+```typescript
+import { email, iso, url, uuid } from "zod";
+
+const ownerSchema = object({
+  id: uuid(),
+  homepage: url().optional(),
+  email: email(),
+  createdAt: iso.datetime({ offset: true }),
+});
+```
+
+Keep the original arguments, such as `offset` or `precision`. `datetime`,
+`date`, `time` and `duration` live under `iso`. Alias a format import that
+collides with a local name, for example `url as zUrl`.
+
+A top-level format is both the string schema and its format check, so two
+cases need the deprecated method's internal form, `string().check(format())`:
+
+- The format check runs before any chained checks or transforms. Keep a check
+  or transform that must run first on `string()`.
+- A custom message on the top-level format also replaces the non-string type
+  error. Keep a format-only message on the check.
+
+```typescript
+const hostIdSchema = string().trim().check(uuid());
+const uploadIdSchema = string().check(uuid("Upload ID must be a UUID"));
+```
+
+The `zod/no-string-format-methods` ESLint rule reports the deprecated methods
+on a `string()` or `coerce.string()` call chain from a classic Zod entry point.
+Both spellings use the same Zod format implementation and produce the same
+JSON Schema; the top-level form constructs fewer schema instances.
+
 ## Browser HTTP contract imports
 
 Share contract types without sharing endpoint schema construction with the

@@ -5,7 +5,7 @@ import {
   connectorAuthMethodRevokeMetadata,
 } from "@okouai/connectors/connector-auth-method";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { array, literal, number, object, string, union } from "zod";
+import { array, literal, number, object, string, union, uuid } from "zod";
 import {
   builtinConnectorTokenRevokeReadPlan,
   prepareBuiltinConnectorAccountDeletionRevoke,
@@ -148,7 +148,7 @@ export const builtinDeletionSqlResultSchema = union([
   object({
     kind: literal("deleted"),
     resolvedSelectionCount: number().int().nonnegative(),
-    promotedDefaultConnectionId: string().uuid().nullable(),
+    promotedDefaultConnectionId: uuid().nullable(),
     revokeIndex: number().int().nonnegative().nullable(),
     secretRows: array(
       object({ name: string(), encryptedValue: string().nullable() }),

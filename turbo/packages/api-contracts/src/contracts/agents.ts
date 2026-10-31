@@ -1,4 +1,4 @@
-import { array, object, string, type infer as zInfer } from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import {
   agentResponseSchema,
@@ -111,7 +111,7 @@ export const agentsByIdContract = c.router({
     method: "GET",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: agentResponseSchema,
       400: apiErrorSchema,
@@ -125,7 +125,7 @@ export const agentsByIdContract = c.router({
     method: "PUT",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentRequestSchema,
     responses: {
       200: agentResponseSchema,
@@ -142,7 +142,7 @@ export const agentsByIdContract = c.router({
     method: "PATCH",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentMetadataRequestSchema,
     responses: {
       200: agentResponseSchema,
@@ -158,7 +158,7 @@ export const agentsByIdContract = c.router({
     method: "DELETE",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: c.noBody(),
     responses: {
       204: c.noBody(),
@@ -180,7 +180,7 @@ export const agentInstructionsContract = c.router({
     method: "GET",
     path: "/api/agents/:id/instructions",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: agentInstructionsResponseSchema,
       400: apiErrorSchema,
@@ -194,7 +194,7 @@ export const agentInstructionsContract = c.router({
     method: "PUT",
     path: "/api/agents/:id/instructions",
     headers: authHeadersSchema,
-    pathParams: object({ id: string().uuid() }),
+    pathParams: object({ id: uuid() }),
     body: agentInstructionsRequestSchema,
     responses: {
       200: agentResponseSchema,

@@ -40,8 +40,8 @@ import {
   releaseDiagnostics,
   type PreparedOfficialWorkflowDefinition,
 } from "./official-workflow-catalog-publication";
+import { canonicalJsonString } from "../../lib/canonical-json";
 import {
-  canonicalJsonString,
   validateOfficialWorkflowCatalog,
   type ValidatedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-validation.service";

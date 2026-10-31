@@ -50,7 +50,7 @@ import {
   WithSubquery,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { boolean, object, string } from "zod";
+import { boolean, object, uuid } from "zod";
 
 import { nowDate, nowDateSql, timestampWithoutTimeZone } from "../../lib/time";
 import {
@@ -4009,7 +4009,7 @@ const finalizeDormantMaterialization$ = command(
     const [result] = parseRawRows(
       object({
         exactTimestamp: boolean(),
-        workflowId: string().uuid().nullable(),
+        workflowId: uuid().nullable(),
       }),
       await db.execute(query),
     );

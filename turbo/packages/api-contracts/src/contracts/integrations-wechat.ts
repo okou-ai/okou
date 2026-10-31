@@ -7,6 +7,7 @@ import {
   number,
   object,
   string,
+  url,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -130,7 +131,7 @@ export const wechatReceiverContract = c.router({
           active: literal(true),
           generation: uuid(),
           session: object({
-            baseUrl: string().url(),
+            baseUrl: url(),
             token: string().min(1),
             cursor: string(),
             preserveCursor: boolean(),

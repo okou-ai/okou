@@ -6,6 +6,7 @@ import {
   object,
   string,
   unknown as zUnknown,
+  url as zUrl,
   type infer as zInfer,
 } from "zod";
 
@@ -24,7 +25,7 @@ export const helloSchema = object({
 
 export const readySchema = object({
   session_id: string().min(1),
-  resume_gateway_url: string().url(),
+  resume_gateway_url: zUrl(),
   application: object({ id: string() }),
   user: object({ id: string().regex(/^\d{17,20}$/u) }),
 });
@@ -41,7 +42,7 @@ export const outboxEntrySchema = object({
 });
 
 export const gatewayBotSchema = object({
-  url: string().url(),
+  url: zUrl(),
   shards: number().int().positive(),
   session_start_limit: object({
     total: number().int().positive(),

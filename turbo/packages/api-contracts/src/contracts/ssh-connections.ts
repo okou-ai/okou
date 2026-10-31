@@ -1,6 +1,7 @@
 import {
   array,
   int,
+  iso,
   literal,
   object,
   string,
@@ -58,8 +59,8 @@ export const sshConnectionMetadataSchema = object({
   })
     .strict()
     .nullable(),
-  createdAt: string().datetime(),
-  updatedAt: string().datetime(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
 }).strict();
 
 export const sshConnectionResponseSchema = union([

@@ -1,9 +1,9 @@
 import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
-import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-threads";
+import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQLWrapper } from "drizzle-orm";
-import { array, string } from "zod";
+import { array, uuid } from "zod";
 
 import {
   nullableDriverValueDecoder,
@@ -15,7 +15,7 @@ const chatEventUserMessageDecoder = zodDriverValueDecoder(
   userMessageDocumentSchema,
 );
 const requiredOfficialWorkflowIdsDecoder = zodDriverValueDecoder(
-  array(string().uuid())
+  array(uuid())
     .min(1)
     .refine((workflowIds) => {
       return new Set(workflowIds).size === workflowIds.length;

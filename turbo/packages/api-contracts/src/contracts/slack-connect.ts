@@ -4,6 +4,7 @@ import {
   literal,
   object,
   string,
+  url,
   type infer as zInfer,
 } from "zod";
 
@@ -80,7 +81,7 @@ export const slackConnectContract = c.router({
     headers: authHeadersSchema,
     body: slackConnectOAuthBodySchema,
     responses: {
-      202: object({ authorizationUrl: string().url() }),
+      202: object({ authorizationUrl: url() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -94,7 +95,7 @@ export const slackConnectContract = c.router({
     headers: authHeadersSchema,
     body: slackConnectOAuthBodySchema,
     responses: {
-      202: object({ authorizationUrl: string().url() }),
+      202: object({ authorizationUrl: url() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

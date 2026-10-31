@@ -5,6 +5,7 @@ import {
   number,
   object,
   string,
+  url,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -56,7 +57,7 @@ export const discordHistoryMessageSchema = object({
     bot: boolean().optional(),
   }),
   timestamp: string(),
-  url: string().url(),
+  url: url(),
   replyTo: object({
     messageId: discordSnowflakeSchema,
     channelId: discordSnowflakeSchema.optional(),

@@ -27,6 +27,7 @@ import {
   number,
   object,
   string,
+  url,
   enum as zEnum,
   ZodError,
   type infer as zInfer,
@@ -345,7 +346,7 @@ async function probeAutomaticOAuthChallenge(
 }
 
 function requiredHttpsUrl(value: string, field: string): string {
-  const parsed = string().url().safeParse(value);
+  const parsed = url().safeParse(value);
   if (!parsed.success) {
     throw new McpAutomaticOAuthError(
       { kind: "incompatible", reason: "invalid-discovery-metadata" },

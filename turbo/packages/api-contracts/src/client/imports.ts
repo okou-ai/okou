@@ -223,6 +223,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "chat-event-send",
+    contracts: ["chatEventsContract"],
+    bindings: [],
+  },
+  {
     module: "chat-input-status",
     contracts: ["chatInputStatusContract"],
     bindings: [],
@@ -256,7 +261,6 @@ export const clientContractImportManifest = [
   {
     module: "chat-threads",
     contracts: [
-      "chatEventsContract",
       "chatSearchContract",
       "chatThreadArchiveContract",
       "chatThreadArtifactsContract",
@@ -280,6 +284,11 @@ export const clientContractImportManifest = [
     ],
     bindings: [
       {
+        name: "CHAT_THREAD_USAGE_RUN_LIMIT",
+        source: "validators/chat-threads",
+        imported: "CHAT_THREAD_USAGE_RUN_LIMIT",
+      },
+      {
         name: "MODEL_FIRST_SELECTION_PROVIDER_ID",
         source: "validators/chat-threads",
         imported: "MODEL_FIRST_SELECTION_PROVIDER_ID",
@@ -293,6 +302,11 @@ export const clientContractImportManifest = [
         name: "chatFollowupsContentDocumentSchema",
         source: "validators/chat-threads",
         imported: "chatFollowupsContentDocumentSchema",
+      },
+      {
+        name: "chatRunOptionsRequestSchema",
+        source: "contracts/chat-run-options",
+        imported: "chatRunOptionsRequestSchema",
       },
       {
         name: "chatThreadArtifactGoogleDriveRecoverySchema",
@@ -598,7 +612,6 @@ export const clientContractImportManifest = [
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
-      "cronCleanupXResourceReadsContract",
       "cronCompactChatThreadSnapshotsContract",
       "cronCompactUsageEventsContract",
       "cronComputerUseScreenshotCleanupContract",
@@ -626,6 +639,11 @@ export const clientContractImportManifest = [
       "cronSyncSkillsContract",
       "cronTelegramCleanupContract",
     ],
+    bindings: [],
+  },
+  {
+    module: "cron-cleanup-x-resource-reads",
+    contracts: ["cronCleanupXResourceReadsContract"],
     bindings: [],
   },
   {
@@ -1436,6 +1454,11 @@ export const clientContractImportManifest = [
         imported: "CANONICAL_WORKING_DIR",
       },
       {
+        name: "MIN_EPOCH_MS_TIMESTAMP",
+        source: "contracts/api-start-time",
+        imported: "MIN_EPOCH_MS_TIMESTAMP",
+      },
+      {
         name: "OFFICIAL_RUNNER_TOKEN_PREFIX",
         source: "contracts/runner-primitives",
         imported: "OFFICIAL_RUNNER_TOKEN_PREFIX",
@@ -1449,6 +1472,11 @@ export const clientContractImportManifest = [
         name: "RUNNER_VERSION_MAX_LENGTH",
         source: "contracts/runner-primitives",
         imported: "RUNNER_VERSION_MAX_LENGTH",
+      },
+      {
+        name: "elapsedSinceApiStartMs",
+        source: "contracts/api-start-time",
+        imported: "elapsedSinceApiStartMs",
       },
       {
         name: "homeReuseResultSchema",

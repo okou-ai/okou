@@ -3,6 +3,7 @@ import {
   boolean,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -15,13 +16,13 @@ export const feishuOrgCallbackFileSchema = object({
 });
 
 export const feishuOrgCallbackPayloadSchema = object({
-  installationId: string().uuid(),
+  installationId: uuid(),
   chatId: string(),
   messageId: string(),
   connectionId: string(),
   sessionKey: string().optional(),
-  agentId: string().uuid().optional(),
-  existingSessionId: string().uuid().optional(),
+  agentId: uuid().optional(),
+  existingSessionId: uuid().optional(),
   reactionId: string().optional(),
   replyInThread: boolean().optional(),
   files: array(feishuOrgCallbackFileSchema).optional(),
