@@ -42,7 +42,7 @@ final class NativeProcessTests: XCTestCase {
     let timestamp = formatter.string(from: Date())
     let command = ComputerUseCommandClaim.Command(
       id: UUID().uuidString, kind: .appsList, status: .running, hostId: "computer", hostName: "Mac",
-      payload: [:], result: nil, error: nil, timeoutMs: timeoutMs, createdAt: timestamp,
+      payload: .init(), result: nil, error: nil, timeoutMs: timeoutMs, createdAt: timestamp,
       claimedAt: timestamp, completedAt: nil)
     return await executor.execute(command, claimStarted: .now)
   }

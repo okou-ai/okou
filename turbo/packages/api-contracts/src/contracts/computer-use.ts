@@ -6,6 +6,7 @@ import {
   discriminatedUnion,
   intersection,
   literal,
+  looseObject,
   number,
   object,
   record,
@@ -15,6 +16,10 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import {
+  desktopShellPayloadSchema,
+  desktopShellResultSchema,
+} from "./desktop-shell-schemas";
 import { fileDownloadUrlSchema } from "./file-download";
 import { authHeadersSchema, initContract } from "./base";
 import { ApiError, apiErrorSchema } from "./errors";
@@ -335,7 +340,16 @@ const computerUseCommandErrorSchema = object({
   message: string(),
 });
 
-const computerUseCommandResultSchema = record(string(), zUnknown());
+// GUI/helper fields remain open. Declare the shared Shell fields without adding
+// required queue fields or changing the JSON sent by installed 0.54.x builds.
+const computerUseCommandPayloadSchema = looseObject({
+  ...desktopShellPayloadSchema.shape,
+  // GUI keyboard.press_key uses the same name with a different key vocabulary.
+  key: string().optional(),
+}).meta({ "x-desktop-stable-fields": true });
+const computerUseCommandResultSchema = looseObject(
+  desktopShellResultSchema.shape,
+).meta({ "x-desktop-stable-fields": true });
 
 /**
  * Screenshot pointer shapes for `computer_use_commands.result.screenshot`.
@@ -458,7 +472,7 @@ export const computerUseCommandResponseSchema = object({
   status: computerUseCommandStatusSchema,
   hostId: string().nullable(),
   hostName: string().nullable(),
-  payload: record(string(), zUnknown()),
+  payload: computerUseCommandPayloadSchema,
   result: computerUseCommandResultSchema.optional(),
   error: computerUseCommandErrorSchema.optional(),
   timeoutMs: number().int().nullable(),

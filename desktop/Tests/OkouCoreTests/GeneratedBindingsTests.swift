@@ -82,12 +82,48 @@ final class GeneratedBindingsTests: XCTestCase {
     XCTAssertFalse(ComputerUseCommandClaim.Command.Kind.knownValues.contains(command.kind))
     XCTAssertEqual(command.status, .running)
     XCTAssertNil(command.timeoutMs)
-    XCTAssertEqual(command.payload, ["app": .string("Notes"), "depth": .number(2)])
-    XCTAssertEqual(JSONValue.object(command.payload)["app"].string, "Notes")
+    XCTAssertEqual(
+      command.payload.additionalFields, ["app": .string("Notes"), "depth": .number(2)])
+    XCTAssertEqual(try JSONValue(encoding: command.payload)["app"].string, "Notes")
     XCTAssertThrowsError(try decode(ComputerUseCommandClaim.self, #"{"status":"paused"}"#)) {
       error in
       XCTAssertEqual((error as? DesktopFailure)?.code, "invalid_response")
     }
+  }
+
+  func testShellPayloadKeepsNamedFieldsAndOpaqueGUIFieldsOnRoundTrip() throws {
+    let shellJson =
+      #"{"sessionId":"00000000-0000-4000-8000-000000000001","command":"printf hello","cursor":0,"waitMs":1000,"shellPermissionId":"00000000-0000-4000-8000-000000000002"}"#
+    let guiJson = #"{"app":"Notes","key":"CMD+A","opaque":{"value":null}}"#
+    let shell = try decode(ComputerUseCommandClaim.Command.Payload.self, shellJson)
+    let gui = try decode(ComputerUseCommandClaim.Command.Payload.self, guiJson)
+    XCTAssertEqual(shell.command, "printf hello")
+    XCTAssertEqual(shell.cursor, 0)
+    XCTAssertEqual(shell.waitMs, 1000)
+    XCTAssertEqual(gui.key, "CMD+A")
+    XCTAssertEqual(gui.additionalFields["app"], .string("Notes"))
+    for (json, payload) in [(shellJson, shell), (guiJson, gui)] {
+      XCTAssertEqual(
+        try JSONValue(encoding: payload),
+        try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)))
+    }
+  }
+
+  func testShellCompletionPreservesTheInstalledWireShapeAndRequiredNulls() throws {
+    let session =
+      #"{"id":"00000000-0000-4000-8000-000000000001","state":"open","initialCwd":"/tmp","cwd":"/tmp","commandState":"running","exitCode":null,"shellExitCode":null,"shellExitSignal":null,"closeReason":null,"oldestCursor":0,"endCursor":5,"idleRemainingSeconds":900,"cols":120,"rows":40}"#
+    for json in [
+      "{\"session\":\(session),\"outputBase64\":\"aGVsbG8=\",\"nextCursor\":5,\"lostBytes\":0,\"moreAvailable\":false,\"reason\":\"wait_elapsed\"}",
+      "{\"sessions\":[\(session)]}", "{\"session\":\(session)}", "{\"closed\":true}",
+    ] {
+      let result = try decode(ComputerUseShellResult.self, json)
+      XCTAssertEqual(
+        try JSONValue(encoding: result),
+        try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)))
+    }
+    let missingExitCode = session.replacingOccurrences(of: "\"exitCode\":null,", with: "")
+    XCTAssertThrowsError(
+      try decode(ComputerUseShellResult.self, "{\"session\":\(missingExitCode)}"))
   }
 
   func testCompatibilityPolicyAndIdentityResponsesDecode() throws {

@@ -22,6 +22,24 @@ const capabilities = [
   `shell.permission:${permission}`,
 ] as const;
 
+// The complete wire record emitted by released 0.54.x Desktop builds.
+const shellSession = {
+  id: permission,
+  state: "open",
+  initialCwd: "/tmp",
+  cwd: "/tmp",
+  commandState: "running",
+  exitCode: null,
+  shellExitCode: null,
+  shellExitSignal: null,
+  closeReason: null,
+  oldestCursor: 0,
+  endCursor: 0,
+  idleRemainingSeconds: 900,
+  cols: 120,
+  rows: 40,
+} as const;
+
 async function approveAndResume(
   scenario: ReturnType<typeof createPublicComputerUseScenario>,
   actor: Parameters<typeof scenario.claim>[0],
@@ -541,11 +559,7 @@ describe("Desktop Shell command pipeline", () => {
           {
             status: "succeeded",
             result: {
-              session: {
-                id: permission,
-                state: "open",
-                commandState: "running",
-              },
+              session: shellSession,
               reason: "wait_elapsed",
             },
           },
@@ -759,6 +773,18 @@ describe("Desktop Shell command pipeline", () => {
             },
           },
         });
+        await api.requestCompleteComputerUseCommand(
+          host.connection,
+          created.body.commandId,
+          { status: "succeeded", result: { nextCursor: -1 } },
+          [400],
+        );
+        await expect(
+          api.readComputerUseCommand(
+            { bearer: run.token },
+            created.body.commandId,
+          ),
+        ).resolves.toMatchObject({ status: "running" });
         // A transport success may report a still-running foreground command.
         await api.completeComputerUseCommandWith(
           host.connection,
@@ -766,7 +792,7 @@ describe("Desktop Shell command pipeline", () => {
           {
             status: "succeeded",
             result: {
-              session: { id: "local-session", commandState: "running" },
+              session: shellSession,
               reason: "wait_elapsed",
             },
           },
