@@ -1,3 +1,4 @@
+import { USAGE_PACKS_USD } from "@okouai/api-contracts/validators/billing";
 import { Button } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
@@ -85,24 +86,39 @@ export function ProUpgradeCard({
           )}
         </div>
 
-        <Button
-          type="button"
-          variant="default"
-          size="default"
-          onClick={onUpgrade}
-          className="h-auto min-h-9 w-full max-w-full shrink-0 px-3 py-2 whitespace-normal @[480px]:ml-auto @[480px]:w-auto @[480px]:px-4"
-        >
-          {monthlyPriceUsd !== undefined
-            ? t(
-                ($) => {
-                  return $.chat.billing.proCard.upgradeFromPrice;
-                },
-                { price: formatUsd(monthlyPriceUsd, 0) },
-              )
-            : t(($) => {
-                return $.chat.billing.proCard.upgradeNow;
-              })}
-        </Button>
+        <div className="grid w-full max-w-full shrink-0 @[480px]:ml-auto @[480px]:w-auto">
+          {/* Reserve the localized action with the largest supported pack so
+              the catalog response cannot add a wrapped line. */}
+          <span
+            aria-hidden="true"
+            className="invisible min-h-9 px-3 py-2 text-sm font-medium [grid-area:1/1] @[480px]:px-4"
+          >
+            {t(
+              ($) => {
+                return $.chat.billing.proCard.upgradeFromPrice;
+              },
+              { price: formatUsd(Math.max(...USAGE_PACKS_USD), 0) },
+            )}
+          </span>
+          <Button
+            type="button"
+            variant="default"
+            size="default"
+            onClick={onUpgrade}
+            className="h-auto min-h-9 w-full max-w-full px-3 py-2 whitespace-normal [grid-area:1/1] @[480px]:px-4"
+          >
+            {monthlyPriceUsd !== undefined
+              ? t(
+                  ($) => {
+                    return $.chat.billing.proCard.upgradeFromPrice;
+                  },
+                  { price: formatUsd(monthlyPriceUsd, 0) },
+                )
+              : t(($) => {
+                  return $.chat.billing.proCard.upgradeNow;
+                })}
+          </Button>
+        </div>
       </div>
     </ChatCard>
   );
