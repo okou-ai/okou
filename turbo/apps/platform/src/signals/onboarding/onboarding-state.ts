@@ -1,6 +1,9 @@
 import { command, computed, state } from "ccstate";
+import { i18n } from "../../i18n/index.ts";
 import { onRef } from "../utils.ts";
+import { defaultOnboardingOutputFormat } from "./onboarding-default-output-format.ts";
 import {
+  ONBOARDING_OUTPUT_FORMATS,
   editedStartingPromptOutput,
   withStartingPromptOutput,
   type OnboardingOutputFormat,
@@ -69,13 +72,45 @@ export const resetOnboardingDraft$ = command(({ set }) => {
   set(internalOnboardingDraft$, emptyOnboardingDraft());
 });
 
-/** The prompt handoff starts from the prompt its link brought. */
+/** Select a task-shaped default once, before the visitor starts editing. */
 export const hydrateOnboardingRoute$ = command(
   ({ set }, searchParams: URLSearchParams) => {
     set(resetOnboardingDraft$);
     const prompt = searchParams.get("prompt");
     if (prompt !== null) {
       set(editOnboardingPrompt$, prompt);
+      if (prompt.trim()) {
+        const copy = i18n.t(
+          ($) => {
+            return $.onboarding.sourcesFirst.outputFormats;
+          },
+          { returnObjects: true },
+        );
+        // A shared prompt may already contain one of our format paragraphs.
+        const existingFormat = ONBOARDING_OUTPUT_FORMATS.find((format) => {
+          return prompt.endsWith(`\n\n${copy.options[format].instruction}`);
+        });
+        if (existingFormat) {
+          set(internalOnboardingDraft$, {
+            prompt,
+            output: {
+              format: existingFormat,
+              start:
+                prompt.length -
+                copy.options[existingFormat].instruction.length -
+                2,
+              end: prompt.length,
+            },
+          });
+          return;
+        }
+        const format = defaultOnboardingOutputFormat(prompt);
+        set(
+          selectOnboardingPromptOutput$,
+          format,
+          copy.options[format].instruction,
+        );
+      }
     }
   },
 );

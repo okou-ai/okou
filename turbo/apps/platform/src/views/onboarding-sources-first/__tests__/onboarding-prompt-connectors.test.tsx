@@ -82,7 +82,9 @@ test.each([
       ).toBeEnabled();
     }
     expect(recommendations).toHaveTextContent("You can also connect later.");
-    expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(PROMPT);
+    expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
+      `${PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+    );
 
     const editedPrompt = `${PROMPT} for next month`;
     await fill(screen.getByLabelText("Onboarding prompt"), editedPrompt);

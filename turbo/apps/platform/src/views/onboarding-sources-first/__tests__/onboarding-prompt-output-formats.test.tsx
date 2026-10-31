@@ -45,6 +45,96 @@ async function openPrompt({
 }
 
 test.each([
+  [
+    "Create a presentation from my topic or files. Ask me about the audience and goal.",
+    "Presentation",
+  ],
+  [
+    "Analyze the social profiles or posts I share. Summarize the evidence and recommend next steps.",
+    "Report",
+  ],
+  [
+    "Find people or businesses that match my criteria, using public professional sources. Explain why each result fits.",
+    "People shortlist",
+  ],
+  [
+    "Create an image from my brief. Ask me about the subject, style, and dimensions.",
+    "Image",
+  ],
+  ["Build a landing page for my consulting business.", "Website"],
+  [
+    "Research the market for AI assistants and compare competitors.",
+    "Research brief",
+  ],
+  [
+    "/gen presentation, create a pitch deck about image generation",
+    "Presentation",
+  ],
+  ["/gen website create a portfolio for a presentation designer", "Website"],
+  ["Create a report about image generation trends.", "Report"],
+  ["Review our website traffic and recommend improvements.", "Report"],
+  ["Research website builders for a small business.", "Research brief"],
+  ["Find creators who reach small business owners.", "People shortlist"],
+  ["帮我制作一份产品介绍PPT", "Presentation"],
+  ["生成一张产品宣传海报", "Image"],
+  ["为咨询业务搭建一个网站", "Website"],
+  ["寻找适合推广办公工具的达人", "People shortlist"],
+  ["调研AI助手的市场和竞争对手", "Research brief"],
+  ["分析上周广告效果并提出改进建议", "Report"],
+])("selects a task-matched default for %s", async (prompt, label) => {
+  const input = await openPrompt({ prompt });
+  expect(getConnectorAction("button", label)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(input.value.startsWith(`${prompt}\n\n`)).toBeTruthy();
+  // Clearing a default restores the original task, and editing does not select again.
+  click(getConnectorAction("button", "Clear selection"));
+  await waitFor(() => {
+    expect(input).toHaveValue(prompt);
+    expect(getConnectorAction("button", label)).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+  await fill(input, "Create a presentation for the board.");
+  expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+});
+
+test("the default format reaches the first chat without requiring a selection", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
+  const prompt = "Create a presentation for my next board meeting.";
+  const input = await openPrompt({ prompt });
+  expect(input).toHaveValue(`${prompt}\n\n${PRESENTATION}`);
+  click(getConnectorAction("button", "Next"));
+  await waitFor(() => {
+    expect(sentPrompt).toBe(`${prompt}\n\n${PRESENTATION}`);
+  });
+});
+
+test("a shared prompt keeps its existing format instruction without duplicating it", async () => {
+  const prompt = `${TASK}\n\n${PRESENTATION}`;
+  const input = await openPrompt({ prompt });
+  expect(input).toHaveValue(prompt);
+  expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  click(getConnectorAction("button", "Report"));
+  await waitFor(() => {
+    expect(input).toHaveValue(`${TASK}\n\n${REPORT}`);
+  });
+});
+
+test.each([
   { mobile: false, path: ROUTES.onboarding, action: "Next" },
   { mobile: true, path: ROUTES.onboardingSources, action: "Start task" },
 ])(
@@ -57,7 +147,11 @@ test.each([
       },
     });
     const input = await openPrompt({ mobile, path });
-    expect(input).toHaveValue(TASK);
+    expect(input).toHaveValue(`${TASK}\n\n${REPORT}`);
+    expect(getConnectorAction("button", "Report")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
       screen.getByRole("region", { name: "Connect your work tools" }),
     ).toBeInTheDocument();
@@ -159,7 +253,7 @@ test("long landing-page prompts can choose a format without being truncated", as
   });
   const prompt = `${TASK}\n${"Keep the recommendations actionable. ".repeat(40)}`;
   const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(prompt);
+  expect(input).toHaveValue(`${prompt}\n\n${REPORT}`);
   click(getConnectorAction("button", "Presentation"));
   await waitFor(() => {
     expect(input).toHaveValue(`${prompt}\n\n${PRESENTATION}`);
