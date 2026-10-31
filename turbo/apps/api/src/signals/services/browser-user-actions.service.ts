@@ -1064,15 +1064,20 @@ const resolveBrowserUserActionLifetime$ = command(
       readonly providerSessionId: string;
       readonly window?: BrowserWindowContext;
     } | null = null;
-    if (shared) {
-      const features = await set(
-        loadUserFeatureSwitchContext$,
-        args.orgId,
-        args.userId,
-        signal,
-      );
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    const sharedEnabled = isFeatureEnabled(
+      FeatureSwitchKey.BrowserSharedOwner,
+      features,
+    );
+    if (shared || sharedEnabled) {
       if (
-        !isFeatureEnabled(FeatureSwitchKey.BrowserSharedOwner, features) ||
+        !sharedEnabled ||
+        !shared ||
         shared.status !== "active" ||
         !shared.providerSessionId ||
         shared.timeoutAt <= now ||
