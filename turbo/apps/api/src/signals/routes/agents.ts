@@ -37,7 +37,7 @@ import {
   agentDetail,
   agentEnabledConnectorSlugs,
   agentCustomConnectorGrants,
-  agentExists,
+  visibleAgentIdentityCondition,
   agentList,
   visibleJoinedAgentCondition,
   nonDefaultAgentCondition,
@@ -450,13 +450,17 @@ const getAgentInner$ = computed(async (get) => {
 const getAgentUserConnectorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(userBuiltinConnectorsContract.get));
-  const exists = await get(
-    agentExists({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const agentScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const [visibleAgent] = await get(db$)
+    .select({ id: agents.id })
+    .from(agents)
+    .where(visibleAgentIdentityCondition(agentScope))
+    .limit(1);
+  const exists = Boolean(visibleAgent);
   if (!exists) {
     return agentNotFound(params.id);
   }
@@ -491,13 +495,17 @@ const getAgentUserConnectorsInner$ = computed(async (get) => {
 const getAgentCustomConnectorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(agentCustomConnectorsContract.get));
-  const exists = await get(
-    agentExists({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    }),
-  );
+  const agentScope = {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    agentId: params.id,
+  };
+  const [visibleAgent] = await get(db$)
+    .select({ id: agents.id })
+    .from(agents)
+    .where(visibleAgentIdentityCondition(agentScope))
+    .limit(1);
+  const exists = Boolean(visibleAgent);
   if (!exists) {
     return agentNotFound(params.id);
   }
@@ -841,14 +849,18 @@ const updateAgentCustomConnectorsInner$ = command(
       return body.response;
     }
 
-    const exists = await get(
-      agentExists({
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: params.id,
-      }),
-    );
+    const agentScope = {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      agentId: params.id,
+    };
+    const [visibleAgent] = await get(db$)
+      .select({ id: agents.id })
+      .from(agents)
+      .where(visibleAgentIdentityCondition(agentScope))
+      .limit(1);
     signal.throwIfAborted();
+    const exists = Boolean(visibleAgent);
     if (!exists) {
       return agentNotFound(params.id);
     }
