@@ -91,7 +91,7 @@ async def test_path_normalization_budget_blocks_before_unbounded_work(
         assert "Authorization" not in flow.request.headers
 
         await mitm_addon.request(flow)
-        assert decomposed_characters > header_characters
+        assert decomposed_characters == header_characters
 
     auth_fetch.assert_not_called()
     assert flow.response is not None

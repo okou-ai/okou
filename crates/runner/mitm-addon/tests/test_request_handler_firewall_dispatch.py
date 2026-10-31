@@ -146,6 +146,53 @@ async def test_unambiguous_encoded_resource_keeps_raw_forwarding(
     assert flow.request.path == path
 
 
+@pytest.mark.parametrize("content_length", [17, STREAM_BUFFER_LIMIT + 1])
+async def test_invalid_path_outside_prefix_is_rejected_at_headers(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, content_length
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            firewall_name="example",
+            api_entry={
+                "base": "https://api.example.com/v2",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.API_TOKEN }}"}},
+                "permissions": [{"name": "items", "rules": ["POST /items"]}],
+            },
+            network_policy={"allow": ["items"], "unknownPolicy": "allow"},
+        ),
+    )
+    path = "/outside/%ZZ?caller=private"
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="api.example.com",
+        method="POST",
+        path=path,
+        request_headers=headers(
+            ("Host", "api.example.com"), ("Content-Length", str(content_length))
+        ),
+    )
+    with mitm_ctx(registry_path=str(reg_path)), fake_firewall_headers() as auth_fetch:
+        assert mitm_addon.requestheaders(flow) is None
+        assert flow.response is not None
+        assert flow.response.status_code == 403
+        assert not flow.request.stream
+        assert upstream_destination_binding.binding_snapshot_for_tests() == {}
+        await mitm_addon.request(flow)
+
+    body = json.loads(flow.response.content)
+    assert body["reason"] == "unsafe_path"
+    assert body["path"] == "/outside/%ZZ"
+    assert body["url"] == "https://api.example.com/outside/%ZZ"
+    assert "name" not in body
+    assert "base" not in body
+    assert flow.request.path == path
+    assert "Authorization" not in flow.request.headers
+    auth_fetch.assert_not_awaited()
+
+
 class _DecodeGuardConnectorIntent(bytes):
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
         raise AssertionError("oversized connector intent must not be decoded")
@@ -1380,21 +1427,21 @@ async def test_firewall_unsafe_path_blocks_before_auth_injection(
     assert flow.response is not None
     assert flow.response.status_code == 403
     assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
-    assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"
-    assert flow.metadata[metadata_keys.FIREWALL_NAME] == "github"
+    assert metadata_keys.FIREWALL_BASE not in flow.metadata
+    assert metadata_keys.FIREWALL_NAME not in flow.metadata
     assert "Authorization" not in flow.request.headers
     body = json.loads(flow.response.content)
     assert body["error"] == "permission_denied"
     assert body["message"] == "Request blocked: unsafe path"
     assert body["method"] == "GET"
     assert body["path"] == path
-    assert body["name"] == "github"
+    assert "name" not in body
     assert body["permissions"] == []
     assert body["reason"] == "unsafe_path"
-    assert body["base"] == "https://api.github.com"
+    assert "base" not in body
     proxy_log_entry = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")[0]
     assert proxy_log_entry["type"] == "firewall_block"
-    assert proxy_log_entry["name"] == "github"
+    assert "name" not in proxy_log_entry
     assert proxy_log_entry["reason"] == "unsafe_path"
 
 
@@ -1443,8 +1490,8 @@ async def test_unsafe_firewall_base_still_blocks_before_auth_injection(
     assert flow.response is not None
     assert flow.response.status_code == 403
     assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
-    assert flow.metadata[metadata_keys.FIREWALL_BASE] == unsafe_base
+    assert metadata_keys.FIREWALL_BASE not in flow.metadata
     assert "Authorization" not in flow.request.headers
     body = json.loads(flow.response.content)
     assert body["reason"] == "unsafe_path"
-    assert body["base"] == unsafe_base
+    assert "base" not in body

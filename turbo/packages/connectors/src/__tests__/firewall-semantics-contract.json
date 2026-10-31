@@ -1240,12 +1240,9 @@
         "url": "https://api.example.com/v2/管/files/id"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2/%E7%AE%A1",
-        "relativePath": "/v2/管/files/id",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v2/管/files/id"
       }
     },
     {
@@ -1326,12 +1323,9 @@
         "url": "https://api.example.com/v2/%E7%AE%A1%FF/files/id"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2/管{tenant}",
-        "relativePath": "/v2/%E7%AE%A1%FF/files/id",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v2/%E7%AE%A1%FF/files/id"
       }
     },
     {
@@ -1366,12 +1360,9 @@
         "url": "https://api.example.com/v%25252525252532/files/id"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/v%25252525252532/files/id",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%25252525252532/files/id"
       }
     },
     {
@@ -1406,12 +1397,9 @@
         "url": "https://acme.example.com/v%25252525252532/team/files/id"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://{tenant}.example.com/v2/{account}",
-        "relativePath": "/v%25252525252532/team/files/id",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%25252525252532/team/files/id"
       }
     },
     {
@@ -1551,12 +1539,9 @@
         "url": "https://api.example.com/other%25252525252532/files/id"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/other%25252525252532/files/id",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/other%25252525252532/files/id"
       }
     },
     {
@@ -1595,12 +1580,9 @@
         "url": "https://api.example.com/v%2532/registries/id%FF"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/v%2532/registries/id%FF",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%2532/registries/id%FF"
       }
     },
     {
@@ -1639,12 +1621,9 @@
         "url": "https://api.example.com/v%2532/registries/id%ZZ"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/v%2532/registries/id%ZZ",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%2532/registries/id%ZZ"
       }
     },
     {
@@ -1683,7 +1662,9 @@
         "url": "https://api.example.com/other/registries/id%ZZ"
       },
       "expected": {
-        "kind": "no_match"
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/other/registries/id%ZZ"
       }
     },
     {
@@ -1722,12 +1703,9 @@
         "url": "https://api.example.com/v%32/registries/id%3Fignored"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/v%32/registries/id%3Fignored",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%32/registries/id%3Fignored"
       }
     },
     {
@@ -1766,12 +1744,9 @@
         "url": "https://api.example.com/v%32/registries/id%23ignored"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/v%32/registries/id%23ignored",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%32/registries/id%23ignored"
       }
     },
     {
@@ -1810,12 +1785,9 @@
         "url": "https://api.example.com/v%2532/registries/id%3Fignored"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/v%2532/registries/id%3Fignored",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%2532/registries/id%3Fignored"
       }
     },
     {
@@ -1854,16 +1826,13 @@
         "url": "https://api.example.com/v%2532/registries/id%23ignored"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/v%2532/registries/id%23ignored",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%2532/registries/id%23ignored"
       }
     },
     {
-      "name": "unsafe path interpretation without an owner retains ordinary network scope",
+      "name": "unsafe path on a configured authority is invalid before prefix matching",
       "firewalls": [
         {
           "name": "example",
@@ -1898,7 +1867,9 @@
         "url": "https://api.example.com/other/registries/id%3Fignored"
       },
       "expected": {
-        "kind": "no_match"
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/other/registries/id%3Fignored"
       }
     },
     {
@@ -2694,12 +2665,9 @@
         "url": "https://api.example.com/v2/acme/files/id"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v%32/{tenant}",
-        "relativePath": "/v2/acme/files/id",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v2/acme/files/id"
       }
     },
     {
@@ -3590,12 +3558,9 @@
         "url": "https://api.example.com/v2/registries/id%3Fignored"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/registries/id%3Fignored",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v2/registries/id%3Fignored"
       }
     },
     {
@@ -3638,12 +3603,9 @@
         "url": "https://api.example.com/v%32/registries/id"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com/v2",
-        "relativePath": "/v%32/registries/id",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v%32/registries/id"
       }
     },
     {
@@ -5032,12 +4994,9 @@
         "url": "https://api.example.com/items\\123"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com",
-        "relativePath": "/items\\123",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/items\\123"
       }
     },
     {
@@ -5072,7 +5031,9 @@
         "url": "https://api.example.com/v1\\items/123"
       },
       "expected": {
-        "kind": "no_match"
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/v1\\items/123"
       }
     },
     {
@@ -5107,12 +5068,9 @@
         "url": "https://api.example.com/users/%2e%2e/admin"
       },
       "expected": {
-        "kind": "block",
-        "firewallName": "example",
-        "base": "https://api.example.com",
-        "relativePath": "/users/%2e%2e/admin",
-        "reason": "unsafe_path",
-        "permissions": []
+        "kind": "invalid_input",
+        "method": "GET",
+        "path": "/users/%2e%2e/admin"
       }
     },
     {
@@ -6510,6 +6468,1018 @@
         "relativePath": "/123/calendars/home/event.ics",
         "reason": "permission_denied",
         "permissions": ["calendar.write"]
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 1 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 1 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 1 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 1 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%64elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%64elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 2 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2564elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2564elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 2 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2564elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2564elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 2 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2564elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2564elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 2 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2564elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2564elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 3 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%252564elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%252564elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 3 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%252564elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%252564elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 3 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%252564elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%252564elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 3 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%252564elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%252564elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 4 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%25252564elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%25252564elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 4 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%25252564elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%25252564elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 4 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%25252564elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%25252564elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 4 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%25252564elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%25252564elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 5 and slash depth 1",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2525252564elegations%2Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2525252564elegations%2Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 5 and slash depth 2",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2525252564elegations%252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2525252564elegations%252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 5 and slash depth 3",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2525252564elegations%25252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2525252564elegations%25252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent nested decoding preserves denial at letter depth 5 and slash depth 4",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/delegations%2Ffoo"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/%2525252564elegations%2525252Ffoo"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/%2525252564elegations%2525252Ffoo",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "independent decoding exposes a single-segment rule without escaped declarations",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /{key+}"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/%2566iles/a%2Fb"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/%2566iles/a%2Fb",
+        "reason": "unsafe_path",
+        "permissions": []
+      }
+    },
+    {
+      "name": "stable applicability still rejects a derived specificity flip",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://api.example.com/v2",
+              "auth": {
+                "headers": {}
+              },
+              "permissions": [
+                {
+                  "name": "grant",
+                  "rules": ["GET /files/{id}%61%62%63"]
+                },
+                {
+                  "name": "deny",
+                  "rules": ["GET /files/prefix{id}"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v2/files/prefixx%61%62%63"
+      },
+      "networkPolicies": {
+        "example": {
+          "allow": ["grant"],
+          "deny": ["deny"],
+          "ask": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "expected": {
+        "kind": "block",
+        "firewallName": "example",
+        "base": "https://api.example.com/v2",
+        "relativePath": "/files/prefixx%61%62%63",
+        "reason": "unsafe_path",
+        "permissions": []
       }
     }
   ]

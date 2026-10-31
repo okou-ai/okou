@@ -228,6 +228,22 @@ def test_target_rule_also_requires_declared_url_query(indexed: bool) -> None:
         _assert_unknown(_match(**args, url=url))
 
 
+def test_path_only_rule_does_not_inspect_aws_query_context(monkeypatch) -> None:
+    def reject_query_inspection(*args, **kwargs):
+        raise AssertionError("path-only matching must not parse AWS selector context")
+
+    monkeypatch.setattr(matching, "parse_qsl", reject_query_inspection)
+    result = _match(
+        base="https://s3.example.com",
+        permissions=[firewall_permission("ordinary", "GET /files/{id}")],
+        url="https://s3.example.com/files/object?caller=opaque%2Fdata",
+        method="GET",
+        headers=(),
+        allow=("ordinary",),
+    )
+    _assert_allowed(result, "ordinary")
+
+
 def test_query_action_inspects_form_body_at_most_once(monkeypatch) -> None:
     permissions = [
         firewall_permission(

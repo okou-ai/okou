@@ -1081,7 +1081,7 @@ function decisionPermissionResult(
   config: ConnectorCheckRoutingConfig,
   decision: Exclude<
     FirewallRequestDecision,
-    { readonly kind: "no_match" | "ambiguous" }
+    { readonly kind: "no_match" | "ambiguous" | "invalid_input" }
   >,
   timeline: ConnectorCheckTimeline,
 ) {
@@ -1349,7 +1349,7 @@ interface ResolvedUrlDiagnosticArgs {
   readonly parsed: ParsedConnectorDiagnosticRequest;
   readonly decision: Exclude<
     FirewallRequestDecision,
-    { readonly kind: "no_match" | "ambiguous" }
+    { readonly kind: "no_match" | "ambiguous" | "invalid_input" }
   >;
   readonly configs: readonly ConnectorCheckRoutingConfig[];
   readonly timeline: ConnectorCheckTimeline;
@@ -1497,6 +1497,9 @@ async function resolveUrlMode(
     awsDiagnosticDecisionOptions(request.aws),
   );
 
+  if (decision.kind === "invalid_input") {
+    return { diagnostic: { outcome: "unsafe-input", reason: "unsafe-path" } };
+  }
   if (decision.kind === "no_match") {
     return {
       diagnostic: noMatchDiagnostic(

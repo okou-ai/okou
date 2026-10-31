@@ -1,9 +1,7 @@
 """URL path safety helpers."""
 
-import re
 import unicodedata
 import urllib.parse
-from typing import NamedTuple
 
 from url_syntax import has_unsafe_url_codepoint
 
@@ -17,14 +15,6 @@ _MAX_CONSECUTIVE_NONSTARTERS = 30
 # Match the addon's existing 64 KiB request-work scale. Character count bounds
 # Python string processing without first scanning and allocating encoded bytes.
 MAX_PATH_VALIDATION_CHARACTERS = 64 * 1024
-_PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
-_UTF8_PERCENT_CODE_POINT = re.compile(
-    r"(?:%C[2-9A-F]|%D[0-9A-F])%[89AB][0-9A-F]"
-    r"|%E[0-9A-F](?:%[89AB][0-9A-F]){2}"
-    r"|%F[0-4](?:%[89AB][0-9A-F]){3}",
-    re.IGNORECASE,
-)
-_URI_UNRESERVED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-")
 
 
 def has_unsafe_path(path: str) -> bool:
@@ -59,61 +49,6 @@ def has_unsafe_url_path(url: str) -> bool:
         if delimiter_index != -1:
             path_end = min(path_end, delimiter_index)
     return has_unsafe_path(path_and_after[:path_end])
-
-
-def canonical_path_percent_encoding(path: str) -> str:
-    """Normalize URI/IRI literals without turning reserved escapes into structure."""
-
-    def replace_escape(match: re.Match[str]) -> str:
-        escape = match.group()
-        char = chr(int(escape[1:], 16))
-        return char if char in _URI_UNRESERVED else escape.upper()
-
-    def replace_utf8(match: re.Match[str]) -> str:
-        encoded = match.group()
-        try:
-            return bytes.fromhex(encoded.replace("%", "")).decode("utf-8")
-        except UnicodeError:
-            return encoded
-
-    return _UTF8_PERCENT_CODE_POINT.sub(replace_utf8, _PERCENT_ESCAPE.sub(replace_escape, path))
-
-
-class PathInterpretations(NamedTuple):
-    paths: tuple[str, ...]
-    unsafe: bool
-    budget_exhausted: bool = False
-
-
-def request_path_interpretations(path: str) -> PathInterpretations:
-    """Retain bounded owner-discovery paths, marking unsafe authorization separately."""
-    if len(path) > MAX_PATH_VALIDATION_CHARACTERS:
-        return PathInterpretations((path,), True, True)
-    paths = [path]
-    current = path
-    unsafe = False
-    for _ in range(_MAX_PERCENT_DECODE_PASSES):
-        canonical = canonical_path_percent_encoding(current)
-        if canonical != current and canonical not in paths:
-            paths.append(canonical)
-        if "%" not in current:
-            return PathInterpretations(tuple(paths), unsafe)
-        decoded_segments: list[str] = []
-        for segment in current.split("/"):
-            decoded_segment = _percent_decode_segment(segment)
-            if decoded_segment is None:
-                unsafe = True
-                decoded_segments.append(segment)
-            else:
-                decoded_segments.append(decoded_segment)
-        decoded = "/".join(decoded_segments)
-        unsafe |= "?" in decoded or "#" in decoded
-        if decoded == current:
-            return PathInterpretations(tuple(paths), unsafe)
-        paths.append(decoded)
-        current = decoded
-    budget_exhausted = "%" in current
-    return PathInterpretations(tuple(paths), unsafe or budget_exhausted, budget_exhausted)
 
 
 def _segment_has_unsafe_path(raw_segment: str) -> bool:

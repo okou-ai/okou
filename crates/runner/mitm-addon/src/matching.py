@@ -43,11 +43,22 @@ from firewall_matching.patterns import (
     _match_compiled_path_segments,
     _split_path_segments,
 )
-from path_security import (
-    canonical_path_percent_encoding,
-    has_unsafe_path,
-    request_path_interpretations,
+from path_automaton import (
+    Applicability,
+    CompiledForm,
+    PathAnalysis,
+    PathCompiler,
+    SelectionCandidate,
+    certifies_selection,
 )
+from path_language import (
+    MAX_PATH_CHARACTERS,
+    MAX_REQUEST_WORK,
+    AnalysisLimitError,
+    InvalidPathError,
+    request_language,
+)
+from path_security import has_unsafe_path
 from runtime_url_parsing import split_runtime_url
 from url_syntax import (
     has_raw_whitespace,
@@ -234,6 +245,11 @@ class _CompiledRuleIndex(NamedTuple):
     by_method: Mapping[str, _CompiledRuleMethodIndex]
 
 
+class _CompiledApiPaths(NamedTuple):
+    base: tuple[CompiledForm, ...]
+    rules: Mapping[int, tuple[CompiledForm, ...]]
+
+
 class _CompiledApiCore(NamedTuple):
     raw_api_index: int
     base: _CompiledBase
@@ -246,6 +262,7 @@ class _CompiledApiCore(NamedTuple):
     routing_identity: str | None
     # True when API compilation encountered malformed permissions/rules config.
     has_malformed_rules: bool
+    paths: _CompiledApiPaths | None = None
 
 
 class _CompiledApi(NamedTuple):
@@ -294,6 +311,7 @@ class CompiledFirewallCore(NamedTuple):
     intent_identity: str
     api_cores: tuple[_CompiledApiCore, ...]
     name_malformed: bool
+    path_analysis_incomplete: bool = False
 
 
 class _CompiledFirewall(NamedTuple):
@@ -342,25 +360,14 @@ class CompiledFirewallSet:
         compare=False,
         repr=False,
     )
-    _uri_normalized: CompiledFirewallSet | None = field(compare=False, repr=False)
 
-    def __init__(
-        self, firewalls: tuple[_CompiledFirewall, ...], *, _normalize_uri_literals: bool = True
-    ) -> None:
+    def __init__(self, firewalls: tuple[_CompiledFirewall, ...]) -> None:
         object.__setattr__(self, "firewalls", firewalls)
         object.__setattr__(self, "_api_index", _compile_api_candidate_index(firewalls))
         object.__setattr__(
             self,
             "_ordinary_credential_authority_index",
             _compile_ordinary_credential_authority_index(firewalls),
-        )
-        normalized = _canonical_uri_firewalls(firewalls) if _normalize_uri_literals else None
-        object.__setattr__(
-            self,
-            "_uri_normalized",
-            CompiledFirewallSet(normalized, _normalize_uri_literals=False)
-            if normalized is not None
-            else None,
         )
 
     def __bool__(self) -> bool:
@@ -1080,96 +1087,6 @@ def _attach_aws_query_selector_keys(
     return tuple(compiled_permissions)
 
 
-def _canonical_uri_pattern(path: str) -> str:
-    return "".join(
-        part if part.startswith("{") else canonical_path_percent_encoding(part)
-        for part in re.split(r"(\{[^{}]*\})", path)
-    )
-
-
-def _canonical_uri_base(base: _CompiledBase) -> _CompiledBase:
-    path = _canonical_uri_pattern(base.parts.path)
-    if path == base.parts.path:
-        return base
-    return base._replace(
-        parts=base.parts._replace(path=path),
-        path_segments=_canonical_uri_segments(base.path_segments),
-        specificity=base.specificity._replace(
-            path=base.specificity.path - (len(base.parts.path) - len(path))
-        ),
-    )
-
-
-def _canonical_uri_segments(
-    original: tuple[SegmentLiteral | SegmentParam | SegmentError, ...],
-) -> tuple[SegmentLiteral | SegmentParam | SegmentError, ...]:
-    segments: list[SegmentLiteral | SegmentParam | SegmentError] = []
-    for segment in original:
-        if isinstance(segment, SegmentLiteral):
-            segments.append(SegmentLiteral(canonical_path_percent_encoding(segment.value)))
-        elif isinstance(segment, SegmentParam):
-            segments.append(
-                segment._replace(
-                    prefix=canonical_path_percent_encoding(segment.prefix),
-                    suffix=canonical_path_percent_encoding(segment.suffix),
-                )
-            )
-        else:
-            segments.append(segment)
-    return tuple(segments)
-
-
-def _canonical_uri_rule(rule: _CompiledRule) -> _CompiledRule:
-    path = CompiledPathPattern(_canonical_uri_segments(rule.path.segments))
-    if path == rule.path:
-        return rule
-    return rule._replace(path=path, specificity=_path_specificity(path))
-
-
-def _canonical_uri_firewalls(
-    firewalls: tuple[_CompiledFirewall, ...],
-) -> tuple[_CompiledFirewall, ...] | None:
-    if not any(
-        "%" in api.base.parts.path
-        or any("%" in rule.raw for permission in api.permissions for rule in permission.rules)
-        for firewall in firewalls
-        for api in firewall.apis
-    ):
-        return None
-    changed = False
-    normalized_firewalls: list[_CompiledFirewall] = []
-    for firewall in firewalls:
-        normalized_apis: list[_CompiledApi] = []
-        for api in firewall.apis:
-            base = _canonical_uri_base(api.base)
-            permissions: list[_CompiledPermission] = []
-            for permission in api.permissions:
-                rules: list[_CompiledRule] = []
-                for rule in permission.rules:
-                    normalized_rule = _canonical_uri_rule(rule)
-                    rules.append(normalized_rule)
-                    changed |= normalized_rule.path != rule.path
-                permissions.append(permission._replace(rules=tuple(rules)))
-            compiled_permissions = _attach_aws_query_selector_keys(permissions)
-            changed |= base != api.base
-            if base == api.base and compiled_permissions == api.permissions:
-                normalized_apis.append(api)
-            else:
-                core = api.core._replace(
-                    base=base,
-                    permissions=compiled_permissions,
-                    rule_index=_compile_rule_index(compiled_permissions),
-                )
-                normalized_apis.append(api._replace(core=core))
-        apis = tuple(normalized_apis)
-        normalized_firewalls.append(
-            firewall._replace(
-                core=firewall.core._replace(api_cores=tuple(api.core for api in apis)), apis=apis
-            )
-        )
-    return tuple(normalized_firewalls) if changed else None
-
-
 def firewall_rule_is_valid(rule_str: str) -> bool:
     """Return whether a firewall permission rule matches the runtime grammar."""
     return _compile_rule(rule_str) is not None
@@ -1221,7 +1138,8 @@ def declared_firewall_permission_name_invalid_reason(
 # Malformed config for an unrelated base does not block unrelated traffic.
 #
 # Preserve current decision precedence when changing this code or these docs:
-# unsafe paths block immediately after base match. APIs with malformed firewall
+# Invalid/incomplete paths terminate after authority matching, before path-prefix selection.
+# APIs with malformed firewall
 # name, base, or auth config record malformed firewall config and then skip rule
 # evaluation for that API. Malformed permission/rule config records malformed
 # firewall config but still lets valid compiled rules on that API participate.
@@ -1240,6 +1158,28 @@ def declared_firewall_permission_name_invalid_reason(
 # ``tests/test_compiled_firewall_rule_specificity_precedence.py``,
 # ``tests/test_compiled_firewall_cross_firewall_precedence.py``, and the parity cases in
 # ``turbo/packages/connectors/src/__tests__/firewall-rule-matcher.test.ts``.
+def _base_analysis_tokens(base: _CompiledBase, raw_path: str) -> tuple[int, ...] | None:
+    if len(raw_path) > MAX_PATH_CHARACTERS:
+        raise AnalysisLimitError("source path character limit")
+    if not base.has_params:
+        return None
+    tokens: list[int] = [47] if base.parts.path else []
+    for index, segment in enumerate(base.path_segments):
+        if index:
+            tokens.append(47)
+        if isinstance(segment, SegmentLiteral):
+            tokens.extend(segment.value.encode("utf-8"))
+        elif isinstance(segment, SegmentParam):
+            tokens.extend(segment.prefix.encode("utf-8"))
+            tokens.append(-2 if segment.greedy == "+" else -3 if segment.greedy == "*" else -1)
+            tokens.extend(segment.suffix.encode("utf-8"))
+        else:
+            raise InvalidPathError("compiled base lost its path grammar")
+    if raw_path.endswith("/"):
+        tokens.append(47)
+    return tuple(tokens)
+
+
 def compile_firewall_core(fw_entry: object) -> CompiledFirewallCore | None:
     """Compile one firewall into reusable matcher data.
 
@@ -1271,6 +1211,8 @@ def compile_firewall_core(fw_entry: object) -> CompiledFirewallCore | None:
         return None
 
     api_cores: list[_CompiledApiCore] = []
+    path_compiler = PathCompiler()
+    path_analysis_incomplete = False
     for api_index, api_entry in enumerate(raw_apis):
         if not isinstance(api_entry, dict):
             continue
@@ -1339,28 +1281,57 @@ def compile_firewall_core(fw_entry: object) -> CompiledFirewallCore | None:
             has_malformed_rules = True
 
         compiled_permissions_tuple = _attach_aws_query_selector_keys(compiled_permissions)
+        rule_index = _compile_rule_index(compiled_permissions_tuple)
+        paths: _CompiledApiPaths | None = None
+        if not path_analysis_incomplete:
+            try:
+                raw_path = urlsplit(raw_base).path
+                typed_base = _base_analysis_tokens(base, raw_path)
+                base_forms = path_compiler.compile_api(
+                    raw_path, parameterized=base.has_params, typed_base=typed_base
+                )
+                rule_forms: dict[int, tuple[CompiledForm, ...]] = {}
+                for entry in rule_index.all_rules:
+                    parsed_path = _split_rule_path_and_aws_predicates(
+                        entry.rule.raw.split(" ", 1)[1]
+                    )
+                    if parsed_path is None:
+                        raise InvalidPathError("compiled source rule lost its path")
+                    rule_forms[entry.order] = path_compiler.compile_api(
+                        raw_path,
+                        parameterized=base.has_params,
+                        rule=parsed_path[0],
+                        typed_base=typed_base,
+                    )
+                paths = _CompiledApiPaths(base_forms, MappingProxyType(rule_forms))
+            except ValueError:
+                path_analysis_incomplete = True
         api_cores.append(
             _CompiledApiCore(
                 api_index,
                 base,
                 compiled_permissions_tuple,
-                _compile_rule_index(compiled_permissions_tuple),
+                rule_index,
                 base_malformed,
                 auth_malformed,
                 injects_ordinary_upstream_credentials,
                 permissionless,
                 routing_identity,
                 has_malformed_rules,
+                paths,
             )
         )
 
     if not api_cores:
         return None
+    if path_analysis_incomplete:
+        api_cores = [api._replace(paths=None) for api in api_cores]
     return CompiledFirewallCore(
         firewall_name,
         intent_identity,
         tuple(api_cores),
         name_malformed,
+        path_analysis_incomplete,
     )
 
 
@@ -1586,7 +1557,14 @@ class FirewallAmbiguous(NamedTuple):
     reason: ConnectorRouteAmbiguityReason
 
 
-_AuthorizationRoute = tuple[Literal["api"], int] | tuple[Literal["rule"], int, str, str]
+class FirewallInvalidInput(NamedTuple):
+    """Known authority with invalid or incomplete analysis; no invented owner."""
+
+    method: str
+    path: str
+
+
+_AuthorizationRoute = tuple[Literal["api"], int] | tuple[Literal["rule"], int, int]
 
 
 class _FirewallInterpretation(NamedTuple):
@@ -1594,6 +1572,7 @@ class _FirewallInterpretation(NamedTuple):
 
     decision: FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None
     authorization_routes: frozenset[_AuthorizationRoute]
+    form_action_result: _AwsFormActionResult | None = None
 
 
 class _BaseMatch(NamedTuple):
@@ -2113,7 +2092,7 @@ def _collect_rule_routes(
             continue
         if applicable_routes is not None:
             applicable_routes.setdefault(api_match.firewall.name, set()).add(
-                ("rule", api_match.order, entry.permission, rule.raw)
+                ("rule", api_match.order, entry.order)
             )
         if record_winning:
             collection.record_rule_route(api_match.order, rule.specificity)
@@ -2635,6 +2614,7 @@ def _match_compiled_firewall_request_with_api_candidates(
         frozenset(applicable_routes.get(selected_name, ()))
         if applicable_routes is not None and selected_name is not None
         else frozenset(),
+        form_action_result if isinstance(form_action_result, _AwsFormActionResult) else None,
     )
 
 
@@ -2651,6 +2631,7 @@ def _prepare_compiled_request_match(
     url_parts = _split_base_match_url(
         url,
         allow_runtime_backslash_syntax=url_has_backslash,
+        allow_unsafe_runtime_url_syntax=True,
     )
     if url_parts is None:
         return None
@@ -2672,7 +2653,14 @@ def _match_compiled_firewall_request_linear(
     request_context: FirewallRequestContext | None = None,
     *,
     is_asterisk_form: bool = False,
-) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
+) -> (
+    FirewallAllow
+    | FirewallPolicyAllow
+    | FirewallBlock
+    | FirewallAmbiguous
+    | FirewallInvalidInput
+    | None
+):
     return _match_request_interpretations(
         url,
         method,
@@ -2694,13 +2682,21 @@ def match_compiled_firewall_request(
     request_context: FirewallRequestContext | None = None,
     *,
     is_asterisk_form: bool = False,
-) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
+) -> (
+    FirewallAllow
+    | FirewallPolicyAllow
+    | FirewallBlock
+    | FirewallAmbiguous
+    | FirewallInvalidInput
+    | None
+):
     """Match request against production precompiled firewall permissions.
 
-    Retained malformed state from the compile functions applies only after the
-    request matches a compiled base. It can surface as FirewallBlock reasons
-    ``malformed_firewall_config`` or ``malformed_network_policy``; unsafe paths
-    use ``unsafe_path`` after base match. APIs with malformed firewall name,
+    Invalid or incomplete path analysis at a configured authority returns an
+    ownerless FirewallInvalidInput before API path-prefix selection. Other
+    retained malformed state from compilation applies after a compiled base
+    match, with ``malformed_firewall_config`` or ``malformed_network_policy``.
+    APIs with malformed firewall name,
     base, or auth config do not evaluate their rules; malformed permission/rule
     config can still leave valid compiled rules eligible. Malformed top-level
     policies or malformed allow/deny/ask permission sets skip rule evaluation
@@ -2714,6 +2710,7 @@ def match_compiled_firewall_request(
       FirewallBlock — permission denied, unknown endpoint blocked, or matched
         malformed firewall/network policy config or unsafe path failed closed
       FirewallAmbiguous — multiple connector owners require a usable intent
+      FirewallInvalidInput — configured authority with invalid/incomplete path analysis
       None — no base URL match (not a firewall request)
 
     ``unknownPolicy="ask"`` is treated as block at the proxy layer.
@@ -2735,6 +2732,190 @@ def match_compiled_firewall_request(
     )
 
 
+def _path_priority_proof(proof: Applicability, api: _CompiledApi, *, rule: bool) -> Applicability:
+    def priority(value: tuple[int, ...] | None) -> tuple[int, ...] | None:
+        if value is None:
+            return None
+        tail = value[1:] if rule else (-1, 0, 0, 0, 0, 0, 0)
+        return (value[0], api.base.specificity.authority, api.base.specificity.static_bonus, *tail)
+
+    return Applicability(
+        proof.possible, proof.certain, priority(proof.minimum), priority(proof.maximum)
+    )
+
+
+def _certify_raw_firewall_allow(
+    original: FirewallAllow,
+    original_routes: frozenset[_AuthorizationRoute],
+    *,
+    authority_candidates: tuple[_CompiledApiCandidate, ...],
+    analysis: PathAnalysis,
+    url: str,
+    upper_method: str,
+    policies: CompiledNetworkPolicies,
+    intent: connector_intent.ConnectorIntent,
+    request_context: FirewallRequestContext | None,
+    form_result: _AwsFormActionResult | None = None,
+) -> bool:
+    facts: dict[str, SelectionCandidate] = {}
+    api_proofs: dict[int, Applicability] = {}
+    selected: str | None = None
+    source_order = 0
+    query_pairs: list[tuple[str, str]] = []
+    service: str | None = None
+    aws_context_loaded = False
+
+    def get_form_result() -> _AwsFormActionResult:
+        nonlocal form_result
+        if form_result is None:
+            form_result = _form_action_values(
+                request_context.headers if request_context else None,
+                request_context.body if request_context else None,
+            )
+        return form_result
+
+    for candidate in authority_candidates:
+        analysis.graph.budget.charge()
+        paths = candidate.api.core.paths
+        if paths is not None:
+            api_proofs[candidate.order] = analysis.applicability(paths.base)
+
+    # Custom ownership shadows builtins before priority. A possible intent
+    # builtin can disable that shadow, so retain all builtins in that case.
+    builtin_intent_possible = intent.status == "present" and any(
+        c.firewall.connector_runtime_kind == "builtin"
+        and c.firewall.intent_identity == intent.value
+        and c.order in api_proofs
+        and api_proofs[c.order].possible
+        for c in authority_candidates
+    )
+    builtin_intent_certain = intent.status == "present" and any(
+        c.firewall.connector_runtime_kind == "builtin"
+        and c.firewall.intent_identity == intent.value
+        and c.order in api_proofs
+        and api_proofs[c.order].certain
+        for c in authority_candidates
+    )
+    selected_is_custom = any(
+        c.api.raw_api_entry is original.api_entry and c.firewall.connector_runtime_kind == "custom"
+        for c in authority_candidates
+    )
+    selected_is_builtin = any(
+        c.api.raw_api_entry is original.api_entry and c.firewall.connector_runtime_kind == "builtin"
+        for c in authority_candidates
+    )
+    if (
+        selected_is_builtin
+        and not builtin_intent_certain
+        and any(
+            c.firewall.connector_runtime_kind == "custom"
+            and c.order in api_proofs
+            and api_proofs[c.order].possible
+            for c in authority_candidates
+        )
+    ):
+        return False
+
+    for candidate in authority_candidates:
+        api = candidate.api
+        firewall = candidate.firewall
+        paths = api.core.paths
+        if paths is None:
+            continue
+        if (
+            selected_is_custom
+            and not builtin_intent_possible
+            and firewall.connector_runtime_kind == "builtin"
+        ):
+            continue
+        source_order += 1
+        analysis.graph.budget.charge()
+        api_id = repr(("api", candidate.order))
+        base_proof = _path_priority_proof(api_proofs[candidate.order], api, rule=False)
+        facts[api_id] = SelectionCandidate(
+            firewall.name,
+            base_proof,
+            (MAX_REQUEST_WORK if api.permissionless else 0) - source_order,
+            (*api.base.specificity, -1, 0, 0, 0, 0, 0, 0),
+        )
+        selected_api = api.raw_api_entry is original.api_entry and firewall.name == original.name
+        if selected_api and original.rule is None and selected is None:
+            selected = api_id
+        policy = policies.policies.get(firewall.name)
+        evaluable = not (
+            firewall.name_malformed
+            or api.base_malformed
+            or api.auth_malformed
+            or api.routing_identity is None
+            or policies.top_level_malformed
+            or (policy is not None and policy.permission_malformed)
+        )
+        for entry in api.rule_index.all_rules:
+            source_order += 1
+            analysis.graph.budget.charge()
+            rule = entry.rule
+            if rule.method not in ("ANY", upper_method):
+                continue
+            if rule.aws_predicates is not None:
+                if not aws_context_loaded:
+                    query_pairs = parse_qsl(split_runtime_url(url).query, keep_blank_values=True)
+                    service = (
+                        None
+                        if request_context is not None
+                        and not request_context.aws_inspection_available
+                        else aws_sigv4.inspect_sigv4_service(
+                            url=url,
+                            headers=_headers_for_sigv4(
+                                request_context.headers if request_context else None
+                            ),
+                        )
+                    )
+                    aws_context_loaded = True
+                if not _aws_predicates_match(
+                    rule,
+                    query_pairs=query_pairs,
+                    context=request_context,
+                    sigv4_service=service,
+                    get_form_action_result=get_form_result,
+                ):
+                    continue
+            identity = repr(("rule", candidate.order, entry.order))
+            proof = _path_priority_proof(
+                analysis.applicability(paths.rules[entry.order]), api, rule=True
+            )
+            allowed = evaluable and (
+                policy is None or entry.permission not in policy.blocked_permissions
+            )
+            facts[identity] = SelectionCandidate(
+                firewall.name,
+                proof,
+                -source_order if allowed else -MAX_REQUEST_WORK - source_order,
+                (*api.base.specificity, *rule.specificity),
+            )
+            if (
+                selected_api
+                and selected is None
+                and entry.permission == original.permission
+                and rule.raw == original.rule
+                and identity in {repr(route) for route in original_routes}
+            ):
+                selected = identity
+
+    return selected is not None and certifies_selection(
+        facts,
+        original_owner_sources=frozenset(repr(route) for route in original_routes),
+        selected=selected,
+        explicit_owner_intent=(
+            intent.status == "present"
+            and any(
+                c.firewall.name == original.name and c.firewall.intent_identity == intent.value
+                for c in authority_candidates
+            )
+        ),
+        budget=analysis.graph.budget,
+    )
+
+
 def _match_request_interpretations(
     url: str,
     method: str,
@@ -2745,119 +2926,76 @@ def _match_request_interpretations(
     *,
     indexed_rules: bool,
     is_asterisk_form: bool,
-) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
-    prepared = _prepare_compiled_request_match(
-        url,
-        method,
-        compiled_firewalls,
-        network_policies,
-    )
+) -> (
+    FirewallAllow
+    | FirewallPolicyAllow
+    | FirewallBlock
+    | FirewallAmbiguous
+    | FirewallInvalidInput
+    | None
+):
+    prepared = _prepare_compiled_request_match(url, method, compiled_firewalls, network_policies)
     if prepared is None or compiled_firewalls is None:
         return None
-
-    url_parts, url_has_backslash, upper_method, compiled_network_policies = prepared
-    normalized = compiled_firewalls._uri_normalized
-    track_authorization_routes = not is_asterisk_form and (
-        "%" in url_parts.path or normalized is not None
+    url_parts, url_has_backslash, upper_method, policies = prepared
+    resolved_intent = intent or connector_intent.ConnectorIntent("absent", None)
+    all_candidates = compiled_firewalls.linear_api_candidates()
+    authorities = tuple(
+        candidate
+        for candidate in all_candidates
+        if _match_compiled_base_authority(url_parts, candidate.api.base)
     )
-
-    def match_path(
-        path: str,
-        definitions: CompiledFirewallSet,
-    ) -> _FirewallInterpretation:
-        parts = url_parts._replace(path=path)
-        candidates = (
-            definitions.indexed_api_candidates(parts)
-            if indexed_rules
-            else definitions.linear_api_candidates()
-        )
-        return _match_compiled_firewall_request_with_api_candidates(
+    if not authorities:
+        return None
+    path = url_parts.path or "/"
+    invalid = FirewallInvalidInput(upper_method, path)
+    if url_has_backslash or has_unsafe_url_codepoint(url) or has_raw_whitespace(url):
+        return invalid
+    if any(c.firewall.core.path_analysis_incomplete for c in authorities):
+        return invalid
+    try:
+        analysis = None if is_asterisk_form else PathAnalysis(request_language(path))
+        original_match = _match_compiled_firewall_request_with_api_candidates(
             url=url,
-            url_parts=parts,
+            url_parts=url_parts,
             url_has_backslash=url_has_backslash,
             upper_method=upper_method,
-            compiled_network_policies=compiled_network_policies,
-            api_candidates=candidates,
+            compiled_network_policies=policies,
+            api_candidates=(
+                compiled_firewalls.indexed_api_candidates(url_parts)
+                if indexed_rules
+                else all_candidates
+            ),
             indexed_rules=indexed_rules,
-            intent=intent or connector_intent.ABSENT,
+            intent=resolved_intent,
             is_asterisk_form=is_asterisk_form,
             request_context=request_context,
-            track_authorization_routes=track_authorization_routes,
+            track_authorization_routes=not is_asterisk_form,
         )
-
-    original_match = match_path(url_parts.path, compiled_firewalls)
-    original = original_match.decision
-    if is_asterisk_form or isinstance(
-        original, FirewallBlock | FirewallAmbiguous | FirewallPolicyAllow
-    ):
-        return original
-    if not track_authorization_routes:
-        return original
-    interpretations = request_path_interpretations(url_parts.path)
-    if original is None and interpretations.budget_exhausted:
-        # Budget exhaustion cannot establish that an encoded URL is unowned.
-        # This authority-only check supplies rejection context, never credentials.
-        for candidate in compiled_firewalls.linear_api_candidates():
-            if _match_compiled_base_authority(url_parts, candidate.api.base):
-                return FirewallBlock(
-                    candidate.api.base.raw,
-                    candidate.firewall.name,
-                    upper_method,
-                    url_parts.path,
-                    (),
-                    "unsafe_path",
-                )
-        return None
-    if interpretations.unsafe and isinstance(original, FirewallAllow):
-        return FirewallBlock(
-            original.api_entry["base"],
-            original.name,
-            upper_method,
-            original.rel_path,
-            (),
-            "unsafe_path",
-        )
-    seen: set[str] = set()
-    for path in interpretations.paths:
-        canonical_path = canonical_path_percent_encoding(path)
-        if canonical_path in seen or (normalized is None and canonical_path == url_parts.path):
-            continue
-        seen.add(canonical_path)
-        interpreted_match = match_path(
-            canonical_path, normalized if normalized is not None else compiled_firewalls
-        )
-        interpreted = interpreted_match.decision
+        original = original_match.decision
+        if analysis is None or isinstance(
+            original, FirewallBlock | FirewallAmbiguous | FirewallPolicyAllow
+        ):
+            return original
         if original is None:
-            if interpreted is None:
-                continue
-            if isinstance(interpreted, FirewallAmbiguous):
-                return interpreted._replace(path=url_parts.path)
-            selected = (
-                interpreted.firewall_allow
-                if isinstance(interpreted, FirewallPolicyAllow)
-                else interpreted
-            )
-            if isinstance(selected, FirewallBlock):
-                return selected._replace(
-                    path=url_parts.path,
-                    permissions=(),
-                    reason="unsafe_path",
-                    aws_sigv4_body_pending=False,
-                )
-            return FirewallBlock(
-                selected.api_entry["base"],
-                selected.name,
-                upper_method,
-                url_parts.path,
-                (),
-                "unsafe_path",
-            )
-        if not isinstance(interpreted, FirewallAllow) or (
-            interpreted.name != original.name
-            or interpreted.api_entry != original.api_entry
-            or interpreted.permission != original.permission
-            or interpreted.rule != original.rule
-            or interpreted_match.authorization_routes != original_match.authorization_routes
+            if any(
+                c.api.core.paths is not None
+                and analysis.applicability(c.api.core.paths.base).possible
+                for c in authorities
+            ):
+                return invalid
+            return None
+        if not _certify_raw_firewall_allow(
+            original,
+            original_match.authorization_routes,
+            authority_candidates=authorities,
+            analysis=analysis,
+            url=url,
+            upper_method=upper_method,
+            policies=policies,
+            intent=resolved_intent,
+            request_context=request_context,
+            form_result=original_match.form_action_result,
         ):
             return FirewallBlock(
                 original.api_entry["base"],
@@ -2867,4 +3005,6 @@ def _match_request_interpretations(
                 (),
                 "unsafe_path",
             )
-    return original
+        return original
+    except AnalysisLimitError, InvalidPathError:
+        return invalid

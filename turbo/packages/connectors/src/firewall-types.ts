@@ -748,58 +748,6 @@ export function hasUnsafeFirewallPath(path: string): boolean {
   });
 }
 
-/** URI/IRI normalization; ASCII reserved escapes remain data, never structure. */
-export function canonicalFirewallPathPercentEncoding(path: string): string {
-  const canonical = path.replace(/%[\da-f]{2}/gi, (escape) => {
-    const char = String.fromCharCode(Number.parseInt(escape.slice(1), 16));
-    return /^[A-Za-z0-9._~-]$/.test(char) ? char : escape.toUpperCase();
-  });
-  return canonical.replace(
-    /(?:%C[2-9A-F]|%D[0-9A-F])%[89AB][0-9A-F]|%E[0-9A-F](?:%[89AB][0-9A-F]){2}|%F[0-4](?:%[89AB][0-9A-F]){3}/gi,
-    (encoded) => {
-      try {
-        return decodeURIComponent(encoded);
-      } catch {
-        return encoded;
-      }
-    },
-  );
-}
-
-/** Bounded owner-discovery paths; unsafe candidates must never authorize a request. */
-export function firewallRequestPathInterpretations(path: string): {
-  readonly paths: readonly string[];
-  readonly unsafe: boolean;
-  readonly budgetExceeded: boolean;
-} {
-  const paths = [path];
-  let current = path;
-  let unsafe = false;
-  for (let pass = 0; pass < MAX_PATH_PERCENT_DECODE_PASSES; pass += 1) {
-    const canonical = canonicalFirewallPathPercentEncoding(current);
-    if (canonical !== current && !paths.includes(canonical))
-      paths.push(canonical);
-    if (!current.includes("%")) return { paths, unsafe, budgetExceeded: false };
-    const decodedSegments: string[] = [];
-    for (const segment of current.split("/")) {
-      try {
-        decodedSegments.push(decodeURIComponent(segment));
-      } catch {
-        unsafe = true;
-        decodedSegments.push(segment);
-      }
-    }
-    const decoded = decodedSegments.join("/");
-    // Keep these opaque paths only to discover an owner before rejecting.
-    unsafe ||= decoded.includes("?") || decoded.includes("#");
-    if (decoded === current) return { paths, unsafe, budgetExceeded: false };
-    paths.push(decoded);
-    current = decoded;
-  }
-  const budgetExceeded = current.includes("%");
-  return { paths, unsafe: unsafe || budgetExceeded, budgetExceeded };
-}
-
 function validateBaseUrlVariablePercentEncoding({
   base,
   serviceName,

@@ -32,6 +32,12 @@ from request_authority import (
 _DNS_TIMEOUT_SECONDS = 10
 
 
+class InvalidFirewallInputError(Exception):
+    def __init__(self, result: matching.FirewallInvalidInput) -> None:
+        super().__init__("invalid firewall path analysis")
+        self.result = result
+
+
 def _destination_error(flow: http.HTTPFlow) -> AuthorityValidationError:
     return AuthorityValidationError(
         "authority_mismatch",
@@ -65,16 +71,16 @@ def prepare(flow: http.HTTPFlow, *, registry_path: str) -> Awaitable[None] | Non
         return None
 
     def matches(url: str) -> bool:
-        return (
-            matching.match_compiled_firewall_request(
-                url,
-                flow.request.method,
-                custom_candidates,
-                state.compiled_network_policies[peer[0]],
-                is_asterisk_form=flow.request.path == "*",
-            )
-            is not None
+        result = matching.match_compiled_firewall_request(
+            url,
+            flow.request.method,
+            custom_candidates,
+            state.compiled_network_policies[peer[0]],
+            is_asterisk_form=flow.request.path == "*",
         )
+        if isinstance(result, matching.FirewallInvalidInput):
+            raise InvalidFirewallInputError(result)
+        return result is not None
 
     original_url = get_trusted_authority(flow).url
     try:

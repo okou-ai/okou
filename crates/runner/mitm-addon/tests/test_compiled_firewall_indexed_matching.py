@@ -1069,10 +1069,8 @@ def test_oversized_slash_paths_do_not_materialize_complete_segment_lists(monkeyp
         policies,
     )
 
-    assert isinstance(static_result, matching.FirewallBlock)
-    assert static_result.reason == "unsafe_path"
-    assert isinstance(parameterized_result, matching.FirewallBlock)
-    assert parameterized_result.reason == "unsafe_path"
+    assert isinstance(static_result, matching.FirewallInvalidInput)
+    assert isinstance(parameterized_result, matching.FirewallInvalidInput)
     assert unrelated_result is None
 
 
@@ -1088,7 +1086,7 @@ def test_oversized_slash_paths_do_not_materialize_complete_segment_lists(monkeyp
         ("https://api.example.com/v2", "https://other.example.com/v%2532/files/", False),
         ("https://api.example.com:8443/v2", "https://api.example.com/v%2532/files/", False),
         ("https://api.example.com/v2", "http://api.example.com/v%2532/files/", False),
-        ("https://api.example.com/v2", "https://api.example.com/other/files/", False),
+        ("https://api.example.com/v2", "https://api.example.com/other/files/", True),
         ("https://api.example.com/v2", "https://api.example.com/other%2Ffiles/", True),
     ],
 )
@@ -1102,10 +1100,8 @@ def test_over_budget_interpretation_rejects_potential_authority(base, prefix, bl
         url, "GET", firewalls, {"example": network_policy(allow=["read"], unknown_policy="allow")}
     )
     if blocked:
-        assert isinstance(result, matching.FirewallBlock)
-        assert result.reason == "unsafe_path"
-        assert result.base == base
-        assert result.permissions == ()
+        assert isinstance(result, matching.FirewallInvalidInput)
+        assert not hasattr(result, "base")
     else:
         assert result is None
 

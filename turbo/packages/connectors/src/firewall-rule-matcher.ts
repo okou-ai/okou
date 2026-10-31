@@ -1,7 +1,5 @@
 import {
   type FirewallConfig,
-  canonicalFirewallPathPercentEncoding,
-  firewallRequestPathInterpretations,
   hasUnsafeFirewallPath,
   hasBaseUrlParams,
   validateAuthBaseUrl,
@@ -18,6 +16,22 @@ import {
 } from "./firewall-expander";
 import { hasRawWhitespace, hasUnsafeUrlCodepoint } from "./firewall-url-utils";
 import { parseSegment, splitPathSegments } from "./segment-parser";
+import {
+  PathAnalysis,
+  PathCompiler,
+  certifiesSelection,
+  type CompiledPathForm,
+  type PathApplicability,
+  type SelectionCandidate,
+} from "./path-automaton";
+import {
+  AnalysisLimitError,
+  InvalidPathError,
+  MAX_REQUEST_WORK,
+  MAX_PATH_CHARACTERS,
+  encodePathLiteral,
+  requestLanguage,
+} from "./path-language";
 
 type SegmentParseResult = ReturnType<typeof parseSegment>;
 type MatchableSegment = Exclude<SegmentParseResult, { kind: "error" }>;
@@ -104,6 +118,11 @@ export type ConnectorRouteAmbiguityReason =
 
 export type FirewallRequestDecision =
   | {
+      readonly kind: "invalid_input";
+      readonly method: string;
+      readonly path: string;
+    }
+  | {
       readonly kind: "no_match";
     }
   | {
@@ -176,7 +195,12 @@ interface DecisionRule {
 
 interface DecisionApi {
   readonly rawBase: string;
-  readonly uriMatchBase?: string;
+  readonly paths?: {
+    readonly base: readonly CompiledPathForm[];
+    readonly rules: readonly (readonly CompiledPathForm[])[];
+  };
+  readonly rawBaseScore: number;
+  readonly rawPathScore: number;
   readonly baseMalformed: boolean;
   readonly authMalformed: boolean;
   readonly hasMalformedRules: boolean;
@@ -191,6 +215,7 @@ interface DecisionFirewall {
   readonly intentIdentity: string;
   readonly nameMalformed: boolean;
   readonly apis: readonly DecisionApi[];
+  readonly pathAnalysisIncomplete: boolean;
 }
 
 interface DecisionBaseMatch {
@@ -253,7 +278,7 @@ interface FirewallRequestInterpretation {
 }
 
 function authorizationRouteIdentity(
-  route: readonly ["api", number] | readonly ["rule", number, string, string],
+  route: readonly ["api", number] | readonly ["rule", number, number],
 ): string {
   return JSON.stringify(route);
 }
@@ -1182,6 +1207,7 @@ function compileDecisionApi(
 
   return {
     rawBase: api.base,
+    ...decisionBasePriority(api.base),
     baseMalformed,
     authMalformed,
     hasMalformedRules,
@@ -1210,6 +1236,8 @@ function compileDecisionFirewall(
   if (!Array.isArray(rawApis)) return null;
 
   const apis: DecisionApi[] = [];
+  const pathCompiler = new PathCompiler();
+  let pathAnalysisIncomplete = false;
   for (const rawApi of rawApis) {
     if (!isObjectRecord(rawApi)) continue;
     const api = compileDecisionApi(
@@ -1219,12 +1247,102 @@ function compileDecisionFirewall(
       awsDiagnosticEnabled,
     );
     if (api !== null) {
-      apis.push(api);
+      if (!pathAnalysisIncomplete) {
+        try {
+          const rawPath = rawBasePathFromUrl(api.rawBase);
+          const parameterized = hasBaseUrlParams(api.rawBase);
+          const typedBase = baseAnalysisTokens(api.rawBase);
+          const base = pathCompiler.compileApi(
+            rawPath,
+            parameterized,
+            undefined,
+            typedBase,
+          );
+          const rules = api.rules.map((rule) => {
+            return pathCompiler.compileApi(
+              rawPath,
+              parameterized,
+              rule.path,
+              typedBase,
+            );
+          });
+          apis.push({ ...api, paths: { base, rules } });
+        } catch (error) {
+          if (
+            !(error instanceof AnalysisLimitError) &&
+            !(error instanceof InvalidPathError)
+          )
+            throw error;
+          pathAnalysisIncomplete = true;
+          apis.push(api);
+        }
+      } else apis.push(api);
     }
   }
 
   if (apis.length === 0) return null;
-  return { name, intentIdentity, nameMalformed, apis };
+  return { name, intentIdentity, nameMalformed, apis, pathAnalysisIncomplete };
+}
+
+function baseAnalysisTokens(base: string): readonly number[] | undefined {
+  if (!hasBaseUrlParams(base)) return undefined;
+  const path = rawBasePathFromUrl(stripTrailingSlash(base));
+  let length = 0;
+  for (const _char of path) {
+    length += 1;
+    if (length > MAX_PATH_CHARACTERS)
+      throw new AnalysisLimitError("source path character limit");
+  }
+  const tokens: number[] = path === "" ? [] : [47];
+  const segments = splitPathSegments(path);
+  for (const [index, value] of segments.entries()) {
+    if (index > 0) tokens.push(47);
+    const segment = parseMalformedTolerantBaseSegment(
+      value,
+      index,
+      segments.length - 1,
+    );
+    if (segment.kind === "literal") {
+      for (const byte of encodePathLiteral(segment.value)) tokens.push(byte);
+    } else {
+      for (const byte of encodePathLiteral(segment.prefix)) tokens.push(byte);
+      tokens.push(
+        segment.greedy === "+" ? -2 : segment.greedy === "*" ? -3 : -1,
+      );
+      for (const byte of encodePathLiteral(segment.suffix)) tokens.push(byte);
+    }
+  }
+  if (rawBasePathFromUrl(base).endsWith("/")) tokens.push(47);
+  return tokens;
+}
+
+function decisionBasePriority(base: string): {
+  rawBaseScore: number;
+  rawPathScore: number;
+} {
+  try {
+    const hasParams = hasBaseUrlParams(base);
+    const parsed = new URL(rawBaseForDecisionMatch(base) ?? base);
+    const authority = normalizedUrlAuthority(parsed, {
+      allowHostParams: hasParams,
+    });
+    if (authority === null) return { rawBaseScore: 0, rawPathScore: 0 };
+    const path = rawBasePathFromUrl(stripTrailingSlash(base));
+    return {
+      rawBaseScore: baseUrlSpecificityScore({
+        authority: hasParams ? authority.hostname : authority.authority,
+        path,
+        hasParams,
+        tolerateMalformedBaseParams: true,
+      }),
+      rawPathScore: scorePathPattern(
+        path,
+        hasParams ? parseMalformedTolerantBaseSegment : null,
+      ),
+    };
+  } catch {
+    return { rawBaseScore: 0, rawPathScore: 0 };
+  }
 }
 
 function compileDecisionFirewalls(
@@ -2137,7 +2255,7 @@ function collectDecisionRules(
   recordWinning: boolean,
   applicableRoutes: Map<string, Set<string>> | undefined,
 ): void {
-  for (const rule of apiMatch.api.rules) {
+  for (const [ruleOrder, rule] of apiMatch.api.rules.entries()) {
     if (rule.method !== "ANY" && rule.method !== upperMethod) continue;
     if (
       rule.awsPredicates !== undefined &&
@@ -2165,12 +2283,7 @@ function collectDecisionRules(
         applicableRoutes.set(apiMatch.firewall.name, routes);
       }
       routes.add(
-        authorizationRouteIdentity([
-          "rule",
-          apiMatch.order,
-          rule.permission,
-          rule.raw,
-        ]),
+        authorizationRouteIdentity(["rule", apiMatch.order, ruleOrder]),
       );
     }
     if (recordWinning) recordCollectedRule(collection, { apiMatch, rule });
@@ -2478,68 +2591,6 @@ export function matchFirewallBaseUrl(
   }
 }
 
-function canonicalUriPattern(path: string): string {
-  return path
-    .split(/(\{[^{}]*\})/)
-    .map((part) => {
-      return part.startsWith("{")
-        ? part
-        : canonicalFirewallPathPercentEncoding(part);
-    })
-    .join("");
-}
-
-function canonicalUriBase(base: string): string {
-  const pathStart = base.indexOf("/", base.indexOf("://") + 3);
-  return pathStart === -1
-    ? base
-    : base.slice(0, pathStart) + canonicalUriPattern(base.slice(pathStart));
-}
-
-function canonicalUriFirewalls(
-  firewalls: readonly DecisionFirewall[],
-): readonly DecisionFirewall[] | null {
-  if (
-    !firewalls.some((firewall) => {
-      return firewall.apis.some((api) => {
-        return (
-          api.rawBase.includes("%") ||
-          api.rules.some((rule) => {
-            return rule.path.includes("%");
-          })
-        );
-      });
-    })
-  )
-    return null;
-  let changed = false;
-  const canonical = firewalls.map((firewall) => {
-    const apis = firewall.apis.map((api) => {
-      const uriMatchBase = canonicalUriBase(api.rawBase);
-      const rules = api.rules.map((rule) => {
-        const path = canonicalUriPattern(rule.path);
-        const specificity: PathSpecificity = [
-          rule.specificity[0],
-          rule.specificity[1],
-          rule.specificity[2],
-          rule.specificity[3],
-          rule.specificity[4],
-          rule.specificity[5] -
-            (codePointLength(rule.path) - codePointLength(path)),
-          rule.specificity[6],
-        ];
-        const normalized = { ...rule, path, specificity };
-        if (path !== rule.path) changed = true;
-        return normalized;
-      });
-      if (uriMatchBase !== api.rawBase) changed = true;
-      return { ...api, uriMatchBase, rules: attachAwsQuerySelectorKeys(rules) };
-    });
-    return { ...firewall, apis };
-  });
-  return changed ? canonical : null;
-}
-
 function matchFirewallRequestInterpretation(
   decisionFirewalls: readonly DecisionFirewall[],
   method: string,
@@ -2575,7 +2626,7 @@ function matchFirewallRequestInterpretation(
       apiOrder += 1;
       const matchedBase = matchFirewallBaseUrlForDecision(
         url,
-        api.uriMatchBase ?? api.rawBase,
+        api.rawBase,
         requestPath,
       );
       if (matchedBase === null) continue;
@@ -2657,94 +2708,201 @@ function matchFirewallRequestInterpretation(
   };
 }
 
-function sameFirewallAuthorization(
-  original: FirewallRequestInterpretation,
-  interpreted: FirewallRequestInterpretation,
-): boolean {
-  const originalDecision = original.decision;
-  const interpretedDecision = interpreted.decision;
-  if (originalDecision.kind !== "allow" || interpretedDecision.kind !== "allow")
-    return false;
-  if (
-    interpretedDecision.firewallName !== originalDecision.firewallName ||
-    interpretedDecision.base !== originalDecision.base ||
-    interpretedDecision.permission !== originalDecision.permission ||
-    interpretedDecision.rule !== originalDecision.rule ||
-    interpreted.authorizationRoutes.size !== original.authorizationRoutes.size
-  )
-    return false;
-  for (const route of original.authorizationRoutes) {
-    if (!interpreted.authorizationRoutes.has(route)) return false;
-  }
-  return true;
+interface AuthorityApi {
+  readonly firewall: DecisionFirewall;
+  readonly api: DecisionApi;
+  readonly order: number;
 }
 
-function blockExhaustedPathBudget(
-  firewalls: readonly DecisionFirewall[],
+function apiAuthorityBase(base: string): string {
+  const start = base.indexOf("/", base.indexOf("://") + 3);
+  return start < 0 ? base : base.slice(0, start);
+}
+
+function authorityApis(
+  compiled: readonly DecisionFirewall[],
   url: string,
-  path: string,
-): Extract<FirewallRequestDecision, { readonly kind: "block" | "no_match" }> {
-  for (const firewall of firewalls) {
+): AuthorityApi[] {
+  const requestAuthority = rawAuthorityFromUrl(url);
+  const schemeEnd = url.indexOf("://");
+  if (requestAuthority === null || schemeEnd < 0) return [];
+  const authorityUrl = url.slice(0, schemeEnd + 3) + requestAuthority;
+  const matches: AuthorityApi[] = [];
+  let order = 0;
+  for (const firewall of compiled)
     for (const api of firewall.apis) {
-      const bounds = rawUrlAuthorityBounds(api.rawBase);
-      if (bounds === null) continue;
-      const authorityBase = api.rawBase.slice(0, bounds.authorityEnd);
-      if (matchFirewallBaseUrlForDecision(url, authorityBase, "/") === null)
-        continue;
-      // Budget exhaustion supplies rejection context, never credentials.
-      return {
-        kind: "block",
-        firewallName: firewall.name,
-        base: stripTrailingSlash(api.rawBase),
-        relativePath: path,
-        reason: "unsafe_path",
-        permissions: [],
-      };
+      if (
+        matchFirewallBaseUrlForDecision(
+          authorityUrl,
+          apiAuthorityBase(api.rawBase),
+          "/",
+        ) !== null
+      )
+        matches.push({ firewall, api, order });
+      order += 1;
+    }
+  return matches;
+}
+
+function semanticPriority(
+  proof: PathApplicability,
+  api: DecisionApi,
+  rule: boolean,
+): PathApplicability {
+  const priority = (
+    value: readonly number[] | null,
+  ): readonly number[] | null => {
+    if (value === null) return null;
+    const base =
+      api.rawBaseScore + (value[0]! - api.rawPathScore) * PATH_SCORE_MULTIPLIER;
+    return [base, ...(rule ? value.slice(1) : [-1, 0, 0, 0, 0, 0, 0])];
+  };
+  return {
+    possible: proof.possible,
+    certain: proof.certain,
+    minimum: priority(proof.minimum),
+    maximum: priority(proof.maximum),
+  };
+}
+
+function certificateApiCanGrant(
+  firewall: DecisionFirewall,
+  api: DecisionApi,
+  policies: CompiledNetworkPolicies,
+): boolean {
+  const policy = policies.policies.get(firewall.name);
+  return (
+    !firewall.nameMalformed &&
+    !api.baseMalformed &&
+    !api.authMalformed &&
+    api.routingIdentity !== null &&
+    !policies.topLevelMalformed &&
+    policy?.permissionMalformed !== true
+  );
+}
+
+function certificateRuleContextMatches(
+  rule: DecisionRule,
+  method: string,
+  context: FirewallAwsDiagnosticContext | undefined,
+): boolean {
+  if (rule.method !== "ANY" && rule.method !== method) return false;
+  return (
+    rule.awsPredicates === undefined ||
+    (context !== undefined && awsRuleMatches(rule, context))
+  );
+}
+
+function isOriginalGrantedRule(
+  original: Extract<FirewallRequestDecision, { kind: "allow" }>,
+  candidate: AuthorityApi,
+  rule: DecisionRule,
+  identity: string,
+  routes: ReadonlySet<string>,
+  allowed: boolean,
+): boolean {
+  return (
+    allowed &&
+    candidate.firewall.name === original.firewallName &&
+    candidate.api.rawBase === original.base &&
+    routes.has(identity) &&
+    rule.permission === original.permission &&
+    rule.raw === original.rule
+  );
+}
+
+function certifiesRawAllow(
+  original: Extract<FirewallRequestDecision, { kind: "allow" }>,
+  originalRoutes: ReadonlySet<string>,
+  authorities: readonly AuthorityApi[],
+  analysis: PathAnalysis,
+  method: string,
+  policies: CompiledNetworkPolicies,
+  intent: FirewallConnectorIntent,
+  options: FirewallRequestDecisionOptions,
+): boolean {
+  const context = options.awsDiagnostic?.context;
+  const awsContext =
+    context !== undefined && isValidAwsDiagnosticContext(context)
+      ? context
+      : undefined;
+  const facts = new Map<string, SelectionCandidate>();
+  let selected: string | undefined;
+  let sourceOrder = 0;
+  const fallback = [-1, 0, 0, 0, 0, 0, 0];
+  const unknownCandidates = authorities.filter(({ firewall, api }) => {
+    return (
+      firewall.name === original.firewallName && api.rawBase === original.base
+    );
+  });
+  const unknownApi =
+    unknownCandidates.find(({ api }) => {
+      return api.permissionless;
+    }) ?? unknownCandidates[0];
+  for (const candidate of authorities) {
+    const { firewall, api, order } = candidate;
+    const paths = api.paths;
+    if (paths === undefined) continue;
+    analysis.graph.budget.charge();
+    sourceOrder += 1;
+    const apiId = authorizationRouteIdentity(["api", order]);
+    facts.set(apiId, {
+      owner: firewall.name,
+      proof: semanticPriority(analysis.applicability(paths.base), api, false),
+      tieRank: (api.permissionless ? MAX_REQUEST_WORK : 0) - sourceOrder,
+      rawPriority: [api.rawBaseScore, ...fallback],
+    });
+    if (original.rule === undefined && unknownApi === candidate)
+      selected = apiId;
+    const policy = policies.policies.get(firewall.name);
+    const evaluable = certificateApiCanGrant(firewall, api, policies);
+    for (const [ruleOrder, rule] of api.rules.entries()) {
+      sourceOrder += 1;
+      analysis.graph.budget.charge();
+      if (!certificateRuleContextMatches(rule, method, awsContext)) continue;
+      const id = authorizationRouteIdentity(["rule", order, ruleOrder]);
+      const allowed =
+        evaluable && !policy?.blockedPermissions.has(rule.permission);
+      facts.set(id, {
+        owner: firewall.name,
+        proof: semanticPriority(
+          analysis.applicability(paths.rules[ruleOrder]!),
+          api,
+          true,
+        ),
+        tieRank: allowed ? -sourceOrder : -MAX_REQUEST_WORK - sourceOrder,
+        rawPriority: [api.rawBaseScore, ...rule.specificity],
+      });
+      if (
+        selected === undefined &&
+        isOriginalGrantedRule(
+          original,
+          candidate,
+          rule,
+          id,
+          originalRoutes,
+          allowed,
+        )
+      )
+        selected = id;
     }
   }
-  return { kind: "no_match" };
-}
-
-function rejectChangedAuthorization(
-  original: Extract<
-    FirewallRequestDecision,
-    { readonly kind: "allow" | "no_match" }
-  >,
-  originalRoutes: ReadonlySet<string>,
-  interpretedMatch: FirewallRequestInterpretation,
-  path: string,
-): Extract<
-  FirewallRequestDecision,
-  { readonly kind: "block" | "ambiguous" }
-> | null {
-  const interpreted = interpretedMatch.decision;
-  if (original.kind === "no_match") {
-    if (interpreted.kind === "no_match") return null;
-    if (interpreted.kind === "ambiguous") return { ...interpreted, path };
-    return {
-      kind: "block",
-      firewallName: interpreted.firewallName,
-      base: interpreted.base,
-      relativePath: path,
-      reason: "unsafe_path",
-      permissions: [],
-    };
-  }
-  if (
-    sameFirewallAuthorization(
-      { decision: original, authorizationRoutes: originalRoutes },
-      interpretedMatch,
+  return (
+    selected !== undefined &&
+    certifiesSelection(
+      facts,
+      originalRoutes,
+      selected,
+      intent.status === "present" &&
+        authorities.some(({ firewall }) => {
+          return (
+            firewall.name === original.firewallName &&
+            firewall.intentIdentity === intent.value
+          );
+        }),
+      analysis.graph.budget,
     )
-  )
-    return null;
-  return {
-    kind: "block",
-    firewallName: original.firewallName,
-    base: original.base,
-    relativePath: original.relativePath,
-    reason: "unsafe_path",
-    permissions: [],
-  };
+  );
 }
 
 export function matchFirewallRequestDecision(
@@ -2761,64 +2919,76 @@ export function matchFirewallRequestDecision(
   );
   const policies = compileNetworkPolicies(networkPolicies);
   const path = rawPathFromUrl(url);
-  const canonical = canonicalUriFirewalls(compiled);
-  const trackAuthorizationRoutes = path.includes("%") || canonical !== null;
-  const originalMatch = matchFirewallRequestInterpretation(
-    compiled,
-    method,
-    url,
-    policies,
-    connectorIntent,
-    options,
+  const authorities = authorityApis(compiled, url);
+  if (authorities.length === 0) return { kind: "no_match" };
+  const invalid: FirewallRequestDecision = {
+    kind: "invalid_input",
+    method: method.toUpperCase(),
     path,
-    trackAuthorizationRoutes,
-  );
-  const original = originalMatch.decision;
-  if (original.kind !== "allow" && original.kind !== "no_match")
-    return original;
-  if (!trackAuthorizationRoutes) return original;
-  const interpretations = path.includes("%")
-    ? firewallRequestPathInterpretations(path)
-    : { paths: [path], unsafe: false, budgetExceeded: false };
-  if (original.kind === "no_match" && interpretations.budgetExceeded) {
-    return blockExhaustedPathBudget(compiled, url, path);
-  }
-  if (interpretations.unsafe && original.kind === "allow") {
-    return {
-      kind: "block",
-      firewallName: original.firewallName,
-      base: original.base,
-      relativePath: original.relativePath,
-      reason: "unsafe_path",
-      permissions: [],
-    };
-  }
-  const seen = new Set<string>();
-  for (const interpretedPath of interpretations.paths) {
-    const matchPath = canonicalFirewallPathPercentEncoding(interpretedPath);
-    if (seen.has(matchPath) || (canonical === null && matchPath === path))
-      continue;
-    seen.add(matchPath);
-    const interpretedMatch = matchFirewallRequestInterpretation(
-      canonical ?? compiled,
+  };
+  if (
+    url.includes("\\") ||
+    hasUnsafeUrlCodepoint(url) ||
+    hasRawWhitespace(url) ||
+    authorities.some(({ firewall }) => {
+      return firewall.pathAnalysisIncomplete;
+    })
+  )
+    return invalid;
+  try {
+    const analysis = new PathAnalysis(requestLanguage(path));
+    const raw = matchFirewallRequestInterpretation(
+      compiled,
       method,
       url,
       policies,
       connectorIntent,
       options,
-      matchPath,
+      path,
       true,
     );
-    const rejected = rejectChangedAuthorization(
-      original,
-      originalMatch.authorizationRoutes,
-      interpretedMatch,
-      path,
-    );
-    if (rejected !== null) return rejected;
+    const original = raw.decision;
+    if (original.kind !== "allow" && original.kind !== "no_match")
+      return original;
+    if (original.kind === "no_match") {
+      const possible = authorities.some(({ api }) => {
+        return (
+          api.paths !== undefined &&
+          analysis.applicability(api.paths.base).possible
+        );
+      });
+      return possible ? invalid : original;
+    }
+    if (
+      !certifiesRawAllow(
+        original,
+        raw.authorizationRoutes,
+        authorities,
+        analysis,
+        method.toUpperCase(),
+        policies,
+        connectorIntent,
+        options,
+      )
+    ) {
+      return {
+        kind: "block",
+        firewallName: original.firewallName,
+        base: original.base,
+        relativePath: original.relativePath,
+        reason: "unsafe_path",
+        permissions: [],
+      };
+    }
+    return original;
+  } catch (error) {
+    if (
+      error instanceof AnalysisLimitError ||
+      error instanceof InvalidPathError
+    )
+      return invalid;
+    throw error;
   }
-  // Only the original selection may supply routing, raw captures or credentials.
-  return original;
 }
 
 function matchFirewallHostWithParser(

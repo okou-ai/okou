@@ -230,6 +230,20 @@ without an API, CLI, registry or database migration.
 
 ## Ordinary connector firewall owner selection
 
+Connector path analysis keeps the raw matcher result as the authorization and
+forwarding ceiling. A bounded symbolic request graph retains independent percent
+decoding choices and URI literal aliases. Immutable typed source NFAs and exact
+request-local subset products prove possible and certain source applicability;
+matching-conditioned priority envelopes must also preserve the raw owner and
+rule. Interpretation never supplies replacement captures or credential bindings.
+
+Authority scope is established before path prefixes. Invalid input or incomplete
+analysis at a configured authority is a terminal, ownerless unsafe-path denial,
+including from header admission and custom HTTP preparation. It is not ordinary
+unmatched network traffic. Valid paths proven outside configured API prefixes
+and valid different authorities keep ordinary scope. Existing pending AWS body
+inspection remains resource admission and cannot authorize credentials.
+
 Outside the platform API admission path, the addon first gathers active firewall
 base matches, then selects an owner in this order:
 
