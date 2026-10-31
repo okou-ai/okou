@@ -4221,9 +4221,8 @@
       "make": "Willkommen bei {{brandName}}"
     },
     "make": {
-      "promptDescription": "Passen Sie es unten an oder führen Sie es unverändert aus. {{assistantName}} übernimmt es von hier aus. Ihre Tools bleiben in der Sandbox und nichts verlässt Ihren Arbeitsbereich.",
       "promptLabel": "Onboarding-Eingabeaufforderung",
-      "promptTitle": "Versuchen Sie es mit dieser Eingabeaufforderung"
+      "promptTitle": "Passe diese Aufgabe an"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4539,13 +4538,13 @@
             "label": "Website"
           }
         },
-        "title": "Format wählen",
+        "title": "Ausgabeformat wählen",
         "tooLong": "Kürze deine Aufgabe, um ein anderes Format zu wählen."
       },
       "prompt": {
-        "connectorsDescription": "Verbinde deine Tools, damit Okou deinen Arbeitskontext versteht und Aufgaben passend zu deinen Bedürfnissen erledigt. Du kannst das auch später tun.",
+        "connectorsDescription": "Verbinde deine Apps, damit Okou deine Arbeit besser versteht.",
         "connectorsTitle": "Verbinde deine Arbeitstools",
-        "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."
+        "intro": "Verbinde deine Apps für bessere Ergebnisse und wähle ein Format."
       },
       "skills": {
         "copied": "Kopiert",

@@ -81,7 +81,6 @@ test.each([
         getConnectorAction("button", `Connect ${tool.label}`, recommendations),
       ).toBeEnabled();
     }
-    expect(recommendations).toHaveTextContent("You can also connect later.");
     expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(PROMPT);
 
     const editedPrompt = `${PROMPT} for next month`;
@@ -89,7 +88,9 @@ test.each([
     click(getConnectorAction("button", action));
 
     await waitFor(() => {
-      expect(runPrompt).toBe(editedPrompt);
+      expect(runPrompt).toBe(
+        `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+      );
       expect(pathname()).toMatch(/^\/chats\//u);
     });
   },

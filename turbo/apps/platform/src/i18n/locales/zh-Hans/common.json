@@ -4206,9 +4206,8 @@
       "make": "欢迎使用 {{brandName}}"
     },
     "make": {
-      "promptDescription": "你可以在下面改一改，也可以直接运行，接下来交给 {{assistantName}}。你的工具都在沙箱里运行，数据不会离开你的工作区。",
       "promptLabel": "新手引导提示词",
-      "promptTitle": "试试这个提示词"
+      "promptTitle": "按你的需要调整任务"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4524,13 +4523,13 @@
             "label": "网站"
           }
         },
-        "title": "选择产出形式",
+        "title": "选择输出格式",
         "tooLong": "请缩短任务内容，以选择其他产出形式。"
       },
       "prompt": {
-        "connectorsDescription": "连接这些工具，让 Okou 更了解你的工作场景，更有针对性地帮你完成任务。也可以稍后再连接。",
+        "connectorsDescription": "连接应用，让 Okou 更了解你的工作。",
         "connectorsTitle": "连接你的工作工具",
-        "intro": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。"
+        "intro": "连接应用，让结果更贴合需求，并选择输出格式。"
       },
       "skills": {
         "copied": "已复制",

@@ -4275,9 +4275,8 @@
       "make": "Benvenuto a {{brandName}}"
     },
     "make": {
-      "promptDescription": "Modificalo qui sotto oppure eseguilo così com'è: {{assistantName}} farà il resto. I tuoi strumenti rimangono nella sandbox e nulla lascia la tua area di lavoro.",
       "promptLabel": "Richiesta di onboarding",
-      "promptTitle": "Prova questo suggerimento"
+      "promptTitle": "Personalizza questa attività"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4593,13 +4592,13 @@
             "label": "Sito web"
           }
         },
-        "title": "Scegli un formato",
+        "title": "Scegli un formato di output",
         "tooLong": "Accorcia il testo dell’attività per scegliere un altro formato."
       },
       "prompt": {
-        "connectorsDescription": "Collega i tuoi strumenti per aiutare Okou a capire il tuo lavoro e svolgere le attività in base alle tue esigenze. Puoi farlo anche più tardi.",
+        "connectorsDescription": "Collega le tue app per aiutare Okou a capire meglio il tuo lavoro.",
         "connectorsTitle": "Collega i tuoi strumenti di lavoro",
-        "intro": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud."
+        "intro": "Collega le tue app per risultati migliori e scegli un formato."
       },
       "skills": {
         "copied": "Copiato",
