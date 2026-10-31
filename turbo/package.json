@@ -44,7 +44,7 @@
     "tsx": "^4.21.0",
     "turbo": "^2.11.10",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "^8.72.0",
+    "typescript-eslint": "^8.72.1",
     "vitest": "^5.0.5"
   },
   "packageManager": "pnpm@10.33.4",
