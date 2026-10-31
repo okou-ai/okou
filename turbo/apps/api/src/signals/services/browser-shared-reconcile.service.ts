@@ -452,7 +452,11 @@ const stopEmptySharedBrowser$ = command(
     const stopped = db.$with("stopped_shared_browser").as(
       db
         .update(profiles)
-        .set({ status: "stopped", updatedAt: nowDate() })
+        .set({
+          status: "stopped",
+          browserExtensionId: null,
+          updatedAt: nowDate(),
+        })
         .where(
           and(
             exactProfile(candidate),
