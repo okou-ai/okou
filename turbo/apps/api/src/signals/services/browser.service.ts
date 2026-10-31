@@ -12,6 +12,7 @@ import {
   type BrowserWindowContext,
 } from "@okouai/api-contracts/contracts/browser";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import {
   browserSessionInstances,
   browserSessionResizeStates,
@@ -83,10 +84,9 @@ import {
   stopBrowserUseSessionForCleanup,
   type BrowserUseSession,
 } from "./browser-use.service";
-import { allocateUploadedArtifact$ } from "./uploaded-artifact.service";
 import {
   resolveArtifactFileReference$,
-  completePrivateArtifact$,
+  allocatePrivateArtifact$,
   privateArtifactRecord$,
 } from "./private-artifact-storage.service";
 import {
@@ -967,6 +967,7 @@ type BrowserScreenshotStage = "prepare" | "capture" | "upload" | "save";
 
 interface BrowserScreenshotPublication {
   readonly browser: BrowserSessionRow;
+  readonly fileId: string;
   readonly shared?: {
     readonly providerSessionId: string;
     readonly window: BrowserWindowContext;
@@ -1034,60 +1035,107 @@ async function recordBrowserScreenshotResult(result: {
   }
 }
 
+function sharedBrowserScreenshotPublication(
+  args: BrowserScreenshotPublication,
+  shared: NonNullable<BrowserScreenshotPublication["shared"]>,
+  fileReady: SQL,
+) {
+  const { browser } = args;
+  const artifact = { key: args.objectKey, url: args.url };
+  const t = browserSessionScreenshots;
+  const publication = browserCapturePublication({
+    value: t.objectKey,
+    updatedAt: t.updatedAt,
+    previousValue: shared.previousValue,
+    capturedAt: shared.capturedAt,
+  });
+  const guard = and(
+    eq(browserOwnerWindows.chatThreadId, browser.chatThreadId),
+    eq(browserOwnerWindows.instanceId, shared.window.instanceId),
+    eq(browserOwnerWindows.primaryWindowId, shared.window.primaryWindowId),
+    exists(
+      new QueryBuilder()
+        .select({ id: browserOwnerProfiles.id })
+        .from(browserOwnerProfiles)
+        .where(
+          and(
+            eq(browserOwnerProfiles.instanceId, shared.window.instanceId),
+            eq(
+              browserOwnerProfiles.providerSessionId,
+              shared.providerSessionId,
+            ),
+            eq(browserOwnerProfiles.orgId, browser.orgId),
+            eq(browserOwnerProfiles.userId, browser.userId),
+          ),
+        ),
+    ),
+  );
+  const source = new QueryBuilder()
+    .select({
+      chatThreadId: browserOwnerWindows.chatThreadId,
+      objectKey: sql`${artifact.key}`.mapWith(t.objectKey).as("object_key"),
+      url: sql`${artifact.url}`.mapWith(t.url).as("url"),
+      createdAt: sql`${sql.param(shared.capturedAt, t.createdAt)}::timestamp`
+        .mapWith(t.createdAt)
+        .as("created_at"),
+      updatedAt: sql`${sql.param(shared.capturedAt, t.updatedAt)}::timestamp`
+        .mapWith(t.updatedAt)
+        .as("updated_at"),
+    })
+    .from(browserOwnerWindows)
+    .where(and(guard, fileReady));
+  return {
+    source,
+    updatedAt: publication.updatedAt,
+    canReplace: and(
+      exists(
+        new QueryBuilder()
+          .select({ id: browserOwnerWindows.chatThreadId })
+          .from(browserOwnerWindows)
+          .where(guard),
+      ),
+      publication.canReplace,
+    ),
+  };
+}
+
 const publishBrowserScreenshot$ = command(
   async ({ set }, args: BrowserScreenshotPublication): Promise<boolean> => {
     const { browser, shared } = args;
     const artifact = { key: args.objectKey, url: args.url };
     const db = set(writeDb$);
-    let publicationSql: SQL;
-    if (shared) {
-      const t = browserSessionScreenshots;
-      const publication = browserCapturePublication({
-        value: t.objectKey,
-        updatedAt: t.updatedAt,
-        previousValue: shared.previousValue,
-        capturedAt: shared.capturedAt,
-      });
-      const guard = and(
-        eq(browserOwnerWindows.chatThreadId, browser.chatThreadId),
-        eq(browserOwnerWindows.instanceId, shared.window.instanceId),
-        eq(browserOwnerWindows.primaryWindowId, shared.window.primaryWindowId),
-        exists(
-          new QueryBuilder()
-            .select({ id: browserOwnerProfiles.id })
-            .from(browserOwnerProfiles)
-            .where(
-              and(
-                eq(browserOwnerProfiles.instanceId, shared.window.instanceId),
-                eq(
-                  browserOwnerProfiles.providerSessionId,
-                  shared.providerSessionId,
-                ),
-                eq(browserOwnerProfiles.orgId, browser.orgId),
-                eq(browserOwnerProfiles.userId, browser.userId),
-              ),
-            ),
+    // File completion and preview publication are one operation. Cleanup can
+    // retire pending bytes after a lost DB reply, so publication must compete
+    // with that tombstone on the same existing business file row.
+    const completion = db
+      .update(runUploadedFiles)
+      .set({
+        materializationStatus: "ready",
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(runUploadedFiles.id, args.fileId),
+          eq(runUploadedFiles.storageKey, artifact.key),
+          eq(runUploadedFiles.userId, browser.userId),
+          eq(runUploadedFiles.orgId, browser.orgId),
+          eq(runUploadedFiles.materializationStatus, "pending"),
+          isNull(runUploadedFiles.deletedAt),
         ),
+      )
+      .returning({ id: runUploadedFiles.id });
+    const completed = db.$with("completed_browser_screenshot").as(completion);
+    let publicationSql: SQL;
+    const t = browserSessionScreenshots;
+    if (shared) {
+      const publication = sharedBrowserScreenshotPublication(
+        args,
+        shared,
+        exists(new QueryBuilder().select({ id: completed.id }).from(completed)),
       );
-      const source = new QueryBuilder()
-        .select({
-          chatThreadId: browserOwnerWindows.chatThreadId,
-          objectKey: sql`${artifact.key}`.mapWith(t.objectKey).as("object_key"),
-          url: sql`${artifact.url}`.mapWith(t.url).as("url"),
-          createdAt:
-            sql`${sql.param(shared.capturedAt, t.createdAt)}::timestamp`
-              .mapWith(t.createdAt)
-              .as("created_at"),
-          updatedAt:
-            sql`${sql.param(shared.capturedAt, t.updatedAt)}::timestamp`
-              .mapWith(t.updatedAt)
-              .as("updated_at"),
-        })
-        .from(browserOwnerWindows)
-        .where(guard);
       publicationSql = db
         .insert(t)
-        .select(source)
+        .select(publication.source)
         .onConflictDoUpdate({
           target: t.chatThreadId,
           set: {
@@ -1095,26 +1143,28 @@ const publishBrowserScreenshot$ = command(
             url: artifact.url,
             updatedAt: publication.updatedAt,
           },
-          setWhere: and(
-            exists(
-              new QueryBuilder()
-                .select({ id: browserOwnerWindows.chatThreadId })
-                .from(browserOwnerWindows)
-                .where(guard),
-            ),
-            publication.canReplace,
-          ),
+          setWhere: publication.canReplace,
         })
         .returning({ id: t.chatThreadId })
         .getSQL();
     } else {
       publicationSql = db
         .insert(browserSessionScreenshots)
-        .values({
-          chatThreadId: browser.chatThreadId,
-          objectKey: artifact.key,
-          url: artifact.url,
-        })
+        .select(
+          new QueryBuilder()
+            .select({
+              chatThreadId: sql`${browser.chatThreadId}::uuid`
+                .mapWith(t.chatThreadId)
+                .as("chat_thread_id"),
+              objectKey: sql`${artifact.key}`
+                .mapWith(t.objectKey)
+                .as("object_key"),
+              url: sql`${artifact.url}`.mapWith(t.url).as("url"),
+              createdAt: sql`now()`.mapWith(t.createdAt).as("created_at"),
+              updatedAt: sql`now()`.mapWith(t.updatedAt).as("updated_at"),
+            })
+            .from(completed),
+        )
         .onConflictDoUpdate({
           target: browserSessionScreenshots.chatThreadId,
           set: {
@@ -1149,7 +1199,8 @@ const publishBrowserScreenshot$ = command(
       .getSQL();
     const [outcome] = parseRawRows(
       object({ saved: boolean() }),
-      await db.execute(sql`WITH published AS (${publicationSql}),
+      await db.execute(sql`WITH completed_browser_screenshot AS (${completion.getSQL()}),
+        published AS (${publicationSql}),
         queued AS (${queued})
         SELECT EXISTS(SELECT 1 FROM published) AS saved`),
     );
@@ -1235,7 +1286,7 @@ export const captureAndStoreBrowserScreenshot$ = command(
         signal.throwIfAborted();
         stage = "upload";
         const artifact = await set(
-          allocateUploadedArtifact$,
+          allocatePrivateArtifact$,
           {
             userId: browser.userId,
             orgId: browser.orgId,
@@ -1259,20 +1310,9 @@ export const captureAndStoreBrowserScreenshot$ = command(
         signal.throwIfAborted();
 
         stage = "save";
-        if ("storage" in artifact.storageMetadata) {
-          await set(
-            completePrivateArtifact$,
-            {
-              id: artifact.id,
-              url: null,
-              contentType: BROWSER_SCREENSHOT_CONTENT_TYPE,
-              size: image.byteLength,
-            },
-            signal,
-          );
-        }
         const saved = await set(publishBrowserScreenshot$, {
           browser,
+          fileId: artifact.id,
           shared: shared ? { ...shared, previousValue, capturedAt } : undefined,
           objectKey: artifact.key,
           url: artifact.url,

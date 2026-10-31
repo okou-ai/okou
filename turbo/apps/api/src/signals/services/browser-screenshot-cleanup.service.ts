@@ -18,30 +18,123 @@ import { revokeDeletedFileArtifactShare$ } from "./artifact-shares.service";
 
 const L = logger("BrowserScreenshotCleanup");
 
-/** Immutable keys are never republished. A referenced key is dormant work,
- * not garbage; after replacement/removal its existing intent becomes eligible.
- * Keep the intent until bytes and file access are both retired so interrupted
- * sweeps can safely repeat the exact operation on the next scheduled visit.
- */
-export const cleanupBrowserScreenshots$ = command(
-  async ({ get, set }, limit: number, signal: AbortSignal) => {
+const retireBrowserScreenshot$ = command(
+  async (
+    { get, set },
+    item: { readonly objectKey: string; readonly chatThreadId: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const unreferenced = notExists(
       db
         .select({ id: browserSessionScreenshots.chatThreadId })
         .from(browserSessionScreenshots)
-        .where(
-          eq(
-            browserSessionScreenshots.objectKey,
-            browserSessionScreenshotDeletions.objectKey,
-          ),
-        ),
+        .where(eq(browserSessionScreenshots.objectKey, item.objectKey)),
     );
+    let bucket: string;
+    let file: typeof runUploadedFiles.$inferSelect | undefined;
+    if (item.objectKey.startsWith("private-artifacts/")) {
+      const id = uuid().parse(item.objectKey.split("/")[1]);
+      [file] = await db
+        .select()
+        .from(runUploadedFiles)
+        .where(
+          and(
+            eq(runUploadedFiles.id, id),
+            eq(runUploadedFiles.storageKey, item.objectKey),
+          ),
+        );
+      signal.throwIfAborted();
+      if (
+        !file?.orgId ||
+        file.metadata.storage === undefined ||
+        file.materializationStatus === null
+      ) {
+        throw new Error("Browser screenshot has no private storage identity");
+      }
+      bucket = artifactStorageBucket(file.metadata);
+      // Serialize retirement with pending-to-ready preview publication using
+      // the existing file business state. If publication wins, a stale pending
+      // observation cannot delete its now-ready object. If retirement wins,
+      // the publisher's deleted-at predicate rejects the candidate. Keep the
+      // intent and storage metadata through all external effects below.
+      const retired = await db
+        .update(runUploadedFiles)
+        .set({ deletedAt: file.deletedAt ?? nowDate() })
+        .where(
+          and(
+            eq(runUploadedFiles.id, file.id),
+            eq(runUploadedFiles.storageKey, item.objectKey),
+            eq(runUploadedFiles.userId, file.userId),
+            eq(runUploadedFiles.orgId, file.orgId),
+            eq(
+              runUploadedFiles.materializationStatus,
+              file.materializationStatus,
+            ),
+            unreferenced,
+          ),
+        )
+        .returning({ id: runUploadedFiles.id });
+      signal.throwIfAborted();
+      if (retired.length === 0) {
+        return false;
+      }
+    } else if (item.objectKey.startsWith("artifacts/")) {
+      // Historical captures predate independent private file ownership and
+      // current private-only publishers. Retain their exact public key.
+      bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
+    } else {
+      throw new Error("Unsupported Browser screenshot storage identity");
+    }
+
+    await get(deleteS3Objects(bucket, [item.objectKey], signal));
+    signal.throwIfAborted();
+    if (file?.orgId) {
+      await set(
+        revokeDeletedFileArtifactShare$,
+        { fileId: file.id, userId: file.userId, orgId: file.orgId },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    await db
+      .delete(browserSessionScreenshotDeletions)
+      .where(
+        and(
+          eq(browserSessionScreenshotDeletions.objectKey, item.objectKey),
+          eq(browserSessionScreenshotDeletions.chatThreadId, item.chatThreadId),
+          unreferenced,
+        ),
+      );
+    signal.throwIfAborted();
+    return true;
+  },
+);
+
+/** A current immutable key is dormant work, not garbage. Its durable intent
+ * survives replacement, deletion and interrupted storage/share retirement.
+ */
+export const cleanupBrowserScreenshots$ = command(
+  async ({ set }, limit: number, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
     const pending = await db
       .select()
       .from(browserSessionScreenshotDeletions)
-      .where(unreferenced)
+      .where(
+        notExists(
+          db
+            .select({ id: browserSessionScreenshots.chatThreadId })
+            .from(browserSessionScreenshots)
+            .where(
+              eq(
+                browserSessionScreenshots.objectKey,
+                browserSessionScreenshotDeletions.objectKey,
+              ),
+            ),
+        ),
+      )
       .orderBy(
         asc(browserSessionScreenshotDeletions.createdAt),
         asc(browserSessionScreenshotDeletions.objectKey),
@@ -52,75 +145,12 @@ export const cleanupBrowserScreenshots$ = command(
     let cleaned = 0;
     let errors = 0;
     for (const item of pending) {
-      const result = await settleIncludingAbort(async () => {
-        signal.throwIfAborted();
-        let bucket: string;
-        let file: typeof runUploadedFiles.$inferSelect | undefined;
-        if (item.objectKey.startsWith("private-artifacts/")) {
-          const id = uuid().parse(item.objectKey.split("/")[1]);
-          [file] = await db
-            .select()
-            .from(runUploadedFiles)
-            .where(
-              and(
-                eq(runUploadedFiles.id, id),
-                eq(runUploadedFiles.storageKey, item.objectKey),
-              ),
-            );
-          signal.throwIfAborted();
-          if (!file?.orgId || file.metadata.storage === undefined) {
-            throw new Error(
-              "Browser screenshot has no private storage identity",
-            );
-          }
-          bucket = artifactStorageBucket(file.metadata);
-        } else if (item.objectKey.startsWith("artifacts/")) {
-          // Historical captures predate independent private file ownership.
-          // The ledger/pointer retains the exact public object identity.
-          bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
-        } else {
-          throw new Error("Unsupported Browser screenshot storage identity");
-        }
-
-        await get(deleteS3Objects(bucket, [item.objectKey], signal));
-        signal.throwIfAborted();
-        if (file?.orgId) {
-          await db
-            .update(runUploadedFiles)
-            .set({ deletedAt: file.deletedAt ?? nowDate() })
-            .where(
-              and(
-                eq(runUploadedFiles.id, file.id),
-                eq(runUploadedFiles.storageKey, item.objectKey),
-                eq(runUploadedFiles.userId, file.userId),
-                eq(runUploadedFiles.orgId, file.orgId),
-              ),
-            );
-          signal.throwIfAborted();
-          await set(
-            revokeDeletedFileArtifactShare$,
-            { fileId: file.id, userId: file.userId, orgId: file.orgId },
-            signal,
-          );
-          signal.throwIfAborted();
-        }
-        await db
-          .delete(browserSessionScreenshotDeletions)
-          .where(
-            and(
-              eq(browserSessionScreenshotDeletions.objectKey, item.objectKey),
-              eq(
-                browserSessionScreenshotDeletions.chatThreadId,
-                item.chatThreadId,
-              ),
-              unreferenced,
-            ),
-          );
-        signal.throwIfAborted();
-      });
+      const result = await settleIncludingAbort(
+        set(retireBrowserScreenshot$, item, signal),
+      );
       signal.throwIfAborted();
       if (result.ok) {
-        cleaned += 1;
+        cleaned += result.value ? 1 : 0;
       } else {
         errors += 1;
         L.warn("Managed browser screenshot cleanup failed", {

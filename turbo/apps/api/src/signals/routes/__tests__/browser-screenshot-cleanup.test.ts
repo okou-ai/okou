@@ -12,6 +12,7 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
@@ -131,6 +132,31 @@ async function capture(chat: Chat) {
   return decodeURIComponent(new URL(browser.screenshotUrl).pathname.slice(1));
 }
 
+test("publishes legacy Browser captures with their ready private file through the existing cron", async () => {
+  const f = await fixture(false);
+  await f.owned.run(async () => {
+    installBrowserWindowContentCommands(f.provider.native);
+    const a = await f.start();
+    await open(a);
+    const s3 = storage();
+    await sweep();
+    await flushWaitUntilForTest();
+    const browser = await view(a);
+    if (!browser.screenshotUrl) {
+      throw new Error("Expected the legacy Browser's published screenshot");
+    }
+    const key = decodeURIComponent(
+      new URL(browser.screenshotUrl).pathname.slice(1),
+    );
+    expect(s3.bytes(key)?.toString()).toMatch(/^preview:/u);
+    await createChatFilesBddApi(context).requestWebFileUrl(
+      f.owned.actor,
+      key.split("/")[1] ?? "",
+      [200],
+    );
+  });
+});
+
 test("reclaims replaced screenshots and their file access while the current preview remains usable", async () => {
   const f = await fixture();
   await f.owned.run(async () => {
@@ -191,6 +217,61 @@ test("reclaims a deleted chat's final screenshot without removing an active sibl
   });
 });
 
+test("fences obsolete file access before a delayed storage deletion without fencing the accepted preview", async () => {
+  const f = await fixture();
+  await f.owned.run(async () => {
+    installBrowserWindowContentCommands(f.provider.native);
+    const a = await f.start();
+    await open(a);
+    const s3 = storage();
+    const obsolete = await capture(a);
+    mockNow(START + 1000);
+    const accepted = await capture(a);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    s3.controls.beforeDelete = async (key) => {
+      if (key === obsolete) {
+        entered.resolve();
+        await release.promise;
+      }
+    };
+    const cleaning = settleIncludingAbort(sweep());
+    const observed = await settleIncludingAbort(async () => {
+      await Promise.race([
+        entered.promise,
+        cleaning.then(() => {
+          throw new Error("Expected storage deletion to be held");
+        }),
+      ]);
+      const chat = createChatFilesBddApi(context);
+      await chat.requestWebFileUrl(
+        f.owned.actor,
+        obsolete.split("/")[1] ?? "",
+        [404],
+      );
+      await chat.requestWebFileUrl(
+        f.owned.actor,
+        accepted.split("/")[1] ?? "",
+        [200],
+      );
+      expect(s3.bytes(obsolete)?.toString()).toMatch(/^preview:/u);
+      expect((await view(a)).screenshotUrl).toBe(
+        `https://screenshots.example.test/${encodeURIComponent(accepted)}`,
+      );
+    });
+    release.resolve();
+    const cleaned = await cleaning;
+    if (!observed.ok) {
+      throw observed.error;
+    }
+    if (!cleaned.ok) {
+      throw cleaned.error;
+    }
+    expect(s3.bytes(obsolete)).toBeUndefined();
+    expect(s3.bytes(accepted)?.toString()).toMatch(/^preview:/u);
+  });
+});
+
 test("retains partial deletion failures, continues other objects, and recovers an already-missing object", async () => {
   const f = await fixture();
   await f.owned.run(async () => {
@@ -212,7 +293,7 @@ test("retains partial deletion failures, continues other objects, and recovers a
     await chat.requestWebFileUrl(
       f.owned.actor,
       failed.split("/")[1] ?? "",
-      [200],
+      [404],
     );
     // Model an external deletion whose reply was lost before local retirement.
     s3.remove(failed);
