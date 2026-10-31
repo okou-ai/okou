@@ -1,0 +1,342 @@
+diff --git a/src/input.ts b/src/input.ts
+index b385cc1..a151ae8 100644
+--- a/src/input.ts
++++ b/src/input.ts
+@@ -21,6 +21,7 @@ export class InputState {
+   mouseDown: MouseDown | null = null
+   lastKeyCode: number | null = null
+   lastKeyCodeTime = 0
++  lastKeyDispatched = false
+   lastClick = {time: 0, x: 0, y: 0, type: "", button: 0}
+   lastSelectionOrigin: string | null = null
+   lastSelectionTime = 0
+@@ -104,12 +105,21 @@ export function dispatchEvent(view: EditorView, event: Event) {
+     handlers[event.type](view, event)
+ }
+ 
++export function dispatchKey(view: EditorView, event: KeyboardEvent | "Backspace" | "Enter") {
++  let {input} = view
++  if (input.lastKeyDispatched || view.composing) return false
++  input.lastKeyDispatched = true
++  if (typeof event == "string") event = keyEvent(event == "Backspace" ? 8 : 13, event)
++  return view.someProp("handleKeyDown", f => f(view, event))
++}
++
+ editHandlers.keydown = (view: EditorView, _event: Event) => {
+   let event = _event as KeyboardEvent
+   view.input.shiftKey = event.keyCode == 16 || event.shiftKey
+   if (inOrNearComposition(view, event)) return
+   view.input.lastKeyCode = event.keyCode
+   view.input.lastKeyCodeTime = Date.now()
++  view.input.lastKeyDispatched = false
+   // Suppress enter key events on Chrome Android, because those tend
+   // to be part of a confused sequence of composition events fired,
+   // and handling them eagerly tends to corrupt the input.
+@@ -125,11 +135,11 @@ editHandlers.keydown = (view: EditorView, _event: Event) => {
+     view.input.lastIOSEnter = now
+     view.input.lastIOSEnterFallbackTimeout = setTimeout(() => {
+       if (view.input.lastIOSEnter == now) {
+-        view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter")))
++        dispatchKey(view, "Enter")
+         view.input.lastIOSEnter = 0
+       }
+     }, 200)
+-  } else if (view.someProp("handleKeyDown", f => f(view, event)) || captureKeyDown(view, event)) {
++  } else if (dispatchKey(view, event) || captureKeyDown(view, event)) {
+     event.preventDefault()
+   } else {
+     setSelectionOrigin(view, "key")
+@@ -873,7 +883,7 @@ handlers.beforeinput = (view, _event: Event) => {
+       // This bug tends to close the virtual keyboard, so we refocus
+       view.dom.blur()
+       view.focus()
+-      if (view.someProp("handleKeyDown", f => f(view, keyEvent(8, "Backspace")))) return
++      if (dispatchKey(view, "Backspace")) return
+       let {$cursor} = view.state.selection as TextSelection
+       // Crude approximation of backspace behavior when no command handled it
+       if ($cursor && $cursor.pos > 0) view.dispatch(view.state.tr.delete($cursor.pos - 1, $cursor.pos).scrollIntoView())
+diff --git a/src/domchange.ts b/src/domchange.ts
+index 5e441c3..ae9c161 100644
+--- a/src/domchange.ts
++++ b/src/domchange.ts
+@@ -2,9 +2,10 @@ import {Fragment, DOMParser, TagParseRule, Node, Mark, ResolvedPos} from "prosem
+ import {TextSelection, Transaction} from "prosemirror-state"
+ 
+ import {selectionBetween, selectionFromDOM, selectionToDOM} from "./selection"
+-import {selectionCollapsed, keyEvent, DOMNode, isElt, contains} from "./dom"
++import {selectionCollapsed, DOMNode, isElt, contains} from "./dom"
+ import * as browser from "./browser"
+ import {EditorView} from "./index"
++import {dispatchKey} from "./input"
+ 
+ // Note that all referencing and parsing is done with the
+ // start-of-operation selection and document, since that's the one
+@@ -88,7 +89,7 @@ export function readDOMChange(view: EditorView, from: number, to: number, typeOv
+     if (newSel && !view.state.selection.eq(newSel)) {
+       if (browser.chrome && browser.android &&
+           view.input.lastKeyCode === 13 && Date.now() - 100 < view.input.lastKeyCodeTime &&
+-          view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter"))))
++          dispatchKey(view, "Enter"))
+         return
+       let tr = view.state.tr.setSelection(newSel)
+       if (origin == "pointer") tr.setMeta("pointer", true)
+@@ -124,7 +125,7 @@ export function readDOMChange(view: EditorView, from: number, to: number, typeOv
+   if ((browser.ios && view.input.lastIOSEnter > Date.now() - 225 || browser.android) &&
+       addedNodes.some(n => isElt(n) && !isInline.test(n.nodeName)) &&
+       (!change || change.endA >= change.endB) &&
+-      view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter")))) {
++      dispatchKey(view, "Enter")) {
+     view.input.lastIOSEnter = 0
+     return
+   }
+@@ -181,7 +182,7 @@ export function readDOMChange(view: EditorView, from: number, to: number, typeOv
+   if (((browser.ios && view.input.lastIOSEnter > Date.now() - 225 &&
+         (!inlineChange || addedNodes.some(n => n.nodeName == "DIV" || n.nodeName == "P"))) ||
+        (!inlineChange && looksLikeEnter(parse.doc, $from.pos, $to.pos))) &&
+-      view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter")))) {
++      dispatchKey(view, "Enter")) {
+     view.input.lastIOSEnter = 0
+     return
+   }
+@@ -189,7 +190,7 @@ export function readDOMChange(view: EditorView, from: number, to: number, typeOv
+   if (view.state.selection.anchor > change.start &&
+       (inlineChange ? change.endA > change.start && change.endB == change.start
+         : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) &&
+-      view.someProp("handleKeyDown", f => f(view, keyEvent(8, "Backspace")))) {
++      dispatchKey(view, "Backspace")) {
+     if (browser.android && browser.chrome) view.domObserver.suppressSelectionUpdates() // #820
+     return
+   }
+@@ -212,9 +213,7 @@ export function readDOMChange(view: EditorView, from: number, to: number, typeOv
+       parse.sel && parse.sel.anchor == parse.sel.head && parse.sel.head == change.endA) {
+     change.endB -= 2
+     $to = parse.doc.resolveNoCache(change.endB - parse.from)
+-    setTimeout(() => {
+-      view.someProp("handleKeyDown", function (f) { return f(view, keyEvent(13, "Enter")); })
+-    }, 20)
++    setTimeout(() => dispatchKey(view, "Enter"), 20)
+   }
+ 
+   let chFrom = change.start, chTo = change.endA
+diff --git a/dist/index.js b/dist/index.js
+index 3752110..a61778c 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -3137,6 +3137,7 @@ class InputState {
+         this.mouseDown = null;
+         this.lastKeyCode = null;
+         this.lastKeyCodeTime = 0;
++        this.lastKeyDispatched = false;
+         this.lastClick = { time: 0, x: 0, y: 0, type: "", button: 0 };
+         this.lastSelectionOrigin = null;
+         this.lastSelectionTime = 0;
+@@ -3217,6 +3218,15 @@ function dispatchEvent(view, event) {
+         (view.editable || !(event.type in editHandlers)))
+         handlers[event.type](view, event);
+ }
++function dispatchKey(view, event) {
++    let { input } = view;
++    if (input.lastKeyDispatched || view.composing)
++        return false;
++    input.lastKeyDispatched = true;
++    if (typeof event == "string")
++        event = keyEvent(event == "Backspace" ? 8 : 13, event);
++    return view.someProp("handleKeyDown", f => f(view, event));
++}
+ editHandlers.keydown = (view, _event) => {
+     let event = _event;
+     view.input.shiftKey = event.keyCode == 16 || event.shiftKey;
+@@ -3224,6 +3234,7 @@ editHandlers.keydown = (view, _event) => {
+         return;
+     view.input.lastKeyCode = event.keyCode;
+     view.input.lastKeyCodeTime = Date.now();
++    view.input.lastKeyDispatched = false;
+     // Suppress enter key events on Chrome Android, because those tend
+     // to be part of a confused sequence of composition events fired,
+     // and handling them eagerly tends to corrupt the input.
+@@ -3240,12 +3251,12 @@ editHandlers.keydown = (view, _event) => {
+         view.input.lastIOSEnter = now;
+         view.input.lastIOSEnterFallbackTimeout = setTimeout(() => {
+             if (view.input.lastIOSEnter == now) {
+-                view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter")));
++                dispatchKey(view, "Enter");
+                 view.input.lastIOSEnter = 0;
+             }
+         }, 200);
+     }
+-    else if (view.someProp("handleKeyDown", f => f(view, event)) || captureKeyDown(view, event)) {
++    else if (dispatchKey(view, event) || captureKeyDown(view, event)) {
+         event.preventDefault();
+     }
+     else {
+@@ -3970,7 +3981,7 @@ handlers.beforeinput = (view, _event) => {
+             // This bug tends to close the virtual keyboard, so we refocus
+             view.dom.blur();
+             view.focus();
+-            if (view.someProp("handleKeyDown", f => f(view, keyEvent(8, "Backspace"))))
++            if (dispatchKey(view, "Backspace"))
+                 return;
+             let { $cursor } = view.state.selection;
+             // Crude approximation of backspace behavior when no command handled it
+@@ -5172,7 +5183,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+         if (newSel && !view.state.selection.eq(newSel)) {
+             if (chrome && android &&
+                 view.input.lastKeyCode === 13 && Date.now() - 100 < view.input.lastKeyCodeTime &&
+-                view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter"))))
++                dispatchKey(view, "Enter"))
+                 return;
+             let tr = view.state.tr.setSelection(newSel);
+             if (origin == "pointer")
+@@ -5209,7 +5220,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+     if ((ios && view.input.lastIOSEnter > Date.now() - 225 || android) &&
+         addedNodes.some(n => isElt(n) && !isInline.test(n.nodeName)) &&
+         (!change || change.endA >= change.endB) &&
+-        view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter")))) {
++        dispatchKey(view, "Enter")) {
+         view.input.lastIOSEnter = 0;
+         return;
+     }
+@@ -5266,7 +5277,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+     if (((ios && view.input.lastIOSEnter > Date.now() - 225 &&
+         (!inlineChange || addedNodes.some(n => n.nodeName == "DIV" || n.nodeName == "P"))) ||
+         (!inlineChange && looksLikeEnter(parse.doc, $from.pos, $to.pos))) &&
+-        view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter")))) {
++        dispatchKey(view, "Enter")) {
+         view.input.lastIOSEnter = 0;
+         return;
+     }
+@@ -5274,7 +5285,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+     if (view.state.selection.anchor > change.start &&
+         (inlineChange ? change.endA > change.start && change.endB == change.start
+             : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) &&
+-        view.someProp("handleKeyDown", f => f(view, keyEvent(8, "Backspace")))) {
++        dispatchKey(view, "Backspace")) {
+         if (android && chrome)
+             view.domObserver.suppressSelectionUpdates(); // #820
+         return;
+@@ -5296,9 +5307,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+         parse.sel && parse.sel.anchor == parse.sel.head && parse.sel.head == change.endA) {
+         change.endB -= 2;
+         $to = parse.doc.resolveNoCache(change.endB - parse.from);
+-        setTimeout(() => {
+-            view.someProp("handleKeyDown", function (f) { return f(view, keyEvent(13, "Enter")); });
+-        }, 20);
++        setTimeout(() => dispatchKey(view, "Enter"), 20);
+     }
+     let chFrom = change.start, chTo = change.endA;
+     let mkTr = (base) => {
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 8bc4db8..291fe76 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -2963,6 +2963,7 @@ var InputState = _createClass(function InputState() {
+   this.mouseDown = null;
+   this.lastKeyCode = null;
+   this.lastKeyCodeTime = 0;
++  this.lastKeyDispatched = false;
+   this.lastClick = {
+     time: 0,
+     x: 0,
+@@ -3039,12 +3040,22 @@ function eventBelongsToView(view, event) {
+ function _dispatchEvent(view, event) {
+   if (!runCustomHandler(view, event) && handlers[event.type] && (view.editable || !(event.type in editHandlers))) handlers[event.type](view, event);
+ }
++function dispatchKey(view, event) {
++  var input = view.input;
++  if (input.lastKeyDispatched || view.composing) return false;
++  input.lastKeyDispatched = true;
++  if (typeof event == "string") event = keyEvent(event == "Backspace" ? 8 : 13, event);
++  return view.someProp("handleKeyDown", function (f) {
++    return f(view, event);
++  });
++}
+ editHandlers.keydown = function (view, _event) {
+   var event = _event;
+   view.input.shiftKey = event.keyCode == 16 || event.shiftKey;
+   if (inOrNearComposition(view)) return;
+   view.input.lastKeyCode = event.keyCode;
+   view.input.lastKeyCodeTime = Date.now();
++  view.input.lastKeyDispatched = false;
+   if (android && chrome && event.keyCode == 13) return;
+   if (event.keyCode != 229) view.domObserver.forceFlush();
+   if (ios && event.keyCode == 13 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+@@ -3052,15 +3063,11 @@ editHandlers.keydown = function (view, _event) {
+     view.input.lastIOSEnter = now;
+     view.input.lastIOSEnterFallbackTimeout = setTimeout(function () {
+       if (view.input.lastIOSEnter == now) {
+-        view.someProp("handleKeyDown", function (f) {
+-          return f(view, keyEvent(13, "Enter"));
+-        });
++        dispatchKey(view, "Enter");
+         view.input.lastIOSEnter = 0;
+       }
+     }, 200);
+-  } else if (view.someProp("handleKeyDown", function (f) {
+-    return f(view, event);
+-  }) || captureKeyDown(view, event)) {
++  } else if (dispatchKey(view, event) || captureKeyDown(view, event)) {
+     event.preventDefault();
+   } else {
+     setSelectionOrigin(view, "key");
+@@ -3719,9 +3726,7 @@ handlers.beforeinput = function (view, _event) {
+       if (view.input.domChangeCount != domChangeCount) return;
+       view.dom.blur();
+       view.focus();
+-      if (view.someProp("handleKeyDown", function (f) {
+-        return f(view, keyEvent(8, "Backspace"));
+-      })) return;
++      if (dispatchKey(view, "Backspace")) return;
+       var $cursor = view.state.selection.$cursor;
+       if ($cursor && $cursor.pos > 0) view.dispatch(view.state.tr["delete"]($cursor.pos - 1, $cursor.pos).scrollIntoView());
+     }, 50);
+@@ -4875,9 +4880,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+     var origin = view.input.lastSelectionTime > Date.now() - 50 ? view.input.lastSelectionOrigin : null;
+     var newSel = selectionFromDOM(view, origin);
+     if (newSel && !view.state.selection.eq(newSel)) {
+-      if (chrome && android && view.input.lastKeyCode === 13 && Date.now() - 100 < view.input.lastKeyCodeTime && view.someProp("handleKeyDown", function (f) {
+-        return f(view, keyEvent(13, "Enter"));
+-      })) return;
++      if (chrome && android && view.input.lastKeyCode === 13 && Date.now() - 100 < view.input.lastKeyCodeTime && dispatchKey(view, "Enter")) return;
+       var tr = view.state.tr.setSelection(newSel);
+       if (origin == "pointer") tr.setMeta("pointer", true);else if (origin == "key") tr.scrollIntoView();
+       if (compositionID) tr.setMeta("composition", compositionID);
+@@ -4906,9 +4909,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+   if (change) view.input.domChangeCount++;
+   if ((ios && view.input.lastIOSEnter > Date.now() - 225 || android) && addedNodes.some(function (n) {
+     return isElt(n) && !isInline.test(n.nodeName);
+-  }) && (!change || change.endA >= change.endB) && view.someProp("handleKeyDown", function (f) {
+-    return f(view, keyEvent(13, "Enter"));
+-  })) {
++  }) && (!change || change.endA >= change.endB) && dispatchKey(view, "Enter")) {
+     view.input.lastIOSEnter = 0;
+     return;
+   }
+@@ -4950,15 +4951,11 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+   var inlineChange = $from.sameParent($to) && $from.parent.inlineContent && $fromA.end() >= change.endA;
+   if ((ios && view.input.lastIOSEnter > Date.now() - 225 && (!inlineChange || addedNodes.some(function (n) {
+     return n.nodeName == "DIV" || n.nodeName == "P";
+-  })) || !inlineChange && looksLikeEnter(parse.doc, $from.pos, $to.pos)) && view.someProp("handleKeyDown", function (f) {
+-    return f(view, keyEvent(13, "Enter"));
+-  })) {
++  })) || !inlineChange && looksLikeEnter(parse.doc, $from.pos, $to.pos)) && dispatchKey(view, "Enter")) {
+     view.input.lastIOSEnter = 0;
+     return;
+   }
+-  if (view.state.selection.anchor > change.start && (inlineChange ? change.endA > change.start && change.endB == change.start : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) && view.someProp("handleKeyDown", function (f) {
+-    return f(view, keyEvent(8, "Backspace"));
+-  })) {
++  if (view.state.selection.anchor > change.start && (inlineChange ? change.endA > change.start && change.endB == change.start : looksLikeBlockJoin(doc, change.start, change.endA, $from, $to)) && dispatchKey(view, "Backspace")) {
+     if (android && chrome) view.domObserver.suppressSelectionUpdates();
+     return;
+   }
+@@ -4967,9 +4964,7 @@ function readDOMChange(view, from, to, typeOver, addedNodes) {
+     change.endB -= 2;
+     $to = parse.doc.resolveNoCache(change.endB - parse.from);
+     setTimeout(function () {
+-      view.someProp("handleKeyDown", function (f) {
+-        return f(view, keyEvent(13, "Enter"));
+-      });
++      dispatchKey(view, "Enter");
+     }, 20);
+   }
+   var chFrom = change.start,
