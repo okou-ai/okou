@@ -2990,6 +2990,13 @@
       "when": 1793443672462,
       "tag": "1505_browser_owner_instance_extension",
       "breakpoints": true
+    },
+    {
+      "idx": 1506,
+      "version": "7",
+      "when": 1793455707553,
+      "tag": "1506_browser_owner_extension_index",
+      "breakpoints": true
     }
   ]
 }
