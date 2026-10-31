@@ -1,9 +1,9 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import { delay } from "signal-timers";
 import {
   createDeferredPromise,
   isAbortError,
   resetSignal,
-  scheduleTimeout,
   type DeferredPromise,
 } from "../../utils.ts";
 import type { CdpClient } from "../cdp/client.ts";
@@ -552,29 +552,14 @@ function createSyncScheduler(
   } = context;
   const waitForSchedule$ = command(
     async ({ get }, signal: AbortSignal): Promise<void> => {
-      signal.throwIfAborted();
-      const deadline = createDeferredPromise<void>(signal);
-      const cancelDeadline = scheduleTimeout(
-        () => {
-          if (!deadline.settled()) {
-            deadline.resolve();
-          }
-        },
+      await delay(
         Math.max(
           0,
           minimumSyncIntervalMs - (performance.now() - get(started$)),
         ),
-        signal,
+        { signal },
       );
-      const [result] = await Promise.allSettled([deadline.promise]);
-      if (signal.aborted) {
-        cancelDeadline();
-        signal.throwIfAborted();
-      }
-      cancelDeadline();
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
+      signal.throwIfAborted();
     },
   );
 

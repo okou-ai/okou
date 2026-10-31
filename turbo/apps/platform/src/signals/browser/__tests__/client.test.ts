@@ -11,55 +11,6 @@ import { createCanvasRenderer, type DecodedFrame } from "../render/canvas.ts";
 const context = testContext();
 const endpoint = "wss://browser.example/cdp";
 
-test("a late attach receipt releases only its original session after the deadline", async () => {
-  const attached = context.mocks.deferred<number>();
-  const detached = context.mocks.deferred<unknown>();
-  const socket = context.mocks.browser.webSocket((data) => {
-    const request: unknown = JSON.parse(data);
-    if (!isRecord(request)) {
-      throw new Error("Invalid fixture request");
-    }
-    if (request.method === "Target.attachToTarget") {
-      attached.resolve(request.id as number);
-    }
-    if (request.method === "Target.detachFromTarget") {
-      detached.resolve(request.params);
-    }
-    return null;
-  });
-  const client = createCdpClient(
-    endpoint,
-    { requestTimeout: 20 },
-    context.signal,
-  );
-  await client.opened;
-  const result = client.request(
-    "Target.attachToTarget",
-    { targetId: "original-page", flatten: true },
-    undefined,
-    (reply) => {
-      if (isRecord(reply) && typeof reply.sessionId === "string") {
-        client.notify("Target.detachFromTarget", {
-          sessionId: reply.sessionId,
-        });
-      }
-    },
-  );
-  const id = await attached.promise;
-  await expect(result).rejects.toMatchObject({
-    kind: "protocol",
-    message: "The browser request timed out.",
-  });
-  socket.receive(
-    endpoint,
-    JSON.stringify({ id, result: { sessionId: "original-session" } }),
-  );
-  await expect(detached.promise).resolves.toStrictEqual({
-    sessionId: "original-session",
-  });
-  client.close();
-});
-
 test("closing a viewer rejects pending requests without closing the remote browser", async () => {
   const received: string[] = [];
   context.mocks.browser.webSocket((data) => {
@@ -397,6 +348,7 @@ test("cancelling one connection rejects its request while another stays usable",
 });
 
 test("late Runtime objects are released on their original connection and session", async () => {
+  const operation = createTestRuntime(context);
   const sent = context.mocks.deferred<number>();
   const released = context.mocks.deferred<{
     url: string;
@@ -419,11 +371,7 @@ test("late Runtime objects are released on their original connection and session
     }
     return null;
   });
-  const original = createCdpClient(
-    endpoint,
-    { requestTimeout: 20 },
-    context.signal,
-  );
+  const original = createCdpClient(endpoint, {}, context.signal);
   const replacement = createCdpClient(
     "wss://browser.example/replacement",
     {},
@@ -437,12 +385,11 @@ test("late Runtime objects are released on their original connection and session
     (reply) => {
       releaseRuntimeObjects(original, "original-session", reply);
     },
+    operation.signal,
   );
   const id = await sent.promise;
-  await expect(result).rejects.toMatchObject({
-    kind: "protocol",
-    message: "The browser request timed out.",
-  });
+  operation.dispose();
+  await expect(result).rejects.toMatchObject({ name: "AbortError" });
   socket.receive(
     endpoint,
     JSON.stringify({

@@ -25,12 +25,10 @@ import {
   type DisplaySnapshot,
   type DisplayTarget,
 } from "./preparation.ts";
-import { frameTimeoutMs } from "./limits.ts";
 import { captureBoundary } from "./capture-boundary.ts";
 
 export interface DisplayEffects {
   readonly windowId: number | null;
-  readonly presentationTimeout?: number | undefined;
   readonly capturePending$: Computed<boolean>;
   readonly refresh$: Command<
     Promise<void>,
@@ -313,8 +311,7 @@ type CaptureContext = TransactionContext &
   ReturnType<typeof createCaptureRefresh>;
 
 function createTransactionCompletion(context: CaptureContext) {
-  const { current$, target, applied$, completion$, fenceCapture$, host } =
-    context;
+  const { current$, target, applied$, completion$, fenceCapture$ } = context;
   const complete$ = command(
     (
       { set },
@@ -370,11 +367,8 @@ function createTransactionCompletion(context: CaptureContext) {
       if (!set(current$, signal)) {
         return { kind: "retired" };
       }
-      const started = performance.now();
-      const budget = host.presentationTimeout ?? frameTimeoutMs;
       const outcome = await set(
         target.geometry.waitForPresentation$,
-        budget,
         !freshCapture,
         signal,
       );
@@ -396,12 +390,7 @@ function createTransactionCompletion(context: CaptureContext) {
         if (!set(current$, signal)) {
           return { kind: "retired" };
         }
-        await set(
-          target.geometry.waitForPresentation$,
-          budget - (performance.now() - started),
-          false,
-          signal,
-        );
+        await set(target.geometry.waitForPresentation$, false, signal);
       }
       return set(complete$, receipt, "painted", signal);
     },
@@ -510,7 +499,6 @@ function createTransactionPerform(
 ) {
   const {
     preparation,
-    host,
     current$,
     target,
     applied$,
@@ -523,11 +511,7 @@ function createTransactionPerform(
       policy: ExecutionPolicy,
       signal: AbortSignal,
     ): Promise<DisplayResult> => {
-      const snapshot = await set(
-        preparation.acquire$,
-        host.presentationTimeout,
-        signal,
-      );
+      const snapshot = await set(preparation.acquire$, signal);
       if (!snapshot || !set(current$, signal)) {
         return { kind: set(current$, signal) ? "deferred" : "retired" };
       }
@@ -588,7 +572,7 @@ function createTransactionPerform(
 }
 
 function createTransactionRestore(context: CaptureContext) {
-  const { current$, client, target, fenceCapture$, host } = context;
+  const { current$, client, target, fenceCapture$ } = context;
   const restore$ = command(
     async ({ set }, signal: AbortSignal): Promise<boolean> => {
       if (!set(current$, signal)) {
@@ -623,12 +607,7 @@ function createTransactionRestore(context: CaptureContext) {
       if (!set(current$, signal)) {
         return false;
       }
-      await set(
-        target.geometry.waitForPresentation$,
-        host.presentationTimeout,
-        false,
-        signal,
-      );
+      await set(target.geometry.waitForPresentation$, false, signal);
       return set(current$, signal);
     },
   );
