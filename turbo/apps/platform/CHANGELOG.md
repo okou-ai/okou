@@ -12,6 +12,19 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1081.3](https://github.com/okou-ai/okou/compare/app-v0.1081.2...app-v0.1081.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* **app:** simplify the first-task upgrade banner ([#44401](https://github.com/okou-ai/okou/issues/44401)) ([a819442](https://github.com/okou-ai/okou/commit/a819442a7dc799af1f62229110adddc4dd51d16b))
+* **app:** support output formats across onboarding ([#44372](https://github.com/okou-ai/okou/issues/44372)) ([75a5079](https://github.com/okou-ai/okou/commit/75a507925052b2e00c52c447044024e000195e8b))
+
+
+### Refactoring
+
+* **platform:** drive cloud browser display sync from explicit commands ([#44415](https://github.com/okou-ai/okou/issues/44415)) ([9514bbe](https://github.com/okou-ai/okou/commit/9514bbee398757439f9e31e119ebbbda3f0c5278))
+
 ## [0.1081.2](https://github.com/okou-ai/okou/compare/app-v0.1081.1...app-v0.1081.2) (2026-10-31)
 
 

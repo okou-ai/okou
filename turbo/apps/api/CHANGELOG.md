@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.34.1](https://github.com/okou-ai/okou/compare/api-v2.34.0...api-v2.34.1) (2026-10-31)
+
+
+### Refactoring
+
+* **api:** localize agent connector read ownership ([#44422](https://github.com/okou-ai/okou/issues/44422)) ([97b23ee](https://github.com/okou-ai/okou/commit/97b23eef735fef263abc68803130577f9609466e))
+
+
+### Performance Improvements
+
+* **browser:** reduce api and cli window lookup latency ([#44426](https://github.com/okou-ai/okou/issues/44426)) ([23b55e3](https://github.com/okou-ai/okou/commit/23b55e3fb6722d25917e69610d2d14f6a73020a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.14.1
+
 ## [2.34.0](https://github.com/okou-ai/okou/compare/api-v2.33.3...api-v2.34.0) (2026-10-31)
 
 

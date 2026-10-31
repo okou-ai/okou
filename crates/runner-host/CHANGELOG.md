@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.10](https://github.com/okou-ai/okou/compare/runner-host-v0.10.9...runner-host-v0.10.10) (2026-10-31)
+
+
+### Refactoring
+
+* **runner-host:** separate process ancestry test source ownership ([#44410](https://github.com/okou-ai/okou/issues/44410)) ([6842db7](https://github.com/okou-ai/okou/commit/6842db7e0cde9801d9e953bcb64c7fa0a4e20371))
+
 ## [0.10.9](https://github.com/okou-ai/okou/compare/runner-host-v0.10.8...runner-host-v0.10.9) (2026-10-31)
 
 
