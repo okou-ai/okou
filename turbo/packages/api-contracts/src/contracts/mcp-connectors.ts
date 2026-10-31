@@ -6,6 +6,7 @@ import {
   literal,
   object,
   string,
+  url,
   uuid,
   type infer as zInfer,
 } from "zod";
@@ -65,13 +66,13 @@ export const mcpConnectorOAuthReauthorizationResponseSchema =
   discriminatedUnion("kind", [
     object({
       kind: literal("oauth"),
-      authorizationUrl: string().url(),
+      authorizationUrl: url(),
       expiresAt: iso.datetime(),
     }),
     object({
       kind: literal("reconnect"),
       connectionId: uuid(),
-      authorizationUrl: string().url(),
+      authorizationUrl: url(),
     }),
   ]);
 export type McpConnectorOAuthReauthorizationResponse = zInfer<

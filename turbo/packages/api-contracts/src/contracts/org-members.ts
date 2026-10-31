@@ -1,10 +1,12 @@
 import {
   array,
   boolean,
+  email,
   iso,
   number,
   object,
   string,
+  url,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -95,7 +97,7 @@ export type OrgMembersResponse = zInfer<typeof orgMembersResponseSchema>;
  * Invite member request schema
  */
 export const inviteOrgMemberRequestSchema = object({
-  email: string().email(),
+  email: email(),
   role: orgRoleSchema.optional().default("member"),
 });
 export type InviteOrgMemberRequest = zInfer<
@@ -106,7 +108,7 @@ export const previewOrgInvitationPurchaseRequestSchema =
   inviteOrgMemberRequestSchema.extend({
     usagePackUsd: usagePackUsdSchema,
     supportsInAppPreview: boolean().optional(),
-    returnUrl: string().url().max(5000).optional(),
+    returnUrl: url().max(5000).optional(),
   });
 
 export const orgInvitationPurchasePreviewResponseSchema = object({
@@ -120,7 +122,7 @@ export const orgInvitationPurchasePreviewResponseSchema = object({
   currentPeriodEnd: iso.datetime(),
   expiresAt: iso.datetime(),
   paymentMethodPreviewToken: string().min(1).optional(),
-  checkoutUrl: string().url().optional(),
+  checkoutUrl: url().optional(),
 });
 export type OrgInvitationPurchasePreviewResponse = zInfer<
   typeof orgInvitationPurchasePreviewResponseSchema
@@ -130,7 +132,7 @@ export type OrgInvitationPurchasePreviewResponse = zInfer<
  * Remove member request schema
  */
 export const removeOrgMemberRequestSchema = object({
-  email: string().email(),
+  email: email(),
 });
 export type RemoveOrgMemberRequest = zInfer<
   typeof removeOrgMemberRequestSchema
@@ -140,7 +142,7 @@ export type RemoveOrgMemberRequest = zInfer<
  * Update member role request schema
  */
 export const updateOrgMemberRoleRequestSchema = object({
-  email: string().email(),
+  email: email(),
   role: orgRoleSchema,
 });
 export type UpdateOrgMemberRoleRequest = zInfer<

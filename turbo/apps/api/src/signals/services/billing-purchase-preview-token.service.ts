@@ -5,6 +5,7 @@ import {
   literal,
   object,
   string,
+  url,
   enum as zEnum,
   type infer as zInfer,
   type ZodType,
@@ -29,7 +30,7 @@ const billingPaymentMethodPreviewTokenSchema = object({
   customerId: string().min(1),
   subscriptionId: string().min(1),
   paymentMethodId: string().min(1),
-  returnUrl: string().url(),
+  returnUrl: url(),
   expiresAt: iso.datetime(),
 });
 

@@ -5,7 +5,7 @@ import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { randomUUID } from "node:crypto";
 import { Webhook } from "svix";
 import { beforeEach, expect, test, vi } from "vitest";
-import { object, string } from "zod";
+import { object, string, uuid } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -42,7 +42,7 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const secret = `whsec_${Buffer.from("get-started-synthetic-secret").toString("base64")}`;
 const sentInvitation = object({
   organizationId: string(),
-  privateMetadata: object({ getStartedClaimId: string().uuid() }),
+  privateMetadata: object({ getStartedClaimId: uuid() }),
 });
 
 beforeEach(async () => {

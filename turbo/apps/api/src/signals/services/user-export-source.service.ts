@@ -24,9 +24,11 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   array,
+  iso,
   number,
   object,
   string,
+  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -84,12 +86,12 @@ const checkpointSchema = object({
     "discord",
     "done",
   ]).default("init"),
-  startedAt: string().datetime().optional(),
+  startedAt: iso.datetime().optional(),
   orgIds: array(string()).default([]),
   cursor: string().optional(),
   discordKind: discordExportKindSchema.optional(),
   thread: object({
-    id: string().uuid(),
+    id: uuid(),
     upperSeqId: number().int().nonnegative(),
     afterSeqId: number().int().nonnegative(),
     snapshotKey: string().nullable(),

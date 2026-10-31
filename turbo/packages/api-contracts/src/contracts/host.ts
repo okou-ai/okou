@@ -46,9 +46,9 @@ export const hostedSiteTitleResponseSchema = object({
 });
 
 export const hostedSiteUrlSchema = object({
-  siteId: string().uuid(),
+  siteId: uuid(),
   publicSlug: string(),
-  url: string().url(),
+  url: url(),
   isActive: boolean(),
 });
 
@@ -56,8 +56,8 @@ export const hostedSiteDeliveryPointerSchema = object({
   version: literal(1),
   publicBrand: zEnum(["vm0", "okou"]).optional(),
   publicSlug: string(),
-  siteId: string().uuid(),
-  deploymentId: string().uuid(),
+  siteId: uuid(),
+  deploymentId: uuid(),
   deploymentVersion: number().int().positive().optional(),
   artifactUrl: string().optional(),
   prefix: string().startsWith("sites/"),
@@ -180,7 +180,7 @@ export function hostedSiteAssetContentError(path: string): string {
 }
 
 export const hostedSiteDownloadFileSchema = hostedSiteFileSchema.extend({
-  downloadUrl: string().url(),
+  downloadUrl: url(),
 });
 
 export const MAX_HOSTED_PREVIEW_BYTES = 5 * 1024 * 1024;
@@ -225,34 +225,34 @@ export const hostedSitePrepareRequestSchema = object({
 
 export const hostedSiteUploadSchema = object({
   path: string(),
-  uploadUrl: string().url(),
+  uploadUrl: url(),
 });
 
 export const hostedSitePrepareResponseSchema = object({
-  siteId: string().uuid(),
+  siteId: uuid(),
   /** Acknowledges the site policy before uploads or publication can start. */
   visibility: hostedSiteVisibilitySchema.optional(),
   /** Acknowledges explicit titles; absent on APIs predating site titles. */
   title: hostedSiteTitleSchema.optional(),
-  deploymentId: string().uuid(),
+  deploymentId: uuid(),
   publicSlug: string(),
   url: artifactUrlSchema,
   deploymentVersion: number().int().positive().optional(),
   artifactUrl: artifactUrlSchema.optional(),
-  aliasUrl: string().url().optional(),
+  aliasUrl: url().optional(),
   uploads: array(hostedSiteUploadSchema),
   /** Acknowledges that this API requires the preview before publication. */
-  preview: object({ uploadUrl: string().url(), sha256: string() }).optional(),
+  preview: object({ uploadUrl: url(), sha256: string() }).optional(),
 });
 
 export const hostedSiteCompleteResponseSchema = object({
-  siteId: string().uuid(),
-  deploymentId: string().uuid(),
+  siteId: uuid(),
+  deploymentId: uuid(),
   publicSlug: string(),
   url: artifactUrlSchema,
   deploymentVersion: number().int().positive().optional(),
   artifactUrl: artifactUrlSchema.optional(),
-  aliasUrl: string().url().optional(),
+  aliasUrl: url().optional(),
   isActive: boolean().optional(),
   activeDeploymentVersion: number().int().positive().optional(),
   status: literal("ready"),
@@ -260,46 +260,46 @@ export const hostedSiteCompleteResponseSchema = object({
 });
 
 export const hostedSiteFilesResponseSchema = object({
-  siteId: string().uuid(),
-  deploymentId: string().uuid(),
+  siteId: uuid(),
+  deploymentId: uuid(),
   publicSlug: hostedSitePublicSlugSchema,
   url: artifactUrlSchema,
   deploymentVersion: number().int().positive().optional(),
   artifactUrl: artifactUrlSchema.optional(),
-  aliasUrl: string().url().optional(),
+  aliasUrl: url().optional(),
   fileCount: number().int().nonnegative(),
   size: number().int().nonnegative(),
   files: array(hostedSiteDownloadFileSchema),
 });
 
 const hostedSiteDeploymentSummarySchema = object({
-  deploymentId: string().uuid(),
+  deploymentId: uuid(),
   deploymentVersion: number().int().positive().nullable(),
   artifactUrl: artifactUrlSchema.nullable(),
   status: zEnum(["uploading", "ready", "failed", "deleted"]),
   isActive: boolean(),
-  createdAt: string().datetime(),
-  readyAt: string().datetime().nullable(),
+  createdAt: iso.datetime(),
+  readyAt: iso.datetime().nullable(),
 });
 
 export const hostedSiteDeploymentsResponseSchema = object({
-  siteId: string().uuid(),
+  siteId: uuid(),
   site: hostedSiteSlugSchema,
   publicSlug: hostedSitePublicSlugSchema,
-  aliasUrl: string().url().nullable(),
-  activeDeploymentId: string().uuid().nullable(),
+  aliasUrl: url().nullable(),
+  activeDeploymentId: uuid().nullable(),
   activeDeploymentVersion: number().int().positive().nullable(),
   deployments: array(hostedSiteDeploymentSummarySchema),
 });
 
 export const hostedSiteDeleteResponseSchema = object({
-  siteId: string().uuid(),
+  siteId: uuid(),
   // The --site value that restores the site when redeployed.
   site: hostedSiteSlugSchema,
   publicSlug: hostedSitePublicSlugSchema,
-  aliasUrl: string().url(),
+  aliasUrl: url(),
   // Every site and version URL that no longer serves the site.
-  offlineUrls: array(string().url()),
+  offlineUrls: array(url()),
 });
 
 const creationRoute = {
@@ -349,7 +349,7 @@ export const hostContract = c.router({
   siteUrlAvailability: {
     method: "GET",
     path: "/api/host/sites/:siteId/url-availability",
-    pathParams: object({ siteId: string().uuid() }),
+    pathParams: object({ siteId: uuid() }),
     query: object({ publicSlug: hostedSiteUrlSlugSchema }),
     headers: authHeadersSchema,
     responses: {
@@ -364,7 +364,7 @@ export const hostContract = c.router({
   updateSiteUrl: {
     method: "PATCH",
     path: "/api/host/sites/:siteId/url",
-    pathParams: object({ siteId: string().uuid() }),
+    pathParams: object({ siteId: uuid() }),
     body: object({
       publicSlug: hostedSiteUrlSlugSchema,
       expectedPublicSlug: hostedSitePublicSlugSchema,
@@ -506,7 +506,7 @@ export const hostContract = c.router({
     path: "/api/host/sites/:siteId/access",
     headers: authHeadersSchema,
     pathParams: object({ siteId: uuid() }),
-    query: object({ origin: string().url() }),
+    query: object({ origin: url() }),
     responses: {
       200: hostedSiteAccessDecisionSchema,
       400: apiErrorSchema,
@@ -534,8 +534,8 @@ export const hostContract = c.router({
     path: "/api/host/delivery/:siteId/:deploymentId",
     headers: authHeadersSchema,
     pathParams: object({
-      siteId: string().uuid().toLowerCase(),
-      deploymentId: string().uuid().toLowerCase(),
+      siteId: uuid().toLowerCase(),
+      deploymentId: uuid().toLowerCase(),
     }),
     query: object({
       alias: hostedSitePublicSlugSchema,
@@ -562,7 +562,7 @@ export const hostContract = c.router({
     method: "POST",
     path: "/api/host/deployments/:deploymentId/complete",
     pathParams: object({
-      deploymentId: string().uuid(),
+      deploymentId: uuid(),
     }),
     headers: authHeadersSchema,
     body: object({}),

@@ -2,6 +2,7 @@ import {
   array,
   discriminatedUnion,
   int,
+  iso,
   literal,
   object,
   string,
@@ -62,8 +63,8 @@ const vncCredentialResponseBase = {
   id: uuid(),
   name: string(),
   revision: revisionSchema,
-  createdAt: string().datetime(),
-  updatedAt: string().datetime(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
   hosts: array(object({ id: uuid(), displayName: string() }).strict()),
 } as const;
 

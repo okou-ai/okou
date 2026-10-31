@@ -1,4 +1,4 @@
-import { array, int, object, string, uuid, enum as zEnum } from "zod";
+import { array, int, iso, object, string, uuid, enum as zEnum } from "zod";
 
 import { vncNetworkHostReferenceSchema } from "../contracts/vnc-transport";
 
@@ -30,8 +30,8 @@ const cloudflareAccessConfigMetadataSchema = object({
   name: string(),
   revision,
   generation: revision,
-  createdAt: string().datetime(),
-  updatedAt: string().datetime(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
 }).strict();
 const sshHostReferenceSchema = object({
   id: uuid(),

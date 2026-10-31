@@ -4,6 +4,7 @@ import {
   literal,
   object,
   string,
+  uuid,
   enum as zEnum,
   never as zNever,
   type infer as zInfer,
@@ -27,7 +28,7 @@ export {
 
 const c = initContract();
 
-const agentIdSchema = string().uuid();
+const agentIdSchema = uuid();
 
 export const userPermissionGrantActionSchema = zEnum(["allow", "deny"]);
 export const userPermissionGrantApplyModeSchema = zEnum(["patch", "replace"]);

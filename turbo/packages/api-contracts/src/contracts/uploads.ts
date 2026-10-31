@@ -8,6 +8,8 @@ import {
   record,
   string,
   union,
+  url,
+  uuid,
   type infer as zInfer,
 } from "zod";
 
@@ -43,14 +45,14 @@ const uploadMetadataSchema = object({
 
 const prepareResponseSchema = uploadMetadataSchema.extend({
   /** Presigned PUT URL — browser uploads the file body here directly. */
-  uploadUrl: string().url(),
+  uploadUrl: url(),
   /** Headers the client must include with the presigned PUT request. */
   uploadHeaders: record(string(), string()),
 });
 
 const multipartUploadPartSchema = object({
   partNumber: number().int().positive(),
-  uploadUrl: string().url(),
+  uploadUrl: url(),
 });
 
 const multipartPrepareResponseSchema = uploadMetadataSchema.extend({
@@ -67,7 +69,7 @@ const prepareResultSchema = union([
 ]);
 
 const multipartUploadIdentitySchema = object({
-  id: string().uuid(),
+  id: uuid(),
   filename: string().min(1).max(255),
   uploadId: string().min(1),
 });
@@ -77,16 +79,16 @@ const multipartCompleteRequestSchema = multipartUploadIdentitySchema.extend({
 });
 
 const multipartResponseSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   url: artifactUrlSchema,
 });
 
 const multipartAbortResponseSchema = object({
-  id: string().uuid(),
+  id: uuid(),
 });
 
 const completeRequestSchema = object({
-  id: string().uuid(),
+  id: uuid(),
   contentType: string().min(1).max(200).optional(),
 });
 

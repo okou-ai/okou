@@ -1,8 +1,8 @@
-import { object, string, type infer as zInfer } from "zod";
+import { object, string, uuid, type infer as zInfer } from "zod";
 
 export const discordDeliveryTargetSchema = object({
-  routeId: string().uuid(),
-  connectionId: string().uuid(),
+  routeId: uuid(),
+  connectionId: uuid(),
   guildId: string().min(1).nullable(),
   discordUserId: string().min(1),
   channelId: string().min(1),

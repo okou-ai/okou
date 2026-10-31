@@ -2,6 +2,7 @@ import {
   array,
   discriminatedUnion,
   int,
+  iso,
   literal,
   object,
   string,
@@ -104,8 +105,8 @@ export const vncConnectionMetadataSchema = object({
   ]).optional(),
   security: vncCredentialSecuritySchema,
   generation: generationSchema,
-  createdAt: string().datetime(),
-  updatedAt: string().datetime(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
 }).strict();
 
 const vncCredentiallessMetadataSchema = vncConnectionMetadataSchema

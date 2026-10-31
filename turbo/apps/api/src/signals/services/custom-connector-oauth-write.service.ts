@@ -8,7 +8,7 @@ import {
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
-import { boolean, object, string } from "zod";
+import { boolean, object, uuid } from "zod";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
@@ -27,7 +27,7 @@ import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 export const customConnectorOAuthStartResultSchema = object({
   contractValid: boolean(),
   accountPresent: boolean(),
-  oauthStateId: string().uuid().nullable(),
+  oauthStateId: uuid().nullable(),
 });
 
 interface CustomOAuthStart {

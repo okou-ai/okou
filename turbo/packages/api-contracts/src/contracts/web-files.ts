@@ -1,4 +1,4 @@
-import { object, string, url } from "zod";
+import { iso, object, string, url } from "zod";
 import { authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { initContract } from "./trpc-contract";
@@ -14,7 +14,7 @@ export const webFilesContract = c.router({
     responses: {
       200: object({
         url: string(),
-        expiresAt: string().datetime(),
+        expiresAt: iso.datetime(),
         /** Attachment response for native downloads, separate from preview caching. */
         downloadUrl: url(),
         /**
