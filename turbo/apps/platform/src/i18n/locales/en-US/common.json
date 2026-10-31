@@ -1769,9 +1769,10 @@
       "outOfCredits": "You're out of credits",
       "proCard": {
         "creditsNow": "credits · Just now",
-        "description": "Additional credits · Advanced features · 3 cloud computers",
+        "description": "Advanced features · 3 cloud computers",
         "priceUnavailable": "See plans for current pricing",
         "title": "About 5 tasks left",
+        "upgradeFromPrice": "Upgrade from {{price}}/month",
         "upgradeNow": "Upgrade now"
       },
       "redirecting": "Redirecting...",

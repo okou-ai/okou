@@ -1797,9 +1797,10 @@
       "outOfCredits": "Se te han acabado los créditos",
       "proCard": {
         "creditsNow": "créditos · Ahora mismo",
-        "description": "Créditos adicionales · Funciones avanzadas · 3 ordenadores en la nube",
+        "description": "Funciones avanzadas · 3 ordenadores en la nube",
         "priceUnavailable": "Consulta los precios actuales de los planes",
         "title": "Quedan unas 5 tareas",
+        "upgradeFromPrice": "Mejorar desde {{price}}/mes",
         "upgradeNow": "Mejorar plan ahora"
       },
       "redirecting": "Redirigiendo...",
