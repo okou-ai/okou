@@ -20,11 +20,6 @@ import {
 } from "zod";
 
 import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
-
-export {
-  MIN_EPOCH_MS_TIMESTAMP,
-  elapsedSinceApiStartMs,
-} from "./api-start-time";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
@@ -44,6 +39,11 @@ import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
 } from "./runner-primitives";
+
+export {
+  MIN_EPOCH_MS_TIMESTAMP,
+  elapsedSinceApiStartMs,
+} from "./api-start-time";
 
 export { BUILTIN_FIREWALL_CATALOG_MAX_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 
