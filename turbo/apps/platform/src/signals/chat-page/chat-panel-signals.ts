@@ -106,7 +106,8 @@ export interface MessageListSignals {
     Promise<RecommendedFollowupSource | null>
   >;
   readonly donePhrase$: Computed<Promise<string>>;
-  readonly loadMoreRenderedChatGroups$: Command<
+  /** Call on every transcript scroll; loads once scrolling settles near the top. */
+  readonly loadEarlierGroupsAfterScroll$: Command<
     Promise<boolean>,
     [AbortSignal]
   >;
@@ -227,7 +228,8 @@ export interface ChatPanelSignals {
   readonly recommendedFollowupSource$: Computed<
     Promise<RecommendedFollowupSource | null>
   >;
-  readonly loadMoreRenderedChatGroups$: Command<
+  /** Call on every transcript scroll; loads once scrolling settles near the top. */
+  readonly loadEarlierGroupsAfterScroll$: Command<
     Promise<boolean>,
     [AbortSignal]
   >;
