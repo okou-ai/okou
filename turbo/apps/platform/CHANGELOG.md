@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1081.1](https://github.com/okou-ai/okou/compare/app-v0.1081.0...app-v0.1081.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **platform:** load earlier chat history after scrolling settles ([#44374](https://github.com/okou-ai/okou/issues/44374)) ([469686e](https://github.com/okou-ai/okou/commit/469686ed85a261a48a7744a388262114a26e1aa3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.2
+    * @okouai/core bumped to 8.805.5
+
 ## [0.1081.0](https://github.com/okou-ai/okou/compare/app-v0.1080.3...app-v0.1081.0) (2026-10-31)
 
 
