@@ -51,6 +51,77 @@ async function use(chat: Chat) {
 }
 
 describe("shared Browser public consumers", () => {
+  it.each([false, true])(
+    "keeps screenshot attribution with out-of-order membership replies and moved=%s",
+    async (moved) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        installBrowserWindowContentCommands(f.provider.native);
+        const a = await f.start();
+        const b = await f.start();
+        const first = await use(a);
+        const sibling = await use(b);
+        const aPage = [...f.provider.native.targets.values()].find((page) => {
+          return page.windowId === first.browser.window?.primaryWindowId;
+        });
+        const bPage = [...f.provider.native.targets.values()].find((page) => {
+          return page.windowId === sibling.browser.window?.primaryWindowId;
+        });
+        if (!aPage || !bPage) {
+          throw new Error("Expected both chats' native pages");
+        }
+        const siblingRead = createDeferredPromise<void>(context.signal);
+        f.provider.native.beforeWindowForTargetReply = async (targetId) => {
+          if (targetId === aPage.targetId && !siblingRead.settled()) {
+            await siblingRead.promise;
+          }
+          if (targetId === bPage.targetId && !siblingRead.settled()) {
+            siblingRead.resolve();
+          }
+        };
+        const contentCommand = f.provider.native.command;
+        const send = context.mocks.s3.send.getMockImplementation();
+        if (!contentCommand || !send) {
+          throw new Error("Expected external CDP and S3 fixtures");
+        }
+        f.provider.native.command = (command) => {
+          if (moved && command.method === "Page.captureScreenshot") {
+            aPage.windowId = bPage.windowId;
+          }
+          return contentCommand(command);
+        };
+        const uploaded: string[] = [];
+        context.mocks.s3.send.mockImplementation((command) => {
+          if (
+            command instanceof PutObjectCommand &&
+            command.input.ContentType === "image/webp"
+          ) {
+            uploaded.push(String(command.input.Body));
+          }
+          return send(command);
+        });
+        await accept(
+          client().close({
+            headers,
+            params: { threadId: a.threadId },
+            body: {},
+          }),
+          [200],
+        );
+        await flushWaitUntilForTest();
+        const preview = await view(a);
+        if (moved) {
+          expect(preview.screenshotUrl).toBeNull();
+          expect(uploaded).toStrictEqual([]);
+        } else {
+          expect(preview.screenshotUrl).not.toBeNull();
+          expect(uploaded).toStrictEqual([`preview:${aPage.targetId}`]);
+        }
+        expect((await view(b)).window).toStrictEqual(sibling.browser.window);
+      });
+    },
+  );
+
   it("authorizes native viewing of an active Browser without a provider live URL", async () => {
     const f = await fixture();
     await f.owned.run(async () => {

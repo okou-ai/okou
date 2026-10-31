@@ -712,6 +712,17 @@ function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
   if (command.method === "Browser.getWindowForTarget") {
     return { windowId: 7 };
   }
+  if (command.method === "Browser.getWindowBounds") {
+    return {
+      bounds: {
+        left: 0,
+        top: 0,
+        width: 800,
+        height: 600,
+        windowState: "normal",
+      },
+    };
+  }
   return {};
 }
 
