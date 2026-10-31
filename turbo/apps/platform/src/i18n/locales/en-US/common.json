@@ -1769,9 +1769,10 @@
       "outOfCredits": "You're out of credits",
       "proCard": {
         "creditsNow": "credits · Just now",
-        "description": "Additional credits · Advanced features · 3 cloud computers",
+        "description": "Advanced features · 3 cloud computers",
         "priceUnavailable": "See plans for current pricing",
         "title": "About 5 tasks left",
+        "upgradeFromPrice": "Upgrade from {{price}}/month",
         "upgradeNow": "Upgrade now"
       },
       "redirecting": "Redirecting...",
@@ -4219,9 +4220,8 @@
       "make": "Welcome to {{brandName}}"
     },
     "make": {
-      "promptDescription": "Tweak it below or run it as-is. {{assistantName}} takes it from here. Your tools stay sandboxed and nothing leaves your workspace.",
       "promptLabel": "Onboarding prompt",
-      "promptTitle": "Try this prompt"
+      "promptTitle": "Make this task your own"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4537,13 +4537,13 @@
             "label": "Website"
           }
         },
-        "title": "Choose a format",
+        "title": "Choose an output format",
         "tooLong": "Shorten your task to choose another format."
       },
       "prompt": {
-        "connectorsDescription": "Connect your tools so Okou can understand your work and tailor how it completes tasks for you. You can also connect later.",
+        "connectorsDescription": "Connect your apps to help Okou understand your work.",
         "connectorsTitle": "Connect your work tools",
-        "intro": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud."
+        "intro": "Connect your apps for better results and choose a format."
       },
       "skills": {
         "copied": "Copied",

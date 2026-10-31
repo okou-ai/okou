@@ -458,95 +458,97 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
       (!(operation.error instanceof NavigationFault) ||
         operation.error.scope === scope));
   return (
-    <>
-      <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
-        <IconButton
-          type="button"
-          className="size-8"
-          aria-label={t(($) => {
-            return $.browserViewer.back;
-          })}
-          disabled={!controls.streaming || !entries?.canGoBack || navigating}
-          onClick={() => {
-            detach(navigate("back", pageSignal), Reason.DomCallback);
-          }}
-        >
-          <ArrowLeft size={16} />
-        </IconButton>
-        <IconButton
-          type="button"
-          className="size-8"
-          aria-label={t(($) => {
-            return $.browserViewer.forward;
-          })}
-          disabled={!controls.streaming || !entries?.canGoForward || navigating}
-          onClick={() => {
-            detach(navigate("forward", pageSignal), Reason.DomCallback);
-          }}
-        >
-          <ArrowRight size={16} />
-        </IconButton>
-        <IconButton
-          type="button"
-          className="size-8"
-          aria-label={t(($) => {
-            return $.browserViewer.reload;
-          })}
-          disabled={!controls.streaming || navigating}
-          onClick={() => {
-            detach(navigate("reload", pageSignal), Reason.DomCallback);
-          }}
-        >
-          <RotateCw size={15} />
-        </IconButton>
-        <Input
-          ref={addressRef}
-          data-browser-address
-          aria-label={t(($) => {
-            return $.browserViewer.address;
-          })}
-          placeholder={t(($) => {
-            return $.browserSession.addressPlaceholder;
-          })}
-          className="h-8 min-w-0 flex-1"
-          value={address}
-          disabled={!controls.streaming || navigating}
-          aria-busy={navigating}
-          onFocus={() => {
-            return focus();
-          }}
-          onBlur={() => {
-            return blur();
-          }}
-          onChange={(event) => {
-            return edit(event.currentTarget.value);
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.nativeEvent.isComposing ||
-              event.nativeEvent.keyCode === 229
-            ) {
-              return;
+    <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
+      <IconButton
+        type="button"
+        className="size-8"
+        aria-label={t(($) => {
+          return $.browserViewer.back;
+        })}
+        disabled={!controls.streaming || !entries?.canGoBack || navigating}
+        onClick={() => {
+          detach(navigate("back", pageSignal), Reason.DomCallback);
+        }}
+      >
+        <ArrowLeft size={16} />
+      </IconButton>
+      <IconButton
+        type="button"
+        className="size-8"
+        aria-label={t(($) => {
+          return $.browserViewer.forward;
+        })}
+        disabled={!controls.streaming || !entries?.canGoForward || navigating}
+        onClick={() => {
+          detach(navigate("forward", pageSignal), Reason.DomCallback);
+        }}
+      >
+        <ArrowRight size={16} />
+      </IconButton>
+      <IconButton
+        type="button"
+        className="size-8"
+        aria-label={t(($) => {
+          return $.browserViewer.reload;
+        })}
+        disabled={!controls.streaming || navigating}
+        onClick={() => {
+          detach(navigate("reload", pageSignal), Reason.DomCallback);
+        }}
+      >
+        <RotateCw size={15} />
+      </IconButton>
+      <Input
+        ref={addressRef}
+        data-browser-address
+        aria-label={t(($) => {
+          return $.browserViewer.address;
+        })}
+        placeholder={t(($) => {
+          return $.browserSession.addressPlaceholder;
+        })}
+        className="h-8 min-w-0 flex-1"
+        value={address}
+        disabled={!controls.streaming || navigating}
+        aria-busy={navigating}
+        onFocus={() => {
+          return focus();
+        }}
+        onBlur={() => {
+          return blur();
+        }}
+        onChange={(event) => {
+          return edit(event.currentTarget.value);
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229
+          ) {
+            return;
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (!navigating) {
+              detach(
+                navigate("submit-address", pageSignal),
+                Reason.DomCallback,
+              );
             }
-            if (event.key === "Enter") {
-              event.preventDefault();
-              if (!navigating) {
-                detach(
-                  navigate("submit-address", pageSignal),
-                  Reason.DomCallback,
-                );
-              }
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              reset();
-              event.currentTarget.select();
-            }
-          }}
-        />
-        <BrowserSettings signals={signals} />
-      </div>
-      <BrowserOperationError failed={failed} />
-    </>
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            reset();
+            event.currentTarget.select();
+          }
+        }}
+      />
+      <BrowserSettings signals={signals} />
+      {/* Overlays keep the canvas box stable; layout changes are commanded. */}
+      <BrowserOperationError
+        failed={failed}
+        className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
+      />
+    </div>
   );
 }
 
@@ -989,23 +991,24 @@ export function Browser({
         }}
       />
       <BrowserNavigation signals={signals} />
-      <BrowserOperationError
-        failed={[selectOperation, createOperation].some((operation) => {
-          return (
-            operation.state === "hasError" &&
-            isBrowserOperationFailure(
-              operation.error,
-              imageRecovery !== null || controls.streaming,
-            )
-          );
-        })}
-      />
       <TabsContent
         keepMounted
         value={selectedTabId}
         tabIndex={-1}
         className="relative min-h-0 flex-1"
       >
+        <BrowserOperationError
+          failed={[selectOperation, createOperation].some((operation) => {
+            return (
+              operation.state === "hasError" &&
+              isBrowserOperationFailure(
+                operation.error,
+                imageRecovery !== null || controls.streaming,
+              )
+            );
+          })}
+          className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
+        />
         <div
           ref={surfaceRef}
           data-browser-surface

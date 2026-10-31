@@ -1,4 +1,3 @@
-import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Button, Toggle, ToggleGroup } from "@okouai/ui";
 import {
@@ -11,14 +10,8 @@ import {
 } from "lucide-react";
 import {
   ONBOARDING_OUTPUT_FORMATS,
-  STARTING_PROMPT_MAX_LENGTH,
-  withStartingPromptOutput,
   type OnboardingOutputFormat,
 } from "../../signals/onboarding/onboarding-output-format.ts";
-import {
-  selectStartingPromptOutput$,
-  sourcesFirstDraft$,
-} from "../../signals/onboarding/onboarding-sources-first-state.ts";
 
 const OUTPUT_ICONS = Object.freeze({
   image: Image,
@@ -30,12 +23,17 @@ const OUTPUT_ICONS = Object.freeze({
 });
 
 export function OnboardingOutputFormats({
-  text,
-  promptKey,
+  output,
+  onSelect,
+  isTooLong,
   disabled,
 }: {
-  readonly text: string;
-  readonly promptKey: string;
+  readonly output: OnboardingOutputFormat | null;
+  readonly onSelect: (
+    format: OnboardingOutputFormat | null,
+    instruction: string,
+  ) => void;
+  readonly isTooLong?: (instruction: string) => boolean;
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
@@ -45,15 +43,11 @@ export function OnboardingOutputFormats({
     },
     { returnObjects: true },
   );
-  const { startingPromptOutput: output } = useGet(sourcesFirstDraft$);
-  const selectOutput = useSet(selectStartingPromptOutput$);
   const options = ONBOARDING_OUTPUT_FORMATS.map((format) => {
-    const next = withStartingPromptOutput(
-      text,
-      output,
-      copy.options[format].instruction,
-    );
-    return { format, tooLong: next.text.length > STARTING_PROMPT_MAX_LENGTH };
+    return {
+      format,
+      tooLong: isTooLong?.(copy.options[format].instruction) ?? false,
+    };
   });
 
   return (
@@ -76,7 +70,7 @@ export function OnboardingOutputFormats({
             className="shrink-0 max-sm:min-h-11"
             disabled={disabled}
             onClick={() => {
-              selectOutput(text, promptKey, null, "");
+              onSelect(null, "");
             }}
           >
             {copy.clear}
@@ -85,18 +79,13 @@ export function OnboardingOutputFormats({
       </div>
       <ToggleGroup<OnboardingOutputFormat>
         aria-labelledby="onboarding-output-formats-title"
-        value={output ? [output.format] : []}
+        value={output ? [output] : []}
         disabled={disabled}
         className="grid grid-cols-1 items-stretch gap-2 @min-[18rem]:grid-cols-2"
         onValueChange={(values) => {
           const format = values[0];
           if (format) {
-            selectOutput(
-              text,
-              promptKey,
-              format,
-              copy.options[format].instruction,
-            );
+            onSelect(format, copy.options[format].instruction);
           }
         }}
       >

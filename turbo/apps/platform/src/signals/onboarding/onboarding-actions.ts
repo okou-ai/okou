@@ -4,6 +4,7 @@ import { orgContract } from "@okouai/api-contracts/client/org-routes";
 import { runModelsMainContract } from "@okouai/api-contracts/client/run-models";
 import { userModelPreferenceContract } from "@okouai/api-contracts/client/user-model-preference";
 import { command, computed } from "ccstate";
+import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { resolvePlatformEnvironment } from "../../lib/platform-host.ts";
 import { reloadAgents$ } from "../agent.ts";
@@ -132,6 +133,7 @@ export const runOnboardingRequest$ = command(
     { get, set },
     request: string,
     template: string | null,
+    outputSuffix: string,
     signal: AbortSignal,
   ): Promise<void> => {
     const searchParams = get(searchParams$);
@@ -141,7 +143,7 @@ export const runOnboardingRequest$ = command(
       signal,
     );
     const handoffParams = promptHandoffParams(searchParams);
-    handoffParams.set("prompt", request);
+    handoffParams.set("prompt", request + outputSuffix);
     if (template) {
       handoffParams.set("template", template);
     } else {
@@ -155,14 +157,22 @@ export const runOnboardingRequest$ = command(
 );
 
 /**
- * Runs the prompt a visitor brought, as edited on the handoff step, with the
- * template its link names. Completion resets the draft, so the prompt is read
- * before it.
+ * Combines the edited task and selected format only at submission. Capture
+ * both before completion so the editable draft stays intact during handoff.
  */
 export const runPromptOnboarding$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const prompt = get(onboardingDraft$).prompt;
+    const { prompt, output } = get(onboardingDraft$);
+    const copy = i18n.t(
+      ($) => {
+        return $.onboarding.sourcesFirst.outputFormats;
+      },
+      { returnObjects: true },
+    );
+    const outputSuffix = output
+      ? `\n\n${copy.options[output].instruction}`
+      : "";
     const template = get(searchParams$).get("template")?.trim() || null;
-    await set(runOnboardingRequest$, prompt, template, signal);
+    await set(runOnboardingRequest$, prompt, template, outputSuffix, signal);
   },
 );

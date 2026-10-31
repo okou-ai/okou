@@ -1765,9 +1765,10 @@
       "outOfCredits": "Kredit Anda habis",
       "proCard": {
         "creditsNow": "kredit · Sekarang juga",
-        "description": "Kredit tambahan · Fitur lanjutan · 3 komputer cloud",
+        "description": "Fitur lanjutan · 3 komputer cloud",
         "priceUnavailable": "Lihat paket untuk harga terbaru",
         "title": "Tersisa sekitar 5 tugas",
+        "upgradeFromPrice": "Upgrade mulai {{price}}/bulan",
         "upgradeNow": "Upgrade sekarang"
       },
       "redirecting": "Mengarahkan...",
@@ -4206,9 +4207,8 @@
       "make": "Selamat datang di {{brandName}}"
     },
     "make": {
-      "promptDescription": "Sesuaikan di bawah atau jalankan apa adanya. {{assistantName}} akan menanganinya dari sini. Alat Anda tetap dalam sandbox dan tidak ada yang keluar dari ruang kerja Anda.",
       "promptLabel": "Prompt onboarding",
-      "promptTitle": "Coba prompt ini"
+      "promptTitle": "Sesuaikan tugas ini"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4524,13 +4524,13 @@
             "label": "Situs web"
           }
         },
-        "title": "Pilih format",
+        "title": "Pilih format hasil",
         "tooLong": "Persingkat tugas untuk memilih format lain."
       },
       "prompt": {
-        "connectorsDescription": "Hubungkan alat kerja Anda agar Okou memahami konteks pekerjaan dan menyelesaikan tugas sesuai kebutuhan Anda. Anda juga bisa menghubungkannya nanti.",
+        "connectorsDescription": "Hubungkan aplikasi Anda agar Okou lebih memahami pekerjaan Anda.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
-        "intro": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud."
+        "intro": "Hubungkan aplikasi Anda untuk hasil yang lebih baik dan pilih format."
       },
       "skills": {
         "copied": "Tersalin",

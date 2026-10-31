@@ -20,7 +20,8 @@ import { runOnboardingRequest$ } from "../../signals/onboarding/onboarding-actio
 import { onboardingRecommendation$ } from "../../signals/onboarding/onboarding-recommendation.ts";
 import {
   editStartingPrompt$,
-  setStartingPromptInput$,
+  selectStartingPromptOutput$,
+  sourcesFirstDraft$,
   type SourcesFirstDraft,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -74,7 +75,8 @@ function StartingPromptPanel({
 }) {
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
-  const setPromptInput = useSet(setStartingPromptInput$);
+  const { startingPromptOutput: output } = useGet(sourcesFirstDraft$);
+  const selectOutput = useSet(selectStartingPromptOutput$);
   return (
     <div
       className={cn(
@@ -118,12 +120,13 @@ function StartingPromptPanel({
           </label>
           <Textarea
             id="onboarding-starting-prompt"
-            ref={setPromptInput}
             className={cn(
               "mt-3 field-sizing-content min-h-[120px] max-h-60 max-sm:min-h-48 max-sm:resize-none max-sm:text-base",
               ONBOARDING_TEXTAREA_CLASS,
             )}
-            maxLength={STARTING_PROMPT_MAX_LENGTH}
+            maxLength={
+              STARTING_PROMPT_MAX_LENGTH - (output?.suffix.length ?? 0)
+            }
             spellCheck={false}
             value={text}
             onChange={(event) => {
@@ -131,8 +134,16 @@ function StartingPromptPanel({
             }}
           />
           <OnboardingOutputFormats
-            text={text}
-            promptKey={promptKey}
+            output={output?.format ?? null}
+            onSelect={(format, instruction) => {
+              selectOutput(text, promptKey, format, instruction);
+            }}
+            isTooLong={(instruction) => {
+              return (
+                text.length + 2 + instruction.length >
+                STARTING_PROMPT_MAX_LENGTH
+              );
+            }}
             disabled={busy}
           />
         </>
@@ -251,7 +262,15 @@ export function OnboardingReadyPage() {
         captureStartClicked(request.length);
         // Starting it completes onboarding first: an owner completes the
         // workspace's onboarding; a member completes only their own.
-        detach(runRequest(request, null, pageSignal), Reason.DomCallback);
+        detach(
+          runRequest(
+            request,
+            null,
+            flow.draft.startingPromptOutput?.suffix ?? "",
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       primaryDisabled={isLoading || text.trim().length === 0}
       primaryBusy={runLoadable.state === "loading"}
@@ -275,7 +294,7 @@ export function OnboardingReadyPage() {
           promptKey={promptKey}
           busy={runLoadable.state === "loading"}
           onChange={(value) => {
-            editPrompt(text, value, promptKey);
+            editPrompt(value, promptKey);
             capturePromptEdited(value.length);
           }}
         />

@@ -1,8 +1,10 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { delay } from "signal-timers";
+import { throttleCommand } from "../../command-scheduling.ts";
 import {
   createDeferredPromise,
+  detach,
   isAbortError,
+  Reason,
   resetSignal,
   type DeferredPromise,
 } from "../../utils.ts";
@@ -18,6 +20,7 @@ import {
   transitionDisplay,
   type DisplayEvent,
   type DisplayIntent,
+  type DisplayPolicy,
   type DisplayStage,
 } from "./policy.ts";
 import {
@@ -67,7 +70,7 @@ export interface DisplaySync {
     Promise<DisplayModeResult>,
     [WindowSizeSync, AbortSignal]
   >;
-  readonly start$: Command<Promise<void>, [AbortSignal]>;
+  readonly start$: Command<void, [AbortSignal]>;
   readonly setTarget$: Command<void, [DisplayTarget | null]>;
   readonly setMode$: Command<void, [WindowSizeSync]>;
   readonly measure$: Command<void, [DisplaySize | null]>;
@@ -81,25 +84,26 @@ interface Selection {
   readonly target: DisplayTarget;
 }
 
-/** Native owner-abort event, not a cached UI operation or stored signal. */
-interface Owner {
-  readonly ended: DeferredPromise<never>;
-}
-
+/** A caller-awaited request settles when its own intent is published or retired. */
 interface ManualRequest {
   readonly selection: Selection;
   readonly size: DisplaySize;
   readonly revision: number;
+  readonly done: DeferredPromise<void>;
 }
 
-type Worker =
-  | { readonly kind: "idle" }
-  | { readonly kind: "scheduled"; readonly selection: Selection }
-  | {
-      readonly kind: "executing";
-      readonly selection: Selection;
-      readonly intent: DisplayIntent;
-    };
+interface ModeRequest {
+  readonly selection: Selection;
+  readonly revision: number;
+  readonly mode: WindowSizeSync;
+  readonly done: DeferredPromise<DisplayCompletion>;
+}
+
+/** The native write currently in flight, kept so cleanup can await its end. */
+interface Execution {
+  readonly intent: DisplayIntent;
+  readonly operation: Promise<unknown>;
+}
 
 /** One retained native outcome, not a copied request-error/notification model. */
 interface DisplayReceipt extends DisplayExecutionOutcome {
@@ -121,29 +125,38 @@ function sameSize(left: DisplaySize, right: DisplaySize): boolean {
   );
 }
 
+function modeRequestCurrent(
+  request: ModeRequest,
+  selection: Selection | null,
+  policy: DisplayPolicy,
+): boolean {
+  return (
+    selection === request.selection &&
+    request.selection.target.current() &&
+    policy.revision === request.revision &&
+    policy.mode === request.mode &&
+    !policy.suspended &&
+    !!policy.local &&
+    policy.execution.kind !== "closed"
+  );
+}
+
 function createSyncState() {
   const policy$ = state(createDisplayPolicy());
   const selection$ = state<Selection | null>(null);
-  const worker$ = state<Worker>({ kind: "idle" });
-  const started$ = state(-Infinity);
-  const owner$ = state<Owner | null>(null);
+  const execution$ = state<Execution | null>(null);
   const manual$ = state<ManualRequest | null>(null);
+  const modeRequest$ = state<ModeRequest | null>(null);
   const receipt$ = state<DisplayReceipt | null>(null);
-  // Deferreds adapt policy notifications, not operation/loading Promise slots.
-  const waiters$ = state<ReadonlySet<DeferredPromise<void>>>(new Set());
-  const resetOwner$ = resetSignal();
   const resetManual$ = resetSignal();
   const resetWork$ = resetSignal();
   return {
     policy$,
     selection$,
-    worker$,
-    started$,
-    owner$,
+    execution$,
     manual$,
+    modeRequest$,
     receipt$,
-    waiters$,
-    resetOwner$,
     resetManual$,
     resetWork$,
   };
@@ -155,7 +168,7 @@ type SyncContext = ReturnType<typeof createSyncState> & {
 };
 
 function createSyncSelectors(context: SyncContext) {
-  const { selection$, client, host, policy$, worker$, receipt$ } = context;
+  const { selection$, client, host, policy$, receipt$ } = context;
   // Selection identity fences old replies even when the same target is reselected.
   const transaction$ = computed((get) => {
     const selection = get(selection$);
@@ -178,10 +191,7 @@ function createSyncSelectors(context: SyncContext) {
     const selection = get(selection$);
     return {
       ready: !policy.suspended && !!policy.local && !!selection,
-      pending:
-        !!activeDisplayIntent(policy) ||
-        (get(worker$).kind === "scheduled" && !!policy.pending) ||
-        canBeginDisplay(policy),
+      pending: !!activeDisplayIntent(policy) || canBeginDisplay(policy),
       pointerBlocked: !!selection && !get(selection.target.geometry.available$),
     };
   });
@@ -204,12 +214,34 @@ function createSyncSelectors(context: SyncContext) {
 }
 
 function createSyncNotifications(context: SyncContext) {
-  const { waiters$, policy$, resetManual$, worker$, resetWork$, manual$ } =
-    context;
-  const wake$ = command(({ get }) => {
-    for (const waiter of get(waiters$)) {
-      if (!waiter.settled()) {
-        waiter.resolve();
+  const {
+    policy$,
+    selection$,
+    manual$,
+    modeRequest$,
+    execution$,
+    resetManual$,
+    resetWork$,
+  } = context;
+  // A transition that invalidates a caller-awaited request rejects it there.
+  const retireRequests$ = command(({ get, set }) => {
+    const policy = get(policy$);
+    const selection = get(selection$);
+    const manual = get(manual$);
+    if (
+      manual &&
+      !manual.done.settled() &&
+      (selection !== manual.selection ||
+        !manual.selection.target.current() ||
+        policy.execution.kind === "closed")
+    ) {
+      manual.done.reject(cancelled());
+    }
+    const mode = get(modeRequest$);
+    if (mode && !modeRequestCurrent(mode, selection, policy)) {
+      set(modeRequest$, null);
+      if (!mode.done.settled()) {
+        mode.done.reject(cancelled());
       }
     }
   });
@@ -220,162 +252,28 @@ function createSyncNotifications(context: SyncContext) {
       return false;
     }
     set(policy$, next);
-    set(wake$);
+    set(retireRequests$);
     return true;
   });
-
-  const waitForChange$ = command(
-    async (
-      { get, set },
-      owner: Owner | null,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      const event = createDeferredPromise<void>(signal);
-      set(waiters$, new Set([...get(waiters$), event]));
-      const [result] = await Promise.allSettled([
-        owner
-          ? Promise.race([event.promise, owner.ended.promise])
-          : event.promise,
-      ]);
-      if (signal.aborted) {
-        const remaining = new Set(get(waiters$));
-        remaining.delete(event);
-        set(waiters$, remaining);
-        signal.throwIfAborted();
-      }
-      const remaining = new Set(get(waiters$));
-      remaining.delete(event);
-      set(waiters$, remaining);
-      if (!event.settled()) {
-        event.resolve();
-      }
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-    },
-  );
-
   const cancelManual$ = command(({ get, set }) => {
+    // Retiring the manual lifetime rejects its request completion.
     set(resetManual$);
-    const worker = get(worker$);
-    if (worker.kind === "executing" && worker.intent.source === "manual") {
+    if (get(execution$)?.intent.source === "manual") {
       set(resetWork$);
     }
     set(manual$, null);
+    const policy = get(policy$);
     if (
-      get(policy$).pending?.source === "manual" ||
-      activeDisplayIntent(get(policy$))?.source === "manual"
+      policy.pending?.source === "manual" ||
+      activeDisplayIntent(policy)?.source === "manual"
     ) {
       set(dispatch$, { type: "cancel-manual" });
     }
-    set(wake$);
   });
-  return { wake$, dispatch$, waitForChange$, cancelManual$ };
+  return { dispatch$, cancelManual$ };
 }
 
 type SyncCommands = SyncContext & ReturnType<typeof createSyncNotifications>;
-
-function createSyncDomainCommands(context: SyncCommands) {
-  const {
-    selection$,
-    cancelManual$,
-    resetWork$,
-    dispatch$,
-    wake$,
-    policy$,
-    resetOwner$,
-    receipt$,
-  } = context;
-  const setTarget$ = command(({ get, set }, target: DisplayTarget | null) => {
-    const previous = get(selection$);
-    if (previous?.target === target || (!previous && !target)) {
-      return;
-    }
-    set(cancelManual$);
-    set(resetWork$);
-    if (previous) {
-      set(previous.target.geometry.suspendPresentation$);
-      set(previous.target.geometry.invalidate$);
-    }
-    set(receipt$, null);
-    set(selection$, target ? { target } : null);
-    if (target) {
-      set(target.geometry.resumePresentation$);
-    }
-    set(dispatch$, { type: "select", owner: target });
-    set(wake$);
-  });
-
-  const applyMode$ = command(
-    ({ get, set }, mode: WindowSizeSync, type: "mode" | "request-mode") => {
-      if (get(policy$).mode !== mode) {
-        set(cancelManual$);
-        set(dispatch$, { type, mode });
-      }
-    },
-  );
-  const setMode$ = command(({ set }, mode: WindowSizeSync) => {
-    set(applyMode$, mode, "mode");
-  });
-
-  const measure$ = command(({ get, set }, size: DisplaySize | null) => {
-    const previous = get(policy$);
-    const next = transitionDisplay(previous, { type: "measure", size });
-    if (next === previous) {
-      return;
-    }
-    set(cancelManual$);
-    set(dispatch$, { type: "measure", size });
-    if (!get(policy$).local) {
-      set(resetWork$);
-      const selection = get(selection$);
-      if (selection) {
-        set(selection.target.geometry.suspendPresentation$);
-      }
-    } else if (!get(policy$).suspended) {
-      const selection = get(selection$);
-      if (selection) {
-        set(selection.target.geometry.resumePresentation$);
-      }
-    }
-  });
-
-  const setSuspended$ = command(({ get, set }, value: boolean) => {
-    if (get(policy$).suspended === value) {
-      return;
-    }
-    if (value) {
-      set(cancelManual$);
-      set(resetWork$);
-    }
-    const selection = get(selection$);
-    if (selection) {
-      if (value) {
-        set(selection.target.geometry.suspendPresentation$);
-      } else if (get(policy$).local) {
-        set(selection.target.geometry.resumePresentation$);
-      }
-    }
-    set(dispatch$, { type: "suspend", value });
-  });
-
-  const close$ = command(({ get, set }) => {
-    set(cancelManual$);
-    set(resetOwner$);
-    set(resetWork$);
-    const selection = get(selection$);
-    if (selection) {
-      set(selection.target.geometry.suspendPresentation$);
-      set(selection.target.geometry.invalidate$);
-    }
-    set(selection$, null);
-    set(receipt$, null);
-    set(dispatch$, { type: "close" });
-    set(wake$);
-  });
-  return { setTarget$, setMode$, applyMode$, measure$, setSuspended$, close$ };
-}
 
 function createSyncExecutionPolicy(context: SyncCommands) {
   const { policy$, manual$, selection$, dispatch$ } = context;
@@ -443,27 +341,80 @@ function createSyncPublication(context: SyncCommands) {
       intent: DisplayIntent,
       result: DisplayResult,
       completed$: Computed<DisplayCompletion | null>,
-    ) => {
+    ): DisplayReceipt | null => {
       if (result.kind === "deferred") {
-        return;
+        return null;
       }
-      set(receipt$, {
+      const receipt: DisplayReceipt = {
         selection,
         target: selection.target,
         intent,
         result,
         completion: result.kind === "completed" ? get(completed$) : null,
-      });
+      };
+      set(receipt$, receipt);
       if (host.settled$) {
         set(host.settled$);
       }
+      return receipt;
     },
   );
   return { publishResult$ };
 }
 
+/** Only the published receipt of a request's own intent settles that request. */
+function createRequestSettlement(context: SyncCommands & PresentationProof) {
+  const { manual$, modeRequest$, matchPresentation$ } = context;
+  const settleRequests$ = command(({ get, set }, receipt: DisplayReceipt) => {
+    const manual = get(manual$);
+    if (
+      manual &&
+      !manual.done.settled() &&
+      receipt.selection === manual.selection &&
+      receipt.intent.source === "manual" &&
+      receipt.intent.revision === manual.revision
+    ) {
+      if (receipt.result.kind === "failed") {
+        manual.done.reject(receipt.result.error);
+      } else {
+        const completion = set(matchPresentation$, receipt);
+        if (
+          completion?.decision.kind === "fit" &&
+          sameSize(completion.decision.size, manual.size)
+        ) {
+          manual.done.resolve();
+        } else {
+          manual.done.reject(cancelled());
+        }
+      }
+    }
+    const mode = get(modeRequest$);
+    if (
+      mode &&
+      !mode.done.settled() &&
+      receipt.selection === mode.selection &&
+      receipt.intent.source === "mode" &&
+      receipt.intent.revision === mode.revision &&
+      receipt.intent.mode === mode.mode
+    ) {
+      if (receipt.result.kind === "failed") {
+        mode.done.reject(receipt.result.error);
+      } else {
+        const completion = set(matchPresentation$, receipt);
+        if (completion) {
+          mode.done.resolve(completion);
+        } else {
+          mode.done.reject(cancelled());
+        }
+      }
+    }
+  });
+  return { settleRequests$ };
+}
+
 function createSyncWorker(
   context: SyncCommands &
+    ReturnType<typeof createRequestSettlement> &
     ReturnType<typeof createSyncSelectors> &
     ReturnType<typeof createSyncExecutionPolicy> &
     ReturnType<typeof createSyncPublication>,
@@ -475,10 +426,9 @@ function createSyncWorker(
     dispatch$,
     executionPolicy$,
     resetWork$,
-    worker$,
-    started$,
-    wake$,
+    execution$,
     publishResult$,
+    settleRequests$,
   } = context;
   const run$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
@@ -500,23 +450,25 @@ function createSyncWorker(
         return;
       }
       const workSignal = set(resetWork$, signal);
-      set(worker$, { kind: "executing", selection, intent });
-      set(started$, performance.now());
-      set(wake$);
-      const [operation] = await Promise.allSettled([
-        set(transaction.execute$, executionPolicy, workSignal),
-      ]);
+      const operation = set(transaction.execute$, executionPolicy, workSignal);
+      const execution: Execution = { intent, operation };
+      set(execution$, execution);
+      const [settled] = await Promise.allSettled([operation]);
       if (signal.aborted) {
+        if (get(execution$) === execution) {
+          set(execution$, null);
+        }
         set(dispatch$, {
           type: "finished",
           intent,
           outcome: { kind: "retired" },
         });
-        set(worker$, { kind: "idle" });
-        set(wake$);
         signal.throwIfAborted();
       }
-      const result = settledDisplayResult(operation, workSignal.aborted);
+      if (get(execution$) === execution) {
+        set(execution$, null);
+      }
+      const result = settledDisplayResult(settled, workSignal.aborted);
       const accepted = set(dispatch$, {
         type: "finished",
         intent,
@@ -528,111 +480,184 @@ function createSyncWorker(
         !signal.aborted &&
         !workSignal.aborted;
       if (current && accepted) {
-        set(publishResult$, selection, intent, result, transaction.completed$);
+        const receipt = set(
+          publishResult$,
+          selection,
+          intent,
+          result,
+          transaction.completed$,
+        );
+        if (receipt) {
+          set(settleRequests$, receipt);
+        }
       }
-      set(worker$, { kind: "idle" });
-      set(wake$);
       signal.throwIfAborted();
     },
   );
   return { run$ };
 }
 
+/** Automatic work belongs to this graph's CDP client, the resource it writes to. */
 function createSyncScheduler(
   context: SyncCommands & ReturnType<typeof createSyncWorker>,
 ) {
-  const {
-    started$,
-    selection$,
-    policy$,
-    worker$,
-    wake$,
-    run$,
-    waitForChange$,
-  } = context;
-  const waitForSchedule$ = command(
-    async ({ get }, signal: AbortSignal): Promise<void> => {
-      await delay(
-        Math.max(
-          0,
-          minimumSyncIntervalMs - (performance.now() - get(started$)),
-        ),
-        { signal },
-      );
+  const { client, selection$, policy$, run$ } = context;
+  // Idle requests start immediately; bursts keep 150ms between native writes.
+  const throttledRun$ = throttleCommand(run$, minimumSyncIntervalMs);
+  const schedulable$ = command(({ get }): boolean => {
+    const selection = get(selection$);
+    return (
+      !client.signal.aborted &&
+      !!selection?.target.current() &&
+      canBeginDisplay(get(policy$))
+    );
+  });
+  const runScheduled$ = command(
+    async ({ set }, signal: AbortSignal): Promise<void> => {
+      await set(throttledRun$, signal);
       signal.throwIfAborted();
+      // A deferred outcome keeps its intent pending without a new trigger.
+      set(schedule$);
     },
   );
-
-  const daemon$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      // This loop waits for explicit domain events or a single admitted throttle
-      // deadline; it does not poll. Only this owner daemon starts automatic work.
-      while (!signal.aborted) {
-        const selection = get(selection$);
-        if (selection?.target.current() && canBeginDisplay(get(policy$))) {
-          set(worker$, { kind: "scheduled", selection });
-          set(wake$);
-          await set(waitForSchedule$, signal);
-          set(worker$, { kind: "idle" });
-          await set(run$, signal);
-        } else {
-          await set(waitForChange$, null, signal);
-        }
-      }
-      signal.throwIfAborted();
-    },
-  );
-  return { daemon$ };
+  const schedule$: Command<void, []> = command(({ set }) => {
+    if (!set(schedulable$)) {
+      return;
+    }
+    detach(
+      set(runScheduled$, client.signal),
+      Reason.Daemon,
+      "browser display synchronization",
+    );
+  });
+  return { schedule$ };
 }
 
-function createSyncOwner(
-  context: SyncCommands &
-    ReturnType<typeof createSyncDomainCommands> &
-    ReturnType<typeof createSyncScheduler>,
-) {
-  const { owner$, close$, worker$, wake$, policy$, resetOwner$, daemon$ } =
-    context;
-  const finishOwner$ = command(({ get, set }, owner: Owner) => {
-    if (get(owner$) === owner) {
-      set(close$);
-      set(owner$, null);
-      set(worker$, { kind: "idle" });
-      set(wake$);
+type SyncScheduling = SyncCommands & ReturnType<typeof createSyncScheduler>;
+
+function createSyncDomainCommands(context: SyncScheduling) {
+  const {
+    selection$,
+    cancelManual$,
+    resetWork$,
+    dispatch$,
+    policy$,
+    receipt$,
+    schedule$,
+  } = context;
+  const setTarget$ = command(({ get, set }, target: DisplayTarget | null) => {
+    const previous = get(selection$);
+    if (previous?.target === target || (!previous && !target)) {
+      return;
     }
+    set(cancelManual$);
+    set(resetWork$);
+    if (previous) {
+      set(previous.target.geometry.suspendPresentation$);
+      set(previous.target.geometry.invalidate$);
+    }
+    set(receipt$, null);
+    set(selection$, target ? { target } : null);
+    if (target) {
+      set(target.geometry.resumePresentation$);
+    }
+    set(dispatch$, { type: "select", owner: target });
+    set(schedule$);
   });
 
-  const start$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      signal.throwIfAborted();
-      if (get(policy$).execution.kind === "closed") {
-        throw cancelled();
-      }
-      if (get(owner$)) {
-        throw new Error(
-          "The browser display policy owner is already installed.",
-        );
-      }
-      const lifetime = set(resetOwner$, signal);
-      const owner: Owner = { ended: createDeferredPromise<never>(lifetime) };
-      set(owner$, owner);
-      set(wake$);
-      const [result] = await Promise.allSettled([set(daemon$, lifetime)]);
-      if (signal.aborted) {
-        set(finishOwner$, owner);
-        signal.throwIfAborted();
-      }
-      const stopped = lifetime.aborted;
-      const reason = lifetime.reason;
-      set(finishOwner$, owner);
-      if (stopped) {
-        throw reason;
-      }
-      if (result.status === "rejected") {
-        throw result.reason;
+  const applyMode$ = command(
+    ({ get, set }, mode: WindowSizeSync, type: "mode" | "request-mode") => {
+      if (get(policy$).mode !== mode) {
+        set(cancelManual$);
+        set(dispatch$, { type, mode });
       }
     },
   );
-  return { start$ };
+  const setMode$ = command(({ set }, mode: WindowSizeSync) => {
+    set(applyMode$, mode, "mode");
+    set(schedule$);
+  });
+
+  const measure$ = command(({ get, set }, size: DisplaySize | null) => {
+    const previous = get(policy$);
+    const next = transitionDisplay(previous, { type: "measure", size });
+    if (next === previous) {
+      return;
+    }
+    set(cancelManual$);
+    set(dispatch$, { type: "measure", size });
+    if (!get(policy$).local) {
+      set(resetWork$);
+      const selection = get(selection$);
+      if (selection) {
+        set(selection.target.geometry.suspendPresentation$);
+      }
+    } else if (!get(policy$).suspended) {
+      const selection = get(selection$);
+      if (selection) {
+        set(selection.target.geometry.resumePresentation$);
+      }
+    }
+    set(schedule$);
+  });
+
+  const setSuspended$ = command(({ get, set }, value: boolean) => {
+    if (get(policy$).suspended === value) {
+      return;
+    }
+    if (value) {
+      set(cancelManual$);
+      set(resetWork$);
+    }
+    const selection = get(selection$);
+    if (selection) {
+      if (value) {
+        set(selection.target.geometry.suspendPresentation$);
+      } else if (get(policy$).local) {
+        set(selection.target.geometry.resumePresentation$);
+      }
+    }
+    set(dispatch$, { type: "suspend", value });
+    set(schedule$);
+  });
+
+  const close$ = command(({ get, set }) => {
+    set(cancelManual$);
+    set(resetWork$);
+    const selection = get(selection$);
+    if (selection) {
+      set(selection.target.geometry.suspendPresentation$);
+      set(selection.target.geometry.invalidate$);
+    }
+    set(selection$, null);
+    set(receipt$, null);
+    set(dispatch$, { type: "close" });
+  });
+
+  // The client lifetime retires the policy; there is no owner loop to stop.
+  const start$ = command(({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    if (get(policy$).execution.kind === "closed") {
+      throw cancelled();
+    }
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(close$);
+      },
+      { once: true },
+    );
+    set(schedule$);
+  });
+  return {
+    setTarget$,
+    setMode$,
+    applyMode$,
+    measure$,
+    setSuspended$,
+    close$,
+    start$,
+  };
 }
 
 function createPresentationProof(context: SyncCommands) {
@@ -662,81 +687,24 @@ function createPresentationProof(context: SyncCommands) {
 }
 type PresentationProof = ReturnType<typeof createPresentationProof>;
 
-function createManualCompletionWait(context: SyncCommands & PresentationProof) {
+function createManualSync(context: SyncScheduling) {
   const {
-    manual$,
-    owner$,
-    selection$,
-    receipt$,
-    waitForChange$,
-    matchPresentation$,
-  } = context;
-  const waitForManual$ = command(
-    async (
-      { get, set },
-      request: ManualRequest,
-      owner: Owner,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      while (!signal.aborted) {
-        if (
-          get(manual$) !== request ||
-          get(owner$) !== owner ||
-          owner.ended.settled() ||
-          get(selection$) !== request.selection ||
-          !request.selection.target.current()
-        ) {
-          throw cancelled();
-        }
-        const receipt = get(receipt$);
-        if (
-          receipt?.selection === request.selection &&
-          receipt.intent.source === "manual" &&
-          receipt.intent.revision === request.revision
-        ) {
-          if (receipt.result.kind === "failed") {
-            throw receipt.result.error;
-          }
-          const completion = set(matchPresentation$, receipt);
-          if (
-            completion?.decision.kind === "fit" &&
-            sameSize(completion.decision.size, request.size)
-          ) {
-            return;
-          }
-          throw cancelled();
-        }
-        await set(waitForChange$, owner, signal);
-      }
-      signal.throwIfAborted();
-    },
-  );
-  return { waitForManual$ };
-}
-
-function createManualSync(
-  context: SyncCommands & ReturnType<typeof createManualCompletionWait>,
-) {
-  const {
-    owner$,
+    client,
     selection$,
     policy$,
     cancelManual$,
     resetManual$,
     dispatch$,
     manual$,
-    wake$,
-    waitForManual$,
+    schedule$,
   } = context;
   const syncDisplay$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       signal.throwIfAborted();
-      const owner = get(owner$);
       const selection = get(selection$);
       const policy = get(policy$);
       if (
-        !owner ||
-        owner.ended.settled() ||
+        client.signal.aborted ||
         !selection?.target.current() ||
         policy.suspended ||
         !policy.local ||
@@ -751,15 +719,15 @@ function createManualSync(
         selection,
         size: { ...policy.local },
         revision: get(policy$).revision,
+        done: createDeferredPromise<void>(lifetime),
       };
       set(manual$, request);
-      set(wake$);
-      const [result] = await Promise.allSettled([
-        set(waitForManual$, request, owner, lifetime),
-      ]);
+      set(schedule$);
+      const [result] = await Promise.allSettled([request.done.promise]);
       if (signal.aborted) {
         if (get(manual$) === request) {
           set(cancelManual$);
+          set(schedule$);
         }
         signal.throwIfAborted();
       }
@@ -768,8 +736,9 @@ function createManualSync(
       const cancellation = lifetime.reason;
       if (get(manual$) === request) {
         set(cancelManual$);
+        set(schedule$);
       }
-      if (owner.ended.settled() || get(owner$) !== owner) {
+      if (client.signal.aborted || get(policy$).execution.kind === "closed") {
         throw cancelled();
       }
       if (superseded) {
@@ -783,75 +752,11 @@ function createManualSync(
   return { syncDisplay$ };
 }
 
-interface ModeRequest {
-  readonly selection: Selection;
-  readonly revision: number;
-  readonly mode: WindowSizeSync;
-}
-
-function createModeCompletionWait(context: SyncCommands & PresentationProof) {
-  const {
-    owner$,
-    selection$,
-    policy$,
-    receipt$,
-    waitForChange$,
-    matchPresentation$,
-  } = context;
-  const waitForMode$ = command(
-    async (
-      { get, set },
-      request: ModeRequest,
-      owner: Owner,
-      signal: AbortSignal,
-    ): Promise<DisplayCompletion> => {
-      while (!signal.aborted) {
-        const policy = get(policy$);
-        if (
-          get(owner$) !== owner ||
-          owner.ended.settled() ||
-          get(selection$) !== request.selection ||
-          !request.selection.target.current() ||
-          policy.revision !== request.revision ||
-          policy.mode !== request.mode ||
-          policy.suspended ||
-          !policy.local ||
-          policy.execution.kind === "closed"
-        ) {
-          throw cancelled();
-        }
-        const receipt = get(receipt$);
-        if (
-          receipt?.selection === request.selection &&
-          receipt.intent.source === "mode" &&
-          receipt.intent.revision === request.revision &&
-          receipt.intent.mode === request.mode
-        ) {
-          if (receipt.result.kind === "failed") {
-            throw receipt.result.error;
-          }
-          const completion = set(matchPresentation$, receipt);
-          if (completion) {
-            return completion;
-          }
-          throw cancelled();
-        }
-        await set(waitForChange$, owner, signal);
-      }
-      signal.throwIfAborted();
-      throw cancelled();
-    },
-  );
-  return { waitForMode$ };
-}
-
 function createModeChange(
-  context: SyncCommands &
-    ReturnType<typeof createSyncDomainCommands> &
-    PresentationProof,
+  context: SyncScheduling & ReturnType<typeof createSyncDomainCommands>,
 ) {
-  const { owner$, selection$, policy$, applyMode$ } = context;
-  const { waitForMode$ } = createModeCompletionWait(context);
+  const { client, selection$, policy$, applyMode$, modeRequest$, schedule$ } =
+    context;
   const changeMode$ = command(
     async (
       { get, set },
@@ -863,73 +768,72 @@ function createModeChange(
       if (previous.execution.kind === "closed") {
         throw cancelled();
       }
-      const owner = get(owner$);
       const selection = get(selection$);
       const admitted =
         previous.mode !== mode &&
         mode !== "off" &&
-        !!owner &&
-        !owner.ended.settled() &&
+        !client.signal.aborted &&
         !!selection?.target.current() &&
         !previous.suspended &&
         !!previous.local;
       set(applyMode$, mode, admitted ? "request-mode" : "mode");
       // These are policy changes, not claims that an unadmitted native write ran.
-      if (!admitted || !owner || !selection) {
+      if (!admitted || !selection) {
+        set(schedule$);
         return { kind: "policy-updated", mode };
       }
-      const policy = get(policy$);
-      const completion = await set(
-        waitForMode$,
-        { selection, mode, revision: policy.revision },
-        owner,
-        signal,
-      );
-      signal.throwIfAborted();
-      return { kind: "synchronized", mode, completion };
+      const request: ModeRequest = {
+        selection,
+        mode,
+        revision: get(policy$).revision,
+        done: createDeferredPromise<DisplayCompletion>(signal),
+      };
+      set(modeRequest$, request);
+      set(schedule$);
+      const [result] = await Promise.allSettled([request.done.promise]);
+      if (signal.aborted) {
+        if (get(modeRequest$) === request) {
+          set(modeRequest$, null);
+        }
+        signal.throwIfAborted();
+      }
+      if (get(modeRequest$) === request) {
+        set(modeRequest$, null);
+      }
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      return { kind: "synchronized", mode, completion: result.value };
     },
   );
   return { changeMode$ };
 }
 
 function createIdleWait(context: SyncCommands) {
-  const { owner$, policy$, worker$, selection$, waitForChange$ } = context;
+  const { execution$, policy$ } = context;
+  // Callers suspend first, so only the native write already in flight remains.
   const waitForIdle$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async ({ get }, signal: AbortSignal): Promise<void> => {
       signal.throwIfAborted();
-      const owner = get(owner$);
-      if (!owner || owner.ended.settled()) {
-        if (get(policy$).execution.kind === "closed") {
-          throw cancelled();
-        }
-        if (get(worker$).kind !== "idle" || canBeginDisplay(get(policy$))) {
-          throw cancelled();
-        }
-        return;
+      const execution = get(execution$);
+      if (execution) {
+        const stopped = createDeferredPromise<void>(signal);
+        await Promise.race([
+          Promise.allSettled([execution.operation]),
+          stopped.promise,
+        ]);
+        signal.throwIfAborted();
+        stopped.resolve();
       }
-      while (!signal.aborted) {
-        if (get(owner$) !== owner || owner.ended.settled()) {
-          throw cancelled();
-        }
-        const selection = get(selection$);
-        const scheduled =
-          !!selection?.target.current() && canBeginDisplay(get(policy$));
-        if (
-          get(worker$).kind === "idle" &&
-          !activeDisplayIntent(get(policy$)) &&
-          !scheduled
-        ) {
-          return;
-        }
-        await set(waitForChange$, owner, signal);
+      if (get(policy$).execution.kind === "closed") {
+        throw cancelled();
       }
-      signal.throwIfAborted();
     },
   );
   return { waitForIdle$ };
 }
 
-/** Pure policy plus one owner-awaited worker. Finite actions only await facts. */
+/** Pure policy plus one throttled worker. Commands start and await their own work. */
 export function createDisplaySync(
   client: CdpClient,
   host: DisplaySyncHost,
@@ -938,27 +842,24 @@ export function createDisplaySync(
   const selectors = createSyncSelectors(context);
   const commands = { ...context, ...createSyncNotifications(context) };
   const proof = createPresentationProof(commands);
-  const domain = createSyncDomainCommands(commands);
-  const executionPolicy = createSyncExecutionPolicy(commands);
   const worker = createSyncWorker({
     ...commands,
+    ...createRequestSettlement({ ...commands, ...proof }),
     ...selectors,
-    ...executionPolicy,
+    ...createSyncExecutionPolicy(commands),
     ...createSyncPublication(commands),
   });
-  const scheduler = createSyncScheduler({ ...commands, ...worker });
-  const owner = createSyncOwner({ ...commands, ...domain, ...scheduler });
-  const manual = createManualSync({
+  const scheduling = {
     ...commands,
-    ...createManualCompletionWait({ ...commands, ...proof }),
-  });
+    ...createSyncScheduler({ ...commands, ...worker }),
+  };
+  const domain = createSyncDomainCommands(scheduling);
   return {
     state$: selectors.state$,
     recovery$: selectors.recovery$,
-    ...createModeChange({ ...commands, ...domain, ...proof }),
-    ...owner,
+    ...createModeChange({ ...scheduling, ...domain }),
     ...domain,
-    ...manual,
+    ...createManualSync(scheduling),
     ...createIdleWait(commands),
   };
 }

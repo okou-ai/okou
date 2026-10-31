@@ -210,7 +210,7 @@ test("A failed preference update retains the previous choice and can be retried"
   });
 });
 
-test("All capabilities can be off and the editable prompt and output format survive navigation", async () => {
+test("All capabilities can be off and the task and separate output format survive navigation", async () => {
   mockCatalog();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, { disabledTools: ["image-generation", ...FAMILY_IDS] });
@@ -229,20 +229,17 @@ test("All capabilities can be off and the editable prompt and output format surv
   click(button("Continue"));
   await screen.findByRole("heading", { name: READY_TITLE });
   const prompt = await screen.findByLabelText("Your starting prompt");
-  await fill(prompt, "Draft a launch plan for my business.");
+  const task = "Draft a launch plan for my business.";
+  await fill(prompt, task);
   click(button("Presentation"));
-  if (!(prompt instanceof HTMLTextAreaElement)) {
-    throw new Error("Expected the starting prompt textarea");
-  }
-  const edited = prompt.value;
-  expect(edited).toContain("Draft a launch plan for my business.");
-  expect(edited).toContain("concise presentation");
+  expect(prompt).toHaveValue(task);
+  expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
   click(button("Back"));
   await screen.findByRole("heading", { name: TITLE });
   click(button("Continue"));
   await expect(
     screen.findByLabelText("Your starting prompt"),
-  ).resolves.toHaveValue(edited);
+  ).resolves.toHaveValue(task);
   expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
 });
 

@@ -1797,9 +1797,10 @@
       "outOfCredits": "Seus créditos acabaram",
       "proCard": {
         "creditsNow": "créditos · Agora mesmo",
-        "description": "Créditos extras · Recursos avançados · 3 computadores na nuvem",
+        "description": "Recursos avançados · 3 computadores na nuvem",
         "priceUnavailable": "Veja os preços atuais dos planos",
         "title": "Restam cerca de 5 tarefas",
+        "upgradeFromPrice": "Faça upgrade a partir de {{price}}/mês",
         "upgradeNow": "Fazer upgrade agora"
       },
       "redirecting": "Redirecionando...",
@@ -4275,9 +4276,8 @@
       "make": "Bem-vindo ao {{brandName}}"
     },
     "make": {
-      "promptDescription": "Ajuste abaixo ou execute como está. O {{assistantName}} cuida do resto. Suas ferramentas permanecem isoladas e nada sai do seu espaço de trabalho.",
       "promptLabel": "Prompt de onboarding",
-      "promptTitle": "Experimente este prompt"
+      "promptTitle": "Personalize esta tarefa"
     },
     "sourcesFirst": {
       "capabilities": {
@@ -4593,13 +4593,13 @@
             "label": "Site"
           }
         },
-        "title": "Escolha um formato",
+        "title": "Escolha um formato de saída",
         "tooLong": "Encurte a tarefa para escolher outro formato."
       },
       "prompt": {
-        "connectorsDescription": "Conecte suas ferramentas para que o Okou entenda seu trabalho e realize as tarefas de acordo com suas necessidades. Você também pode fazer isso depois.",
+        "connectorsDescription": "Conecte seus aplicativos para ajudar o Okou a entender melhor seu trabalho.",
         "connectorsTitle": "Conecte suas ferramentas de trabalho",
-        "intro": "O Okou é o assistente de trabalho para você e sua equipe. Ele transforma informações dispersas em trabalho concluído, na nuvem."
+        "intro": "Conecte seus aplicativos para obter melhores resultados e escolha um formato."
       },
       "skills": {
         "copied": "Copiado",
