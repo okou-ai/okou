@@ -2,11 +2,6 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0073",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "claimExpiredInactiveBrowser$"
-    },
-    {
       "id": "TX-0314",
       "file": "turbo/apps/api/src/signals/services/user-permission-grants.service.ts",
       "owner": "applyVisibleAgentGrantRows"

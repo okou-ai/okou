@@ -3569,6 +3569,70 @@ interface ExpiredInactiveBrowserTarget {
   readonly providerProfileId: string | null;
 }
 
+function expiredInactiveBrowserClaim(
+  target: ExpiredInactiveBrowserTarget,
+  cutoff: Date,
+) {
+  return and(
+    eq(browserSessions.id, target.browserId),
+    eq(browserSessions.chatThreadId, target.chatThreadId),
+    eq(browserSessions.status, target.status),
+    eq(browserSessions.updatedAt, target.updatedAt),
+    lte(browserSessions.updatedAt, cutoff),
+    uncutBrowserOwner(),
+    target.providerProfileId === null
+      ? notExists(
+          new QueryBuilder()
+            .select({ id: browserThreadProfiles.id })
+            .from(browserThreadProfiles)
+            .where(eq(browserThreadProfiles.chatThreadId, target.chatThreadId)),
+        )
+      : exists(
+          new QueryBuilder()
+            .select({ id: browserThreadProfiles.id })
+            .from(browserThreadProfiles)
+            .where(
+              and(
+                eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
+                eq(
+                  browserThreadProfiles.providerProfileId,
+                  target.providerProfileId,
+                ),
+              ),
+            ),
+        ),
+    notExists(
+      new QueryBuilder()
+        .select({
+          providerSessionId: browserSessionInstances.providerSessionId,
+        })
+        .from(browserSessionInstances)
+        .where(
+          and(
+            eq(
+              browserSessionInstances.chatThreadId,
+              browserSessions.chatThreadId,
+            ),
+            inArray(browserSessionInstances.status, ["active", "stopping"]),
+          ),
+        ),
+    ),
+    notExists(
+      new QueryBuilder()
+        .select({
+          requestTokenHash: browserUserActionRequests.requestTokenHash,
+        })
+        .from(browserUserActionRequests)
+        .where(
+          eq(
+            browserUserActionRequests.chatThreadId,
+            browserSessions.chatThreadId,
+          ),
+        ),
+    ),
+  );
+}
+
 const claimExpiredInactiveBrowser$ = command(
   async (
     { set },
@@ -3578,9 +3642,8 @@ const claimExpiredInactiveBrowser$ = command(
   ): Promise<Date | null> => {
     const db = set(writeDb$);
     const claimedAt = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0073; new non-billing transactions are prohibited.
-    const claimed = await db.transaction(async (tx) => {
-      const [browser] = await tx
+    const claimedBrowser = db.$with("claimed_browser").as(
+      db
         .update(browserSessions)
         .set({
           status: "stopping",
@@ -3588,94 +3651,24 @@ const claimExpiredInactiveBrowser$ = command(
           suspensionReason: "reconcile",
           updatedAt: claimedAt,
         })
-        .where(
-          and(
-            eq(browserSessions.id, target.browserId),
-            eq(browserSessions.chatThreadId, target.chatThreadId),
-            eq(browserSessions.status, target.status),
-            eq(browserSessions.updatedAt, target.updatedAt),
-            lte(browserSessions.updatedAt, cutoff),
-            uncutBrowserOwner(),
-            target.providerProfileId === null
-              ? notExists(
-                  tx
-                    .select({ id: browserThreadProfiles.id })
-                    .from(browserThreadProfiles)
-                    .where(
-                      eq(
-                        browserThreadProfiles.chatThreadId,
-                        target.chatThreadId,
-                      ),
-                    ),
-                )
-              : exists(
-                  tx
-                    .select({ id: browserThreadProfiles.id })
-                    .from(browserThreadProfiles)
-                    .where(
-                      and(
-                        eq(
-                          browserThreadProfiles.chatThreadId,
-                          target.chatThreadId,
-                        ),
-                        eq(
-                          browserThreadProfiles.providerProfileId,
-                          target.providerProfileId,
-                        ),
-                      ),
-                    ),
-                ),
-            notExists(
-              tx
-                .select({
-                  providerSessionId: browserSessionInstances.providerSessionId,
-                })
-                .from(browserSessionInstances)
-                .where(
-                  and(
-                    eq(
-                      browserSessionInstances.chatThreadId,
-                      browserSessions.chatThreadId,
-                    ),
-                    inArray(browserSessionInstances.status, [
-                      "active",
-                      "stopping",
-                    ]),
-                  ),
-                ),
-            ),
-            notExists(
-              tx
-                .select({
-                  requestTokenHash: browserUserActionRequests.requestTokenHash,
-                })
-                .from(browserUserActionRequests)
-                .where(
-                  eq(
-                    browserUserActionRequests.chatThreadId,
-                    browserSessions.chatThreadId,
-                  ),
-                ),
-            ),
-          ),
-        )
-        .returning({ chatThreadId: browserSessions.chatThreadId });
-      if (!browser) {
-        return false;
-      }
-
-      const removedPreview = tx
-        .$with("removed_browser_preview")
-        .as(
-          tx
-            .delete(browserSessionScreenshots)
-            .where(
-              eq(browserSessionScreenshots.chatThreadId, target.chatThreadId),
-            )
-            .returning(),
-        );
-      await tx
-        .with(removedPreview)
+        .where(expiredInactiveBrowserClaim(target, cutoff))
+        .returning({ chatThreadId: browserSessions.chatThreadId }),
+    );
+    const claimedThreads = db
+      .select({ chatThreadId: claimedBrowser.chatThreadId })
+      .from(claimedBrowser);
+    const removedPreview = db
+      .$with("removed_browser_preview")
+      .as(
+        db
+          .delete(browserSessionScreenshots)
+          .where(
+            inArray(browserSessionScreenshots.chatThreadId, claimedThreads),
+          )
+          .returning(),
+      );
+    const queuedPreview = db.$with("queued_browser_preview").as(
+      db
         .insert(browserSessionScreenshotDeletions)
         .select(
           new QueryBuilder()
@@ -3686,17 +3679,39 @@ const claimExpiredInactiveBrowser$ = command(
             })
             .from(removedPreview),
         )
-        .onConflictDoNothing();
-      await tx
-        .delete(browserSessionTabSnapshots)
-        .where(
-          eq(browserSessionTabSnapshots.chatThreadId, target.chatThreadId),
-        );
-      await tx
+        .onConflictDoNothing()
+        .returning({ objectKey: browserSessionScreenshotDeletions.objectKey }),
+    );
+    const removedTabs = db
+      .$with("removed_browser_tabs")
+      .as(
+        db
+          .delete(browserSessionTabSnapshots)
+          .where(
+            inArray(browserSessionTabSnapshots.chatThreadId, claimedThreads),
+          )
+          .returning({ chatThreadId: browserSessionTabSnapshots.chatThreadId }),
+      );
+    const removedInstances = db.$with("removed_browser_instances").as(
+      db
         .delete(browserSessionInstances)
-        .where(eq(browserSessionInstances.chatThreadId, target.chatThreadId));
-      return true;
-    });
+        .where(inArray(browserSessionInstances.chatThreadId, claimedThreads))
+        .returning({
+          providerSessionId: browserSessionInstances.providerSessionId,
+        }),
+    );
+    // Every local write commits with the exact claim in one statement. Its
+    // snapshot deliberately does not fence later cache publications.
+    const [claimed] = await db
+      .with(
+        claimedBrowser,
+        removedPreview,
+        queuedPreview,
+        removedTabs,
+        removedInstances,
+      )
+      .select({ chatThreadId: claimedBrowser.chatThreadId })
+      .from(claimedBrowser);
     signal.throwIfAborted();
     return claimed ? claimedAt : null;
   },
