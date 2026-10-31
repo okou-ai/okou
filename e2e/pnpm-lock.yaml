@@ -15,8 +15,8 @@ importers:
         specifier: ^26.6.5
         version: 26.6.5
       dotenv:
-        specifier: ^18.0.8
-        version: 18.0.8
+        specifier: ^18.0.9
+        version: 18.0.9
     devDependencies:
       tsx:
         specifier: ^4.23.15
@@ -311,8 +311,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  dotenv@18.0.8:
-    resolution: {integrity: sha512-2KDeoFoK/zRtcnbunCDlLG5VWVMcyqeQc6iK65o231nfNAcuGrKoqUQfJFUtBI+QlShk5HKIHxwebBtUl3rEfA==}
+  dotenv@18.0.9:
+    resolution: {integrity: sha512-3fVOW4cB02R066PUSwn8O4TJyz9NckQl7F81blIbaq9jKBm2tSmOKky7ZHIXzGvkVPXCSn6jkpziBPZdGFs8Tw==}
     engines: {node: '>=12'}
     hasBin: true
 
@@ -497,7 +497,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  dotenv@18.0.8: {}
+  dotenv@18.0.9: {}
 
   esbuild@0.28.2:
     optionalDependencies:
