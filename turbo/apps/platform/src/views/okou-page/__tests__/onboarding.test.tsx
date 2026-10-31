@@ -31,9 +31,7 @@ test("A new user keeps prompt and connector context through onboarding", async (
   expect(onboardingContext.get("prompt")).toBe("hello world");
   expect(onboardingContext.get("connector")).toBe("github");
   expect(onboardingContext.get("vm0_source")).toBe("presentation");
-  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    "hello world\n\nPresent the findings as a structured report with key results, recommendations, and next steps.",
-  );
+  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue("hello world");
 });
 
 test("A Slack success return remains visible before onboarding", async () => {

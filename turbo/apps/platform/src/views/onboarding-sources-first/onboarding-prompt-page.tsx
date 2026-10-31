@@ -8,7 +8,6 @@ import {
   editOnboardingPrompt$,
   onboardingDraft$,
   selectOnboardingPromptOutput$,
-  setOnboardingPromptInput$,
 } from "../../signals/onboarding/onboarding-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -62,12 +61,10 @@ export function OnboardingSourcesFirstPromptPage() {
   const mobile = useMobileOnboarding();
   const { prompt, output, setPrompt, selectOutput, connectorSlugs, run, busy } =
     usePromptOnboarding();
-  const setPromptInput = useSet(setOnboardingPromptInput$);
 
   const promptInput = (
     <Textarea
       id="onboarding-prompt"
-      ref={setPromptInput}
       aria-label={t(($) => {
         return $.onboarding.make.promptLabel;
       })}
@@ -139,7 +136,6 @@ export function OnboardingSourcesFirstPromptPage() {
           />
         </section>
         <OnboardingOutputFormats
-          text={prompt}
           output={output}
           onSelect={selectOutput}
           disabled={busy}

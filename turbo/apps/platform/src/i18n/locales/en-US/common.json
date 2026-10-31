@@ -4542,7 +4542,7 @@
       "prompt": {
         "connectorsDescription": "Connect your apps to help Okou understand your work.",
         "connectorsTitle": "Connect your work tools",
-        "intro": "Connect your tools for better results and choose a format to add editable instructions to your prompt."
+        "intro": "Connect your apps for better results and choose a format."
       },
       "skills": {
         "copied": "Copied",

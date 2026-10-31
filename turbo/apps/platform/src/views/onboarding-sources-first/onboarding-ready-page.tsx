@@ -2,7 +2,10 @@ import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Textarea, cn, surfaceVariants } from "@okouai/ui";
-import { STARTING_PROMPT_MAX_LENGTH } from "../../signals/onboarding/onboarding-output-format.ts";
+import {
+  STARTING_PROMPT_MAX_LENGTH,
+  withStartingPromptOutput,
+} from "../../signals/onboarding/onboarding-output-format.ts";
 import { OnboardingOutputFormats } from "./onboarding-output-formats.tsx";
 import { Loader2 } from "lucide-react";
 import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/validators/onboarding";
@@ -135,12 +138,16 @@ function StartingPromptPanel({
             }}
           />
           <OnboardingOutputFormats
-            text={text}
-            output={output}
+            output={output?.format ?? null}
             onSelect={(format, instruction) => {
               selectOutput(text, promptKey, format, instruction);
             }}
-            maxLength={STARTING_PROMPT_MAX_LENGTH}
+            isTooLong={(instruction) => {
+              return (
+                withStartingPromptOutput(text, output, instruction).text
+                  .length > STARTING_PROMPT_MAX_LENGTH
+              );
+            }}
             disabled={busy}
           />
         </>

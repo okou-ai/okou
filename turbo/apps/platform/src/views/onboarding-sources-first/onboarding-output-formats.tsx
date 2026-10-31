@@ -10,9 +10,7 @@ import {
 } from "lucide-react";
 import {
   ONBOARDING_OUTPUT_FORMATS,
-  withStartingPromptOutput,
   type OnboardingOutputFormat,
-  type StartingPromptOutput,
 } from "../../signals/onboarding/onboarding-output-format.ts";
 
 const OUTPUT_ICONS = Object.freeze({
@@ -25,19 +23,17 @@ const OUTPUT_ICONS = Object.freeze({
 });
 
 export function OnboardingOutputFormats({
-  text,
   output,
   onSelect,
-  maxLength,
+  isTooLong,
   disabled,
 }: {
-  readonly text: string;
-  readonly output: StartingPromptOutput | null;
+  readonly output: OnboardingOutputFormat | null;
   readonly onSelect: (
     format: OnboardingOutputFormat | null,
     instruction: string,
   ) => void;
-  readonly maxLength?: number;
+  readonly isTooLong?: (instruction: string) => boolean;
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
@@ -48,14 +44,9 @@ export function OnboardingOutputFormats({
     { returnObjects: true },
   );
   const options = ONBOARDING_OUTPUT_FORMATS.map((format) => {
-    const next = withStartingPromptOutput(
-      text,
-      output,
-      copy.options[format].instruction,
-    );
     return {
       format,
-      tooLong: maxLength !== undefined && next.text.length > maxLength,
+      tooLong: isTooLong?.(copy.options[format].instruction) ?? false,
     };
   });
 
@@ -88,7 +79,7 @@ export function OnboardingOutputFormats({
       </div>
       <ToggleGroup<OnboardingOutputFormat>
         aria-labelledby="onboarding-output-formats-title"
-        value={output ? [output.format] : []}
+        value={output ? [output] : []}
         disabled={disabled}
         className="grid grid-cols-1 items-stretch gap-2 @min-[18rem]:grid-cols-2"
         onValueChange={(values) => {

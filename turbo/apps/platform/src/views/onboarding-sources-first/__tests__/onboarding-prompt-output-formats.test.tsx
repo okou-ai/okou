@@ -1,5 +1,4 @@
 import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -100,8 +99,8 @@ test.each([
     "aria-pressed",
     "true",
   );
-  expect(input.value.startsWith(`${prompt}\n\n`)).toBeTruthy();
-  // Clearing a default restores the original task, and editing does not select again.
+  expect(input).toHaveValue(prompt);
+  // Clearing a default leaves the task intact, and editing does not select again.
   click(getConnectorAction("button", "Clear selection"));
   await waitFor(() => {
     expect(input).toHaveValue(prompt);
@@ -148,7 +147,7 @@ test("an explicit response contract can still be changed with the format control
   expect(input).toHaveValue(prompt);
   click(getConnectorAction("button", "Report"));
   await waitFor(() => {
-    expect(input).toHaveValue(`${prompt}\n\n${REPORT}`);
+    expect(input).toHaveValue(prompt);
     expect(getConnectorAction("button", "Report")).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -169,32 +168,46 @@ test("the default format reaches the first chat without requiring a selection", 
   });
   const prompt = "Create a presentation for my next board meeting.";
   const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(`${prompt}\n\n${PRESENTATION}`);
+  expect(input).toHaveValue(prompt);
   click(getConnectorAction("button", "Next"));
   await waitFor(() => {
     expect(sentPrompt).toBe(`${prompt}\n\n${PRESENTATION}`);
   });
 });
 
-test("a shared prompt keeps its existing format instruction without duplicating it", async () => {
-  const prompt = `${TASK}\n\n${PRESENTATION}`;
-  const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(prompt);
-  expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  click(getConnectorAction("button", "Report"));
-  await waitFor(() => {
-    expect(input).toHaveValue(`${TASK}\n\n${REPORT}`);
-  });
-});
+test.each([
+  ["Presentation", PRESENTATION],
+  ["Report", REPORT],
+  ["Clear selection", null],
+] as const)(
+  "a shared prompt separates its format before selecting %s",
+  async (choice, instruction) => {
+    let sentPrompt: string | undefined;
+    mockChatLifecycle(context, {
+      onRunCreate: (body) => {
+        sentPrompt = body.prompt;
+      },
+    });
+    const input = await openPrompt({ prompt: `${TASK}\n\n${PRESENTATION}` });
+    expect(input).toHaveValue(TASK);
+    expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    click(getConnectorAction("button", choice));
+    expect(input).toHaveValue(TASK);
+    click(getConnectorAction("button", "Next"));
+    await waitFor(() => {
+      expect(sentPrompt).toBe(instruction ? `${TASK}\n\n${instruction}` : TASK);
+    });
+  },
+);
 
 test.each([
   { mobile: false, path: ROUTES.onboarding, action: "Next" },
   { mobile: true, path: ROUTES.onboardingSources, action: "Start task" },
 ])(
-  "prompt links offer the main onboarding formats and send the visible prompt (mobile: $mobile)",
+  "prompt links keep the task separate and submit only the latest selected format (mobile: $mobile)",
   async ({ mobile, path, action }) => {
     let sentPrompt: string | undefined;
     mockChatLifecycle(context, {
@@ -203,7 +216,7 @@ test.each([
       },
     });
     const input = await openPrompt({ mobile, path });
-    expect(input).toHaveValue(`${TASK}\n\n${REPORT}`);
+    expect(input).toHaveValue(TASK);
     expect(getConnectorAction("button", "Report")).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -213,35 +226,25 @@ test.each([
     ).toBeInTheDocument();
 
     const choices = [
-      ["Image", "Present the findings as a clear visual summary image."],
-      [
-        "Website",
-        "Present the findings as a shareable webpage with clear sections and takeaways.",
-      ],
-      ["Report", REPORT],
-      [
-        "Research brief",
-        "Present the findings as a research brief with supporting sources and open questions. Distinguish sourced facts from recommendations.",
-      ],
-      [
-        "People shortlist",
-        "Use this task as context to produce a shortlist of relevant people, with their roles, reasons for inclusion, and public professional profile links. If their relevance to the task is unclear, ask a focused question before searching.",
-      ],
-      ["Presentation", PRESENTATION],
-    ] as const;
-    for (const [name, instruction] of choices) {
+      "Image",
+      "Website",
+      "Report",
+      "Research brief",
+      "People shortlist",
+      "Presentation",
+    ];
+    for (const name of choices) {
       click(getConnectorAction("button", name));
       await waitFor(() => {
-        expect(input).toHaveValue(`${TASK}\n\n${instruction}`);
+        expect(input).toHaveValue(TASK);
         expect(getConnectorAction("button", name)).toHaveAttribute(
           "aria-pressed",
           "true",
         );
-        expect(input).toHaveFocus();
       });
     }
     click(getConnectorAction("button", "Presentation"));
-    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
+    expect(input).toHaveValue(TASK);
     click(getConnectorAction("button", action));
     await waitFor(() => {
       expect(sentPrompt).toBe(`${TASK}\n\n${PRESENTATION}`);
@@ -249,54 +252,49 @@ test.each([
   },
 );
 
-test("switching and clearing a prompt link's format preserve surrounding edits", async () => {
+test("switching and clearing formats preserve the edited task and submit it unchanged", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
   const input = await openPrompt();
-  click(getConnectorAction("button", "Presentation"));
-  await waitFor(() => {
-    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
-  });
-  const user = userEvent.setup({ delay: null });
-  await user.click(input);
-  await user.keyboard("{Control>}{Home}{/Control}Please ");
-  const wordStart = input.value.indexOf("concise");
-  input.setSelectionRange(wordStart, wordStart + "concise".length);
-  await user.keyboard("detailed");
-  await user.keyboard(
-    "{Control>}{End}{/Control}{Enter}{Enter}Use plain English.",
+  const edited = `Please ${TASK}\n\nUse plain English.`;
+  await fill(input, edited);
+  for (const choice of ["Presentation", "Report", "Clear selection"]) {
+    click(getConnectorAction("button", choice));
+    expect(input).toHaveValue(edited);
+  }
+  expect(getConnectorAction("button", "Report")).toHaveAttribute(
+    "aria-pressed",
+    "false",
   );
-  click(getConnectorAction("button", "Report"));
+  click(getConnectorAction("button", "Next"));
   await waitFor(() => {
-    expect(input).toHaveValue(
-      `Please ${TASK}\n\n${REPORT}\n\nUse plain English.`,
-    );
-  });
-  click(getConnectorAction("button", "Clear selection"));
-  await waitFor(() => {
-    expect(input).toHaveValue(`Please ${TASK}\n\nUse plain English.`);
-    expect(getConnectorAction("button", "Report")).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-    expect(input).toHaveFocus();
+    expect(sentPrompt).toBe(edited);
   });
 });
 
-test("replacing a landing-page prompt clears its old format selection", async () => {
+test("editing the task preserves the selected format for submission", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
   const input = await openPrompt();
   click(getConnectorAction("button", "Presentation"));
+  const edited = "Draft a customer update.";
+  await fill(input, edited);
+  expect(input).toHaveValue(edited);
+  expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  click(getConnectorAction("button", "Next"));
   await waitFor(() => {
-    expect(input).toHaveValue(`${TASK}\n\n${PRESENTATION}`);
-  });
-  await fill(input, "Draft a customer update.");
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-  });
-  click(getConnectorAction("button", "Report"));
-  await waitFor(() => {
-    expect(input).toHaveValue(`Draft a customer update.\n\n${REPORT}`);
+    expect(sentPrompt).toBe(`${edited}\n\n${PRESENTATION}`);
   });
 });
 
@@ -309,10 +307,10 @@ test("long landing-page prompts can choose a format without being truncated", as
   });
   const prompt = `${TASK}\n${"Keep the recommendations actionable. ".repeat(40)}`;
   const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(`${prompt}\n\n${REPORT}`);
+  expect(input).toHaveValue(prompt);
   click(getConnectorAction("button", "Presentation"));
   await waitFor(() => {
-    expect(input).toHaveValue(`${prompt}\n\n${PRESENTATION}`);
+    expect(input).toHaveValue(prompt);
   });
   click(getConnectorAction("button", "Next"));
   await waitFor(() => {

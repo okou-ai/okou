@@ -81,16 +81,16 @@ test.each([
         getConnectorAction("button", `Connect ${tool.label}`, recommendations),
       ).toBeEnabled();
     }
-    expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-      `${PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
-    );
+    expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(PROMPT);
 
     const editedPrompt = `${PROMPT} for next month`;
     await fill(screen.getByLabelText("Onboarding prompt"), editedPrompt);
     click(getConnectorAction("button", action));
 
     await waitFor(() => {
-      expect(runPrompt).toBe(editedPrompt);
+      expect(runPrompt).toBe(
+        `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+      );
       expect(pathname()).toMatch(/^\/chats\//u);
     });
   },

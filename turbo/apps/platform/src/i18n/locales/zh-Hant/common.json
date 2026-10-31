@@ -4529,7 +4529,7 @@
       "prompt": {
         "connectorsDescription": "連接應用程式，讓 Okou 更了解你的工作。",
         "connectorsTitle": "連接你的工作工具",
-        "intro": "連接工具，讓成果更符合需求；選擇格式後，輸出要求會填入提示詞，供你編輯。"
+        "intro": "連接應用程式，讓成果更符合需求，並選擇輸出格式。"
       },
       "skills": {
         "copied": "已複製",

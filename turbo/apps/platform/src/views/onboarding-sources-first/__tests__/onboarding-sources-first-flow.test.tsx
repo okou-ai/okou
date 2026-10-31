@@ -45,7 +45,7 @@ const HANDOFF_PROMPT = "Draft the launch plan";
 const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`;
 const PROMPT_TITLE = "Make this task your own";
 const PROMPT_INTRO =
-  "Connect your tools for better results and choose a format to add editable instructions to your prompt.";
+  "Connect your apps for better results and choose a format.";
 const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 function generatedProfile() {
   return {
@@ -875,7 +875,7 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
     screen.findByRole("heading", { name: PROMPT_TITLE }),
   ).resolves.toBeInTheDocument();
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    HANDOFF_WITH_FORMAT,
+    HANDOFF_PROMPT,
   );
   // Task guidance and compliance sit beside the prompt.
   expect(screen.getByText(PROMPT_INTRO)).toBeInTheDocument();
@@ -968,7 +968,7 @@ test("The sheet's connector card connects the tool the prompt link names", async
 
   await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    "Track keyword rankings\n\nPresent the findings as a structured report with key results, recommendations, and next steps.",
+    "Track keyword rankings",
   );
 });
 
@@ -1038,7 +1038,9 @@ test("The prompt step completes onboarding, then runs the prompt as edited", asy
   click(getButtonByName("Next"));
 
   await waitFor(() => {
-    expect(runPrompt).toBe(editedPrompt);
+    expect(runPrompt).toBe(
+      `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+    );
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboarding]);
@@ -1071,7 +1073,9 @@ test("The prompt step keeps the edited prompt on screen until the first chat ope
 
   handoff.release();
   await waitFor(() => {
-    expect(runPrompt).toBe(editedPrompt);
+    expect(runPrompt).toBe(
+      `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+    );
     expect(pathname()).toMatch(/^\/chats\//u);
   });
 });
@@ -1173,7 +1177,7 @@ test("A later source-first step opened with a prompt goes back to the prompt pag
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboarding);
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    HANDOFF_WITH_FORMAT,
+    HANDOFF_PROMPT,
   );
 });
 

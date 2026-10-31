@@ -4544,7 +4544,7 @@
       "prompt": {
         "connectorsDescription": "Verbinde deine Apps, damit Okou deine Arbeit besser versteht.",
         "connectorsTitle": "Verbinde deine Arbeitstools",
-        "intro": "Verbinde deine Tools für bessere Ergebnisse und wähle ein Format, um bearbeitbare Vorgaben in deinen Prompt einzufügen."
+        "intro": "Verbinde deine Apps für bessere Ergebnisse und wähle ein Format."
       },
       "skills": {
         "copied": "Kopiert",

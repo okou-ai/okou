@@ -4598,7 +4598,7 @@
       "prompt": {
         "connectorsDescription": "Conecte seus aplicativos para ajudar o Okou a entender melhor seu trabalho.",
         "connectorsTitle": "Conecte suas ferramentas de trabalho",
-        "intro": "Conecte suas ferramentas para obter melhores resultados e escolha um formato para adicionar instruções editáveis ao prompt."
+        "intro": "Conecte seus aplicativos para obter melhores resultados e escolha um formato."
       },
       "skills": {
         "copied": "Copiado",
