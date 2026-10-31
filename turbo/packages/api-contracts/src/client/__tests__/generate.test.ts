@@ -1,6 +1,7 @@
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   stat,
@@ -167,35 +168,38 @@ describe("HTTP client descriptor generation", () => {
     expect(
       await readFile(new URL("../agents.ts", import.meta.url), "utf8"),
     ).toBe(renderAgentsClientDescriptors());
-
-    await generateClientDescriptors({ outputDirectory: directory });
-    await generateClientDescriptors({
-      check: true,
-      outputDirectory: directory,
-    });
   });
 
   it("checks all fresh outputs without rewriting them", async () => {
-    await generateClientDescriptors({ outputDirectory: directory });
-    const paths = [
-      "agents.ts",
-      "artifact-catalog.ts",
-      "shared-threads.ts",
-      "manifest.ts",
-      "testing.ts",
+    const sourceDirectory = join(directory, "contracts");
+    const outputDirectory = join(directory, "client");
+    await mkdir(sourceDirectory);
+    await writeFile(
+      join(sourceDirectory, "first.ts"),
+      'export const routes = { get: { method: "GET", path: "/first", responses: { 200: {} } } };\n',
+    );
+    await writeFile(
+      join(sourceDirectory, "second.ts"),
+      'export const routes = { create: { method: "POST", path: "/second", responses: { 201: {}, 409: {} } } };\n',
+    );
+    const options = { sourceDirectory, outputDirectory };
+    await generateClientDescriptors(options);
+    const paths = (await readdir(outputDirectory)).sort();
+    expect(paths).toEqual([
+      "first.ts",
       "imports.ts",
-    ];
+      "manifest.ts",
+      "second.ts",
+      "testing.ts",
+    ]);
     for (const name of paths) {
-      await utimes(join(directory, name), 0, 0);
+      await utimes(join(outputDirectory, name), 0, 0);
     }
 
-    await generateClientDescriptors({
-      check: true,
-      outputDirectory: directory,
-    });
+    await generateClientDescriptors({ ...options, check: true });
 
     for (const name of paths) {
-      expect((await stat(join(directory, name))).mtimeMs).toBe(0);
+      expect((await stat(join(outputDirectory, name))).mtimeMs).toBe(0);
     }
   });
 
