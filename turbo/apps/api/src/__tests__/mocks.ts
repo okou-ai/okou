@@ -23,6 +23,7 @@ import { mockStripeClient } from "../signals/external/stripe-client";
 import {
   TEST_EXTENSION_TARGETS,
   browserExtensionBootstrap,
+  browserExtensionBootstrapEvents,
   browserExtensionRequest,
   browserExtensionReply,
 } from "./browser-extension";
@@ -747,7 +748,10 @@ export function browserUseCdpHandler(
           targetInfos: [...inventory.targetInfos, ...TEST_EXTENSION_TARGETS],
         };
       }
-      for (const beforeReply of eventsBeforeReply?.(command) ?? []) {
+      for (const beforeReply of [
+        ...browserExtensionBootstrapEvents(command),
+        ...(eventsBeforeReply?.(command) ?? []),
+      ]) {
         client.send(JSON.stringify(beforeReply));
       }
       if (withholdReply?.(command)) {
