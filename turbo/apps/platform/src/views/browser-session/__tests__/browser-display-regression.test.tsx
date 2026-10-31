@@ -20,12 +20,16 @@ const threadId = "11111111-1111-4111-8111-111111111111";
 const operationError =
   "The browser action could not be completed. Check the browser before trying again.";
 
-function mockViewer() {
+function mockViewer(
+  canvasBox: () => DOMRect = () => {
+    return new DOMRect(0, 0, 900, 600);
+  },
+) {
   const original = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       return this instanceof HTMLCanvasElement
-        ? new DOMRect(0, 0, 900, 600)
+        ? canvasBox()
         : original.call(this);
     },
   );
@@ -152,4 +156,28 @@ test("Automatic panel sizing exposes a native display failure without a settings
     "https://example.com",
   );
   expect(within(viewer).getByLabelText("Browser settings")).toBeEnabled();
+});
+
+test("A window resize synchronizes the remote display to the new panel size", async () => {
+  let canvasBox = new DOMRect(0, 0, 900, 600);
+  const browser = mockViewer(() => {
+    return canvasBox;
+  });
+  const viewer = await openViewer();
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  act(() => {
+    browser.frame("AAAA");
+  });
+
+  canvasBox = new DOMRect(0, 0, 720, 480);
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
+
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 720, height: 480 });
+  });
 });

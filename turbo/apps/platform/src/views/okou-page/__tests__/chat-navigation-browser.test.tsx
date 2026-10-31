@@ -11,7 +11,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
@@ -352,6 +352,45 @@ test.each(["https://viewer.example/live", null])(
     });
   },
 );
+
+test("Resizing the browser sidebar synchronizes the remote display to the committed panel", async () => {
+  mockWideScreen();
+  let canvasBox = new DOMRect(0, 0, 900, 600);
+  let resizeContainer: HTMLElement | null = null;
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this instanceof HTMLCanvasElement) {
+        return canvasBox;
+      }
+      return this === resizeContainer
+        ? new DOMRect(0, 0, 1440, 900)
+        : original.call(this);
+    },
+  );
+  const { native } = mockBrowserApi(liveBrowserSession());
+  await openConversation([]);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  await waitFor(() => {
+    expect(native.viewport).toStrictEqual({ width: 900, height: 600 });
+  });
+  act(() => {
+    native.frame("AAAA");
+  });
+  const handle = await screen.findByRole("separator", {
+    name: "Resize sidebar",
+  });
+  resizeContainer = handle.parentElement;
+
+  // The widened panel commits its layout; only then does the canvas grow.
+  canvasBox = new DOMRect(0, 0, 916, 600);
+  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+
+  await waitFor(() => {
+    expect(native.viewport).toStrictEqual({ width: 916, height: 600 });
+  });
+});
 
 test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
   const user = userEvent.setup({ delay: null });
