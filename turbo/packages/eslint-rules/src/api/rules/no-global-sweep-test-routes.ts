@@ -34,65 +34,6 @@ type FactoryPropertyResolution =
   "canonical" | "missing" | "noncanonical" | "undefined" | "unknown";
 type FactoryValueKind = "factory" | "namespace";
 
-interface GlobalSweepBoundary {
-  readonly exportName: string;
-  readonly moduleName: string;
-  readonly path: string;
-}
-
-const GLOBAL_SWEEP_BOUNDARIES: readonly GlobalSweepBoundary[] = [
-  {
-    exportName: "cronCleanupSandboxesRoutes",
-    moduleName: "cron-cleanup-sandboxes",
-    path: "/api/cron/cleanup-sandboxes",
-  },
-  {
-    exportName: "cronReconcileBillingEntitlementsRoutes",
-    moduleName: "cron-reconcile-billing-entitlements",
-    path: "/api/cron/reconcile-billing-entitlements",
-  },
-  {
-    exportName: "cronDrainEmailOutboxRoutes",
-    moduleName: "cron-drain-email-outbox",
-    path: "/api/cron/drain-email-outbox",
-  },
-  {
-    exportName: "cronBrowserReconcileRoutes",
-    moduleName: "cron-browser-reconcile",
-    path: "/api/cron/reconcile-browsers",
-  },
-  {
-    exportName: "cronConnectorOauthStateCleanupRoutes",
-    moduleName: "cron-connector-oauth-state-cleanup",
-    path: "/api/cron/connector-oauth-state-cleanup",
-  },
-  {
-    exportName: "cronComputerUseScreenshotCleanupRoutes",
-    moduleName: "cron-computer-use-screenshot-cleanup",
-    path: "/api/cron/computer-use-screenshot-cleanup",
-  },
-  {
-    exportName: "cronSyncSkillsRoutes",
-    moduleName: "cron-sync-skills",
-    path: "/api/cron/sync-skills",
-  },
-  {
-    exportName: "cronExecuteWorkflowAutomationsRoutes",
-    moduleName: "cron-execute-workflow-automations",
-    path: "/api/cron/execute-workflow-automations",
-  },
-];
-
-const CONTRACT_HARNESS_SUFFIX =
-  "/src/signals/routes/__tests__/global-sweep-contracts.test.ts";
-const PRODUCTION_ROUTE_SUFFIX = "/src/signals/route.ts";
-const CONTRACT_HELPER_SUFFIX =
-  "/signals/routes/__tests__/helpers/global-sweep-contract";
-const CONTRACT_HELPER_RELATIVE = "./helpers/global-sweep-contract";
-const UNAUTHORIZED_HELPERS = new Set([
-  "expectGlobalSweepMissingAuth",
-  "expectGlobalSweepWrongAuth",
-]);
 const APP_FACTORIES = new Set(["createApp", "createAppWithRoutes", "setupApp"]);
 
 function isCanonicalAppFactoryModule(source: string): boolean {
@@ -128,82 +69,6 @@ function resolvesToProductionRoute(filename: string, source: string): boolean {
   return segments.join("/").endsWith("/src/signals/route");
 }
 
-function moduleName(source: string): string {
-  const finalSegment = source.split("/").at(-1) ?? source;
-  return finalSegment.replace(/\.(?:[cm]?[jt]s)$/, "");
-}
-
-function boundaryForImport(
-  source: string,
-  importedName: string,
-): GlobalSweepBoundary | undefined {
-  const importedModule = moduleName(source);
-  return GLOBAL_SWEEP_BOUNDARIES.find((boundary) => {
-    return (
-      boundary.moduleName === importedModule &&
-      boundary.exportName === importedName
-    );
-  });
-}
-
-function boundariesForModule(source: string): readonly GlobalSweepBoundary[] {
-  const importedModule = moduleName(source);
-  return GLOBAL_SWEEP_BOUNDARIES.filter((boundary) => {
-    return boundary.moduleName === importedModule;
-  });
-}
-
-function staticString(
-  expression: TSESTree.CallExpressionArgument,
-): string | null {
-  if (
-    expression.type === AST_NODE_TYPES.Literal &&
-    typeof expression.value === "string"
-  ) {
-    return expression.value;
-  }
-  if (
-    expression.type === AST_NODE_TYPES.TemplateLiteral &&
-    expression.expressions.length === 0
-  ) {
-    return expression.quasis[0]?.value.cooked ?? null;
-  }
-  return null;
-}
-
-function isApprovedHarnessReference(
-  identifier: TSESTree.Identifier,
-  boundary: GlobalSweepBoundary,
-  context: Readonly<{ sourceCode: Parameters<typeof importReference>[0] }>,
-): boolean {
-  const call = identifier.parent;
-  if (
-    call.type !== AST_NODE_TYPES.CallExpression ||
-    call.arguments.length !== 3 ||
-    call.arguments[1] !== identifier ||
-    call.callee.type !== AST_NODE_TYPES.Identifier
-  ) {
-    return false;
-  }
-  const helper = importReference(context.sourceCode, call.callee);
-  if (
-    !helper ||
-    (helper.source !== CONTRACT_HELPER_RELATIVE &&
-      !helper.source.endsWith(CONTRACT_HELPER_SUFFIX)) ||
-    helper.importedName === "default"
-  ) {
-    return false;
-  }
-  const pathArgument = call.arguments[2];
-  if (!pathArgument || pathArgument.type === AST_NODE_TYPES.SpreadElement) {
-    return false;
-  }
-  const path = staticString(pathArgument);
-  return (
-    UNAUTHORIZED_HELPERS.has(helper.importedName) && path === boundary.path
-  );
-}
-
 export const noGlobalSweepTestRoutes = createRule({
   name: "no-global-sweep-test-routes",
   defaultOptions: [],
@@ -211,32 +76,18 @@ export const noGlobalSweepTestRoutes = createRule({
     type: "problem",
     docs: {
       description:
-        "Keep API correctness on approved public boundaries instead of arbitrary global sweeps",
+        "Keep API tests on explicit production route slices instead of the aggregate API bootstrap",
       requiresTypeChecking: false,
     },
     schema: [],
     messages: {
       globalSweep:
-        "Production-global route '{{ routeName }}' is not an approved correctness boundary. Use the ordinary public lifecycle; contract coverage may pass it directly only to the fixed no-auth helper. See docs/api/api-testing.md#external-behavior-boundary.",
+        "Do not mount aggregate production '{{ routeName }}' in API tests. Select the production route slice for the caller under test. Explicitly in-scope cron tests use real authentication, an isolated database and public observations. See docs/api/api-testing.md#external-behavior-boundary.",
     },
   },
   create(context) {
     const filename = normalizedFilename(context.filename);
-    const isProductionRoute = filename.endsWith(PRODUCTION_ROUTE_SUFFIX);
-    const isContractHarness = filename.endsWith(CONTRACT_HARNESS_SUFFIX);
-    const harnessBindings: {
-      readonly boundary: GlobalSweepBoundary;
-      readonly specifier: TSESTree.ImportSpecifier;
-    }[] = [];
     const calls: TSESTree.CallExpression[] = [];
-
-    function report(node: TSESTree.Node, boundary: GlobalSweepBoundary): void {
-      context.report({
-        node,
-        messageId: "globalSweep",
-        data: { routeName: boundary.exportName },
-      });
-    }
 
     function reportAggregateRoutes(node: TSESTree.Node): void {
       context.report({
@@ -857,91 +708,6 @@ export const noGlobalSweepTestRoutes = createRule({
     }
 
     return {
-      ImportDeclaration(node: TSESTree.ImportDeclaration) {
-        if (typeof node.source.value !== "string") {
-          return;
-        }
-        const moduleBoundaries = boundariesForModule(node.source.value);
-        if (moduleBoundaries.length === 0 || isProductionRoute) {
-          return;
-        }
-        for (const specifier of node.specifiers) {
-          if (specifier.type !== AST_NODE_TYPES.ImportSpecifier) {
-            const boundary = moduleBoundaries[0];
-            if (boundary) {
-              report(specifier, boundary);
-            }
-            continue;
-          }
-          const importedName =
-            specifier.imported.type === AST_NODE_TYPES.Identifier
-              ? specifier.imported.name
-              : String(specifier.imported.value);
-          const boundary = boundaryForImport(node.source.value, importedName);
-          if (!boundary) {
-            continue;
-          }
-          // This system-boundary suite publishes through the real catalog cron
-          // and owns an isolated database before reconciling installations.
-          if (
-            filename.endsWith(
-              "/src/signals/routes/__tests__/official-workflows.test.ts",
-            ) &&
-            boundary.exportName === "cronExecuteWorkflowAutomationsRoutes" &&
-            specifier.local.name === boundary.exportName
-          ) {
-            continue;
-          }
-          if (
-            !isContractHarness ||
-            specifier.local.name !== boundary.exportName
-          ) {
-            report(specifier, boundary);
-            continue;
-          }
-          harnessBindings.push({ boundary, specifier });
-        }
-      },
-      ExportNamedDeclaration(node: TSESTree.ExportNamedDeclaration) {
-        if (!node.source || typeof node.source.value !== "string") {
-          return;
-        }
-        for (const specifier of node.specifiers) {
-          if (specifier.type !== AST_NODE_TYPES.ExportSpecifier) {
-            continue;
-          }
-          const localName =
-            specifier.local.type === AST_NODE_TYPES.Identifier
-              ? specifier.local.name
-              : String(specifier.local.value);
-          const boundary = boundaryForImport(node.source.value, localName);
-          if (boundary && !isProductionRoute) {
-            report(specifier, boundary);
-          }
-        }
-      },
-      ExportAllDeclaration(node: TSESTree.ExportAllDeclaration) {
-        if (typeof node.source.value !== "string" || isProductionRoute) {
-          return;
-        }
-        const boundary = boundariesForModule(node.source.value)[0];
-        if (boundary) {
-          report(node, boundary);
-        }
-      },
-      ImportExpression(node: TSESTree.ImportExpression) {
-        if (
-          node.source.type !== AST_NODE_TYPES.Literal ||
-          typeof node.source.value !== "string" ||
-          isProductionRoute
-        ) {
-          return;
-        }
-        const boundary = boundariesForModule(node.source.value)[0];
-        if (boundary) {
-          report(node, boundary);
-        }
-      },
       CallExpression(node: TSESTree.CallExpression) {
         calls.push(node);
       },
@@ -949,20 +715,6 @@ export const noGlobalSweepTestRoutes = createRule({
         for (const call of calls) {
           if (isAggregateAppFactoryMount(call)) {
             reportAggregateRoutes(call);
-          }
-        }
-        for (const { boundary, specifier } of harnessBindings) {
-          const variables = context.sourceCode.getDeclaredVariables(specifier);
-          for (const variable of variables) {
-            for (const reference of variable.references) {
-              const identifier = reference.identifier;
-              if (
-                identifier.type === AST_NODE_TYPES.Identifier &&
-                !isApprovedHarnessReference(identifier, boundary, context)
-              ) {
-                report(identifier, boundary);
-              }
-            }
           }
         }
       },

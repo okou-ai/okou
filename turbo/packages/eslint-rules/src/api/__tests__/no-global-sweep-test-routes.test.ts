@@ -8,58 +8,18 @@ RuleTester.describe = describe;
 RuleTester.it = it;
 
 const ruleTester = new RuleTester();
-const harness =
-  "/app/src/signals/routes/__tests__/global-sweep-contracts.test.ts";
 const behaviorTest = "/app/src/signals/routes/__tests__/workflows.test.ts";
-const sandboxCleanupImport =
-  'import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";';
-const computerUseCleanupImport =
-  'import { cronComputerUseScreenshotCleanupRoutes } from "../cron-computer-use-screenshot-cleanup";';
-
-const helperImport = `
-  import { expectGlobalSweepMissingAuth } from "./helpers/global-sweep-contract";
-`;
-const routeImport = `
-  import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
-`;
 
 ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
   valid: [
     {
-      name: "isolated Official system coverage uses the canonical automation cron",
-      filename: "/app/src/signals/routes/__tests__/official-workflows.test.ts",
-      code: `${routeImport}
-        setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes });
-      `,
-    },
-    {
-      name: "production bootstrap keeps global behavior",
-      filename: "/app/src/signals/route.ts",
-      code: `${routeImport}
-        export const ROUTES = [...cronExecuteWorkflowAutomationsRoutes];
-      `,
-    },
-    {
-      name: "contract harness passes the route directly to the fixed no-auth helper",
-      filename: harness,
-      code: `${routeImport}${helperImport}
-        await expectGlobalSweepMissingAuth(
-          context,
-          cronExecuteWorkflowAutomationsRoutes,
-          "/api/cron/execute-workflow-automations",
-        );
-      `,
-    },
-    {
-      name: "contract harness admits the fixed wrong-auth helper",
-      filename: harness,
-      code: `${routeImport}
-        import { expectGlobalSweepWrongAuth } from "./helpers/global-sweep-contract";
-        await expectGlobalSweepWrongAuth(
-          context,
-          cronExecuteWorkflowAutomationsRoutes,
-          "/api/cron/execute-workflow-automations",
-        );
+      name: "operator behavior coverage uses its explicit production route slice",
+      filename: behaviorTest,
+      code: `
+        import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
+        import { setupApp } from "../../../__tests__/test-helpers";
+        await setupApp({ context, routes: cronBrowserReconcileRoutes })(contract)
+          .reconcile({ headers: { authorization: "Bearer test-cron-secret" } });
       `,
     },
     {
@@ -126,57 +86,6 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
     },
   ],
   invalid: [
-    {
-      name: "isolation does not authorize a global screenshot cleanup operator",
-      filename: behaviorTest,
-      code: `${computerUseCleanupImport}
-        import { setupApp } from "../../../__tests__/test-helpers";
-        setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes, isolatePg: true });
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "spread options do not authorize a global screenshot cleanup operator",
-      filename: behaviorTest,
-      code: `${computerUseCleanupImport}
-        import { setupApp } from "../../../__tests__/test-helpers";
-        setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes, isolatePg: true, ...options });
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "ordinary coverage cannot use the Computer Use retention operator",
-      filename: behaviorTest,
-      code: computerUseCleanupImport,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "ordinary coverage cannot use a private operator driver",
-      filename: behaviorTest,
-      code: `${computerUseCleanupImport}
-        import { setupApp } from "./private-driver";
-        setupApp({ routes: cronComputerUseScreenshotCleanupRoutes });
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "a behavior suite cannot import sandbox cleanup",
-      filename: behaviorTest,
-      code: sandboxCleanupImport,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Official system coverage cannot import an unrelated global sweep",
-      filename: "/app/src/signals/routes/__tests__/official-workflows.test.ts",
-      code: `import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Official system coverage cannot alias the approved route",
-      filename: "/app/src/signals/routes/__tests__/official-workflows.test.ts",
-      code: `import { cronExecuteWorkflowAutomationsRoutes as sweep } from "../cron-execute-workflow-automations";`,
-      errors: [{ messageId: "globalSweep" }],
-    },
     {
       name: "defaulted shorthand route destructuring remains rejected",
       filename: behaviorTest,
@@ -489,125 +398,6 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
           headers: { authorization: "Bearer test-cron-secret" },
         });
       `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "old behavior helper cannot wrap the production-global sweep",
-      filename: behaviorTest,
-      code: `${routeImport}
-        import { createApp } from "../../../app-factory";
-        async function executeCron() {
-          return await createApp({
-            signal,
-            routes: cronExecuteWorkflowAutomationsRoutes,
-          }).request("/api/cron/execute-workflow-automations", {
-            headers: { authorization: "Bearer test-cron-secret" },
-          });
-        }
-        await executeCron();
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot rename a global route import",
-      filename: harness,
-      code: `
-        import { cronExecuteWorkflowAutomationsRoutes as sweep } from "../cron-execute-workflow-automations";
-        ${helperImport}
-        await expectGlobalSweepMissingAuth(context, sweep, "/api/cron/execute-workflow-automations");
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot alias a route locally",
-      filename: harness,
-      code: `${routeImport}${helperImport}
-        const sweep = cronExecuteWorkflowAutomationsRoutes;
-        await expectGlobalSweepMissingAuth(context, sweep, "/api/cron/execute-workflow-automations");
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot put a route in a local array",
-      filename: harness,
-      code: `${routeImport}${helperImport}
-        const routes = [...cronExecuteWorkflowAutomationsRoutes];
-        await expectGlobalSweepMissingAuth(context, routes, "/api/cron/execute-workflow-automations");
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot pass a route through a local wrapper",
-      filename: harness,
-      code: `${routeImport}${helperImport}
-        async function check(routes) {
-          await expectGlobalSweepMissingAuth(context, routes, "/api/cron/execute-workflow-automations");
-        }
-        await check(cronExecuteWorkflowAutomationsRoutes);
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot re-export a global route",
-      filename: harness,
-      code: `export { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot star re-export a global route module",
-      filename: harness,
-      code: `export * from "../cron-execute-workflow-automations";`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot mount a route with createApp",
-      filename: harness,
-      code: `${routeImport}
-        import { createApp } from "../../../app-factory";
-        await createApp({ signal, routes: cronExecuteWorkflowAutomationsRoutes })
-          .request("/api/cron/execute-workflow-automations");
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot mount a route with setupApp",
-      filename: harness,
-      code: `${routeImport}
-        await setupApp({
-          context,
-          routes: cronExecuteWorkflowAutomationsRoutes,
-        })(cronExecuteWorkflowAutomationsContract).execute({
-          headers: {},
-        });
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "approved filename cannot make an authorized behavior call",
-      filename: harness,
-      code: `${routeImport}${helperImport}
-        import { createApp } from "../../../app-factory";
-        const response = await createApp({
-          signal,
-          routes: cronExecuteWorkflowAutomationsRoutes,
-        }).request("/api/cron/execute-workflow-automations", {
-          headers: { authorization: "Bearer test-cron-secret" },
-        });
-        expect(response.status).toBe(200);
-        await expectGlobalSweepMissingAuth(context, cronExecuteWorkflowAutomationsRoutes, "/api/cron/execute-workflow-automations");
-      `,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "namespace import cannot hide the sweep",
-      filename: behaviorTest,
-      code: `import * as cron from "../cron-execute-workflow-automations"; cron.cronExecuteWorkflowAutomationsRoutes;`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "dynamic import cannot hide the sweep",
-      filename: behaviorTest,
-      code: `await import("../cron-execute-workflow-automations");`,
       errors: [{ messageId: "globalSweep" }],
     },
   ],

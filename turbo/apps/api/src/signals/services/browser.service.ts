@@ -47,6 +47,7 @@ import {
   notExists,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { array, boolean, object, string, ZodError } from "zod";
@@ -964,6 +965,18 @@ export const ensureBrowserCapacity$ = command(
 
 type BrowserScreenshotStage = "prepare" | "capture" | "upload" | "save";
 
+interface BrowserScreenshotPublication {
+  readonly browser: BrowserSessionRow;
+  readonly shared?: {
+    readonly providerSessionId: string;
+    readonly window: BrowserWindowContext;
+    readonly previousValue: string | null;
+    readonly capturedAt: Date;
+  };
+  readonly objectKey: string;
+  readonly url: string;
+}
+
 function browserScreenshotFailureKind(error: unknown): string {
   if (!(error instanceof Error)) {
     return "other";
@@ -1022,23 +1035,11 @@ async function recordBrowserScreenshotResult(result: {
 }
 
 const publishBrowserScreenshot$ = command(
-  async (
-    { set },
-    args: {
-      readonly browser: BrowserSessionRow;
-      readonly shared?: {
-        readonly providerSessionId: string;
-        readonly window: BrowserWindowContext;
-        readonly previousValue: string | null;
-        readonly capturedAt: Date;
-      };
-      readonly objectKey: string;
-      readonly url: string;
-    },
-  ): Promise<boolean> => {
+  async ({ set }, args: BrowserScreenshotPublication): Promise<boolean> => {
     const { browser, shared } = args;
     const artifact = { key: args.objectKey, url: args.url };
     const db = set(writeDb$);
+    let publicationSql: SQL;
     if (shared) {
       const t = browserSessionScreenshots;
       const publication = browserCapturePublication({
@@ -1084,7 +1085,7 @@ const publishBrowserScreenshot$ = command(
         })
         .from(browserOwnerWindows)
         .where(guard);
-      const saved = await db
+      publicationSql = db
         .insert(t)
         .select(source)
         .onConflictDoUpdate({
@@ -1104,19 +1105,10 @@ const publishBrowserScreenshot$ = command(
             publication.canReplace,
           ),
         })
-        .returning({ id: t.chatThreadId });
-      if (saved.length === 0) {
-        await db
-          .insert(browserSessionScreenshotDeletions)
-          .values({
-            objectKey: artifact.key,
-            chatThreadId: browser.chatThreadId,
-          })
-          .onConflictDoNothing();
-        return false;
-      }
+        .returning({ id: t.chatThreadId })
+        .getSQL();
     } else {
-      await db
+      publicationSql = db
         .insert(browserSessionScreenshots)
         .values({
           chatThreadId: browser.chatThreadId,
@@ -1130,9 +1122,60 @@ const publishBrowserScreenshot$ = command(
             url: artifact.url,
             updatedAt: nowDate(),
           },
-        });
+        })
+        .returning({ id: browserSessionScreenshots.chatThreadId })
+        .getSQL();
     }
-    return true;
+    // Every candidate retains its own cleanup identity, including the accepted
+    // preview. The sweeper excludes referenced keys. This also covers a value
+    // displaced by a concurrent upsert that this statement's snapshot cannot
+    // see; saving only the snapshot-visible predecessor would lose that key.
+    const queued = db
+      .insert(browserSessionScreenshotDeletions)
+      .select(
+        sql`${db
+          .select({
+            objectKey: browserSessionScreenshots.objectKey,
+            chatThreadId: browserSessionScreenshots.chatThreadId,
+            createdAt: browserSessionScreenshots.createdAt,
+          })
+          .from(browserSessionScreenshots)
+          .where(
+            eq(browserSessionScreenshots.chatThreadId, browser.chatThreadId),
+          )}
+          UNION SELECT ${artifact.key}, ${browser.chatThreadId}::uuid, now()`,
+      )
+      .onConflictDoNothing()
+      .getSQL();
+    const [outcome] = parseRawRows(
+      object({ saved: boolean() }),
+      await db.execute(sql`WITH published AS (${publicationSql}),
+        queued AS (${queued})
+        SELECT EXISTS(SELECT 1 FROM published) AS saved`),
+    );
+    if (!outcome) {
+      throw new Error("Browser screenshot publication returned no outcome");
+    }
+    return outcome.saved;
+  },
+);
+
+const retainAbandonedBrowserScreenshot$ = command(
+  async ({ set }, chatThreadId: string, objectKey: string): Promise<void> => {
+    const db = set(writeDb$);
+    const queued = await settleIncludingAbort(
+      db
+        .insert(browserSessionScreenshotDeletions)
+        .values({ objectKey, chatThreadId })
+        .onConflictDoNothing(),
+    );
+    if (!queued.ok) {
+      L.warn("Managed browser screenshot cleanup handoff failed", {
+        chatThreadId,
+        objectKey,
+        error: queued.error,
+      });
+    }
   },
 );
 
@@ -1148,6 +1191,7 @@ export const captureAndStoreBrowserScreenshot$ = command(
     const startedAt = now();
     const signal = get(rootSignal$);
     let stage: BrowserScreenshotStage = "prepare";
+    let allocatedKey: string | undefined;
     // Include capture cancellation in the final outcome so every started
     // screenshot operation has a recorded result.
     const [result] = await Promise.allSettled([
@@ -1202,6 +1246,7 @@ export const captureAndStoreBrowserScreenshot$ = command(
           signal,
         );
         const bucket = artifact.bucket;
+        allocatedKey = artifact.key;
         await get(
           putImmutableS3Object(
             bucket,
@@ -1244,6 +1289,17 @@ export const captureAndStoreBrowserScreenshot$ = command(
         return true;
       })(),
     ]);
+    if (result.status === "rejected" && allocatedKey) {
+      // The upload/publication promise has settled, but its commit may be
+      // uncertain. Retain only this attempt's immutable identity; the accepted
+      // pointer protects a publication that actually succeeded. Do not inherit
+      // capture cancellation for this durable recovery handoff.
+      await set(
+        retainAbandonedBrowserScreenshot$,
+        browser.chatThreadId,
+        allocatedKey,
+      );
+    }
     if (result.status === "fulfilled" && !result.value) {
       return;
     }
@@ -3524,9 +3580,29 @@ const claimExpiredInactiveBrowser$ = command(
         return false;
       }
 
+      const removedPreview = tx
+        .$with("removed_browser_preview")
+        .as(
+          tx
+            .delete(browserSessionScreenshots)
+            .where(
+              eq(browserSessionScreenshots.chatThreadId, target.chatThreadId),
+            )
+            .returning(),
+        );
       await tx
-        .delete(browserSessionScreenshots)
-        .where(eq(browserSessionScreenshots.chatThreadId, target.chatThreadId));
+        .with(removedPreview)
+        .insert(browserSessionScreenshotDeletions)
+        .select(
+          new QueryBuilder()
+            .select({
+              objectKey: removedPreview.objectKey,
+              chatThreadId: removedPreview.chatThreadId,
+              createdAt: removedPreview.createdAt,
+            })
+            .from(removedPreview),
+        )
+        .onConflictDoNothing();
       await tx
         .delete(browserSessionTabSnapshots)
         .where(
@@ -4026,7 +4102,7 @@ const reconcileOrphanedBrowserScreenshots$ = command(
     let cleaned = 0;
     let errors = 0;
     for (const screenshot of screenshots) {
-      const result = await settleIncludingAbort(
+      const removed = db.$with("orphaned_browser_preview").as(
         db
           .delete(browserSessionScreenshots)
           .where(
@@ -4036,8 +4112,32 @@ const reconcileOrphanedBrowserScreenshots$ = command(
                 screenshot.chatThreadId,
               ),
               eq(browserSessionScreenshots.objectKey, screenshot.objectKey),
+              notExists(
+                db
+                  .select({ id: chatThreads.id })
+                  .from(chatThreads)
+                  .where(
+                    eq(chatThreads.id, browserSessionScreenshots.chatThreadId),
+                  ),
+              ),
             ),
-          ),
+          )
+          .returning(),
+      );
+      const result = await settleIncludingAbort(
+        db
+          .with(removed)
+          .insert(browserSessionScreenshotDeletions)
+          .select(
+            new QueryBuilder()
+              .select({
+                objectKey: removed.objectKey,
+                chatThreadId: removed.chatThreadId,
+                createdAt: removed.createdAt,
+              })
+              .from(removed),
+          )
+          .onConflictDoNothing(),
       );
       signal.throwIfAborted();
       if (result.ok) {
