@@ -5,7 +5,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// Materialize claim-time instructions after ordinary Storage reconciliation.
+/// Materialize verified bundle instructions after ordinary Storage reconciliation.
 /// The caller owns the private source file; only known framework files are replaced.
 pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> bool {
     let (relative_home, filename) = match framework {
@@ -34,29 +34,6 @@ pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> 
     copy_instruction_file(source, &target, filename, "Applied Agent instructions")
 }
 
-/// Replace only SKILL.md after attachment reconciliation, rejecting symlink parents.
-pub fn apply_workflow_skill(home: &Path, mount: &Path, source: &Path) -> bool {
-    let Some(relative) = workflow_skill_relative_mount(home, mount) else {
-        return false;
-    };
-    if !existing_instruction_dir_is_safe(home)
-        || !matches!(
-            lstat_instruction_path_state(source),
-            InstructionPathState::RegularFile
-        )
-    {
-        return false;
-    }
-    let mut target = home.to_path_buf();
-    for component in Path::new(relative).components() {
-        target.push(component);
-        if !ensure_final_instruction_dir(&target) {
-            return false;
-        }
-    }
-    copy_instruction_file_atomically(source, &target.join("SKILL.md"), io::copy).is_ok()
-}
-
 pub(crate) fn workflow_skill_relative_mount<'a>(home: &Path, mount: &'a Path) -> Option<&'a str> {
     let relative = mount.strip_prefix(home).ok()?.to_str()?;
     let name = [".claude/skills/", ".codex/skills/", ".pi/agent/skills/"]
@@ -69,34 +46,6 @@ pub(crate) fn workflow_skill_relative_mount<'a>(home: &Path, mount: &'a Path) ->
             .bytes()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-'))
     .then_some(relative)
-}
-
-/// Apply bounded Workflow metadata in order after validating all source identities.
-///
-/// Replaces only SKILL.md and removes each consumed private source. The first
-/// application or removal failure stops later entries; earlier changes remain.
-pub fn apply_workflow_skill_documents(home: &Path, runtime_dir: &Path, input: &[u8]) -> bool {
-    let Ok(entries) = guest_contracts::workflow_documents::decode(input, runtime_dir) else {
-        return false;
-    };
-    if entries
-        .iter()
-        .any(|entry| workflow_skill_relative_mount(home, Path::new(&entry.mount_path)).is_none())
-    {
-        return false;
-    }
-    for entry in entries {
-        let source = Path::new(&entry.source);
-        let applied = apply_workflow_skill(home, Path::new(&entry.mount_path), source);
-        let removed = match fs::remove_file(source) {
-            Ok(()) => true,
-            Err(error) => error.kind() == io::ErrorKind::NotFound,
-        };
-        if !applied || !removed {
-            return false;
-        }
-    }
-    true
 }
 
 #[derive(Debug, PartialEq, Eq)]

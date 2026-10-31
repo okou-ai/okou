@@ -5,7 +5,6 @@ import {
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
-  runnersWorkflowDownloadContract,
   runnersPollContract,
 } from "../contracts/runners";
 import {
@@ -62,11 +61,6 @@ const runtimeServiceRouteBindings = [
     id: "runners.jobs.claim",
     owner: "runner",
     route: runnersJobClaimContract.claim,
-  },
-  {
-    id: "runners.runs.workflows.download",
-    owner: "runner",
-    route: runnersWorkflowDownloadContract.get,
   },
   {
     id: "runners.heartbeat",

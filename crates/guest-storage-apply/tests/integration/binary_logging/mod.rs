@@ -16,7 +16,6 @@ mod manifest_input;
 mod redaction;
 mod runtime_paths;
 mod skipped_entries;
-mod workflow_documents;
 
 pub(super) struct RuntimeLogPaths {
     pub(super) runtime_dir: PathBuf,

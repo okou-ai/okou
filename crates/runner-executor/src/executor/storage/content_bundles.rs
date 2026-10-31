@@ -44,18 +44,7 @@ async fn prepare(
     config: &ExecutorConfig,
     cancel: &CancellationToken,
 ) -> RunnerResult<()> {
-    let bundles = context
-        .content_bundles
-        .as_ref()
-        .ok_or_else(|| RunnerError::Internal("Missing bundle manifest".into()))?;
-    if context.agent_instructions.is_some()
-        || context
-            .storage_manifest
-            .as_ref()
-            .is_some_and(|m| !m.workflow_references.is_empty() || !m.workflow_skills.is_empty())
-    {
-        return Err(RunnerError::Api("Mixed content delivery protocols".into()));
-    }
+    let bundles = &context.content_bundles;
     let cache = &config.content_bundle_cache;
     let mut prepared = Vec::new();
     if let Some(reference) = &bundles.instructions {
@@ -93,8 +82,6 @@ async fn prepare(
         context.storage_manifest = Some(runner_types::storage_manifest::StorageManifest {
             storages: Vec::new(),
             artifacts: Vec::new(),
-            workflow_references: Vec::new(),
-            workflow_skills: Vec::new(),
         });
     }
     context.prepared_bundles = prepared;
@@ -105,9 +92,6 @@ pub(in crate::executor) async fn apply_content_bundles(
     context: &ExecutionContext,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<()> {
-    if context.content_bundles.is_none() {
-        return Ok(());
-    }
     let started = Instant::now();
     let result = apply(sandbox, context).await;
     let error = result.as_ref().err().map(ToString::to_string);

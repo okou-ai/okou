@@ -77,16 +77,8 @@ pub struct ExecutionContext {
     pub prompt: String,
     #[serde(default)]
     pub append_system_prompt: Option<String>,
-    /// Absent for agentless jobs; empty explicitly replaces the managed file.
-    #[serde(
-        default,
-        deserialize_with = "deserialize_agent_instructions",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub agent_instructions: Option<String>,
-    /// Prepared package protocol; the API producer activates in the next release.
-    #[serde(default, deserialize_with = "deserialize_content_bundles")]
-    pub content_bundles: Option<crate::content_bundle::ClaimedContentBundles>,
+    /// Immutable packages selected by the API, empty for agentless/local jobs.
+    pub content_bundles: crate::content_bundle::ClaimedContentBundles,
     /// Verified files owned by this execution, never decoded from claim JSON.
     #[serde(skip)]
     pub prepared_bundles: Vec<crate::content_bundle::PreparedBundle>,
@@ -1683,14 +1675,6 @@ pub struct ConnectorRuntimeSyncBatchResponse {
     pub results: Vec<ConnectorRuntimeSyncResult>,
 }
 
-fn deserialize_agent_instructions<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    // Absence selects the legacy protocol; a present null is not that protocol.
-    String::deserialize(deserializer).map(Some)
-}
-
 impl ExecutionContext {
     pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
@@ -1878,12 +1862,6 @@ impl HomeReuseResult {
     }
 }
 
-fn deserialize_content_bundles<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::content_bundle::ClaimedContentBundles>, D::Error> {
-    crate::content_bundle::ClaimedContentBundles::deserialize(deserializer).map(Some)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1992,6 +1970,7 @@ mod tests {
                 }]
             },
             "platformEnvironment": {},
+            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": []
         });
 
@@ -2024,28 +2003,6 @@ mod tests {
     }
 
     #[test]
-    fn execution_context_distinguishes_absent_empty_and_invalid_instructions() {
-        let claim = json!({
-            "runId": "11111111-1111-4111-8111-111111111111",
-            "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "codex",
-            "platformEnvironment": {}, "connectorRuntimeTargets": []
-        });
-        let agentless: ExecutionContext = serde_json::from_value(claim.clone()).unwrap();
-        assert_eq!(agentless.agent_instructions, None);
-        for body in ["", "  指令\n\n"] {
-            let mut current = claim.clone();
-            current["agentInstructions"] = json!(body);
-            let context: ExecutionContext = serde_json::from_value(current).unwrap();
-            assert_eq!(context.agent_instructions.as_deref(), Some(body));
-        }
-        for invalid in [json!(null), json!(42)] {
-            let mut current = claim.clone();
-            current["agentInstructions"] = invalid;
-            assert!(serde_json::from_value::<ExecutionContext>(current).is_err());
-        }
-    }
-
-    #[test]
     fn execution_context_preserves_optional_first_run_context() {
         for label in [None, Some(false), Some(true)] {
             let mut claim = json!({
@@ -2054,6 +2011,7 @@ mod tests {
                 "sandboxToken": "tok",
                 "cliAgentType": "claude-code",
                 "platformEnvironment": {},
+                "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                 "connectorRuntimeTargets": []
             });
             if let Some(label) = label {
@@ -2072,6 +2030,7 @@ mod tests {
             "sandboxToken": "tok",
             "cliAgentType": "claude-code",
             "platformEnvironment": {},
+            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": [],
             "firewalls": [{
                 "name": "github",
@@ -2098,6 +2057,7 @@ mod tests {
             "sandboxToken": "tok",
             "cliAgentType": "claude-code",
             "platformEnvironment": {},
+            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": [],
             "firewalls": [{
                 "kind": "unknown",
@@ -2446,6 +2406,7 @@ mod tests {
             "cliAgentType": "claude_code",
             "billableFirewalls": [],
             "platformEnvironment": {},
+            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": []
         });
         let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
@@ -2462,6 +2423,7 @@ mod tests {
                 "cliAgentType": "claude_code",
                 "billableFirewalls": [],
                 "platformEnvironment": {},
+                "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                 "connectorRuntimeTargets": [target]
             })
         };
@@ -2509,7 +2471,8 @@ mod tests {
     #[test]
     fn cli_agent_session_identity_uses_native_intent_and_local_submission() {
         let mut context: ExecutionContext = serde_json::from_value(json!({
-            "runId": "550e8400-e29b-41d4-a716-446655440000", "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "claude-code", "platformEnvironment": {}, "connectorRuntimeTargets": [],
+            "runId": "550e8400-e29b-41d4-a716-446655440000", "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "claude-code", "platformEnvironment": {},
+            "contentBundles": {"format": "tar-gzip-v1", "skills": []}, "connectorRuntimeTargets": [],
             "nativeContinuation": { "sessionId": "native-session", "generationRunId": "550e8400-e29b-41d4-a716-446655440001", "recoveryPrompt": null }
         })).unwrap();
         assert_eq!(context.cli_agent_session_id(), Some("native-session"));
@@ -2529,6 +2492,7 @@ mod tests {
             "cliAgentType": "claude_code",
             "billableFirewalls": [],
             "platformEnvironment": {},
+            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": []
         })
     }

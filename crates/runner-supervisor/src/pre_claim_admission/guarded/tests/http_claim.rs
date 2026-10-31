@@ -32,6 +32,7 @@ async fn http_claim_failure_completion_preserves_independent_cleanup_and_full_le
                 "cliAgentType": "claude_code",
                 "billableFirewalls": [],
                 "platformEnvironment": {},
+                "contentBundles": {"format": "tar-gzip-v1", "skills": []},
                 "connectorRuntimeTargets": []
             }));
         })

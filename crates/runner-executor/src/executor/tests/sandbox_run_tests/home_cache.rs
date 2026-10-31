@@ -88,8 +88,6 @@ async fn invalid_storage_preparation_preserves_the_selected_home_for_the_next_ru
     );
     artifact.archive_url = None;
     context.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: Vec::new(),
         artifacts: vec![artifact],
     });
@@ -188,8 +186,6 @@ async fn rejected_seed_handoff_rebuilds_current_storage_before_one_fresh_create(
     );
     storage.archive_size = Some(archive.len() as u64);
     let manifest = StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage],
         artifacts: Vec::new(),
     };
@@ -515,8 +511,6 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
     );
     storage.archive_size = Some(body.len() as u64);
     ctx.storage_manifest = Some(StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![storage],
         artifacts: Vec::new(),
     });
@@ -791,8 +785,6 @@ async fn dns_replacement_storage_classification_failure_prevents_agent_start() {
     let mut ctx = minimal_context();
     let mount_path = format!("{CANONICAL_WORKING_DIR}/data");
     let mut manifest = StorageManifest {
-        workflow_references: Vec::new(),
-        workflow_skills: Vec::new(),
         storages: vec![api_storage(
             "dns-retry-storage",
             &mount_path,

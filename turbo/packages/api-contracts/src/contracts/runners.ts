@@ -20,11 +20,6 @@ import {
 } from "zod";
 
 import {
-  workflowDownloadSchema,
-  workflowSkillReferenceSchema,
-} from "./workflow-attachments";
-
-import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
   firewallApiSchema,
@@ -612,7 +607,6 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
 
 /** Canonical Runner wire representation. */
 export const storageManifestSchema = object({
-  workflowSkills: array(workflowSkillReferenceSchema).optional(),
   storageMounts: array(storageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
   ),
@@ -1049,10 +1043,8 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = object({
-  // Selected immutable packages; old API claims are handled by prepared Runners.
+  // Selected immutable packages, including an empty set for agentless jobs.
   contentBundles: claimedContentBundlesSchema,
-  // Legacy API producer field; retire with old claim readers in #44164 Release 3.
-  agentInstructions: string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: boolean().optional(),
   runId: uuid(),
@@ -1139,16 +1131,6 @@ const executionContextObjectSchema = object({
 
 export const executionContextSchema = executionContextObjectSchema.superRefine(
   (context, refinement) => {
-    if (
-      context.agentInstructions !== undefined ||
-      (context.storageManifest?.workflowSkills?.length ?? 0) > 0
-    ) {
-      refinement.addIssue({
-        code: "custom",
-        path: ["contentBundles"],
-        message: "Content bundles cannot be mixed with legacy claim content",
-      });
-    }
     const piFields = [
       context.piSessionId,
       context.piLaunchConfig,
@@ -1208,22 +1190,6 @@ export const runnersJobClaimContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Claim a pending job for execution",
-  },
-});
-
-export const runnersWorkflowDownloadContract = c.router({
-  get: {
-    method: "GET",
-    path: "/api/runners/runs/:runId/workflows/:workflowId",
-    headers: authHeadersSchema,
-    pathParams: object({ runId: uuid(), workflowId: uuid() }),
-    responses: {
-      200: workflowDownloadSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Download current Workflow content for an authenticated Run",
   },
 });
 

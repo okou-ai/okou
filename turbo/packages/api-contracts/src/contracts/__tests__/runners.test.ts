@@ -171,32 +171,6 @@ describe("runner claim response contract", () => {
     expect(context).not.toHaveProperty("experimentalProfile");
   });
 
-  it("rejects mixed bundle and legacy claim content", () => {
-    const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
-    );
-    expect(
-      executionContextSchema.safeParse({
-        ...fixture,
-        agentInstructions: "inline body",
-      }).success,
-    ).toBe(false);
-    expect(
-      executionContextSchema.safeParse({
-        ...fixture,
-        storageManifest: {
-          ...fixture.storageManifest,
-          workflowSkills: [
-            {
-              workflowId: "00000000-0000-4000-8000-000000020987",
-              mountPath: "/home/user/.codex/skills/fixture-skill",
-            },
-          ],
-        },
-      }).success,
-    ).toBe(false);
-  });
-
   it("round-trips canonical trusted environments through stored contexts", () => {
     const storedContext = storedExecutionContextSchema.parse({
       storageMounts: [],

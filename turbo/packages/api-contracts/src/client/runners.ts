@@ -9,7 +9,6 @@ import type {
   runnersJobClaimContract as OriginalRunnersJobClaimContract,
   runnersPollContract as OriginalRunnersPollContract,
   runnersSteerContract as OriginalRunnersSteerContract,
-  runnersWorkflowDownloadContract as OriginalRunnersWorkflowDownloadContract,
 } from "../contracts/runners";
 import type { ClientDescriptor } from "./types";
 
@@ -133,21 +132,6 @@ export const runnersSteerContract: ClientDescriptor<
       404: true,
       409: true,
       500: true,
-    },
-  },
-};
-
-export const runnersWorkflowDownloadContract: ClientDescriptor<
-  typeof OriginalRunnersWorkflowDownloadContract
-> = {
-  get: {
-    method: "GET",
-    path: "/api/runners/runs/:runId/workflows/:workflowId",
-    statuses: {
-      200: true,
-      401: true,
-      403: true,
-      404: true,
     },
   },
 };

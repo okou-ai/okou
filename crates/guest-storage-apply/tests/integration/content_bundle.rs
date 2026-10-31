@@ -31,40 +31,6 @@ fn stage_archive(runtime: &std::path::Path, bytes: &[u8]) -> io::Result<BundleAr
 }
 
 #[test]
-fn legacy_archive_application_preserves_complete_bundle_and_separately_applied_body() {
-    let temp = tempfile::tempdir().unwrap();
-    let home = temp.path();
-    let mount = home.join(".codex/skills/example");
-    let archive =
-        include_bytes!("../../../runner-executor/tests/fixtures/content-bundle-v1.tar.gz");
-    let staged = home.join("archive.tar.gz");
-    fs::write(&staged, archive).unwrap();
-    let manifest = serde_json::json!({"storageMounts":[{
-        "mountPath":mount,
-        "archiveUrl":format!("file://{}", staged.display()),
-        "name":"workflow:7feae200-7a26-46f5-9dcb-12eaa0804414",
-        "versionId":"d1467f9f02022e04ad66f2e983158c80ea58a152e8eec1ea7d07b0f51d3b3c67",
-    }]});
-    assert!(guest_storage_apply::run_manifest_bytes(
-        &serde_json::to_vec(&manifest).unwrap()
-    ));
-    let body = "---\nname: example\n---\n\n正文\n";
-    let source = home.join("private-body");
-    fs::write(&source, body).unwrap();
-    assert!(guest_storage_apply::apply_workflow_skill(
-        home, &mount, &source
-    ));
-    assert_eq!(fs::read_to_string(mount.join("SKILL.md")).unwrap(), body);
-    let attachment = format!("references/{0}/{0}/{0}/raw.bin", "目录".repeat(30));
-    assert_eq!(fs::read(mount.join(attachment)).unwrap(), [0, 255, 128, 1]);
-    let mut invalid = manifest;
-    invalid["storageMounts"][0]["versionId"] = "0".repeat(64).into();
-    assert!(!guest_storage_apply::run_manifest_bytes(
-        &serde_json::to_vec(&invalid).unwrap()
-    ));
-}
-
-#[test]
 fn bundles_restore_exact_instructions_and_replace_complete_skill_directories() {
     for (framework, root, filename) in [
         ("claude-code", ".claude", "CLAUDE.md"),

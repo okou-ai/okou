@@ -22,7 +22,7 @@ pub(super) use self::execution::{
     spawn_run_in_sandbox_test_with_timeouts,
 };
 pub(super) use self::home_cache::{seed_home_image_cache, seed_home_image_cache_with_fingerprints};
-pub(super) use self::manifest::{api_artifact, api_storage, downloaded_workflow_manifest};
+pub(super) use self::manifest::{api_artifact, api_storage};
 pub(super) use self::sandbox::{
     DestroyPanicFactory, create_overridden_sandbox, sandbox_copy_file_error, sandbox_create_error,
     sandbox_exec_error, sandbox_read_file_error, sandbox_write_file_error,

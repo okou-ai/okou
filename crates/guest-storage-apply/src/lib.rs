@@ -23,8 +23,8 @@
 //!
 //! Cached storages and artifacts preserve their mount roots. Empty artifacts
 //! retain root identity and ownership while clearing stale contents, including
-//! when a containing directory is also cleaned. Claim-time Agent instructions
-//! are applied separately after Storage reconciliation through `apply_agent_instructions`.
+//! when a containing directory is also cleaned. Hash-addressed content bundles
+//! use the same archive extraction and managed instruction file safety checks.
 //!
 //! ## Archive metadata limits
 //!
@@ -59,9 +59,6 @@ mod files;
 mod http_failure;
 pub mod input_telemetry;
 mod instructions;
-pub use instructions::apply_agent_instructions;
-pub use instructions::apply_workflow_skill;
-pub use instructions::apply_workflow_skill_documents;
 mod manifest;
 mod path;
 mod plan;

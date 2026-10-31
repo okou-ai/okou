@@ -271,8 +271,8 @@ impl JobProvider for LocalProvider {
             reuse_key: req.reuse_key,
             prompt: req.prompt,
             append_system_prompt: None,
-            agent_instructions: None,
-            content_bundles: None,
+
+            content_bundles: runner_types::content_bundle::ClaimedContentBundles::default(),
             prepared_bundles: Vec::new(),
             vars: req.vars,
             sandbox_token: String::new(),

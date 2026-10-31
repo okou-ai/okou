@@ -7,13 +7,8 @@ use super::super::storage::{
     guest_storage_manifest_cleanup_command,
 };
 use super::super::{DEFAULT_EXEC_TIMEOUT, guest_runtime_dir};
-use super::support::{
-    minimal_context, sandbox_exec_error, sandbox_write_file_error, test_executor_config,
-    test_telemetry,
-};
+use super::support::{minimal_context, sandbox_exec_error, sandbox_write_file_error};
 use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
-
-mod workflow_documents;
 
 fn empty_manifest() -> Manifest {
     Manifest {
@@ -22,125 +17,6 @@ fn empty_manifest() -> Manifest {
         cleanup_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     }
-}
-
-#[tokio::test]
-async fn workflow_documents_use_private_transport_and_propagate_helper_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = MockSandbox::new("test");
-    let mut context = minimal_context();
-    let workflow_id = uuid::Uuid::new_v4();
-    for body in ["Unicode 正文\n'$(never execute)'", ""] {
-        context.storage_manifest = Some(
-            crate::executor::tests::support::downloaded_workflow_manifest(serde_json::json!({
-                "storageMounts": [],
-                "workflowSkills": [{
-                    "workflowId": workflow_id,
-                    "mountPath": "/home/user/.codex/skills/custom-workflow",
-                    "skillMd": body,
-                    "attachments": null
-                }]
-            }))
-            .unwrap(),
-        );
-        super::super::storage::apply_workflow_skill_documents(
-            &sandbox,
-            &context,
-            &mut test_telemetry(&config, &context),
-        )
-        .await
-        .unwrap();
-        let writes = sandbox.private_write_files_calls();
-        let last = &writes.last().unwrap().files[0];
-        assert_eq!(last.content, body.as_bytes());
-        assert!(last.path.ends_with(&format!("/workflow-{workflow_id}")));
-        let calls = sandbox.exec_calls();
-        let command = &calls.last().unwrap().cmd;
-        assert!(command.contains(" --skill /home/user/.codex/skills/custom-workflow "));
-        assert!(!command.contains("never execute"));
-    }
-    sandbox.push_exec_result(Ok(ExecResult::new(1, Vec::new(), Vec::new())));
-    assert!(
-        super::super::storage::apply_workflow_skill_documents(
-            &sandbox,
-            &context,
-            &mut test_telemetry(&config, &context)
-        )
-        .await
-        .is_err()
-    );
-}
-
-#[tokio::test]
-async fn inline_instructions_are_optional_and_use_private_file_transport() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = MockSandbox::new("test");
-    let mut context = minimal_context();
-    assert!(
-        super::super::storage::AgentInstructionSource::prepare(&context)
-            .unwrap()
-            .is_none()
-    );
-    assert!(sandbox.exec_calls().is_empty());
-    assert!(sandbox.private_write_files_calls().is_empty());
-    for content in ["Unicode 指令\n'$(never execute)'", ""] {
-        context.agent_instructions = Some(content.into());
-        super::super::storage::AgentInstructionSource::prepare(&context)
-            .unwrap()
-            .unwrap()
-            .publish_and_apply(&sandbox, &context, &mut test_telemetry(&config, &context))
-            .await
-            .unwrap();
-        let calls = sandbox.private_write_files_calls();
-        assert_eq!(calls.last().unwrap().files[0].content, content.as_bytes());
-        assert!(
-            !sandbox
-                .exec_calls()
-                .last()
-                .unwrap()
-                .cmd
-                .contains("never execute")
-        );
-    }
-}
-
-#[tokio::test]
-async fn inline_instruction_helper_failure_is_required() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = MockSandbox::new("test");
-    let mut context = minimal_context();
-    context.agent_instructions = Some("new".into());
-    sandbox.push_exec_result(Ok(ExecResult::new(1, Vec::new(), Vec::new())));
-    assert!(
-        super::super::storage::AgentInstructionSource::prepare(&context)
-            .unwrap()
-            .unwrap()
-            .publish_and_apply(&sandbox, &context, &mut test_telemetry(&config, &context))
-            .await
-            .is_err()
-    );
-}
-
-#[tokio::test]
-async fn inline_instruction_transfer_failure_does_not_apply_stale_source() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = MockSandbox::new("test");
-    let mut context = minimal_context();
-    context.agent_instructions = Some("new".into());
-    sandbox.push_private_write_files_result(Err(sandbox_write_file_error("private write failed")));
-    assert!(
-        super::super::storage::AgentInstructionSource::prepare(&context)
-            .unwrap()
-            .unwrap()
-            .publish_and_apply(&sandbox, &context, &mut test_telemetry(&config, &context))
-            .await
-            .is_err()
-    );
-    assert!(sandbox.exec_calls().is_empty());
 }
 
 fn storage_manifest() -> Manifest {
