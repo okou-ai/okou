@@ -1,0 +1,6 @@
+diff --git a/lib/config-array/override-tester.js b/lib/config-array/override-tester.js
+--- a/lib/config-array/override-tester.js
++++ b/lib/config-array/override-tester.js
+@@ -23,1 +23,1 @@
+-import minimatch from "minimatch";
++import * as minimatch from "minimatch";
