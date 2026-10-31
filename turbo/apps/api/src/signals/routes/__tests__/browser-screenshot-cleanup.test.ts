@@ -20,7 +20,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
   createSharedBrowserFixtures,
-  MINUTE,
   START,
 } from "./helpers/browser-shared-fixture";
 
@@ -201,8 +200,21 @@ test("retains the accepted screenshot after the shared owner and window retire",
     await open(a);
     const s3 = storage();
     await capture(a);
-    mockNow(START + 11 * MINUTE);
-    await sweep();
+    const [providerId] = f.provider.sessionIds;
+    if (!providerId) {
+      throw new Error("Expected the shared owner's live provider");
+    }
+    f.provider.sessionIds.delete(providerId);
+    f.provider.stoppedSessionIds.add(providerId);
+    f.provider.native.targets.clear();
+    await accept(
+      client().leaseByThread({
+        headers,
+        params: { threadId: a.threadId },
+        body: {},
+      }),
+      [409],
+    );
     const inactive = await view(a);
     expect(inactive.window).toBeUndefined();
     if (!inactive.screenshotUrl) {
