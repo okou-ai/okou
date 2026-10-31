@@ -125,21 +125,30 @@ function normalizeRuntimeApiRoute(
     ...(contentType ? { contentType } : {}),
     request: {
       ...(route.headers
-        ? { headers: normalizeSchema(route.headers, `${binding.id}.headers`) }
+        ? {
+            headers: normalizeSchema(
+              route.headers,
+              `${binding.id}.headers`,
+              "input",
+            ),
+          }
         : {}),
       ...(route.query
-        ? { query: normalizeSchema(route.query, `${binding.id}.query`) }
+        ? {
+            query: normalizeSchema(route.query, `${binding.id}.query`, "input"),
+          }
         : {}),
       ...(route.pathParams
         ? {
             pathParams: normalizeSchema(
               route.pathParams,
               `${binding.id}.pathParams`,
+              "input",
             ),
           }
         : {}),
       ...(route.body
-        ? { body: normalizeSchema(route.body, `${binding.id}.body`) }
+        ? { body: normalizeSchema(route.body, `${binding.id}.body`, "input") }
         : {}),
     },
     responses: normalizeResponses(route.responses, binding.id),
@@ -158,12 +167,13 @@ function assertUniqueRuntimeApiRoutes(
     ids.add(route.id);
 
     const registration = `${route.method} ${route.path}`;
-    if (registrations.has(registration)) {
+    const ownedRegistration = `${route.owner} ${registration}`;
+    if (registrations.has(ownedRegistration)) {
       throw new Error(
         `Duplicate runtime API route registration: ${registration}`,
       );
     }
-    registrations.add(registration);
+    registrations.add(ownedRegistration);
   }
 }
 
@@ -201,11 +211,20 @@ function normalizeResponseSchema(responseSchema: unknown): unknown {
 function normalizeSchema(
   schema: unknown,
   label: string,
+  io: "input" | "output" = "output",
 ): RuntimeSchemaSnapshot {
   if (isZodSchema(schema)) {
     return {
       kind: "json-schema",
-      schema: normalizeJsonValue(toJSONSchema(schema), label),
+      schema: normalizeJsonValue(
+        {
+          ...toJSONSchema(schema, { io }),
+          ...(io === "input" && schema.isOptional()
+            ? { "x-optional-input": true }
+            : {}),
+        },
+        label,
+      ),
     };
   }
 
