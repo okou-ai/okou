@@ -20,6 +20,10 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -48,9 +52,14 @@ import {
   publicAgentCountReadPlan,
 } from "../services/agent-data.service";
 import {
-  connectorActionResolver,
+  createConnectorActionResolver,
   readConnectorResolver$,
 } from "../services/connector-action-resolver.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "../services/connector-catalog-slug-source.service";
 
 import {
   updateUserBuiltinConnectors$,
@@ -496,7 +505,20 @@ const getAgentUserConnectorsInner$ = computed(async (get) => {
   const enabledConnectorSlugs = rows.map((row) => {
     return connectorSlugSchema.parse(row.connectorSlug);
   });
-  const resolver = await get(connectorActionResolver(enabledConnectorSlugs));
+  const connectorSlugs = enabledConnectorSlugs;
+  const catalogDb = get(db$);
+  const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+    connectorSlugs,
+  });
+  const snapshot = connectorRuntimeSlugSelectionFromRows(
+    catalogPlan.selection,
+    await catalogDb
+      .select(catalogPlan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, catalogPlan.join)
+      .where(connectorCatalogCurrentWhere()),
+  );
+  const resolver = createConnectorActionResolver(snapshot);
   const availableEnabledConnectorSlugs: (typeof enabledConnectorSlugs)[number][] =
     [];
   for (const connectorSlug of enabledConnectorSlugs) {
