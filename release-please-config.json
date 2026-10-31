@@ -98,7 +98,6 @@
     },
     "crates/guest-agent-tests": {
       "release-type": "rust",
-      "skip-github-release": true,
       "skip-changelog": true
     },
     "crates/guest-contracts": {
