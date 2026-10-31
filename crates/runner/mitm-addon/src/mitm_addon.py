@@ -434,12 +434,7 @@ def _prebind_bounded_requestheaders_upstream_destination(
         hostname=trusted_authority.host,
         port=trusted_authority.port,
     )
-    classification = _classify_request_for_flow_with_trusted_authority(
-        flow,
-        trusted_authority=trusted_authority,
-        defer_unresolved_public_destination=True,
-    )
-    if (
+    reuse_binding = (
         not is_api_destination
         and upstream_admission.has_bound_destination(
             flow,
@@ -449,7 +444,13 @@ def _prebind_bounded_requestheaders_upstream_destination(
         # Reusing a connection skips binding work, never current path validation.
         # Managed OpenRouter still requires body admission.
         and trusted_authority.host != managed_openrouter.HOST
-    ):
+    )
+    classification = _classify_request_for_flow_with_trusted_authority(
+        flow,
+        trusted_authority=trusted_authority,
+        defer_unresolved_public_destination=True,
+    )
+    if reuse_binding:
         return classification
     _prebind_requestheaders_upstream_destination(flow, classification)
     return classification
