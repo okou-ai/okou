@@ -961,6 +961,100 @@ function activeHostedBindingCondition(deploymentId: string, siteId: string) {
   );
 }
 
+const commitHostedSiteDeployment$ = command(
+  async (
+    { get, set },
+    args: HostedSiteBindingArgs,
+    site: HostedSiteRow,
+    published: HostedSitePointer | null,
+    signal: AbortSignal,
+  ): Promise<HostedSitePromotion | undefined> => {
+    const db = get(db$);
+    const writeDb = set(writeDb$);
+    const deploymentTable = args.deployment.manifest.access
+      ? privateHostedDeployments
+      : hostedDeployments;
+    const readyIds =
+      published && published.deploymentId !== args.deployment.id
+        ? [args.deployment.id, published.deploymentId]
+        : [args.deployment.id];
+    const ready = writeDb.$with("ready_hosted_deployments").as(
+      writeDb
+        .update(deploymentTable)
+        .set(hostedDeploymentReadyValues(args.readyAt))
+        .where(
+          and(
+            inArray(deploymentTable.id, readyIds),
+            eq(deploymentTable.siteId, site.id),
+            eq(deploymentTable.orgId, args.orgId),
+            eq(deploymentTable.userId, args.deployment.userId),
+            eq(
+              deploymentTable.linkLayoutSegment,
+              args.deployment.linkLayoutSegment,
+            ),
+            ne(deploymentTable.status, "deleted"),
+          ),
+        )
+        .returning({ id: deploymentTable.id }),
+    );
+    const activeBinding = db
+      .select({
+        version:
+          sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+            nullableDriverValueDecoder(pgIntegerDecoder),
+          ),
+      })
+      .from(hostedDeployments)
+      .where(
+        and(
+          eq(hostedDeployments.id, hostedSites.activeDeploymentId),
+          eq(hostedDeployments.siteId, hostedSites.id),
+        ),
+      );
+    const activeVersion = sql`(${activeBinding})`;
+    // A newer completion can bind while this one waits. Compare immutable
+    // versions against the actual Site row rather than the earlier read.
+    const nextBinding = published
+      ? sql`CASE
+          WHEN ${isNull(hostedSites.activeDeploymentId)} THEN ${published.deploymentId}::uuid
+          WHEN ${exists(activeBinding)} AND (
+            ${isNull(activeVersion)}
+            OR ${gte(sql`${published.deploymentVersion ?? null}::integer`, activeVersion)}
+          ) THEN ${published.deploymentId}::uuid
+          ELSE ${hostedSites.activeDeploymentId}
+        END`
+      : hostedSites.activeDeploymentId;
+    // Remote publication is complete before this one local atomic statement.
+    // A concurrent deletion may win; publication does not hold a site lock
+    // while waiting for storage, and does not revive a deleted version.
+    const [promotion] = await writeDb
+      .with(ready)
+      .update(hostedSites)
+      .set({
+        activeDeploymentId: nextBinding,
+        updatedAt: published ? args.readyAt : hostedSites.updatedAt,
+      })
+      .where(
+        and(
+          hostedBindingSiteCondition(site.id, args.orgId),
+          eq(hostedSites.userId, args.deployment.userId),
+          eq(hostedSites.linkLayoutSegment, args.deployment.linkLayoutSegment),
+          isNull(hostedSites.deletedAt),
+          eq(db.select({ count: count() }).from(ready), readyIds.length),
+        ),
+      )
+      .returning({
+        publicSlug: hostedSites.publicSlug,
+        activeDeploymentId: hostedSites.activeDeploymentId,
+        activeDeploymentVersion: activeVersion.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
+      });
+    signal.throwIfAborted();
+    return promotion;
+  },
+);
+
 const bindHostedSiteDeployment$ = command(
   async (
     { get, set },
@@ -968,7 +1062,6 @@ const bindHostedSiteDeployment$ = command(
     signal: AbortSignal,
   ): Promise<HostedSitePromotion> => {
     const db = get(db$);
-    const writeDb = set(writeDb$);
     const [ownedSite] = await db
       .select()
       .from(hostedSites)
@@ -1057,83 +1150,13 @@ const bindHostedSiteDeployment$ = command(
       );
     }
     signal.throwIfAborted();
-    const readyIds =
-      published && published.deploymentId !== args.deployment.id
-        ? [args.deployment.id, published.deploymentId]
-        : [args.deployment.id];
-    const ready = writeDb.$with("ready_hosted_deployments").as(
-      writeDb
-        .update(deploymentTable)
-        .set(hostedDeploymentReadyValues(args.readyAt))
-        .where(
-          and(
-            inArray(deploymentTable.id, readyIds),
-            eq(deploymentTable.siteId, site.id),
-            eq(deploymentTable.orgId, args.orgId),
-            eq(deploymentTable.userId, args.deployment.userId),
-            eq(
-              deploymentTable.linkLayoutSegment,
-              args.deployment.linkLayoutSegment,
-            ),
-            ne(deploymentTable.status, "deleted"),
-          ),
-        )
-        .returning({ id: deploymentTable.id }),
+    const promotion = await set(
+      commitHostedSiteDeployment$,
+      args,
+      site,
+      published,
+      signal,
     );
-    const activeBinding = db
-      .select({
-        version:
-          sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
-            nullableDriverValueDecoder(pgIntegerDecoder),
-          ),
-      })
-      .from(hostedDeployments)
-      .where(
-        and(
-          eq(hostedDeployments.id, hostedSites.activeDeploymentId),
-          eq(hostedDeployments.siteId, hostedSites.id),
-        ),
-      );
-    const activeVersion = sql`(${activeBinding})`;
-    // A newer completion can bind while this one waits. Compare immutable
-    // versions against the actual Site row rather than the earlier read.
-    const nextBinding = published
-      ? sql`CASE
-          WHEN ${isNull(hostedSites.activeDeploymentId)} THEN ${published.deploymentId}::uuid
-          WHEN ${exists(activeBinding)} AND (
-            ${isNull(activeVersion)}
-            OR ${gte(sql`${published.deploymentVersion ?? null}::integer`, activeVersion)}
-          ) THEN ${published.deploymentId}::uuid
-          ELSE ${hostedSites.activeDeploymentId}
-        END`
-      : hostedSites.activeDeploymentId;
-    // Remote publication is complete before this one local atomic statement.
-    // A concurrent deletion may win; publication does not hold a site lock
-    // while waiting for storage, and does not revive a deleted version.
-    const [promotion] = await writeDb
-      .with(ready)
-      .update(hostedSites)
-      .set({
-        activeDeploymentId: nextBinding,
-        updatedAt: published ? args.readyAt : hostedSites.updatedAt,
-      })
-      .where(
-        and(
-          hostedBindingSiteCondition(site.id, args.orgId),
-          eq(hostedSites.userId, args.deployment.userId),
-          eq(hostedSites.linkLayoutSegment, args.deployment.linkLayoutSegment),
-          isNull(hostedSites.deletedAt),
-          eq(db.select({ count: count() }).from(ready), readyIds.length),
-        ),
-      )
-      .returning({
-        publicSlug: hostedSites.publicSlug,
-        activeDeploymentId: hostedSites.activeDeploymentId,
-        activeDeploymentVersion: activeVersion.mapWith(
-          nullableDriverValueDecoder(pgIntegerDecoder),
-        ),
-      });
-    signal.throwIfAborted();
     if (!promotion) {
       const [latest] = await db
         .select({ status: deploymentTable.status })
