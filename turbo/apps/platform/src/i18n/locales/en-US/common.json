@@ -4224,6 +4224,49 @@
       "promptTitle": "Try this prompt"
     },
     "sourcesFirst": {
+      "capabilities": {
+        "copy": "Give your agent more power with specialist data, social insights, and image creation. Choose your capabilities. Okou puts them to work for you.",
+        "items": {
+          "data-search": {
+            "description": "Compare companies, website traffic, and ads to spot opportunities.",
+            "name": "Advanced data research"
+          },
+          "finance": {
+            "description": "Compare stock prices and market trends for investment research.",
+            "name": "Financial data"
+          },
+          "image-generation": {
+            "description": "Create original visuals for social posts, campaigns, and slides.",
+            "name": "Image generation"
+          },
+          "maps": {
+            "description": "Find businesses and venues, compare locations, and plan routes.",
+            "name": "Maps and places"
+          },
+          "people-search": {
+            "description": "Find potential customers, partners, or hires by role and company.",
+            "name": "People search"
+          },
+          "scrape": {
+            "description": "Turn web pages into key facts for briefs and comparisons.",
+            "name": "Page extraction"
+          },
+          "seo": {
+            "description": "Find keywords customers search for and see where competitors rank.",
+            "name": "SEO research"
+          },
+          "social": {
+            "description": "Research creators, posts, and engagement to guide your content.",
+            "name": "Social search"
+          },
+          "web-search": {
+            "description": "Find up-to-date news and facts, with sources you can check.",
+            "name": "Web search"
+          }
+        },
+        "listLabel": "Built-in capabilities",
+        "title": "Meet Okou’s secret tools"
+      },
       "chatChannels": {
         "connectedTitle": "Your chat is connected",
         "copy": "Text Okou for yourself, or add it to your team’s chat. Choose the way you already work.",
@@ -4246,8 +4289,7 @@
         "industry": "Choose your field",
         "ready": "Okou is ready",
         "skills": "Import your skills",
-        "sources": "Connect your work",
-        "team": "Invite a team member"
+        "sources": "Connect your work"
       },
       "experience": {
         "copy": "Start with guidance, or bring the Codex or Claude Code plan you already use.",
@@ -4337,9 +4379,7 @@
         "skillsCopy": "Use {{provider}} on your computer.",
         "skillsTitle": "Import your skills",
         "sourcesCopy": "Choose one for your first task.",
-        "startTask": "Start task",
-        "teamCopy": "Work together in one workspace.",
-        "teamTitle": "Invite a teammate"
+        "startTask": "Start task"
       },
       "outcomes": {
         "accessibleLabel": "Illustrative {{title}} prepared from {{source}}. All content is sample data.",
@@ -4912,24 +4952,6 @@
         "failedNote": "We couldn’t connect {{provider}}. You can continue and connect it later.",
         "rowCopy": "Connect to run on your plan instead of Okou credits.",
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can continue and connect it later."
-      },
-      "team": {
-        "copy": "Invite a team member to share your workflows, while each of you connects your own tools.",
-        "invalidEmail": "Enter a valid email address",
-        "invite": "Send invite",
-        "invited": "Invited",
-        "label": "Team member’s email",
-        "note": "They can start working with Okou right away.",
-        "notSent": "Not sent",
-        "panelTitle": "Invite a team member",
-        "placeholder": "name@company.com",
-        "points": {
-          "accounts": "They connect their own tools when they need them.",
-          "workflows": "They can run any workflow your team has built.",
-          "workspace": "They join your workspace."
-        },
-        "sending": "Sending…",
-        "title": "Make Okou useful to your whole team"
       },
       "welcome": {
         "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",

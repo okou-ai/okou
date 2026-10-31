@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.805.4](https://github.com/okou-ai/okou/compare/core-v8.805.3...core-v8.805.4) (2026-10-31)
+
+
+### Performance Improvements
+
+* **app:** replace browser http contracts with schema-free descriptors ([#44306](https://github.com/okou-ai/okou/issues/44306)) ([ce8f7fc](https://github.com/okou-ai/okou/commit/ce8f7fc59e52c4da702aced0d641d41f57a63139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.1
+
 ## [8.805.3](https://github.com/okou-ai/okou/compare/core-v8.805.2...core-v8.805.3) (2026-10-30)
 
 

@@ -12,6 +12,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1081.0](https://github.com/okou-ai/okou/compare/app-v0.1080.3...app-v0.1081.0) (2026-10-31)
+
+
+### Features
+
+* add onboarding capabilities and remove team invitations ([#44373](https://github.com/okou-ai/okou/issues/44373)) ([f905e56](https://github.com/okou-ai/okou/commit/f905e561cecb59879c54ced8f5e2f952645990be))
+
+
+### Refactoring
+
+* **platform:** rebuild cloud browser as signal factories ([#44322](https://github.com/okou-ai/okou/issues/44322)) ([e4ef854](https://github.com/okou-ai/okou/commit/e4ef8545bbe764407ffdd4f38700ad5fce0fc884))
+
+
+### Performance Improvements
+
+* **app:** replace browser http contracts with schema-free descriptors ([#44306](https://github.com/okou-ai/okou/issues/44306)) ([ce8f7fc](https://github.com/okou-ai/okou/commit/ce8f7fc59e52c4da702aced0d641d41f57a63139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.26.1
+    * @okouai/core bumped to 8.805.4
+
 ## [0.1080.3](https://github.com/okou-ai/okou/compare/app-v0.1080.2...app-v0.1080.3) (2026-10-30)
 
 

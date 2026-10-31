@@ -133,6 +133,7 @@ test("Resuming a later step preserves progress without a connected source", asyn
 
 test.each([
   { step: "team", isAdmin: false },
+  { step: "team", isAdmin: true },
   { step: "skills", isAdmin: true },
 ])(
   "A saved $step step must belong to the current flow",

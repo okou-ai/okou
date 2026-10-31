@@ -62,6 +62,7 @@ import {
   setupOnboardingSkillsPage$,
   setupOnboardingSlackPage$,
   setupOnboardingTeamPage$,
+  setupOnboardingCapabilitiesPage$,
 } from "./onboarding/onboarding-sources-first-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
@@ -473,6 +474,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.onboardingSlack,
     setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
+  },
+  {
+    path: ROUTES.onboardingCapabilities,
+    setup: setupAuthPageWrapper(setupOnboardingCapabilitiesPage$),
   },
   {
     path: ROUTES.onboardingReady,
