@@ -17,7 +17,7 @@ import {
   type ConnectorRuntimeBindingEntry,
 } from "@okouai/connectors/connector-auth-method";
 import {
-  matchFirewallBaseUrl,
+  matchFirewallBaseAuthority,
   matchFirewallRequestDecision,
   type FirewallRequestDecisionOptions,
   type FirewallRequestDecision,
@@ -773,8 +773,8 @@ async function loadGlobalCatalogConfigs(
   state: StoredRuntimeState,
   snapshot: ConnectorRuntimeSnapshot,
 ): Promise<ConnectorCheckRoutingConfig[]> {
-  let bestScore: number | null = null;
-  const ownerSlugs = new Set<ConnectorSlug>();
+  const candidateSlugs = new Set<ConnectorSlug>();
+  const authorityUrl = new URL(request.url).origin;
 
   for (const connectorSlug of snapshot.serverFirewalls.connectorSlugs) {
     const metadata =
@@ -797,24 +797,18 @@ async function loadGlobalCatalogConfigs(
       if (!resolution.candidate) {
         continue;
       }
-      const match = matchFirewallBaseUrl(
-        request.url,
-        resolution.candidate.decisionBase,
-      );
-      if (!match) {
-        continue;
-      }
-      if (bestScore === null || match.score > bestScore) {
-        bestScore = match.score;
-        ownerSlugs.clear();
-      }
-      if (match.score === bestScore) {
-        ownerSlugs.add(connectorSlug);
+      if (
+        matchFirewallBaseAuthority(
+          authorityUrl,
+          resolution.candidate.decisionBase,
+        )
+      ) {
+        candidateSlugs.add(connectorSlug);
       }
     }
   }
 
-  if (ownerSlugs.size === 0 && requestedConnectorSlug) {
+  if (candidateSlugs.size === 0 && requestedConnectorSlug) {
     const selected = await catalogConfig(
       requestedConnectorSlug,
       state,
@@ -824,7 +818,7 @@ async function loadGlobalCatalogConfigs(
   }
 
   const configs = await Promise.all(
-    [...ownerSlugs].sort().map(async (connectorSlug) => {
+    [...candidateSlugs].sort().map(async (connectorSlug) => {
       const config = await catalogConfig(connectorSlug, state, snapshot);
       if (!config) {
         throw new Error(

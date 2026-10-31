@@ -386,6 +386,22 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
   });
 
+  it("retains encoded API prefixes during global catalog selection", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await bdd.readOnboardingStatus(actor);
+    await connectReap(actor, "https://prod.api.reap.global/v%31");
+    const result = await checkWithSession(actor, {
+      mode: "url",
+      method: "GET",
+      url: "https://prod.api.reap.global/v1/users",
+    });
+    expect(result.body).toStrictEqual({
+      outcome: "unsafe-input",
+      reason: "unsafe-path",
+    });
+  });
+
   it("returns canonical identities for both URL request forms", async () => {
     const actor = bdd.user();
     const base = {

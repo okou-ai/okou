@@ -2719,6 +2719,21 @@ function apiAuthorityBase(base: string): string {
   return start < 0 ? base : base.slice(0, start);
 }
 
+/** Candidate discovery only; path applicability and authorization still require the decision matcher. */
+export function matchFirewallBaseAuthority(url: string, base: string): boolean {
+  const requestAuthority = rawAuthorityFromUrl(url);
+  const schemeEnd = url.indexOf("://");
+  if (requestAuthority === null || schemeEnd < 0) return false;
+  const authorityUrl = url.slice(0, schemeEnd + 3) + requestAuthority;
+  return (
+    matchFirewallBaseUrlForDecision(
+      authorityUrl,
+      apiAuthorityBase(base),
+      "/",
+    ) !== null
+  );
+}
+
 function authorityApis(
   compiled: readonly DecisionFirewall[],
   url: string,
@@ -2731,13 +2746,7 @@ function authorityApis(
   let order = 0;
   for (const firewall of compiled)
     for (const api of firewall.apis) {
-      if (
-        matchFirewallBaseUrlForDecision(
-          authorityUrl,
-          apiAuthorityBase(api.rawBase),
-          "/",
-        ) !== null
-      )
+      if (matchFirewallBaseAuthority(authorityUrl, api.rawBase))
         matches.push({ firewall, api, order });
       order += 1;
     }
