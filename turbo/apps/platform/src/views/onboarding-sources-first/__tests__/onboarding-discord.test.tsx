@@ -139,6 +139,8 @@ test.each([false, true])(
     expect(pathname()).toBe(ROUTES.onboardingSlack);
 
     click(getButton("Continue"));
+    await screen.findByRole("heading", { name: "Meet Okou’s secret tools" });
+    click(getButton("Continue"));
 
     await expect(
       screen.findByLabelText("Your starting prompt"),
