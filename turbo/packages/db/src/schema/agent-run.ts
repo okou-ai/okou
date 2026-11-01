@@ -257,6 +257,26 @@ export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
       "agent_runs_official_workflow_provenance_check",
       sql`(
           ${table.officialWorkflowProvenance} IS NULL OR (
+            jsonb_typeof(${table.officialWorkflowProvenance}) = 'object'
+            AND ${table.officialWorkflowProvenance} ?& ARRAY['schemaVersion', 'definitions']
+            AND (${table.officialWorkflowProvenance} - 'schemaVersion' - 'definitions') = '{}'::jsonb
+            AND ${table.officialWorkflowProvenance}->'schemaVersion' = '2'::jsonb
+            AND jsonb_typeof(${table.officialWorkflowProvenance}->'definitions') = 'array'
+            AND jsonb_array_length(${table.officialWorkflowProvenance}->'definitions') > 0
+            AND NOT jsonb_path_exists(${table.officialWorkflowProvenance}, '$.definitions[*] ? (
+              @.type() != "object" || !exists(@.name) || @.name.type() != "string" ||
+              !(@.name like_regex "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$") ||
+              !exists(@.revision) || @.revision.type() != "string" || !(@.revision like_regex "^[0-9a-f]{64}$") ||
+              exists(@.keyvalue() ? (@.key != "name" && @.key != "revision" && @.key != "contentBundle")) ||
+              !exists(@.contentBundle) || @.contentBundle.type() != "object" ||
+              !exists(@.contentBundle.sha256) || @.contentBundle.sha256.type() != "string" ||
+              !(@.contentBundle.sha256 like_regex "^[0-9a-f]{64}$") ||
+              !exists(@.contentBundle.archiveBytes) || @.contentBundle.archiveBytes.type() != "number" ||
+              @.contentBundle.archiveBytes < 1 || @.contentBundle.archiveBytes > 33554432 ||
+              @.contentBundle.archiveBytes.floor() != @.contentBundle.archiveBytes ||
+              exists(@.contentBundle.keyvalue() ? (@.key != "sha256" && @.key != "archiveBytes"))
+            )')
+          ) OR (
             jsonb_typeof(${table.officialWorkflowProvenance}) = 'object' AND
             ${table.officialWorkflowProvenance} ?& ARRAY[
               'schemaVersion',

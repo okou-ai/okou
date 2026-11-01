@@ -29,6 +29,39 @@ export interface WorkflowClaimInput {
   readonly ambiguousMountPaths: readonly string[];
 }
 
+function officialWorkflowClaimSelection(
+  context: StoredExecutionContext,
+  skillRoot: string,
+): WorkflowClaimInput["selection"] {
+  const officialPaths = (context.officialWorkflowBundles ?? []).map(
+    (bundle) => {
+      return bundle.mountPath;
+    },
+  );
+  if (
+    new Set(officialPaths).size !== officialPaths.length ||
+    officialPaths.some((path) => {
+      return (
+        !path.startsWith(`${skillRoot}/`) ||
+        context.storageMounts.some((mount) => {
+          return mount.mountPath === path;
+        })
+      );
+    })
+  ) {
+    throw new Error("Official Workflow bundle destinations are inconsistent");
+  }
+  return context.customWorkflowSelection && officialPaths.length > 0
+    ? {
+        ...context.customWorkflowSelection,
+        protectedMountPaths: [
+          ...(context.customWorkflowSelection.protectedMountPaths ?? []),
+          ...officialPaths,
+        ],
+      }
+    : context.customWorkflowSelection;
+}
+
 export function workflowClaimInput(
   context: StoredExecutionContext,
   prompt: string,
@@ -39,6 +72,7 @@ export function workflowClaimInput(
       : context.cliAgentType === "codex"
         ? "/home/user/.codex/skills"
         : "/home/user/.claude/skills";
+  const selection = officialWorkflowClaimSelection(context, skillRoot);
   const ordinaryMount = /^custom-skill@[a-f0-9-]{36}$/u;
   for (const mount of context.storageMounts) {
     if (
@@ -55,7 +89,7 @@ export function workflowClaimInput(
     /^\/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])(?:\s|$)/u.exec(prompt.trim())?.[1] ??
     null;
   return {
-    selection: context.customWorkflowSelection,
+    selection,
     skillRoot,
     invokedWorkflowId:
       context.customWorkflowSelection?.invokedWorkflowId ??

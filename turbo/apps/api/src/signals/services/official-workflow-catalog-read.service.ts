@@ -14,7 +14,7 @@ import {
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { array, string } from "zod";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, isNotNull, or } from "drizzle-orm";
 
 import { db$ } from "../external/db";
 
@@ -37,9 +37,10 @@ interface OfficialWorkflowRevisionRow {
   readonly definitionName: string;
   readonly revision: string;
   readonly payload: unknown;
-  readonly storageName: string;
-  readonly storageId: string;
-  readonly storageVersion: string;
+  readonly storageName: string | null;
+  readonly storageId: string | null;
+  readonly storageVersion: string | null;
+  readonly contentBundle: unknown;
 }
 
 function officialWorkflowPayloadSchemaVersion(payload: unknown): number {
@@ -71,11 +72,18 @@ export function acceptedRevisionFromRow(
   }
   return officialWorkflowAcceptedRevisionSchema.parse({
     definition,
-    artifact: {
-      storageName: row.storageName,
-      storageId: row.storageId,
-      storageVersion: row.storageVersion,
-    },
+    ...(row.storageName === null &&
+    row.storageId === null &&
+    row.storageVersion === null
+      ? { contentBundle: row.contentBundle }
+      : {
+          artifact: {
+            storageName: row.storageName,
+            storageId: row.storageId,
+            storageVersion: row.storageVersion,
+          },
+          contentBundle: row.contentBundle,
+        }),
   });
 }
 
@@ -153,6 +161,7 @@ export function acceptedOfficialWorkflowRevisionReadPlan(args: {
       definitionName: officialWorkflowDefinitionRevisions.definitionName,
       revision: officialWorkflowDefinitionRevisions.revision,
       payload: officialWorkflowDefinitionRevisions.payload,
+      contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
       storageName: officialWorkflowDefinitionRevisions.storageName,
       storageId: officialWorkflowDefinitionRevisions.storageId,
       storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
@@ -173,6 +182,15 @@ export function acceptedOfficialWorkflowRevisionReadPlan(args: {
         officialWorkflowDefinitionRevisions.storageId,
       ),
     ),
+    deliveryCondition: or(
+      and(
+        isNull(officialWorkflowDefinitionRevisions.storageName),
+        isNull(officialWorkflowDefinitionRevisions.storageId),
+        isNull(officialWorkflowDefinitionRevisions.storageVersion),
+        isNotNull(officialWorkflowDefinitionRevisions.contentBundle),
+      ),
+      and(isNotNull(storages.id), isNotNull(storageVersions.id)),
+    ),
     condition: and(
       eq(officialWorkflowDefinitionRevisions.definitionName, args.name),
       eq(officialWorkflowDefinitionRevisions.revision, args.revision),
@@ -189,13 +207,26 @@ export const readAcceptedOfficialWorkflowRevision$ = command(
     const db = get(db$);
     const plan = acceptedOfficialWorkflowRevisionReadPlan(args);
     const [row] = await db
-      .select(plan.columns)
+      .select({
+        ...plan.columns,
+        verifiedStorageId: storages.id,
+        verifiedStorageVersion: storageVersions.id,
+      })
       .from(officialWorkflowDefinitionRevisions)
-      .innerJoin(storages, plan.storageJoin)
-      .innerJoin(storageVersions, plan.storageVersionJoin)
+      .leftJoin(storages, plan.storageJoin)
+      .leftJoin(storageVersions, plan.storageVersionJoin)
       .where(plan.condition)
       .limit(1);
     signal.throwIfAborted();
+    if (
+      row &&
+      (row.verifiedStorageId !== row.storageId ||
+        row.verifiedStorageVersion !== row.storageVersion)
+    ) {
+      throw new Error(
+        "Official Workflow revision artifact registration is inconsistent",
+      );
+    }
     return row ? acceptedRevisionFromRow(row) : null;
   },
 );
@@ -211,6 +242,7 @@ export const readAllSupportedOfficialWorkflowRevisions$ = command(
         definitionName: officialWorkflowDefinitionRevisions.definitionName,
         revision: officialWorkflowDefinitionRevisions.revision,
         payload: officialWorkflowDefinitionRevisions.payload,
+        contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
         storageName: officialWorkflowDefinitionRevisions.storageName,
         storageId: officialWorkflowDefinitionRevisions.storageId,
         storageVersion: officialWorkflowDefinitionRevisions.storageVersion,

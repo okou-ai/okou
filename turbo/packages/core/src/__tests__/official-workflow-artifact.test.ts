@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { prepareContentBundle, readContentBundle } from "../content-bundle";
-import { officialWorkflowArtifactFiles } from "../official-workflow-artifact";
+import {
+  officialWorkflowArtifactFiles,
+  officialWorkflowExecutionFiles,
+  verifyOfficialWorkflowArtifact,
+} from "../official-workflow-artifact";
 
 const definition = {
   name: "weekly-report",
@@ -112,4 +116,78 @@ describe("Official Workflow artifact file encoding", () => {
       ),
     );
   });
+});
+
+it("keeps execution hash independent of Blueprint and business revision changes", async () => {
+  const first = {
+    ...definition,
+    revision: "a".repeat(64),
+    blueprints: [{ key: "daily", schedule: "0 7 * * *" }],
+  };
+  const next = {
+    ...first,
+    revision: "b".repeat(64),
+    blueprints: [{ key: "daily", schedule: "0 8 * * *" }],
+  };
+  const prepare = (value: typeof first) => {
+    return prepareContentBundle(
+      officialWorkflowExecutionFiles(value).map((file) => {
+        return {
+          path: file.path,
+          content: Buffer.from(file.content, "utf8"),
+        };
+      }),
+    );
+  };
+  expect((await prepare(first)).descriptor).toEqual(
+    (await prepare(next)).descriptor,
+  );
+  expect(
+    (
+      await prepare({
+        ...next,
+        workflow: { ...next.workflow, instruction: "New instruction" },
+      })
+    ).descriptor.sha256,
+  ).not.toEqual((await prepare(first)).descriptor.sha256);
+});
+
+it("checks actual archive bytes against the pinned legacy file hashes", async () => {
+  const files = officialWorkflowExecutionFiles(definition).map((file) => {
+    return {
+      path: file.path,
+      content: Buffer.from(file.content, "utf8"),
+    };
+  });
+  const valid = await prepareContentBundle(files);
+  const published = {
+    storageId,
+    storageVersion: executionVersion,
+    definitionManifest,
+  };
+  expect(() => {
+    return verifyOfficialWorkflowArtifact(valid.archive, definition, published);
+  }).not.toThrow();
+  const forged = await prepareContentBundle(
+    files.map((file) => {
+      return {
+        ...file,
+        content:
+          file.path === "SKILL.md"
+            ? Buffer.from(
+                file.content
+                  .toString()
+                  .replace("Summarize the week.", "Summarize the weak."),
+              )
+            : file.content,
+      };
+    }),
+  );
+  expect(() => {
+    return verifyOfficialWorkflowArtifact(
+      forged.archive,
+      definition,
+      published,
+    );
+  }).toThrow("content is inconsistent");
 });

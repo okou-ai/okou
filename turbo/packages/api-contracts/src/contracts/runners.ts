@@ -1,4 +1,7 @@
-import { claimedContentBundlesSchema } from "./content-bundle";
+import {
+  contentBundleSchema,
+  claimedContentBundlesSchema,
+} from "./content-bundle";
 import {
   array,
   boolean,
@@ -920,6 +923,16 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = object({
+  // Exact Official content is selected at admission, never refreshed at claim.
+  officialWorkflowBundles: array(
+    contentBundleSchema
+      .extend({
+        mountPath: string().regex(
+          /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/u,
+        ),
+      })
+      .strict(),
+  ).optional(),
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),

@@ -156,6 +156,7 @@ import {
 import type { ModelCatalog } from "./model-catalog.service";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
+  pinnedOfficialWorkflowBundles,
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowRunObservation,
@@ -4676,6 +4677,16 @@ function prepareAtomicLaunchPersistence(
 ): PreparedAtomicLaunchPersistence {
   const payload = runnerJobPayload({
     ...commit.launch.runnerJobPayload,
+    executionContext: {
+      ...commit.launch.runnerJobPayload.executionContext,
+      ...(commit.context.officialWorkflowRun?.provenance.schemaVersion === 2
+        ? {
+            officialWorkflowBundles: pinnedOfficialWorkflowBundles(
+              commit.context.officialWorkflowRun,
+            ),
+          }
+        : {}),
+    },
     reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
   });
   const rowsArgs = preparedLaunchRowsArgs({
