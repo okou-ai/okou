@@ -770,8 +770,8 @@ test("Remote editing context configures one stable selection-capable keyboard pr
   expect(input).toHaveFocus();
 });
 
-test("A retired tab cannot apply its delayed secure editing context", async () => {
-  const browser = await setupViewer();
+test("A failed editing-context read clears stale keyboard hints without disabling input", async () => {
+  const browser = await setupViewer(0);
   browser.setFocusedEditing({
     x: 40,
     y: 50,
@@ -780,32 +780,110 @@ test("A retired tab cannot apply its delayed secure editing context", async () =
     offsetX: 0,
     offsetY: 0,
     editing: {
-      type: "password",
+      type: "text",
       multiline: false,
-      inputMode: "numeric",
+      inputMode: "none",
       enterKeyHint: "done",
-      autoCapitalize: "none",
+      autoCapitalize: "characters",
       lang: "ja",
     },
   });
-  const reading = browser.holdNext("Runtime.evaluate");
-  await userEvent.click(screen.getByLabelText("Remote browser input"));
-  await expect(reading.received).resolves.toContain('"password"');
-  browser.setFocusedEditing(null);
-  await userEvent.click(
-    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
-  );
-  await waitFor(() => {
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-  });
-  await act(async () => {
-    await reading.release();
-  });
   const input = screen.getByLabelText("Remote browser input");
-  expect(input).toHaveAttribute("type", "text");
-  expect(input).toHaveAttribute("inputmode", "text");
-  expect(input).toHaveAttribute("enterkeyhint", "enter");
+  await userEvent.click(input);
+  await waitFor(() => {
+    expect(input).toHaveAttribute("inputmode", "none");
+  });
+  browser.setFocusedEditing(null);
+  browser.failNext("Runtime.evaluate", "Cannot find context with specified id");
+  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  await waitFor(() => {
+    expect(input).toHaveAttribute("inputmode", "text");
+    expect(input).toHaveAttribute("enterkeyhint", "enter");
+    expect(input).toHaveAttribute("lang", "");
+  });
+  expect(input).toBeEnabled();
+  expect(input).toHaveFocus();
+  fireEvent.input(input, {
+    target: { value: "fresh" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "fresh" },
+    });
+  });
 });
+
+test.each(["success", "failure"])(
+  "A retired tab's delayed %s cannot alter the successor editing context",
+  async (outcome) => {
+    const browser = await setupViewer();
+    browser.setFocusedEditing({
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type: "password",
+        multiline: false,
+        inputMode: "numeric",
+        enterKeyHint: "done",
+        autoCapitalize: "none",
+        lang: "ja",
+      },
+    });
+    if (outcome === "failure") {
+      browser.failNext(
+        "Runtime.evaluate",
+        "Cannot find context with specified id",
+      );
+    }
+    const reading = browser.holdNext("Runtime.evaluate");
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    await expect(reading.received).resolves.toContain(
+      outcome === "failure" ? '"error"' : '"password"',
+    );
+    browser.setFocusedEditing({
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type: "text",
+        multiline: false,
+        inputMode: "numeric",
+        enterKeyHint: "send",
+        autoCapitalize: "none",
+        lang: "en",
+      },
+    });
+    await userEvent.click(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    await waitFor(() => {
+      expect(input).toHaveAttribute("inputmode", "numeric");
+      expect(input).toHaveAttribute("enterkeyhint", "send");
+    });
+    await act(async () => {
+      await reading.release();
+    });
+    expect(input).toHaveAttribute("type", "text");
+    expect(input).toHaveAttribute("inputmode", "numeric");
+    expect(input).toHaveAttribute("enterkeyhint", "send");
+    expect(input).toHaveAttribute("lang", "en");
+  },
+);
 
 test("Native form actions forward Enter once without submitting an IME candidate", async () => {
   const browser = await setupViewer(0);

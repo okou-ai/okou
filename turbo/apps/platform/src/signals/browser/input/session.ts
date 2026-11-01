@@ -315,13 +315,10 @@ function createCaretObservation(
       set(caretJob$, null);
       const [result] = await Promise.allSettled([set(readCaret$, job, signal)]);
       signal.throwIfAborted();
-      if (
-        result.status === "fulfilled" &&
-        version === get(caretVersion$) &&
-        set(lifecycle.owns$, job.owner)
-      ) {
-        set(internalCaret$, result.value?.caret ?? null);
-        set(internalEditing$, result.value?.editing ?? null);
+      if (version === get(caretVersion$) && set(lifecycle.owns$, job.owner)) {
+        const observation = result.status === "fulfilled" ? result.value : null;
+        set(internalCaret$, observation?.caret ?? null);
+        set(internalEditing$, observation?.editing ?? null);
         set(graph.nativeHost.synchronize$);
       }
     }
