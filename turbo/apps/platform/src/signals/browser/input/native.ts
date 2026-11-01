@@ -774,11 +774,21 @@ function createNativeTextEvents(
     ingress,
     proxy$,
     synchronize$,
+    enter$,
     sendEnter$,
     enterForwarded$,
   } = graph;
   const beforeInput$ = command(({ get, set }, event: InputEvent) => {
     set(synchronize$);
+    if (
+      event.cancelable &&
+      isEnterInput(event) &&
+      !get(composition.composing$)
+    ) {
+      // Single-line controls can expose paragraph intent only in beforeinput.
+      set(enter$, event);
+      return;
+    }
     // A single-line input sanitizes multiline insertion before its input event.
     // Preserve literal text here; only an explicit action becomes remote Enter.
     const text =

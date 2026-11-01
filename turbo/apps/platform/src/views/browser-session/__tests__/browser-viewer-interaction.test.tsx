@@ -894,6 +894,14 @@ test("Native form actions forward Enter once without submitting an IME candidate
   expect(fireEvent.submit(form)).toBeFalsy();
   fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
   fireEvent.submit(form);
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertParagraph",
+    }),
+  );
   fireEvent.keyUp(input, { key: "Enter", code: "Enter", keyCode: 13 });
   fireEvent.compositionStart(input);
   fireEvent.input(input, {
@@ -902,6 +910,16 @@ test("Native form actions forward Enter once without submitting an IME candidate
     isComposing: true,
   });
   fireEvent.submit(form);
+  expect(
+    fireEvent(
+      input,
+      new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertParagraph",
+      }),
+    ),
+  ).toBeTruthy();
   fireEvent(
     input,
     Object.assign(new Event("compositionend", { bubbles: true }), {
@@ -913,6 +931,18 @@ test("Native form actions forward Enter once without submitting an IME candidate
     inputType: "insertCompositionText",
   });
   fireEvent.input(input, { inputType: "insertLineBreak" });
+  for (const inputType of ["insertLineBreak", "insertParagraph"]) {
+    expect(
+      fireEvent(
+        input,
+        new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType,
+        }),
+      ),
+    ).toBeFalsy();
+  }
   fireEvent(
     input,
     new InputEvent("beforeinput", {
@@ -935,7 +965,7 @@ test("Native form actions forward Enter once without submitting an IME candidate
   const keys = browser.input.filter((request) => {
     return request.method === "Input.dispatchKeyEvent";
   });
-  expect(keys).toHaveLength(6);
+  expect(keys).toHaveLength(10);
   for (let index = 0; index < keys.length; index += 2) {
     expect(keys[index]).toMatchObject({
       params: {
