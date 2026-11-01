@@ -299,6 +299,7 @@ test("Completing a prompt link preserves a model chosen in a later composer", as
     context,
     path: "/prompt?prompt=Finish%20the%20linked%20task&model=gpt-6-astra",
   });
+  await page.content;
   await waitForPromptLaunch("Finish the linked task", capture);
 
   act(() => {
