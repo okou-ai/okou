@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.807.0](https://github.com/okou-ai/okou/compare/core-v8.806.1...core-v8.807.0) (2026-11-01)
+
+
+### Features
+
+* enable shared browser for staff ([#44435](https://github.com/okou-ai/okou/issues/44435)) ([a85f2d2](https://github.com/okou-ai/okou/commit/a85f2d2bf7b06fef0d225bc47e70c202f207562f))
+* **workflows:** prepare official workflow content bundles ([#44471](https://github.com/okou-ai/okou/issues/44471)) ([868fad8](https://github.com/okou-ai/okou/commit/868fad832660a1430be8f847a4af489888cefa3c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.29.0
+
 ## [8.806.1](https://github.com/okou-ai/okou/compare/core-v8.806.0...core-v8.806.1) (2026-11-01)
 
 
