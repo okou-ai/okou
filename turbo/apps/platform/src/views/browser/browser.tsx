@@ -498,50 +498,57 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
       >
         <RotateCw size={15} />
       </IconButton>
-      <Input
-        ref={addressRef}
-        data-browser-address
-        aria-label={t(($) => {
-          return $.browserViewer.address;
-        })}
-        placeholder={t(($) => {
-          return $.browserSession.addressPlaceholder;
-        })}
-        className="h-8 min-w-0 flex-1"
-        value={address}
-        disabled={!controls.streaming || navigating}
-        aria-busy={navigating}
-        onFocus={() => {
-          return focus();
-        }}
-        onBlur={() => {
-          return blur();
-        }}
-        onChange={(event) => {
-          return edit(event.currentTarget.value);
-        }}
-        onKeyDown={(event) => {
-          if (
-            event.nativeEvent.isComposing ||
-            event.nativeEvent.keyCode === 229
-          ) {
-            return;
+      <form
+        className="flex min-w-0 flex-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (controls.streaming && !navigating) {
+            detach(navigate("submit-address", pageSignal), Reason.DomCallback);
           }
-          if (event.key === "Enter") {
-            event.preventDefault();
-            if (!navigating) {
-              detach(
-                navigate("submit-address", pageSignal),
-                Reason.DomCallback,
-              );
+        }}
+      >
+        <Input
+          ref={addressRef}
+          data-browser-address
+          aria-label={t(($) => {
+            return $.browserViewer.address;
+          })}
+          placeholder={t(($) => {
+            return $.browserSession.addressPlaceholder;
+          })}
+          className="h-8 min-w-0 flex-1"
+          value={address}
+          inputMode="url"
+          enterKeyHint="go"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          disabled={!controls.streaming || navigating}
+          aria-busy={navigating}
+          onFocus={() => {
+            return focus();
+          }}
+          onBlur={() => {
+            return blur();
+          }}
+          onChange={(event) => {
+            return edit(event.currentTarget.value);
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.nativeEvent.isComposing ||
+              event.nativeEvent.keyCode === 229
+            ) {
+              return;
             }
-          } else if (event.key === "Escape") {
-            event.preventDefault();
-            reset();
-            event.currentTarget.select();
-          }
-        }}
-      />
+            if (event.key === "Escape") {
+              event.preventDefault();
+              reset();
+              event.currentTarget.select();
+            }
+          }}
+        />
+      </form>
       <BrowserSettings signals={signals} />
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
       <BrowserOperationError
