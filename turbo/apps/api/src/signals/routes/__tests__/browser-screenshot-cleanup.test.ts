@@ -203,6 +203,11 @@ test("reclaims replaced screenshots and their file access while the current prev
 });
 
 test("retains the accepted screenshot after the shared owner and window retire", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
