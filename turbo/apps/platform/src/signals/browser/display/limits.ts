@@ -6,7 +6,3 @@ export const maximumFrameArea = 3840 * 2160;
 
 /** Base64 character count, before decoding; not the binary image byte length. */
 export const maximumEncodedFrameLength = 12 * 1024 * 1024;
-
-/** Native adaptation product budgets, independent of screenshot preferences. */
-export const maximumDisplayDimension = 4096;
-export const maximumDisplayArea = 3840 * 2160;

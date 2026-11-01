@@ -89,7 +89,13 @@ function BrowserOperationError({
   );
 }
 
-function BrowserSettings({ signals }: { readonly signals: BrowserSignals }) {
+function BrowserSettings({
+  signals,
+  disabled,
+}: {
+  readonly signals: BrowserSignals;
+  readonly disabled: boolean;
+}) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   // The owner remains mounted when the menu closes, including its operation errors.
@@ -121,6 +127,7 @@ function BrowserSettings({ signals }: { readonly signals: BrowserSignals }) {
           render={
             <IconButton
               type="button"
+              disabled={disabled}
               aria-label={t(($) => {
                 return $.browserViewer.settings;
               })}
@@ -435,7 +442,15 @@ function TransportSettingsMenu({
   );
 }
 
-function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
+interface BrowserNavigationProps {
+  readonly signals: BrowserSignals;
+  readonly settingsDisabled: boolean;
+}
+
+function BrowserNavigation({
+  signals,
+  settingsDisabled,
+}: BrowserNavigationProps) {
   const { t } = useTranslation();
   const history = useLoadable(signals.history$);
   const scope = useGet(signals.navigationScope$);
@@ -549,7 +564,7 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
           }}
         />
       </form>
-      <BrowserSettings signals={signals} />
+      <BrowserSettings signals={signals} disabled={settingsDisabled} />
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
       <BrowserOperationError
         failed={failed}
@@ -951,10 +966,13 @@ export function Browser({
   signals,
   actions,
   presence,
+  placeholder,
 }: {
   readonly signals: BrowserSignals;
   readonly actions: ReactNode;
   readonly presence: ReactNode;
+  /** Paused content uses the real surface geometry before Browser creation. */
+  readonly placeholder?: ReactNode;
 }) {
   const { t } = useTranslation();
   const selectedTabId = useGet(signals.selectedTabId$);
@@ -997,7 +1015,10 @@ export function Browser({
           return createTab(pageSignal);
         }}
       />
-      <BrowserNavigation signals={signals} />
+      <BrowserNavigation
+        signals={signals}
+        settingsDisabled={placeholder !== undefined}
+      />
       <TabsContent
         keepMounted
         value={selectedTabId}
@@ -1047,13 +1068,15 @@ export function Browser({
             className="pointer-events-none absolute left-0 top-0 h-px min-h-0 w-px resize-none overflow-hidden rounded-none border-0 p-0 opacity-0 shadow-none"
           />
         </div>
-        <BrowserStatus
-          signals={signals}
-          creating={createOperation.state === "loading"}
-          onCreate={() => {
-            return createTab(pageSignal);
-          }}
-        />
+        {placeholder ?? (
+          <BrowserStatus
+            signals={signals}
+            creating={createOperation.state === "loading"}
+            onCreate={() => {
+              return createTab(pageSignal);
+            }}
+          />
+        )}
         {controls.streaming && navigation?.url === "about:blank" && (
           <div className="absolute inset-0 bg-background">
             <BrowserBlankPage />

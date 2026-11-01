@@ -1,10 +1,10 @@
 import type { Protocol } from "devtools-protocol";
-import { CdpFault, isRecord } from "../cdp/errors.ts";
 import {
-  maximumDisplayArea,
-  maximumDisplayDimension,
-  maximumFrameDimension,
-} from "./limits.ts";
+  browserDisplayContents,
+  constrainBrowserDisplay,
+} from "@okouai/core/browser-display";
+import { CdpFault, isRecord } from "../cdp/errors.ts";
+import { maximumFrameDimension } from "./limits.ts";
 
 export interface Point {
   readonly x: number;
@@ -203,27 +203,14 @@ export function frameViewport(metadata: unknown): Viewport | null {
 export function constrainDisplay(
   size: DisplaySize,
 ): DisplaySize & { constrained: boolean } {
-  const scale = Math.min(
-    1,
-    maximumDisplayDimension / size.width,
-    maximumDisplayDimension / size.height,
-    maximumDisplayDimension / (size.width * size.dpr),
-    maximumDisplayDimension / (size.height * size.dpr),
-    Math.sqrt(maximumDisplayArea / size.width / size.height) / size.dpr,
-  );
-  const width = Math.max(1, Math.floor(size.width * scale));
-  const height = Math.max(1, Math.floor(size.height * scale));
-  if (
-    width * size.dpr > maximumDisplayDimension ||
-    height * size.dpr > maximumDisplayDimension ||
-    width * height * size.dpr * size.dpr > maximumDisplayArea
-  ) {
+  const constrained = constrainBrowserDisplay(size);
+  if (!constrained) {
     throw new CdpFault(
       "display",
       "The display density cannot fit within the supported size limits.",
     );
   }
-  return { width, height, dpr: size.dpr, constrained: scale < 1 };
+  return constrained;
 }
 
 /** Project a requested CSS surface into native window DIP, emulation and input. */
@@ -244,8 +231,7 @@ export function projectDisplay(
   const viewportScale = densityScale / zoom;
   const contents = {
     windowId,
-    width: Math.max(1, Math.round(size.width * densityScale)),
-    height: Math.max(1, Math.round(size.height * densityScale)),
+    ...browserDisplayContents(size, nativeDpr),
   };
   const metrics: Protocol.Emulation.SetDeviceMetricsOverrideRequest = {
     width: Math.max(1, Math.round(size.width * zoom)),

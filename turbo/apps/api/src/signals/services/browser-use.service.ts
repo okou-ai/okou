@@ -1,6 +1,10 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import {
+  browserDisplayContents,
+  type BrowserDisplaySize,
+} from "@okouai/core/browser-display";
 
 import {
   BROWSER_INITIAL_SCREEN_HEIGHT,
@@ -845,6 +849,7 @@ export async function initialBrowserUseWindow(
 /** Creation is never retried: an unknown response may already have a window. */
 export async function createBrowserUseWindow(
   cdpUrl: string,
+  initialDisplay: BrowserDisplaySize | undefined,
   signal: AbortSignal,
 ): Promise<BrowserUseWindowCandidate> {
   const created = await settleIncludingAbort(
@@ -856,7 +861,14 @@ export async function createBrowserUseWindow(
             {
               id: 1,
               method: "Target.createTarget",
-              params: { url: "about:blank", newWindow: true },
+              // Creation bounds are outer DIP. Calibrate exact contents after creation.
+              params: {
+                url: "about:blank",
+                newWindow: true,
+                ...(initialDisplay
+                  ? browserDisplayContents(initialDisplay, 1)
+                  : {}),
+              },
             },
             deadline,
           ),
@@ -888,6 +900,97 @@ export async function createBrowserUseWindow(
   // The admission owner must receive a known candidate before it can honor
   // caller cancellation and finish exact candidate cleanup.
   return created.value;
+}
+
+/** Prepare native geometry; DPR emulation belongs to the sustained viewer session. */
+export async function prepareBrowserUseWindowDisplay(
+  cdpUrl: string,
+  window: BrowserUseWindowCandidate,
+  display: BrowserDisplaySize,
+  signal: AbortSignal,
+): Promise<void> {
+  const prepared = await settleIncludingAbort(
+    withBrowserUseCdpDeadline(signal, async (deadline) => {
+      await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+        const sequence = { next: 1 };
+        if (
+          (await nativeWindowForTarget(
+            socket,
+            window.targetId,
+            sequence,
+            deadline,
+          )) !== window.primaryWindowId
+        ) {
+          throw new Error("The Browser preparation target left its window");
+        }
+        // Closing this bounded socket releases its page session. A temporary
+        // metrics override would reset at that point, so only observe native scale.
+        const { sessionId } = object({ sessionId: string().min(1) }).parse(
+          await sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: sequence.next++,
+              method: "Target.attachToTarget",
+              params: { targetId: window.targetId, flatten: true },
+            },
+            deadline,
+          ),
+        );
+        const layout = object({
+          visualViewport: object({ clientWidth: number().positive() }),
+          cssVisualViewport: object({
+            clientWidth: number().positive(),
+            zoom: number().positive().optional(),
+          }),
+        }).parse(
+          await sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: sequence.next++,
+              method: "Page.getLayoutMetrics",
+              params: {},
+              sessionId,
+            },
+            deadline,
+          ),
+        );
+        const nativeDpr =
+          layout.visualViewport.clientWidth /
+          layout.cssVisualViewport.clientWidth /
+          (layout.cssVisualViewport.zoom ?? 1);
+        if (
+          (await nativeWindowForTarget(
+            socket,
+            window.targetId,
+            sequence,
+            deadline,
+          )) !== window.primaryWindowId
+        ) {
+          throw new Error("The Browser preparation target left its window");
+        }
+        await sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: sequence.next++,
+            method: "Browser.setContentsSize",
+            params: {
+              windowId: window.primaryWindowId,
+              ...browserDisplayContents(display, nativeDpr),
+            },
+          },
+          deadline,
+        );
+      });
+    }),
+  );
+  signal.throwIfAborted();
+  if (!prepared.ok) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_WINDOW_DISPLAY_ERROR",
+      "Managed Browser provider could not prepare the window display",
+    );
+  }
 }
 
 export async function browserUseWindowExists(
@@ -3931,6 +4034,18 @@ export async function deleteBrowserUseProfile(
   );
 }
 
+function initialBrowserUseScreen(display: BrowserDisplaySize | undefined) {
+  const contents = display
+    ? browserDisplayContents(display, 1)
+    : { width: BROWSER_SCREEN_WIDTH, height: BROWSER_INITIAL_SCREEN_HEIGHT };
+  // Provider launch limits differ from the viewer raster budget. Admission
+  // calibrates the actual contents afterward with allowResizing enabled.
+  return {
+    width: Math.max(320, Math.min(6144, contents.width)),
+    height: Math.max(320, Math.min(3456, contents.height)),
+  };
+}
+
 export async function createBrowserUseSession(
   args: {
     readonly profileId: string;
@@ -3938,9 +4053,11 @@ export async function createBrowserUseSession(
     readonly proxyCountryCode: string | null;
     readonly timeoutMinutes: number;
     readonly instanceId?: string;
+    readonly initialDisplay?: BrowserDisplaySize;
   },
   signal: AbortSignal,
 ): Promise<BrowserUseSession> {
+  const screen = initialBrowserUseScreen(args.initialDisplay);
   const body = await browserUseRequest(
     "/browsers",
     {
@@ -3949,8 +4066,8 @@ export async function createBrowserUseSession(
         profileId: args.profileId,
         proxyCountryCode: args.proxyCountryCode,
         timeout: args.timeoutMinutes,
-        browserScreenWidth: BROWSER_SCREEN_WIDTH,
-        browserScreenHeight: BROWSER_INITIAL_SCREEN_HEIGHT,
+        browserScreenWidth: screen.width,
+        browserScreenHeight: screen.height,
         allowResizing: true,
         enableRecording: false,
         extensionIds: [args.extensionId],

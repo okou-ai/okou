@@ -3,6 +3,7 @@ import { createBrowserRuntime } from "./runtime.ts";
 import type { ClipboardRecovery } from "./input/clipboard.ts";
 import type { BrowserNavigationAction } from "./navigation/action.ts";
 import type { DisplayModeResult, DisplayState } from "./display/sync.ts";
+import type { DisplaySize } from "./display/geometry.ts";
 import type { ImageRecovery } from "./viewer/image-recovery.ts";
 import type { layoutTabs } from "./viewer/tab-layout.ts";
 import type {
@@ -108,6 +109,8 @@ export interface BrowserSignals {
   readonly connectionChanged$: Command<void, []>;
   /** Re-measure after an application layout commit changes the viewer's box. */
   readonly syncLayout$: Command<void, []>;
+  /** Sample the mounted surface even before a remote connection exists. */
+  readonly measureInitialDisplay$: Command<DisplaySize | null, []>;
   readonly refs: {
     readonly root$: Ref<HTMLDivElement>;
     readonly canvas$: Ref<HTMLCanvasElement>;
