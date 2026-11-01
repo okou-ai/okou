@@ -2141,19 +2141,6 @@
       "threads": "Chat",
       "title": "Inoltra a"
     },
-    "landingFiles": {
-      "back": "Torna ai file",
-      "editFailed": "Impossibile aggiornare i file. Riprova.",
-      "failed": "Impossibile completare. I file e la richiesta restano qui. Riprova.",
-      "limit": "Aggiungi fino a 10 file (1 GB in totale).",
-      "loading": "Ripristino dei file…",
-      "missing": "I file non sono disponibili. Torna alla pagina nello stesso browser e selezionali di nuovo.",
-      "popupBlocked": "Consenti i popup per questo sito, poi riprova a trasferire i file.",
-      "prompt": "La tua richiesta",
-      "retry": "Riprova",
-      "selected": "File selezionati",
-      "uploading": "Caricamento del file {{current}} di {{total}}…"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

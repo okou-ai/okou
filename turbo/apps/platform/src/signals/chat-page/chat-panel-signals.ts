@@ -136,7 +136,6 @@ export interface QueueMessageOptions {
 }
 
 export interface ChatPanelSignals {
-  readonly refreshMessages$: Command<Promise<void>, [AbortSignal]>;
   readonly firstTaskUpgradeEligible$: Computed<Promise<boolean>>;
   readonly mail: ThreadMailSignals;
   readonly threadId: string;
