@@ -8,6 +8,7 @@ import {
   type OfficialWorkflowDefinitionRevisionPayload,
   type OfficialWorkflowPublishedCatalogReleasePayload,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import {
   officialWorkflowCatalogState,
@@ -47,6 +48,7 @@ export interface PreparedOfficialWorkflowDefinition {
   readonly definition: OfficialWorkflowDefinitionRevisionPayload;
   readonly volume: PreparedServerSideVolume;
   readonly artifact: OfficialWorkflowArtifactReference;
+  readonly contentBundle: ContentBundle | null;
 }
 
 type CandidateReleaseResult =
@@ -107,6 +109,9 @@ function retiredDefinition(
   previous: OfficialWorkflowAcceptedDefinition,
   presentation: OfficialWorkflowPublishedCatalogReleasePayload["definitions"][number]["presentation"],
 ): OfficialWorkflowPublishedCatalogReleasePayload["definitions"][number] {
+  if (!previous.artifact) {
+    throw new OfficialWorkflowCatalogRegistrationError(previous.name);
+  }
   return {
     name: previous.name,
     lifecycle: "retired",
@@ -221,6 +226,7 @@ function preparedCandidateConflict(
     if (
       !prepared ||
       prepared.definition.revision !== definition.revision ||
+      definition.artifact === undefined ||
       prepared.artifact.storageName !== definition.artifact.storageName ||
       prepared.artifact.storageId !== definition.artifact.storageId ||
       prepared.artifact.storageVersion !== definition.artifact.storageVersion
@@ -258,10 +264,18 @@ export function catalogPublicationPlan(
       readonly payload: OfficialWorkflowCatalogReleasePayload;
       readonly hiddenThreadDefinitionNames: readonly string[];
     } {
+  if (current?.payload.schemaVersion === 4) {
+    return {
+      outcome: "rejected" as const,
+      releaseId: current.releaseId,
+      diagnostics: [
+        { code: "activation-conflict" as const, path: ["catalog"] },
+      ],
+    };
+  }
   const currentReleaseId = current?.releaseId ?? null;
-  // Every decodable accepted catalog (v2 or v3) is at or below the publication
-  // version, so this writer may upgrade it. A newer catalog fails its strict
-  // read before any plan, so it is never replaced.
+  // This writer upgrades only legacy catalogs. The prepared v4 reader above
+  // does not authorize a legacy publication over a bundle-backed head.
   const previous = current?.payload ?? null;
   const stale = currentReleaseId !== input.observedReleaseId;
   const candidate = buildCandidateRelease(
@@ -378,18 +392,19 @@ export function preparedDefinitionPublicationPlan(
   const registered = query.$with(`${namespace}registered_definition`, {
     definitionName: table.definitionName,
   }).as(sql`INSERT INTO ${table}
-      (definition_name, revision, payload, storage_name, storage_id, storage_version)
+      (definition_name, revision, payload, storage_name, storage_id, storage_version, content_bundle)
     SELECT ${prepared.definition.name}, ${prepared.definition.revision},
       ${sql.param(prepared.definition, table.payload)}, ${prepared.artifact.storageName},
-      ${prepared.artifact.storageId}, ${prepared.artifact.storageVersion}
+      ${prepared.artifact.storageId}, ${prepared.artifact.storageVersion}, ${sql.param(prepared.contentBundle, table.contentBundle)}
     FROM ${volume.published}
     WHERE true
     ON CONFLICT (definition_name, revision) DO UPDATE
-      SET definition_name = EXCLUDED.definition_name
+      SET content_bundle = COALESCE(official_workflow_definition_revisions.content_bundle, EXCLUDED.content_bundle)
     WHERE ${table.payload} = EXCLUDED.payload
       AND ${table.storageName} = EXCLUDED.storage_name
       AND ${table.storageId} = EXCLUDED.storage_id
       AND ${table.storageVersion} = EXCLUDED.storage_version
+      AND (${table.contentBundle} IS NULL OR EXCLUDED.content_bundle IS NULL OR ${table.contentBundle} = EXCLUDED.content_bundle)
     RETURNING definition_name`);
   return { ctes: [...volume.ctes, registered], registered };
 }

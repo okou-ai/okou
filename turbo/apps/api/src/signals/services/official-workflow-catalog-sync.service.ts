@@ -8,11 +8,16 @@ import {
   getOfficialWorkflowDefinitionStorageName,
   SYSTEM_ORG_ID,
 } from "@okouai/core/storage-names";
-import { officialWorkflowArtifactFiles } from "@okouai/core/official-workflow-artifact";
+import {
+  officialWorkflowArtifactFiles,
+  officialWorkflowExecutionFiles,
+} from "@okouai/core/official-workflow-artifact";
 import {
   officialWorkflowCatalogReleases,
   officialWorkflowCatalogState,
 } from "@okouai/db/schema/official-workflow-catalog";
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+import { publishContentBundle$ } from "./content-bundle.service";
 import { command } from "ccstate";
 import { literal, object } from "zod";
 import { eq } from "drizzle-orm";
@@ -126,11 +131,16 @@ const catalogReleaseFields: Readonly<{
 const prepareDefinitionArtifact$ = command(
   async (
     { set },
-    definition: OfficialWorkflowDefinitionRevisionPayload,
-    expectedArtifact: OfficialWorkflowArtifactReference | undefined,
-    path: readonly (string | number)[],
+    args: {
+      readonly definition: OfficialWorkflowDefinitionRevisionPayload;
+      readonly expectedArtifact: OfficialWorkflowArtifactReference | undefined;
+      readonly path: readonly (string | number)[];
+      readonly contentBundle: ContentBundle | null;
+    },
     signal: AbortSignal,
   ): Promise<DefinitionPreparationResult> => {
+    const { definition, expectedArtifact, path } = args;
+    let contentBundle = args.contentBundle;
     const storageName = getOfficialWorkflowDefinitionStorageName(
       definition.name,
     );
@@ -179,10 +189,78 @@ const prepareDefinitionArtifact$ = command(
     ) {
       return artifactPreparationRejected(definition.name, path);
     }
+    if (!expectedArtifact) {
+      const published = await settle(
+        set(
+          publishContentBundle$,
+          officialWorkflowExecutionFiles(definition).map((file) => {
+            return {
+              path: file.path,
+              content: Buffer.from(file.content, "utf8"),
+            };
+          }),
+          signal,
+        ),
+        signal,
+      );
+      if (!published.ok) {
+        return artifactPreparationRejected(definition.name, path);
+      }
+      contentBundle = published.value;
+    }
     return {
       kind: "prepared",
-      definition: { definition, volume, artifact },
+      definition: { definition, volume, artifact, contentBundle },
     };
+  },
+);
+
+const prepareHistoricalDefinitions$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    const historicalResult = await settle(
+      set(readAllSupportedOfficialWorkflowRevisions$, signal),
+      signal,
+    );
+    if (!historicalResult.ok) {
+      return artifactPreparationRejected(undefined, ["revisions"]);
+    }
+    const historicalByRevision = new Map<
+      string,
+      PreparedOfficialWorkflowDefinition
+    >();
+    for (const [
+      revisionIndex,
+      historical,
+    ] of historicalResult.value.entries()) {
+      if (!historical.artifact) {
+        return artifactPreparationRejected(historical.definition.name, [
+          "revisions",
+          revisionIndex,
+        ]);
+      }
+      const preparation = await set(
+        prepareDefinitionArtifact$,
+        {
+          definition: historical.definition,
+          expectedArtifact: historical.artifact,
+          path: ["revisions", revisionIndex],
+          contentBundle: historical.contentBundle ?? null,
+        },
+        signal,
+      );
+      if (preparation.kind === "rejected") {
+        return preparation;
+      }
+      historicalByRevision.set(
+        definitionRevisionKey(
+          historical.definition.name,
+          historical.definition.revision,
+        ),
+        preparation.definition,
+      );
+    }
+
+    return { kind: "prepared" as const, definitions: historicalByRevision };
   },
 );
 
@@ -205,39 +283,11 @@ const prepareDefinitions$ = command(
         readonly diagnostics: readonly OfficialWorkflowCatalogDiagnostic[];
       }
   > => {
-    const historicalResult = await settle(
-      set(readAllSupportedOfficialWorkflowRevisions$, signal),
-      signal,
-    );
-    if (!historicalResult.ok) {
-      return artifactPreparationRejected(undefined, ["revisions"]);
+    const historical = await set(prepareHistoricalDefinitions$, signal);
+    if (historical.kind === "rejected") {
+      return historical;
     }
-    const historicalByRevision = new Map<
-      string,
-      PreparedOfficialWorkflowDefinition
-    >();
-    for (const [
-      revisionIndex,
-      historical,
-    ] of historicalResult.value.entries()) {
-      const preparation = await set(
-        prepareDefinitionArtifact$,
-        historical.definition,
-        historical.artifact,
-        ["revisions", revisionIndex],
-        signal,
-      );
-      if (preparation.kind === "rejected") {
-        return preparation;
-      }
-      historicalByRevision.set(
-        definitionRevisionKey(
-          historical.definition.name,
-          historical.definition.revision,
-        ),
-        preparation.definition,
-      );
-    }
+    const historicalByRevision = historical.definitions;
 
     const preparedByName = new Map<
       string,
@@ -267,7 +317,7 @@ const prepareDefinitions$ = command(
             );
       if (sourceDefinition.lifecycle === "retired") {
         if (
-          !previousDefinition ||
+          !previousDefinition?.artifact ||
           !historical ||
           !artifactReferencesMatch(
             historical.artifact,
@@ -303,9 +353,12 @@ const prepareDefinitions$ = command(
       }
       const preparation = await set(
         prepareDefinitionArtifact$,
-        sourceRevision,
-        undefined,
-        ["definitions", definitionIndex],
+        {
+          definition: sourceRevision,
+          expectedArtifact: undefined,
+          path: ["definitions", definitionIndex],
+          contentBundle: null,
+        },
         signal,
       );
       if (preparation.kind === "rejected") {
@@ -373,24 +426,41 @@ const activateCandidate$ = command(
   },
 );
 
-const catalogActivationConflictResponse$ = command(
+const catalogActivationFailureResponse$ = command(
   async (
     { set },
-    candidateReleaseId: string,
+    error: unknown,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowCatalogSyncResponse> => {
     const accepted = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    return accepted?.releaseId === candidateReleaseId
-      ? {
-          outcome: "unchanged",
-          releaseId: accepted.releaseId,
-          diagnostics: [],
-        }
-      : {
-          outcome: "rejected",
-          releaseId: accepted?.releaseId ?? null,
-          diagnostics: [{ code: "activation-conflict", path: ["catalog"] }],
-        };
+    if (error instanceof OfficialWorkflowCatalogActivationConflictError) {
+      return accepted?.releaseId === error.candidateReleaseId
+        ? {
+            outcome: "unchanged",
+            releaseId: accepted.releaseId,
+            diagnostics: [],
+          }
+        : {
+            outcome: "rejected",
+            releaseId: accepted?.releaseId ?? null,
+            diagnostics: [{ code: "activation-conflict", path: ["catalog"] }],
+          };
+    }
+    const definitionName =
+      error instanceof OfficialWorkflowCatalogRegistrationError
+        ? error.definitionName
+        : undefined;
+    return {
+      outcome: "rejected",
+      releaseId: accepted?.releaseId ?? null,
+      diagnostics: [
+        {
+          code: "artifact-registration-failed",
+          path: ["definitions"],
+          ...(definitionName === undefined ? {} : { definitionName }),
+        },
+      ],
+    };
   },
 );
 
@@ -401,6 +471,14 @@ export function createOfficialWorkflowCatalogSyncCommand(candidate: unknown) {
       signal: AbortSignal,
     ): Promise<OfficialWorkflowCatalogSyncResponse> => {
       const current = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+      // This preparation publisher must never downgrade a bundle-only head.
+      if (current?.payload.schemaVersion === 4) {
+        return {
+          outcome: "rejected",
+          releaseId: current.releaseId,
+          diagnostics: [{ code: "activation-conflict", path: ["catalog"] }],
+        };
+      }
       const validation = validateOfficialWorkflowCatalog(candidate);
       if (validation.kind === "invalid") {
         return {
@@ -446,33 +524,11 @@ export function createOfficialWorkflowCatalogSyncCommand(candidate: unknown) {
         signal,
       );
       if (!activation.ok) {
-        if (
-          activation.error instanceof
-          OfficialWorkflowCatalogActivationConflictError
-        ) {
-          return await set(
-            catalogActivationConflictResponse$,
-            activation.error.candidateReleaseId,
-            signal,
-          );
-        }
-        const definitionName =
-          activation.error instanceof OfficialWorkflowCatalogRegistrationError
-            ? activation.error.definitionName
-            : undefined;
-        return {
-          outcome: "rejected",
-          releaseId:
-            (await set(readAcceptedOfficialWorkflowCatalog$, signal))
-              ?.releaseId ?? null,
-          diagnostics: [
-            {
-              code: "artifact-registration-failed",
-              path: ["definitions"],
-              ...(definitionName === undefined ? {} : { definitionName }),
-            },
-          ],
-        };
+        return await set(
+          catalogActivationFailureResponse$,
+          activation.error,
+          signal,
+        );
       }
       return activation.value;
     },

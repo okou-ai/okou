@@ -76,6 +76,132 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
       [runId],
     );
     assert.deepEqual(validRow.rows, [{ provenance: validProvenance }]);
+    const bundle = { sha256: "c".repeat(64), archiveBytes: 200 };
+    const bundleDefinition = {
+      name: "daily-brief",
+      revision: "a".repeat(64),
+      contentBundle: bundle,
+    };
+    const v2 = { schemaVersion: 2, definitions: [bundleDefinition] };
+    await client.query(
+      "UPDATE agent_runs SET official_workflow_provenance=$1::jsonb WHERE id=$2",
+      [JSON.stringify(v2), runId],
+    );
+    assert.deepEqual(
+      (
+        await client.query(
+          "SELECT official_workflow_provenance AS provenance FROM agent_runs WHERE id=$1",
+          [runId],
+        )
+      ).rows,
+      [{ provenance: v2 }],
+    );
+    const malformed = [
+      { ...v2, definitions: [] },
+      {
+        ...v2,
+        definitions: [
+          {
+            ...bundleDefinition,
+            artifact: validProvenance.definitions[0].artifact,
+          },
+        ],
+      },
+      { schemaVersion: 1, definitions: [bundleDefinition] },
+      ...[0, 1.5, 33554433, "200", null].map((archiveBytes) => {
+        return {
+          ...v2,
+          definitions: [
+            { ...bundleDefinition, contentBundle: { ...bundle, archiveBytes } },
+          ],
+        };
+      }),
+      {
+        ...v2,
+        definitions: [
+          { ...bundleDefinition, contentBundle: { archiveBytes: 200 } },
+        ],
+      },
+      {
+        ...v2,
+        definitions: [
+          { ...bundleDefinition, contentBundle: { ...bundle, extra: true } },
+        ],
+      },
+      {
+        ...v2,
+        definitions: [validProvenance.definitions[0], bundleDefinition],
+      },
+    ];
+    for (const value of malformed) {
+      await assert.rejects(
+        client.query(
+          "UPDATE agent_runs SET official_workflow_provenance=$1::jsonb WHERE id=$2",
+          [JSON.stringify(value), runId],
+        ),
+        (error: unknown) => {
+          return (
+            databaseErrorCode(error) === "23514" &&
+            databaseErrorConstraint(error) === constraintName
+          );
+        },
+      );
+    }
+    const revisionName = `bundle-check-${identity.slice(0, 8)}`;
+    try {
+      await client.query(
+        `INSERT INTO official_workflow_definition_revisions (definition_name,revision,payload,content_bundle) VALUES ($1,$2,$3,$4)`,
+        [
+          revisionName,
+          "a".repeat(64),
+          {
+            schemaVersion: 3,
+            name: revisionName,
+            revision: "a".repeat(64),
+            workflow: {
+              displayName: "Report",
+              description: "Report",
+              instruction: "Report",
+              files: [],
+            },
+            blueprints: [],
+          },
+          bundle,
+        ],
+      );
+      for (const value of [
+        null,
+        {},
+        { sha256: "bad", archiveBytes: 200 },
+        { ...bundle, archiveBytes: 0 },
+        { ...bundle, archiveBytes: 1.5 },
+        { ...bundle, extra: true },
+      ]) {
+        await assert.rejects(
+          client.query(
+            "UPDATE official_workflow_definition_revisions SET content_bundle=$1 WHERE definition_name=$2",
+            [value, revisionName],
+          ),
+        );
+      }
+      await assert.rejects(
+        client.query(
+          "UPDATE official_workflow_definition_revisions SET storage_name=$1 WHERE definition_name=$2",
+          ["partial-identity", revisionName],
+        ),
+        (error: unknown) => {
+          return (
+            databaseErrorConstraint(error) ===
+            "official_workflow_definition_revision_delivery_check"
+          );
+        },
+      );
+    } finally {
+      await client.query(
+        "DELETE FROM official_workflow_definition_revisions WHERE definition_name=$1",
+        [revisionName],
+      );
+    }
 
     const serializedMalformedProvenance = JSON.stringify({
       schemaVersion: 1,

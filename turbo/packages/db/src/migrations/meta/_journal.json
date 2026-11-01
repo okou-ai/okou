@@ -2997,6 +2997,13 @@
       "when": 1793455707553,
       "tag": "1506_browser_owner_extension_index",
       "breakpoints": true
+    },
+    {
+      "idx": 1507,
+      "version": "7",
+      "when": 1793494852919,
+      "tag": "1507_official_workflow_bundle_preparation",
+      "breakpoints": true
     }
   ]
 }
