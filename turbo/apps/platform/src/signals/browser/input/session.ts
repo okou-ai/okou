@@ -61,7 +61,8 @@ const caretPosition = `(() => {
     while (languageRoot) {
       const source = languageRoot.closest('[lang]');
       if (source) { lang = source.getAttribute('lang'); break; }
-      languageRoot = languageRoot.getRootNode().host;
+      const root = languageRoot.getRootNode();
+      languageRoot = root instanceof doc.defaultView.ShadowRoot ? root.host : null;
     }
     const type = e.localName === 'input' ? e.type : e.localName;
     const editing = {
