@@ -978,6 +978,43 @@ test("A delayed read from a blurred proxy cannot retire the next composition's e
   expect(input).toHaveFocus();
 });
 
+test("A failed optional observation preserves the active composition's editor", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  const preedit = browser.holdNext("Input.imeSetComposition");
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await preedit.received;
+  browser.failNext("Runtime.callFunctionOn", "Temporary observation failure");
+  const observation = browser.holdNext("Runtime.callFunctionOn");
+  await preedit.release();
+  await expect(observation.received).resolves.toContain(
+    "Temporary observation failure",
+  );
+  await act(async () => {
+    await observation.release();
+  });
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中文",
+    }),
+  );
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "中文" },
+    });
+  });
+  expect(input).toBeEnabled();
+  expect(input).toHaveFocus();
+});
+
 test("A failed editing-context read clears stale keyboard hints without disabling input", async () => {
   const browser = await setupViewer(0);
   browser.setFocusedEditing({

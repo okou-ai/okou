@@ -272,11 +272,11 @@ export function createEditingReader(
         };
         set(probe$, probe);
       }
-      let observed = false;
+      let acquired = false;
       using _read = {
         [Symbol.dispose]: () => {
           if (
-            !observed &&
+            !acquired &&
             get(probe$)?.token === probe.token &&
             set(lifecycle.owns$, job.owner)
           ) {
@@ -286,6 +286,8 @@ export function createEditingReader(
       };
       const objectId = await probe.result;
       signal.throwIfAborted();
+      // Optional observations borrow the document probe used by live compositions.
+      acquired = true;
       const result = await set(queue.callFunction$, job, {
         objectId,
         functionDeclaration: "function() { return this.read(); }",
@@ -295,7 +297,6 @@ export function createEditingReader(
       if (result.exceptionDetails) {
         throw new Error("Editing observation unavailable");
       }
-      observed = true;
       return editingObservation(objectId, result.result.value as unknown);
     },
   );
