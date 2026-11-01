@@ -95,39 +95,51 @@ describe("persisted Official Workflow catalog payloads", () => {
   });
 });
 
-describe("bundle-backed Official catalog reader preparation", () => {
-  it("reads delivery v4 without changing the business revision or Blueprint", () => {
-    const legacy = catalogPayload(3, [v3Blueprint]);
-    const original = legacy.definitions[0];
-    if (!original) throw new Error("Expected a definition");
-    const { artifact: _artifact, ...identity } = original;
-    const definition = {
-      ...identity,
-      contentBundle: { sha256: "c".repeat(64), archiveBytes: 200 },
-    };
-    const catalog = { schemaVersion: 4, definitions: [definition] };
-    expect(
-      officialWorkflowCatalogReleasePayloadSchema.parse(catalog),
-    ).toStrictEqual(catalog);
-    expect(
-      officialWorkflowCatalogReleasePayloadSchema.safeParse({
-        ...catalog,
-        definitions: [{ ...definition, artifact: original.artifact }],
-      }).success,
-    ).toBe(false);
-    expect(
-      officialWorkflowCatalogReleasePayloadSchema.safeParse({
-        schemaVersion: 3,
-        definitions: [definition],
-      }).success,
-    ).toBe(false);
-    expect(
-      officialWorkflowCatalogReleasePayloadSchema.safeParse({
-        ...catalog,
-        definitions: [
-          { ...identity, contentBundle: { sha256: "bad", archiveBytes: 200 } },
-        ],
-      }).success,
-    ).toBe(false);
-  });
+describe("bundle-backed Official catalogs", () => {
+  it.each([
+    { lifecycle: "active", blueprint: v3Blueprint },
+    { lifecycle: "retired", blueprint: v2Blueprint },
+  ])(
+    "reads v4 $lifecycle delivery without changing business identity",
+    ({ lifecycle, blueprint }) => {
+      const legacy = catalogPayload(3, [blueprint]);
+      const original = legacy.definitions[0];
+      if (!original) {
+        throw new Error("Expected a definition");
+      }
+      const { artifact: _artifact, ...identity } = original;
+      const definition = {
+        ...identity,
+        lifecycle,
+        contentBundle: { sha256: "c".repeat(64), archiveBytes: 200 },
+      };
+      const catalog = { schemaVersion: 4, definitions: [definition] };
+      expect(
+        officialWorkflowCatalogReleasePayloadSchema.parse(catalog),
+      ).toStrictEqual(catalog);
+      expect(
+        officialWorkflowCatalogReleasePayloadSchema.safeParse({
+          ...catalog,
+          definitions: [{ ...definition, artifact: original.artifact }],
+        }).success,
+      ).toBe(false);
+      expect(
+        officialWorkflowCatalogReleasePayloadSchema.safeParse({
+          schemaVersion: 3,
+          definitions: [definition],
+        }).success,
+      ).toBe(false);
+      expect(
+        officialWorkflowCatalogReleasePayloadSchema.safeParse({
+          ...catalog,
+          definitions: [
+            {
+              ...identity,
+              contentBundle: { sha256: "bad", archiveBytes: 200 },
+            },
+          ],
+        }).success,
+      ).toBe(false);
+    },
+  );
 });

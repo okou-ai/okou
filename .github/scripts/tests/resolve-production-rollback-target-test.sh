@@ -20,6 +20,7 @@ data_router_response_id_floor=$(<"${repo_root}/.github/rollback-floors/data-rout
 connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
 data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
+official_workflow_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/official-workflow-bundle-reader")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
 cat >"${fake_bin}/git" <<'SH'
@@ -29,7 +30,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
+    if [ "${3:-}" = "$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
       [ "${MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc" ]; then
       [ "${MOCK_OFFICIAL_WORKFLOW_ARTIFACT_READER_VALID:-1}" = "1" ]
@@ -370,6 +377,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_RUN_REFERENCE_PREPARATION_COMMIT-66e1cae65d0468a50149f0dafab9d0d35abd0819}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/official-workflow-bundle-reader" ]; then
+      [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_COMMIT-$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/home-cache-capacity-reader" ]; then
       [ "${MOCK_HOME_CACHE_CAPACITY_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_HOME_CACHE_CAPACITY_READER_COMMIT-$MOCK_HOME_CACHE_CAPACITY_READER_FLOOR}"
@@ -489,6 +501,7 @@ run_resolver() {
     MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR="$desktop_manifest_r2_reader_floor" \
     MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
+    MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \
@@ -2064,6 +2077,20 @@ for run_reference_case in \
   [ ! -s "${tmp_dir}/run-reference-policy.output" ] || fail "invalid Run policy must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "invalid Run policy must reject before provider or host access"
+  fi
+done
+
+for official_bundle_case in \
+  "MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_AVAILABLE=0|Cannot read the Official Workflow bundle reader rollback floor from main" \
+  "MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_COMMIT=invalid|Missing or invalid Official Workflow bundle reader rollback floor" \
+  "MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_ON_MAIN=0|Official Workflow bundle reader rollback floor is not on main" \
+  "MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_VALID=0|Rollback target predates Official Workflow bundle reader preparation"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${official_bundle_case#*|}" \
+    run_resolver "${tmp_dir}/official-workflow-bundle.output" "${official_bundle_case%%|*}"
+  [ ! -s "${tmp_dir}/official-workflow-bundle.output" ] || fail "incompatible Official bundle API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Official bundle reader floor must reject before provider or host access"
   fi
 done
 

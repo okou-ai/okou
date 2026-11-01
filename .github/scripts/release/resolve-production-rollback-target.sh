@@ -113,6 +113,7 @@ readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600
 # Rollback starts Runner before API, so both artifacts must retain that preparation.
 readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb2ae
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
+readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
@@ -867,6 +868,21 @@ fi
 
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates immutable content bundle publication: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
+fi
+
+# Catalog v4 and provenance v2 survive rollback. Require the released preparation
+# API, whose publisher also fences against downgrading an accepted v4 catalog.
+if ! official_workflow_bundle_reader_commit=$(git show "origin/main:${OFFICIAL_WORKFLOW_BUNDLE_READER_PATH}"); then
+  fail "Cannot read the Official Workflow bundle reader rollback floor from main."
+fi
+if [[ ! "$official_workflow_bundle_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Official Workflow bundle reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$official_workflow_bundle_reader_commit" origin/main; then
+  fail "Official Workflow bundle reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$official_workflow_bundle_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Official Workflow bundle reader preparation: ${official_workflow_bundle_reader_commit}."
 fi
 
 # Reference-only claims require the corrected archive reader. Keep the API

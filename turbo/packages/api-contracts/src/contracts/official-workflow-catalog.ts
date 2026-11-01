@@ -40,7 +40,7 @@ export type {
 } from "./official-workflow-bindings";
 
 /**
- * The only schema version the source catalog and publication writer emit.
+ * The schema version emitted for source catalogs and immutable business revisions.
  * Persisted readers also decode schema v2, whose immutable accepted catalogs
  * and revisions are still referenced by retired definitions and Run provenance.
  */
@@ -331,7 +331,7 @@ const officialWorkflowAcceptedDefinitionV3Schema = object({
 }).strict();
 
 /** Delivery format is independent of the immutable v2/v3 definition payload. */
-const OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION = 4 as const;
+export const OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION = 4 as const;
 const officialWorkflowAcceptedDefinitionV4Schema = object({
   ...officialWorkflowAcceptedDefinitionShape,
   contentBundle: contentBundleSchema,
@@ -369,7 +369,7 @@ export type OfficialWorkflowCatalogReleasePayload = zInfer<
 export type OfficialWorkflowPublishedCatalogReleasePayload = Extract<
   OfficialWorkflowCatalogReleasePayload,
   {
-    readonly schemaVersion: typeof OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION;
+    readonly schemaVersion: typeof OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION;
   }
 >;
 export type OfficialWorkflowPublishedDefinitionRevisionPayload = Extract<
