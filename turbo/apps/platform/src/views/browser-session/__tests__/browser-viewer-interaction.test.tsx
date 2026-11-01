@@ -844,6 +844,63 @@ test("A composition cannot commit into a different remote editor in the same tab
   });
 });
 
+test("A new composition binds the current editor instead of stale keyboard hints", async () => {
+  const browser = await setupViewer(0);
+  const metadata = {
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "text",
+      multiline: false,
+      inputMode: "text",
+      enterKeyHint: "search",
+      autoCapitalize: "none",
+      lang: "en",
+    },
+  };
+  browser.setFocusedEditing(metadata, "editor-a");
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  await waitFor(() => {
+    expect(input).toHaveAttribute("enterkeyhint", "search");
+  });
+  browser.setFocusedEditing(
+    { ...metadata, editing: { ...metadata.editing, enterKeyHint: "send" } },
+    "editor-b",
+  );
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.imeSetComposition",
+      params: { text: "中" },
+    });
+  });
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中文",
+    }),
+  );
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "中文" },
+    });
+  });
+  await waitFor(() => {
+    expect(input).toHaveAttribute("enterkeyhint", "send");
+  });
+});
+
 test("Original composition cleanup cannot cancel a different remote editor", async () => {
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");
@@ -1329,6 +1386,78 @@ test("An unsupported preedit and stale cleanup do not block switching tabs", asy
       sessionId: "other-page-session",
     });
   });
+});
+
+test("A composition queued behind an unconfirmed key is discarded on blur", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  const pending = browser.holdNext("Input.dispatchKeyEvent");
+  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  await pending.received;
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "old" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await userEvent.click(screen.getByLabelText("Address"));
+  await pending.release();
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "fresh" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "fresh" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.imeSetComposition";
+    }),
+  ).toStrictEqual([]);
+});
+
+test("A refocused composition waits for original cleanup before sending preedit", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "old" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.imeSetComposition",
+      params: { text: "old" },
+    });
+  });
+  const cleaning = browser.holdNext("Runtime.callFunctionOn");
+  await userEvent.click(screen.getByLabelText("Address"));
+  await cleaning.received;
+  await userEvent.click(input);
+  fireEvent.compositionStart(input);
+  await userEvent.type(input, "new");
+  await cleaning.release();
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.imeSetComposition",
+      params: { text: "new" },
+    });
+  });
+  const compositions = browser.input.filter((request) => {
+    return request.method === "Input.imeSetComposition";
+  });
+  expect(compositions).toMatchObject([
+    { params: { text: "old" } },
+    { params: { text: "" } },
+    { params: { text: "new" } },
+  ]);
 });
 
 test("Backward deletion preserves preedit and consumes committed composition residuals", async () => {

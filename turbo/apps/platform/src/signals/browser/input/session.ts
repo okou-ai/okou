@@ -35,7 +35,6 @@ interface PointerJob {
 interface CompositionLease {
   readonly token: object;
   readonly owner: InputOwner;
-  readonly expected: EditingTarget | null;
 }
 
 interface SessionConnection {
@@ -779,7 +778,6 @@ function createCompositionBinding(graph: SessionObservations) {
     compositionLease$,
     compositionTargets$,
     editingReader,
-    internalEditing$,
     lifecycle,
     queue,
     refreshCaret$,
@@ -796,15 +794,8 @@ function createCompositionBinding(graph: SessionObservations) {
         return;
       }
       const observed = result?.editing;
-      const candidate =
-        observed?.kind !== "inactive" ? (observed?.target ?? null) : null;
       const target =
-        candidate &&
-        (!lease.expected ||
-          (lease.expected.objectId === candidate.objectId &&
-            lease.expected.revision === candidate.revision))
-          ? candidate
-          : null;
+        observed?.kind !== "inactive" ? (observed?.target ?? null) : null;
       set(
         compositionTargets$,
         new Map(get(compositionTargets$)).set(lease.token, target),
@@ -821,7 +812,6 @@ function createCompositionBinding(graph: SessionObservations) {
     const lease: CompositionLease = {
       token: Object.freeze({}),
       owner,
-      expected: get(internalEditing$).target,
     };
     const targets = new Map(get(compositionTargets$));
     const previous = get(compositionLease$);
@@ -831,7 +821,8 @@ function createCompositionBinding(graph: SessionObservations) {
     targets.set(lease.token, null);
     set(compositionLease$, lease);
     set(compositionTargets$, targets);
-    set(queue.enqueue$, owner, beginRun$, undefined, undefined, lease);
+    // Capture focus after preceding native effects, independently of stale hints.
+    set(queue.enqueue$, owner, beginRun$, undefined, undefined, lease, true);
   });
   const validComposition$ = command(
     async ({ get, set }, job: InputJob, signal: AbortSignal) => {
@@ -982,6 +973,7 @@ function createSessionCompositionCommit(graph: CompositionActions) {
     accepting$,
     compositionLease$,
     compositionTargets$,
+    internalError$,
     lifecycle,
     queue,
     refreshCaret$,
@@ -1002,6 +994,7 @@ function createSessionCompositionCommit(graph: CompositionActions) {
       if (!target) {
         return;
       }
+      set(internalError$, null);
       const token = set(lifecycle.composition$, job.owner);
       if (job.text) {
         await set(queue.write$, job, {
@@ -1032,9 +1025,17 @@ function createSessionCompositionCommit(graph: CompositionActions) {
       set(queue.discardPreedit$);
       set(compositionLease$, null);
       if (text) {
-        set(queue.text$, owner, text, commitRun$, lease);
+        set(queue.text$, owner, text, commitRun$, lease, true);
       } else {
-        set(queue.enqueue$, owner, commitRun$, undefined, undefined, lease);
+        set(
+          queue.enqueue$,
+          owner,
+          commitRun$,
+          undefined,
+          undefined,
+          lease,
+          true,
+        );
       }
     },
   );

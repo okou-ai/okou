@@ -328,7 +328,7 @@ function createQueueReceipts(graph: QueueGraph) {
 }
 
 function createQueueRunner(graph: QueueGraph) {
-  const { active$, pending$, preparation$, owns$, cancel$ } = graph;
+  const { active$, pending$, preparation$, owns$, cancel$, effects } = graph;
   const canRun$ = command(({ get, set }, entry: QueuedJob): boolean => {
     return (
       set(owns$, entry.input.owner) &&
@@ -344,6 +344,9 @@ function createQueueRunner(graph: QueueGraph) {
     ): Promise<void> => {
       if (original.barrier) {
         await Promise.all(get(pending$).values());
+        signal.throwIfAborted();
+        // Original cleanup also owns native receipts outside the queued send lane.
+        await set(effects.completion$);
         signal.throwIfAborted();
       }
       if (!set(canRun$, original)) {
@@ -606,7 +609,11 @@ function createPreeditAdmission(graph: QueueAdmission) {
           set(active$, { ...active, entry });
         }
       } else {
-        set(add$, { input: Object.freeze({ owner, preedit, data }), run });
+        set(add$, {
+          input: Object.freeze({ owner, preedit, data }),
+          run,
+          barrier: true,
+        });
       }
     },
   );
@@ -634,19 +641,32 @@ function createQueueAdmission(graph: QueueAdmission) {
       { set },
       owner: InputOwner,
       run: Run,
-      ...options: [move?: PointerState, prepare?: Run, data?: unknown]
+      ...options: [
+        move?: PointerState,
+        prepare?: Run,
+        data?: unknown,
+        barrier?: boolean,
+      ]
     ) => {
-      const [move, prepare, data] = options;
+      const [move, prepare, data, barrier] = options;
       set(add$, {
         input: Object.freeze({ owner, data }),
         run,
+        ...(barrier ? { barrier } : {}),
         ...(move ? { move } : {}),
         ...(prepare ? { prepare } : {}),
       });
     },
   );
   const text$ = command(
-    ({ set }, owner: InputOwner, text: string, run: Run, data?: unknown) => {
+    (
+      { set },
+      owner: InputOwner,
+      text: string,
+      run: Run,
+      ...options: [data?: unknown, barrier?: boolean]
+    ) => {
+      const [data, barrier = false] = options;
       if (!set(owns$, owner) || !text) {
         return;
       }
@@ -654,7 +674,7 @@ function createQueueAdmission(graph: QueueAdmission) {
         set(failed$);
         return;
       }
-      set(add$, { input: Object.freeze({ owner, text, data }), run });
+      set(add$, { input: Object.freeze({ owner, text, data }), run, barrier });
     },
   );
   const wheel$ = command(
