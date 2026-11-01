@@ -2,7 +2,7 @@ import {
   derivePlatformServiceOrigin,
   okouAppWorkerPreviewJobRef,
 } from "@okouai/core/platform-service-origin";
-import { createDeferredPromise } from "../utils.ts";
+import { abortAfter, createDeferredPromise } from "../utils.ts";
 
 /** Only the matching first-party Marketing site can supply browser-local files. */
 export function landingFileSource(
@@ -73,7 +73,11 @@ export async function readLandingFiles(
   if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(id)) {
     throw new Error("Invalid landing file draft");
   }
-  const transferSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+  const transferSignal = abortAfter(
+    30_000,
+    signal,
+    new DOMException("signal timed out", "TimeoutError"),
+  );
   transferSignal.throwIfAborted();
   const nonce = crypto.randomUUID();
   const bridge = new URL("/file-handoff", source);

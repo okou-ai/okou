@@ -1,7 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import { now } from "../../lib/time.ts";
 import { hash, search } from "../location.ts";
-import { createDeferredPromise } from "../utils.ts";
+import { abortAfter, createDeferredPromise } from "../utils.ts";
 import {
   landingFileSource,
   validLandingFiles,
@@ -124,7 +124,11 @@ export async function receiveLandingFileTransfer(
   if (!source || !opener || !uuid.test(id) || !uuid.test(nonce)) {
     return true;
   }
-  const signal = AbortSignal.any([ownerSignal, AbortSignal.timeout(60_000)]);
+  const signal = abortAfter(
+    60_000,
+    ownerSignal,
+    new DOMException("signal timed out", "TimeoutError"),
+  );
   const result = createDeferredPromise<File[]>(signal);
   const receive = (event: MessageEvent<unknown>) => {
     if (event.origin !== source.origin || event.source !== opener) {
