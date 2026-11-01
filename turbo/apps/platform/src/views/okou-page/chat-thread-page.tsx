@@ -5,6 +5,8 @@ import {
 } from "./shared-thread-share-menu.tsx";
 import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
+import { pendingLandingFiles$ } from "../../signals/prompt-page/landing-files.ts";
+import { LandingFilesMessage } from "../prompt-page/landing-files-message.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
@@ -3284,6 +3286,9 @@ function ChatThreadEmptyState({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
+  const landingFiles = useGet(pendingLandingFiles$);
+  const pendingFiles =
+    landingFiles?.threadId === thread.threadId ? landingFiles : null;
   const initialEventsReady = useGet(thread.initialEventsReady$);
   const renderedGroupsReady = useLastLoadable(
     thread.visibleRenderedChatGroupsReady$,
@@ -3303,12 +3308,18 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
         className={cn(
           CHAT_THREAD_MESSAGE_LIST_CLASS,
           // Preserve the mounted layout for scroll restoration while loading.
-          !showTranscript && "invisible",
+          !showTranscript && !pendingFiles && "invisible",
         )}
       >
-        <ChatThreadSessionError thread={thread} />
-        <ChatThreadEmptyState thread={thread} />
-        <ChatThreadRenderedEventGroups thread={thread} />
+        {pendingFiles ? (
+          <LandingFilesMessage signals={pendingFiles} />
+        ) : (
+          <>
+            <ChatThreadSessionError thread={thread} />
+            <ChatThreadEmptyState thread={thread} />
+            <ChatThreadRenderedEventGroups thread={thread} />
+          </>
+        )}
         <ChatThreadNextRunModelNotice thread={thread} />
       </div>
     </main>,
@@ -3803,8 +3814,9 @@ function RunWorkSectionRow({
 }
 
 function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
+  const landingFiles = useGet(pendingLandingFiles$);
   const initialEventsReady = useGet(thread.initialEventsReady$);
-  if (initialEventsReady) {
+  if (initialEventsReady || landingFiles?.threadId === thread.threadId) {
     return null;
   }
 
@@ -4365,6 +4377,8 @@ function splitQueuedEventsForThinkingIndicator(groups: ChatEventGroup[]): {
 }
 
 function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
+  const landingFiles = useGet(pendingLandingFiles$);
+  const uploading = landingFiles?.threadId === thread.threadId;
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
 
@@ -4384,7 +4398,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
           standalonePwa && "overscroll-contain",
         )}
       >
-        <div className="mx-auto max-w-[900px]">
+        <div className="mx-auto max-w-[900px]" inert={uploading}>
           <ChatComposer signals={thread.composer} />
         </div>
       </div>

@@ -6,12 +6,11 @@ import {
   LandingFilePopupBlockedError,
   LandingFilesUnavailableError,
 } from "../../signals/prompt-page/landing-file-handoff.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ProductBrandMark } from "../components/product-brand-mark.tsx";
-import { LandingFileList, LandingFilePreview } from "./landing-file-list.tsx";
+import { ChatUserMessageBubble } from "../okou-page/chat-message-surface.tsx";
+import { LandingFileList } from "./landing-file-list.tsx";
 
-export function LandingFilesPage({
+export function LandingFilesMessage({
   signals,
 }: {
   signals: LandingFilesSignals;
@@ -22,7 +21,6 @@ export function LandingFilesPage({
   const edit = useSet(signals.edit$);
   const starting = useLoadable(signals.operation$);
   const start = useSet(signals.start$);
-  const signal = useGet(pageSignal$);
   const busy = starting.state !== "hasError";
   const attachments = useGet(signals.attachments$);
   const popupBlocked =
@@ -34,16 +32,11 @@ export function LandingFilesPage({
       starting.error instanceof LandingFilesUnavailableError);
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background p-6">
-      <section className="flex w-full max-w-xl flex-col gap-4 rounded-2xl border border-border bg-card p-6">
-        <ProductBrandMark decorative size="hero" />
-        <h1 className="text-xl font-medium">
-          {t(($) => {
-            return busy
-              ? $.chat.landingFiles.loading
-              : $.chat.landingFiles.selected;
-          })}
-        </h1>
+    <div data-landing-files-message className="flex flex-col items-end gap-3">
+      <ChatUserMessageBubble className="whitespace-pre-wrap">
+        <div className="px-4 py-3">{prompt}</div>
+      </ChatUserMessageBubble>
+      <div className="flex max-w-full flex-col items-end gap-3">
         {!busy && (
           <Textarea
             value={prompt}
@@ -56,24 +49,24 @@ export function LandingFilesPage({
             className="min-h-32"
           />
         )}
-        {files ? (
-          <div className="flex flex-wrap gap-2">
-            <LandingFileList files={files} />
-          </div>
-        ) : (
-          <LandingFilePreview />
-        )}
-        {busy && files && (
+        <div className="flex flex-wrap gap-2">
+          <LandingFileList files={files ?? signals.preview} />
+        </div>
+        {busy && (
           <p role="status" className="text-sm text-muted-foreground">
-            {t(
-              ($) => {
-                return $.chat.landingFiles.uploading;
-              },
-              {
-                current: attachments.length,
-                total: files.length,
-              },
-            )}
+            {files
+              ? t(
+                  ($) => {
+                    return $.chat.landingFiles.uploading;
+                  },
+                  {
+                    current: attachments.length,
+                    total: files.length,
+                  },
+                )
+              : t(($) => {
+                  return $.chat.landingFiles.loading;
+                })}
           </p>
         )}
         {(!signals.source || starting.state === "hasError") && (
@@ -107,7 +100,7 @@ export function LandingFilesPage({
               className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
               disabled={!signals.source || !prompt.trim()}
               onClick={() => {
-                detach(start(signal), Reason.DomCallback);
+                detach(start(), Reason.DomCallback);
               }}
             >
               {t(($) => {
@@ -116,7 +109,7 @@ export function LandingFilesPage({
             </Button>
           </div>
         )}
-      </section>
-    </main>
+      </div>
+    </div>
   );
 }

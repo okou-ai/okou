@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { array, number, object, string, uuid } from "zod";
+import { array, number, object, string, uuid, type infer as Infer } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { now } from "../../lib/time.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -44,6 +44,10 @@ const savedPreviewSchema = object({
     .max(10)
     .default([]),
 });
+
+export type LandingFileSelection = Infer<typeof savedPreviewSchema> & {
+  id: string;
+};
 
 function previewStorage(id: string) {
   return localStorageSignals(`landing-files:preview:${id}`);

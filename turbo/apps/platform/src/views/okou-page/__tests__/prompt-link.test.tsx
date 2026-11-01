@@ -516,7 +516,7 @@ function mockLandingPopup() {
   return { open, close, post, deliver, ready };
 }
 
-test("A landing-page request waits for its files and starts automatically", async () => {
+test("A landing-page request opens its chat before files arrive and starts automatically", async () => {
   const popup = mockLandingPopup();
   const capture = capturePromptLaunch();
   context.mocks.upload.success({
@@ -527,9 +527,12 @@ test("A landing-page request waits for its files and starts automatically", asyn
     url: "https://cdn.vm7.io/artifacts/tests/report.pdf",
   });
   await startLandingPage({ context, path: landingPath(), host: "app.okou.ai" });
-  await expect(
-    screen.findByRole("heading", { name: "Restoring your files…" }),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByRole("status")).resolves.toBeInTheDocument();
+  expect(pathname()).toMatch(/^\/chats\//);
+  const pendingThreadPath = pathname();
+  expect(
+    screen.queryByRole("heading", { name: "Restoring your files…" }),
+  ).not.toBeInTheDocument();
   expect(capture.sends).toHaveLength(0);
   await waitFor(() => {
     expect(popup.open).toHaveBeenCalledOnce();
@@ -559,6 +562,7 @@ test("A landing-page request waits for its files and starts automatically", asyn
     "a0000000-0000-4000-a000-000000000081",
   );
   expect(JSON.stringify(userMessageParts(send))).toContain("report.pdf");
+  expect(pathname()).toBe(pendingThreadPath);
   expect(search()).not.toContain("landingFiles");
   expect(popup.close).toHaveBeenCalledOnce();
 });
@@ -685,9 +689,7 @@ test("A new user keeps the landing file handoff while completing onboarding", as
   await fill(input, "Create slides for our board");
   expect(popup.open).not.toHaveBeenCalled();
   click(await findButton("Next"));
-  await expect(
-    screen.findByRole("heading", { name: "Restoring your files…" }),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByRole("status")).resolves.toBeInTheDocument();
   await expect(
     screen.findByText("董事会笔记.txt"),
   ).resolves.toBeInTheDocument();
@@ -749,6 +751,9 @@ test("A failed upload stops launch and retries only the failed file", async () =
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Your files and request are kept here",
   );
+  const failedThreadPath = pathname();
+  expect(failedThreadPath).toMatch(/^\/chats\//);
+  expect(capture.createdThreads).toHaveLength(1);
   expect(capture.sends).toHaveLength(0);
   expect(attempts).toStrictEqual([report.filename, notes.filename]);
   failNotes = false;
@@ -764,6 +769,8 @@ test("A failed upload stops launch and retries only the failed file", async () =
   const payload = JSON.stringify(capture.sends[0].userMessage);
   expect(payload).toContain(report.id);
   expect(payload).toContain(notes.id);
+  expect(pathname()).toBe(failedThreadPath);
+  expect(capture.createdThreads).toHaveLength(1);
   expect(popup.open).toHaveBeenCalledOnce();
 });
 
