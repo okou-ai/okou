@@ -102,12 +102,12 @@ final class ChatArtifactTests: XCTestCase {
     XCTAssertNil(resolved.expiresAt)
   }
 
-  func testPublishedCapabilitiesAndLegacyResourcesKeepTheirAddresses() async throws {
+  func testPublishedCapabilitiesAndLegacyResourcesResolveTheirContentAddresses() async throws {
     let fixture = ChatHTTPFixture { _ in throw URLError(.unsupportedURL) }
     for address in [
       "https://pv-token.okou.app/slide.html#next",
       "https://ps-token.okou.app/index.html", "https://sh-token.okou.app/",
-      "https://legacy.sites.vm0.io/", "https://cdn.okou.io/artifacts/user/id/report.pdf",
+      "https://legacy.sites.vm0.io/",
     ] {
       let url = URL(string: address)!
       let artifact = try XCTUnwrap(
@@ -115,6 +115,12 @@ final class ChatArtifactTests: XCTestCase {
       let resolved = try await commands(fixture).artifacts.resolve(artifact)
       XCTAssertEqual(resolved.contentURL, url)
     }
+    let legacy = try XCTUnwrap(
+      ChatArtifactReference.parse(
+        "https://cdn.okou.io/artifacts/user/id/report.pdf", webURL: webURL, apiURL: fixture.baseURL))
+    let resolved = try await commands(fixture).artifacts.resolve(legacy)
+    XCTAssertEqual(
+      resolved.contentURL, URL(string: "https://cdn.vm0.io/artifacts/user/id/report.pdf"))
   }
 
   func testDeniedHostedSitePreviewSurfacesTheAuthorityResponse() async throws {
