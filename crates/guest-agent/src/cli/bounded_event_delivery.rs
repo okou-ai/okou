@@ -444,8 +444,8 @@ fn truncated_text(original: &str, retained_bytes: usize) -> String {
 
     let head_target = retained_bytes.div_ceil(2);
     let tail_target = retained_bytes / 2;
-    let head_end = floor_char_boundary(original, head_target);
-    let tail_start = ceil_char_boundary(original, original.len().saturating_sub(tail_target));
+    let head_end = original.floor_char_boundary(head_target);
+    let tail_start = original.ceil_char_boundary(original.len().saturating_sub(tail_target));
     let preserved = head_end + original.len().saturating_sub(tail_start);
     let omitted = original.len().saturating_sub(preserved);
     format!(
@@ -453,20 +453,4 @@ fn truncated_text(original: &str, retained_bytes: usize) -> String {
         &original[..head_end],
         &original[tail_start..]
     )
-}
-
-fn floor_char_boundary(value: &str, mut index: usize) -> usize {
-    index = index.min(value.len());
-    while !value.is_char_boundary(index) {
-        index -= 1;
-    }
-    index
-}
-
-fn ceil_char_boundary(value: &str, mut index: usize) -> usize {
-    index = index.min(value.len());
-    while !value.is_char_boundary(index) {
-        index += 1;
-    }
-    index
 }

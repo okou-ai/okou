@@ -378,10 +378,8 @@ impl<'a> PiAssistantStream<'a> {
         let run_event_id = format!("{}:{source}", self.event_id_prefix);
         let mut remaining = text;
         while !remaining.is_empty() {
-            let mut end = remaining.len().min(SESSION_OUTPUT_DELTA_MAX_BYTES);
-            while !remaining.is_char_boundary(end) {
-                end -= 1;
-            }
+            let end =
+                remaining.floor_char_boundary(remaining.len().min(SESSION_OUTPUT_DELTA_MAX_BYTES));
             let delta = remaining[..end].to_string();
             if !self.output.try_send(&run_event_id, delta) {
                 self.closed_sources.insert(source);

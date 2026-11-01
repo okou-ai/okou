@@ -590,10 +590,7 @@ pub(crate) fn truncate_command_preview(s: &str) -> String {
         return s.to_string();
     }
     // Find a safe UTF-8 boundary at or before the max length.
-    let mut end = COMMAND_PREVIEW_MAX_LEN;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = s.floor_char_boundary(COMMAND_PREVIEW_MAX_LEN);
     format!("{}...", &s[..end])
 }
 

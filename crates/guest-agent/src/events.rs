@@ -421,10 +421,9 @@ fn truncate_diagnostic_message(message: &str) -> String {
         return message.to_string();
     }
 
-    let mut end = FAILURE_DIAGNOSTIC_MAX_BYTES - FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX.len();
-    while !message.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = message.floor_char_boundary(
+        FAILURE_DIAGNOSTIC_MAX_BYTES - FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX.len(),
+    );
     format!("{}{}", &message[..end], FAILURE_DIAGNOSTIC_TRUNCATED_SUFFIX)
 }
 

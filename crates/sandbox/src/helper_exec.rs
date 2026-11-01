@@ -86,10 +86,7 @@ fn diagnostic_output_excerpt(input: &str) -> (&str, bool) {
         return (input, false);
     }
 
-    let mut start = input.len() - HELPER_EXEC_OUTPUT_EXCERPT_BYTES;
-    while !input.is_char_boundary(start) {
-        start += 1;
-    }
+    let start = input.ceil_char_boundary(input.len() - HELPER_EXEC_OUTPUT_EXCERPT_BYTES);
     (&input[start..], true)
 }
 

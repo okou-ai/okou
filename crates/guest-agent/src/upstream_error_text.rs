@@ -127,10 +127,7 @@ fn truncate_model_error_text(message: &str) -> String {
         return message.to_string();
     }
 
-    let mut end = MAX_MODEL_ERROR_BYTES - TRUNCATED_SUFFIX.len();
-    while !message.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = message.floor_char_boundary(MAX_MODEL_ERROR_BYTES - TRUNCATED_SUFFIX.len());
     format!("{}{TRUNCATED_SUFFIX}", &message[..end])
 }
 

@@ -71,10 +71,7 @@ pub fn bounded_error_tail(error: &str, max_bytes: usize) -> Option<&str> {
     if error.len() <= max_bytes {
         return None;
     }
-    let mut start = error.len() - max_bytes;
-    while !error.is_char_boundary(start) {
-        start += 1;
-    }
+    let start = error.ceil_char_boundary(error.len() - max_bytes);
     Some(&error[start..])
 }
 

@@ -917,14 +917,7 @@ fn truncate_cli_stderr_line(line: &str) -> std::borrow::Cow<'_, str> {
         return std::borrow::Cow::Borrowed(line);
     }
 
-    let mut cut = 0;
-    for (idx, ch) in line.char_indices() {
-        let next = idx + ch.len_utf8();
-        if next > MAX_LOGGED_CLI_STDERR_LINE_BYTES {
-            break;
-        }
-        cut = next;
-    }
+    let cut = line.floor_char_boundary(MAX_LOGGED_CLI_STDERR_LINE_BYTES);
 
     let mut truncated = line[..cut].to_string();
     truncated.push_str("...[truncated]");

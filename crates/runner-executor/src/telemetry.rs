@@ -274,10 +274,7 @@ struct HomeStartupSource {
 }
 
 fn bounded_home_identity(value: &str) -> String {
-    let mut end = value.len().min(4096);
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = value.floor_char_boundary(value.len().min(4096));
     value[..end].to_owned()
 }
 
@@ -1246,10 +1243,7 @@ fn sandbox_op_from_record(record: SandboxOpRecord, run_id: Option<RunId>) -> San
             (&mut home.handoff_path, 64),
         ] {
             if let Some(field) = field {
-                let mut end = field.len().min(limit);
-                while !field.is_char_boundary(end) {
-                    end -= 1;
-                }
+                let end = field.floor_char_boundary(field.len().min(limit));
                 field.truncate(end);
             }
         }
