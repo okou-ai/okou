@@ -270,8 +270,8 @@ def load(loader: Loader) -> None:
 
 def configure(updated: set[str]) -> None:
     if "okou_builtin_firewall_catalog_cache_path" in updated:
-        # configure precedes listener activation. Replacement sandboxes may
-        # reconnect before Runner can send its post-listener readiness request.
+        # Runner disables its listener until running() below. Script loading
+        # itself is asynchronous and does not precede native listener setup.
         builtin_firewall_cache.load_configured_catalog_snapshot()
     platform_api.configure_client_headers(
         client_session_id=ctx.options.okou_client_session_id,
@@ -294,6 +294,10 @@ def running() -> None:
     usage_state_id = ctx.options.okou_usage_state_id
     run_usage.initialize(usage_state_id or None)
     if control_dir and usage_state_id:
+        proxy_server = ctx.master.addons.get("proxyserver")
+        if proxy_server is None:
+            raise RuntimeError("managed addon requires the native proxy server")
+        proxy_servers = proxy_server.servers
         registry_owner = registry_control.RegistryControl(
             asyncio.get_running_loop(), get_registry_path()
         )
@@ -303,10 +307,16 @@ def running() -> None:
             registry_owner,
             runner_flush_lifecycle.DeliveryControl(),
             usage_snapshot=run_usage.snapshot,
+            # Native server maps are replaced, and is_running only reads each
+            # instance's published listener state. No policy work runs here.
+            listener_ready=lambda: any(server.is_running for server in proxy_servers),
         )
         control.start()
         _registry_control = registry_owner
         _runner_control = control
+        # Managed launches start with server=false so reconnecting sandboxes
+        # cannot enter before configure() has validated the existing catalog.
+        ctx.options.update(server=True)
 
 
 def get_api_url() -> str:

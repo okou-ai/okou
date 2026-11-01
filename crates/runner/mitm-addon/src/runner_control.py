@@ -89,12 +89,14 @@ class ControlServer:
         delivery_owner: runner_flush_lifecycle.DeliveryControl | None = None,
         *,
         usage_snapshot: Callable[[str], dict[str, object]] | None = None,
+        listener_ready: Callable[[], bool] | None = None,
     ) -> None:
         self._directory = directory
         self._generation = _identifier(generation)
         self._registry_owner = registry_owner
         self._delivery_owner = delivery_owner
         self._usage_snapshot = usage_snapshot
+        self._listener_ready = listener_ready
         self._started: Future[None] = Future()
         self._shutdown: Future[None] = Future()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -236,6 +238,8 @@ class ControlServer:
                 return self._error(request_id, "unknown_method")
             if request["params"]:
                 return self._error(request_id, "invalid_request")
+            if self._listener_ready is not None and not self._listener_ready():
+                return self._error(request_id, "not_ready")
         except ValueError, RecursionError:
             return self._error(request_id, "invalid_request")
         return {
