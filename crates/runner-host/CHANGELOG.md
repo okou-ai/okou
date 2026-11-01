@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.13](https://github.com/okou-ai/okou/compare/runner-host-v0.10.12...runner-host-v0.10.13) (2026-11-01)
+
+
+### Refactoring
+
+* **runner-host:** separate host resource observation test sources ([#44484](https://github.com/okou-ai/okou/issues/44484)) ([bca8616](https://github.com/okou-ai/okou/commit/bca8616607bb8aedea885c246474526795fb4c75))
+
 ## [0.10.12](https://github.com/okou-ai/okou/compare/runner-host-v0.10.11...runner-host-v0.10.12) (2026-11-01)
 
 

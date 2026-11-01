@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.6](https://github.com/okou-ai/okou/compare/ios-v0.22.5...ios-v0.22.6) (2026-11-01)
+
+
+### Bug Fixes
+
+* **ios:** authorize hosted site previews like the pwa ([#44474](https://github.com/okou-ai/okou/issues/44474)) ([51abd00](https://github.com/okou-ai/okou/commit/51abd001b14377f9d329605d6489866f70df8b72))
+
 ## [0.22.5](https://github.com/okou-ai/okou/compare/ios-v0.22.4...ios-v0.22.5) (2026-10-30)
 
 
