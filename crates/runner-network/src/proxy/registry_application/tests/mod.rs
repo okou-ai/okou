@@ -105,6 +105,45 @@ async fn stop_real_python_registry_owner(mut child: tokio::process::Child) {
 }
 
 #[tokio::test]
+async fn catalog_warmup_uses_the_real_python_owner_and_explicit_unavailable_state() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let child = start_real_python_registry_owner(directory.path()).await;
+    let target = ControlTarget {
+        directory: directory.path().to_path_buf(),
+        generation: PYTHON_OWNER_GENERATION.to_string(),
+    };
+    // A local Runner need not have an API catalog, but its owner must finish
+    // checking and return an explicit unavailable result.
+    warm_catalog(
+        &target,
+        tokio::time::Instant::now() + Duration::from_secs(5),
+    )
+    .await
+    .unwrap();
+    let cache = directory.path().join("catalog.json");
+    runner_host::state_file::write_private_atomic(&cache, b"{invalid")
+        .await
+        .unwrap();
+    warm_catalog(
+        &target,
+        tokio::time::Instant::now() + Duration::from_secs(5),
+    )
+    .await
+    .unwrap();
+    let stale = ControlTarget {
+        generation: "previous-generation".into(),
+        ..target
+    };
+    assert!(
+        warm_catalog(&stale, tokio::time::Instant::now() + Duration::from_secs(5))
+            .await
+            .is_err()
+    );
+    stop_real_python_registry_owner(child).await;
+}
+
+#[tokio::test]
 async fn application_uses_frozen_generation_and_validates_actual_snapshot() {
     for defect in ["none", "digest", "catalog", "summary", "state", "extra"] {
         let directory = tempfile::Builder::new()

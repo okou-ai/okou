@@ -222,6 +222,12 @@ class ControlServer:
                 return await self._flush_logs(request_id, request["params"])
             if method == "registry.apply":
                 return await self._apply_registry(request_id, request["params"])
+            if method == "catalog.warm":
+                if request["params"]:
+                    return self._error(request_id, "invalid_request")
+                if self._registry_owner is None:
+                    return self._error(request_id, "not_ready")
+                return await self._registry_operation(request_id, self._registry_owner.warm_catalog)
             if method == "registry.status":
                 if request["params"]:
                     return self._error(request_id, "invalid_request")
@@ -287,8 +293,16 @@ class ControlServer:
             return self._error(request_id, "invalid_request")
         if self._registry_owner is None:
             return self._error(request_id, "not_ready")
+        owner = self._registry_owner
+        return await self._registry_operation(request_id, lambda: owner.apply(digest))
+
+    async def _registry_operation(
+        self,
+        request_id: str,
+        operation: Callable[[], Future[dict[str, object] | None] | None],
+    ) -> dict[str, object]:
         try:
-            future = self._registry_owner.apply(digest)
+            future = operation()
             if future is None:
                 return self._error(request_id, "busy")
             async with asyncio.timeout(4.0):
@@ -297,7 +311,7 @@ class ControlServer:
             return self._error(request_id, "deadline")
         except Exception as error:
             addon_process_logging.emit_addon_process_event(
-                "error", f"Registry control application failed ({type(error).__name__})"
+                "error", f"Registry control operation failed ({type(error).__name__})"
             )
             return self._error(request_id, "internal_error")
         if result is None:

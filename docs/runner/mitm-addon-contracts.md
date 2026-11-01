@@ -325,9 +325,33 @@ exemption, and the existing draft/review handoff instructions.
 Runner and its embedded addon ship together. `okou_control_socket_dir` selects
 the current managed launch directory; `okou_usage_state_id` is also the control
 generation and rotates on restart. Readiness requires a correlated `proxy.status`
-reply followed by EOF, then the existing TCP listener probe, within the original
-10-second startup deadline. A socket inode alone is not readiness. Only read-only
-startup probes retry, with at most one second per control attempt.
+reply followed by EOF, then the existing TCP listener probe and one completed
+`catalog.warm` request, within the original 10-second startup deadline. A socket
+inode alone is not readiness. Only observational startup probes retry, with at
+most one second per control attempt; an uncertain warmup is not replayed.
+
+`catalog.warm` takes empty object parameters and runs the existing configured
+catalog loader on the bounded registry owner, not the control I/O thread. It
+returns the credential-free catalog projection used by registry observations:
+`available` with file identity and digest, or `unavailable` with file identity
+when known and its explicit reason. It does not apply a registry or change
+authorization. Missing and invalid sources retain existing fail-closed builtin
+behavior and supported local/inline operation. `proxy.status` remains
+observational and does not establish catalog warmth.
+
+The addon's configure hook preloads an existing configured catalog before the
+pinned runtime activates its listener. This covers sandboxes reconnecting during
+proxy replacement before Runner can send its readiness request.
+Initial mitmdump startup precedes API-provider catalog publication. Supervisor
+therefore completes another catalog warmup after provider startup readiness and
+before factories, Running status, or discovery. A failed control exchange stops
+startup; lifecycle cancellation retains startup rollback ownership. Replacement
+mitmdump launches complete their catalog load before process readiness returns.
+The loader reuses the warmed file identity on initial requests; changed identities
+still invalidate it. Periodic catalog replacement after admission retains its
+existing synchronous validation cost. Warmup outcome and elapsed time are logged
+without policy or credential content; unavailable is not reported as an available
+catalog.
 
 The addon owns a separate asyncio I/O thread. It opens the launch directory with
 `O_DIRECTORY | O_NOFOLLOW`, requires the effective UID and private permissions,
