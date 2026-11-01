@@ -404,12 +404,14 @@ const iosContracts: readonly {
 ];
 
 export const iosRouteBindings: readonly RuntimeApiRouteBinding[] =
-  iosContracts.map(({ id, route }) => {return {
-    id,
-    owner: "ios",
-    // The global compatibility middleware can answer 426 before route matching.
-    route: {
-      ...route,
-      responses: { ...route.responses, 426: iosUpgradeRequiredSchema },
-    },
-  }});
+  iosContracts.map(({ id, route }) => {
+    return {
+      id,
+      owner: "ios",
+      // The global compatibility middleware can answer 426 before route matching.
+      route: {
+        ...route,
+        responses: { ...route.responses, 426: iosUpgradeRequiredSchema },
+      },
+    };
+  });
