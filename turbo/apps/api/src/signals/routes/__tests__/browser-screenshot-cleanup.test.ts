@@ -133,6 +133,11 @@ async function capture(chat: Chat) {
 }
 
 test("publishes legacy Browser captures with their ready private file through the existing cron", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture(false);
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
@@ -158,6 +163,11 @@ test("publishes legacy Browser captures with their ready private file through th
 });
 
 test("reclaims replaced screenshots and their file access while the current preview remains usable", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
@@ -235,6 +245,11 @@ test("retains the accepted screenshot after the shared owner and window retire",
 });
 
 test("reclaims a deleted chat's final screenshot without removing an active sibling", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
@@ -260,6 +275,11 @@ test("reclaims a deleted chat's final screenshot without removing an active sibl
 });
 
 test("fences obsolete file access before a delayed storage deletion without fencing the accepted preview", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
@@ -315,6 +335,11 @@ test("fences obsolete file access before a delayed storage deletion without fenc
 });
 
 test("retains partial deletion failures, continues other objects, and recovers an already-missing object", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
@@ -355,6 +380,11 @@ test("retains partial deletion failures, continues other objects, and recovers a
 });
 
 test("reclaims an upload abandoned after an uncertain storage response", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
@@ -388,6 +418,11 @@ test("reclaims an upload abandoned after an uncertain storage response", async (
 });
 
 test("preserves a concurrently published preview while the sweep is deleting its predecessor", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
@@ -434,6 +469,11 @@ test("preserves a concurrently published preview while the sweep is deleting its
 });
 
 test("reclaims a rejected older capture while retaining the newer accepted preview", async () => {
+  await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
