@@ -682,7 +682,7 @@ describe("zero user permission grants", () => {
     ]);
     const listed = await listPermissionGrants(agentId);
     expect(listed).toHaveLength(2);
-    expect(listed).toStrictEqual(expect.arrayContaining(applied));
+    expect(listed).toStrictEqual(expect.arrayContaining([...applied]));
   });
 
   it("accepts concurrent edits of a new permission without losing other grants", async () => {
