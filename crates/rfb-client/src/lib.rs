@@ -27,6 +27,7 @@ mod rsa_aes;
 mod session;
 mod transport;
 mod trust;
+mod version;
 mod wire;
 mod zrle;
 

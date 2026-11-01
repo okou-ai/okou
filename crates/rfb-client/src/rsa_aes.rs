@@ -4,6 +4,7 @@ pub(crate) mod records;
 use crate::{
     Authenticated, AuthenticatedStream, AuthenticationStage, Error,
     authentication::{phase, read_security_result},
+    version::{ServerVersion, exchange_version},
 };
 use crypto_bigint::BoxedUint;
 use rand::{
@@ -163,16 +164,6 @@ fn wire(key: &RsaPublicKey) -> Result<Vec<u8>, Error> {
     }
     Ok(result)
 }
-async fn version<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let mut banner = [0; 12];
-    stream.read_exact(&mut banner).await?;
-    if &banner != b"RFB 003.008\n" {
-        return Err(Error::UnsupportedRfbVersion);
-    }
-    stream.write_all(&banner).await?;
-    stream.flush().await?;
-    Ok(())
-}
 async fn select<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
     security: RsaAesSecurity,
@@ -267,7 +258,7 @@ where
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
-        version(&mut stream),
+        exchange_version(&mut stream, ServerVersion::Rfb38),
     )
     .await?;
     phase(
