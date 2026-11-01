@@ -264,7 +264,7 @@ function OnboardingStepActions({
             onClick={onPrimary}
             disabled={primaryDisabled}
             pending={primaryBusy}
-            className="w-[132px] max-sm:w-full"
+            className="min-w-[132px] max-sm:w-full"
           >
             {primaryLabel}
           </Button>
