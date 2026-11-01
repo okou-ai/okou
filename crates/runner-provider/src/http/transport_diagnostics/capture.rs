@@ -188,7 +188,8 @@ fn receive(fd: &OwnedFd) -> io::Result<Option<Packet>> {
     message.msg_iov = &mut iov;
     message.msg_iovlen = 1;
     message.msg_control = control.as_mut_ptr().cast();
-    message.msg_controllen = size_of_val(&control);
+    // libc uses different length types on GNU and musl; this fixed buffer fits both.
+    message.msg_controllen = size_of_val(&control) as _;
     let received = unsafe { libc::recvmsg(fd.as_raw_fd(), &mut message, libc::MSG_DONTWAIT) };
     if received == -1 {
         return Err(io::Error::last_os_error());
@@ -204,7 +205,7 @@ fn receive(fd: &OwnedFd) -> io::Result<Option<Packet>> {
         while !header.is_null() {
             if (*header).cmsg_level == libc::SOL_SOCKET
                 && (*header).cmsg_type == libc::SCM_TIMESTAMPNS
-                && (*header).cmsg_len >= libc::CMSG_LEN(size_of::<libc::timespec>() as u32) as usize
+                && (*header).cmsg_len >= libc::CMSG_LEN(size_of::<libc::timespec>() as u32) as _
             {
                 let ts = std::ptr::read_unaligned(libc::CMSG_DATA(header).cast::<libc::timespec>());
                 stamp = u64::try_from(ts.tv_sec).ok().and_then(|s| {
