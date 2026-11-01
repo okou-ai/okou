@@ -6,7 +6,7 @@ import { CdpFault, isRecord, requestDetails } from "../cdp/errors.ts";
 import type { NavigationAction, NavigationReceipt } from "../viewer/types.ts";
 import type { DisplayViewport } from "../display/viewport.ts";
 import type { NavigationData } from "../navigation/data.ts";
-import type { NativeInputHost } from "./port.ts";
+import type { EditingContext, NativeInputHost } from "./port.ts";
 import type { InputGeometry, Point } from "../display/geometry.ts";
 import { navigationAddress } from "./address.ts";
 import { createInputEffects } from "./effects.ts";
@@ -56,9 +56,18 @@ const caretPosition = `(() => {
       if (caret.height) { x = caret.left; y = caret.bottom; }
     }
     const viewport = window.visualViewport;
+    const type = e.localName === 'input' ? e.type : e.localName;
+    const editing = {
+      type,
+      multiline: e.localName === 'textarea' || e.isContentEditable,
+      inputMode: e.inputMode,
+      enterKeyHint: e.enterKeyHint,
+      autoCapitalize: e.autocapitalize || e.form?.autocapitalize || '',
+      lang: e.closest('[lang]')?.lang || doc.documentElement.lang
+    };
     return { x: x + ox, y: y + oy,
       width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight,
-      offsetX: viewport?.offsetLeft ?? 0, offsetY: viewport?.offsetTop ?? 0 };
+      offsetX: viewport?.offsetLeft ?? 0, offsetY: viewport?.offsetTop ?? 0, editing };
   }
   return null;
 })()`;
@@ -84,6 +93,7 @@ function createSessionState(
   const navigationGate$ = state<object | null>(null);
   const internalError$ = state<CdpFault | null>(null);
   const internalCaret$ = state<Point | null>(null);
+  const internalEditing$ = state<EditingContext | null>(null);
   const internalTransition$ = state<{
     id: number;
     reason: InputTransition;
@@ -116,6 +126,9 @@ function createSessionState(
   const caret$ = computed((get) => {
     return get(internalCaret$);
   });
+  const editing$ = computed((get) => {
+    return get(internalEditing$);
+  });
   const transition$ = computed((get) => {
     return get(internalTransition$);
   });
@@ -138,6 +151,7 @@ function createSessionState(
     navigationGate$,
     internalError$,
     internalCaret$,
+    internalEditing$,
     internalTransition$,
     clipboardVersion$,
     frameId$,
@@ -151,6 +165,7 @@ function createSessionState(
     owner$,
     error$,
     caret$,
+    editing$,
     transition$,
     clipboardEpoch$,
   };
@@ -172,6 +187,7 @@ function createSessionInvalidation(graph: SessionBase) {
     clipboardVersion$,
     effects,
     internalCaret$,
+    internalEditing$,
     nativeHost,
   } = graph;
   const invalidateClipboard$ = command(({ set }) => {
@@ -186,6 +202,7 @@ function createSessionInvalidation(graph: SessionBase) {
     });
     set(caretJob$, null);
     set(internalCaret$, null);
+    set(internalEditing$, null);
     if (notify) {
       set(nativeHost.synchronize$);
     }
@@ -208,6 +225,7 @@ function createCaretObservation(
     caretReading$,
     caretVersion$,
     internalCaret$,
+    internalEditing$,
     lifecycle,
     queue,
   } = graph;
@@ -216,7 +234,7 @@ function createCaretObservation(
       { set },
       job: InputJob,
       signal: AbortSignal,
-    ): Promise<Point | null> => {
+    ): Promise<{ caret: Point; editing: EditingContext } | null> => {
       const result = await set(queue.evaluate$, job, {
         expression: caretPosition,
         returnByValue: true,
@@ -245,9 +263,31 @@ function createCaretObservation(
       ) {
         return null;
       }
+      const editing = value.editing;
+      if (
+        !isRecord(editing) ||
+        typeof editing.type !== "string" ||
+        typeof editing.multiline !== "boolean" ||
+        typeof editing.inputMode !== "string" ||
+        typeof editing.enterKeyHint !== "string" ||
+        typeof editing.autoCapitalize !== "string" ||
+        typeof editing.lang !== "string"
+      ) {
+        return null;
+      }
       return {
-        x: Math.max(0, Math.min(1, (value.x - value.offsetX) / value.width)),
-        y: Math.max(0, Math.min(1, (value.y - value.offsetY) / value.height)),
+        caret: {
+          x: Math.max(0, Math.min(1, (value.x - value.offsetX) / value.width)),
+          y: Math.max(0, Math.min(1, (value.y - value.offsetY) / value.height)),
+        },
+        editing: {
+          type: editing.type,
+          multiline: editing.multiline,
+          inputMode: editing.inputMode,
+          enterKeyHint: editing.enterKeyHint,
+          autoCapitalize: editing.autoCapitalize,
+          lang: editing.lang,
+        },
       };
     },
   );
@@ -270,10 +310,10 @@ function createCaretObservation(
       if (
         result.status === "fulfilled" &&
         version === get(caretVersion$) &&
-        set(lifecycle.owns$, job.owner) &&
-        result.value
+        set(lifecycle.owns$, job.owner)
       ) {
-        set(internalCaret$, result.value);
+        set(internalCaret$, result.value?.caret ?? null);
+        set(internalEditing$, result.value?.editing ?? null);
         set(graph.nativeHost.synchronize$);
       }
     }
@@ -1199,6 +1239,7 @@ export function createInputSession(
     owner$: values.owner$,
     error$: values.error$,
     caret$: values.caret$,
+    editing$: values.editing$,
     transition$: values.transition$,
     clipboardEpoch$: values.clipboardEpoch$,
     ...cleanup,

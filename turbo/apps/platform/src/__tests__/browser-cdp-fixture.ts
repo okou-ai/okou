@@ -45,6 +45,7 @@ export function mockBrowserCdp(
       ? null
       : context.mocks.browser.imageBitmap(1440, 900);
   const viewport = { width: 1440, height: 900 };
+  let focusedEditing: unknown = null;
   const targets: BrowserTarget[] = (
     options.targets ?? [
       {
@@ -367,11 +368,15 @@ export function mockBrowserCdp(
           : nativeResult(expression);
       }
       return {
-        result: expression.includes("const fence =")
-          ? { type: "object", value: { fence: 1000, now: 1001 } }
-          : expression.includes("devicePixelRatio")
-            ? { type: "object", value: { ...viewport, dpr: 1 } }
-            : { type: "undefined" },
+        result:
+          expression.includes("doc.activeElement") &&
+          expression.includes("offsetX:")
+            ? { type: "object", value: focusedEditing }
+            : expression.includes("const fence =")
+              ? { type: "object", value: { fence: 1000, now: 1001 } }
+              : expression.includes("devicePixelRatio")
+                ? { type: "object", value: { ...viewport, dpr: 1 } }
+                : { type: "undefined" },
       };
     }
     return {};
@@ -556,6 +561,9 @@ export function mockBrowserCdp(
     detached,
     captures,
     viewport,
+    setFocusedEditing(value: unknown) {
+      focusedEditing = value;
+    },
     connections: socket.connections,
     failNext(method: string, message: string, code = -32_000) {
       nextResponses.set(method, () => {

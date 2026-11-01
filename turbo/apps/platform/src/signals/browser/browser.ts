@@ -114,7 +114,7 @@ export interface BrowserSignals {
   readonly refs: {
     readonly root$: Ref<HTMLDivElement>;
     readonly canvas$: Ref<HTMLCanvasElement>;
-    readonly input$: Ref<HTMLTextAreaElement>;
+    readonly input$: Ref<HTMLInputElement>;
     readonly toolbar$: Ref<HTMLDivElement>;
     readonly tabs$: Ref<HTMLDivElement>;
     readonly address$: Ref<HTMLInputElement>;

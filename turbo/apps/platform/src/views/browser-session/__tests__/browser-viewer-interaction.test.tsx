@@ -649,6 +649,239 @@ test.each([
   },
 );
 
+test("Remote editing context configures one stable selection-capable keyboard proxy", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  for (const [type, inputMode, enterKeyHint] of [
+    ["search", "search", "search"],
+    ["email", "email", "enter"],
+    ["url", "url", "enter"],
+    ["tel", "tel", "enter"],
+    ["number", "decimal", "enter"],
+    ["textarea", "text", "enter"],
+    ["password", "text", "enter"],
+  ]) {
+    browser.setFocusedEditing({
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type,
+        multiline: type === "textarea",
+        inputMode: "",
+        enterKeyHint: "",
+        autoCapitalize: "characters",
+        lang: "zh-CN",
+      },
+    });
+    fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+    fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
+    await waitFor(() => {
+      expect(input).toHaveAttribute("inputmode", inputMode);
+      expect(input).toHaveAttribute("enterkeyhint", enterKeyHint);
+      expect(input).toHaveAttribute(
+        "type",
+        type === "password" ? "password" : "text",
+      );
+    });
+    expect(input).toHaveFocus();
+    expect(screen.getByLabelText("Remote browser input")).toBe(input);
+    expect(input).toHaveAttribute("lang", "zh-CN");
+    expect(input).toHaveAttribute("autocorrect", "off");
+    expect(input).toHaveAttribute("spellcheck", "false");
+  }
+  expect(input).toHaveAttribute("autocapitalize", "none");
+  browser.setFocusedEditing({
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "text",
+      multiline: false,
+      inputMode: "numeric",
+      enterKeyHint: "send",
+      autoCapitalize: "words",
+      lang: "en-US",
+    },
+  });
+  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  await waitFor(() => {
+    expect(input).toHaveAttribute("inputmode", "numeric");
+    expect(input).toHaveAttribute("enterkeyhint", "send");
+  });
+  expect(input).toHaveAttribute("autocapitalize", "words");
+  fireEvent.compositionStart(input);
+  browser.setFocusedEditing({
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "password",
+      multiline: false,
+      inputMode: "",
+      enterKeyHint: "done",
+      autoCapitalize: "characters",
+      lang: "ja",
+    },
+  });
+  const reading = browser.holdNext("Runtime.evaluate");
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await reading.received;
+  await act(async () => {
+    await reading.release();
+  });
+  expect(input).toHaveAttribute("type", "text");
+  expect(input).toHaveAttribute("inputmode", "numeric");
+  expect(input).toHaveValue("中");
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中",
+    }),
+  );
+  await waitFor(() => {
+    expect(input).toHaveAttribute("type", "password");
+    expect(input).toHaveAttribute("enterkeyhint", "done");
+  });
+  expect(input).toHaveFocus();
+  browser.setFocusedEditing(null);
+  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
+  await waitFor(() => {
+    expect(input).toHaveAttribute("inputmode", "text");
+    expect(input).toHaveAttribute("enterkeyhint", "enter");
+    expect(input).toHaveAttribute("lang", "");
+  });
+  expect(input).toHaveFocus();
+});
+
+test("A retired tab cannot apply its delayed secure editing context", async () => {
+  const browser = await setupViewer();
+  browser.setFocusedEditing({
+    x: 40,
+    y: 50,
+    width: 1440,
+    height: 900,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type: "password",
+      multiline: false,
+      inputMode: "numeric",
+      enterKeyHint: "done",
+      autoCapitalize: "none",
+      lang: "ja",
+    },
+  });
+  const reading = browser.holdNext("Runtime.evaluate");
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  await expect(reading.received).resolves.toContain('"password"');
+  browser.setFocusedEditing(null);
+  await userEvent.click(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await act(async () => {
+    await reading.release();
+  });
+  const input = screen.getByLabelText("Remote browser input");
+  expect(input).toHaveAttribute("type", "text");
+  expect(input).toHaveAttribute("inputmode", "text");
+  expect(input).toHaveAttribute("enterkeyhint", "enter");
+});
+
+test("Native form actions forward Enter once without submitting an IME candidate", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  const form = input.closest("form")!;
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Unidentified", keyCode: 229 });
+  expect(fireEvent.submit(form)).toBeFalsy();
+  fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
+  fireEvent.submit(form);
+  fireEvent.keyUp(input, { key: "Enter", code: "Enter", keyCode: 13 });
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  fireEvent.submit(form);
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中",
+    }),
+  );
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+  });
+  fireEvent.input(input, { inputType: "insertLineBreak" });
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertText",
+      data: "first\nsecond",
+    }),
+  );
+  fireEvent.input(input, {
+    target: { value: "last" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "last" },
+    });
+  });
+  const keys = browser.input.filter((request) => {
+    return request.method === "Input.dispatchKeyEvent";
+  });
+  expect(keys).toHaveLength(6);
+  for (let index = 0; index < keys.length; index += 2) {
+    expect(keys[index]).toMatchObject({
+      params: {
+        type: "keyDown",
+        key: "Enter",
+        text: "\r",
+        unmodifiedText: "\r",
+      },
+    });
+    expect(keys[index + 1]).toMatchObject({
+      params: { type: "keyUp", key: "Enter" },
+    });
+  }
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.insertText";
+    }),
+  ).toStrictEqual([
+    expect.objectContaining({ params: { text: "中" } }),
+    expect.objectContaining({ params: { text: "first\nsecond" } }),
+    expect.objectContaining({ params: { text: "last" } }),
+  ]);
+});
+
 test("Soft-keyboard deletion forwards after committed text without duplicating desktop Backspace", async () => {
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");
@@ -725,7 +958,7 @@ test("Soft-keyboard deletion forwards after committed text without duplicating d
   );
 });
 
-test("Queued soft-keyboard deletion cannot reach a replacement tab", async () => {
+test("Queued soft-keyboard deletion and Enter cannot reach a replacement tab", async () => {
   const browser = await setupViewer();
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
@@ -744,6 +977,7 @@ test("Queued soft-keyboard deletion cannot reach a replacement tab", async () =>
       data: "old",
     }),
   );
+  fireEvent.submit(input.closest("form")!);
   fireEvent(
     input,
     new InputEvent("beforeinput", {

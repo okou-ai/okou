@@ -962,6 +962,32 @@ function BrowserClipboard({ signals }: { readonly signals: BrowserSignals }) {
 }
 
 /** Product presentation and state belong to Platform; each graph owns its mounted browser. */
+function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
+  const { t } = useTranslation();
+  const controls = useGet(signals.controls$);
+  const inputRef = useSet(signals.refs.input$);
+  return (
+    <form className="contents">
+      <Input
+        ref={inputRef}
+        data-browser-input
+        aria-label={t(($) => {
+          return $.browserViewer.remoteInput;
+        })}
+        disabled={!controls.streaming}
+        type="text"
+        inputMode="text"
+        enterKeyHint="enter"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        className="pointer-events-none absolute left-0 top-0 h-px min-h-0 w-px overflow-hidden rounded-none border-0 p-0 text-base opacity-0 shadow-none"
+      />
+    </form>
+  );
+}
+
 export function Browser({
   signals,
   actions,
@@ -983,7 +1009,6 @@ export function Browser({
   const rootRef = useSet(signals.refs.root$);
   const surfaceRef = useSet(signals.refs.surface$);
   const canvasRef = useSet(signals.refs.canvas$);
-  const inputRef = useSet(signals.refs.input$);
   const [selectOperation, selectTab] = useLoadableSet(signals.selectTab$);
   // Both New tab entry points share one request owner to prevent duplicate creation.
   const [createOperation, createTab] = useLoadableSet(signals.createTab$);
@@ -1052,21 +1077,7 @@ export function Browser({
             aria-hidden={!controls.streaming}
             className="block h-full w-full object-contain"
           />
-          <Textarea
-            ref={inputRef}
-            data-browser-input
-            aria-label={t(($) => {
-              return $.browserViewer.remoteInput;
-            })}
-            disabled={!controls.streaming}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            rows={1}
-            wrap="off"
-            className="pointer-events-none absolute left-0 top-0 h-px min-h-0 w-px resize-none overflow-hidden rounded-none border-0 p-0 opacity-0 shadow-none"
-          />
+          <BrowserInput signals={signals} />
         </div>
         {placeholder ?? (
           <BrowserStatus
