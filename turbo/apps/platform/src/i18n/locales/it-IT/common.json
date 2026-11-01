@@ -4597,8 +4597,8 @@
             "label": "Presentazione"
           },
           "report": {
-            "instruction": "Presenta i risultati in un report strutturato con risultati principali, raccomandazioni e prossimi passi.",
-            "label": "Report"
+            "instruction": "Crea un documento completo con i risultati nel formato di file richiesto (Markdown predefinito). Caricalo come artefatto e includi un link funzionante all’artefatto nella risposta finale.",
+            "label": "Documento"
           },
           "research": {
             "instruction": "Presenta i risultati in una sintesi della ricerca con fonti e domande aperte. Distingui i fatti documentati dalle raccomandazioni.",

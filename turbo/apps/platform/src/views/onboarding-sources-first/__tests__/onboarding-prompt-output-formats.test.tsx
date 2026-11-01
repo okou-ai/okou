@@ -10,8 +10,8 @@ const context = testContext();
 const TASK = "Review my latest campaign and recommend three improvements.";
 const PRESENTATION =
   "Present the findings as a concise presentation with key results, recommendations, and next steps.";
-const REPORT =
-  "Present the findings as a structured report with key results, recommendations, and next steps.";
+const DOCUMENT =
+  "Create a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.";
 
 async function openPrompt({
   prompt = TASK,
@@ -50,7 +50,7 @@ test.each([
   ],
   [
     "Analyze the social profiles or posts I share. Summarize the evidence and recommend next steps.",
-    "Report",
+    "Document",
   ],
   [
     "Find people or businesses that match my criteria, using public professional sources. Explain why each result fits.",
@@ -70,8 +70,15 @@ test.each([
     "Presentation",
   ],
   ["/gen website create a portfolio for a presentation designer", "Website"],
-  ["Create a report about image generation trends.", "Report"],
-  ["Review our website traffic and recommend improvements.", "Report"],
+  ["Create a report about image generation trends.", "Document"],
+  ["/gen document compare three marketing strategies", "Document"],
+  [
+    "Research AI assistants and return a document with the findings.",
+    "Document",
+  ],
+  ["Compare these proposals and present the results as a PDF.", "Document"],
+  ["调研市场并整理成一份文档。", "Document"],
+  ["Review our website traffic and recommend improvements.", "Document"],
   ["Research website builders for a small business.", "Research brief"],
   ["Find creators who reach small business owners.", "People shortlist"],
   ["帮我制作一份产品介绍PPT", "Presentation"],
@@ -79,19 +86,22 @@ test.each([
   ["为咨询业务搭建一个网站", "Website"],
   ["寻找适合推广办公工具的达人", "People shortlist"],
   ["调研AI助手的市场和竞争对手", "Research brief"],
-  ["分析上周广告效果并提出改进建议", "Report"],
+  ["分析上周广告效果并提出改进建议", "Document"],
   ["Turn these notes into a 10-slide presentation.", "Presentation"],
   ["把这些资料整理成一份PPT。", "Presentation"],
-  ["Don't create a presentation. Create a report with the findings.", "Report"],
+  [
+    "Don't create a presentation. Create a report with the findings.",
+    "Document",
+  ],
   ["Do not create a report; instead create a presentation.", "Presentation"],
-  ["不要制作PPT，写一份报告。", "Report"],
-  ["Do not return JSON. Create a report.", "Report"],
+  ["不要制作PPT，写一份报告。", "Document"],
+  ["Do not return JSON. Create a report.", "Document"],
   ["Find people who can help me design a website.", "People shortlist"],
   ["Find designers to create a presentation.", "People shortlist"],
   ["找能帮我设计网站的人", "People shortlist"],
   [
     "Find people who can design a website. Present the shortlist as a report.",
-    "Report",
+    "Document",
   ],
 ])("selects a task-matched default for %s", async (prompt, label) => {
   const input = await openPrompt({ prompt });
@@ -131,7 +141,7 @@ test.each([
   });
   const input = await openPrompt({ prompt });
   expect(input).toHaveValue(prompt);
-  expect(getConnectorAction("button", "Report")).toHaveAttribute(
+  expect(getConnectorAction("button", "Document")).toHaveAttribute(
     "aria-pressed",
     "false",
   );
@@ -145,10 +155,10 @@ test("an explicit response contract can still be changed with the format control
   const prompt = "What is 1 + 2? Reply with only the number.";
   const input = await openPrompt({ prompt });
   expect(input).toHaveValue(prompt);
-  click(getConnectorAction("button", "Report"));
+  click(getConnectorAction("button", "Document"));
   await waitFor(() => {
     expect(input).toHaveValue(prompt);
-    expect(getConnectorAction("button", "Report")).toHaveAttribute(
+    expect(getConnectorAction("button", "Document")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -159,25 +169,30 @@ test("an explicit response contract can still be changed with the format control
   });
 });
 
-test("the default format reaches the first chat without requiring a selection", async () => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const prompt = "Create a presentation for my next board meeting.";
-  const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(prompt);
-  click(getConnectorAction("button", "Next"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(`${prompt}\n\n${PRESENTATION}`);
-  });
-});
+test.each([
+  ["Create a presentation for my next board meeting.", PRESENTATION],
+  [TASK, DOCUMENT],
+])(
+  "the default format reaches the first chat for %s",
+  async (prompt, instruction) => {
+    let sentPrompt: string | undefined;
+    mockChatLifecycle(context, {
+      onRunCreate: (body) => {
+        sentPrompt = body.prompt;
+      },
+    });
+    const input = await openPrompt({ prompt });
+    expect(input).toHaveValue(prompt);
+    click(getConnectorAction("button", "Next"));
+    await waitFor(() => {
+      expect(sentPrompt).toBe(`${prompt}\n\n${instruction}`);
+    });
+  },
+);
 
 test.each([
   ["Presentation", PRESENTATION],
-  ["Report", REPORT],
+  ["Document", DOCUMENT],
   ["Clear selection", null],
 ] as const)(
   "a shared prompt separates its format before selecting %s",
@@ -217,7 +232,7 @@ test.each([
     });
     const input = await openPrompt({ mobile, path });
     expect(input).toHaveValue(TASK);
-    expect(getConnectorAction("button", "Report")).toHaveAttribute(
+    expect(getConnectorAction("button", "Document")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -228,7 +243,7 @@ test.each([
     const choices = [
       "Image",
       "Website",
-      "Report",
+      "Document",
       "Research brief",
       "People shortlist",
       "Presentation",
@@ -262,11 +277,11 @@ test("switching and clearing formats preserve the edited task and submit it unch
   const input = await openPrompt();
   const edited = `Please ${TASK}\n\nUse plain English.`;
   await fill(input, edited);
-  for (const choice of ["Presentation", "Report", "Clear selection"]) {
+  for (const choice of ["Presentation", "Document", "Clear selection"]) {
     click(getConnectorAction("button", choice));
     expect(input).toHaveValue(edited);
   }
-  expect(getConnectorAction("button", "Report")).toHaveAttribute(
+  expect(getConnectorAction("button", "Document")).toHaveAttribute(
     "aria-pressed",
     "false",
   );

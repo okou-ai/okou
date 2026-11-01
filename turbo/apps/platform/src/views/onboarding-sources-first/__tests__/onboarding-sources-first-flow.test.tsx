@@ -42,7 +42,7 @@ const START_ACTION = "Start with Okou";
 const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
-const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`;
+const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`;
 const PROMPT_TITLE = "Make this task your own";
 const PROMPT_INTRO =
   "Connect your apps for better results and choose a format.";
@@ -1036,7 +1036,7 @@ test("The prompt step completes onboarding, then runs the prompt as edited", asy
 
   await waitFor(() => {
     expect(runPrompt).toBe(
-      `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+      `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
     );
     expect(pathname()).toMatch(/^\/chats\//u);
   });
@@ -1071,7 +1071,7 @@ test("The prompt step keeps the edited prompt on screen until the first chat ope
   handoff.release();
   await waitFor(() => {
     expect(runPrompt).toBe(
-      `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+      `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
     );
     expect(pathname()).toMatch(/^\/chats\//u);
   });

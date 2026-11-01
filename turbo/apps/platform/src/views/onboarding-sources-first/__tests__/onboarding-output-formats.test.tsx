@@ -12,17 +12,19 @@ import {
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { resetSignal } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const TASK =
   "Review last week's ad results and suggest three things to test next.";
 const PRESENTATION =
   "Present the findings as a concise presentation with key results, recommendations, and next steps.";
-const REPORT =
-  "Present the findings as a structured report with key results, recommendations, and next steps.";
+const DOCUMENT =
+  "Create a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.";
 
 async function openReady(
   pageContext: TestContext = context,
@@ -67,7 +69,7 @@ test("format choices leave the task unchanged and only the final choice reaches 
   const choices = [
     "Image",
     "Website",
-    "Report",
+    "Document",
     "Research brief",
     "People shortlist",
     "Presentation",
@@ -105,15 +107,15 @@ test("switching and clearing formats preserve task edits and clearing submits on
   const editedTask = `${TASK}\n\nFocus on the spring campaign.`;
   await fill(input, editedTask);
 
-  click(button("Report"));
+  click(button("Document"));
   await waitFor(() => {
     expect(input).toHaveValue(editedTask);
-    expect(button("Report")).toHaveAttribute("aria-pressed", "true");
+    expect(button("Document")).toHaveAttribute("aria-pressed", "true");
   });
   click(button("Clear selection"));
   await waitFor(() => {
     expect(input).toHaveValue(editedTask);
-    expect(button("Report")).toHaveAttribute("aria-pressed", "false");
+    expect(button("Document")).toHaveAttribute("aria-pressed", "false");
   });
   click(button("Start with Okou"));
   await waitFor(() => {
@@ -179,8 +181,8 @@ test("the selected format reserves space within the saved prompt limit", async (
     },
   });
   const input = await openReady();
-  click(button("Report"));
-  const taskLimit = 1000 - 2 - REPORT.length;
+  click(button("Document"));
+  const taskLimit = 1000 - 2 - DOCUMENT.length;
   await waitFor(() => {
     expect(input).toHaveAttribute("maxlength", String(taskLimit));
   });
@@ -193,7 +195,7 @@ test("the selected format reserves space within the saved prompt limit", async (
   expect(input).toHaveValue(longTask);
   click(button("Start with Okou"));
   await waitFor(() => {
-    expect(sentPrompt).toBe(`${longTask}\n\n${REPORT}`);
+    expect(sentPrompt).toBe(`${longTask}\n\n${DOCUMENT}`);
     expect(sentPrompt).toHaveLength(1000);
   });
 });
@@ -223,13 +225,51 @@ test("a reload preserves the task and separate format selection without duplicat
   const restored = await openReady(reloadedContext);
   expect(restored).toHaveValue(TASK);
   expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
-  click(button("Report"));
+  click(button("Document"));
   await waitFor(() => {
     expect(restored).toHaveValue(TASK);
-    expect(button("Report")).toHaveAttribute("aria-pressed", "true");
+    expect(button("Document")).toHaveAttribute("aria-pressed", "true");
   });
   click(button("Start with Okou"));
   await waitFor(() => {
-    expect(sentPrompt).toBe(`${TASK}\n\n${REPORT}`);
+    expect(sentPrompt).toBe(`${TASK}\n\n${DOCUMENT}`);
+  });
+});
+
+test("a saved report draft preserves custom instructions and requests a document artifact", async () => {
+  let sentPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      sentPrompt = body.prompt;
+    },
+  });
+  const savedInstruction =
+    "\n\nPresent the findings as a structured report. Include a risk register.";
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 2,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: false,
+      provider: null,
+      startingPromptDraft: TASK + savedInstruction,
+      startingPromptKey: "marketing:none",
+      startingPromptOutput: {
+        format: "report",
+        start: TASK.length,
+        end: TASK.length + savedInstruction.length,
+      },
+      recommendationJobId: null,
+      recommendationStartedAt: null,
+    }),
+  );
+  const input = await openReady();
+  expect(input).toHaveValue(TASK);
+  expect(button("Document")).toHaveAttribute("aria-pressed", "true");
+  click(button("Start with Okou"));
+  await waitFor(() => {
+    expect(sentPrompt).toBe(`${TASK}${savedInstruction}\n\n${DOCUMENT}`);
   });
 });

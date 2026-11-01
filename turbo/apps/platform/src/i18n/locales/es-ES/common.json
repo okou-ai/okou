@@ -4597,8 +4597,8 @@
             "label": "Presentación"
           },
           "report": {
-            "instruction": "Presenta los hallazgos en un informe estructurado con resultados clave, recomendaciones y próximos pasos.",
-            "label": "Informe"
+            "instruction": "Crea un documento completo con los resultados en el formato de archivo solicitado (Markdown por defecto). Súbelo como artefacto e incluye un enlace funcional al artefacto en tu respuesta final.",
+            "label": "Documento"
           },
           "research": {
             "instruction": "Presenta los hallazgos en un resumen de investigación con fuentes y preguntas pendientes. Distingue los hechos respaldados por fuentes de las recomendaciones.",

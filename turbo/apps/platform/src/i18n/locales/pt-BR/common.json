@@ -4597,8 +4597,8 @@
             "label": "Apresentação"
           },
           "report": {
-            "instruction": "Apresente os resultados em um relatório estruturado com os principais resultados, recomendações e próximos passos.",
-            "label": "Relatório"
+            "instruction": "Crie um documento completo com os resultados no formato de arquivo solicitado (Markdown por padrão). Envie-o como artefato e inclua um link funcional para o artefato na resposta final.",
+            "label": "Documento"
           },
           "research": {
             "instruction": "Apresente os resultados em um resumo de pesquisa com fontes e questões em aberto. Diferencie fatos fundamentados de recomendações.",

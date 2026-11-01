@@ -266,7 +266,7 @@ export function OnboardingReadyPage() {
           runRequest(
             request,
             null,
-            flow.draft.startingPromptOutput?.suffix ?? "",
+            flow.draft.startingPromptOutput,
             pageSignal,
           ),
           Reason.DomCallback,
