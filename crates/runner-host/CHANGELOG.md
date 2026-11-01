@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.14](https://github.com/okou-ai/okou/compare/runner-host-v0.10.13...runner-host-v0.10.14) (2026-11-01)
+
+
+### Refactoring
+
+* **runner-host:** separate service primitive test sources ([#44499](https://github.com/okou-ai/okou/issues/44499)) ([e59ce5b](https://github.com/okou-ai/okou/commit/e59ce5b89057ae8a3962b36a35812dbe77372a4a))
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
 ## [0.10.13](https://github.com/okou-ai/okou/compare/runner-host-v0.10.12...runner-host-v0.10.13) (2026-11-01)
 
 

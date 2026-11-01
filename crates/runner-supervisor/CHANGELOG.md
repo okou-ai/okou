@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.14...runner-supervisor-v0.21.15) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
+
+### Performance Improvements
+
+* **runner:** warm firewall catalogs before admitting work ([#44528](https://github.com/okou-ai/okou/issues/44528)) ([1814a6d](https://github.com/okou-ai/okou/commit/1814a6d49bc2d0e20788e71144f30409fff9a0cc))
+
 ## [0.21.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.13...runner-supervisor-v0.21.14) (2026-11-01)
 
 ## [0.21.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.12...runner-supervisor-v0.21.13) (2026-11-01)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.4](https://github.com/okou-ai/okou/compare/runner-types-v0.11.3...runner-types-v0.11.4) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.11.3](https://github.com/okou-ai/okou/compare/runner-types-v0.11.2...runner-types-v0.11.3) (2026-10-31)
 
 

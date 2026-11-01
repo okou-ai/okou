@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.14](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.13...runner-storage-v0.8.14) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.8.13](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.12...runner-storage-v0.8.13) (2026-11-01)
 
 ## [0.8.12](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.11...runner-storage-v0.8.12) (2026-11-01)

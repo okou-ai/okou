@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.15](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.14...runner-remote-v0.30.15) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.30.14](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.13...runner-remote-v0.30.14) (2026-11-01)
 
 ## [0.30.13](https://github.com/okou-ai/okou/compare/runner-remote-v0.30.12...runner-remote-v0.30.13) (2026-11-01)

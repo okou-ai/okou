@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ably-subscriber"
-version = "2.0.3"
+version = "2.0.4"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "api-contracts"
-version = "0.66.1"
+version = "0.66.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1063,7 +1063,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.82"
+version = "0.22.83"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "cli-test-support"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aho-corasick",
  "base64 0.23.1",
@@ -1117,7 +1117,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.39"
+version = "0.12.40"
 dependencies = [
  "chrono",
  "clap",
@@ -2013,7 +2013,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.25"
+version = "0.109.26"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.133"
+version = "0.1.134"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2077,7 +2077,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2091,7 +2091,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.65"
+version = "0.23.66"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.22.51"
+version = "0.22.52"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -2118,7 +2118,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.61"
+version = "0.24.62"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -2135,7 +2135,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.127"
+version = "0.12.128"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -2155,7 +2155,7 @@ dependencies = [
 
 [[package]]
 name = "guest-home-mount"
-version = "0.2.50"
+version = "0.2.51"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2167,7 +2167,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.47"
+version = "0.20.48"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2179,7 +2179,7 @@ dependencies = [
 
 [[package]]
 name = "guest-state-restore"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "libc",
  "tempfile",
@@ -2187,7 +2187,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.28.3"
+version = "0.28.4"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -2208,7 +2208,7 @@ dependencies = [
 
 [[package]]
 name = "guest-task-exec"
-version = "0.2.47"
+version = "0.2.48"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2218,7 +2218,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.180"
+version = "0.3.181"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -2230,7 +2230,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.3.45"
+version = "0.3.46"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2242,7 +2242,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.265"
+version = "0.1.266"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -2911,7 +2911,7 @@ dependencies = [
 
 [[package]]
 name = "kerberos-worker"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "kerberos-credentials",
  "rustix",
@@ -3088,7 +3088,7 @@ dependencies = [
 
 [[package]]
 name = "nbd-cow"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "bitvec",
  "libc",
@@ -3603,7 +3603,7 @@ dependencies = [
 
 [[package]]
 name = "process-control-ipc"
-version = "0.5.47"
+version = "0.5.48"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -3614,7 +3614,7 @@ dependencies = [
 
 [[package]]
 name = "process-launch"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "libc",
  "tempfile",
@@ -3904,7 +3904,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -4046,7 +4046,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.241.20"
+version = "0.242.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4119,7 +4119,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.18.9"
+version = "0.18.10"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4167,7 +4167,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.10.13"
+version = "0.10.14"
 dependencies = [
  "chrono",
  "futures-util",
@@ -4191,7 +4191,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.49"
+version = "0.17.50"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4222,7 +4222,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4253,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.13.9"
+version = "0.14.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4297,7 +4297,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.30.14"
+version = "0.30.15"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4398,7 +4398,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.8.13"
+version = "0.8.14"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4442,7 +4442,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.21.14"
+version = "0.21.15"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4481,7 +4481,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.11.3"
+version = "0.11.4"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -4750,7 +4750,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.28.5"
+version = "0.28.6"
 dependencies = [
  "async-trait",
  "libc",
@@ -4765,7 +4765,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.54"
+version = "0.53.55"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4803,7 +4803,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.17.34"
+version = "0.17.35"
 dependencies = [
  "async-trait",
  "crc32fast",
@@ -5193,7 +5193,7 @@ dependencies = [
 
 [[package]]
 name = "shell-quote"
-version = "0.1.3"
+version = "0.1.4"
 
 [[package]]
 name = "shlex"
@@ -5825,7 +5825,7 @@ dependencies = [
 
 [[package]]
 name = "tracing-test-support"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "tracing",
  "tracing-subscriber",

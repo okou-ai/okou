@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1082.5](https://github.com/okou-ai/okou/compare/app-v0.1082.4...app-v0.1082.5) (2026-11-01)
+
+
+### Bug Fixes
+
+* **app:** limit halloween entry clicks to the ghost ([#44513](https://github.com/okou-ai/okou/issues/44513)) ([5fe8b3b](https://github.com/okou-ai/okou/commit/5fe8b3b04f3f10fc959886b164cc7e18f84f6d39))
+* **platform:** forward soft-keyboard backward deletion ([#44497](https://github.com/okou-ai/okou/issues/44497)) ([2047e61](https://github.com/okou-ai/okou/commit/2047e61f55909f7e2f2d173fe744bc69c45a33d2))
+
+
+### Refactoring
+
+* **platform:** bind landing file transfer deadlines to their owners ([#44509](https://github.com/okou-ai/okou/issues/44509)) ([b2c15b7](https://github.com/okou-ai/okou/commit/b2c15b724e4570ae695799016ca9e790c0b4bd98))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.30.0
+    * @okouai/core bumped to 8.807.2
+
 ## [0.1082.4](https://github.com/okou-ai/okou/compare/app-v0.1082.3...app-v0.1082.4) (2026-11-01)
 
 

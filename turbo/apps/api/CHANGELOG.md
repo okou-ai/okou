@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.37.0](https://github.com/okou-ai/okou/compare/api-v2.36.1...api-v2.37.0) (2026-11-01)
+
+
+### Features
+
+* **workflows:** activate current official workflow bundles ([#44537](https://github.com/okou-ai/okou/issues/44537)) ([53eb442](https://github.com/okou-ai/okou/commit/53eb44219252b774d85bfc3be7c8b54a80049dd1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.30.0
+    * @okouai/core bumped to 8.807.2
+    * @okouai/db bumped to 2.15.2
+    * @okouai/pi-agent-runtime bumped to 1.51.45
+
 ## [2.36.1](https://github.com/okou-ai/okou/compare/api-v2.36.0...api-v2.36.1) (2026-11-01)
 
 

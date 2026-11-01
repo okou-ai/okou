@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.50](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.49...runner-lifecycle-v0.17.50) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.17.49](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.48...runner-lifecycle-v0.17.49) (2026-11-01)
 
 ## [0.17.48](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.47...runner-lifecycle-v0.17.48) (2026-11-01)

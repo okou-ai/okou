@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.53.55](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.54...sandbox-firecracker-v0.53.55) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
 ## [0.53.54](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.53...sandbox-firecracker-v0.53.54) (2026-10-31)
 
 ## [0.53.53](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.52...sandbox-firecracker-v0.53.53) (2026-10-30)
