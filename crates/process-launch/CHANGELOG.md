@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/okou-ai/okou/compare/process-launch-v0.1.2...process-launch-v0.1.3) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native owned blocking pipes ([#44536](https://github.com/okou-ai/okou/issues/44536)) ([a6c71bd](https://github.com/okou-ai/okou/commit/a6c71bd5e2ac41228ab4d704a43de9715bfbb67d))
+
 ## [0.1.2](https://github.com/vm0-ai/vm0/compare/process-launch-v0.1.1...process-launch-v0.1.2) (2026-09-14)
 
 

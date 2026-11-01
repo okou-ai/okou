@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.0...guest-state-restore-v0.4.1) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.4.0](https://github.com/vm0-ai/vm0/compare/guest-state-restore-v0.3.9...guest-state-restore-v0.4.0) (2026-09-08)
 
 

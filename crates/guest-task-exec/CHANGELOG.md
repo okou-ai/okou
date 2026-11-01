@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.48](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.47...guest-task-exec-v0.2.48) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.2.47](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.46...guest-task-exec-v0.2.47) (2026-10-31)
 
 ## [0.2.46](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.45...guest-task-exec-v0.2.46) (2026-10-30)

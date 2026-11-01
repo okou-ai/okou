@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.8](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.7...nbd-cow-v0.5.8) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.5.7](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.6...nbd-cow-v0.5.7) (2026-10-20)
 
 

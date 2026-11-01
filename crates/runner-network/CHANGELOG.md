@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.18](https://github.com/okou-ai/okou/compare/runner-network-v0.3.17...runner-network-v0.3.18) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+
+### Performance Improvements
+
+* **runner:** warm firewall catalogs before admitting work ([#44528](https://github.com/okou-ai/okou/issues/44528)) ([1814a6d](https://github.com/okou-ai/okou/commit/1814a6d49bc2d0e20788e71144f30409fff9a0cc))
+
 ## [0.3.17](https://github.com/okou-ai/okou/compare/runner-network-v0.3.16...runner-network-v0.3.17) (2026-11-01)
 
 ## [0.3.16](https://github.com/okou-ai/okou/compare/runner-network-v0.3.15...runner-network-v0.3.16) (2026-11-01)
