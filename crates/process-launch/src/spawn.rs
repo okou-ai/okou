@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::File;
 use std::io::{self, Read};
-use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::time::{Duration, Instant};
 
@@ -95,17 +95,10 @@ impl PreparedStdio {
 }
 
 fn pipe() -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut descriptors = [0; 2];
-    // SAFETY: pipe2 initializes both slots on success, atomically CLOEXEC.
-    if unsafe { libc::pipe2(descriptors.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let [reader, writer] = descriptors;
-    // SAFETY: each new descriptor is transferred to exactly one owner before
-    // either fallible normalization, so partial setup cannot leak the other.
-    let reader = unsafe { OwnedFd::from_raw_fd(reader) };
-    // SAFETY: this is the distinct writer returned by pipe2.
-    let writer = unsafe { OwnedFd::from_raw_fd(writer) };
+    let (reader, writer) = io::pipe()?;
+    // Own both descriptors before either fallible normalization.
+    let reader: OwnedFd = reader.into();
+    let writer: OwnedFd = writer.into();
     Ok((private_descriptor(reader)?, private_descriptor(writer)?))
 }
 
