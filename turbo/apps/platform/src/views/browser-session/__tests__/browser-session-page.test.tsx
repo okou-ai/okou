@@ -588,45 +588,76 @@ test("An inaccessible conversation has no browser page", async () => {
   expect(screen.queryByText("Start browser")).toBeNull();
 });
 
-test("A user can restart a reclaimed browser", async () => {
-  const activeSession = browserSession();
-  const cdpUrl = "wss://cdp.browser-use.com/restarted";
-  mockBrowserCdp(context, cdpUrl);
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
-  });
-  let startCount = 0;
-  mockBrowserSession(
-    browserSession({
-      status: "suspended",
-      liveUrl: null,
-      screen: undefined,
-      idleExpiresAt: null,
-      suspendedAt: "2026-09-01T10:10:00.000Z",
-      suspensionReason: "idle",
-    }),
-  );
-  context.mocks.api(browserContract.open, ({ params, respond }) => {
-    if (params.threadId === THREAD_ID) {
-      startCount += 1;
-    }
-    return respond(200, { browser: activeSession });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
-    return respond(200, { browser: activeSession });
-  });
+test.each([
+  {
+    name: "a measured mobile display",
+    width: 390,
+    height: 600,
+    dpr: 3,
+    initialDisplay: { width: 390, height: 600, dpr: 3 },
+  },
+  {
+    name: "an empty display",
+    width: 0,
+    height: 0,
+    dpr: 1,
+    initialDisplay: undefined,
+  },
+])(
+  "A user can restart a reclaimed browser with $name",
+  async ({ width, height, dpr, initialDisplay }) => {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        return this instanceof HTMLCanvasElement
+          ? new DOMRect(0, 0, width, height)
+          : original.call(this);
+      },
+    );
+    vi.spyOn(window, "devicePixelRatio", "get").mockReturnValue(dpr);
+    const activeSession = browserSession();
+    const cdpUrl = "wss://cdp.browser-use.com/restarted";
+    mockBrowserCdp(context, cdpUrl);
+    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    });
+    let startCount = 0;
+    mockBrowserSession(
+      browserSession({
+        status: "suspended",
+        liveUrl: null,
+        screen: undefined,
+        idleExpiresAt: null,
+        suspendedAt: "2026-09-01T10:10:00.000Z",
+        suspensionReason: "idle",
+      }),
+    );
+    let requestDisplay: unknown;
+    context.mocks.api(browserContract.open, ({ params, body, respond }) => {
+      requestDisplay = body.initialDisplay;
+      if (params.threadId === THREAD_ID) {
+        startCount += 1;
+      }
+      return respond(200, { browser: activeSession });
+    });
+    context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+      return respond(200, { browser: activeSession });
+    });
 
-  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+    await setupPage({ context, path: `/browsers/${THREAD_ID}` });
 
-  await expect(screen.findByText("Browser not live")).resolves.toBeVisible();
-  click(getButton("Start browser"));
+    await expect(screen.findByText("Browser not live")).resolves.toBeVisible();
+    expect(screen.getByLabelText("Browser settings")).toBeDisabled();
+    click(getButton("Start browser"));
 
-  await expect(
-    screen.findByDisplayValue("https://example.com"),
-  ).resolves.toBeEnabled();
-  expect(startCount).toBe(1);
-  expect(screen.queryByText("Browser not live")).toBeNull();
-});
+    await expect(
+      screen.findByDisplayValue("https://example.com"),
+    ).resolves.toBeEnabled();
+    expect(startCount).toBe(1);
+    expect(requestDisplay).toStrictEqual(initialDisplay);
+    expect(screen.queryByText("Browser not live")).toBeNull();
+  },
+);
 
 async function expectStreamingViewer(): Promise<void> {
   await waitFor(() => {

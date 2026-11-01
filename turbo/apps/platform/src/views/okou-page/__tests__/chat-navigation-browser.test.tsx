@@ -511,9 +511,12 @@ test("Start and close a browser from the thread sidebar", async () => {
     name: "Cloud browser",
   });
   click(buttonByName("Start browser", reopened));
-  const input = await within(reopened).findByLabelText("Remote browser input");
-  await waitFor(() => {
-    expect(input).toBeEnabled();
+  const input = await waitFor(() => {
+    const currentInput = within(reopened).getByLabelText(
+      "Remote browser input",
+    );
+    expect(currentInput).toBeEnabled();
+    return currentInput;
   });
   fireEvent.input(retiredInput, {
     target: { value: "retired surface" },

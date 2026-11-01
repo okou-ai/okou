@@ -12,7 +12,7 @@ import { pageSignal$ } from "../page-signal.ts";
 import type { BrowserSignals } from "./browser.ts";
 import { CdpFault, diagnostic } from "./cdp/errors.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
-import type { DisplaySize } from "./display/geometry.ts";
+import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus } from "./focus.ts";
 import { navigationAddress } from "./input/address.ts";
 import { createNativeInput } from "./input/native.ts";
@@ -1129,6 +1129,18 @@ export function createBrowserRuntime(
   );
   const presentation = createPresentation(context, graph);
   const { model } = context;
+  const measureInitialDisplay$ = command(({ get }) => {
+    if (get(model.windowSizeSync$) === "off") {
+      return null;
+    }
+    const canvas = get(graph.canvas.mounted$);
+    const size = canvas ? measureDisplay(canvas.node) : null;
+    if (!size) {
+      return null;
+    }
+    const { width, height, dpr } = constrainDisplay(size);
+    return { width, height, dpr };
+  });
   return {
     tabs$: model.tabs$,
     selectedTabId$: model.selectedTabId$,
@@ -1151,6 +1163,7 @@ export function createBrowserRuntime(
     ...presentation,
     connectionChanged$: context.connectionChanged$,
     syncLayout$: createLayoutSync(context),
+    measureInitialDisplay$,
     refs: {
       root$: observers.root$,
       canvas$: graph.canvas.ref$,

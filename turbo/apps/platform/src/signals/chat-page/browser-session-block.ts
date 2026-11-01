@@ -122,19 +122,27 @@ interface BrowserMutationSignalContext {
   readonly connectionChanged$: BrowserSignals["connectionChanged$"];
 }
 
-function createStartBrowserSignals({
-  descriptor,
-  sessionOverride$,
-  reload$,
-  connectionChanged$,
-}: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "start$"> {
+function createStartBrowserSignals(
+  {
+    descriptor,
+    sessionOverride$,
+    reload$,
+    connectionChanged$,
+  }: BrowserMutationSignalContext,
+  measureInitialDisplay$: BrowserSignals["measureInitialDisplay$"],
+  session$: Computed<Promise<BrowserSession | null>>,
+): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const current = await get(session$);
+    signal.throwIfAborted();
+    const initialDisplay =
+      current?.status === "active" ? null : set(measureInitialDisplay$);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const started = await withCleanup(
       accept(
         get(apiClient$)(browserContract).open({
           params: { threadId: descriptor.threadId },
-          body: {},
+          body: initialDisplay ? { initialDisplay } : {},
           fetchOptions: { signal },
         }),
         [200],
@@ -374,7 +382,11 @@ export function createBrowserSessionSignals(
     reload$,
     connectionChanged$: browser.connectionChanged$,
   };
-  const startSignals = createStartBrowserSignals(mutationContext);
+  const startSignals = createStartBrowserSignals(
+    mutationContext,
+    browser.measureInitialDisplay$,
+    lifecycleSession$,
+  );
   const closeSignals = createCloseBrowserSignals(mutationContext);
   const subscriptionSignals = createBrowserSessionSubscriptionSignals(
     descriptor,
