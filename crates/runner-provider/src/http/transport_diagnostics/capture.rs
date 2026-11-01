@@ -324,7 +324,8 @@ impl Pending {
             self.close_logged += usize::from(close);
         } else if self.after_seen == MAX_AFTER - RESERVED_CLOSE_PACKETS + 1 {
             info!(target: TARGET, client_request_id = %self.request_id,
-                bulk_packet_limit = MAX_AFTER - RESERVED_CLOSE_PACKETS, "API TCP evidence bulk limit reached");
+                bulk_packet_limit = MAX_AFTER - RESERVED_CLOSE_PACKETS,
+                close_packet_limit = RESERVED_CLOSE_PACKETS, "API TCP evidence packet limit reached");
         }
     }
 }

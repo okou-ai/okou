@@ -301,13 +301,15 @@ async fn recorder_bounds_fault_output_finishes_its_window_and_aborts_with_its_ow
     })
     .await;
     let bulk_limit = MAX_AFTER - RESERVED_CLOSE_PACKETS;
+    let bulk_limit_label = bulk_limit.to_string();
     let mut bulk = frame(false, 1234, 443);
     bulk[24 + 13] = 0x18;
     for _ in 0..bulk_limit + 1 {
         send.send(&bulk).unwrap();
     }
     wait_for_event(&captured, &mut events, |e| {
-        e.fields.get("message").map(String::as_str) == Some("API TCP evidence bulk limit reached")
+        e.fields.get("client_request_id").map(String::as_str) == Some("first")
+            && e.fields.get("bulk_packet_limit") == Some(&bulk_limit_label)
     })
     .await;
     send.send(&frame(false, 1234, 443)).unwrap();
@@ -352,6 +354,49 @@ async fn recorder_bounds_fault_output_finishes_its_window_and_aborts_with_its_ow
             && e.fields.get("message").map(String::as_str) == Some("API TCP evidence started")
     })
     .await;
+    // Exhaust the close quota while ordinary data still has room. Reporting
+    // this as a bulk limit would give the wrong reason for missing FIN/RSTs.
+    for _ in 0..RESERVED_CLOSE_PACKETS {
+        send.send(&frame(false, 1234, 443)).unwrap();
+    }
+    let partial_bulk = bulk_limit - RESERVED_CLOSE_PACKETS;
+    for _ in 0..partial_bulk {
+        send.send(&bulk).unwrap();
+    }
+    send.send(&frame(false, 1234, 443)).unwrap();
+    wait_for_event(&captured, &mut events, |e| {
+        e.fields.get("client_request_id").map(String::as_str) == Some("interrupted")
+            && e.fields.contains_key("bulk_packet_limit")
+    })
+    .await;
+    let entries = captured.entries();
+    let limit = entries
+        .iter()
+        .find(|e| {
+            e.fields.get("client_request_id").map(String::as_str) == Some("interrupted")
+                && e.fields.contains_key("bulk_packet_limit")
+        })
+        .unwrap();
+    assert_eq!(
+        limit.fields["message"],
+        "API TCP evidence packet limit reached"
+    );
+    assert_eq!(
+        limit.fields["close_packet_limit"],
+        RESERVED_CLOSE_PACKETS.to_string()
+    );
+    let after: Vec<_> = entries
+        .iter()
+        .filter(|e| {
+            e.fields.get("client_request_id").map(String::as_str) == Some("interrupted")
+                && e.fields.get("phase").map(String::as_str) == Some("after_failure_observation")
+        })
+        .collect();
+    assert_eq!(after.len(), RESERVED_CLOSE_PACKETS + partial_bulk);
+    assert_eq!(
+        after.iter().filter(|e| e.fields["flags"] == "20").count(),
+        RESERVED_CLOSE_PACKETS
+    );
     let weak = Arc::downgrade(&owner.0);
     drop(owner);
     assert!(
