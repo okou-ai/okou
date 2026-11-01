@@ -28,7 +28,7 @@ const context = testContext();
 const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Connect a work tool";
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
-const READY_TITLE = "Start with a task that matters";
+const READY_TITLE = "Let’s start your first task";
 const MARKETING_FIELD = "Marketing & content";
 
 function mockOnboardingNeeded(): void {
@@ -130,7 +130,7 @@ test("Skipping sources reports the step skip and keeps a single onboarding start
   click(getButtonByName("Skip"));
 
   await screen.findByRole("dialog", {
-    name: "Okou works better with your tools",
+    name: "Start without connecting a tool?",
   });
   expect(
     posthog.events.filter((event) => {
@@ -149,7 +149,7 @@ test("Skipping sources reports the step skip and keeps a single onboarding start
 
   click(getButtonByName("Skip"));
   await screen.findByRole("dialog", {
-    name: "Okou works better with your tools",
+    name: "Start without connecting a tool?",
   });
   click(getButtonByName("Skip for now"));
 
@@ -205,7 +205,7 @@ test("Each step reports its position in the flow without an invitation step", as
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
-  click(choiceRadio("I'm new to AI agents"));
+  click(choiceRadio("Start with Okou"));
 
   await waitFor(() => {
     expect(posthog.events).toStrictEqual(
@@ -364,8 +364,8 @@ test("The starting prompt reports its length, never the request itself", async (
   ).resolves.toBeInTheDocument();
 
   const request = "Summarise last week for me";
-  await fill(screen.getByLabelText("Your starting prompt"), request);
-  click(getButtonByName("Start with Okou"));
+  await fill(screen.getByLabelText("Your first task"), request);
+  click(getButtonByName("Start my first task"));
 
   expect(posthog.events).toStrictEqual(
     expect.arrayContaining([

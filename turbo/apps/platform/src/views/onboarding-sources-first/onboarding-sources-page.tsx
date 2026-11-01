@@ -132,16 +132,12 @@ function useSourceExplanation(
         ? $.onboarding.sourcesFirst.outcomes.title
         : $.onboarding.sourcesFirst.sources.title;
     }),
-    description: showOutcome
-      ? ""
-      : t(($) => {
-          return $.onboarding.sourcesFirst.sources.copy;
-        }),
-    mobileDescription: showOutcome
-      ? ""
-      : t(($) => {
-          return $.onboarding.sourcesFirst.mobile.sourcesCopy;
-        }),
+    description: t(($) => {
+      return $.onboarding.sourcesFirst.sources.copy;
+    }),
+    mobileDescription: t(($) => {
+      return $.onboarding.sourcesFirst.mobile.sourcesCopy;
+    }),
     illustration: showOutcome && (
       <OnboardingSourceOutcome
         industry={outcomeIndustry}

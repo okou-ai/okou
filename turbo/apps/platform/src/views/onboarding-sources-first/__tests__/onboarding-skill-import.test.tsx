@@ -418,7 +418,7 @@ test("The step hands over the prompt its session produced, and copies it whole",
   expect(screen.getByText("Run this in Codex")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Run this prompt in Codex to import the skills you've already built, so Okou can use them from day one.",
+      "If you’ve saved skills in Codex, bring them over so Okou can reuse your way of working. You can skip this step and import them later.",
     ),
   ).toBeInTheDocument();
 
@@ -471,7 +471,7 @@ test("The skills step names Claude Code when it was selected", async () => {
   expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Run this prompt in Claude Code to import the skills you've already built, so Okou can use them from day one.",
+      "If you’ve saved skills in Claude Code, bring them over so Okou can reuse your way of working. You can skip this step and import them later.",
     ),
   ).toBeInTheDocument();
   // The Claude app's Chat tab cannot read local files; its Code tab can.
@@ -513,12 +513,14 @@ test("Finishing onboarding sends the industry after a full Codex flow", async ()
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();
   click(getButtonByName("Not now"));
-  await screen.findByRole("heading", { name: "Meet Okou’s secret tools" });
+  await screen.findByRole("heading", {
+    name: "More ways to get your work done",
+  });
   click(getButtonByName("Continue"));
   await expect(
-    screen.findByRole("heading", { name: "Start with a task that matters" }),
+    screen.findByRole("heading", { name: "Let’s start your first task" }),
   ).resolves.toBeInTheDocument();
-  click(getButtonByName("Start with Okou"));
+  click(getButtonByName("Start my first task"));
   await waitFor(() => {
     expect(sentIndustry).toBe("marketing");
   });

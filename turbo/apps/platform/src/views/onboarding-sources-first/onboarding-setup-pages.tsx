@@ -375,7 +375,6 @@ export function OnboardingExperiencePage() {
         mobileTitle={t(($) => {
           return $.onboarding.sourcesFirst.mobile.experienceTitle;
         })}
-        mobileDescription=""
         trustPoints={[
           t(($) => {
             return $.onboarding.sourcesFirst.experience.trust;

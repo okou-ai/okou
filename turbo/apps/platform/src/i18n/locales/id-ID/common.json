@@ -4228,7 +4228,7 @@
     },
     "sourcesFirst": {
       "capabilities": {
-        "copy": "Perkuat agen Anda dengan data khusus, wawasan sosial, dan pembuatan gambar. Pilih kemampuan yang dibutuhkan. Okou menggunakannya untuk pekerjaan Anda.",
+        "copy": "Riset web, temukan orang, dan buat gambar dengan Okou. Alat-alat ini aktif secara default; Anda bisa menyesuaikannya sekarang atau nanti.",
         "items": {
           "data-search": {
             "description": "Bandingkan perusahaan, trafik situs, dan iklan untuk menemukan peluang.",
@@ -4268,11 +4268,11 @@
           }
         },
         "listLabel": "Kemampuan bawaan",
-        "title": "Kenali alat rahasia Okou"
+        "title": "Lebih banyak cara menyelesaikan pekerjaan"
       },
       "chatChannels": {
         "connectedTitle": "Chat Anda terhubung",
-        "copy": "Kirim pesan ke Okou atau tambahkan ke chat tim Anda. Pilih cara kerja yang sudah biasa Anda gunakan.",
+        "copy": "Gunakan Okou di chat sehari-hari, sendiri atau bersama tim. Anda bisa tetap bekerja di sini dan menghubungkan aplikasi chat nanti.",
         "imessageConnected": "iMessage terhubung",
         "imessageCopy": "Pekerjaan Anda, cukup lewat satu pesan.",
         "imessageExpired": "Kode koneksi Anda telah kedaluwarsa.",
@@ -4288,18 +4288,18 @@
         "notNow": "Nanti saja"
       },
       "documentTitles": {
-        "experience": "Pengalaman AI Anda",
+        "experience": "Pilih cara memulai",
         "industry": "Pilih bidang Anda",
-        "ready": "Okou sudah siap",
+        "ready": "Tugas pertama Anda",
         "skills": "Impor skill Anda",
         "sources": "Hubungkan pekerjaan Anda"
       },
       "experience": {
-        "copy": "Mulai dengan panduan, atau gunakan paket Codex atau Claude Code yang sudah Anda miliki.",
-        "no": "Saya baru mengenal agen AI",
-        "noCopy": "Okou membantu Anda memilih tugas pertama yang berguna.",
+        "copy": "Langsung mulai dengan Okou, atau hubungkan paket Codex atau Claude Code yang sudah Anda miliki.",
+        "no": "Mulai dengan Okou",
+        "noCopy": "Dapatkan bantuan untuk tugas pertama Anda.",
         "title": "Bagaimana Anda ingin memulai dengan Okou?",
-        "trust": "Tugas berjalan dengan paket Codex atau Claude Code Anda, bukan kredit Okou, jadi Anda bisa melakukan lebih banyak tanpa khawatir soal pemakaian. Hubungkan sekarang atau nanti."
+        "trust": "Paket yang terhubung menggunakan kuotanya sendiri, bukan kredit Okou. Anda bisa menghubungkannya nanti; batas penggunaan paket tetap berlaku."
       },
       "industries": {
         "coaching": {
@@ -4359,11 +4359,11 @@
         }
       },
       "industry": {
-        "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud. Pilih bidang Anda untuk tugas pertama yang pas.",
+        "copy": "Ceritakan pekerjaan Anda. Kami akan menyarankan tugas pertama yang sesuai.",
         "title": "Pekerjaan Anda seperti apa?"
       },
       "mobile": {
-        "channelsCopy": "Hubungi Okou lewat aplikasi yang biasa Anda gunakan.",
+        "channelsCopy": "Tetap bekerja di sini, atau hubungkan aplikasi chat sekarang.",
         "channelsTitle": "Pilih aplikasi chat",
         "connect": "Hubungkan",
         "copyImportPrompt": "Salin prompt impor",
@@ -4379,9 +4379,9 @@
         "planCopy": "Jalankan tugas dengan langganan Anda.",
         "promptTitle": "Apa yang ingin diselesaikan?",
         "readyTitle": "Mulai tugas pertama",
-        "skillsCopy": "Gunakan {{provider}} di komputer.",
+        "skillsCopy": "Punya skill di {{provider}}? Impor dari komputer Anda, atau lakukan nanti.",
         "skillsTitle": "Impor keterampilan",
-        "sourcesCopy": "Hubungkan satu alat untuk tugas pertama.",
+        "sourcesCopy": "Hubungkan satu alat, atau lewati dan hubungkan nanti.",
         "startTask": "Mulai tugas"
       },
       "outcomes": {
@@ -4540,7 +4540,7 @@
             "label": "Situs web"
           }
         },
-        "title": "Pilih format hasil",
+        "title": "Pilih format (opsional)",
         "tooLong": "Persingkat tugas untuk memilih format lain."
       },
       "prompt": {
@@ -4550,7 +4550,7 @@
       },
       "skills": {
         "copied": "Tersalin",
-        "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah Anda buat, agar Okou dapat langsung menggunakannya.",
+        "copy": "Jika Anda telah menyimpan skill di {{provider}}, impor agar Okou dapat mengikuti cara kerja Anda. Anda bisa melewati langkah ini dan mengimpornya nanti.",
         "copyError": "Prompt tidak dapat disalin.",
         "copyPrompt": "Salin prompt",
         "guide": {
@@ -4611,14 +4611,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Semakin Okou memahami pekerjaan Anda, semakin cerdas ia bekerja. Hubungkan alat yang Anda gunakan setiap hari untuk memulai dengan tugas dari pekerjaan nyata Anda.",
-        "permissions": "Okou menggunakan sedikit sampel untuk menyesuaikan tugas pertama Anda. Anda yang menentukan apa yang dapat dilakukan Agent dan berapa lama.",
+        "copy": "Hubungkan satu alat untuk memulai tugas dari pekerjaan Anda, atau lewati langkah ini dan hubungkan nanti.",
+        "permissions": "Okou menggunakan sedikit sampel informasi untuk menyarankan tugas pertama Anda. Anda menentukan apa yang dapat diakses Okou dan untuk berapa lama.",
         "securityLink": "Cara Okou melindungi data Anda",
         "skipDialog": {
           "connect": "Hubungkan alat",
-          "description": "Sebaiknya hubungkan alat kerja Anda agar Okou memahami pekerjaan Anda dan memberikan bantuan yang lebih sesuai. Anda juga dapat menghubungkannya nanti.",
+          "description": "Anda sudah bisa memulai tugas sekarang. Hubungkan alat nanti saat Anda ingin Okou bekerja dengan email, dokumen, atau data Anda.",
           "skip": "Lewati untuk sekarang",
-          "title": "Okou lebih membantu dengan alat kerja Anda"
+          "title": "Mulai tanpa menghubungkan alat?"
         },
         "title": "Hubungkan alat kerja"
       },
@@ -4952,14 +4952,15 @@
         "connected": "Terhubung",
         "connecting": "Menghubungkan…",
         "failedNote": "Kami tidak dapat menghubungkan {{provider}}. Anda dapat melanjutkan dan menghubungkannya nanti.",
-        "rowCopy": "Hubungkan agar tugas memakai paket Anda, bukan kredit Okou.",
+        "rowCopy": "Gunakan paket yang sudah Anda miliki untuk tugas.",
         "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Anda dapat melanjutkan dan menghubungkannya nanti."
       },
       "welcome": {
-        "copy": "Tinjau tugas yang disarankan untuk pekerjaan Anda, sesuaikan dengan tujuan, lalu biarkan Okou memulai.",
-        "promptLabel": "Prompt awal Anda",
-        "start": "Mulai dengan Okou",
-        "title": "Mulai dengan tugas yang berarti"
+        "copy": "Kami telah menyarankan tugas pertama untuk pekerjaan Anda. Edit atau ganti dengan sesuatu yang ingin Anda selesaikan.",
+        "preparing": "Mencari tugas pertama yang berguna untuk Anda…",
+        "promptLabel": "Tugas pertama Anda",
+        "start": "Mulai tugas pertama saya",
+        "title": "Mari mulai tugas pertama Anda"
       }
     }
   },

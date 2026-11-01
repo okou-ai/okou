@@ -4243,7 +4243,7 @@
     },
     "sourcesFirst": {
       "capabilities": {
-        "copy": "Stärke deinen Agenten mit Fachdaten, Social-Media-Einblicken und Bildgenerierung. Wähle die Fähigkeiten aus. Okou setzt sie für deine Arbeit ein.",
+        "copy": "Recherchiere im Web, finde Personen und erstelle Bilder mit Okou. Diese Tools sind standardmäßig aktiviert; du kannst sie jetzt oder später anpassen.",
         "items": {
           "data-search": {
             "description": "Vergleiche Unternehmen, Website-Traffic und Anzeigen, um Chancen zu erkennen.",
@@ -4283,11 +4283,11 @@
           }
         },
         "listLabel": "Integrierte Fähigkeiten",
-        "title": "Okous geheime Werkzeuge"
+        "title": "Mehr Möglichkeiten, deine Arbeit zu erledigen"
       },
       "chatChannels": {
         "connectedTitle": "Dein Chat ist verbunden",
-        "copy": "Schreibe Okou direkt oder füge es zum Teamchat hinzu. Wähle die Art, wie du bereits arbeitest.",
+        "copy": "Nutze Okou in deinen gewohnten Chats, allein oder mit deinem Team. Du kannst auch hier weiterarbeiten und eine Chat-App später verbinden.",
         "imessageConnected": "iMessage ist verbunden",
         "imessageCopy": "Deine Arbeit, nur eine Nachricht entfernt.",
         "imessageExpired": "Dein Verbindungscode ist abgelaufen.",
@@ -4303,18 +4303,18 @@
         "notNow": "Jetzt nicht"
       },
       "documentTitles": {
-        "experience": "Deine KI-Erfahrung",
+        "experience": "Wähle, wie du starten möchtest",
         "industry": "Bereich wählen",
-        "ready": "Okou ist bereit",
+        "ready": "Deine erste Aufgabe",
         "skills": "Skills importieren",
         "sources": "Arbeit verbinden"
       },
       "experience": {
-        "copy": "Lass dich beim Einstieg begleiten oder nutze deinen vorhandenen Codex- oder Claude-Code-Tarif.",
-        "no": "Ich bin neu bei KI-Agenten",
-        "noCopy": "Okou hilft dir, eine passende erste Aufgabe zu finden.",
+        "copy": "Starte direkt mit Okou oder verbinde dein bestehendes Codex- oder Claude-Code-Abo.",
+        "no": "Mit Okou starten",
+        "noCopy": "Hol dir Hilfe bei deiner ersten Aufgabe.",
         "title": "Wie möchtest du mit Okou starten?",
-        "trust": "Aufgaben laufen über deinen Codex- oder Claude-Code-Tarif statt über Okou-Credits, so kannst du mehr erledigen, ohne auf den Verbrauch zu achten. Jetzt oder später verbinden."
+        "trust": "Verbundene Abos nutzen ihr eigenes Kontingent statt Okou-Credits. Du kannst sie später verbinden; die Nutzungslimits deines Abos gelten weiterhin."
       },
       "industries": {
         "coaching": {
@@ -4374,11 +4374,11 @@
         }
       },
       "industry": {
-        "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
+        "copy": "Erzähl uns, was du beruflich machst. Wir schlagen dir eine erste passende Aufgabe vor.",
         "title": "Welche Arbeit machst du?"
       },
       "mobile": {
-        "channelsCopy": "Schreibe Okou dort, wo du schon arbeitest.",
+        "channelsCopy": "Arbeite hier weiter oder verbinde jetzt eine Chat-App.",
         "channelsTitle": "Chat-App wählen",
         "connect": "Verbinden",
         "copyImportPrompt": "Import-Prompt kopieren",
@@ -4394,9 +4394,9 @@
         "planCopy": "Aufgaben mit deinem Abo ausführen.",
         "promptTitle": "Was möchtest du erledigen?",
         "readyTitle": "Erste Aufgabe starten",
-        "skillsCopy": "Nutze {{provider}} auf deinem Computer.",
+        "skillsCopy": "Hast du Skills in {{provider}}? Importiere sie von deinem Computer oder erledige das später.",
         "skillsTitle": "Skills importieren",
-        "sourcesCopy": "Verbinde ein Tool für die erste Aufgabe.",
+        "sourcesCopy": "Verbinde ein Tool oder überspringe den Schritt und hole es später nach.",
         "startTask": "Aufgabe starten"
       },
       "outcomes": {
@@ -4555,7 +4555,7 @@
             "label": "Website"
           }
         },
-        "title": "Ausgabeformat wählen",
+        "title": "Format wählen (optional)",
         "tooLong": "Kürze deine Aufgabe, um ein anderes Format zu wählen."
       },
       "prompt": {
@@ -4565,7 +4565,7 @@
       },
       "skills": {
         "copied": "Kopiert",
-        "copy": "Führe diesen Prompt in {{provider}} aus, um deine vorhandenen Skills zu importieren, damit Okou sie sofort nutzen kann.",
+        "copy": "Wenn du Skills in {{provider}} gespeichert hast, importiere sie, damit Okou deine Arbeitsweise übernehmen kann. Du kannst diesen Schritt auch überspringen und sie später importieren.",
         "copyError": "Der Prompt konnte nicht kopiert werden.",
         "copyPrompt": "Prompt kopieren",
         "guide": {
@@ -4627,14 +4627,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Je mehr Okou über deine Arbeit weiß, desto klüger wird es. Verbinde ein Tool, das du täglich nutzt, und starte mit einer Aufgabe aus deiner echten Arbeit.",
-        "permissions": "Okou nutzt eine kleine Stichprobe, um deine erste Aufgabe anzupassen. Du entscheidest, was Agents tun dürfen und wie lange.",
+        "copy": "Verbinde ein Tool für eine erste Aufgabe aus deinem Arbeitsalltag – oder überspringe diesen Schritt und verbinde es später.",
+        "permissions": "Okou nutzt eine kleine Auswahl an Informationen, um deine erste Aufgabe vorzuschlagen. Du entscheidest, worauf Okou zugreifen darf und wie lange.",
         "securityLink": "So schützt Okou deine Daten",
         "skipDialog": {
           "connect": "Tool verbinden",
-          "description": "Wir empfehlen, deine Tools zu verbinden, damit Okou deine Arbeit versteht und dich gezielter unterstützt. Du kannst sie auch später verbinden.",
+          "description": "Du kannst schon jetzt eine Aufgabe starten. Verbinde ein Tool später, wenn Okou mit deinen E-Mails, Dokumenten oder Daten arbeiten soll.",
           "skip": "Vorerst überspringen",
-          "title": "Mit deinen Tools hilft Okou noch besser"
+          "title": "Ohne verbundenes Tool starten?"
         },
         "title": "Ein Arbeitstool verbinden"
       },
@@ -4968,14 +4968,15 @@
         "connected": "Verbunden",
         "connecting": "Wird verbunden …",
         "failedNote": "{{provider}} konnte nicht verbunden werden. Du kannst fortfahren und die Verbindung später herstellen.",
-        "rowCopy": "Verbinde deinen Plan, damit Aufgaben statt mit Okou-Credits darüber laufen.",
+        "rowCopy": "Nutze dein bestehendes Abo für Aufgaben.",
         "unconfirmedNote": "Deine Verbindung zu {{provider}} konnte nicht geprüft werden. Du kannst fortfahren und die Verbindung später herstellen."
       },
       "welcome": {
-        "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",
-        "promptLabel": "Dein Startprompt",
-        "start": "Mit Okou starten",
-        "title": "Starte mit einer Aufgabe, die zählt"
+        "copy": "Wir haben eine erste Aufgabe für deinen Arbeitsalltag vorgeschlagen. Passe sie an oder ersetze sie durch etwas, das du erledigen möchtest.",
+        "preparing": "Wir suchen eine passende erste Aufgabe für dich…",
+        "promptLabel": "Deine erste Aufgabe",
+        "start": "Meine erste Aufgabe starten",
+        "title": "Starten wir deine erste Aufgabe"
       }
     }
   },

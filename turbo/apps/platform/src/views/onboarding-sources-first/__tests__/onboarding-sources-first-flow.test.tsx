@@ -36,8 +36,8 @@ const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Connect a work tool";
 const MARKETING_FIELD = "Marketing & content";
-const READY_TITLE = "Start with a task that matters";
-const START_ACTION = "Start with Okou";
+const READY_TITLE = "Let’s start your first task";
+const START_ACTION = "Start my first task";
 /** The preset request for a marketer with Gmail connected. */
 const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
@@ -146,7 +146,9 @@ async function leaveSlackStepWithNotNow(): Promise<void> {
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingSlack);
   click(getButtonByName("Not now"));
-  await screen.findByRole("heading", { name: "Meet Okou’s secret tools" });
+  await screen.findByRole("heading", {
+    name: "More ways to get your work done",
+  });
   click(getButtonByName("Continue"));
 }
 
@@ -308,7 +310,7 @@ test("The first step introduces Okou and its compliance progress", async () => {
   ).resolves.toBeInTheDocument();
   expect(
     screen.getByText(
-      "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
+      "Tell us what you do. We’ll suggest a first task that fits your work.",
     ),
   ).toBeInTheDocument();
   const badges = Array.from(
@@ -382,7 +384,7 @@ test.each([false, true])(
     click(getButtonByName("Skip"));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Okou works better with your tools",
+      name: "Start without connecting a tool?",
     });
     expect(pathname()).toBe(ROUTES.onboardingSources);
     click(getButtonByName("Connect a tool", dialog));
@@ -394,7 +396,7 @@ test.each([false, true])(
 
     click(getButtonByName("Skip"));
     const confirmation = await screen.findByRole("dialog", {
-      name: "Okou works better with your tools",
+      name: "Start without connecting a tool?",
     });
     click(getButtonByName("Skip for now", confirmation));
 
@@ -494,7 +496,7 @@ test("Connected account context replaces the static starting prompt", async () =
       name: "How would you like to start with Okou?",
     }),
   ).resolves.toBeInTheDocument();
-  click(fieldRadio("I'm new to AI agents"));
+  click(fieldRadio("Start with Okou"));
   click(getButtonByName("Continue"));
   await leaveSlackStepWithNotNow();
 
@@ -563,7 +565,7 @@ test("The ready step shows the generated request once the shared context result 
   await screen.findByRole("heading", {
     name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("I'm new to AI agents"));
+  click(fieldRadio("Start with Okou"));
   click(getButtonByName("Continue"));
   await leaveSlackStepWithNotNow();
 
@@ -603,7 +605,7 @@ test("A failed recommendation leaves the preset request on the ready step", asyn
   await screen.findByRole("heading", {
     name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("I'm new to AI agents"));
+  click(fieldRadio("Start with Okou"));
   click(getButtonByName("Continue"));
   await leaveSlackStepWithNotNow();
 
@@ -706,7 +708,7 @@ test("A refreshed ready step keeps the industry and edited request", async () =>
   await expect(
     screen.findByRole("heading", { name: READY_TITLE }),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
     "Draft my launch plan",
   );
 
@@ -754,7 +756,7 @@ test("The ready step keeps the request on screen until the first chat opens", as
   click(getButtonByName(START_ACTION));
   await handoff.handoffPending;
 
-  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
     "Draft my launch plan",
   );
 
@@ -799,7 +801,7 @@ test("A member skips sources, completes their own onboarding and enters chat", a
   await screen.findByRole("heading", { name: SOURCES_QUESTION });
   click(getButtonByName("Skip"));
   const confirmation = await screen.findByRole("dialog", {
-    name: "Okou works better with your tools",
+    name: "Start without connecting a tool?",
   });
   click(getButtonByName("Skip for now", confirmation));
 
@@ -808,17 +810,17 @@ test("A member skips sources, completes their own onboarding and enters chat", a
     name: "How would you like to start with Okou?",
   });
   expect(pathname()).toBe(ROUTES.onboardingExperience);
-  click(fieldRadio("I'm new to AI agents"));
+  click(fieldRadio("Start with Okou"));
   click(getButtonByName("Continue"));
 
   await leaveSlackStepWithNotNow();
 
   await screen.findByRole("heading", { name: READY_TITLE });
-  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
     "Compare the public content of three competitors and suggest three angles for my brand. Ask me which brand and audience to focus on.",
   );
   await fill(
-    screen.getByLabelText("Your starting prompt"),
+    screen.getByLabelText("Your first task"),
     "Draft my meeting agenda",
   );
   click(getButtonByName(START_ACTION));

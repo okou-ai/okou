@@ -4228,7 +4228,7 @@
     },
     "sourcesFirst": {
       "capabilities": {
-        "copy": "专业数据、社交洞察和图像生成，让你的 agent 更强大。选择需要的能力，Okou 会用它们为你完成工作。",
+        "copy": "用 Okou 查资料、找人、生成图片。这些工具默认开启，你可以现在调整，也可以稍后再改。",
         "items": {
           "data-search": {
             "description": "比较公司、网站流量和广告，发现业务机会。",
@@ -4268,11 +4268,11 @@
           }
         },
         "listLabel": "内置能力",
-        "title": "认识 Okou 的秘密工具"
+        "title": "把更多工作交给 Okou"
       },
       "chatChannels": {
         "connectedTitle": "聊天渠道已连接",
-        "copy": "通过消息与 Okou 协作，或把它加入团队聊天。选择你习惯的方式。",
+        "copy": "在常用聊天工具中使用 Okou，自己用或与团队一起用都可以。你也可以继续在这里工作，稍后再连接。",
         "imessageConnected": "iMessage 已连接",
         "imessageCopy": "发条消息，就能继续你的工作。",
         "imessageExpired": "连接验证码已过期。",
@@ -4288,18 +4288,18 @@
         "notNow": "暂不"
       },
       "documentTitles": {
-        "experience": "你的 AI 使用经验",
+        "experience": "选择开始方式",
         "industry": "选择你的领域",
-        "ready": "Okou 已就绪",
+        "ready": "你的第一个任务",
         "skills": "导入你的技能",
         "sources": "连接你的工作"
       },
       "experience": {
-        "copy": "可以从引导开始，也可以接入你已有的 Codex 或 Claude Code 订阅。",
-        "no": "我是 AI Agent 新手",
-        "noCopy": "Okou 会帮你找到合适的第一项任务。",
+        "copy": "直接使用 Okou 开始，或连接你已有的 Codex、Claude Code 订阅。",
+        "no": "使用 Okou 开始",
+        "noCopy": "让 Okou 帮你开始第一个任务。",
         "title": "你想怎样开始使用 Okou？",
-        "trust": "连接 Codex 或 Claude Code 订阅后，任务使用你已有的额度，不消耗 Okou credits，可以放心多用。现在或以后连接都可以。"
+        "trust": "连接订阅后，任务会使用该订阅的额度，而非 Okou 积分。可以稍后连接，原订阅的用量限制仍然适用。"
       },
       "industries": {
         "coaching": {
@@ -4359,11 +4359,11 @@
         }
       },
       "industry": {
-        "copy": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。选择你的领域，获取适合你的第一项任务。",
+        "copy": "告诉我们你从事什么工作，Okou 会推荐一件适合你先尝试的任务。",
         "title": "你主要做哪类工作？"
       },
       "mobile": {
-        "channelsCopy": "在常用聊天工具中联系 Okou。",
+        "channelsCopy": "继续在这里工作，或现在连接聊天工具。",
         "channelsTitle": "选择聊天工具",
         "connect": "连接",
         "copyImportPrompt": "复制导入提示词",
@@ -4379,9 +4379,9 @@
         "planCopy": "用现有订阅运行任务。",
         "promptTitle": "你想完成什么？",
         "readyTitle": "开始你的第一个任务",
-        "skillsCopy": "在电脑上使用 {{provider}}。",
+        "skillsCopy": "在 {{provider}} 中有保存的技能？可以从电脑导入，也可以稍后再做。",
         "skillsTitle": "导入你的技能",
-        "sourcesCopy": "为首个任务连接一个工具。",
+        "sourcesCopy": "先连接一个工具，也可以跳过，稍后再连接。",
         "startTask": "开始任务"
       },
       "outcomes": {
@@ -4540,7 +4540,7 @@
             "label": "网站"
           }
         },
-        "title": "选择输出格式",
+        "title": "选择结果格式（可选）",
         "tooLong": "请缩短任务内容，以选择其他产出形式。"
       },
       "prompt": {
@@ -4550,7 +4550,7 @@
       },
       "skills": {
         "copied": "已复制",
-        "copy": "在 {{provider}} 中运行这段提示词，导入你已经写好的技能，Okou 马上就能用上。",
+        "copy": "如果你在 {{provider}} 中保存过技能，可以导入，让 Okou 沿用你的工作方式。也可以跳过，稍后再导入。",
         "copyError": "无法复制提示词。",
         "copyPrompt": "复制提示词",
         "guide": {
@@ -4611,14 +4611,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Okou 越了解你的工作，就越聪明。连接一个你每天在用的工具，从一项基于真实工作的任务开始。",
-        "permissions": "Okou 会参考少量信息为你定制第一项任务；Agent 能做什么、授权多久，都由你决定。",
+        "copy": "连接一个日常工具，让第一个任务贴近你的实际工作；也可以跳过，稍后再连接。",
+        "permissions": "Okou 会用少量信息推荐你的第一个任务。你决定 Okou 可以访问什么，以及授权多久。",
         "securityLink": "了解 Okou 如何保护你的数据",
         "skipDialog": {
           "connect": "继续连接",
-          "description": "建议先连接常用工具，让 Okou 更了解你的工作，提供更贴合需求的帮助。你也可以稍后再连接。",
+          "description": "你现在就可以开始一个任务。需要 Okou 使用邮件、文档或数据时，再连接相应工具。",
           "skip": "仍然跳过",
-          "title": "连接工具，让 Okou 更懂你的工作"
+          "title": "先不连接工具，继续开始？"
         },
         "title": "连接一个工作工具"
       },
@@ -4952,14 +4952,15 @@
         "connected": "已连接",
         "connecting": "连接中…",
         "failedNote": "无法连接 {{provider}}。你可以继续，稍后再连接。",
-        "rowCopy": "连接后可使用你的套餐运行，不消耗 Okou 积分。",
+        "rowCopy": "使用已有订阅执行任务。",
         "unconfirmedNote": "无法确认 {{provider}} 的连接状态。你可以继续，稍后再连接。"
       },
       "welcome": {
-        "copy": "看看为你的工作推荐的任务，按目标调整，再让 Okou 开始执行。",
-        "promptLabel": "你的起始提示词",
-        "start": "开始使用 Okou",
-        "title": "从一项有价值的任务开始"
+        "copy": "我们为你的工作推荐了一个任务。你可以修改它，也可以换成自己想完成的事。",
+        "preparing": "正在为你推荐一个实用的任务…",
+        "promptLabel": "你的第一个任务",
+        "start": "开始我的第一个任务",
+        "title": "开始你的第一个任务"
       }
     }
   },

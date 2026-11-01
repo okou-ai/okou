@@ -4241,7 +4241,7 @@
     },
     "sourcesFirst": {
       "capabilities": {
-        "copy": "Give your agent more power with specialist data, social insights, and image creation. Choose your capabilities. Okou puts them to work for you.",
+        "copy": "Research the web, find people, and create images with Okou. These tools are on by default; you can adjust them now or later.",
         "items": {
           "data-search": {
             "description": "Compare companies, website traffic, and ads to spot opportunities.",
@@ -4281,11 +4281,11 @@
           }
         },
         "listLabel": "Built-in capabilities",
-        "title": "Meet Okou’s secret tools"
+        "title": "More ways to get your work done"
       },
       "chatChannels": {
         "connectedTitle": "Your chat is connected",
-        "copy": "Text Okou for yourself, or add it to your team’s chat. Choose the way you already work.",
+        "copy": "Use Okou in your everyday chats, on your own or with your team. You can keep working here and connect a chat app later.",
         "imessageConnected": "iMessage is connected",
         "imessageCopy": "Your work, one message away.",
         "imessageExpired": "Your connection code has expired.",
@@ -4301,18 +4301,18 @@
         "notNow": "Not now"
       },
       "documentTitles": {
-        "experience": "Your AI experience",
+        "experience": "Choose how to start",
         "industry": "Choose your field",
-        "ready": "Okou is ready",
+        "ready": "Your first task",
         "skills": "Import your skills",
         "sources": "Connect your work"
       },
       "experience": {
-        "copy": "Start with guidance, or bring the Codex or Claude Code plan you already use.",
-        "no": "I'm new to AI agents",
-        "noCopy": "Okou helps you choose a useful first task.",
+        "copy": "Start with Okou right away, or connect a Codex or Claude Code plan you already have.",
+        "no": "Start with Okou",
+        "noCopy": "Get help with your first task.",
         "title": "How would you like to start with Okou?",
-        "trust": "Run tasks on your Codex or Claude Code plan instead of Okou credits, so you can do more without worrying about usage. Connect now or later."
+        "trust": "Connected plans use their own allowance instead of Okou credits. You can connect later; your plan’s limits still apply."
       },
       "industries": {
         "coaching": {
@@ -4372,11 +4372,11 @@
         }
       },
       "industry": {
-        "copy": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
+        "copy": "Tell us what you do. We’ll suggest a first task that fits your work.",
         "title": "What kind of work do you do?"
       },
       "mobile": {
-        "channelsCopy": "Message Okou where you already work.",
+        "channelsCopy": "Keep working here, or connect a chat app now.",
         "channelsTitle": "Choose a chat app",
         "connect": "Connect",
         "copyImportPrompt": "Copy import prompt",
@@ -4392,9 +4392,9 @@
         "planCopy": "Use your subscription for tasks.",
         "promptTitle": "What would you like done?",
         "readyTitle": "Start your first task",
-        "skillsCopy": "Use {{provider}} on your computer.",
+        "skillsCopy": "Have skills in {{provider}}? Import them from your computer, or do this later.",
         "skillsTitle": "Import your skills",
-        "sourcesCopy": "Choose one for your first task.",
+        "sourcesCopy": "Connect one tool, or skip and add it later.",
         "startTask": "Start task"
       },
       "outcomes": {
@@ -4553,7 +4553,7 @@
             "label": "Website"
           }
         },
-        "title": "Choose an output format",
+        "title": "Choose a format (optional)",
         "tooLong": "Shorten your task to choose another format."
       },
       "prompt": {
@@ -4563,7 +4563,7 @@
       },
       "skills": {
         "copied": "Copied",
-        "copy": "Run this prompt in {{provider}} to import the skills you've already built, so Okou can use them from day one.",
+        "copy": "If you’ve saved skills in {{provider}}, bring them over so Okou can reuse your way of working. You can skip this step and import them later.",
         "copyError": "The prompt could not be copied.",
         "copyPrompt": "Copy prompt",
         "guide": {
@@ -4625,14 +4625,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "The more Okou knows about your work, the smarter it gets. Connect a tool you use every day to start with a task built on your real work.",
-        "permissions": "Okou uses a small sample to tailor your first task. You decide what Agents can do and for how long.",
+        "copy": "Connect one tool for a first task based on your work, or skip and connect it later.",
+        "permissions": "Okou uses a small sample to suggest your first task. You choose what Okou can access and for how long.",
         "securityLink": "How Okou protects your data",
         "skipDialog": {
           "connect": "Connect a tool",
-          "description": "We recommend connecting your tools so Okou can understand your work and give you more relevant help. You can always connect them later.",
+          "description": "You can still start a task now. Connect a tool later when you want Okou to work with your emails, documents, or data.",
           "skip": "Skip for now",
-          "title": "Okou works better with your tools"
+          "title": "Start without connecting a tool?"
         },
         "title": "Connect a work tool"
       },
@@ -4966,14 +4966,15 @@
         "connected": "Connected",
         "connecting": "Connecting…",
         "failedNote": "We couldn’t connect {{provider}}. You can continue and connect it later.",
-        "rowCopy": "Connect to run on your plan instead of Okou credits.",
+        "rowCopy": "Use your existing plan for tasks.",
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can continue and connect it later."
       },
       "welcome": {
-        "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",
-        "promptLabel": "Your starting prompt",
-        "start": "Start with Okou",
-        "title": "Start with a task that matters"
+        "copy": "We’ve suggested a first task for your work. Edit it or replace it with something you want done.",
+        "preparing": "Finding a useful first task for you…",
+        "promptLabel": "Your first task",
+        "start": "Start my first task",
+        "title": "Let’s start your first task"
       }
     }
   },

@@ -92,7 +92,7 @@ function StartingPromptPanel({
           <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
           <span>
             {t(($) => {
-              return $.onboarding.sourcesFirst.welcome.copy;
+              return $.onboarding.sourcesFirst.welcome.preparing;
             })}
           </span>
         </div>
@@ -245,12 +245,13 @@ export function OnboardingReadyPage() {
         return $.onboarding.sourcesFirst.welcome.title;
       })}
       description={t(($) => {
-        return $.onboarding.sourcesFirst.welcome.copy;
+        return isLoading
+          ? $.onboarding.sourcesFirst.welcome.preparing
+          : $.onboarding.sourcesFirst.welcome.copy;
       })}
       mobileTitle={t(($) => {
         return $.onboarding.sourcesFirst.mobile.readyTitle;
       })}
-      mobileDescription=""
       primaryLabel={t(($) => {
         return mobile
           ? $.onboarding.sourcesFirst.mobile.startTask
