@@ -4619,9 +4619,25 @@ function bestEffortTelemetry(record: () => unknown): void {
   safeSync(record);
 }
 
-function ingestRunContextSnapshot(snapshot: RunContextAxiomSnapshot): void {
+function ingestRunContextSnapshot(
+  snapshot: RunContextAxiomSnapshot,
+  officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"],
+): void {
   bestEffortTelemetry(() => {
-    return ingestToAxiom(getDatasetName("run-context"), [snapshot]);
+    return ingestToAxiom(getDatasetName("run-context"), [
+      {
+        ...snapshot,
+        officialWorkflowBundles: (officialWorkflowBundles ?? []).map(
+          (bundle) => {
+            return {
+              sha256: bundle.sha256,
+              archiveBytes: bundle.archiveBytes,
+              mountPath: bundle.mountPath,
+            };
+          },
+        ),
+      },
+    ]);
   });
 }
 
@@ -4898,7 +4914,10 @@ function committedAtomicLaunchResponse(args: {
     args.transactionReturnedAt,
   );
   args.phaseTiming.appendTo(args.timing);
-  ingestRunContextSnapshot(args.committed.runContextSnapshot);
+  ingestRunContextSnapshot(
+    args.committed.runContextSnapshot,
+    args.committed.runnerJobPayload.executionContext.officialWorkflowBundles,
+  );
   const runContextRegisteredAt = now();
   const dispatchedProfile = args.committed.runnerJobPayload.profile;
   args.timing.flush({
