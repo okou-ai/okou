@@ -11,7 +11,20 @@ import { fileURLToPath } from "node:url";
 import { zstdDecompressSync } from "node:zlib";
 
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../test/fixtures/build-process-entry";
 import {
   piSandboxAgentConfigFromEnv,
   recordPiPreparationTiming,
@@ -25,6 +38,8 @@ const RPC_FIXTURE = fileURLToPath(
   new URL("../test/fixtures/pi-agent-loop-rpc-host.ts", import.meta.url),
 );
 const TSX_IMPORT = import.meta.resolve("tsx");
+let rpcHostEntry: Awaited<ReturnType<typeof buildProcessEntry>>;
+let rpcHostPreparation: ReturnType<typeof buildProcessEntry> | undefined;
 const CONFIG: PiSandboxAgentConfig = {
   runId: RUN_ID,
   sessionId: SESSION_ID,
@@ -274,7 +289,7 @@ class RpcHost {
   }) {
     this.#child = spawn(
       process.execPath,
-      ["--import", TSX_IMPORT, RPC_FIXTURE, args.agentDir, args.sessionDir],
+      [rpcHostEntry.entry, args.agentDir, args.sessionDir],
       {
         cwd: args.cwd,
         env: args.env,
@@ -358,6 +373,15 @@ class RpcHost {
     this.#lines.close();
   }
 }
+
+beforeAll(async () => {
+  rpcHostPreparation = buildProcessEntry(RPC_FIXTURE);
+  rpcHostEntry = await rpcHostPreparation;
+});
+
+afterAll(async () => {
+  await disposePreparedProcessEntry(rpcHostPreparation);
+});
 
 beforeEach(async () => {
   launchPayloadDirectory = await mkdtemp(join(tmpdir(), "okou-pi-launch-"));
