@@ -8,7 +8,7 @@ import { createSharedBrowserFixtures } from "./helpers/browser-shared-fixture";
 
 const context = testContext();
 const { fixture, open } = createSharedBrowserFixtures(context);
-const display = { width: 390, height: 600, dpr: 3 };
+const display = Object.freeze({ width: 390, height: 600, dpr: 3 });
 
 function openViewer(threadId: string, initialDisplay?: BrowserDisplaySize) {
   return setupApp({ context, routes: browserRoutes })(browserContract).open({
