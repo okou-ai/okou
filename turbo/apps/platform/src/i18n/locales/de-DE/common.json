@@ -4543,8 +4543,8 @@
             "label": "Präsentation"
           },
           "report": {
-            "instruction": "Fasse die Ergebnisse in einem strukturierten Bericht mit Kernergebnissen, Empfehlungen und nächsten Schritten zusammen.",
-            "label": "Bericht"
+            "instruction": "Erstelle ein vollständiges Dokument mit den Ergebnissen im gewünschten Dateiformat (standardmäßig Markdown). Lade es als Artefakt hoch und füge deiner abschließenden Antwort einen funktionierenden Link zum Artefakt hinzu.",
+            "label": "Dokument"
           },
           "research": {
             "instruction": "Erstelle eine Rechercheübersicht mit Quellen und offenen Fragen. Unterscheide belegte Fakten von Empfehlungen.",

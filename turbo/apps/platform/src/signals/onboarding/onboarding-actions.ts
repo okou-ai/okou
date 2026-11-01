@@ -22,6 +22,7 @@ import {
 } from "./onboarding-sources-first-state.ts";
 import { landingFileEditsReady$ } from "../prompt-page/landing-file-preview.ts";
 import { onboardingDraft$ } from "./onboarding-state.ts";
+import type { StartingPromptOutput } from "./onboarding-output-format.ts";
 
 const ONBOARDING_TRANSIENT_PARAMS = [
   "choice",
@@ -134,9 +135,21 @@ export const runOnboardingRequest$ = command(
     { get, set },
     request: string,
     template: string | null,
-    outputSuffix: string,
+    output: StartingPromptOutput | null,
     signal: AbortSignal,
   ): Promise<void> => {
+    let outputSuffix = output?.suffix ?? "";
+    if (output?.format === "report") {
+      const documentSuffix = `\n\n${i18n.t(($) => {
+        return $.onboarding.sourcesFirst.outputFormats.options.report
+          .instruction;
+      })}`;
+      // Older drafts can contain custom report instructions. Preserve those
+      // while applying Document's artifact delivery contract at submission.
+      if (outputSuffix !== documentSuffix) {
+        outputSuffix += documentSuffix;
+      }
+    }
     const searchParams = get(searchParams$);
     await set(
       completeOnboarding$,
@@ -172,10 +185,15 @@ export const runPromptOnboarding$ = command(
       },
       { returnObjects: true },
     );
-    const outputSuffix = output
-      ? `\n\n${copy.options[output].instruction}`
-      : "";
     const template = get(searchParams$).get("template")?.trim() || null;
-    await set(runOnboardingRequest$, prompt, template, outputSuffix, signal);
+    await set(
+      runOnboardingRequest$,
+      prompt,
+      template,
+      output
+        ? { format: output, suffix: `\n\n${copy.options[output].instruction}` }
+        : null,
+      signal,
+    );
   },
 );

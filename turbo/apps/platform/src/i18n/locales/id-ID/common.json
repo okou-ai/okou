@@ -4528,8 +4528,8 @@
             "label": "Presentasi"
           },
           "report": {
-            "instruction": "Sajikan temuan sebagai laporan terstruktur berisi hasil utama, rekomendasi, dan langkah berikutnya.",
-            "label": "Laporan"
+            "instruction": "Buat dokumen lengkap berisi hasil dalam format file yang diminta (Markdown secara default). Unggah sebagai artefak dan sertakan tautan artefak yang dapat dibuka dalam jawaban akhir.",
+            "label": "Dokumen"
           },
           "research": {
             "instruction": "Sajikan temuan sebagai ringkasan riset dengan sumber pendukung dan pertanyaan terbuka. Bedakan fakta bersumber dari rekomendasi.",

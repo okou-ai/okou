@@ -4541,8 +4541,8 @@
             "label": "Presentation"
           },
           "report": {
-            "instruction": "Present the findings as a structured report with key results, recommendations, and next steps.",
-            "label": "Report"
+            "instruction": "Create a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.",
+            "label": "Document"
           },
           "research": {
             "instruction": "Present the findings as a research brief with supporting sources and open questions. Distinguish sourced facts from recommendations.",

@@ -89,7 +89,7 @@ test.each([
 
     await waitFor(() => {
       expect(runPrompt).toBe(
-        `${editedPrompt}\n\nPresent the findings as a structured report with key results, recommendations, and next steps.`,
+        `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
       );
       expect(pathname()).toMatch(/^\/chats\//u);
     });

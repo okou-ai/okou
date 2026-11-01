@@ -4528,8 +4528,8 @@
             "label": "簡報"
           },
           "report": {
-            "instruction": "將結果整理為一份結構清晰的報告，包含關鍵結果、建議和後續步驟。",
-            "label": "報告"
+            "instruction": "將完整結果製作成文件，使用要求的檔案格式（預設使用 Markdown）。將文件上傳為 artifact，並在最終回覆中提供可開啟的 artifact 連結。",
+            "label": "文件"
           },
           "research": {
             "instruction": "將結果整理為一份研究摘要，附上支持結論的來源和待解決的問題。區分有來源支持的事實與建議。",
