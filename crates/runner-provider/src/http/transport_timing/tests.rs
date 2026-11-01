@@ -8,6 +8,7 @@ use tracing_test_support::{CapturedEvent, CapturedEvents};
 
 fn builder(client: reqwest::Client, url: String) -> ApiRequestBuilder {
     ApiRequestBuilder {
+        diagnostics: crate::http::TransportDiagnostics::new(),
         builder: client.post(url).bearer_auth("private-test-token"),
         client,
         client_headers: ClientHeaders::new("observed-session".into(), "1.2.3").unwrap(),
@@ -137,6 +138,15 @@ async fn observed_request_preserves_json_headers_query_and_timeout_override() {
     let event = summary(&captured);
     assert_eq!(event.fields["outcome"], "request_failed");
     assert_eq!(event.fields["connect_succeeded"], "1");
+    let entries = captured.entries();
+    let diagnostic = entries
+        .iter()
+        .find(|e| {
+            e.fields.get("message").map(String::as_str) == Some("API transport failure diagnostics")
+        })
+        .unwrap();
+    assert_eq!(diagnostic.fields["socket_metadata_available"], "false");
+    assert!(!diagnostic.fields.contains_key("connection_id"));
     assert!(!format!("{:?}", captured.entries()).contains("private body"));
 }
 
