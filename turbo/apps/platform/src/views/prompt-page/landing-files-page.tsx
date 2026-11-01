@@ -1,6 +1,5 @@
 import { Button, Textarea, buttonVariants } from "@okouai/ui";
-import { useGet, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
+import { useGet, useSet, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { LandingFilesSignals } from "../../signals/prompt-page/landing-files.ts";
 import {
@@ -21,9 +20,10 @@ export function LandingFilesPage({
   const files = useGet(signals.files$);
   const prompt = useGet(signals.input$);
   const edit = useSet(signals.edit$);
-  const [starting, start] = useLoadableSet(signals.start$);
+  const starting = useLoadable(signals.operation$);
+  const start = useSet(signals.start$);
   const signal = useGet(pageSignal$);
-  const busy = starting.state === "loading";
+  const busy = starting.state !== "hasError";
   const attachments = useGet(signals.attachments$);
   const popupBlocked =
     starting.state === "hasError" &&
@@ -39,31 +39,22 @@ export function LandingFilesPage({
         <ProductBrandMark decorative size="hero" />
         <h1 className="text-xl font-medium">
           {t(($) => {
-            return $.chat.landingFiles.title;
+            return busy
+              ? $.chat.landingFiles.loading
+              : $.chat.landingFiles.selected;
           })}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.chat.landingFiles.description;
-          })}
-        </p>
-        <Textarea
-          value={prompt}
-          disabled={busy}
-          onChange={(event) => {
-            edit(event.target.value);
-          }}
-          aria-label={t(($) => {
-            return $.chat.landingFiles.prompt;
-          })}
-          className="min-h-32"
-        />
-        {busy && !files && (
-          <p role="status">
-            {t(($) => {
-              return $.chat.landingFiles.loading;
+        {!busy && (
+          <Textarea
+            value={prompt}
+            onChange={(event) => {
+              edit(event.target.value);
+            }}
+            aria-label={t(($) => {
+              return $.chat.landingFiles.prompt;
             })}
-          </p>
+            className="min-h-32"
+          />
         )}
         {files ? (
           <div className="flex flex-wrap gap-2">
@@ -100,32 +91,31 @@ export function LandingFilesPage({
                   })}
           </p>
         )}
-        <div className="flex flex-wrap justify-end gap-2">
-          {signals.back && !busy && (
-            <a
-              href={signals.back}
-              className={buttonVariants({ variant: "outline" })}
+        {!busy && (
+          <div className="flex flex-wrap justify-end gap-2">
+            {signals.back && (
+              <a
+                href={signals.back}
+                className={buttonVariants({ variant: "outline" })}
+              >
+                {t(($) => {
+                  return $.chat.landingFiles.back;
+                })}
+              </a>
+            )}
+            <Button
+              className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
+              disabled={!signals.source || !prompt.trim()}
+              onClick={() => {
+                detach(start(signal), Reason.DomCallback);
+              }}
             >
               {t(($) => {
-                return $.chat.landingFiles.back;
+                return $.chat.landingFiles.retry;
               })}
-            </a>
-          )}
-          <Button
-            pending={busy}
-            className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
-            disabled={!signals.source || busy || !prompt.trim()}
-            onClick={() => {
-              detach(start(signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return starting.state === "hasError"
-                ? $.chat.landingFiles.retry
-                : $.chat.landingFiles.start;
-            })}
-          </Button>
-        </div>
+            </Button>
+          </div>
+        )}
       </section>
     </main>
   );

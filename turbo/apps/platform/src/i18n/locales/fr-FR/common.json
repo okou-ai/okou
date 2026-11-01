@@ -2143,7 +2143,6 @@
     },
     "landingFiles": {
       "back": "Retour aux fichiers",
-      "description": "Vérifiez votre demande, puis importez les fichiers sélectionnés pour commencer.",
       "editFailed": "Impossible de mettre à jour les fichiers. Réessayez.",
       "failed": "Impossible de terminer. Vos fichiers et votre demande sont conservés ici. Réessayez.",
       "limit": "Ajoutez jusqu’à 10 fichiers (1 Go au total).",
@@ -2153,8 +2152,6 @@
       "prompt": "Votre demande",
       "retry": "Réessayer",
       "selected": "Fichiers sélectionnés",
-      "start": "Importer et commencer",
-      "title": "Commencer avec vos fichiers",
       "uploading": "Importation du fichier {{current}} sur {{total}}…"
     },
     "mail": {

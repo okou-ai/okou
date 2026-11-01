@@ -2143,7 +2143,6 @@
     },
     "landingFiles": {
       "back": "Voltar aos arquivos",
-      "description": "Revise sua solicitação e envie os arquivos selecionados para começar.",
       "editFailed": "Não foi possível atualizar os arquivos. Tente novamente.",
       "failed": "Não foi possível concluir. Seus arquivos e sua solicitação foram mantidos aqui. Tente novamente.",
       "limit": "Adicione até 10 arquivos (1 GB no total).",
@@ -2153,8 +2152,6 @@
       "prompt": "Sua solicitação",
       "retry": "Tentar novamente",
       "selected": "Arquivos selecionados",
-      "start": "Enviar e começar",
-      "title": "Comece com seus arquivos",
       "uploading": "Enviando arquivo {{current}} de {{total}}…"
     },
     "mail": {

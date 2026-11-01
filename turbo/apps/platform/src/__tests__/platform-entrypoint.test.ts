@@ -41,11 +41,14 @@ describe("platform entrypoint", () => {
   });
 
   it("starts the application in a supported browser", async () => {
+    context.mocks.browser.url("https://app.okou.ai/?landingFiles=draft");
+    vi.stubGlobal("opener", window);
     context.mocks.browser.userAgent(
       "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36",
     );
     vi.stubGlobal("SharedWorker", class extends EventTarget {});
     startPlatformEntrypoint();
+    expect(window.opener).toBeNull();
     await waitForApplicationStart();
     expect(context.mocks.sentry().initializations).toHaveLength(1);
     expect(

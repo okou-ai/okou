@@ -9,6 +9,7 @@ import { createStore } from "ccstate";
 import { bootstrap$ } from "../signals/bootstrap.ts";
 import { captureDiscordApprovalFragment$ } from "../signals/okou-page/discord-oauth-approval.ts";
 import { captureLandingFilePreview$ } from "../signals/prompt-page/landing-file-preview.ts";
+import { receiveLandingFileTransfer } from "../signals/prompt-page/landing-file-transfer.ts";
 import { ASSISTANT_NAME } from "../signals/branding.ts";
 import { detach, Reason } from "../signals/utils.ts";
 import { setupRouter } from "../views/main.tsx";
@@ -57,6 +58,22 @@ export function startPlatformEntrypoint(): void {
     throw new Error("Platform lifecycle was not initialized");
   }
   rootSignal.throwIfAborted();
+  if (
+    new URLSearchParams(window.location.hash.slice(1)).has(
+      "landingFileTransfer",
+    )
+  ) {
+    detach(
+      receiveLandingFileTransfer(rootSignal),
+      Reason.Entrance,
+      "landing file transfer",
+    );
+    return;
+  }
+  // The transfer uses opener only until the normal auth/onboarding navigation.
+  if (new URLSearchParams(window.location.search).has("landingFiles")) {
+    window.opener = null;
+  }
   const store = createStore();
   store.set(captureLandingFilePreview$, rootSignal);
   store.set(captureDiscordApprovalFragment$, rootSignal);

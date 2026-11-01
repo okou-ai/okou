@@ -27,6 +27,7 @@ function createLandingFilesSignals(
   id: string,
   prompt: string,
   request: SendNewThreadMessageRequest,
+  transferred: File[] | null,
 ) {
   const draft = createDraftSignals();
   const input$ = state(prompt);
@@ -37,7 +38,8 @@ function createLandingFilesSignals(
   const files$ = computed((get) => {
     return get(internalFiles$);
   });
-  const start$ = command(async ({ get, set }, operationSignal: AbortSignal) => {
+  const operation$ = state<Promise<void> | null>(null);
+  const run$ = command(async ({ get, set }, operationSignal: AbortSignal) => {
     operationSignal.throwIfAborted();
     if (!source) {
       throw new Error("Invalid landing file source");
@@ -52,7 +54,7 @@ function createLandingFilesSignals(
         });
       // Open the source window before awaiting anything, preserving user activation.
       const original = needsSource
-        ? await readLandingFiles(source, id, operationSignal)
+        ? (transferred ?? (await readLandingFiles(source, id, operationSignal)))
         : [];
       operationSignal.throwIfAborted();
       if (
@@ -119,7 +121,13 @@ function createLandingFilesSignals(
       get(rootSignal$),
     );
   });
+  const start$ = command(({ set }, signal: AbortSignal) => {
+    const pending = set(run$, signal);
+    set(operation$, pending);
+    return pending;
+  });
   return {
+    operation$,
     source,
     back: source ? landingFileReturnUrl(source, id, location.origin) : null,
     input$,
@@ -137,6 +145,7 @@ interface LandingFilesRequest {
   id: string;
   prompt: string;
   request: SendNewThreadMessageRequest;
+  transferred: File[] | null;
 }
 
 const landingFilesRequest$ = state<LandingFilesRequest | null>(null);
@@ -148,6 +157,7 @@ const landingFiles$ = computed((get) => {
         request.id,
         request.prompt,
         request.request,
+        request.transferred,
       )
     : null;
 });
