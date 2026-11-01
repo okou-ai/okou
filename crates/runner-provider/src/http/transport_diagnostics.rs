@@ -113,6 +113,15 @@ struct ObservedConnection {
     last_payload: Option<Instant>,
 }
 
+impl ObservedConnection {
+    fn can_attribute(&self, request_id: &str, started: Instant) -> bool {
+        // A registration created by another request after this send began
+        // cannot identify its generation, including after registry eviction.
+        !self.ambiguous
+            && (self.registered <= started || self.registered_for.as_ref() == request_id)
+    }
+}
+
 struct State {
     connections: VecDeque<ObservedConnection>,
     packets: VecDeque<RecordedPacket>,
@@ -288,7 +297,12 @@ impl TransportDiagnostics {
         }
     }
 
-    pub(super) fn response(&self, response: &reqwest::Response) {
+    pub(super) fn response(
+        &self,
+        response: &reqwest::Response,
+        request_id: &str,
+        started: Instant,
+    ) {
         let Some(info) = response.extensions().get::<HttpInfo>() else {
             return;
         };
@@ -298,6 +312,13 @@ impl TransportDiagnostics {
                 .iter_mut()
                 .find(|c| c.tuple == Tuple::from_info(info))
             {
+                if !connection.can_attribute(request_id, started) {
+                    self.0
+                        .shared
+                        .dropped_updates
+                        .fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
                 connection.responses = connection.responses.saturating_add(1);
                 connection.last_response = Some(Instant::now());
             }
@@ -338,13 +359,9 @@ impl TransportDiagnostics {
             .and_then(|s| s.connections.iter().find(|c| Some(c.tuple) == tuple))
             .cloned();
         let connection_id = connection.as_ref().map(|c| c.id);
-        // A tuple re-registered by a different request after this send began
-        // cannot identify this failed generation (including registry eviction).
-        let ambiguous = connection.as_ref().is_some_and(|c| {
-            c.ambiguous
-                || (c.registered > started
-                    && c.registered_for.as_ref() != context.client_request_id)
-        });
+        let ambiguous = connection
+            .as_ref()
+            .is_some_and(|c| !c.can_attribute(&context.client_request_id, started));
         let capture_status = state.as_ref().map_or("state_busy", |s| s.capture_status);
         let capture_filter_current = state
             .as_ref()

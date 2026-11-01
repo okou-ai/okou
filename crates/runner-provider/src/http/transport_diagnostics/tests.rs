@@ -340,3 +340,59 @@ async fn diagnostic_state_contention_never_blocks_a_failed_request() {
     );
     assert!(events.iter().all(|e| e.level == tracing::Level::INFO));
 }
+
+#[tokio::test]
+async fn delayed_response_cannot_update_a_replacement_registration() {
+    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec(),
+    )])
+    .await;
+    let http = client(&server.url());
+    let started = Instant::now();
+    let response = http.inner.client.get(server.url()).send().await.unwrap();
+    let tuple = Tuple::from_info(response.extensions().get::<HttpInfo>().unwrap());
+    // Model the external observation after the old registry entry was evicted:
+    // reqwest exposes a tuple, not a kernel socket cookie. Use real response
+    // metadata; deterministic OS ephemeral-port reuse is not a fixture API.
+    http.inner
+        .diagnostics
+        .0
+        .shared
+        .state()
+        .register(tuple, Arc::from("replacement-request"));
+    assert!(
+        http.inner
+            .diagnostics
+            .0
+            .shared
+            .state()
+            .connections
+            .front()
+            .unwrap()
+            .registered
+            > started
+    );
+    http.inner
+        .diagnostics
+        .response(&response, "original-request", started);
+    {
+        let state = http.inner.diagnostics.0.shared.state();
+        let replacement = state.connections.front().unwrap();
+        assert_eq!(
+            replacement.responses, 0,
+            "old headers are not replacement-generation evidence"
+        );
+        assert!(replacement.last_response.is_none());
+    }
+    assert_eq!(
+        http.inner
+            .diagnostics
+            .0
+            .shared
+            .dropped_updates
+            .load(Ordering::Relaxed),
+        1
+    );
+    assert_eq!(response.text().await.unwrap(), "ok");
+    server.assert_finished().await;
+}

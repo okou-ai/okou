@@ -307,7 +307,7 @@ impl PreparedApiRequest {
             .await;
         match result {
             Ok(response) => {
-                diagnostics.response(&response);
+                diagnostics.response(&response, &context.client_request_id, started);
                 Ok(response)
             }
             Err(error) => {
