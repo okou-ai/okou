@@ -86,7 +86,7 @@ All candidates still require the exact captured locations and reference gates.
 Use the reported `nextAfter` as `--after` for the next plan until it is null.
 `--storage-id UUID` scopes investigation to
 one candidate. A page can contain blocked candidates: following its cursor is
-not permission to ignore them. `--max-ms` bounds work (default 60,000 ms, maximum
+not permission to ignore them. `--max-ms` bounds work (default 180,000 ms, maximum
 300,000); a partially examined page retains the last **examined** cursor.
 
 The plan captures the persisted Storage prefix, without deriving its historical
@@ -139,7 +139,7 @@ or edit the plan to make a missing receipt disappear.
 node --import tsx scripts/migrations/026-retire-workflow-storage/cleanup.ts \
   --process-jobs --plan-file /private/tmp/workflow-retirement/plan-001.json \
   --expect-plan-sha256 REVIEWED_SHA256 --ack-consumer-retirement \
-  --max-pages 8 --max-ms 60000 \
+  --max-pages 8 --max-ms 180000 \
   --output /private/tmp/workflow-retirement/objects-001.jsonl
 ```
 
@@ -163,8 +163,13 @@ by relisting the same exact prefix. A lost database save or expired lease needs
 reconciliation first; do not start a second unbounded driver.
 
 An invocation's wall-clock budget is checked between bounded operations; an
-already started database/provider call can finish after that budget. Database
-statements and queries also have their own 10/12-second timeouts.
+already started database/provider call can finish after that budget. Server SQL
+execution remains capped at 10 seconds. The initial inventory observation can
+contain several megabytes of Workflow hashes and attachment metadata, so only
+that query has a 120-second client result-receive deadline. Other database
+queries retain their 12-second client deadline. The default 180-second invocation
+budget leaves time to receive the inventory and perform bounded work afterward.
+The 60-second job leases and 10-second R2 call deadlines are unchanged.
 
 ## 4. Audit every original plan and global preservation
 
@@ -211,4 +216,5 @@ S3 fixture; it never accepts a remote production database. The migration
 consistency suite also invokes it. No GitHub workflow or online runtime changes
 are needed. Coverage includes historical slugs with zero/one/multiple namesakes,
 current Workflow preservation, name-only consumers appearing during listing,
-custom connector and version-only Skill ownership, and Pi indexing lifecycle.
+custom connector and version-only Skill ownership, Pi indexing lifecycle, and
+slow inventory result reception through a local PostgreSQL transport fixture.
