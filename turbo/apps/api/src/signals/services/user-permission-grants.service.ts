@@ -19,10 +19,12 @@ import {
   and,
   asc,
   eq,
+  exists,
   gt,
   inArray,
   isNull,
   lte,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -68,7 +70,6 @@ import { visibleAgentIdentityCondition } from "./agent-data.service";
 import {
   permissionGrantCondition,
   resolveGrantExpiresAt,
-  resolvedExpiresAt,
 } from "./permission-grant-apply-plan";
 
 const userPermissionGrantSelection = Object.freeze({
@@ -421,8 +422,49 @@ async function validateApplyUserPermissionGrants(
   return null;
 }
 
-// The entry observes cancellation after this finite transaction and its
-// committed-row refresh, preserving the existing apply-stage boundary.
+function permissionGrantValues(
+  grants: ApplyUserPermissionGrantsRequest["grants"],
+  timestamp: Date,
+) {
+  return grants.map((grant) => {
+    const expiresAt =
+      grant.action === "allow"
+        ? resolveGrantExpiresAt(grant.expiresIn, timestamp)
+        : null;
+    return sql`(${grant.permission}::varchar, ${grant.action}::varchar,
+      ${expiresAt?.toISOString() ?? null}::timestamp)`;
+  });
+}
+
+function permissionGrantRequestedColumns(
+  connectorSlug: string,
+  timestamp: Date,
+) {
+  return {
+    connectorSlug: sql`${connectorSlug}`
+      .mapWith(userPermissionGrants.connectorSlug)
+      .as("connector_slug"),
+    permission: sql`requested.permission`
+      .mapWith(userPermissionGrants.permission)
+      .as("permission"),
+    action: sql`requested.action`
+      .mapWith(userPermissionGrants.action)
+      .as("action"),
+    expiresAt: sql`requested.expires_at`
+      .mapWith(nullableDriverValueDecoder(userPermissionGrants.expiresAt))
+      .as("expires_at"),
+    createdAt: sql`${timestamp.toISOString()}::timestamp`
+      .mapWith(userPermissionGrants.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${timestamp.toISOString()}::timestamp`
+      .mapWith(userPermissionGrants.updatedAt)
+      .as("updated_at"),
+  };
+}
+
+// One statement owns the visible-agent check and all grant changes. Concurrent
+// edits arbitrate per permission; replacements may combine concurrent edits.
+// The entry observes cancellation after this finite write and runtime refresh.
 const applyVisibleGrantRows$ = command(
   async function applyVisibleAgentGrantRows(
     { set },
@@ -431,108 +473,119 @@ const applyVisibleGrantRows$ = command(
   ): Promise<readonly UserPermissionGrantRow[] | NotFoundResponse> {
     const db = set(writeDb$);
     const agentId = args.apply.agentId;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0314; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const visibleAgentDb = tx;
-      const visibleAgentScope: UserPermissionGrantScope = {
-        orgId: args.orgId,
-        userId: args.userId,
-        role: args.role,
-        agentId,
-      };
-      const visibleAgent = await (async (): Promise<{
-        readonly id: string;
-      } | null> => {
-        const [agent] = await visibleAgentDb
-          .select({ id: agents.id })
-          .from(agents)
-          .where(visibleAgentIdentityCondition(visibleAgentScope))
-          .for("update")
-          .limit(1);
-        return agent ?? null;
-      })();
-      if (!visibleAgent) {
-        return notFound(`Agent not found: ${agentId}`);
-      }
+    const timestamp = nowDate();
+    const authorized = db.$with("permission_agent").as(
+      db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(visibleAgentIdentityCondition({ ...args, agentId })),
+    );
+    // The INSERT owns requested keys; DELETE only touches omitted keys so a
+    // replacement never modifies the same row twice within this statement.
+    const removed = db.$with("permission_removed").as(
+      db
+        .delete(userPermissionGrants)
+        .where(
+          and(
+            args.apply.mode === "replace" ? undefined : sql`false`,
+            permissionGrantCondition({
+              ...args,
+              agentId,
+              connectorSlug: args.apply.connectorSlug,
+            }),
+            notInArray(
+              userPermissionGrants.permission,
+              args.apply.grants.map((grant) => {
+                return grant.permission;
+              }),
+            ),
+            exists(db.select({ id: authorized.id }).from(authorized)),
+          ),
+        )
+        .returning({ id: userPermissionGrants.id }),
+    );
+    if (args.apply.grants.length === 0) {
+      const [agent] = await db
+        .with(authorized, removed)
+        .select({ id: authorized.id })
+        .from(authorized);
+      return agent ? [] : notFound(`Agent not found: ${agentId}`);
+    }
 
-      const timestamp = nowDate();
-      const connectorScopeCondition = permissionGrantCondition({
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId,
-        connectorSlug: args.apply.connectorSlug,
-      });
-
-      if (args.apply.mode === "replace") {
-        await tx.delete(userPermissionGrants).where(connectorScopeCondition);
+    const requested = [...args.apply.grants].sort((left, right) => {
+      return left.permission.localeCompare(right.permission);
+    });
+    const values = permissionGrantValues(requested, timestamp);
+    const preserveExpiryPermissions = requested.flatMap((grant) => {
+      return args.apply.mode === "patch" &&
+        grant.action === "allow" &&
+        grant.expiresIn === undefined
+        ? [grant.permission]
+        : [];
+    });
+    const rows = await db
+      .with(authorized, removed)
+      .insert(userPermissionGrants)
+      .select(
+        db
+          .select({
+            id: sql`gen_random_uuid()`
+              .mapWith(userPermissionGrants.id)
+              .as("id"),
+            orgId: sql`${args.orgId}`
+              .mapWith(userPermissionGrants.orgId)
+              .as("org_id"),
+            userId: sql`${args.userId}`
+              .mapWith(userPermissionGrants.userId)
+              .as("user_id"),
+            agentId: authorized.id,
+            ...permissionGrantRequestedColumns(
+              args.apply.connectorSlug,
+              timestamp,
+            ),
+          })
+          .from(authorized)
+          .crossJoin(
+            sql`(values ${sql.join(values, sql`, `)}) as requested(permission, action, expires_at)`,
+          )
+          .where(sql`true`),
+      )
+      .onConflictDoUpdate({
+        target: [
+          userPermissionGrants.orgId,
+          userPermissionGrants.userId,
+          userPermissionGrants.agentId,
+          userPermissionGrants.connectorSlug,
+          userPermissionGrants.permission,
+        ],
+        set: {
+          ...(args.apply.mode === "replace"
+            ? { id: sql`excluded.id`, createdAt: timestamp }
+            : {}),
+          action: sql`excluded.action`,
+          expiresAt: sql`case when ${inArray(userPermissionGrants.permission, preserveExpiryPermissions)}
+            and ${eq(userPermissionGrants.action, "allow")}
+            and ${gt(userPermissionGrants.expiresAt, timestamp)}
+            then ${userPermissionGrants.expiresAt}
+            else excluded.expires_at end`,
+          updatedAt: timestamp,
+        },
+      })
+      .returning({ ...userPermissionGrantSelection });
+    if (rows.length === 0) {
+      return notFound(`Agent not found: ${agentId}`);
+    }
+    const rowsByPermission = new Map(
+      rows.map((row) => {
+        return [row.permission, row];
+      }),
+    );
+    return args.apply.grants.map((grant) => {
+      const row = rowsByPermission.get(grant.permission);
+      if (!row) {
+        throw new Error("User permission grant apply did not return a row");
       }
-
-      if (args.apply.grants.length === 0) {
-        return [];
-      }
-
-      const existingRows =
-        args.apply.mode === "replace"
-          ? []
-          : await tx
-              .select(userPermissionGrantSelection)
-              .from(userPermissionGrants)
-              .where(connectorScopeCondition)
-              .for("update");
-      const existingRowsByPermission = new Map(
-        existingRows.map((row) => {
-          return [row.permission, row] as const;
-        }),
-      );
-      const rows: UserPermissionGrantRow[] = [];
-      for (const grant of args.apply.grants) {
-        const existing = existingRowsByPermission.get(grant.permission);
-        const expiresAt = resolvedExpiresAt({
-          action: grant.action,
-          expiresIn: grant.expiresIn,
-          existing,
-          timestamp,
-        });
-        const [row] = existing
-          ? await tx
-              .update(userPermissionGrants)
-              .set({
-                action: grant.action,
-                expiresAt,
-                updatedAt: timestamp,
-              })
-              .where(
-                permissionGrantCondition(
-                  {
-                    orgId: args.orgId,
-                    userId: args.userId,
-                    agentId,
-                    connectorSlug: args.apply.connectorSlug,
-                  },
-                  grant.permission,
-                ),
-              )
-              .returning(userPermissionGrantSelection)
-          : await tx
-              .insert(userPermissionGrants)
-              .values({
-                orgId: args.orgId,
-                userId: args.userId,
-                agentId,
-                connectorSlug: args.apply.connectorSlug,
-                permission: grant.permission,
-                action: grant.action,
-                expiresAt,
-                createdAt: timestamp,
-                updatedAt: timestamp,
-              })
-              .returning(userPermissionGrantSelection);
-        if (!row) {
-          throw new Error("User permission grant apply did not return a row");
-        }
-        rows.push(row);
-      }
-      return rows;
+      return row;
     });
   },
 );
@@ -851,7 +904,7 @@ const writeUserPermissionGrantBatch$ = command(
  * catalog before the sole write statement. Existing active allows are not
  * updated, including their original expiration and updatedAt.
  *
- * This does not serialize with legacy apply/replace: PostgreSQL's existing
+ * This does not serialize with apply/replace: PostgreSQL's existing
  * unique key arbitrates overlapping upserts, while a concurrent replacement
  * may remove grants visible to its DELETE snapshot. A batch is atomic, not a
  * global ordering barrier for other permission edits.
