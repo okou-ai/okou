@@ -1,0 +1,223 @@
+use super::*;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+
+use clap::Parser;
+
+struct InputFixture {
+    dir: tempfile::TempDir,
+    queue: local_queue::LocalQueue,
+    run_id: RunId,
+}
+
+impl InputFixture {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(dir.path().to_path_buf());
+        let group_dir = home.groups_dir().join("test/group");
+        local_queue::ensure_claims_dir(&group_dir).unwrap();
+        Self {
+            dir,
+            queue: local_queue::LocalQueue::new(group_dir),
+            run_id: RunId::new_v4(),
+        }
+    }
+
+    fn write_job(&self, active_input: Option<bool>, profile: &str) -> PathBuf {
+        local_queue::ensure_profile_jobs_dir(self.queue.group_dir(), profile).unwrap();
+        let path = local_queue::job_path(self.queue.group_dir(), profile, self.run_id).unwrap();
+        let request = local_queue::JobRequest {
+            job_id: self.run_id,
+            prompt: "initial prompt".into(),
+            cli_agent_type: "claude-code".into(),
+            vars: None,
+            environment: None,
+            secret_environment: None,
+            user_timezone: None,
+            profile: Some(profile.into()),
+            reuse_key: None,
+            session_id: None,
+            feature_flags: None,
+            active_input,
+        };
+        local_queue::write_private_file(
+            &path,
+            &serde_json::to_vec(&request).unwrap(),
+            "test job request",
+        )
+        .unwrap();
+        path
+    }
+
+    fn claim_job(&self, active_input: Option<bool>, profile: &str) -> PathBuf {
+        let path = self.write_job(active_input, profile);
+        assert!(matches!(
+            self.queue.claim_job_sync(self.run_id, profile, &path),
+            local_queue::LocalClaimResult::Claimed { .. }
+        ));
+        path
+    }
+
+    fn input(&self) -> RunnerResult<ExitCode> {
+        let cli = crate::Cli::try_parse_from([
+            "runner",
+            "local",
+            "input",
+            "--group",
+            "test/group",
+            "--run",
+            &self.run_id.to_string(),
+            "--sequence",
+            "5",
+            "--text",
+            "pressure-finish",
+        ])
+        .unwrap();
+        let crate::Command::Local(local) = cli.command else {
+            panic!("expected local command");
+        };
+        let crate::cmd::local::LocalCommand::Input(args) = local.command else {
+            panic!("expected input command");
+        };
+        run_input_with_home(args, HomePaths::with_root(self.dir.path().to_path_buf()))
+    }
+
+    fn assert_rejected(&self, message: &str) {
+        let error = self.input().unwrap_err();
+        assert!(error.to_string().contains(message), "got: {error}");
+        assert!(!local_queue::run_inputs_dir(self.queue.group_dir(), self.run_id).exists());
+    }
+}
+
+#[test]
+fn writes_active_input_for_claimed_job() {
+    for profile in [crate::profile::DEFAULT_PROFILE, "test/custom"] {
+        let fixture = InputFixture::new();
+        fixture.claim_job(Some(true), profile);
+
+        assert_eq!(fixture.input().unwrap(), ExitCode::SUCCESS);
+        let input_path =
+            local_queue::active_input_path(fixture.queue.group_dir(), fixture.run_id, 5);
+        let entry: ActiveInputEntry =
+            serde_json::from_slice(&std::fs::read(&input_path).unwrap()).unwrap();
+        assert_eq!(
+            entry,
+            ActiveInputEntry {
+                run_id: fixture.run_id,
+                sequence: 5,
+                text: "pressure-finish".into(),
+            }
+        );
+        assert_eq!(
+            std::fs::metadata(input_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+}
+
+#[test]
+fn rejects_input_when_claimed_job_has_forwarding_disabled() {
+    for active_input in [None, Some(false)] {
+        let fixture = InputFixture::new();
+        fixture.claim_job(active_input, crate::profile::DEFAULT_PROFILE);
+
+        fixture.assert_rejected("resubmit with --active-input");
+    }
+}
+
+#[test]
+fn rejects_input_when_claim_marker_has_no_job_request() {
+    let fixture = InputFixture::new();
+    local_queue::write_private_marker(
+        &local_queue::claim_path(fixture.queue.group_dir(), fixture.run_id),
+        "test claim marker",
+    )
+    .unwrap();
+
+    fixture.assert_rejected("no local job request found");
+}
+
+#[test]
+fn rejects_input_when_run_has_multiple_job_requests() {
+    let fixture = InputFixture::new();
+    fixture.claim_job(Some(true), crate::profile::DEFAULT_PROFILE);
+    fixture.write_job(Some(false), "test/custom");
+
+    fixture.assert_rejected("multiple local job requests found");
+}
+
+#[test]
+fn rejects_input_when_job_scan_fails() {
+    let fixture = InputFixture::new();
+    local_queue::write_private_marker(
+        &local_queue::claim_path(fixture.queue.group_dir(), fixture.run_id),
+        "test claim marker",
+    )
+    .unwrap();
+    std::fs::write(
+        local_queue::jobs_dir(fixture.queue.group_dir()),
+        b"not a directory",
+    )
+    .unwrap();
+
+    fixture.assert_rejected("cannot scan local job requests");
+}
+
+#[test]
+fn rejects_input_when_job_request_is_invalid() {
+    let fixture = InputFixture::new();
+    let path = fixture.claim_job(Some(true), crate::profile::DEFAULT_PROFILE);
+    local_queue::write_private_file(&path, b"{", "test job request").unwrap();
+
+    fixture.assert_rejected("invalid local job request");
+}
+
+#[test]
+fn rejects_input_when_job_request_has_different_run_id() {
+    let fixture = InputFixture::new();
+    let path = fixture.claim_job(Some(true), crate::profile::DEFAULT_PROFILE);
+    let mut request: local_queue::JobRequest =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    request.job_id = RunId::new_v4();
+    local_queue::write_private_file(
+        &path,
+        &serde_json::to_vec(&request).unwrap(),
+        "test job request",
+    )
+    .unwrap();
+
+    fixture.assert_rejected("job id mismatch");
+}
+
+#[test]
+fn rejects_input_when_job_request_is_a_symlink() {
+    let fixture = InputFixture::new();
+    let path = fixture.claim_job(Some(true), crate::profile::DEFAULT_PROFILE);
+    let target = fixture.dir.path().join("request.json");
+    std::fs::rename(&path, &target).unwrap();
+    std::os::unix::fs::symlink(&target, &path).unwrap();
+
+    fixture.assert_rejected("read claimed local job");
+}
+
+#[test]
+fn rejects_input_when_job_request_exceeds_size_limit() {
+    let fixture = InputFixture::new();
+    let path = fixture.claim_job(Some(true), crate::profile::DEFAULT_PROFILE);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_len(local_queue::LOCAL_JOB_MAX_BYTES as u64 + 1)
+        .unwrap();
+
+    fixture.assert_rejected("exceeds");
+}
+
+#[test]
+fn rejects_input_for_unclaimed_job() {
+    let fixture = InputFixture::new();
+    fixture.write_job(Some(true), crate::profile::DEFAULT_PROFILE);
+
+    fixture.assert_rejected("no claimed local job found");
+}

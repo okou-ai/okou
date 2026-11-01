@@ -1,0 +1,791 @@
+use super::*;
+use std::ffi::{CString, OsStr};
+use std::io::Cursor;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs as unix_fs;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+fn extract_archive(tar_path: &Path, extract_dir: &Path) -> io::Result<()> {
+    let file = File::open(tar_path)?;
+    let decoder = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+    archive.unpack(extract_dir)
+}
+
+fn make_fifo(path: &Path) -> io::Result<()> {
+    let path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let rc = unsafe { libc::mkfifo(path.as_ptr(), 0o644) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+fn disable_system_log() {
+    guest_telemetry::log::clear_system_log_file();
+}
+
+struct FailingWriter;
+
+impl io::Write for FailingWriter {
+    fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+        Err(io::Error::other("forced append failure"))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn select_manifest_entries(files: &[FileEntry], expected_paths: &[&str]) -> Vec<FileEntry> {
+    let selected: Vec<FileEntry> = expected_paths
+        .iter()
+        .filter_map(|expected_path| {
+            files
+                .iter()
+                .find(|file| file.path == *expected_path)
+                .cloned()
+        })
+        .collect();
+    let paths: Vec<&str> = selected.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(paths, expected_paths);
+    selected
+}
+
+fn assert_archive_inputs_rejected(
+    root: &Path,
+    files: &[FileEntry],
+    expected_fragments: &[&str],
+) -> io::Result<()> {
+    let root_str = root
+        .to_str()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "artifact root is not UTF-8"))?;
+    let validate_err = match validate_archive_inputs(root_str, files) {
+        Ok(()) => {
+            return Err(io::Error::other(
+                "validate_archive_inputs unexpectedly succeeded",
+            ));
+        }
+        Err(error) => error,
+    };
+    assert_error_contains(&validate_err, expected_fragments);
+
+    let output_dir = tempfile::tempdir()?;
+    let tar_path = output_dir.path().join("archive.tar.gz");
+    let archive_err = match create_archive(root_str, &tar_path, files) {
+        Ok(()) => return Err(io::Error::other("create_archive unexpectedly succeeded")),
+        Err(error) => error,
+    };
+    assert_error_contains(&archive_err, expected_fragments);
+    Ok(())
+}
+
+fn assert_error_contains(error: &ArchiveError, expected_fragments: &[&str]) {
+    let msg = error.to_string();
+    for fragment in expected_fragments {
+        assert!(msg.contains(fragment), "got: {msg}");
+    }
+}
+
+fn assert_unsafe_artifact_root_rejected(root: &Path, files: &[FileEntry]) -> io::Result<()> {
+    let root_str = root
+        .to_str()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "artifact root is not UTF-8"))?;
+
+    assert!(matches!(
+        collect_file_metadata(root_str),
+        Err(ArchiveError::RootOpen { .. })
+    ));
+    assert!(matches!(
+        validate_archive_inputs(root_str, &[]),
+        Err(ArchiveError::RootOpen { .. })
+    ));
+    assert!(matches!(
+        validate_archive_inputs(root_str, files),
+        Err(ArchiveError::RootOpen { .. })
+    ));
+
+    let output_dir = tempfile::tempdir()?;
+    let tar_path = output_dir.path().join("archive.tar.gz");
+    assert!(matches!(
+        create_archive(root_str, &tar_path, files),
+        Err(ArchiveError::RootOpen { .. })
+    ));
+    assert!(!tar_path.exists());
+    Ok(())
+}
+
+#[test]
+fn artifact_root_requires_absolute_path() {
+    let error = match open_artifact_root(Path::new("relative")) {
+        Ok(_) => panic!("relative artifact root unexpectedly opened"),
+        Err(error) => error,
+    };
+    let ArchiveError::RootOpen { source, .. } = error else {
+        panic!("expected artifact root open error, got: {error}");
+    };
+
+    assert_eq!(source.kind(), io::ErrorKind::InvalidInput);
+}
+
+#[test]
+fn walk_dir_skips_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    // Regular file
+    std::fs::write(root.join("real.txt"), "hello").unwrap();
+
+    // Symlink to file
+    unix_fs::symlink(root.join("real.txt"), root.join("link.txt")).unwrap();
+
+    // Symlink to directory outside
+    std::fs::create_dir(root.join("subdir")).unwrap();
+    std::fs::write(root.join("subdir/inner.txt"), "inner").unwrap();
+    unix_fs::symlink(root.join("subdir"), root.join("link_dir")).unwrap();
+
+    // Dangling symlink
+    unix_fs::symlink("/nonexistent", root.join("dangling")).unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+
+    // Regular files should be included
+    assert!(paths.contains(&"real.txt"));
+    assert!(paths.contains(&"subdir/inner.txt"));
+
+    // Symlinks should NOT be included
+    assert!(!paths.contains(&"link.txt"));
+    assert!(!paths.contains(&"link_dir"));
+    assert!(!paths.contains(&"dangling"));
+
+    // link_dir contents should NOT appear (symlink dir skipped, not followed)
+    assert!(!paths.iter().any(|p| p.starts_with("link_dir/")));
+}
+
+#[test]
+fn walk_dir_does_not_follow_directory_symlink() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    let outside = dir.path().join("outside");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(root.join("real.txt"), "real").unwrap();
+    std::fs::write(outside.join("secret.txt"), "secret").unwrap();
+    unix_fs::symlink(&outside, root.join("link_dir")).unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+
+    assert!(paths.contains(&"real.txt"));
+    assert!(!paths.contains(&"link_dir/secret.txt"));
+    assert!(!paths.iter().any(|p| p.starts_with("link_dir/")));
+}
+
+#[test]
+fn walk_dir_skips_fifo() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("real.txt"), "hello").unwrap();
+    make_fifo(&root.join("pipe")).unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+
+    assert!(paths.contains(&"real.txt"));
+    assert!(!paths.contains(&"pipe"));
+}
+
+#[test]
+fn collect_file_metadata_skips_non_utf8_paths_for_ignored_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("real.txt"), "hello").unwrap();
+
+    let symlink_name = OsStr::from_bytes(b"link\xff.txt");
+    unix_fs::symlink(root.join("real.txt"), root.join(Path::new(symlink_name))).unwrap();
+
+    let fifo_name = OsStr::from_bytes(b"pipe\xff");
+    make_fifo(&root.join(Path::new(fifo_name))).unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+
+    assert_eq!(paths, vec!["real.txt"]);
+}
+
+#[test]
+fn walk_dir_handles_hardlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("original.txt"), "content").unwrap();
+    std::fs::hard_link(root.join("original.txt"), root.join("hardlink.txt")).unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+
+    // Both original and hardlink should be recorded as independent files
+    assert!(paths.contains(&"original.txt"));
+    assert!(paths.contains(&"hardlink.txt"));
+
+    // Both should have the same hash
+    let original = files.iter().find(|f| f.path == "original.txt").unwrap();
+    let hardlink = files.iter().find(|f| f.path == "hardlink.txt").unwrap();
+    assert_eq!(original.hash, hardlink.hash);
+    assert_eq!(original.size, hardlink.size);
+}
+
+#[test]
+fn archive_excludes_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    // Regular files
+    std::fs::write(root.join("real.txt"), "hello").unwrap();
+    std::fs::create_dir(root.join("subdir")).unwrap();
+    std::fs::write(root.join("subdir/inner.txt"), "inner").unwrap();
+
+    // Symlinks (should NOT end up in the archive)
+    unix_fs::symlink(root.join("real.txt"), root.join("link.txt")).unwrap();
+    unix_fs::symlink("/nonexistent", root.join("dangling")).unwrap();
+
+    // Collect metadata (skips symlinks)
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+
+    // Create archive using only manifest file list
+    let tar_path = dir.path().join("archive.tar.gz");
+    assert!(create_archive(root.to_str().unwrap(), &tar_path, &files).is_ok());
+
+    // Extract and verify archive contents match manifest exactly
+    let extract_dir = dir.path().join("extracted");
+    std::fs::create_dir(&extract_dir).unwrap();
+    extract_archive(&tar_path, &extract_dir).unwrap();
+
+    // Manifest files should exist
+    assert!(extract_dir.join("real.txt").exists());
+    assert!(extract_dir.join("subdir/inner.txt").exists());
+
+    // Symlinks should NOT exist in the archive
+    assert!(!extract_dir.join("link.txt").exists());
+    assert!(!extract_dir.join("dangling").exists());
+}
+
+#[test]
+fn archive_handles_special_filenames() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    // Files with spaces and special characters
+    std::fs::write(root.join("file with spaces.txt"), "spaces").unwrap();
+    std::fs::create_dir(root.join("dir with spaces")).unwrap();
+    std::fs::write(root.join("dir with spaces/inner.txt"), "inner").unwrap();
+    std::fs::write(root.join("file-with-dashes.txt"), "dashes").unwrap();
+    // File with newline in name
+    std::fs::write(root.join("line1\nline2.txt"), "newline").unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+
+    let tar_path = dir.path().join("archive.tar.gz");
+    assert!(create_archive(root.to_str().unwrap(), &tar_path, &files).is_ok());
+
+    // Extract and verify
+    let extract_dir = dir.path().join("extracted");
+    std::fs::create_dir(&extract_dir).unwrap();
+    extract_archive(&tar_path, &extract_dir).unwrap();
+
+    assert!(extract_dir.join("file with spaces.txt").exists());
+    assert!(extract_dir.join("dir with spaces/inner.txt").exists());
+    assert!(extract_dir.join("file-with-dashes.txt").exists());
+    assert!(extract_dir.join("line1\nline2.txt").exists());
+}
+
+#[test]
+fn archive_empty_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let tar_path = dir.path().join("empty.tar.gz");
+    assert!(create_archive("/tmp", &tar_path, &[]).is_ok());
+    assert!(tar_path.exists());
+
+    let extract_dir = dir.path().join("extracted");
+    std::fs::create_dir(&extract_dir).unwrap();
+    extract_archive(&tar_path, &extract_dir).unwrap();
+    assert!(std::fs::read_dir(&extract_dir).unwrap().next().is_none());
+}
+
+#[test]
+fn archive_empty_files_requires_existing_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("missing");
+    let tar_path = dir.path().join("empty.tar.gz");
+
+    let err = create_archive(missing.to_str().unwrap(), &tar_path, &[]).unwrap_err();
+
+    assert!(
+        err.to_string().contains("failed to open artifact root"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn archive_empty_files_rejects_symlink_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real");
+    let link = dir.path().join("link");
+    std::fs::create_dir(&real).unwrap();
+    unix_fs::symlink(&real, &link).unwrap();
+    let tar_path = dir.path().join("empty.tar.gz");
+
+    let err = create_archive(link.to_str().unwrap(), &tar_path, &[]).unwrap_err();
+
+    assert!(
+        err.to_string().contains("failed to open artifact root"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn artifact_operations_reject_intermediate_symlink_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside_parent = dir.path().join("outside");
+    let outside_root = outside_parent.join("artifact");
+    let alias = dir.path().join("alias");
+    std::fs::create_dir_all(&outside_root).unwrap();
+    std::fs::write(outside_root.join("sentinel.txt"), "outside").unwrap();
+    let files = collect_file_metadata(outside_root.to_str().unwrap()).unwrap();
+    unix_fs::symlink(&outside_parent, &alias).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(alias.join("artifact/sentinel.txt")).unwrap(),
+        "outside"
+    );
+
+    assert_unsafe_artifact_root_rejected(&alias.join("artifact"), &files).unwrap();
+}
+
+#[test]
+fn artifact_operations_reject_proc_magic_link_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside_root = dir.path().join("artifact");
+    std::fs::create_dir(&outside_root).unwrap();
+    std::fs::write(outside_root.join("sentinel.txt"), "outside").unwrap();
+    let files = collect_file_metadata(outside_root.to_str().unwrap()).unwrap();
+    let process_relative_root = Path::new("/proc/self/root").join(
+        outside_root
+            .strip_prefix("/")
+            .expect("temporary directory path must be absolute"),
+    );
+    assert_eq!(
+        std::fs::read_to_string(process_relative_root.join("sentinel.txt")).unwrap(),
+        "outside"
+    );
+
+    assert_unsafe_artifact_root_rejected(&process_relative_root, &files).unwrap();
+}
+
+#[test]
+fn validate_archive_inputs_empty_files_requires_existing_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("missing");
+
+    let err = validate_archive_inputs(missing.to_str().unwrap(), &[]).unwrap_err();
+
+    assert!(
+        err.to_string().contains("failed to open artifact root"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn validate_archive_inputs_empty_files_rejects_symlink_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real");
+    let link = dir.path().join("link");
+    std::fs::create_dir(&real).unwrap();
+    unix_fs::symlink(&real, &link).unwrap();
+
+    let err = validate_archive_inputs(link.to_str().unwrap(), &[]).unwrap_err();
+
+    assert!(
+        err.to_string().contains("failed to open artifact root"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn archive_hardlinks_as_independent_regular_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("original.txt"), "content").unwrap();
+    std::fs::hard_link(root.join("original.txt"), root.join("hardlink.txt")).unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+
+    let tar_path = dir.path().join("archive.tar.gz");
+    assert!(create_archive(root.to_str().unwrap(), &tar_path, &files).is_ok());
+
+    let extract_dir = dir.path().join("extracted");
+    std::fs::create_dir(&extract_dir).unwrap();
+    extract_archive(&tar_path, &extract_dir).unwrap();
+
+    let original = extract_dir.join("original.txt");
+    let hardlink = extract_dir.join("hardlink.txt");
+    assert_eq!(std::fs::read_to_string(&original).unwrap(), "content");
+    assert_eq!(std::fs::read_to_string(&hardlink).unwrap(), "content");
+    assert_ne!(
+        std::fs::metadata(&original).unwrap().ino(),
+        std::fs::metadata(&hardlink).unwrap().ino()
+    );
+}
+
+#[test]
+fn archive_preserves_executable_mode_in_header() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let script = root.join("script.sh");
+
+    std::fs::write(&script, "echo ok\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let tar_path = dir.path().join("archive.tar.gz");
+    assert!(create_archive(root.to_str().unwrap(), &tar_path, &files).is_ok());
+
+    let file = File::open(&tar_path).unwrap();
+    let decoder = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+    let mut entries = archive.entries().unwrap();
+    let entry = entries.next().unwrap().unwrap();
+
+    assert_eq!(entry.path().unwrap().as_ref(), Path::new("script.sh"));
+    assert_eq!(entry.header().mode().unwrap() & 0o7777, 0o755);
+}
+
+#[test]
+fn archive_append_failure_remains_append_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("target.txt"), "content").unwrap();
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let entry = files.iter().find(|file| file.path == "target.txt").unwrap();
+    let root = open_artifact_root(root).unwrap();
+    let mut builder = tar::Builder::new(FailingWriter);
+
+    let err = append_archive_file(&root, &mut builder, entry).unwrap_err();
+
+    let ArchiveError::Append { path, source } = err else {
+        panic!("expected append error, got: {err}");
+    };
+    assert_eq!(path, "target.txt");
+    assert!(
+        source.to_string().contains("forced append failure"),
+        "got: {source}"
+    );
+}
+
+#[test]
+fn archive_inputs_fail_if_listed_file_size_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("target.txt"), "before").unwrap();
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    std::fs::write(root.join("target.txt"), "after-size-change").unwrap();
+
+    assert_archive_inputs_rejected(root, &files, &["target.txt", "size changed"]).unwrap();
+}
+
+#[test]
+fn archive_inputs_fail_if_listed_file_content_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("target.txt"), "before").unwrap();
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    std::fs::write(root.join("target.txt"), "after!").unwrap();
+
+    assert_archive_inputs_rejected(root, &files, &["target.txt", "content changed"]).unwrap();
+}
+
+#[test]
+fn archive_reader_rejects_extra_bytes_after_declared_size() {
+    let mut reader = ArchiveFileReader::new(Cursor::new(b"abcdef".as_slice()), 3);
+    let mut archived = Vec::new();
+
+    io::copy(&mut reader, &mut archived).unwrap();
+    let err = reader.finish_hash().unwrap_err();
+
+    assert_eq!(archived, b"abc");
+    assert!(err.to_string().contains("file grew"), "got: {err}");
+}
+
+#[test]
+fn archive_inputs_fail_if_listed_file_becomes_symlink() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("target.txt"), "before").unwrap();
+    std::fs::write(root.join("outside.txt"), "outside").unwrap();
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let archive_files = select_manifest_entries(&files, &["target.txt"]);
+
+    std::fs::remove_file(root.join("target.txt")).unwrap();
+    unix_fs::symlink(root.join("outside.txt"), root.join("target.txt")).unwrap();
+
+    assert_archive_inputs_rejected(root, &archive_files, &["target.txt", "failed to open"])
+        .unwrap();
+}
+
+#[test]
+fn archive_inputs_fail_if_listed_file_becomes_fifo() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("target.txt"), "before").unwrap();
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let archive_files = select_manifest_entries(&files, &["target.txt"]);
+
+    std::fs::remove_file(root.join("target.txt")).unwrap();
+    make_fifo(&root.join("target.txt")).unwrap();
+
+    assert_archive_inputs_rejected(root, &archive_files, &["target.txt", "not a regular file"])
+        .unwrap();
+}
+
+#[test]
+fn archive_rejects_invalid_manifest_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let tar_path = root.join("archive.tar.gz");
+
+    for path in [
+        "",
+        "/absolute.txt",
+        ".",
+        "./relative.txt",
+        "dir/../file.txt",
+    ] {
+        let files = vec![FileEntry {
+            path: path.to_string(),
+            hash: "unused".to_string(),
+            size: 0,
+        }];
+        let err = create_archive(root.to_str().unwrap(), &tar_path, &files).unwrap_err();
+        assert!(
+            err.to_string().contains("invalid archive path"),
+            "path {path:?} produced: {err}"
+        );
+    }
+}
+
+#[test]
+fn archive_rejects_manifest_path_with_nul() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("bad"), "data").unwrap();
+    let tar_path = root.join("archive.tar.gz");
+    let files = vec![FileEntry {
+        path: "bad\0name".to_string(),
+        hash: "unused".to_string(),
+        size: 0,
+    }];
+
+    let err = create_archive(root.to_str().unwrap(), &tar_path, &files).unwrap_err();
+
+    assert!(
+        err.to_string().to_ascii_lowercase().contains("nul"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn archive_inputs_fail_if_parent_dir_becomes_symlink() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::create_dir(root.join("subdir")).unwrap();
+    std::fs::write(root.join("subdir/file.txt"), "before").unwrap();
+    std::fs::create_dir(root.join("outside")).unwrap();
+    std::fs::write(root.join("outside/file.txt"), "outside").unwrap();
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let archive_files = select_manifest_entries(&files, &["subdir/file.txt"]);
+
+    std::fs::remove_dir_all(root.join("subdir")).unwrap();
+    unix_fs::symlink(root.join("outside"), root.join("subdir")).unwrap();
+
+    assert_archive_inputs_rejected(root, &archive_files, &["subdir/file.txt", "failed to open"])
+        .unwrap();
+}
+
+#[test]
+fn archive_inputs_fail_if_listed_file_disappears() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    std::fs::write(root.join("gone.txt"), "data").unwrap();
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let archive_files = select_manifest_entries(&files, &["gone.txt"]);
+
+    std::fs::remove_file(root.join("gone.txt")).unwrap();
+
+    assert_archive_inputs_rejected(root, &archive_files, &["gone.txt", "failed to open"]).unwrap();
+}
+
+#[test]
+fn collect_file_metadata_excludes_git_and_vm0() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    // Regular file
+    std::fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    // .git directory (should be excluded)
+    std::fs::create_dir(root.join(".git")).unwrap();
+    std::fs::write(root.join(".git/HEAD"), "ref: refs/heads/main").unwrap();
+    std::fs::create_dir(root.join(".git/objects")).unwrap();
+    std::fs::write(root.join(".git/objects/pack"), "data").unwrap();
+
+    // .vm0 directory (should be excluded)
+    std::fs::create_dir(root.join(".vm0")).unwrap();
+    std::fs::write(root.join(".vm0/config.json"), "{}").unwrap();
+
+    // Nested directory with a .git-like name (should NOT be excluded)
+    std::fs::create_dir(root.join("src")).unwrap();
+    std::fs::write(root.join("src/lib.rs"), "pub fn hello() {}").unwrap();
+
+    let files = collect_file_metadata(root.to_str().unwrap()).unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+
+    assert!(paths.contains(&"main.rs"));
+    assert!(paths.contains(&"src/lib.rs"));
+
+    // .git and .vm0 contents must NOT be present
+    assert!(!paths.iter().any(|p| p.starts_with(".git")));
+    assert!(!paths.iter().any(|p| p.starts_with(".vm0")));
+}
+
+#[test]
+fn collect_file_metadata_rejects_non_utf8_path_component() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let filename = OsStr::from_bytes(b"bad\xff.txt");
+    std::fs::write(root.join(Path::new(filename)), "data").unwrap();
+
+    let err = collect_file_metadata(root.to_str().unwrap()).unwrap_err();
+
+    let ArchiveError::NonUtf8PathComponent { parent, component } = &err else {
+        panic!("expected non-UTF-8 path component error, got: {err}");
+    };
+    assert_eq!(parent, ".");
+    assert!(component.contains("bad"), "got: {component}");
+    assert!(
+        err.to_string()
+            .contains("artifact path component is not valid UTF-8"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn collect_file_metadata_rejects_non_utf8_directory_component() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let dirname = OsStr::from_bytes(b"bad\xffdir");
+    let nested = root.join(Path::new(dirname));
+    std::fs::create_dir(&nested).unwrap();
+    std::fs::write(nested.join("file.txt"), "data").unwrap();
+
+    let err = collect_file_metadata(root.to_str().unwrap()).unwrap_err();
+
+    let ArchiveError::NonUtf8PathComponent { parent, component } = &err else {
+        panic!("expected non-UTF-8 path component error, got: {err}");
+    };
+    assert_eq!(parent, ".");
+    assert!(component.contains("bad"), "got: {component}");
+}
+
+#[test]
+fn collect_file_metadata_rejects_nested_non_utf8_path_component() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let parent = root.join("parent");
+    std::fs::create_dir(&parent).unwrap();
+    let filename = OsStr::from_bytes(b"bad\xff.txt");
+    std::fs::write(parent.join(Path::new(filename)), "data").unwrap();
+
+    let err = collect_file_metadata(root.to_str().unwrap()).unwrap_err();
+
+    let ArchiveError::NonUtf8PathComponent { parent, component } = &err else {
+        panic!("expected non-UTF-8 path component error, got: {err}");
+    };
+    assert_eq!(parent, "parent");
+    assert!(component.contains("bad"), "got: {component}");
+}
+
+#[test]
+fn compute_file_hash_known_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("test.txt");
+    std::fs::write(&path, "hello world").unwrap();
+
+    let (hash, size) = compute_file_hash(&path).unwrap();
+    assert_eq!(size, 11);
+    // SHA-256 of "hello world"
+    assert_eq!(
+        hash,
+        "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+    );
+}
+
+#[test]
+fn compute_file_hash_empty_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("empty.txt");
+    std::fs::write(&path, "").unwrap();
+
+    let (hash, size) = compute_file_hash(&path).unwrap();
+    assert_eq!(size, 0);
+    // SHA-256 of empty string
+    assert_eq!(
+        hash,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+}
+
+#[test]
+fn collect_file_metadata_empty_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = collect_file_metadata(dir.path().to_str().unwrap()).unwrap();
+    assert!(files.is_empty());
+}
+
+#[test]
+fn collect_file_metadata_nonexistent_dir() {
+    let _system_log_state_guard = crate::lock_system_log_test_state();
+    disable_system_log();
+    let err = collect_file_metadata("/nonexistent/path/that/does/not/exist").unwrap_err();
+    assert!(
+        err.to_string().contains("failed to open artifact root"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn collect_file_metadata_rejects_symlink_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real");
+    let link = dir.path().join("link");
+    std::fs::create_dir(&real).unwrap();
+    unix_fs::symlink(&real, &link).unwrap();
+
+    let err = collect_file_metadata(link.to_str().unwrap()).unwrap_err();
+
+    assert!(
+        err.to_string().contains("failed to open artifact root"),
+        "got: {err}"
+    );
+}

@@ -29,10 +29,6 @@ pub use telemetry::{SandboxOpRecord, SandboxOpReporter, StorageTelemetry};
 pub mod operation_test_support;
 
 #[cfg(test)]
-mod test_fixtures {
-    pub(crate) mod http_body;
-    pub(crate) use raw_http_test_support::raw_http;
-    pub(crate) use runner_host::test_fixtures::ignored_child;
-}
+mod test_fixtures;
 
 pub mod content_bundle_cache;
