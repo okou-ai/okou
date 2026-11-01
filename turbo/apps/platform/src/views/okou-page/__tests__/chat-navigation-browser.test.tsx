@@ -523,6 +523,7 @@ test("Start and close a browser from the thread sidebar", async () => {
     data: "retired surface",
     inputType: "insertText",
   });
+  fireEvent.submit(retiredInput.closest("form")!);
   fireEvent(
     retiredInput,
     new InputEvent("beforeinput", {
@@ -545,6 +546,7 @@ test("Start and close a browser from the thread sidebar", async () => {
       inputType: "deleteContentBackward",
     }),
   );
+  fireEvent.submit(input.closest("form")!);
   await waitFor(() => {
     expect(browser.native.input).toContainEqual({
       method: "Input.insertText",
@@ -575,6 +577,20 @@ test("Start and close a browser from the thread sidebar", async () => {
         method: "Input.dispatchKeyEvent",
         sessionId: "example-page-session",
         params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+      },
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({
+          type: "keyDown",
+          key: "Enter",
+          text: "\r",
+        }),
+      },
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({ type: "keyUp", key: "Enter" }),
       },
     ]);
   });

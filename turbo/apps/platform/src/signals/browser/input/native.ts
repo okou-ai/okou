@@ -6,7 +6,11 @@ import { createNativeClipboard, type ClipboardRecovery } from "./clipboard.ts";
 import type { InputOwner, InputTransition } from "./lifecycle.ts";
 import { imagePoint, localPoint } from "./geometry.ts";
 import type { Point } from "../display/geometry.ts";
-import type { NativeInputHost, NativeInputPort } from "./port.ts";
+import type {
+  EditingContext,
+  NativeInputHost,
+  NativeInputPort,
+} from "./port.ts";
 import { createInputIngress, type InputBinding } from "./ingress.ts";
 import { createTouchInput } from "./touch.ts";
 
@@ -20,10 +24,79 @@ function modifiers(event: MouseEvent | KeyboardEvent): number {
     (event.shiftKey ? 8 : 0)
   );
 }
+
+function proxyAttribute(proxy: HTMLInputElement, name: string, value: string) {
+  if (proxy.getAttribute(name) !== value) {
+    proxy.setAttribute(name, value);
+  }
+}
+
+function keyboardMode(context: EditingContext | null): string {
+  const mode = context?.inputMode ?? "";
+  const remoteType = context?.type ?? "";
+  return [
+    "none",
+    "text",
+    "tel",
+    "url",
+    "email",
+    "numeric",
+    "decimal",
+    "search",
+  ].includes(mode)
+    ? mode
+    : context?.type === "number"
+      ? "decimal"
+      : ["search", "email", "url", "tel"].includes(remoteType)
+        ? remoteType
+        : "text";
+}
+
+function configureProxy(
+  proxy: HTMLInputElement,
+  context: EditingContext | null,
+) {
+  const secure = context?.type === "password";
+  const type = secure ? "password" : "text";
+  if (proxy.type !== type) {
+    proxy.type = type;
+  }
+  proxyAttribute(proxy, "inputmode", keyboardMode(context));
+  const hint = context?.enterKeyHint ?? "";
+  const enterKeyHint = [
+    "enter",
+    "done",
+    "go",
+    "next",
+    "previous",
+    "search",
+    "send",
+  ].includes(hint)
+    ? hint
+    : context?.type === "search" && !context.multiline
+      ? "search"
+      : "enter";
+  proxyAttribute(proxy, "enterkeyhint", enterKeyHint);
+  const capitalization = context?.autoCapitalize ?? "";
+  const autoCapitalize =
+    !context || secure || ["email", "url"].includes(context.type)
+      ? "none"
+      : ["none", "off", "on", "sentences", "words", "characters"].includes(
+            capitalization,
+          )
+        ? capitalization
+        : "sentences";
+  proxyAttribute(proxy, "autocapitalize", autoCapitalize);
+  proxyAttribute(proxy, "lang", context?.lang ?? "");
+  // The transport has no surrounding text for replacement edits yet (#44503).
+  proxyAttribute(proxy, "autocomplete", "off");
+  proxyAttribute(proxy, "autocorrect", "off");
+  proxyAttribute(proxy, "spellcheck", "false");
+}
 interface NativeElements {
   readonly surface: HTMLElement;
   readonly canvas: HTMLCanvasElement;
-  readonly proxy: HTMLTextAreaElement;
+  readonly proxy: HTMLInputElement;
 }
 interface Admission {
   readonly input: NativeInputPort | null;
@@ -39,7 +112,7 @@ export interface NativeInput extends NativeInputHost {
     [
       surface: HTMLElement,
       canvas: HTMLCanvasElement,
-      proxy: HTMLTextAreaElement,
+      proxy: HTMLInputElement,
       signal: AbortSignal,
     ]
   >;
@@ -107,6 +180,7 @@ type NativeGraph = NativeBase &
   ReturnType<typeof createNativeCoordination> &
   ReturnType<typeof createNativeButtons>;
 type NativeHandlers = NativeGraph &
+  ReturnType<typeof createNativeEnterActions> &
   ReturnType<typeof createNativePress> &
   ReturnType<typeof createNativeMousePress> &
   ReturnType<typeof createNativeMovement> &
@@ -199,6 +273,7 @@ function createNativeCoordination(
   const {
     admission$,
     clipboard,
+    composition,
     elements$,
     ingress,
     input$,
@@ -240,6 +315,10 @@ function createNativeCoordination(
     // Admission gating is not a focus transition. In particular, reopening a
     // navigation gate must not synthesize blur or discard local proxy focus.
     const current = get(input$);
+    const elements = get(elements$);
+    if (elements && !get(composition.composing$)) {
+      configureProxy(elements.proxy, current ? get(current.editing$) : null);
+    }
     const caret = current ? get(current.caret$) : null;
     if (caret) {
       set(place$, caret);
@@ -580,8 +659,8 @@ function createNativeCompositionEvents(graph: NativeGraph) {
       composition.start$,
       document.activeElement === proxy && input ? get(input.owner$) : null,
       proxy.value,
-      proxy.selectionStart,
-      proxy.selectionEnd,
+      proxy.selectionStart!,
+      proxy.selectionEnd!,
     );
     // Leave the native value alone while OS composition is starting.
   });
@@ -624,23 +703,110 @@ function createNativeCompositionEvents(graph: NativeGraph) {
     if (input && composed && owner) {
       set(input.commitComposition$, result.text, owner);
     }
+    set(synchronize$);
   });
   return { compositionStart$, compositionUpdate$, compositionEnd$ };
 }
 
-function createNativeTextEvents(graph: NativeGraph) {
+function createNativeEnterActions(graph: NativeGraph) {
   const { composition, forwarded$, ingress, proxy$, synchronize$ } = graph;
+  const enterForwarded$ = computed((get) => {
+    const forwarded = get(forwarded$);
+    return forwarded.has("Enter") || forwarded.has("NumpadEnter");
+  });
+  const sendEnter$ = command(({ set }, input: InputBinding) => {
+    set(input.key$, {
+      type: "keyDown",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      modifiers: 0,
+      text: "\r",
+      unmodifiedText: "\r",
+    });
+    set(input.key$, {
+      type: "keyUp",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      modifiers: 0,
+    });
+  });
+  const enter$ = command(({ get, set }, event: Event) => {
+    event.preventDefault();
+    set(synchronize$);
+    const proxy = get(proxy$);
+    if (
+      !proxy ||
+      proxy.disabled ||
+      document.activeElement !== proxy ||
+      get(composition.composing$) ||
+      get(enterForwarded$)
+    ) {
+      return;
+    }
+    event.stopPropagation();
+    const input = set(ingress.boundary$, event);
+    if (!input) {
+      return;
+    }
+    set(composition.reset$);
+    proxy.value = "";
+    set(sendEnter$, input);
+  });
+  return { enter$, sendEnter$, enterForwarded$ };
+}
+
+function isEnterInput(event: Event): boolean {
+  return (
+    event instanceof InputEvent &&
+    !event.isComposing &&
+    ["insertLineBreak", "insertParagraph"].includes(event.inputType)
+  );
+}
+
+function createNativeTextEvents(
+  graph: NativeGraph & ReturnType<typeof createNativeEnterActions>,
+) {
+  const {
+    composition,
+    forwarded$,
+    ingress,
+    proxy$,
+    synchronize$,
+    enter$,
+    sendEnter$,
+    enterForwarded$,
+  } = graph;
   const beforeInput$ = command(({ get, set }, event: InputEvent) => {
     set(synchronize$);
     if (
-      event.inputType !== "deleteContentBackward" ||
+      event.cancelable &&
+      isEnterInput(event) &&
+      !get(composition.composing$)
+    ) {
+      // Single-line controls can expose paragraph intent only in beforeinput.
+      set(enter$, event);
+      return;
+    }
+    // A single-line input sanitizes multiline insertion before its input event.
+    // Preserve literal text here; only an explicit action becomes remote Enter.
+    const text =
+      event.cancelable &&
+      event.inputType === "insertText" &&
+      event.data !== null &&
+      /[\r\n]/.test(event.data)
+        ? event.data
+        : null;
+    if (
+      (event.inputType !== "deleteContentBackward" && text === null) ||
       event.isComposing ||
       get(composition.composing$)
     ) {
       return;
     }
     const proxy = get(proxy$);
-    if (!proxy || document.activeElement !== proxy) {
+    if (!proxy || proxy.disabled || document.activeElement !== proxy) {
       return;
     }
     event.preventDefault();
@@ -649,7 +815,14 @@ function createNativeTextEvents(graph: NativeGraph) {
     // Committed composition text may still await its trailing input event.
     set(composition.reset$);
     proxy.value = "";
-    if (!input || get(forwarded$).has("Backspace")) {
+    if (!input) {
+      return;
+    }
+    if (text !== null) {
+      set(input.text$, text);
+      return;
+    }
+    if (get(forwarded$).has("Backspace")) {
       return;
     }
     for (const type of ["rawKeyDown", "keyUp"] as const) {
@@ -665,7 +838,7 @@ function createNativeTextEvents(graph: NativeGraph) {
   const text$ = command(({ get, set }, event: Event) => {
     set(synchronize$);
     const proxy = get(proxy$);
-    if (!proxy) {
+    if (!proxy || proxy.disabled || event.target !== proxy) {
       return;
     }
     const input = set(ingress.boundary$);
@@ -678,7 +851,7 @@ function createNativeTextEvents(graph: NativeGraph) {
       event instanceof InputEvent &&
         (event.isComposing || event.inputType.includes("Composition")),
       event instanceof InputEvent && event.isComposing,
-      { start: proxy.selectionStart, end: proxy.selectionEnd },
+      { start: proxy.selectionStart!, end: proxy.selectionEnd! },
     );
     if (result.keep) {
       if (input && result.preedit && owner) {
@@ -693,6 +866,12 @@ function createNativeTextEvents(graph: NativeGraph) {
       return;
     }
     proxy.value = "";
+    if (input && owner && isEnterInput(event)) {
+      if (!get(enterForwarded$)) {
+        set(sendEnter$, input);
+      }
+      return;
+    }
     if (input && result.text && owner) {
       set(input.text$, result.text, owner);
     }
@@ -933,6 +1112,7 @@ function createNativeTextBindings(graph: NativeHandlers) {
     compositionEnd$,
     compositionStart$,
     compositionUpdate$,
+    enter$,
     focus$,
     keyDown$,
     keyUp$,
@@ -942,6 +1122,17 @@ function createNativeTextBindings(graph: NativeHandlers) {
   const bindTextDom$ = command(
     ({ set }, elements: NativeElements, owner: AbortSignal) => {
       const { proxy } = elements;
+      const form = proxy.form;
+      if (!form) {
+        throw new Error("The browser input proxy requires its native form.");
+      }
+      form.addEventListener(
+        "submit",
+        (event) => {
+          set(enter$, event);
+        },
+        { signal: owner },
+      );
       proxy.addEventListener(
         "focus",
         () => {
@@ -1066,7 +1257,7 @@ function createNativeLifetime(
       { get, set },
       surface: HTMLElement,
       canvas: HTMLCanvasElement,
-      proxy: HTMLTextAreaElement,
+      proxy: HTMLInputElement,
       signal: AbortSignal,
     ) => {
       signal.throwIfAborted();
@@ -1107,7 +1298,7 @@ function createNativeClipboardRecovery(graph: NativeGraph) {
   return { copyClipboard$ };
 }
 
-/** The textarea is uncontrolled; semantic native state belongs to this graph. */
+/** The proxy is uncontrolled; semantic native state belongs to this graph. */
 export function createNativeInput(
   input$: Computed<NativeInputPort | null>,
   releaseFocus$: Command<void, []>,
@@ -1120,15 +1311,17 @@ export function createNativeInput(
     ...createNativeCoordination({ ...values, ...reset }),
     ...createNativeButtons(values),
   };
+  const enter = createNativeEnterActions(coordinated);
   const handlers = {
     ...coordinated,
+    ...enter,
     ...createNativePress(coordinated),
     ...createNativeMousePress(coordinated),
     ...createNativeMovement(coordinated),
     ...createNativeRelease(coordinated),
     ...createNativeFocus(coordinated),
     ...createNativeCompositionEvents(coordinated),
-    ...createNativeTextEvents(coordinated),
+    ...createNativeTextEvents({ ...coordinated, ...enter }),
     ...createNativeKeyDown(coordinated),
     ...createNativeKeyUp(coordinated),
   };

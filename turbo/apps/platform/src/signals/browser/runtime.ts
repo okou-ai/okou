@@ -37,7 +37,7 @@ interface Mounted<E extends HTMLElement> {
 }
 interface BrowserNodes {
   readonly canvas: Mounted<HTMLCanvasElement>;
-  readonly input: Mounted<HTMLTextAreaElement>;
+  readonly input: Mounted<HTMLInputElement>;
   readonly toolbar: Mounted<HTMLDivElement>;
   readonly tabs: Mounted<HTMLDivElement>;
   readonly address: Mounted<HTMLInputElement>;
@@ -216,7 +216,7 @@ function createMountedNodeGraph(
     released$,
     connectionChanged$,
   );
-  const inputNode = createNodeRef<HTMLTextAreaElement>(
+  const inputNode = createNodeRef<HTMLInputElement>(
     released$,
     connectionChanged$,
   );
