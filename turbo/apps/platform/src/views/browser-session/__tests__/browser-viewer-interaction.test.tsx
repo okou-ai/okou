@@ -944,6 +944,7 @@ test("Preedit updates and commit progress while an optional editing read is unac
   const observation = browser.holdNext("Runtime.callFunctionOn");
   await preedit.release();
   await observation.received;
+  const subsequentRead = browser.holdNext("Runtime.callFunctionOn");
   fireEvent.input(input, {
     target: { value: "中文" },
     inputType: "insertCompositionText",
@@ -969,6 +970,7 @@ test("Preedit updates and commit progress while an optional editing read is unac
   });
   await act(async () => {
     await observation.release();
+    await subsequentRead.release();
   });
   expect(input).toBeEnabled();
   expect(input).toHaveFocus();

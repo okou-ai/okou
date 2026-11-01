@@ -7,6 +7,8 @@ import type { Point } from "../display/geometry.ts";
 import { isRecord } from "../cdp/errors.ts";
 import type { EditingObservation } from "./port.ts";
 
+const editingBinding = "__okouEditingChanged";
+
 // Retain DOM identity in the remote world, never in a page global or field value.
 const captureEditing = `/* okou-browser editing */ (() => {
   let previous = [], revision = 0;
@@ -360,7 +362,7 @@ function createEditingProbe(graph: EditingOwnership) {
           worldName: "okou-browser-editing",
         }),
         set(queue.addBinding$, job, {
-          name: "__okouEditingChanged",
+          name: editingBinding,
           executionContextName: "okou-browser-editing",
         }),
       ]);
@@ -514,7 +516,7 @@ function createEditingEvents(graph: EditingGraph) {
     if (
       watch &&
       event.method === "Runtime.bindingCalled" &&
-      event.params.name === "__okouEditingChanged" &&
+      event.params.name === editingBinding &&
       event.params.executionContextId === watch.contextId &&
       event.params.payload === watch.id
     ) {
