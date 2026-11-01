@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import state_file
 
 if TYPE_CHECKING:
+    import builtin_firewall_cache
     import registry
 
 MAX_ENTRY_OUTCOMES = 32
@@ -71,6 +72,25 @@ def publish_unavailable(state: registry.RegistryUnavailable) -> None:
         _status = result
 
 
+def catalog_snapshot(
+    catalog: builtin_firewall_cache.BuiltinFirewallCatalogSnapshot | None,
+) -> dict[str, object]:
+    """Project an already completed load without reading or exposing policy."""
+    if catalog is None:
+        return {"state": "not_used"}
+    if catalog.catalog is None:
+        return {
+            "state": "unavailable",
+            "file": file_identity(catalog.dependency_file_key),
+            "reason": catalog.unavailable_reason,
+        }
+    return {
+        "state": "available",
+        "file": file_identity(catalog.dependency_file_key),
+        "digest": catalog.catalog.identity.catalog_digest.removeprefix("sha256:"),
+    }
+
+
 def publish_available(state: registry._RegistrySnapshot) -> None:
     """Called only by the main-loop registry owner after a complete load result."""
     global _last_state, _status
@@ -80,22 +100,7 @@ def publish_available(state: registry._RegistrySnapshot) -> None:
         "digest": state.digest,
         "file": file_identity(state.loaded_key),
     }
-    catalog = state.builtin_firewall_catalog_snapshot
-    dependency: dict[str, object]
-    if catalog is None:
-        dependency = {"state": "not_used"}
-    elif catalog.catalog is None:
-        dependency = {
-            "state": "unavailable",
-            "file": file_identity(catalog.dependency_file_key),
-            "reason": catalog.unavailable_reason,
-        }
-    else:
-        dependency = {
-            "state": "available",
-            "file": file_identity(catalog.dependency_file_key),
-            "digest": catalog.catalog.identity.catalog_digest.removeprefix("sha256:"),
-        }
+    dependency = catalog_snapshot(state.builtin_firewall_catalog_snapshot)
     entries: list[dict[str, object]] = []
     # Rejected and omitted entries are useful diagnostics; ordinary valid
     # entries contribute counts without crowding out actionable outcomes.

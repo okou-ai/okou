@@ -387,6 +387,27 @@ impl MitmProxy {
         MitmJsonlFlushHandle::new(self.control.clone())
     }
 
+    /// Complete catalog initialization after the provider publishes its source.
+    /// Process startup runs earlier, when the catalog may not exist yet.
+    pub async fn prepare_catalog(&self) -> RunnerResult<()> {
+        let target = match self.control.target() {
+            Some(target) => target,
+            // The explicit no-op proxy has neither a runtime nor a control owner.
+            None if self.runtime.is_none() => return Ok(()),
+            None => {
+                return Err(RunnerError::Internal(
+                    "catalog initialization requires a running addon control owner".into(),
+                ));
+            }
+        };
+        super::registry_application::warm_catalog(
+            &target,
+            tokio::time::Instant::now() + READY_TIMEOUT,
+        )
+        .await
+        .map_err(|error| RunnerError::Internal(format!("initialize addon catalog: {error}")))
+    }
+
     /// Register a sandbox in the proxy registry so the addon can identify its traffic.
     pub async fn register_sandbox(
         &self,
@@ -876,6 +897,17 @@ async fn wait_for_ready(
                 Ok(Ok(_))
             )
         {
+            // One owner-loop load, not an observational status response. Reuse
+            // this launch's original deadline and never replay an unknown result.
+            super::registry_application::warm_catalog(
+                &ControlTarget {
+                    directory: control_directory.to_path_buf(),
+                    generation: expected_usage_state_id.to_owned(),
+                },
+                deadline,
+            )
+            .await
+            .map_err(|error| RunnerError::Internal(format!("initialize addon catalog: {error}")))?;
             return Ok(());
         }
         tokio::time::sleep_until(deadline.min(tokio::time::Instant::now() + poll_interval)).await;

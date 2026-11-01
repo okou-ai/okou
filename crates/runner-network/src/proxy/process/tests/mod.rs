@@ -218,7 +218,44 @@ fn with_addon_python(script: &str) -> String {
     let python =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runner/mitm-addon/.venv/bin/python");
     let quoted_python = format!("'{}'", python.to_str().unwrap().replace('\'', "'\\''"));
-    script.replace("@ADDON_PYTHON@", &quoted_python)
+    script.replace("@ADDON_PYTHON@", &quoted_python).replace(
+        "@ADDON_REGISTRY_OWNER@",
+        r#"import asyncio
+import os
+import socket
+import threading
+from types import SimpleNamespace
+from mitmproxy import ctx
+from registry_control import RegistryControl
+
+def option(name):
+    return next(argument.split('=', 1)[1] for argument in sys.argv if argument.startswith(name + '='))
+
+ctx.options = SimpleNamespace(okou_builtin_firewall_catalog_cache_path=option('okou_builtin_firewall_catalog_cache_path'))
+catalog_path = Path(option('okou_builtin_firewall_catalog_cache_path'))
+gate_path = catalog_path.with_suffix('.gate')
+if gate_path.exists():
+    catalog_inode = catalog_path.stat().st_ino
+    original_read = os.read
+    gate_armed = True
+
+    def read_catalog(fd, size):
+        global gate_armed
+        if gate_armed and os.fstat(fd).st_ino == catalog_inode:
+            gate_armed = False
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
+                peer.settimeout(5)
+                peer.connect(str(gate_path))
+                peer.sendall(b'loading')
+                assert peer.recv(1) == b'!'
+        return original_read(fd, size)
+
+    os.read = read_catalog
+owner_loop = asyncio.new_event_loop()
+threading.Thread(target=owner_loop.run_forever, daemon=True).start()
+registry_owner = RegistryControl(owner_loop, option('okou_proxy_registry_path'))
+"#,
+    )
 }
 
 fn write_fake_listening_mitmdump(path: &Path) {
@@ -264,7 +301,8 @@ except OSError as error:
 sock.listen(1)
 sys.path.insert(0, str(Path(sys.argv[sys.argv.index("--scripts") + 1]).parent))
 from runner_control import ControlServer
-control = ControlServer(control_dir, sys.argv[3])
+@ADDON_REGISTRY_OWNER@
+control = ControlServer(control_dir, sys.argv[3], registry_owner)
 control.start()
 while True:
     conn, _ = sock.accept()
@@ -306,7 +344,8 @@ Path(sys.argv[3]).write_text(str(os.getpid()), encoding="utf-8")
 control_dir = Path(sys.argv[1])
 sys.path.insert(0, str(Path(sys.argv[sys.argv.index("--scripts") + 1]).parent))
 from runner_control import ControlServer
-control = ControlServer(control_dir, sys.argv[2])
+@ADDON_REGISTRY_OWNER@
+control = ControlServer(control_dir, sys.argv[2], registry_owner)
 control.start()
 while True:
     signal.pause()
@@ -370,7 +409,8 @@ sock.bind(("127.0.0.1", port))
 sock.listen(1)
 sys.path.insert(0, str(Path(sys.argv[sys.argv.index("--scripts") + 1]).parent))
 from runner_control import ControlServer
-control = ControlServer(control_dir, usage_state_id)
+@ADDON_REGISTRY_OWNER@
+control = ControlServer(control_dir, usage_state_id, registry_owner)
 control.start()
 while True:
     connection, _ = sock.accept()
@@ -619,19 +659,10 @@ async fn wait_for_pid_file(path: &Path) -> u32 {
 
 async fn acquire_test_runtime(config: &ProxyConfig) -> Arc<MitmdumpRuntime> {
     tokio::fs::create_dir_all(&config.addon_dir).await.unwrap();
-    for name in [
-        "runner_control.py",
-        "registry_observation.py",
-        "state_file.py",
-        "addon_process_logging.py",
-        "jsonl_writer.py",
-    ] {
-        let content = ADDON_FILES
-            .iter()
-            .find(|(file, _)| file == name)
-            .unwrap()
-            .1
-            .as_str();
+    for (name, content) in ADDON_FILES.iter() {
+        tokio::fs::create_dir_all(config.addon_dir.join(name).parent().unwrap())
+            .await
+            .unwrap();
         tokio::fs::write(config.addon_dir.join(name), content)
             .await
             .unwrap();
@@ -711,6 +742,68 @@ async fn initial_start_retries_an_occupied_selected_port() {
 
     proxy.stop().await.unwrap();
     drop(unrelated_listener);
+}
+
+#[tokio::test]
+async fn initial_and_replacement_readiness_join_catalog_initialization() {
+    use tokio::io::AsyncReadExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(directory.path().join("home"));
+    crate::ca::ensure(&home).await.unwrap();
+    let executable = directory.path().join("fake-mitmdump");
+    write_fake_listening_mitmdump(&executable);
+    let config = test_proxy_config(directory.path(), &home, executable);
+    let cache = config.builtin_firewall_catalog_cache_path.clone();
+    let gate = tokio::net::UnixListener::bind(cache.with_extension("gate")).unwrap();
+    let (mut proxy, _crashes) = MitmProxy::new(config, ADDON_FILES.as_slice())
+        .await
+        .unwrap();
+    runner_host::state_file::write_private_atomic(
+        &cache,
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 1, "catalogDigest": format!("sha256:{}", "a".repeat(64)),
+            "catalogVersion": "catalog-a", "updatedAt": "2026-11-01T00:00:00Z",
+            "firewalls": {"example": {"name": "example", "apis": [{
+                "base": "https://example.com", "auth": {"headers": {}}, "permissions": []
+            }]}}
+        }))
+        .unwrap()
+        .as_slice(),
+    )
+    .await
+    .unwrap();
+
+    for replacement in [false, true] {
+        let port = proxy.port();
+        let task = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            if replacement {
+                let child = proxy.begin_restart().spawn().await.unwrap();
+                proxy.complete_restart(child);
+            } else {
+                proxy.start().await.unwrap();
+            }
+            proxy
+        }));
+        let (mut peer, _) = tokio::time::timeout(Duration::from_secs(5), gate.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut marker = [0; 7];
+        peer.read_exact(&mut marker).await.unwrap();
+        assert_eq!(&marker, b"loading");
+        // Listener availability alone must not release initial or replacement readiness.
+        tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        assert!(!task.is_finished());
+        peer.write_all(b"!").await.unwrap();
+        proxy = tokio::time::timeout(Duration::from_secs(5), task.detach())
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    proxy.stop().await.unwrap();
 }
 
 #[tokio::test]
