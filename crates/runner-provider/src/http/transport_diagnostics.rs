@@ -243,9 +243,7 @@ struct Fault {
     request_id: String,
     connection_id: u64,
     deadline: tokio::time::Instant,
-    queued: Instant,
-    before: Vec<RecordedPacket>,
-    before_truncated: bool,
+    observed_at: Instant,
 }
 
 impl TransportDiagnostics {
@@ -352,7 +350,7 @@ impl TransportDiagnostics {
             }
             source = error.source();
         }
-        let failed = Instant::now();
+        let observed_at = Instant::now();
         let state = self.0.shared.try_state();
         let connection = state
             .as_ref()
@@ -371,29 +369,11 @@ impl TransportDiagnostics {
         let kernel_drops = state.as_ref().and_then(|s| s.kernel_drops);
         let fault = connection_id
             .filter(|_| !ambiguous && capture_status == "ready")
-            .and_then(|id| {
-                let state = state.as_ref()?;
-                let mut before: Vec<_> = state
-                    .packets
-                    .iter()
-                    .rev()
-                    .filter(|p| {
-                        p.connection_id == id && failed.duration_since(p.observed) <= HISTORY
-                    })
-                    .take(MAX_BEFORE + 1)
-                    .cloned()
-                    .collect();
-                let before_truncated = before.len() > MAX_BEFORE;
-                before.truncate(MAX_BEFORE);
-                before.reverse();
-                Some(Fault {
-                    request_id: context.client_request_id.clone(),
-                    connection_id: id,
-                    deadline: tokio::time::Instant::now() + AFTER_FAILURE,
-                    queued: failed,
-                    before,
-                    before_truncated,
-                })
+            .map(|id| Fault {
+                request_id: context.client_request_id.clone(),
+                connection_id: id,
+                deadline: tokio::time::Instant::now() + AFTER_FAILURE,
+                observed_at,
             });
         drop(state);
         let facts = connection.as_ref().filter(|_| !ambiguous);

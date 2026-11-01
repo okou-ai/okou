@@ -309,6 +309,26 @@ struct Pending {
     complete: bool,
 }
 
+impl Pending {
+    fn observe(&mut self, record: &RecordedPacket) {
+        self.after_seen = self.after_seen.saturating_add(1);
+        let close = record.packet.flags & 0x05 != 0;
+        let admitted = if close {
+            self.close_logged < RESERVED_CLOSE_PACKETS
+        } else {
+            self.after_logged.saturating_sub(self.close_logged) < MAX_AFTER - RESERVED_CLOSE_PACKETS
+        };
+        if admitted {
+            log_packet(&self.request_id, "after_failure_observation", record);
+            self.after_logged += 1;
+            self.close_logged += usize::from(close);
+        } else if self.after_seen == MAX_AFTER - RESERVED_CLOSE_PACKETS + 1 {
+            info!(target: TARGET, client_request_id = %self.request_id,
+                bulk_packet_limit = MAX_AFTER - RESERVED_CLOSE_PACKETS, "API TCP evidence bulk limit reached");
+        }
+    }
+}
+
 impl Drop for Pending {
     fn drop(&mut self) {
         let (kernel_drops, packet_evictions, registry_evictions, generation_status) = {
@@ -376,21 +396,7 @@ async fn record(shared: Arc<Shared>, socket: AsyncFd<OwnedFd>, mut faults: mpsc:
                             if let Some(record) = record {
                                 for incident in &mut pending {
                                     if incident.connection_id == record.connection_id && TimerInstant::now() <= incident.deadline {
-                                        incident.after_seen = incident.after_seen.saturating_add(1);
-                                        let close = record.packet.flags & 0x05 != 0;
-                                        let admitted = if close {
-                                            incident.close_logged < RESERVED_CLOSE_PACKETS
-                                        } else {
-                                            incident.after_logged.saturating_sub(incident.close_logged) < MAX_AFTER - RESERVED_CLOSE_PACKETS
-                                        };
-                                        if admitted {
-                                            log_packet(&incident.request_id, "after_failure_observation", &record);
-                                            incident.after_logged += 1;
-                                            incident.close_logged += usize::from(close);
-                                        } else if incident.after_seen == MAX_AFTER - RESERVED_CLOSE_PACKETS + 1 {
-                                            info!(target: TARGET, client_request_id = %incident.request_id,
-                                                bulk_packet_limit = MAX_AFTER - RESERVED_CLOSE_PACKETS, "API TCP evidence bulk limit reached");
-                                        }
+                                        incident.observe(&record);
                                     }
                                 }
                             }
@@ -409,19 +415,36 @@ async fn record(shared: Arc<Shared>, socket: AsyncFd<OwnedFd>, mut faults: mpsc:
                         detail_status = "rate_limited", "API TCP evidence omitted");
                 } else {
                     next_dump = TimerInstant::now() + AFTER_FAILURE;
+                    // Snapshot on the same recorder that reads packets. This
+                    // includes reads between the failure and fault admission;
+                    // subsequent reads are handled by the pending incident.
+                    let history: Vec<_> = {
+                        let state = shared.state();
+                        state.packets.iter().filter(|p| {
+                            p.connection_id == fault.connection_id
+                                && fault.observed_at.saturating_duration_since(p.observed) <= HISTORY
+                        }).cloned().collect()
+                    };
+                    let before_count = history.partition_point(|p| p.observed <= fault.observed_at);
                     info!(target: TARGET, client_request_id = %fault.request_id,
-                        connection_id = fault.connection_id, before_packets = fault.before.len(),
-                        fault_queue_delay_ms = millis(fault.queued.elapsed()),
+                        connection_id = fault.connection_id, before_packets = before_count.min(MAX_BEFORE),
+                        fault_admission_delay_ms = millis(fault.observed_at.elapsed()),
                         post_window_remaining_ms = millis(fault.deadline.saturating_duration_since(TimerInstant::now())),
-                        before_truncated = fault.before_truncated, "API TCP evidence started");
-                    for packet in &fault.before {
+                        before_truncated = before_count > MAX_BEFORE, "API TCP evidence started");
+                    for packet in history.iter().take(before_count).skip(before_count.saturating_sub(MAX_BEFORE)) {
                         log_packet(&fault.request_id, "before_failure_observation", packet);
                     }
-                    pending.push(Pending {
+                    let mut incident = Pending {
                         shared: Arc::clone(&shared),
                         request_id: fault.request_id, connection_id: fault.connection_id,
                         deadline: fault.deadline, after_seen: 0, after_logged: 0, close_logged: 0, complete: false,
-                    });
+                    };
+                    for packet in history.iter().skip(before_count).take_while(|p| {
+                        p.observed.duration_since(fault.observed_at) <= AFTER_FAILURE
+                    }) {
+                        incident.observe(packet);
+                    }
+                    pending.push(incident);
                 }
                 Ok(())
             }

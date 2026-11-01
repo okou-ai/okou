@@ -181,6 +181,77 @@ fn truncated_invalid_and_non_tcp_frames_produce_no_metadata() {
 }
 
 #[tokio::test]
+async fn recorder_retains_packets_observed_between_failure_and_incident_admission() {
+    let captured = CapturedEvents::default();
+    let (signal, mut events) = mpsc::channel(128);
+    let dispatch = Dispatch::new(
+        tracing_subscriber::registry()
+            .with(captured.clone())
+            .with(Signal(signal)),
+    );
+    let shared = Arc::new(Shared {
+        state: Mutex::new(State {
+            capture_status: "ready",
+            ..State::default()
+        }),
+        changed: Notify::new(),
+        dispatch: dispatch.clone(),
+        dropped_updates: AtomicU64::new(0),
+    });
+    shared.state().register(
+        Tuple {
+            local: "127.0.0.1:1234".parse().unwrap(),
+            remote: "127.0.0.1:443".parse().unwrap(),
+        },
+        Arc::from("test"),
+    );
+    let (send, receiver) = UnixDatagram::pair().unwrap();
+    receiver.set_nonblocking(true).unwrap();
+    let fd: OwnedFd = receiver.into();
+    install_filter(&fd, &[(1234, 443)]).unwrap();
+    set_option(&fd, libc::SOL_SOCKET, libc::SO_TIMESTAMPNS, &1i32).unwrap();
+    // SAFETY: the owned descriptor remains open and stable for this AsyncFd.
+    let socket =
+        unsafe { AsyncFd::register_with_interest(fd, tokio::io::Interest::READABLE) }.unwrap();
+    let (faults, receiver) = mpsc::channel(MAX_FAULTS);
+    let task =
+        tokio::spawn(record(Arc::clone(&shared), socket, receiver).with_subscriber(dispatch));
+    let owner = TransportDiagnostics(Arc::new(Owner {
+        shared,
+        faults,
+        task: Some(task),
+    }));
+    // Model the real handoff: failure creates an incident, then the recorder
+    // reads the queued RST before selecting the incident notification.
+    let fault = Fault {
+        request_id: "handoff".into(),
+        connection_id: 1,
+        deadline: TimerInstant::now() + AFTER_FAILURE,
+        observed_at: Instant::now(),
+    };
+    send.send(&frame(false, 1234, 443)).unwrap();
+    // Reading the packet triggers this filter refresh; no private record hook
+    // or scheduler timing is needed to establish the read's completion.
+    wait_for_event(&captured, &mut events, |e| {
+        e.fields.get("message").map(String::as_str) == Some("API TCP capture filter updated")
+    })
+    .await;
+    owner.0.faults.send(fault).await.unwrap();
+    wait_for_event(&captured, &mut events, |e| {
+        e.fields.get("message").map(String::as_str) == Some("API TCP evidence started")
+    })
+    .await;
+    let entries = captured.entries();
+    let packet = entries
+        .iter()
+        .find(|e| e.fields.get("message").map(String::as_str) == Some("API TCP packet metadata"))
+        .expect("the RST read during handoff belongs to this incident");
+    assert_eq!(packet.fields["client_request_id"], "handoff");
+    assert_eq!(packet.fields["flags"], "20");
+    assert_eq!(packet.fields["phase"], "after_failure_observation");
+}
+
+#[tokio::test]
 async fn recorder_bounds_fault_output_finishes_its_window_and_aborts_with_its_owner() {
     let captured = CapturedEvents::default();
     let (signal, mut events) = mpsc::channel(128);
@@ -222,9 +293,7 @@ async fn recorder_bounds_fault_output_finishes_its_window_and_aborts_with_its_ow
         request_id: name.into(),
         connection_id: 1,
         deadline: TimerInstant::now() + AFTER_FAILURE,
-        queued: Instant::now(),
-        before: Vec::new(),
-        before_truncated: false,
+        observed_at: Instant::now(),
     };
     owner.0.faults.send(make_fault("first")).await.unwrap();
     wait_for_event(&captured, &mut events, |e| {
