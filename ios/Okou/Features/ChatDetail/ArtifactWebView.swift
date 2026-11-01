@@ -123,7 +123,11 @@ struct ArtifactWebView: UIViewRepresentable {
     private func report(_ error: Error) {
       if (error as? URLError)?.code != .cancelled {
         loadingChanged(false)
-        didFail(error.localizedDescription, nil)
+        let failure = error as NSError
+        didFail(
+          failure.domain == "WebKitErrorDomain" && failure.code == 102
+            ? "Page navigation was interrupted. Retry or open the page in your browser."
+            : error.localizedDescription, nil)
       }
     }
   }

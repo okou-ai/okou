@@ -94,15 +94,23 @@ struct MessageArtifactPreview: View {
         Text(error)
       } actions: {
         Button("Retry") { viewer.retry() }.buttonStyle(NeutralProminentButtonStyle())
+        if case .hostedSite(let url) = preview.artifact.source {
+          Link("Open in browser", destination: url)
+        }
       }
     } else if let url = preview.contentURL {
       VStack(spacing: 0) {
         if let webError {
-          HStack {
+          VStack(alignment: .leading, spacing: 8) {
             Text(webError).font(.caption)
-            Button("Retry") {
-              self.webError = nil
-              viewer.retry()
+            HStack {
+              Button("Retry") {
+                self.webError = nil
+                viewer.retry()
+              }
+              if case .hostedSite(let url) = preview.artifact.source {
+                Link("Open in browser", destination: url)
+              }
             }
           }.padding(12)
         }

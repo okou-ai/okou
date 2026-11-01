@@ -53,6 +53,96 @@ final class ChatArtifactTests: XCTestCase {
       ChatArtifactReference.parse("https://demo.sites.vm0.io/", webURL: preview, apiURL: api))
   }
 
+  func testHostedSitesResolveAuthorizedPreviewsWithoutChangingTheirStableLinks() async throws {
+    let sourceURL = URL(
+      string: "https://court.okou.app/lessons/serve%20practice.html?view=week%2F2#drill%203")!
+    let previewURL = URL(string: "https://site-preview.example.invalid/")!
+    let coverURL = URL(string: "https://cover.example.invalid/preview.png")!
+    let fixture = ChatHTTPFixture { request in
+      guard request.url?.path == "/api/host/sites/court/preview" else {
+        throw URLError(.unsupportedURL)
+      }
+      XCTAssertEqual(request.httpMethod, "GET")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer scope-token")
+      XCTAssertEqual(
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems,
+        [URLQueryItem(name: "hostname", value: "court.okou.app")])
+      return ChatHTTPResponse(
+        body: """
+          {"url":"\(previewURL)","expiresAt":"2099-01-01T00:00:00Z","previewImageUrl":"\(coverURL)"}
+          """)
+    }
+    let artifact = try XCTUnwrap(
+      ChatArtifactReference.parse(
+        sourceURL.absoluteString, webURL: webURL, apiURL: fixture.baseURL))
+    XCTAssertEqual(artifact.source, .hostedSite(sourceURL))
+    let resolved = try await commands(fixture).artifacts.resolve(artifact)
+    XCTAssertEqual(resolved.artifact, artifact)
+    XCTAssertEqual(
+      resolved.contentURL.absoluteString,
+      "https://site-preview.example.invalid/lessons/serve%20practice.html?view=week%2F2#drill%203")
+    XCTAssertEqual(resolved.previewImageURL, coverURL)
+    XCTAssertNotNil(resolved.expiresAt)
+  }
+
+  func testPublicHostedSitePreviewKeepsItsOriginalAddress() async throws {
+    let sourceURL = URL(string: "https://court.sites.vm7.io/schedule?day=2#evening")!
+    let fixture = ChatHTTPFixture { request in
+      guard request.url?.path == "/api/host/sites/court/preview" else {
+        throw URLError(.unsupportedURL)
+      }
+      return ChatHTTPResponse(body: "{\"url\":\"https://court.sites.vm7.io/\",\"expiresAt\":null}")
+    }
+    let artifact = try XCTUnwrap(
+      ChatArtifactReference.parse(
+        sourceURL.absoluteString, webURL: URL(string: "https://app.vm7.ai")!,
+        apiURL: fixture.baseURL))
+    let resolved = try await commands(fixture).artifacts.resolve(artifact)
+    XCTAssertEqual(resolved.contentURL, sourceURL)
+    XCTAssertNil(resolved.expiresAt)
+  }
+
+  func testPublishedCapabilitiesAndLegacyResourcesResolveTheirContentAddresses() async throws {
+    let fixture = ChatHTTPFixture { _ in throw URLError(.unsupportedURL) }
+    for address in [
+      "https://pv-token.okou.app/slide.html#next",
+      "https://ps-token.okou.app/index.html", "https://sh-token.okou.app/",
+      "https://legacy.sites.vm0.io/",
+    ] {
+      let url = URL(string: address)!
+      let artifact = try XCTUnwrap(
+        ChatArtifactReference.parse(address, webURL: webURL, apiURL: fixture.baseURL))
+      let resolved = try await commands(fixture).artifacts.resolve(artifact)
+      XCTAssertEqual(resolved.contentURL, url)
+    }
+    let legacy = try XCTUnwrap(
+      ChatArtifactReference.parse(
+        "https://cdn.okou.io/artifacts/user/id/report.pdf", webURL: webURL,
+        apiURL: fixture.baseURL))
+    let resolved = try await commands(fixture).artifacts.resolve(legacy)
+    XCTAssertEqual(
+      resolved.contentURL, URL(string: "https://cdn.vm0.io/artifacts/user/id/report.pdf"))
+  }
+
+  func testDeniedHostedSitePreviewSurfacesTheAuthorityResponse() async throws {
+    for status in [401, 403, 404] {
+      let fixture = ChatHTTPFixture { request in
+        guard request.url?.path == "/api/host/sites/court/preview" else {
+          throw URLError(.unsupportedURL)
+        }
+        return ChatHTTPResponse(
+          status: status, body: "{\"error\":{\"message\":\"Website preview is unavailable\"}}")
+      }
+      let artifact = try XCTUnwrap(
+        ChatArtifactReference.parse(
+          "https://court.okou.app/", webURL: webURL, apiURL: fixture.baseURL))
+      do {
+        _ = try await commands(fixture).artifacts.resolve(artifact)
+        XCTFail("Unavailable sites must not resolve a preview")
+      } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, status) }
+    }
+  }
+
   func testAuthorizedDownloadRenewsRejectedSignatureAndNeverSendsAppCredentialsToStorage()
     async throws
   {

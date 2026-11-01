@@ -60,9 +60,9 @@ public enum ChatArtifactReference {
     if ChatOfficialArtifactPreviews.urls.contains(url.absoluteString) {
       return ChatArtifact(source: .published(url), filename: url.lastPathComponent)
     }
-    if isHostedSite(url, webURL: webURL) {
+    if let source = hostedSiteSource(url, webURL: webURL) {
       return ChatArtifact(
-        source: .published(url), filename: url.host ?? "Web page", contentType: "text/html")
+        source: source, filename: url.host ?? "Web page", contentType: "text/html")
     }
     return nil
   }
@@ -115,13 +115,15 @@ public enum ChatArtifactReference {
     return origins
   }
 
-  private static func isHostedSite(_ url: URL, webURL: URL) -> Bool {
-    guard let host = url.host, host != "files.sites.vm7.io" else { return false }
+  private static func hostedSiteSource(_ url: URL, webURL: URL) -> ChatArtifact.Source? {
+    guard let host = url.host, host != "files.sites.vm7.io" else { return nil }
     let domains = isProduction(webURL) ? ["okou.app", "sites.vm0.io"] : ["sites.vm7.io"]
-    return domains.contains { domain in
-      guard host.hasSuffix("." + domain) else { return false }
-      let slug = String(host.dropLast(domain.count + 1))
-      return slug.wholeMatch(of: #/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?/#) != nil
+    guard let domain = domains.first(where: { host.hasSuffix("." + $0) }) else { return nil }
+    let slug = String(host.dropLast(domain.count + 1))
+    guard slug.wholeMatch(of: #/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?/#) != nil else { return nil }
+    if domain == "sites.vm0.io" || ["pv-", "ps-", "sh-"].contains(where: slug.hasPrefix) {
+      return .published(url)
     }
+    return .hostedSite(url)
   }
 }

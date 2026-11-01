@@ -7,6 +7,7 @@ public struct ChatArtifactResolution: Sendable {
   public let contentURL: URL
   public let downloadURL: URL
   public let previewImageURL: URL?
+  public let expiresAt: Date?
 }
 
 /// Read-only artifact access through the existing API and credential-free storage transport.
@@ -39,16 +40,36 @@ public struct ChatArtifacts: Sendable {
           source: artifact.source, filename: response.filename, contentType: response.contentType,
           size: artifact.size, artifactKind: artifact.artifactKind),
         contentURL: contentURL, downloadURL: response.downloadUrl,
-        previewImageURL: response.previewImageUrl)
+        previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt)
     case .file(let id):
       let response: FileResponse = try await client.request(
         "/api/web/file-url", query: [URLQueryItem(name: "file_id", value: id)])
       return ChatArtifactResolution(
         artifact: artifact, contentURL: response.url, downloadURL: response.downloadUrl,
-        previewImageURL: response.previewImageUrl)
+        previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt)
+    case .hostedSite(let url):
+      guard let hostname = url.host, let slug = hostname.split(separator: ".").first,
+        let source = URLComponents(url: url, resolvingAgainstBaseURL: false)
+      else { throw APIClientError.invalidURL }
+      let response: SitePreviewResponse = try await client.request(
+        "/api/host/sites/\(slug)/preview", query: [URLQueryItem(name: "hostname", value: hostname)])
+      var contentURL = url
+      if response.expiresAt != nil {
+        guard var preview = URLComponents(url: response.url, resolvingAgainstBaseURL: false) else {
+          throw APIClientError.invalidURL
+        }
+        preview.percentEncodedPath = source.percentEncodedPath
+        preview.percentEncodedQuery = source.percentEncodedQuery
+        preview.percentEncodedFragment = source.percentEncodedFragment
+        guard let resolved = preview.url else { throw APIClientError.invalidURL }
+        contentURL = resolved
+      }
+      return ChatArtifactResolution(
+        artifact: artifact, contentURL: contentURL, downloadURL: contentURL,
+        previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt)
     case .published(let url):
       return ChatArtifactResolution(
-        artifact: artifact, contentURL: url, downloadURL: url, previewImageURL: nil)
+        artifact: artifact, contentURL: url, downloadURL: url, previewImageURL: nil, expiresAt: nil)
     }
   }
 
@@ -115,10 +136,17 @@ public struct ChatArtifacts: Sendable {
     let filename: String
     let contentType: String
     let previewImageUrl: URL?
+    let expiresAt: Date?
   }
   private struct FileResponse: Decodable, Sendable {
     let url: URL
     let downloadUrl: URL
+    let previewImageUrl: URL?
+    let expiresAt: Date?
+  }
+  private struct SitePreviewResponse: Decodable, Sendable {
+    let url: URL
+    let expiresAt: Date?
     let previewImageUrl: URL?
   }
   private struct Catalog: Decodable, Sendable {
@@ -139,7 +167,7 @@ public struct ChatArtifacts: Sendable {
 extension ChatArtifact.Source {
   fileprivate var requiresAuthorization: Bool {
     switch self {
-    case .reference, .file: true
+    case .reference, .file, .hostedSite: true
     case .published: false
     }
   }
