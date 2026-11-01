@@ -1186,17 +1186,8 @@ fn cleanup_cgroup(
 }
 
 fn placement_cancel_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds = [0; 2];
-    // SAFETY: `pipe2` initializes two file descriptors in `fds` on success.
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: both descriptors were freshly returned by `pipe2` and ownership
-    // is transferred to the returned `OwnedFd` values.
-    let reader = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-    // SAFETY: see above; this is the distinct writer descriptor.
-    let writer = unsafe { OwnedFd::from_raw_fd(fds[1]) };
-    Ok((reader, writer))
+    let (reader, writer) = io::pipe()?;
+    Ok((reader.into(), writer.into()))
 }
 
 enum PlacementWaitOutcome {

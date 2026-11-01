@@ -7,7 +7,7 @@
 
 use std::fs;
 use std::io;
-use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{ChildStderr, ChildStdout};
@@ -140,16 +140,8 @@ fn validate_agent_executable(executable: &Path) -> io::Result<()> {
 }
 
 fn cloexec_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds = [0; 2];
-    // SAFETY: `pipe2` initializes both descriptor slots on success.
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: `pipe2` returned two distinct owned descriptors.
-    let reader = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-    // SAFETY: ownership of the second descriptor is transferred separately.
-    let writer = unsafe { OwnedFd::from_raw_fd(fds[1]) };
-    Ok((reader, writer))
+    let (reader, writer) = io::pipe()?;
+    Ok((reader.into(), writer.into()))
 }
 
 #[cfg(test)]

@@ -1,7 +1,6 @@
 use super::*;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
-use std::os::unix::io::FromRawFd;
 use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -9,14 +8,8 @@ use std::time::Duration;
 
 const EXPECTED_DEFAULT_DRAIN_READ_BYTES: usize = 64 * 1024;
 
-fn pipe_pair() -> (File, File) {
-    let mut fds = [0; 2];
-    // SAFETY: fds points to two valid c_int slots for pipe2() to fill.
-    let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
-    assert_eq!(ret, 0, "pipe failed: {}", io::Error::last_os_error());
-
-    // SAFETY: pipe2() initialized both fds and ownership is transferred to File.
-    unsafe { (File::from_raw_fd(fds[0]), File::from_raw_fd(fds[1])) }
+fn pipe_pair() -> (io::PipeReader, io::PipeWriter) {
+    io::pipe().expect("pipe failed")
 }
 
 fn file_with_contents(contents: &[u8]) -> File {

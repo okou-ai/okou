@@ -1,5 +1,5 @@
 use std::io;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
@@ -17,19 +17,11 @@ pub(crate) struct DrainCancellation {
 
 impl DrainCancellation {
     pub(crate) fn new() -> io::Result<Self> {
-        let mut fds = [0; 2];
-        // SAFETY: `pipe2` initializes both descriptor slots on success.
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: `pipe2` returned two distinct owned descriptors.
-        let wake_reader = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-        // SAFETY: ownership of the second descriptor is transferred separately.
-        let wake_writer = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+        let (wake_reader, wake_writer) = io::pipe()?;
         Ok(Self {
             cancelled: AtomicBool::new(false),
-            wake_reader,
-            wake_writer: Mutex::new(Some(wake_writer)),
+            wake_reader: wake_reader.into(),
+            wake_writer: Mutex::new(Some(wake_writer.into())),
         })
     }
 
