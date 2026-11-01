@@ -538,11 +538,14 @@
     },
     "deletion": {
       "cancel": "Annuler",
+      "checking": "Vérification du droit de suppression",
       "delete": "Supprimer",
       "deleting": "Suppression…",
       "description": "Cet artefact sera supprimé et ses liens Okou seront désactivés. Les copies déjà téléchargées ou enregistrées dans d’autres services seront conservées.",
       "hostedDescription": "Ce site et toutes ses versions publiées seront mis hors ligne. Les copies enregistrées dans d’autres services seront conservées.",
+      "loadFailed": "Impossible de vérifier le droit de suppression",
       "menu": "Plus d’actions pour {{title}}",
+      "noActions": "Aucune action disponible",
       "sharedDescription": "Supprimez cette conversation partagée de vos artefacts. Son lien de partage ne fonctionnera plus. Votre conversation originale restera accessible.",
       "success": "Artefact supprimé",
       "title": "Supprimer {{title}} ?"

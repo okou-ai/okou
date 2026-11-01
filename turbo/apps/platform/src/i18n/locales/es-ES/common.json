@@ -538,11 +538,14 @@
     },
     "deletion": {
       "cancel": "Cancelar",
+      "checking": "Comprobando el permiso para eliminar",
       "delete": "Eliminar",
       "deleting": "Eliminando…",
       "description": "Se eliminará el artefacto y se desactivarán sus enlaces de Okou. Las copias ya descargadas o guardadas en otros servicios se conservarán.",
       "hostedDescription": "El sitio web y todas sus versiones publicadas dejarán de estar disponibles. Las copias guardadas en otros servicios se conservarán.",
+      "loadFailed": "No se pudo comprobar el permiso para eliminar",
       "menu": "Más acciones para {{title}}",
+      "noActions": "No hay acciones disponibles",
       "sharedDescription": "Elimina esta conversación compartida de tus artefactos. Su enlace compartido dejará de funcionar. Tu conversación original seguirá disponible.",
       "success": "Artefacto eliminado",
       "title": "¿Eliminar {{title}}?"
