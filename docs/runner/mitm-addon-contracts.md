@@ -339,9 +339,15 @@ authorization. Missing and invalid sources retain existing fail-closed builtin
 behavior and supported local/inline operation. `proxy.status` remains
 observational and does not establish catalog warmth.
 
-The addon's configure hook preloads an existing configured catalog before the
-pinned runtime activates its listener. This covers sandboxes reconnecting during
-proxy replacement before Runner can send its readiness request.
+Runner starts mitmdump with `server=false` because the pinned runtime loads
+scripts asynchronously and can otherwise listen before the addon is configured.
+The addon's configure hook preloads an existing configured catalog; its managed
+running hook then starts control and enables the listener. Standalone addon use
+without Runner control does not override the server option. This covers
+sandboxes reconnecting during proxy replacement before Runner can send its
+readiness request. Managed `proxy.status` returns `not_ready` until its own
+native server reports a bound listener, so an unrelated process on the selected
+port cannot release readiness while asynchronous binding is pending.
 Initial mitmdump startup precedes API-provider catalog publication. Supervisor
 therefore completes another catalog warmup after provider startup readiness and
 before factories, Running status, or discovery. A failed control exchange stops
