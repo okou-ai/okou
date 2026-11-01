@@ -18,6 +18,8 @@ const captureEditing = `/* okou-browser editing */ (() => {
     for (const root of watch.roots) {
       root.removeEventListener('focusin', watch.changed, true);
       root.removeEventListener('focusout', watch.changed, true);
+      root.removeEventListener('compositionend', watch.ended, true);
+      root.removeEventListener('input', watch.input, true);
       root.removeEventListener('pagehide', watch.changed, true);
       root.defaultView?.removeEventListener('pagehide', watch.changed, true);
     }
@@ -98,17 +100,33 @@ const captureEditing = `/* okou-browser editing */ (() => {
       const eligibility = records.some(record => record.type === 'attributes' &&
         previous.some(node => node?.nodeType === 1 && (record.target === node ||
           (record.attributeName === 'contenteditable' && record.target.contains(node)))));
+      const moved = records.some(record => record.type === 'childList' &&
+        [...record.removedNodes].some(node => nodes.has(node)));
       const current = observe(false);
-      if (eligibility || current.revision !== value.revision || current.kind === 'inactive') revoke();
+      if (eligibility || moved || current.revision !== value.revision || current.kind === 'inactive') revoke();
     });
-    watch = { id, roots, changed: revoke, observer };
+    const ended = event => {
+      if (event.composedPath().some(node => node?.nodeType === 1 && previous.includes(node))) revoke();
+    };
+    const input = event => { if (!event.isComposing) ended(event); };
+    watch = { id, roots, changed: revoke, ended, input, observer };
+    const nodes = new Set();
+    for (const focused of previous) {
+      if (!focused?.nodeType) continue;
+      for (let node = focused; node; node = node.parentNode || node.host) nodes.add(node);
+    }
+    // Observe the editor's ancestry, not unrelated mutations throughout the page.
+    for (const node of nodes) {
+      observer.observe(node, { childList: true, attributes: true,
+        attributeFilter: ['type','disabled','readonly','contenteditable'] });
+    }
     for (const root of roots) {
       root.addEventListener('focusin', revoke, true);
       root.addEventListener('focusout', revoke, true);
+      root.addEventListener('compositionend', ended, true);
+      root.addEventListener('input', input, true);
       root.addEventListener('pagehide', revoke, true);
       root.defaultView?.addEventListener('pagehide', revoke, true);
-      observer.observe(root, { subtree: true, childList: true, attributes: true,
-        attributeFilter: ['type','disabled','readonly','contenteditable'] });
     }
     return value;
   };

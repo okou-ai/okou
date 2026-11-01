@@ -472,6 +472,32 @@ export function mockBrowserCdp(
     return {};
   }
 
+  function revokeEditing(sessionId?: string) {
+    if (
+      sessionId &&
+      ![...editingWatches.values()].some(
+        (watch) => watch.sessionId === sessionId,
+      )
+    ) {
+      return;
+    }
+    editingRevision++;
+    for (const [objectId, watch] of editingWatches) {
+      if (!sessionId || watch.sessionId === sessionId) {
+        editingWatches.delete(objectId);
+        event(
+          "Runtime.bindingCalled",
+          {
+            name: "__okouEditingChanged",
+            payload: watch.id,
+            executionContextId: watch.contextId,
+          },
+          watch.sessionId,
+        );
+      }
+    }
+  }
+
   function navigate(request: BrowserRequest, url: string) {
     const target = targetForSession(request.sessionId);
     target.url = url;
@@ -596,6 +622,9 @@ export function mockBrowserCdp(
             params: request.params,
             sessionId: request.sessionId,
           });
+          if (request.method === "Input.insertText") {
+            revokeEditing(request.sessionId);
+          }
         }
       }
     }
@@ -656,19 +685,7 @@ export function mockBrowserCdp(
         target !== editingTarget ||
         (value === null) !== (focusedEditing === null)
       ) {
-        editingRevision++;
-        for (const [objectId, watch] of editingWatches) {
-          editingWatches.delete(objectId);
-          event(
-            "Runtime.bindingCalled",
-            {
-              name: "__okouEditingChanged",
-              payload: watch.id,
-              executionContextId: watch.contextId,
-            },
-            watch.sessionId,
-          );
-        }
+        revokeEditing();
       }
       editingTarget = target;
       focusedEditing = value;
