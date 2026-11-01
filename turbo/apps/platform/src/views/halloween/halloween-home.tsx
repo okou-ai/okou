@@ -60,8 +60,9 @@ export function HalloweenEntry() {
         collapse(true);
       }
     },
+    // Only the ghost receives pointer input; the decoration box overlaps the composer.
     className: cn(
-      "pointer-events-auto absolute bottom-[76px] right-0 z-20 block h-[172px] max-w-[calc(100%-16px)] overflow-hidden rounded-none bg-transparent p-0 outline-none transition-[width] duration-500 hover:bg-transparent motion-reduce:transition-none",
+      "pointer-events-none absolute bottom-[76px] right-0 z-20 block h-[172px] max-w-[calc(100%-16px)] overflow-hidden rounded-none bg-transparent p-0 outline-none transition-[width] duration-500 hover:bg-transparent motion-reduce:transition-none",
       expanded ? "w-[366px]" : "w-24",
     ),
   };
@@ -86,9 +87,10 @@ export function HalloweenEntry() {
       >
         {copy.boo}
       </span>
+      {/* Keep the narrow edge gutter active as the ghost moves left on hover. */}
       <span
         className={cn(
-          "absolute top-12 h-[108px] w-[102px] origin-right drop-shadow-[0_5px_14px_#2c2d3314] transition-all duration-500 motion-reduce:transition-none",
+          "pointer-events-auto absolute top-12 h-[108px] w-[102px] origin-right drop-shadow-[0_5px_14px_#2c2d3314] transition-all duration-500 motion-reduce:transition-none after:absolute after:inset-y-0 after:left-full after:w-3",
           expanded ? "right-3 scale-100" : "-right-[25px] scale-80",
         )}
       >
