@@ -523,12 +523,28 @@ test("Start and close a browser from the thread sidebar", async () => {
     data: "retired surface",
     inputType: "insertText",
   });
+  fireEvent(
+    retiredInput,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
   await userEvent.click(input);
   fireEvent.input(input, {
     target: { value: "reopened surface" },
     data: "reopened surface",
     inputType: "insertText",
   });
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
   await waitFor(() => {
     expect(browser.native.input).toContainEqual({
       method: "Input.insertText",
@@ -540,6 +556,27 @@ test("Start and close a browser from the thread sidebar", async () => {
     method: "Input.insertText",
     params: { text: "retired surface" },
     sessionId: "example-page-session",
+  });
+  await waitFor(() => {
+    expect(
+      browser.native.input.filter((request) => {
+        return request.method === "Input.dispatchKeyEvent";
+      }),
+    ).toStrictEqual([
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({
+          type: "rawKeyDown",
+          key: "Backspace",
+        }),
+      },
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+      },
+    ]);
   });
 });
 

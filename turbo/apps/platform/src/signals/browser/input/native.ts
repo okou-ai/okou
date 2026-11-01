@@ -629,7 +629,39 @@ function createNativeCompositionEvents(graph: NativeGraph) {
 }
 
 function createNativeTextEvents(graph: NativeGraph) {
-  const { composition, ingress, proxy$, synchronize$ } = graph;
+  const { composition, forwarded$, ingress, proxy$, synchronize$ } = graph;
+  const beforeInput$ = command(({ get, set }, event: InputEvent) => {
+    set(synchronize$);
+    if (
+      event.inputType !== "deleteContentBackward" ||
+      event.isComposing ||
+      get(composition.composing$)
+    ) {
+      return;
+    }
+    const proxy = get(proxy$);
+    if (!proxy || document.activeElement !== proxy) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const input = set(ingress.boundary$, event);
+    // Committed composition text may still await its trailing input event.
+    set(composition.reset$);
+    proxy.value = "";
+    if (!input || get(forwarded$).has("Backspace")) {
+      return;
+    }
+    for (const type of ["rawKeyDown", "keyUp"] as const) {
+      set(input.key$, {
+        type,
+        key: "Backspace",
+        code: "Backspace",
+        windowsVirtualKeyCode: 8,
+        modifiers: 0,
+      });
+    }
+  });
   const text$ = command(({ get, set }, event: Event) => {
     set(synchronize$);
     const proxy = get(proxy$);
@@ -671,7 +703,7 @@ function createNativeTextEvents(graph: NativeGraph) {
       set(text$, event);
     }
   });
-  return { text$, selection$ };
+  return { beforeInput$, text$, selection$ };
 }
 
 function createNativeKeyDown(graph: NativeGraph) {
@@ -896,6 +928,7 @@ function createNativePointerBindings(graph: NativeHandlers) {
 
 function createNativeTextBindings(graph: NativeHandlers) {
   const {
+    beforeInput$,
     cancel$,
     compositionEnd$,
     compositionStart$,
@@ -955,6 +988,13 @@ function createNativeTextBindings(graph: NativeHandlers) {
         "compositionend",
         (event) => {
           set(compositionEnd$, event);
+        },
+        { signal: owner },
+      );
+      proxy.addEventListener(
+        "beforeinput",
+        (event) => {
+          set(beforeInput$, event);
         },
         { signal: owner },
       );
