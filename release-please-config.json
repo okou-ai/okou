@@ -204,6 +204,10 @@
       "release-type": "rust",
       "skip-changelog": true
     },
+    "crates/cli-test-support": {
+      "release-type": "rust",
+      "skip-changelog": true
+    },
     "crates/guest-control-server": {
       "release-type": "rust"
     },

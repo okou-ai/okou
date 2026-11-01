@@ -48,6 +48,7 @@
   "crates/sandbox-mock": "0.17.34",
   "crates/shell-quote": "0.1.3",
   "crates/tracing-test-support": "0.2.0",
+  "crates/cli-test-support": "0.1.0",
   "crates/runner-rpc-client": "0.5.2",
   "crates/runner-rpc-proto": "0.5.0",
   "crates/guest-home-mount": "0.2.50",
