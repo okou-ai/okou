@@ -139,11 +139,13 @@ test.each([false, true])(
     expect(pathname()).toBe(ROUTES.onboardingSlack);
 
     click(getButton("Continue"));
-    await screen.findByRole("heading", { name: "Meet Okou’s secret tools" });
+    await screen.findByRole("heading", {
+      name: "More ways to get your work done",
+    });
     click(getButton("Continue"));
 
     await expect(
-      screen.findByLabelText("Your starting prompt"),
+      screen.findByLabelText("Your first task"),
     ).resolves.toBeInTheDocument();
     expect(pathname()).toBe(ROUTES.onboardingReady);
   },

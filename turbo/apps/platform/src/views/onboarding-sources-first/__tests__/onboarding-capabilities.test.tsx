@@ -14,8 +14,8 @@ import { ROUTES } from "../../../signals/route-paths.ts";
 import { mockOnboardingConnectorCatalog } from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
-const TITLE = "Meet Okou’s secret tools";
-const READY_TITLE = "Start with a task that matters";
+const TITLE = "More ways to get your work done";
+const READY_TITLE = "Let’s start your first task";
 const FAMILY_IDS = Object.freeze([
   "finance",
   "maps",
@@ -228,7 +228,7 @@ test("All capabilities can be off and the task and separate output format surviv
   await screen.findByRole("heading", { name: TITLE });
   click(button("Continue"));
   await screen.findByRole("heading", { name: READY_TITLE });
-  const prompt = await screen.findByLabelText("Your starting prompt");
+  const prompt = await screen.findByLabelText("Your first task");
   const task = "Draft a launch plan for my business.";
   await fill(prompt, task);
   click(button("Presentation"));
@@ -237,9 +237,9 @@ test("All capabilities can be off and the task and separate output format surviv
   click(button("Back"));
   await screen.findByRole("heading", { name: TITLE });
   click(button("Continue"));
-  await expect(
-    screen.findByLabelText("Your starting prompt"),
-  ).resolves.toHaveValue(task);
+  await expect(screen.findByLabelText("Your first task")).resolves.toHaveValue(
+    task,
+  );
   expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
 });
 

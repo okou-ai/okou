@@ -4228,7 +4228,7 @@
     },
     "sourcesFirst": {
       "capabilities": {
-        "copy": "전문 데이터, 소셜 인사이트, 이미지 생성으로 에이전트의 능력을 높이세요. 필요한 기능을 선택하면 Okou가 업무에 활용합니다.",
+        "copy": "Okou로 웹을 조사하고, 사람을 찾고, 이미지를 만드세요. 이 도구들은 기본으로 켜져 있으며, 지금이나 나중에 변경할 수 있습니다.",
         "items": {
           "data-search": {
             "description": "회사, 웹사이트 트래픽, 광고를 비교해 기회를 발견하세요.",
@@ -4268,11 +4268,11 @@
           }
         },
         "listLabel": "내장 기능",
-        "title": "Okou의 숨겨진 도구"
+        "title": "업무를 끝내는 더 다양한 방법"
       },
       "chatChannels": {
         "connectedTitle": "채팅이 연결되었어요",
-        "copy": "Okou에게 직접 메시지를 보내거나 팀 채팅에 추가하세요. 익숙한 방식을 선택하세요.",
+        "copy": "평소 쓰는 채팅에서 혼자 또는 팀과 함께 Okou를 사용하세요. 여기서 계속 작업하고 채팅 앱은 나중에 연결해도 됩니다.",
         "imessageConnected": "iMessage가 연결되었어요",
         "imessageCopy": "메시지 하나로 업무를 이어가세요.",
         "imessageExpired": "연결 코드가 만료되었어요.",
@@ -4288,18 +4288,18 @@
         "notNow": "나중에"
       },
       "documentTitles": {
-        "experience": "AI 사용 경험",
+        "experience": "시작 방법 선택",
         "industry": "분야 선택",
-        "ready": "Okou 준비 완료",
+        "ready": "첫 작업",
         "skills": "스킬 가져오기",
         "sources": "업무 연결"
       },
       "experience": {
-        "copy": "안내를 받으며 시작하거나 기존 Codex 또는 Claude Code 요금제를 가져올 수 있습니다.",
-        "no": "AI 에이전트는 처음이에요",
-        "noCopy": "Okou가 유용한 첫 작업을 고르도록 도와줍니다.",
+        "copy": "Okou로 바로 시작하거나 기존 Codex 또는 Claude Code 요금제를 연결하세요.",
+        "no": "Okou로 시작하기",
+        "noCopy": "첫 작업을 Okou의 도움으로 시작하세요.",
         "title": "Okou를 어떻게 시작하고 싶으신가요?",
-        "trust": "작업이 Okou 크레딧 대신 Codex 또는 Claude Code 요금제로 실행되므로 사용량 걱정 없이 더 많이 활용할 수 있습니다. 지금이나 나중에 연결하세요."
+        "trust": "연결한 요금제는 Okou 크레딧 대신 해당 요금제의 사용량을 이용합니다. 나중에 연결해도 되며, 요금제의 사용 한도는 그대로 적용됩니다."
       },
       "industries": {
         "coaching": {
@@ -4359,11 +4359,11 @@
         }
       },
       "industry": {
-        "copy": "Okou는 나와 팀을 위한 업무 어시스턴트입니다. 흩어진 정보를 클라우드에서 완료된 업무로 바꿉니다. 분야를 고르면 알맞은 첫 작업을 추천합니다.",
+        "copy": "어떤 일을 하는지 알려주세요. 업무에 맞는 첫 작업을 추천해 드릴게요.",
         "title": "어떤 일을 하시나요?"
       },
       "mobile": {
-        "channelsCopy": "평소 쓰는 채팅 앱에서 Okou에 요청하세요.",
+        "channelsCopy": "여기서 계속 작업하거나 채팅 앱을 연결하세요.",
         "channelsTitle": "채팅 앱 선택",
         "connect": "연결",
         "copyImportPrompt": "가져오기 프롬프트 복사",
@@ -4379,9 +4379,9 @@
         "planCopy": "기존 구독으로 작업을 실행하세요.",
         "promptTitle": "무엇을 하고 싶으세요?",
         "readyTitle": "첫 작업 시작하기",
-        "skillsCopy": "컴퓨터에서 {{provider}}를 사용하세요.",
+        "skillsCopy": "{{provider}}에 스킬이 있나요? 컴퓨터에서 가져오거나 나중에 진행하세요.",
         "skillsTitle": "스킬 가져오기",
-        "sourcesCopy": "첫 작업에 사용할 도구 하나를 연결하세요.",
+        "sourcesCopy": "도구 하나를 연결하거나, 건너뛰고 나중에 연결하세요.",
         "startTask": "작업 시작"
       },
       "outcomes": {
@@ -4540,7 +4540,7 @@
             "label": "웹사이트"
           }
         },
-        "title": "결과물 형식 선택",
+        "title": "결과 형식 선택 (선택 사항)",
         "tooLong": "다른 형식을 선택하려면 작업 내용을 줄여 주세요."
       },
       "prompt": {
@@ -4550,7 +4550,7 @@
       },
       "skills": {
         "copied": "복사됨",
-        "copy": "{{provider}}에서 이 프롬프트를 실행해 이미 만든 스킬을 가져오면 Okou에서 바로 사용할 수 있습니다.",
+        "copy": "{{provider}}에 저장한 스킬이 있다면 가져와 Okou에서도 익숙한 방식으로 일하세요. 이 단계를 건너뛰고 나중에 가져와도 됩니다.",
         "copyError": "프롬프트를 복사하지 못했습니다.",
         "copyPrompt": "프롬프트 복사",
         "guide": {
@@ -4611,14 +4611,14 @@
         "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Okou는 업무를 알수록 더 똑똑해집니다. 매일 쓰는 도구를 연결하고 실제 업무에 기반한 작업으로 시작하세요.",
-        "permissions": "Okou는 첫 작업을 맞춤화하기 위해 소량의 정보를 사용합니다. Agent가 무엇을 얼마나 오래 할 수 있는지는 직접 결정합니다.",
+        "copy": "평소 사용하는 도구 하나를 연결해 실제 업무로 시작하세요. 이 단계를 건너뛰고 나중에 연결해도 됩니다.",
+        "permissions": "Okou는 소량의 정보를 활용해 첫 작업을 추천합니다. Okou가 접근할 수 있는 정보와 허용 기간은 직접 정할 수 있습니다.",
         "securityLink": "Okou의 데이터 보호 방식",
         "skipDialog": {
           "connect": "도구 연결하기",
-          "description": "자주 쓰는 도구를 연결해 보세요. Okou가 업무를 이해하고 더 알맞은 도움을 드릴 수 있어요. 나중에 연결해도 괜찮아요.",
+          "description": "지금 바로 작업을 시작할 수 있습니다. 이메일, 문서 또는 데이터가 필요할 때 도구를 연결하세요.",
           "skip": "지금은 건너뛰기",
-          "title": "도구를 연결하면 Okou가 더 잘 도와드려요"
+          "title": "도구를 연결하지 않고 시작할까요?"
         },
         "title": "업무 도구 연결"
       },
@@ -4952,14 +4952,15 @@
         "connected": "연결됨",
         "connecting": "연결 중…",
         "failedNote": "{{provider}}을(를) 연결하지 못했습니다. 계속 진행하고 나중에 연결할 수 있습니다.",
-        "rowCopy": "연결하면 Okou 크레딧 대신 내 요금제로 실행할 수 있습니다.",
+        "rowCopy": "기존 요금제로 작업을 실행하세요.",
         "unconfirmedNote": "{{provider}} 연결 상태를 확인하지 못했습니다. 계속 진행하고 나중에 연결할 수 있습니다."
       },
       "welcome": {
-        "copy": "업무에 맞춰 제안된 작업을 확인하고 목표에 맞게 조정한 뒤 Okou를 시작하세요.",
-        "promptLabel": "시작 프롬프트",
-        "start": "Okou로 시작하기",
-        "title": "의미 있는 작업으로 시작하세요"
+        "copy": "업무에 맞는 첫 작업을 추천했습니다. 수정하거나 직접 하고 싶은 작업으로 바꿀 수 있습니다.",
+        "preparing": "도움이 될 첫 작업을 찾고 있습니다…",
+        "promptLabel": "첫 작업",
+        "start": "첫 작업 시작하기",
+        "title": "첫 작업을 시작해 볼까요"
       }
     }
   },

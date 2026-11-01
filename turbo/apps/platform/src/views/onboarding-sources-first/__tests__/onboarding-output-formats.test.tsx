@@ -39,7 +39,7 @@ async function openReady(
     locale: "en-US",
   });
   const input = await screen.findByRole("textbox", {
-    name: "Your starting prompt",
+    name: "Your first task",
   });
   if (!(input instanceof HTMLTextAreaElement)) {
     throw new Error("Expected the starting prompt textarea");
@@ -84,7 +84,7 @@ test("format choices leave the task unchanged and only the final choice reaches 
   // Selecting the same format again must not append a second instruction.
   click(button("Presentation"));
   expect(input).toHaveValue(original);
-  click(button("Start with Okou"));
+  click(button("Start my first task"));
   await waitFor(() => {
     expect(sentPrompt).toBe(`${original}\n\n${PRESENTATION}`);
   });
@@ -117,7 +117,7 @@ test("switching and clearing formats preserve task edits and clearing submits on
     expect(input).toHaveValue(editedTask);
     expect(button("Document")).toHaveAttribute("aria-pressed", "false");
   });
-  click(button("Start with Okou"));
+  click(button("Start my first task"));
   await waitFor(() => {
     expect(sentPrompt).toBe(editedTask);
   });
@@ -140,7 +140,7 @@ test("replacing the task preserves the selected format until submission", async 
     expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
     expect(input).toHaveValue("Draft a customer update.");
   });
-  click(button("Start with Okou"));
+  click(button("Start my first task"));
   await waitFor(() => {
     expect(sentPrompt).toBe(`Draft a customer update.\n\n${PRESENTATION}`);
   });
@@ -162,7 +162,7 @@ test("format choices respect the prompt length limit without truncating the task
     "Shorten your task to choose another format.",
   );
   expect(input).toHaveValue(longTask);
-  expect(button("Start with Okou")).toBeEnabled();
+  expect(button("Start my first task")).toBeEnabled();
   await fill(input, "");
   await waitFor(() => {
     expect(input).toHaveValue("");
@@ -193,7 +193,7 @@ test("the selected format reserves space within the saved prompt limit", async (
   });
   await fill(input, longTask);
   expect(input).toHaveValue(longTask);
-  click(button("Start with Okou"));
+  click(button("Start my first task"));
   await waitFor(() => {
     expect(sentPrompt).toBe(`${longTask}\n\n${DOCUMENT}`);
     expect(sentPrompt).toHaveLength(1000);
@@ -230,7 +230,7 @@ test("a reload preserves the task and separate format selection without duplicat
     expect(restored).toHaveValue(TASK);
     expect(button("Document")).toHaveAttribute("aria-pressed", "true");
   });
-  click(button("Start with Okou"));
+  click(button("Start my first task"));
   await waitFor(() => {
     expect(sentPrompt).toBe(`${TASK}\n\n${DOCUMENT}`);
   });
@@ -268,7 +268,7 @@ test("a saved report draft preserves custom instructions and requests a document
   const input = await openReady();
   expect(input).toHaveValue(TASK);
   expect(button("Document")).toHaveAttribute("aria-pressed", "true");
-  click(button("Start with Okou"));
+  click(button("Start my first task"));
   await waitFor(() => {
     expect(sentPrompt).toBe(`${TASK}${savedInstruction}\n\n${DOCUMENT}`);
   });

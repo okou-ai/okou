@@ -175,7 +175,7 @@ test("Mobile shows the iMessage connection inline and advances only after linkin
   });
   click(getButton("Continue"));
   await expect(
-    screen.findByRole("heading", { name: "Meet Okou’s secret tools" }),
+    screen.findByRole("heading", { name: "More ways to get your work done" }),
   ).resolves.toBeInTheDocument();
 });
 
@@ -197,7 +197,7 @@ test("A pending connection code does not prevent skipping the step", async () =>
   ).resolves.toBeInTheDocument();
   click(getButton("Not now"));
   await expect(
-    screen.findByRole("heading", { name: "Meet Okou’s secret tools" }),
+    screen.findByRole("heading", { name: "More ways to get your work done" }),
   ).resolves.toBeInTheDocument();
   releaseCode.resolve();
   expect(pathname()).toBe(ROUTES.onboardingCapabilities);
