@@ -31,11 +31,11 @@ export function ChatHomeCompliance() {
   return (
     <section
       aria-label={title}
-      className="hidden shrink-0 justify-center bg-gray-50 px-6 py-1 sm:flex"
+      className="hidden shrink-0 justify-center border-t border-border/50 px-6 py-2 sm:flex"
     >
       <ComplianceBadges
         quiet
-        className="flex flex-wrap justify-center gap-x-5 gap-y-1.5"
+        className="flex flex-wrap justify-center gap-x-6 gap-y-2"
       />
     </section>
   );
