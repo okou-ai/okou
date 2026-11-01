@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.807.1](https://github.com/okou-ai/okou/compare/core-v8.807.0...core-v8.807.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **browser:** seed new viewer windows from the target display ([#44486](https://github.com/okou-ai/okou/issues/44486)) ([c544f6f](https://github.com/okou-ai/okou/commit/c544f6f2b7b41015b290cb6bec04758b765ac558))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.29.1
+
 ## [8.807.0](https://github.com/okou-ai/okou/compare/core-v8.806.1...core-v8.807.0) (2026-11-01)
 
 
