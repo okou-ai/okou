@@ -770,9 +770,92 @@ test("Remote editing context configures one stable selection-capable keyboard pr
   expect(input).toHaveFocus();
 });
 
-test("A composition cannot commit into a different remote editor in the same tab", async () => {
+test.each(["editor-b", "editor-a"])(
+  "A composition stays revoked after remote focus moves to B and then %s",
+  async (target) => {
+    const browser = await setupViewer(0);
+    const metadata = {
+      x: 40,
+      y: 50,
+      width: 1440,
+      height: 900,
+      offsetX: 0,
+      offsetY: 0,
+      editing: {
+        type: "text",
+        multiline: false,
+        inputMode: "text",
+        enterKeyHint: "search",
+        autoCapitalize: "none",
+        lang: "en",
+      },
+    };
+    browser.setFocusedEditing(metadata, "editor-a");
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    await waitFor(() => {
+      expect(input).toHaveAttribute("enterkeyhint", "search");
+    });
+    fireEvent.compositionStart(input);
+    fireEvent.input(input, {
+      target: { value: "中" },
+      inputType: "insertCompositionText",
+      isComposing: true,
+    });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.imeSetComposition",
+        params: { text: "中" },
+      });
+    });
+    browser.setFocusedEditing(
+      {
+        ...metadata,
+        editing: {
+          ...metadata.editing,
+          inputMode: "email",
+          enterKeyHint: "send",
+        },
+      },
+      "editor-b",
+    );
+    if (target === "editor-a") {
+      browser.setFocusedEditing(metadata, target);
+    }
+    fireEvent(
+      input,
+      Object.assign(new Event("compositionend", { bubbles: true }), {
+        data: "中文",
+      }),
+    );
+    await waitFor(() => {
+      expect(input).toHaveAttribute(
+        "enterkeyhint",
+        target === "editor-a" ? "search" : "send",
+      );
+    });
+    expect(input).toHaveFocus();
+    fireEvent.input(input, {
+      target: { value: "fresh" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "fresh" },
+      });
+    });
+    expect(
+      browser.input.filter((request) => {
+        return request.method === "Input.insertText";
+      }),
+    ).toMatchObject([{ params: { text: "fresh" } }]);
+  },
+);
+
+test("Focus revocation before begin acknowledgement cannot revive a composition", async () => {
   const browser = await setupViewer(0);
-  const metadata = {
+  browser.setFocusedEditing({
     x: 40,
     y: 50,
     width: 1440,
@@ -783,40 +866,95 @@ test("A composition cannot commit into a different remote editor in the same tab
       type: "text",
       multiline: false,
       inputMode: "text",
-      enterKeyHint: "search",
-      autoCapitalize: "none",
-      lang: "en",
+      enterKeyHint: "go",
+      autoCapitalize: "",
+      lang: "",
     },
-  };
-  browser.setFocusedEditing(metadata, "editor-a");
+  });
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
   await waitFor(() => {
-    expect(input).toHaveAttribute("enterkeyhint", "search");
+    expect(input).toHaveAttribute("enterkeyhint", "go");
+  });
+  const beginning = browser.holdNext("Runtime.callFunctionOn");
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "旧" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await beginning.received;
+  browser.setFocusedEditing(undefined, "editor-b");
+  await act(async () => {
+    await beginning.release();
+  });
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "旧文",
+    }),
+  );
+  fireEvent.input(input, {
+    target: { value: "旧文" },
+    inputType: "insertText",
   });
   fireEvent.compositionStart(input);
   fireEvent.input(input, {
-    target: { value: "中" },
+    target: { value: "新" },
     inputType: "insertCompositionText",
     isComposing: true,
   });
   await waitFor(() => {
     expect(browser.input.at(-1)).toMatchObject({
       method: "Input.imeSetComposition",
-      params: { text: "中" },
+      params: { text: "新" },
     });
   });
-  browser.setFocusedEditing(
-    {
-      ...metadata,
-      editing: {
-        ...metadata.editing,
-        inputMode: "email",
-        enterKeyHint: "send",
-      },
-    },
-    "editor-b",
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "新文",
+    }),
   );
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "新文" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.insertText";
+    }),
+  ).toMatchObject([{ params: { text: "新文" } }]);
+});
+
+test("Preedit updates and commit progress while an optional editing read is unacknowledged", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  const preedit = browser.holdNext("Input.imeSetComposition");
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await preedit.received;
+  const observation = browser.holdNext("Runtime.callFunctionOn");
+  await preedit.release();
+  await observation.received;
+  fireEvent.input(input, {
+    target: { value: "中文" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.imeSetComposition",
+      params: { text: "中文" },
+    });
+  });
   fireEvent(
     input,
     Object.assign(new Event("compositionend", { bubbles: true }), {
@@ -824,24 +962,16 @@ test("A composition cannot commit into a different remote editor in the same tab
     }),
   );
   await waitFor(() => {
-    expect(input).toHaveAttribute("enterkeyhint", "send");
-  });
-  expect(
-    browser.input.filter((request) => {
-      return request.method === "Input.insertText";
-    }),
-  ).toStrictEqual([]);
-  expect(input).toHaveFocus();
-  fireEvent.input(input, {
-    target: { value: "fresh" },
-    inputType: "insertText",
-  });
-  await waitFor(() => {
     expect(browser.input.at(-1)).toMatchObject({
       method: "Input.insertText",
-      params: { text: "fresh" },
+      params: { text: "中文" },
     });
   });
+  await act(async () => {
+    await observation.release();
+  });
+  expect(input).toBeEnabled();
+  expect(input).toHaveFocus();
 });
 
 test("A new composition binds the current editor instead of stale keyboard hints", async () => {

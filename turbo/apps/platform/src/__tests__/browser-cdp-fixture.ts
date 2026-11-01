@@ -50,6 +50,11 @@ export function mockBrowserCdp(
   let editingRevision = 1;
   let editingSequence = 0;
   const editingProbes = new Set<string>();
+  const editingWatches = new Map<
+    string,
+    { id: string; sessionId: string; contextId: number }
+  >();
+  const editingContexts = new Map<string, number>();
   const targets: BrowserTarget[] = (
     options.targets ?? [
       {
@@ -372,19 +377,41 @@ export function mockBrowserCdp(
     };
   }
 
+  function editingCall(
+    objectId: string,
+    declaration: string | undefined,
+    id: unknown,
+    sessionId: string,
+  ): unknown {
+    if (declaration?.includes("this.begin(") && typeof id === "string") {
+      editingWatches.set(objectId, {
+        id,
+        sessionId,
+        contextId: editingContexts.get(sessionId)!,
+      });
+    } else if (
+      declaration?.includes("this.stop(") ||
+      declaration?.includes("this.dispose(")
+    ) {
+      if (id === undefined || editingWatches.get(objectId)?.id === id) {
+        editingWatches.delete(objectId);
+      }
+      return { result: { type: "undefined" } };
+    }
+    return editingResult(declaration?.includes("this.valid(") === true, id);
+  }
+
   function runtimeResult(request: BrowserRequest): unknown {
     if (request.method === "Runtime.releaseObject") {
       const { objectId } = object({ objectId: string() }).parse(request.params);
       editingProbes.delete(objectId);
+      editingWatches.delete(objectId);
       return {};
     }
-    if (request.method === "Runtime.addBinding") {
-      bindings.add(request.sessionId!);
-      return {};
-    }
-    if (request.method === "Runtime.removeBinding") {
-      bindings.delete(request.sessionId!);
-      return {};
+    if (
+      ["Runtime.addBinding", "Runtime.removeBinding"].includes(request.method)
+    ) {
+      return runtimeBinding(request);
     }
     if (request.method === "Runtime.callFunctionOn") {
       const params = object({
@@ -393,9 +420,11 @@ export function mockBrowserCdp(
         arguments: array(object({ value: unknown() })).optional(),
       }).parse(request.params);
       if (params.objectId && editingProbes.has(params.objectId)) {
-        return editingResult(
-          params.functionDeclaration?.includes("this.valid(") === true,
+        return editingCall(
+          params.objectId,
+          params.functionDeclaration,
           params.arguments?.[0]?.value,
+          request.sessionId!,
         );
       }
       const url = params.arguments?.[0]?.value;
@@ -413,6 +442,10 @@ export function mockBrowserCdp(
           : nativeResult(expression);
       }
       if (expression.startsWith("/* okou-browser editing */")) {
+        const { contextId } = object({ contextId: number() }).parse(
+          request.params,
+        );
+        editingContexts.set(request.sessionId!, contextId);
         const objectId = `editing-probe-${++editingSequence}`;
         editingProbes.add(objectId);
         return { result: { type: "object", objectId } };
@@ -424,6 +457,17 @@ export function mockBrowserCdp(
             ? { type: "object", value: { ...viewport, dpr: 1 } }
             : { type: "undefined" },
       };
+    }
+    return {};
+  }
+
+  function runtimeBinding(request: BrowserRequest): unknown {
+    if (request.params?.name !== "__okouEditingChanged") {
+      if (request.method === "Runtime.addBinding") {
+        bindings.add(request.sessionId!);
+      } else {
+        bindings.delete(request.sessionId!);
+      }
     }
     return {};
   }
@@ -613,6 +657,18 @@ export function mockBrowserCdp(
         (value === null) !== (focusedEditing === null)
       ) {
         editingRevision++;
+        for (const [objectId, watch] of editingWatches) {
+          editingWatches.delete(objectId);
+          event(
+            "Runtime.bindingCalled",
+            {
+              name: "__okouEditingChanged",
+              payload: watch.id,
+              executionContextId: watch.contextId,
+            },
+            watch.sessionId,
+          );
+        }
       }
       editingTarget = target;
       focusedEditing = value;

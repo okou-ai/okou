@@ -29,6 +29,7 @@ interface Wheel extends PointerState {
 type PreparationMethod =
   | "Page.getLayoutMetrics"
   | "Page.createIsolatedWorld"
+  | "Runtime.addBinding"
   | "Runtime.evaluate"
   | "Runtime.callFunctionOn";
 type WriteMethod =
@@ -238,10 +239,18 @@ function createQueueProtocol(
     return set(layoutRequest$, job, undefined);
   });
   const createWorld$ = requestFor("Page.createIsolatedWorld");
+  const addBinding$ = requestFor("Runtime.addBinding");
   const evaluate$ = requestFor("Runtime.evaluate");
   const callFunction$ = requestFor("Runtime.callFunctionOn");
 
-  return { write$, layout$, createWorld$, evaluate$, callFunction$ };
+  return {
+    write$,
+    layout$,
+    createWorld$,
+    addBinding$,
+    evaluate$,
+    callFunction$,
+  };
 }
 type QueueGraph = QueueOwnership &
   ReturnType<typeof createQueueProtocol> & {

@@ -285,6 +285,7 @@ function createSessionTransitions(graph: SessionObservations) {
       }
       set(graph.compositionLease$, null);
       set(graph.compositionTargets$, new Map());
+      set(editingReader.stop$);
       if (
         successor.document !== original.document ||
         !get(lifecycle.available$)
@@ -590,6 +591,7 @@ function createSessionEvents(graph: SessionActions) {
       return;
     }
     set(navigation.event$, event);
+    set(graph.editingReader.event$, event);
     const { method, params } = event;
     if (
       [
@@ -785,7 +787,7 @@ function createCompositionBinding(graph: SessionObservations) {
   const beginRun$ = command(
     async ({ get, set }, job: InputJob, signal: AbortSignal) => {
       const lease = job.data as CompositionLease;
-      const result = await set(editingReader.read$, job, signal);
+      const result = await set(editingReader.begin$, job, signal);
       signal.throwIfAborted();
       if (
         !set(lifecycle.owns$, job.owner) ||
@@ -824,31 +826,25 @@ function createCompositionBinding(graph: SessionObservations) {
     // Capture focus after preceding native effects, independently of stale hints.
     set(queue.enqueue$, owner, beginRun$, undefined, undefined, lease, true);
   });
-  const validComposition$ = command(
-    async ({ get, set }, job: InputJob, signal: AbortSignal) => {
-      const lease = job.data as CompositionLease;
-      const target = get(compositionTargets$).get(lease.token);
-      if (!target) {
-        return null;
-      }
-      const valid = await set(editingReader.valid$, job, target, signal);
-      signal.throwIfAborted();
-      if (get(compositionTargets$).get(lease.token) !== target) {
-        return null;
-      }
-      if (valid) {
-        return target;
-      }
-      set(
-        compositionTargets$,
-        new Map(get(compositionTargets$)).set(lease.token, null),
-      );
-      const token = set(lifecycle.composition$, job.owner);
-      set(lifecycle.finishComposition$, job.owner, token);
-      set(refreshCaret$, job);
+  const validComposition$ = command(({ get, set }, job: InputJob) => {
+    const lease = job.data as CompositionLease;
+    const target = get(compositionTargets$).get(lease.token);
+    if (!target) {
       return null;
-    },
-  );
+    }
+    const valid = set(editingReader.valid$, target);
+    if (valid) {
+      return target;
+    }
+    set(
+      compositionTargets$,
+      new Map(get(compositionTargets$)).set(lease.token, null),
+    );
+    const token = set(lifecycle.composition$, job.owner);
+    set(lifecycle.finishComposition$, job.owner, token);
+    set(refreshCaret$, job);
+    return null;
+  });
   return { beginComposition$, validComposition$ };
 }
 type CompositionActions = SessionObservations &
@@ -902,8 +898,7 @@ function createSessionPreedit(graph: CompositionActions) {
       if (!get(preeditSupported$)) {
         return;
       }
-      const target = await set(validComposition$, job, signal);
-      signal.throwIfAborted();
+      const target = set(validComposition$, job);
       if (!target) {
         return;
       }
@@ -985,12 +980,15 @@ function createSessionCompositionCommit(graph: CompositionActions) {
       using _lease = {
         [Symbol.dispose]: () => {
           const remaining = new Map(get(compositionTargets$));
+          const target = remaining.get(lease.token);
+          if (target) {
+            set(graph.editingReader.stop$, target);
+          }
           remaining.delete(lease.token);
           set(compositionTargets$, remaining);
         },
       };
-      const target = await set(validComposition$, job, signal);
-      signal.throwIfAborted();
+      const target = set(validComposition$, job);
       if (!target) {
         return;
       }
