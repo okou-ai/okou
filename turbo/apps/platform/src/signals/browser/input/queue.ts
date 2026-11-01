@@ -29,7 +29,6 @@ interface Wheel extends PointerState {
 type PreparationMethod =
   | "Page.getLayoutMetrics"
   | "Page.createIsolatedWorld"
-  | "Runtime.addBinding"
   | "Runtime.evaluate"
   | "Runtime.callFunctionOn";
 type WriteMethod =
@@ -239,18 +238,10 @@ function createQueueProtocol(
     return set(layoutRequest$, job, undefined);
   });
   const createWorld$ = requestFor("Page.createIsolatedWorld");
-  const addBinding$ = requestFor("Runtime.addBinding");
   const evaluate$ = requestFor("Runtime.evaluate");
   const callFunction$ = requestFor("Runtime.callFunctionOn");
 
-  return {
-    write$,
-    layout$,
-    createWorld$,
-    addBinding$,
-    evaluate$,
-    callFunction$,
-  };
+  return { write$, layout$, createWorld$, evaluate$, callFunction$ };
 }
 type QueueGraph = QueueOwnership &
   ReturnType<typeof createQueueProtocol> & {
@@ -337,7 +328,7 @@ function createQueueReceipts(graph: QueueGraph) {
 }
 
 function createQueueRunner(graph: QueueGraph) {
-  const { active$, pending$, preparation$, owns$, cancel$, effects } = graph;
+  const { active$, pending$, preparation$, owns$, cancel$ } = graph;
   const canRun$ = command(({ get, set }, entry: QueuedJob): boolean => {
     return (
       set(owns$, entry.input.owner) &&
@@ -353,9 +344,6 @@ function createQueueRunner(graph: QueueGraph) {
     ): Promise<void> => {
       if (original.barrier) {
         await Promise.all(get(pending$).values());
-        signal.throwIfAborted();
-        // Original cleanup also owns native receipts outside the queued send lane.
-        await set(effects.completion$);
         signal.throwIfAborted();
       }
       if (!set(canRun$, original)) {
@@ -582,16 +570,38 @@ function createQueueReads(graph: QueueAdmission) {
   return { completion$, enqueueRead$ };
 }
 
-function createPreeditAdmission(graph: QueueAdmission) {
+function createQueueAdmission(graph: QueueAdmission) {
   const { jobs$, active$, owns$, failed$, add$ } = graph;
-  const preedit$ = command(
+  const enqueue$ = command(
     (
-      { get, set },
+      { set },
       owner: InputOwner,
-      preedit: Preedit,
       run: Run,
-      data?: unknown,
+      ...options: [move?: PointerState, prepare?: Run, data?: unknown]
     ) => {
+      const [move, prepare, data] = options;
+      set(add$, {
+        input: Object.freeze({ owner, data }),
+        run,
+        ...(move ? { move } : {}),
+        ...(prepare ? { prepare } : {}),
+      });
+    },
+  );
+  const text$ = command(
+    ({ set }, owner: InputOwner, text: string, run: Run) => {
+      if (!set(owns$, owner) || !text) {
+        return;
+      }
+      if (text.length > 64 * 1024) {
+        set(failed$);
+        return;
+      }
+      set(add$, { input: Object.freeze({ owner, text }), run });
+    },
+  );
+  const preedit$ = command(
+    ({ get, set }, owner: InputOwner, preedit: Preedit, run: Run) => {
       if (!set(owns$, owner)) {
         return;
       }
@@ -603,11 +613,7 @@ function createPreeditAdmission(graph: QueueAdmission) {
       const active = get(active$);
       const tail =
         jobs.at(-1) ?? (active && !active.started ? active.entry : null);
-      if (
-        tail?.input.preedit &&
-        tail.input.data === data &&
-        set(owns$, tail.input.owner)
-      ) {
+      if (tail?.input.preedit && set(owns$, tail.input.owner)) {
         const entry = {
           ...tail,
           input: Object.freeze({ ...tail.input, preedit }),
@@ -618,11 +624,7 @@ function createPreeditAdmission(graph: QueueAdmission) {
           set(active$, { ...active, entry });
         }
       } else {
-        set(add$, {
-          input: Object.freeze({ owner, preedit, data }),
-          run,
-          barrier: true,
-        });
+        set(add$, { input: Object.freeze({ owner, preedit }), run });
       }
     },
   );
@@ -640,52 +642,6 @@ function createPreeditAdmission(graph: QueueAdmission) {
       set(active$, { ...active, cancelled: true });
     }
   });
-  return { preedit$, discardPreedit$ };
-}
-
-function createQueueAdmission(graph: QueueAdmission) {
-  const { jobs$, owns$, failed$, add$ } = graph;
-  const enqueue$ = command(
-    (
-      { set },
-      owner: InputOwner,
-      run: Run,
-      ...options: [
-        move?: PointerState,
-        prepare?: Run,
-        data?: unknown,
-        barrier?: boolean,
-      ]
-    ) => {
-      const [move, prepare, data, barrier] = options;
-      set(add$, {
-        input: Object.freeze({ owner, data }),
-        run,
-        ...(barrier ? { barrier } : {}),
-        ...(move ? { move } : {}),
-        ...(prepare ? { prepare } : {}),
-      });
-    },
-  );
-  const text$ = command(
-    (
-      { set },
-      owner: InputOwner,
-      text: string,
-      run: Run,
-      ...options: [data?: unknown, barrier?: boolean]
-    ) => {
-      const [data, barrier = false] = options;
-      if (!set(owns$, owner) || !text) {
-        return;
-      }
-      if (text.length > 64 * 1024) {
-        set(failed$);
-        return;
-      }
-      set(add$, { input: Object.freeze({ owner, text, data }), run, barrier });
-    },
-  );
   const wheel$ = command(
     (
       { get, set },
@@ -740,7 +696,7 @@ function createQueueAdmission(graph: QueueAdmission) {
       }
     },
   );
-  return { enqueue$, text$, wheel$, ...createPreeditAdmission(graph) };
+  return { enqueue$, text$, preedit$, discardPreedit$, wheel$ };
 }
 
 /** One ordered preparation/send lane, with bounded original-session receipts. */

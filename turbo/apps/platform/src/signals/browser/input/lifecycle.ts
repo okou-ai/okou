@@ -1,7 +1,6 @@
 import { command, computed, state, type Command, type State } from "ccstate";
 import type { Protocol } from "devtools-protocol";
 import type { Point } from "../display/geometry.ts";
-import type { EditingTarget } from "./editing.ts";
 
 type Key = Protocol.Input.DispatchKeyEventRequest;
 type Button = NonNullable<Protocol.Input.DispatchMouseEventRequest["button"]>;
@@ -91,7 +90,7 @@ export function createInputLifecycle(sessionId: string) {
   const keys$ = state<ReadonlyMap<string, Key>>(new Map());
   const buttons$ = state<ReadonlyMap<Button, Point>>(new Map());
   const point$ = state<Point>(Object.freeze({ x: 0, y: 0 }));
-  const composing$ = state<{ readonly target: EditingTarget } | null>(null);
+  const composing$ = state<object | null>(null);
 
   const owner$ = computed((get) => {
     return get(current$);
@@ -109,19 +108,19 @@ export function createInputLifecycle(sessionId: string) {
       owner.document === current.document
     );
   });
-  const composition$ = command(({ get, set }, owner: InputOwner) => {
-    return set(owns$, owner) ? get(composing$) : null;
-  });
-  const compose$ = command(
-    ({ set }, owner: InputOwner, target: EditingTarget) => {
-      if (!set(owns$, owner)) {
-        return null;
-      }
-      const token = Object.freeze({ target });
-      set(composing$, token);
-      return token;
+  const composition$ = command(
+    ({ get, set }, owner: InputOwner): object | null => {
+      return set(owns$, owner) ? get(composing$) : null;
     },
   );
+  const compose$ = command(({ set }, owner: InputOwner): object | null => {
+    if (!set(owns$, owner)) {
+      return null;
+    }
+    const token = Object.freeze({});
+    set(composing$, token);
+    return token;
+  });
   const finishComposition$ = command(
     ({ get, set }, owner: InputOwner, token: object | null): void => {
       if (set(owns$, owner) && get(composing$) === token) {
@@ -171,7 +170,7 @@ export function createInputLifecycle(sessionId: string) {
       keys: rule.release ? [...get(keys$).values()] : [],
       buttons: rule.release ? [...get(buttons$).keys()] : [],
       point: get(point$),
-      composition: rule.release ? get(composing$) : null,
+      composition: rule.release && get(composing$) !== null,
     };
     // Publish the successor before callers run cleanup or reentrant DOM work.
     set(

@@ -2,9 +2,7 @@ import { command, state } from "ccstate";
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 import { detach, Reason } from "../../utils.ts";
 import type { CdpClient } from "../cdp/client.ts";
-import { CdpFault, requestDetails } from "../cdp/errors.ts";
-import { editingTargetValidation, type EditingTarget } from "./editing.ts";
-import { releaseRuntimeObjects } from "../cdp/runtime-objects.ts";
+import { CdpFault } from "../cdp/errors.ts";
 
 type Method =
   | "Input.dispatchKeyEvent"
@@ -16,13 +14,7 @@ type Method =
   | "Page.navigateToHistoryEntry";
 type Params<M extends Method> = ProtocolMapping.Commands[M]["paramsType"][0];
 export type InputOperation<M extends Method = Method> = {
-  [K in M]: {
-    readonly method: K;
-    readonly params: Params<K>;
-    readonly target?: K extends "Input.imeSetComposition"
-      ? EditingTarget
-      : never;
-  };
+  [K in M]: { readonly method: K; readonly params: Params<K> };
 }[M];
 export type InputReceipt<T = unknown> =
   | { readonly ok: true; readonly result: T }
@@ -40,66 +32,15 @@ function createEffectState(client: CdpClient, sessionId: string) {
 }
 type EffectState = ReturnType<typeof createEffectState>;
 
-function createEffectSender(graph: EffectState) {
-  const { client, sessionId } = graph;
-  const releaseValidation = (result: unknown) => {
-    releaseRuntimeObjects(client, sessionId, result);
-  };
-  return command(
-    async (
-      _context,
-      operation: InputOperation,
-      signal: AbortSignal,
-    ): Promise<{ readonly sent: boolean; readonly result: unknown }> => {
-      if (operation.target) {
-        const [checked] = await Promise.allSettled([
-          client.request(
-            "Runtime.callFunctionOn",
-            editingTargetValidation(operation.target),
-            sessionId,
-            releaseValidation,
-            signal,
-          ),
-        ]);
-        signal.throwIfAborted();
-        if (checked.status === "rejected") {
-          throw new CdpFault(
-            "input",
-            "Original composition target validation is unconfirmed.",
-            undefined,
-            requestDetails(checked.reason),
-          );
-        }
-        const validation = checked.value;
-        releaseValidation(validation);
-        if (
-          validation.exceptionDetails ||
-          typeof validation.result.value !== "boolean"
-        ) {
-          throw new CdpFault(
-            "input",
-            "Original composition target validation is unconfirmed.",
-          );
-        }
-        if (!validation.result.value) {
-          return { sent: false, result: {} };
-        }
-      }
-      const result = await client.request(
-        operation.method,
-        operation.params,
-        sessionId,
-        undefined,
-        signal,
-      );
-      return { sent: true, result };
-    },
-  );
-}
-
 function createEffectReceipts(graph: EffectState) {
-  const { client, receipts$, failed$, imeSupported$, imeUnsupported$ } = graph;
-  const send$ = createEffectSender(graph);
+  const {
+    client,
+    sessionId,
+    receipts$,
+    failed$,
+    imeSupported$,
+    imeUnsupported$,
+  } = graph;
   const receive$ = command(
     async (
       { get, set },
@@ -115,14 +56,17 @@ function createEffectReceipts(graph: EffectState) {
         },
       };
       const [result] = await Promise.allSettled([
-        set(send$, operation, signal),
+        client.request(
+          operation.method,
+          operation.params,
+          sessionId,
+          undefined,
+          signal,
+        ),
       ]);
       signal.throwIfAborted();
       if (result.status === "fulfilled") {
-        if (
-          operation.method === "Input.imeSetComposition" &&
-          result.value.sent
-        ) {
+        if (operation.method === "Input.imeSetComposition") {
           set(imeSupported$, true);
         }
       } else if (
@@ -146,7 +90,7 @@ function createEffectReceipts(graph: EffectState) {
         }
       }
       return result.status === "fulfilled"
-        ? { ok: true, result: result.value.result }
+        ? { ok: true, result: result.value }
         : { ok: false, error: result.reason };
     },
   );

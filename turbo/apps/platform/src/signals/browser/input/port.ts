@@ -3,7 +3,6 @@ import type { Protocol } from "devtools-protocol";
 import type { Point } from "../display/geometry.ts";
 import type { InputOwner, InputTransition } from "./lifecycle.ts";
 import type { SelectionResult } from "./selection.ts";
-import type { EditingTarget } from "./editing.ts";
 
 type Mouse = Protocol.Input.DispatchMouseEventRequest;
 export type PointerDetails = Pick<
@@ -26,15 +25,6 @@ export interface EditingContext {
   readonly lang: string;
 }
 
-export type EditingObservation =
-  | {
-      readonly kind: "editable";
-      readonly target: EditingTarget;
-      readonly context: EditingContext;
-    }
-  | { readonly kind: "inactive"; readonly target: EditingTarget }
-  | { readonly kind: "unknown"; readonly target: EditingTarget | null };
-
 /** Session graph capabilities; native bindings retain their original owner. */
 export interface NativeInputPort {
   readonly available$: Computed<boolean>;
@@ -45,7 +35,7 @@ export interface NativeInputPort {
   } | null>;
   readonly clipboardEpoch$: Computed<number>;
   readonly caret$: Computed<Point | null>;
-  readonly editing$: Computed<EditingObservation>;
+  readonly editing$: Computed<EditingContext | null>;
   readonly focus$: Command<void, [owner?: InputOwner]>;
   readonly blur$: Command<InputOwner | null, [owner?: InputOwner]>;
   readonly completion$: Command<Promise<void>, [owner: InputOwner]>;
@@ -63,7 +53,6 @@ export interface NativeInputPort {
     [key: Protocol.Input.DispatchKeyEventRequest, owner?: InputOwner]
   >;
   readonly text$: Command<void, [text: string, owner?: InputOwner]>;
-  readonly beginComposition$: Command<void, [owner: InputOwner]>;
   readonly preedit$: Command<
     void,
     [

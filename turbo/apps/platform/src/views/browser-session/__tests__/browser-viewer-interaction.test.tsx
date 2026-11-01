@@ -735,7 +735,7 @@ test("Remote editing context configures one stable selection-capable keyboard pr
       lang: "ja",
     },
   });
-  const reading = browser.holdNext("Runtime.callFunctionOn");
+  const reading = browser.holdNext("Runtime.evaluate");
   fireEvent.input(input, {
     target: { value: "中" },
     inputType: "insertCompositionText",
@@ -770,383 +770,6 @@ test("Remote editing context configures one stable selection-capable keyboard pr
   expect(input).toHaveFocus();
 });
 
-test.each(["editor-b", "editor-a"])(
-  "A composition stays revoked after remote focus moves to B and then %s",
-  async (target) => {
-    const browser = await setupViewer(0);
-    const metadata = {
-      x: 40,
-      y: 50,
-      width: 1440,
-      height: 900,
-      offsetX: 0,
-      offsetY: 0,
-      editing: {
-        type: "text",
-        multiline: false,
-        inputMode: "text",
-        enterKeyHint: "search",
-        autoCapitalize: "none",
-        lang: "en",
-      },
-    };
-    browser.setFocusedEditing(metadata, "editor-a");
-    const input = screen.getByLabelText("Remote browser input");
-    await userEvent.click(input);
-    await waitFor(() => {
-      expect(input).toHaveAttribute("enterkeyhint", "search");
-    });
-    fireEvent.compositionStart(input);
-    fireEvent.input(input, {
-      target: { value: "中" },
-      inputType: "insertCompositionText",
-      isComposing: true,
-    });
-    await waitFor(() => {
-      expect(browser.input.at(-1)).toMatchObject({
-        method: "Input.imeSetComposition",
-        params: { text: "中" },
-      });
-    });
-    browser.setFocusedEditing(
-      {
-        ...metadata,
-        editing: {
-          ...metadata.editing,
-          inputMode: "email",
-          enterKeyHint: "send",
-        },
-      },
-      "editor-b",
-    );
-    if (target === "editor-a") {
-      browser.setFocusedEditing(metadata, target);
-    }
-    fireEvent(
-      input,
-      Object.assign(new Event("compositionend", { bubbles: true }), {
-        data: "中文",
-      }),
-    );
-    await waitFor(() => {
-      expect(input).toHaveAttribute(
-        "enterkeyhint",
-        target === "editor-a" ? "search" : "send",
-      );
-    });
-    expect(input).toHaveFocus();
-    fireEvent.input(input, {
-      target: { value: "fresh" },
-      inputType: "insertText",
-    });
-    await waitFor(() => {
-      expect(browser.input.at(-1)).toMatchObject({
-        method: "Input.insertText",
-        params: { text: "fresh" },
-      });
-    });
-    expect(
-      browser.input.filter((request) => {
-        return request.method === "Input.insertText";
-      }),
-    ).toMatchObject([{ params: { text: "fresh" } }]);
-  },
-);
-
-test("Focus revocation before begin acknowledgement cannot revive a composition", async () => {
-  const browser = await setupViewer(0);
-  browser.setFocusedEditing({
-    x: 40,
-    y: 50,
-    width: 1440,
-    height: 900,
-    offsetX: 0,
-    offsetY: 0,
-    editing: {
-      type: "text",
-      multiline: false,
-      inputMode: "text",
-      enterKeyHint: "go",
-      autoCapitalize: "",
-      lang: "",
-    },
-  });
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  await waitFor(() => {
-    expect(input).toHaveAttribute("enterkeyhint", "go");
-  });
-  const beginning = browser.holdNext("Runtime.callFunctionOn");
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "旧" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await beginning.received;
-  browser.setFocusedEditing(undefined, "editor-b");
-  await act(async () => {
-    await beginning.release();
-  });
-  fireEvent(
-    input,
-    Object.assign(new Event("compositionend", { bubbles: true }), {
-      data: "旧文",
-    }),
-  );
-  fireEvent.input(input, {
-    target: { value: "旧文" },
-    inputType: "insertText",
-  });
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "新" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.imeSetComposition",
-      params: { text: "新" },
-    });
-  });
-  fireEvent(
-    input,
-    Object.assign(new Event("compositionend", { bubbles: true }), {
-      data: "新文",
-    }),
-  );
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "新文" },
-    });
-  });
-  expect(
-    browser.input.filter((request) => {
-      return request.method === "Input.insertText";
-    }),
-  ).toMatchObject([{ params: { text: "新文" } }]);
-});
-
-test("Preedit updates and commit progress while an optional editing read is unacknowledged", async () => {
-  const browser = await setupViewer(0);
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  const preedit = browser.holdNext("Input.imeSetComposition");
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "中" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await preedit.received;
-  const observation = browser.holdNext("Runtime.callFunctionOn");
-  await preedit.release();
-  await observation.received;
-  const subsequentRead = browser.holdNext("Runtime.callFunctionOn");
-  fireEvent.input(input, {
-    target: { value: "中文" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.imeSetComposition",
-      params: { text: "中文" },
-    });
-  });
-  fireEvent(
-    input,
-    Object.assign(new Event("compositionend", { bubbles: true }), {
-      data: "中文",
-    }),
-  );
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "中文" },
-    });
-  });
-  await act(async () => {
-    await observation.release();
-    await subsequentRead.release();
-  });
-  expect(input).toBeEnabled();
-  expect(input).toHaveFocus();
-});
-
-test("A new composition binds the current editor instead of stale keyboard hints", async () => {
-  const browser = await setupViewer(0);
-  const metadata = {
-    x: 40,
-    y: 50,
-    width: 1440,
-    height: 900,
-    offsetX: 0,
-    offsetY: 0,
-    editing: {
-      type: "text",
-      multiline: false,
-      inputMode: "text",
-      enterKeyHint: "search",
-      autoCapitalize: "none",
-      lang: "en",
-    },
-  };
-  browser.setFocusedEditing(metadata, "editor-a");
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  await waitFor(() => {
-    expect(input).toHaveAttribute("enterkeyhint", "search");
-  });
-  browser.setFocusedEditing(
-    { ...metadata, editing: { ...metadata.editing, enterKeyHint: "send" } },
-    "editor-b",
-  );
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "中" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.imeSetComposition",
-      params: { text: "中" },
-    });
-  });
-  fireEvent(
-    input,
-    Object.assign(new Event("compositionend", { bubbles: true }), {
-      data: "中文",
-    }),
-  );
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "中文" },
-    });
-  });
-  await waitFor(() => {
-    expect(input).toHaveAttribute("enterkeyhint", "send");
-  });
-});
-
-test("Original composition cleanup cannot cancel a different remote editor", async () => {
-  const browser = await setupViewer(0);
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "中" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.imeSetComposition",
-      params: { text: "中" },
-    });
-  });
-  browser.setFocusedEditing(undefined, "editor-b");
-  await userEvent.click(screen.getByLabelText("Address"));
-  await userEvent.click(input);
-  fireEvent.input(input, {
-    target: { value: "fresh" },
-    inputType: "insertText",
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "fresh" },
-    });
-  });
-  expect(
-    browser.input.filter((request) => {
-      return request.method === "Input.imeSetComposition";
-    }),
-  ).toMatchObject([{ params: { text: "中" } }]);
-});
-
-test("A delayed read from a blurred proxy cannot retire the next composition's editor", async () => {
-  const browser = await setupViewer(0);
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  const reading = browser.holdNext("Runtime.callFunctionOn");
-  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
-  fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
-  await reading.received;
-  await userEvent.click(screen.getByLabelText("Address"));
-  await userEvent.click(input);
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "中" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.imeSetComposition",
-      params: { text: "中" },
-    });
-  });
-  await act(async () => {
-    await reading.release();
-  });
-  fireEvent(
-    input,
-    Object.assign(new Event("compositionend", { bubbles: true }), {
-      data: "中文",
-    }),
-  );
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "中文" },
-    });
-  });
-  expect(input).toBeEnabled();
-  expect(input).toHaveFocus();
-});
-
-test("A failed optional observation preserves the active composition's editor", async () => {
-  const browser = await setupViewer(0);
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  const preedit = browser.holdNext("Input.imeSetComposition");
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "中" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await preedit.received;
-  browser.failNext("Runtime.callFunctionOn", "Temporary observation failure");
-  const observation = browser.holdNext("Runtime.callFunctionOn");
-  await preedit.release();
-  await expect(observation.received).resolves.toContain(
-    "Temporary observation failure",
-  );
-  await act(async () => {
-    await observation.release();
-  });
-  fireEvent(
-    input,
-    Object.assign(new Event("compositionend", { bubbles: true }), {
-      data: "中文",
-    }),
-  );
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "中文" },
-    });
-  });
-  expect(input).toBeEnabled();
-  expect(input).toHaveFocus();
-});
-
 test("A failed editing-context read clears stale keyboard hints without disabling input", async () => {
   const browser = await setupViewer(0);
   browser.setFocusedEditing({
@@ -1171,10 +794,7 @@ test("A failed editing-context read clears stale keyboard hints without disablin
     expect(input).toHaveAttribute("inputmode", "none");
   });
   browser.setFocusedEditing(null);
-  browser.failNext(
-    "Runtime.callFunctionOn",
-    "Cannot find context with specified id",
-  );
+  browser.failNext("Runtime.evaluate", "Cannot find context with specified id");
   fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
   fireEvent.keyUp(input, { key: "Tab", code: "Tab", keyCode: 9 });
   await waitFor(() => {
@@ -1218,11 +838,11 @@ test.each(["success", "failure"])(
     });
     if (outcome === "failure") {
       browser.failNext(
-        "Runtime.callFunctionOn",
+        "Runtime.evaluate",
         "Cannot find context with specified id",
       );
     }
-    const reading = browser.holdNext("Runtime.callFunctionOn");
+    const reading = browser.holdNext("Runtime.evaluate");
     await userEvent.click(screen.getByLabelText("Remote browser input"));
     await expect(reading.received).resolves.toContain(
       outcome === "failure" ? '"error"' : '"password"',
@@ -1520,115 +1140,6 @@ test("Queued soft-keyboard deletion and Enter cannot reach a replacement tab", a
   ]);
 });
 
-test("An unsupported preedit and stale cleanup do not block switching tabs", async () => {
-  const browser = await setupViewer();
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  browser.failNext("Input.imeSetComposition", "Method not found", -32_601);
-  const pending = browser.holdNext("Input.imeSetComposition");
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "中" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await pending.received;
-  browser.setFocusedEditing(undefined, "editor-b");
-  await userEvent.click(screen.getByLabelText("Address"));
-  await pending.release();
-  await userEvent.click(
-    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
-  );
-  await waitFor(() => {
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-  });
-  const successor = screen.getByLabelText("Remote browser input");
-  await userEvent.click(successor);
-  fireEvent.input(successor, {
-    target: { value: "fresh" },
-    inputType: "insertText",
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "fresh" },
-      sessionId: "other-page-session",
-    });
-  });
-});
-
-test("A composition queued behind an unconfirmed key is discarded on blur", async () => {
-  const browser = await setupViewer(0);
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  const pending = browser.holdNext("Input.dispatchKeyEvent");
-  fireEvent.keyDown(input, { key: "Tab", code: "Tab", keyCode: 9 });
-  await pending.received;
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "old" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await userEvent.click(screen.getByLabelText("Address"));
-  await pending.release();
-  await userEvent.click(input);
-  fireEvent.input(input, {
-    target: { value: "fresh" },
-    inputType: "insertText",
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.insertText",
-      params: { text: "fresh" },
-    });
-  });
-  expect(
-    browser.input.filter((request) => {
-      return request.method === "Input.imeSetComposition";
-    }),
-  ).toStrictEqual([]);
-});
-
-test("A refocused composition waits for original cleanup before sending preedit", async () => {
-  const browser = await setupViewer(0);
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  fireEvent.compositionStart(input);
-  fireEvent.input(input, {
-    target: { value: "old" },
-    inputType: "insertCompositionText",
-    isComposing: true,
-  });
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.imeSetComposition",
-      params: { text: "old" },
-    });
-  });
-  const cleaning = browser.holdNext("Runtime.callFunctionOn");
-  await userEvent.click(screen.getByLabelText("Address"));
-  await cleaning.received;
-  await userEvent.click(input);
-  fireEvent.compositionStart(input);
-  await userEvent.type(input, "new");
-  await cleaning.release();
-  await waitFor(() => {
-    expect(browser.input.at(-1)).toMatchObject({
-      method: "Input.imeSetComposition",
-      params: { text: "new" },
-    });
-  });
-  const compositions = browser.input.filter((request) => {
-    return request.method === "Input.imeSetComposition";
-  });
-  expect(compositions).toMatchObject([
-    { params: { text: "old" } },
-    { params: { text: "" } },
-    { params: { text: "new" } },
-  ]);
-});
-
 test("Backward deletion preserves preedit and consumes committed composition residuals", async () => {
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");
@@ -1714,16 +1225,25 @@ test("Backward deletion preserves preedit and consumes committed composition res
   ]);
 });
 
-test("IME confirmation commits text once to the current remote session", async () => {
+test("IME preedit and confirmation progress while keyboard metadata is pending", async () => {
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");
+  const metadata = browser.holdNext("Runtime.evaluate");
   await userEvent.click(input);
+  await metadata.received;
   fireEvent.compositionStart(input);
   fireEvent.input(input, {
     target: { value: "中" },
     data: "中",
     inputType: "insertCompositionText",
     isComposing: true,
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual({
+      method: "Input.imeSetComposition",
+      params: { text: "中", selectionStart: 1, selectionEnd: 1 },
+      sessionId: "example-page-session",
+    });
   });
   fireEvent(
     input,
@@ -1751,6 +1271,9 @@ test("IME confirmation commits text once to the current remote session", async (
     ]);
   });
   expect(input).toHaveFocus();
+  await act(async () => {
+    await metadata.release();
+  });
 });
 
 test("A payload-less context reset retires composition before accepting new remote text", async () => {

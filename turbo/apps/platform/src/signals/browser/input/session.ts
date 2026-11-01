@@ -6,8 +6,7 @@ import { CdpFault, isRecord, requestDetails } from "../cdp/errors.ts";
 import type { NavigationAction, NavigationReceipt } from "../viewer/types.ts";
 import type { DisplayViewport } from "../display/viewport.ts";
 import type { NavigationData } from "../navigation/data.ts";
-import type { EditingObservation, NativeInputHost } from "./port.ts";
-import { createEditingReader, type EditingTarget } from "./editing.ts";
+import type { EditingContext, NativeInputHost } from "./port.ts";
 import type { InputGeometry, Point } from "../display/geometry.ts";
 import { navigationAddress } from "./address.ts";
 import { createInputEffects } from "./effects.ts";
@@ -32,10 +31,54 @@ interface PointerJob {
   readonly details: PointerDetails;
 }
 
-interface CompositionLease {
-  readonly token: object;
-  readonly owner: InputOwner;
-}
+const caretPosition = `(() => {
+  let doc = document, ox = 0, oy = 0;
+  for (let depth = 0; depth < 8; depth++) {
+    let e = doc.activeElement;
+    while (e?.shadowRoot?.activeElement) e = e.shadowRoot.activeElement;
+    if (!e) return null;
+    if (['iframe','frame'].includes(e.localName)) {
+      let inner;
+      try { inner = e.contentDocument; } catch { return null; }
+      if (!inner) return null;
+      const rect = e.getBoundingClientRect();
+      ox += rect.left + e.clientLeft; oy += rect.top + e.clientTop;
+      doc = inner; continue;
+    }
+    if (e.disabled || e.readOnly || !(e.isContentEditable || e.localName === 'textarea' ||
+        (e.localName === 'input' && ['text','search','email','url','tel','password','number'].includes(e.type)))) return null;
+    const rect = e.getBoundingClientRect();
+    let x = rect.left + 4, y = rect.top + Math.min(rect.height, 20);
+    const selection = doc.getSelection();
+    if (e.isContentEditable && selection?.rangeCount && e.contains(selection.anchorNode)) {
+      const range = selection.getRangeAt(0).cloneRange(); range.collapse(false);
+      const caret = range.getBoundingClientRect();
+      if (caret.height) { x = caret.left; y = caret.bottom; }
+    }
+    const viewport = window.visualViewport;
+    // Shadow hosts participate in inheritance; an empty lang stops it.
+    let languageRoot = e, lang = '';
+    while (languageRoot) {
+      const source = languageRoot.closest('[lang]');
+      if (source) { lang = source.getAttribute('lang'); break; }
+      const root = languageRoot.getRootNode();
+      languageRoot = root instanceof doc.defaultView.ShadowRoot ? root.host : null;
+    }
+    const type = e.localName === 'input' ? e.type : e.localName;
+    const editing = {
+      type,
+      multiline: e.localName === 'textarea' || e.isContentEditable,
+      inputMode: e.inputMode,
+      enterKeyHint: e.enterKeyHint,
+      autoCapitalize: e.autocapitalize || e.form?.autocapitalize || '',
+      lang
+    };
+    return { x: x + ox, y: y + oy,
+      width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight,
+      offsetX: viewport?.offsetLeft ?? 0, offsetY: viewport?.offsetTop ?? 0, editing };
+  }
+  return null;
+})()`;
 
 interface SessionConnection {
   readonly client: CdpClient;
@@ -58,14 +101,7 @@ function createSessionState(
   const navigationGate$ = state<object | null>(null);
   const internalError$ = state<CdpFault | null>(null);
   const internalCaret$ = state<Point | null>(null);
-  const internalEditing$ = state<EditingObservation>({
-    kind: "unknown",
-    target: null,
-  });
-  const compositionLease$ = state<CompositionLease | null>(null);
-  const compositionTargets$ = state<ReadonlyMap<object, EditingTarget | null>>(
-    new Map(),
-  );
+  const internalEditing$ = state<EditingContext | null>(null);
   const internalTransition$ = state<{
     id: number;
     reason: InputTransition;
@@ -124,8 +160,6 @@ function createSessionState(
     internalError$,
     internalCaret$,
     internalEditing$,
-    compositionLease$,
-    compositionTargets$,
     internalTransition$,
     clipboardVersion$,
     frameId$,
@@ -147,7 +181,6 @@ function createSessionState(
 type SessionBase = ReturnType<typeof createSessionState> & {
   queue: ReturnType<typeof createInputQueue>;
   selectionReader: ReturnType<typeof createSelectionReader>;
-  editingReader: ReturnType<typeof createEditingReader>;
 };
 type SessionObservations = SessionBase &
   ReturnType<typeof createSessionInvalidation> &
@@ -177,14 +210,13 @@ function createSessionInvalidation(graph: SessionBase) {
     });
     set(caretJob$, null);
     set(internalCaret$, null);
-    set(internalEditing$, { kind: "unknown", target: null });
+    set(internalEditing$, null);
     if (notify) {
       set(nativeHost.synchronize$);
     }
   });
-  const cancelComposition$ = command(({ set }, target: EditingTarget) => {
+  const cancelComposition$ = command(({ set }) => {
     set(effects.notify$, {
-      target,
       method: "Input.imeSetComposition",
       params: { text: "", selectionStart: 0, selectionEnd: 0 },
     });
@@ -203,8 +235,70 @@ function createCaretObservation(
     internalCaret$,
     internalEditing$,
     lifecycle,
+    queue,
   } = graph;
-  const readCaret$ = graph.editingReader.read$;
+  const readCaret$ = command(
+    async (
+      { set },
+      job: InputJob,
+      signal: AbortSignal,
+    ): Promise<{ caret: Point; editing: EditingContext } | null> => {
+      const result = await set(queue.evaluate$, job, {
+        expression: caretPosition,
+        returnByValue: true,
+      });
+      signal.throwIfAborted();
+      const value: unknown = result.result.value;
+      if (
+        result.exceptionDetails ||
+        !isRecord(value) ||
+        typeof value.x !== "number" ||
+        typeof value.y !== "number" ||
+        typeof value.width !== "number" ||
+        value.width <= 0 ||
+        typeof value.height !== "number" ||
+        value.height <= 0 ||
+        typeof value.offsetX !== "number" ||
+        typeof value.offsetY !== "number" ||
+        ![
+          value.x,
+          value.y,
+          value.width,
+          value.height,
+          value.offsetX,
+          value.offsetY,
+        ].every(Number.isFinite)
+      ) {
+        return null;
+      }
+      const editing = value.editing;
+      if (
+        !isRecord(editing) ||
+        typeof editing.type !== "string" ||
+        typeof editing.multiline !== "boolean" ||
+        typeof editing.inputMode !== "string" ||
+        typeof editing.enterKeyHint !== "string" ||
+        typeof editing.autoCapitalize !== "string" ||
+        typeof editing.lang !== "string"
+      ) {
+        return null;
+      }
+      return {
+        caret: {
+          x: Math.max(0, Math.min(1, (value.x - value.offsetX) / value.width)),
+          y: Math.max(0, Math.min(1, (value.y - value.offsetY) / value.height)),
+        },
+        editing: {
+          type: editing.type,
+          multiline: editing.multiline,
+          inputMode: editing.inputMode,
+          enterKeyHint: editing.enterKeyHint,
+          autoCapitalize: editing.autoCapitalize,
+          lang: editing.lang,
+        },
+      };
+    },
+  );
   const drainCaret$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (get(caretReading$)) {
       return;
@@ -224,10 +318,7 @@ function createCaretObservation(
       if (version === get(caretVersion$) && set(lifecycle.owns$, job.owner)) {
         const observation = result.status === "fulfilled" ? result.value : null;
         set(internalCaret$, observation?.caret ?? null);
-        set(
-          internalEditing$,
-          observation?.editing ?? { kind: "unknown", target: null },
-        );
+        set(internalEditing$, observation?.editing ?? null);
         set(graph.nativeHost.synchronize$);
       }
     }
@@ -254,7 +345,6 @@ function createSessionTransitions(graph: SessionObservations) {
     cancelComposition$,
     clipboardVersion$,
     effects,
-    editingReader,
     geometry,
     nativeHost,
     internalError$,
@@ -265,7 +355,6 @@ function createSessionTransitions(graph: SessionObservations) {
   } = graph;
   const transitionInput$: Command<InputOwner | null, [InputTransition]> =
     command(({ get, set }, reason: InputTransition) => {
-      const original = get(lifecycle.owner$);
       const cleanup = set(lifecycle.transition$, reason);
       if (!cleanup) {
         return null;
@@ -281,16 +370,7 @@ function createSessionTransitions(graph: SessionObservations) {
       set(invalidateCaret$, false);
       set(queue.clear$);
       if (cleanup.composition) {
-        set(cancelComposition$, cleanup.composition.target);
-      }
-      set(graph.compositionLease$, null);
-      set(graph.compositionTargets$, new Map());
-      set(editingReader.stop$);
-      if (
-        successor.document !== original.document ||
-        !get(lifecycle.available$)
-      ) {
-        set(editingReader.reset$);
+        set(cancelComposition$);
       }
       for (const key of cleanup.keys) {
         set(effects.notify$, {
@@ -591,7 +671,6 @@ function createSessionEvents(graph: SessionActions) {
       return;
     }
     set(navigation.event$, event);
-    set(graph.editingReader.event$, event);
     const { method, params } = event;
     if (
       [
@@ -774,88 +853,15 @@ function createSessionPointer(graph: SessionObservations) {
   return { pointer$ };
 }
 
-function createCompositionBinding(graph: SessionObservations) {
+// Metadata is optional; native input follows remote focus under the current owner.
+function createSessionComposition(graph: SessionObservations) {
   const {
     accepting$,
-    compositionLease$,
-    compositionTargets$,
-    editingReader,
-    lifecycle,
-    queue,
-    refreshCaret$,
-  } = graph;
-  const beginRun$ = command(
-    async ({ get, set }, job: InputJob, signal: AbortSignal) => {
-      const lease = job.data as CompositionLease;
-      const result = await set(editingReader.begin$, job, signal);
-      signal.throwIfAborted();
-      if (
-        !set(lifecycle.owns$, job.owner) ||
-        !get(compositionTargets$).has(lease.token)
-      ) {
-        return;
-      }
-      const observed = result?.editing;
-      const target =
-        observed?.kind !== "inactive" ? (observed?.target ?? null) : null;
-      set(
-        compositionTargets$,
-        new Map(get(compositionTargets$)).set(lease.token, target),
-      );
-      if (!target) {
-        set(refreshCaret$, job);
-      }
-    },
-  );
-  const beginComposition$ = command(({ get, set }, owner: InputOwner) => {
-    if (!get(accepting$) || !set(lifecycle.owns$, owner)) {
-      return;
-    }
-    const lease: CompositionLease = {
-      token: Object.freeze({}),
-      owner,
-    };
-    const targets = new Map(get(compositionTargets$));
-    const previous = get(compositionLease$);
-    if (previous) {
-      targets.delete(previous.token);
-    }
-    targets.set(lease.token, null);
-    set(compositionLease$, lease);
-    set(compositionTargets$, targets);
-    // Capture focus after preceding native effects, independently of stale hints.
-    set(queue.enqueue$, owner, beginRun$, undefined, undefined, lease, true);
-  });
-  const validComposition$ = command(({ get, set }, job: InputJob) => {
-    const lease = job.data as CompositionLease;
-    const target = get(compositionTargets$).get(lease.token);
-    if (!target) {
-      return null;
-    }
-    const valid = set(editingReader.valid$, target);
-    if (valid) {
-      return target;
-    }
-    set(
-      compositionTargets$,
-      new Map(get(compositionTargets$)).set(lease.token, null),
-    );
-    const token = set(lifecycle.composition$, job.owner);
-    set(lifecycle.finishComposition$, job.owner, token);
-    set(refreshCaret$, job);
-    return null;
-  });
-  return { beginComposition$, validComposition$ };
-}
-type CompositionActions = SessionObservations &
-  ReturnType<typeof createCompositionBinding>;
-
-function createSessionText(graph: SessionObservations) {
-  const {
-    accepting$,
+    cancelComposition$,
     internalError$,
     invalidateClipboard$,
     lifecycle,
+    preeditSupported$,
     queue,
     refreshCaret$,
   } = graph;
@@ -879,32 +885,14 @@ function createSessionText(graph: SessionObservations) {
       set(queue.text$, owner, text, textRun$);
     },
   );
-  return { text$ };
-}
-
-function createSessionPreedit(graph: CompositionActions) {
-  const {
-    accepting$,
-    compositionLease$,
-    invalidateClipboard$,
-    lifecycle,
-    preeditSupported$,
-    queue,
-    refreshCaret$,
-    validComposition$,
-  } = graph;
   const preeditRun$ = command(
     async ({ get, set }, job: InputJob, signal: AbortSignal) => {
       if (!get(preeditSupported$)) {
         return;
       }
-      const target = set(validComposition$, job);
-      if (!target) {
-        return;
-      }
       const value = job.preedit!;
       const token = value.text
-        ? set(lifecycle.compose$, job.owner, target)
+        ? set(lifecycle.compose$, job.owner)
         : set(lifecycle.composition$, job.owner);
       const [result] = await Promise.allSettled([
         set(queue.write$, job, {
@@ -925,6 +913,13 @@ function createSessionPreedit(graph: CompositionActions) {
         set(preeditSupported$, false);
         set(lifecycle.finishComposition$, job.owner, token);
       }
+      // A late original-session preedit must be cancelled in its original document.
+      if (
+        !set(lifecycle.owns$, job.owner) &&
+        set(lifecycle.retainsDocument$, job.owner)
+      ) {
+        set(cancelComposition$);
+      }
       if (
         result.status === "rejected" &&
         !(result.reason instanceof CdpFault && result.reason.code === -32_601)
@@ -941,12 +936,10 @@ function createSessionPreedit(graph: CompositionActions) {
       selectionStart: number = text.length,
       selectionEnd: number = selectionStart,
     ) => {
-      const lease = get(compositionLease$);
       if (
         !get(accepting$) ||
         !get(preeditSupported$) ||
-        !set(lifecycle.owns$, owner) ||
-        lease?.owner !== owner
+        !set(lifecycle.owns$, owner)
       ) {
         return;
       }
@@ -956,99 +949,37 @@ function createSessionPreedit(graph: CompositionActions) {
         owner,
         { text, selectionStart, selectionEnd },
         preeditRun$,
-        lease,
       );
     },
   );
-  return { preedit$ };
-}
-
-function createSessionCompositionCommit(graph: CompositionActions) {
-  const {
-    accepting$,
-    compositionLease$,
-    compositionTargets$,
-    internalError$,
-    lifecycle,
-    queue,
-    refreshCaret$,
-    validComposition$,
-  } = graph;
-  const commitRun$ = command(
-    async ({ get, set }, job: InputJob, signal: AbortSignal) => {
-      const lease = job.data as CompositionLease;
-      using _lease = {
-        [Symbol.dispose]: () => {
-          const remaining = new Map(get(compositionTargets$));
-          const target = remaining.get(lease.token);
-          if (target) {
-            set(graph.editingReader.stop$, target);
-          }
-          remaining.delete(lease.token);
-          set(compositionTargets$, remaining);
-        },
-      };
-      const target = set(validComposition$, job);
-      if (!target) {
+  const cancelCommitRun$ = command(
+    async ({ set }, job: InputJob, signal: AbortSignal) => {
+      const token = set(lifecycle.composition$, job.owner);
+      if (!token) {
         return;
       }
-      set(internalError$, null);
-      const token = set(lifecycle.composition$, job.owner);
-      if (job.text) {
-        await set(queue.write$, job, {
-          method: "Input.insertText",
-          params: { text: job.text },
-        });
-      } else if (token) {
-        await set(queue.write$, job, {
-          method: "Input.imeSetComposition",
-          params: { text: "", selectionStart: 0, selectionEnd: 0 },
-        });
-      }
+      await set(queue.write$, job, {
+        method: "Input.imeSetComposition",
+        params: { text: "", selectionStart: 0, selectionEnd: 0 },
+      });
       signal.throwIfAborted();
       set(lifecycle.finishComposition$, job.owner, token);
-      set(refreshCaret$, job);
     },
   );
   const commitComposition$ = command(
     ({ get, set }, text: string, owner: InputOwner) => {
-      const lease = get(compositionLease$);
-      if (
-        !get(accepting$) ||
-        !set(lifecycle.owns$, owner) ||
-        lease?.owner !== owner
-      ) {
+      if (!get(accepting$) || !set(lifecycle.owns$, owner)) {
         return;
       }
       set(queue.discardPreedit$);
-      set(compositionLease$, null);
       if (text) {
-        set(queue.text$, owner, text, commitRun$, lease, true);
+        set(text$, text, owner);
       } else {
-        set(
-          queue.enqueue$,
-          owner,
-          commitRun$,
-          undefined,
-          undefined,
-          lease,
-          true,
-        );
+        set(queue.enqueue$, owner, cancelCommitRun$);
       }
     },
   );
-  return { commitComposition$ };
-}
-
-function createSessionComposition(graph: SessionObservations) {
-  const binding = createCompositionBinding(graph);
-  const actions = { ...graph, ...binding };
-  return {
-    beginComposition$: binding.beginComposition$,
-    ...createSessionText(graph),
-    ...createSessionPreedit(actions),
-    ...createSessionCompositionCommit(actions),
-  };
+  return { text$, preedit$, commitComposition$ };
 }
 
 function createSessionKeyboard(graph: SessionObservations) {
@@ -1294,16 +1225,7 @@ export function createInputSession(
     }),
     values.clipboardEpoch$,
   );
-  const editingReader = createEditingReader(
-    client,
-    sessionId,
-    queue,
-    values.lifecycle,
-    computed((get) => {
-      return get(values.frameId$);
-    }),
-  );
-  const base = { ...values, queue, selectionReader, editingReader };
+  const base = { ...values, queue, selectionReader };
   const observations = {
     ...base,
     ...createSessionInvalidation(base),

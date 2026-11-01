@@ -317,11 +317,7 @@ function createNativeCoordination(
     const current = get(input$);
     const elements = get(elements$);
     if (elements && !get(composition.composing$)) {
-      const editing = current ? get(current.editing$) : null;
-      configureProxy(
-        elements.proxy,
-        editing?.kind === "editable" ? editing.context : null,
-      );
+      configureProxy(elements.proxy, current ? get(current.editing$) : null);
     }
     const caret = current ? get(current.caret$) : null;
     if (caret) {
@@ -666,10 +662,6 @@ function createNativeCompositionEvents(graph: NativeGraph) {
       proxy.selectionStart!,
       proxy.selectionEnd!,
     );
-    const owner = input ? get(input.owner$) : null;
-    if (input && owner && document.activeElement === proxy) {
-      set(input.beginComposition$, owner);
-    }
     // Leave the native value alone while OS composition is starting.
   });
   const compositionUpdate$ = command(
