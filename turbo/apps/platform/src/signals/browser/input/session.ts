@@ -56,6 +56,13 @@ const caretPosition = `(() => {
       if (caret.height) { x = caret.left; y = caret.bottom; }
     }
     const viewport = window.visualViewport;
+    // Shadow hosts participate in inheritance; an empty lang stops it.
+    let languageRoot = e, lang = '';
+    while (languageRoot) {
+      const source = languageRoot.closest('[lang]');
+      if (source) { lang = source.getAttribute('lang'); break; }
+      languageRoot = languageRoot.getRootNode().host;
+    }
     const type = e.localName === 'input' ? e.type : e.localName;
     const editing = {
       type,
@@ -63,7 +70,7 @@ const caretPosition = `(() => {
       inputMode: e.inputMode,
       enterKeyHint: e.enterKeyHint,
       autoCapitalize: e.autocapitalize || e.form?.autocapitalize || '',
-      lang: e.closest('[lang]')?.lang || doc.documentElement.lang
+      lang
     };
     return { x: x + ox, y: y + oy,
       width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight,
