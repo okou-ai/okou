@@ -20,6 +20,8 @@ use crate::error::{
 
 mod transport_timing;
 use transport_timing::{ConnectionTimingLayer, TimedResolver};
+mod transport_diagnostics;
+use transport_diagnostics::{ConnectionDiagnosticsLayer, TransportDiagnostics};
 
 /// Validate and normalize the Runner API base URL before authenticated requests.
 pub fn normalize_api_base_url(value: &str) -> ProviderResult<String> {
@@ -130,6 +132,7 @@ pub struct HttpClient {
 
 struct Inner {
     client: Client,
+    diagnostics: TransportDiagnostics,
     api_url: String,
     vercel_bypass: Option<String>,
     runner_version: &'static str,
@@ -157,6 +160,7 @@ struct FinalizedApiRequest {
 /// Finalized API request whose correlation context is available before transport execution.
 pub struct PreparedApiRequest {
     client: Client,
+    diagnostics: TransportDiagnostics,
     request: Request,
     context: ApiRequestContext,
 }
@@ -167,6 +171,7 @@ pub struct PreparedApiRequest {
 /// request customization cannot accidentally override them.
 pub struct ApiRequestBuilder {
     client: Client,
+    diagnostics: TransportDiagnostics,
     builder: reqwest::RequestBuilder,
     client_headers: ClientHeaders,
     query: Vec<(String, String)>,
@@ -176,12 +181,14 @@ impl ApiRequestBuilder {
     pub fn json<T: Serialize + ?Sized>(self, json: &T) -> Self {
         let Self {
             client,
+            diagnostics,
             builder,
             client_headers,
             query,
         } = self;
         Self {
             client,
+            diagnostics,
             builder: builder.json(json),
             client_headers,
             query,
@@ -191,12 +198,14 @@ impl ApiRequestBuilder {
     pub fn timeout(self, timeout: Duration) -> Self {
         let Self {
             client,
+            diagnostics,
             builder,
             client_headers,
             query,
         } = self;
         Self {
             client,
+            diagnostics,
             builder: builder.timeout(timeout),
             client_headers,
             query,
@@ -218,9 +227,11 @@ impl ApiRequestBuilder {
 
     pub fn prepare(self, endpoint_label: &'static str) -> ProviderResult<PreparedApiRequest> {
         let client = self.client.clone();
+        let diagnostics = self.diagnostics.clone();
         let finalized = self.finalize(endpoint_label)?;
         Ok(PreparedApiRequest {
             client,
+            diagnostics,
             request: finalized.request,
             context: finalized.context,
         })
@@ -259,12 +270,14 @@ impl ApiRequestBuilder {
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {
             client,
+            diagnostics,
             builder,
             client_headers,
             query,
         } = self;
         Self {
             client,
+            diagnostics,
             builder: builder.header(name, value),
             client_headers,
             query,
@@ -284,13 +297,24 @@ impl PreparedApiRequest {
     pub async fn send(self) -> ProviderResult<Response> {
         let Self {
             client,
+            diagnostics,
             request,
             context,
         } = self;
-        client
-            .execute(request)
-            .await
-            .map_err(|e| api_transport_error(context, e))
+        let started = Instant::now();
+        let result = diagnostics
+            .scope(&context.client_request_id, client.execute(request))
+            .await;
+        match result {
+            Ok(response) => {
+                diagnostics.response(&response, &context.client_request_id, started);
+                Ok(response)
+            }
+            Err(error) => {
+                diagnostics.failure(&context, started, &error);
+                Err(api_transport_error(context, error))
+            }
+        }
     }
 
     pub(crate) async fn send_observed_claim(
@@ -359,11 +383,13 @@ impl HttpClient {
             runner_version,
         } = config;
         let api_url = normalize_api_base_url(&raw_api_url)?;
+        let diagnostics = TransportDiagnostics::new();
 
         let client = Client::builder()
             .timeout(DEFAULT_TIMEOUT)
             .dns_resolver(TimedResolver::default())
             .connector_layer(ConnectionTimingLayer)
+            .connector_layer(ConnectionDiagnosticsLayer)
             .build()
             .map_err(|e| ProviderError::Internal(format!("http client: {e}")))?;
 
@@ -376,6 +402,7 @@ impl HttpClient {
         Ok(Self {
             inner: Arc::new(Inner {
                 client,
+                diagnostics,
                 api_url,
                 vercel_bypass,
                 runner_version,
@@ -434,6 +461,7 @@ impl HttpClient {
 
         ApiRequestBuilder {
             client: self.inner.client.clone(),
+            diagnostics: self.inner.diagnostics.clone(),
             builder: req,
             client_headers: self.inner.client_headers.clone(),
             query: Vec::new(),

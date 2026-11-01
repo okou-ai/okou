@@ -34,6 +34,9 @@ url = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }
 
 [dev-dependencies]
+rcgen = { workspace = true, features = ["crypto", "ring", "pem"] }
+rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
 runner-network = { workspace = true, features = ["test-support"] }
 raw-http-test-support = { workspace = true, features = ["test-support"] }
 http-body.workspace = true
