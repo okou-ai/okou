@@ -89,6 +89,11 @@ function createInputBinding(
       }
     },
   );
+  const beginComposition$ = command(({ get, set }, owner: InputOwner) => {
+    if (owner === captured && get(owner$)) {
+      set(target.beginComposition$, captured);
+    }
+  });
   const preedit$ = command(
     (
       { get, set },
@@ -137,6 +142,7 @@ function createInputBinding(
     pointer$,
     key$,
     text$,
+    beginComposition$,
     preedit$,
     commitComposition$,
     selection$,

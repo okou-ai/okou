@@ -570,38 +570,16 @@ function createQueueReads(graph: QueueAdmission) {
   return { completion$, enqueueRead$ };
 }
 
-function createQueueAdmission(graph: QueueAdmission) {
+function createPreeditAdmission(graph: QueueAdmission) {
   const { jobs$, active$, owns$, failed$, add$ } = graph;
-  const enqueue$ = command(
-    (
-      { set },
-      owner: InputOwner,
-      run: Run,
-      ...options: [move?: PointerState, prepare?: Run, data?: unknown]
-    ) => {
-      const [move, prepare, data] = options;
-      set(add$, {
-        input: Object.freeze({ owner, data }),
-        run,
-        ...(move ? { move } : {}),
-        ...(prepare ? { prepare } : {}),
-      });
-    },
-  );
-  const text$ = command(
-    ({ set }, owner: InputOwner, text: string, run: Run) => {
-      if (!set(owns$, owner) || !text) {
-        return;
-      }
-      if (text.length > 64 * 1024) {
-        set(failed$);
-        return;
-      }
-      set(add$, { input: Object.freeze({ owner, text }), run });
-    },
-  );
   const preedit$ = command(
-    ({ get, set }, owner: InputOwner, preedit: Preedit, run: Run) => {
+    (
+      { get, set },
+      owner: InputOwner,
+      preedit: Preedit,
+      run: Run,
+      data?: unknown,
+    ) => {
       if (!set(owns$, owner)) {
         return;
       }
@@ -613,7 +591,11 @@ function createQueueAdmission(graph: QueueAdmission) {
       const active = get(active$);
       const tail =
         jobs.at(-1) ?? (active && !active.started ? active.entry : null);
-      if (tail?.input.preedit && set(owns$, tail.input.owner)) {
+      if (
+        tail?.input.preedit &&
+        tail.input.data === data &&
+        set(owns$, tail.input.owner)
+      ) {
         const entry = {
           ...tail,
           input: Object.freeze({ ...tail.input, preedit }),
@@ -624,7 +606,7 @@ function createQueueAdmission(graph: QueueAdmission) {
           set(active$, { ...active, entry });
         }
       } else {
-        set(add$, { input: Object.freeze({ owner, preedit }), run });
+        set(add$, { input: Object.freeze({ owner, preedit, data }), run });
       }
     },
   );
@@ -642,6 +624,39 @@ function createQueueAdmission(graph: QueueAdmission) {
       set(active$, { ...active, cancelled: true });
     }
   });
+  return { preedit$, discardPreedit$ };
+}
+
+function createQueueAdmission(graph: QueueAdmission) {
+  const { jobs$, owns$, failed$, add$ } = graph;
+  const enqueue$ = command(
+    (
+      { set },
+      owner: InputOwner,
+      run: Run,
+      ...options: [move?: PointerState, prepare?: Run, data?: unknown]
+    ) => {
+      const [move, prepare, data] = options;
+      set(add$, {
+        input: Object.freeze({ owner, data }),
+        run,
+        ...(move ? { move } : {}),
+        ...(prepare ? { prepare } : {}),
+      });
+    },
+  );
+  const text$ = command(
+    ({ set }, owner: InputOwner, text: string, run: Run, data?: unknown) => {
+      if (!set(owns$, owner) || !text) {
+        return;
+      }
+      if (text.length > 64 * 1024) {
+        set(failed$);
+        return;
+      }
+      set(add$, { input: Object.freeze({ owner, text, data }), run });
+    },
+  );
   const wheel$ = command(
     (
       { get, set },
@@ -696,7 +711,7 @@ function createQueueAdmission(graph: QueueAdmission) {
       }
     },
   );
-  return { enqueue$, text$, preedit$, discardPreedit$, wheel$ };
+  return { enqueue$, text$, wheel$, ...createPreeditAdmission(graph) };
 }
 
 /** One ordered preparation/send lane, with bounded original-session receipts. */

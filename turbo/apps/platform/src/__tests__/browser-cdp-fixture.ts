@@ -45,7 +45,11 @@ export function mockBrowserCdp(
       ? null
       : context.mocks.browser.imageBitmap(1440, 900);
   const viewport = { width: 1440, height: 900 };
-  let focusedEditing: unknown = null;
+  let focusedEditing: unknown;
+  let editingTarget = "focused-field";
+  let editingRevision = 1;
+  let editingSequence = 0;
+  const editingProbes = new Set<string>();
   const targets: BrowserTarget[] = (
     options.targets ?? [
       {
@@ -340,7 +344,40 @@ export function mockBrowserCdp(
     return { result: {} };
   }
 
+  function editingResult(validating: boolean, expected: unknown): unknown {
+    if (validating) {
+      return {
+        result: {
+          type: "boolean",
+          value: focusedEditing !== null && expected === editingRevision,
+        },
+      };
+    }
+    return {
+      result: {
+        type: "object",
+        value: {
+          kind:
+            focusedEditing === undefined
+              ? "unknown"
+              : focusedEditing === null
+                ? "inactive"
+                : "editable",
+          revision: editingRevision,
+          ...(typeof focusedEditing === "object" && focusedEditing !== null
+            ? focusedEditing
+            : {}),
+        },
+      },
+    };
+  }
+
   function runtimeResult(request: BrowserRequest): unknown {
+    if (request.method === "Runtime.releaseObject") {
+      const { objectId } = object({ objectId: string() }).parse(request.params);
+      editingProbes.delete(objectId);
+      return {};
+    }
     if (request.method === "Runtime.addBinding") {
       bindings.add(request.sessionId!);
       return {};
@@ -351,8 +388,16 @@ export function mockBrowserCdp(
     }
     if (request.method === "Runtime.callFunctionOn") {
       const params = object({
+        objectId: string().optional(),
+        functionDeclaration: string().optional(),
         arguments: array(object({ value: unknown() })).optional(),
       }).parse(request.params);
+      if (params.objectId && editingProbes.has(params.objectId)) {
+        return editingResult(
+          params.functionDeclaration?.includes("this.valid(") === true,
+          params.arguments?.[0]?.value,
+        );
+      }
       const url = params.arguments?.[0]?.value;
       if (typeof url === "string" && url.startsWith("about:blank#cdpv-")) {
         addTarget(url, targetForSession(request.sessionId).windowId);
@@ -367,16 +412,17 @@ export function mockBrowserCdp(
           ? { result: { type: "undefined" } }
           : nativeResult(expression);
       }
+      if (expression.startsWith("/* okou-browser editing */")) {
+        const objectId = `editing-probe-${++editingSequence}`;
+        editingProbes.add(objectId);
+        return { result: { type: "object", objectId } };
+      }
       return {
-        result:
-          expression.includes("doc.activeElement") &&
-          expression.includes("offsetX:")
-            ? { type: "object", value: focusedEditing }
-            : expression.includes("const fence =")
-              ? { type: "object", value: { fence: 1000, now: 1001 } }
-              : expression.includes("devicePixelRatio")
-                ? { type: "object", value: { ...viewport, dpr: 1 } }
-                : { type: "undefined" },
+        result: expression.includes("const fence =")
+          ? { type: "object", value: { fence: 1000, now: 1001 } }
+          : expression.includes("devicePixelRatio")
+            ? { type: "object", value: { ...viewport, dpr: 1 } }
+            : { type: "undefined" },
       };
     }
     return {};
@@ -561,7 +607,14 @@ export function mockBrowserCdp(
     detached,
     captures,
     viewport,
-    setFocusedEditing(value: unknown) {
+    setFocusedEditing(value: unknown, target = "focused-field") {
+      if (
+        target !== editingTarget ||
+        (value === null) !== (focusedEditing === null)
+      ) {
+        editingRevision++;
+      }
+      editingTarget = target;
       focusedEditing = value;
     },
     connections: socket.connections,
