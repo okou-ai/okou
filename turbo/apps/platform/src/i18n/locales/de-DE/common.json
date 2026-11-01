@@ -2109,7 +2109,6 @@
     },
     "landingFiles": {
       "back": "Zurück zu den Dateien",
-      "description": "Prüfe deine Anfrage und lade dann die ausgewählten Dateien hoch, um zu starten.",
       "editFailed": "Die Dateien konnten nicht aktualisiert werden. Bitte erneut versuchen.",
       "failed": "Der Vorgang konnte nicht abgeschlossen werden. Dateien und Anfrage bleiben erhalten. Versuche es erneut.",
       "limit": "Bis zu 10 Dateien hinzufügen (insgesamt 1 GB).",
@@ -2119,8 +2118,6 @@
       "prompt": "Deine Anfrage",
       "retry": "Erneut versuchen",
       "selected": "Ausgewählte Dateien",
-      "start": "Hochladen und starten",
-      "title": "Mit deinen Dateien starten",
       "uploading": "Datei {{current}} von {{total}} wird hochgeladen…"
     },
     "mail": {

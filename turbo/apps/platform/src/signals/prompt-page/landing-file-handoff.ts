@@ -49,7 +49,7 @@ export function landingFileReturnUrl(
 export class LandingFilePopupBlockedError extends Error {}
 export class LandingFilesUnavailableError extends Error {}
 
-function validLandingFiles(files: unknown): files is File[] {
+export function validLandingFiles(files: unknown): files is File[] {
   return (
     Array.isArray(files) &&
     files.length > 0 &&

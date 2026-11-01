@@ -2102,7 +2102,6 @@
     },
     "landingFiles": {
       "back": "Kembali ke file",
-      "description": "Tinjau permintaan Anda, lalu unggah file yang dipilih untuk memulai.",
       "editFailed": "File tidak dapat diperbarui. Coba lagi.",
       "failed": "Tidak dapat menyelesaikan. File dan permintaan Anda disimpan di sini. Coba lagi.",
       "limit": "Tambahkan hingga 10 file (total 1 GB).",
@@ -2112,8 +2111,6 @@
       "prompt": "Permintaan Anda",
       "retry": "Coba lagi",
       "selected": "File yang dipilih",
-      "start": "Unggah dan mulai",
-      "title": "Mulai dengan file Anda",
       "uploading": "Mengunggah file {{current}} dari {{total}}…"
     },
     "mail": {

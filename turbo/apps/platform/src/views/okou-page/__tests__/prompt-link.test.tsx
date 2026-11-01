@@ -23,6 +23,7 @@ import {
   createTestRuntime,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
+import { startPlatformEntrypoint } from "../../../lib/platform-entrypoint.ts";
 import { hash, pathname, search } from "../../../signals/location.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
@@ -434,6 +435,11 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   expect(draftUpdates).toHaveLength(0);
 });
 
+async function startLandingPage(options: Parameters<typeof setupPage>[0]) {
+  const page = await startPage(options);
+  await page.content;
+}
+
 const LANDING_DRAFT_ID = "f0000000-0000-4000-a000-000000000001";
 
 function landingPath(
@@ -456,6 +462,13 @@ function mockLandingPopup() {
     id = LANDING_DRAFT_ID,
     overrides: { nonce?: string; source?: Window | null } = {},
   ) => {
+    await waitFor(() => {
+      expect(open).toHaveBeenCalledWith(
+        expect.any(URL),
+        "_blank",
+        "popup,width=600,height=500",
+      );
+    });
     const address = open.mock.calls.at(-1)?.[0];
     if (!address) {
       throw new Error("Expected a user-initiated file transfer window");
@@ -478,6 +491,13 @@ function mockLandingPopup() {
     });
   };
   const ready = async (origin = "https://www.okou.ai") => {
+    await waitFor(() => {
+      expect(open).toHaveBeenCalledWith(
+        expect.any(URL),
+        "_blank",
+        "popup,width=600,height=500",
+      );
+    });
     const address = open.mock.calls.at(-1)?.[0];
     if (!address) {
       throw new Error("Expected a user-initiated file transfer window");
@@ -496,8 +516,7 @@ function mockLandingPopup() {
   return { open, close, post, deliver, ready };
 }
 
-test("A landing-page request waits for its files and sends them with the edited prompt after onboarding", async () => {
-  const user = userEvent.setup();
+test("A landing-page request opens its chat before files arrive and starts automatically", async () => {
   const popup = mockLandingPopup();
   const capture = capturePromptLaunch();
   context.mocks.upload.success({
@@ -507,18 +526,17 @@ test("A landing-page request waits for its files and sends them with the edited 
     size: 6,
     url: "https://cdn.vm7.io/artifacts/tests/report.pdf",
   });
-  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
-  await expect(
-    screen.findByRole("heading", { name: "Start with your files" }),
-  ).resolves.toBeInTheDocument();
+  await startLandingPage({ context, path: landingPath(), host: "app.okou.ai" });
+  await expect(screen.findByRole("status")).resolves.toBeInTheDocument();
+  expect(pathname()).toMatch(/^\/chats\//);
+  const pendingThreadPath = pathname();
+  expect(
+    screen.queryByRole("heading", { name: "Restoring your files…" }),
+  ).not.toBeInTheDocument();
   expect(capture.sends).toHaveLength(0);
-  expect(popup.open).not.toHaveBeenCalled();
-  await fill(
-    screen.getByRole("textbox", { name: "Your request" }),
-    "Create a board presentation",
-  );
-  await user.click(await findButton("Upload and start"));
-  expect(popup.open).toHaveBeenCalledOnce();
+  await waitFor(() => {
+    expect(popup.open).toHaveBeenCalledOnce();
+  });
   const file = new File(["report"], "report.pdf", { type: "application/pdf" });
   await popup.deliver([file], "https://attacker.example");
   expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
@@ -537,13 +555,14 @@ test("A landing-page request waits for its files and sends them with the edited 
   expect(capture.sends).toHaveLength(0);
   await popup.deliver([file]);
   const send = await waitForPromptLaunch(
-    "Create a board presentation",
+    "Turn this report into slides",
     capture,
   );
   expect(JSON.stringify(userMessageParts(send))).toContain(
     "a0000000-0000-4000-a000-000000000081",
   );
   expect(JSON.stringify(userMessageParts(send))).toContain("report.pdf");
+  expect(pathname()).toBe(pendingThreadPath);
   expect(search()).not.toContain("landingFiles");
   expect(popup.close).toHaveBeenCalledOnce();
 });
@@ -551,8 +570,7 @@ test("A landing-page request waits for its files and sends them with the edited 
 test("Missing landing files do not silently start a text-only task", async () => {
   const popup = mockLandingPopup();
   const capture = capturePromptLaunch();
-  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
-  click(await findButton("Upload and start"));
+  await startLandingPage({ context, path: landingPath(), host: "app.okou.ai" });
   await popup.deliver(null);
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Your files are unavailable",
@@ -586,7 +604,7 @@ test.each([
   async (source) => {
     const popup = mockLandingPopup();
     const capture = capturePromptLaunch();
-    await setupPage({
+    await startLandingPage({
       context,
       path: landingPath(source),
       host: "app.okou.ai",
@@ -636,7 +654,7 @@ test("A new user keeps the landing file handoff while completing onboarding", as
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  await setupPage({
+  await startLandingPage({
     context,
     path: landingPath(undefined, [
       { name: "report.pdf", size: 6, type: "application/pdf" },
@@ -671,19 +689,10 @@ test("A new user keeps the landing file handoff while completing onboarding", as
   await fill(input, "Create slides for our board");
   expect(popup.open).not.toHaveBeenCalled();
   click(await findButton("Next"));
-  await expect(
-    screen.findByRole("heading", { name: "Start with your files" }),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByRole("status")).resolves.toBeInTheDocument();
   await expect(
     screen.findByText("董事会笔记.txt"),
   ).resolves.toBeInTheDocument();
-  const requestInput = screen.getByRole("textbox", { name: "Your request" });
-  if (!(requestInput instanceof HTMLTextAreaElement)) {
-    throw new Error("Expected request input");
-  }
-  expect(requestInput.value).toContain("Create slides for our board");
-  expect(capture.sends).toHaveLength(0);
-  click(await findButton("Upload and start"));
   await popup.deliver([
     new File(["report"], "report.pdf", { type: "application/pdf" }),
     new File(["notes"], "董事会笔记.txt", { type: "text/plain" }),
@@ -734,8 +743,7 @@ test("A failed upload stops launch and retries only the failed file", async () =
       uploadHeaders: {},
     });
   });
-  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
-  await user.click(await findButton("Upload and start"));
+  await startLandingPage({ context, path: landingPath(), host: "app.okou.ai" });
   await popup.deliver([
     new File(["report"], report.filename, { type: report.contentType }),
     new File(["notes"], notes.filename, { type: notes.contentType }),
@@ -743,6 +751,9 @@ test("A failed upload stops launch and retries only the failed file", async () =
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Your files and request are kept here",
   );
+  const failedThreadPath = pathname();
+  expect(failedThreadPath).toMatch(/^\/chats\//);
+  expect(capture.createdThreads).toHaveLength(1);
   expect(capture.sends).toHaveLength(0);
   expect(attempts).toStrictEqual([report.filename, notes.filename]);
   failNotes = false;
@@ -758,6 +769,8 @@ test("A failed upload stops launch and retries only the failed file", async () =
   const payload = JSON.stringify(capture.sends[0].userMessage);
   expect(payload).toContain(report.id);
   expect(payload).toContain(notes.id);
+  expect(pathname()).toBe(failedThreadPath);
+  expect(capture.createdThreads).toHaveLength(1);
   expect(popup.open).toHaveBeenCalledOnce();
 });
 
@@ -772,12 +785,11 @@ test("A blocked file popup can be retried without losing the edited request", as
     size: 6,
     url: "https://cdn.vm7.io/artifacts/tests/report.pdf",
   });
-  await setupPage({ context, path: landingPath(), host: "app.okou.ai" });
+  await startLandingPage({ context, path: landingPath(), host: "app.okou.ai" });
   await fill(
     await screen.findByRole("textbox", { name: "Your request" }),
     "Summarize for the board",
   );
-  click(await findButton("Upload and start"));
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Allow pop-ups",
   );
@@ -827,7 +839,7 @@ test.each([
       needsOnboarding: true,
       onboardingComplete: false,
     });
-    await setupPage({
+    await startLandingPage({
       context,
       host: "app.okou.ai",
       path: landingPath(source, preview),
@@ -904,7 +916,7 @@ test("Onboarding submits only retained files and files added in that step", asyn
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  await setupPage({
+  await startLandingPage({
     context,
     host: "app.okou.ai",
     path: landingPath(undefined, [
@@ -924,7 +936,6 @@ test("Onboarding submits only retained files and files added in that step", asyn
   );
   await expect(screen.findByText("extra.csv")).resolves.toBeInTheDocument();
   await user.click(await findButton("Next"));
-  await user.click(await findButton("Upload and start"));
   await popup.deliver([
     new File(["report"], "report.pdf", { type: "application/pdf" }),
     new File(["notes"], "notes.txt", { type: "text/plain" }),
@@ -948,7 +959,7 @@ test("Removing every landing file starts only the edited request without a trans
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  await setupPage({
+  await startLandingPage({
     context,
     host: "app.okou.ai",
     path: landingPath(undefined, [
@@ -962,7 +973,6 @@ test("Removing every landing file starts only the edited request without a trans
     expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
   });
   await user.click(await findButton("Next"));
-  await user.click(await findButton("Upload and start"));
   await waitFor(() => {
     expect(capture.sends).toHaveLength(1);
   });
@@ -978,7 +988,7 @@ test("Adding files beyond the combined limit leaves the existing selection intac
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  await setupPage({
+  await startLandingPage({
     context,
     host: "app.okou.ai",
     path: landingPath(undefined, [
@@ -1004,12 +1014,11 @@ test("Adding files beyond the combined limit leaves the existing selection intac
 test("A preview file transfer returns to the same Marketing and App preview pair", async () => {
   const popup = mockLandingPopup();
   const source = "https://pr-848-www.omby.ai/en/tools/pdf-to-ppt";
-  await setupPage({
+  await startLandingPage({
     context,
     path: landingPath(source),
     host: "pr-44425-app-okou-app-preview.vm0.workers.dev",
   });
-  click(await findButton("Upload and start"));
   await popup.deliver(null, "https://pr-848-www.omby.ai");
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Your files are unavailable",
@@ -1028,12 +1037,11 @@ const closingApp = createTestRuntime(context);
 test("Closing the App during transfer closes its file window and stops the handshake", async () => {
   const popup = mockLandingPopup();
   const capture = capturePromptLaunch();
-  await setupPage({
+  await startLandingPage({
     context: closingApp,
     path: landingPath(),
     host: "app.okou.ai",
   });
-  click(await findButton("Upload and start"));
   await popup.ready();
   expect(popup.post).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
@@ -1051,4 +1059,91 @@ test("Closing the App during transfer closes its file window and stops the hands
   await popup.ready();
   expect(popup.post).toHaveBeenCalledOnce();
   expect(capture.sends).toHaveLength(0);
+});
+
+test("Files transferred before auth start the task automatically after onboarding", async () => {
+  vi.stubGlobal("Blob", NativeBlob);
+  vi.stubGlobal("File", NativeFile);
+  const id = crypto.randomUUID();
+  const nonce = crypto.randomUUID();
+  const params = new URLSearchParams({
+    prompt: "Summarize my notes",
+    landingFiles: id,
+    landingSource: "https://www.okou.ai/en/tools/pdf-to-ppt",
+  });
+  context.mocks.browser.url(
+    `https://app.okou.ai/onboarding?${params}#landingFileTransfer=${nonce}`,
+  );
+  vi.stubGlobal("opener", window);
+  const post = vi.spyOn(window, "postMessage").mockImplementation(() => {});
+  startPlatformEntrypoint();
+  expect(post).toHaveBeenCalledWith(
+    { type: "okou:landing-files:transfer-ready", id, nonce },
+    "https://www.okou.ai",
+  );
+  const file = new File(["Private notes"], "notes.txt", { type: "text/plain" });
+  const data = {
+    type: "okou:landing-files:transfer",
+    id,
+    nonce,
+    files: [file],
+  };
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      origin: "https://attacker.example",
+      source: window,
+      data,
+    }),
+  );
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      origin: "https://www.okou.ai",
+      source: null,
+      data,
+    }),
+  );
+  expect(post).toHaveBeenCalledTimes(1);
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      origin: "https://www.okou.ai",
+      source: window,
+      data,
+    }),
+  );
+  await waitFor(() => {
+    expect(post).toHaveBeenCalledWith(
+      { type: "okou:landing-files:transferred", id, nonce },
+      "https://www.okou.ai",
+    );
+  });
+  vi.stubGlobal("opener", null);
+  const open = vi.spyOn(window, "open");
+  const capture = capturePromptLaunch();
+  context.mocks.upload.success({
+    id: "a0000000-0000-4000-a000-000000000085",
+    filename: "notes.txt",
+    contentType: "text/plain",
+    size: file.size,
+    url: "https://cdn.vm7.io/artifacts/tests/notes.txt",
+  });
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: `/onboarding?${params}`,
+  });
+  await fill(
+    await screen.findByRole("textbox", { name: "Onboarding prompt" }),
+    "Summarize for the team",
+  );
+  click(await findButton("Next"));
+  await waitFor(() => {
+    expect(capture.sends).toHaveLength(1);
+  });
+  expect(capture.sends[0].prompt).toContain("Summarize for the team");
+  expect(JSON.stringify(capture.sends[0].userMessage)).toContain("notes.txt");
+  expect(open).not.toHaveBeenCalled();
 });

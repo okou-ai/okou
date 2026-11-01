@@ -1,10 +1,8 @@
 import { command } from "ccstate";
-import { createElement } from "react";
-import { hideAppSkeleton$ } from "../app-skeleton.ts";
-import { updatePage$ } from "../react-router.ts";
-import { LandingFilesPage } from "../../views/prompt-page/landing-files-page.tsx";
 import { landingFileSource } from "./landing-file-handoff.ts";
+import { readTransferredLandingFiles } from "./landing-file-transfer.ts";
 import { prepareLandingFiles$ } from "./landing-files.ts";
+import { landingFileSelection$ } from "./landing-file-preview.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
@@ -190,16 +188,19 @@ export const setupPromptPage$ = command(
     if (params.has("landingFiles") || params.has("landingSource")) {
       const switches = await get(featureSwitch$);
       signal.throwIfAborted();
+      const source = switches[FeatureSwitchKey.LandingFileHandoff]
+        ? landingFileSource(params.get("landingSource") ?? "", location.origin)
+        : null;
+      const id = params.get("landingFiles") ?? "";
+      const transferred = await readTransferredLandingFiles(source, id, signal);
+      signal.throwIfAborted();
       const files = set(
         prepareLandingFiles$,
         {
-          source: switches[FeatureSwitchKey.LandingFileHandoff]
-            ? landingFileSource(
-                params.get("landingSource") ?? "",
-                location.origin,
-              )
-            : null,
-          id: params.get("landingFiles") ?? "",
+          source,
+          id,
+          transferred,
+          selection: get(landingFileSelection$),
           prompt,
           request: {
             agentId,
@@ -212,14 +213,12 @@ export const setupPromptPage$ = command(
             routeSearchParams: cleaned,
           },
         },
-        signal,
+        rootSignal,
       );
-      set(
-        updatePage$,
-        createElement(LandingFilesPage, { key: files.back, signals: files }),
-        "none",
-      );
-      await set(hideAppSkeleton$, signal);
+      // Opening the chat ends this route; the root owns delivery and the chat
+      // renders upload progress and recovery in its transcript.
+      await Promise.allSettled([set(files.start$)]);
+      signal.throwIfAborted();
       return;
     }
     await set(

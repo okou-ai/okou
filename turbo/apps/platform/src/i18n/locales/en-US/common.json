@@ -2109,7 +2109,6 @@
     },
     "landingFiles": {
       "back": "Back to files",
-      "description": "Review your request, then upload your selected files to start.",
       "editFailed": "Couldn’t update the files. Please try again.",
       "failed": "Could not finish. Your files and request are kept here. Try again.",
       "limit": "Add up to 10 files (1 GB total).",
@@ -2119,8 +2118,6 @@
       "prompt": "Your request",
       "retry": "Retry",
       "selected": "Selected files",
-      "start": "Upload and start",
-      "title": "Start with your files",
       "uploading": "Uploading file {{current}} of {{total}}…"
     },
     "mail": {

@@ -52,7 +52,11 @@ import { sendChatEvent } from "./chat-event-api.ts";
 import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
-import { loadRightThread$ } from "./chat-thread-panes.ts";
+import {
+  loadRightThread$,
+  currentLeftThread$,
+  currentRightThread$,
+} from "./chat-thread-panes.ts";
 import {
   apiServiceTierFromSelection,
   runOptionsFromModelProviderSelection,
@@ -96,6 +100,14 @@ export interface SendNewThreadMessageRequest {
   onOptimisticSend?: () => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
+  /** An empty thread already opened while its first message's files upload. */
+  pendingThread?: PendingNewChatThread;
+}
+
+interface PendingNewChatThread {
+  readonly threadId: string;
+  readonly clientEventId: string;
+  readonly chatThreadEventId: string;
 }
 
 interface PreparedNewThreadPayload {
@@ -532,10 +544,10 @@ async function createNewThreadRecord(
 
 const mintNewThreadSubmission$ = command(
   async (
-    { set },
+    { get, set },
     request: Pick<
       SendNewThreadMessageRequest,
-      "agentId" | "computerUseHostId" | "cloudBrowserEnabled"
+      "agentId" | "computerUseHostId" | "cloudBrowserEnabled" | "pendingThread"
     >,
     identity: Omit<PendingThreadIdentity, "intent">,
     submission: {
@@ -556,6 +568,21 @@ const mintNewThreadSubmission$ = command(
         }),
       ),
     );
+    if (request.pendingThread) {
+      // Unlike an ordinary new send, this pane already mounted while files
+      // uploaded. Prepare its transcript resources for the optimistic input.
+      await Promise.all(
+        [get(currentLeftThread$), get(currentRightThread$)].flatMap(
+          (thread) => {
+            return thread?.threadId === identity.threadId
+              ? [set(thread.refreshMessages$, signal)]
+              : [];
+          },
+        ),
+      );
+      signal.throwIfAborted();
+      return;
+    }
     await set(
       mintOptimisticThreadWithEvent$,
       {
@@ -614,6 +641,9 @@ const reserveNewThreadSubmissionIdentity$ = command(
   ) => {
     signal.throwIfAborted();
     const { request, draft, userMessage, modelSelection } = args;
+    if (request.pendingThread) {
+      return { ...request.pendingThread, customDirection: false };
+    }
     const customDirection = suggestionFeedbacks(userMessage).length > 0;
     const identity = customDirection
       ? await customDirectionIdentity(
@@ -703,6 +733,63 @@ function newThreadRecordOptions(args: {
   };
 }
 
+/** Open the actual chat before uploading its first message's attachments. */
+export const openPendingNewThread$ = command(
+  async (
+    { get, set },
+    request: SendNewThreadMessageRequest & {
+      pendingThread: PendingNewChatThread;
+    },
+    signal: AbortSignal,
+  ): Promise<ModelProviderSelection> => {
+    const resolved = await set(
+      resolveNewThreadModelSelection$,
+      request.modelSelection,
+      signal,
+    );
+    if (!resolved) {
+      throw new Error("A model selection is required");
+    }
+    const { modelSelection } = resolved;
+    const identity = request.pendingThread;
+    await set(
+      mintOptimisticThreadWithEvent$,
+      {
+        threadId: identity.threadId,
+        eventId: identity.chatThreadEventId,
+        agentId: request.agentId,
+        selectedModel: modelSelection.selectedModel,
+        modelSettings: modelSelection.modelSettings ?? {},
+        serviceTier: apiServiceTierFromSelection(modelSelection),
+        computerUseHostId: request.computerUseHostId ?? null,
+        cloudBrowserEnabled: request.cloudBrowserEnabled ?? false,
+      },
+      signal,
+    );
+    await set(
+      routeChatThread$,
+      {
+        pane: "main",
+        threadId: identity.threadId,
+        searchParams: request.routeSearchParams,
+      },
+      signal,
+    );
+    await createNewThreadRecord(
+      newThreadRecordOptions({
+        createClient: get(apiClient$),
+        request,
+        identity,
+        resolved,
+        codexExecution: get(featureSwitch$)[FeatureSwitchKey.CodexExecution],
+      }),
+      signal,
+    );
+    signal.throwIfAborted();
+    return modelSelection;
+  },
+);
+
 const sendNewThreadMessage$ = command(
   async (
     { get, set },
@@ -764,8 +851,9 @@ const sendNewThreadMessage$ = command(
       resolved,
       codexExecution: features[FeatureSwitchKey.CodexExecution],
     });
-    const createResult =
-      request.connectorSelections?.length || customDirection
+    const createResult = request.pendingThread
+      ? Promise.resolve()
+      : request.connectorSelections?.length || customDirection
         ? createNewThreadRecord(creation, signal)
         : null;
     // An explicit account choice must be accepted before publishing an
