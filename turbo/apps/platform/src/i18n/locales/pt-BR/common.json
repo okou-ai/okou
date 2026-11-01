@@ -2141,19 +2141,6 @@
       "threads": "Conversas",
       "title": "Encaminhar para"
     },
-    "landingFiles": {
-      "back": "Voltar aos arquivos",
-      "editFailed": "Não foi possível atualizar os arquivos. Tente novamente.",
-      "failed": "Não foi possível concluir. Seus arquivos e sua solicitação foram mantidos aqui. Tente novamente.",
-      "limit": "Adicione até 10 arquivos (1 GB no total).",
-      "loading": "Restaurando seus arquivos…",
-      "missing": "Seus arquivos não estão disponíveis. Volte à página no mesmo navegador e selecione-os novamente.",
-      "popupBlocked": "Permita pop-ups neste site e tente transferir seus arquivos novamente.",
-      "prompt": "Sua solicitação",
-      "retry": "Tentar novamente",
-      "selected": "Arquivos selecionados",
-      "uploading": "Enviando arquivo {{current}} de {{total}}…"
-    },
     "mail": {
       "bcc": "cco",
       "cc": "cc",

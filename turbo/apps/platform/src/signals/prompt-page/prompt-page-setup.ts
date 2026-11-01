@@ -1,10 +1,4 @@
 import { command } from "ccstate";
-import { landingFileSource } from "./landing-file-handoff.ts";
-import { readTransferredLandingFiles } from "./landing-file-transfer.ts";
-import { prepareLandingFiles$ } from "./landing-files.ts";
-import { landingFileSelection$ } from "./landing-file-preview.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
@@ -173,60 +167,21 @@ export const setupPromptPage$ = command(
     const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const resolvedRequestedModel = catalog.resolve(requestedModel);
-    const modelSelection = resolvedRequestedModel
-      ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
-      : null;
 
     const cleaned = new URLSearchParams(params);
     cleaned.delete("prompt");
     cleaned.delete("model");
     cleaned.delete("template");
     cleaned.delete("connector");
-    cleaned.delete("landingFiles");
-    cleaned.delete("landingSource");
     const rootSignal = get(rootSignal$);
-    if (params.has("landingFiles") || params.has("landingSource")) {
-      const switches = await get(featureSwitch$);
-      signal.throwIfAborted();
-      const source = switches[FeatureSwitchKey.LandingFileHandoff]
-        ? landingFileSource(params.get("landingSource") ?? "", location.origin)
-        : null;
-      const id = params.get("landingFiles") ?? "";
-      const transferred = await readTransferredLandingFiles(source, id, signal);
-      signal.throwIfAborted();
-      const files = set(
-        prepareLandingFiles$,
-        {
-          source,
-          id,
-          transferred,
-          selection: get(landingFileSelection$),
-          prompt,
-          request: {
-            agentId,
-            prompt,
-            modelSelection,
-            generationTemplate: resolvedGenerationTemplate?.template,
-            generationTemplateTitleSnapshot:
-              resolvedGenerationTemplate?.titleSnapshot,
-            computerUseHostId: null,
-            routeSearchParams: cleaned,
-          },
-        },
-        rootSignal,
-      );
-      // Opening the chat ends this route; the root owns delivery and the chat
-      // renders upload progress and recovery in its transcript.
-      await Promise.allSettled([set(files.start$)]);
-      signal.throwIfAborted();
-      return;
-    }
     await set(
       sendNewThread$,
       {
         agentId,
         prompt,
-        modelSelection,
+        modelSelection: resolvedRequestedModel
+          ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
+          : null,
         generationTemplate: resolvedGenerationTemplate?.template,
         generationTemplateTitleSnapshot:
           resolvedGenerationTemplate?.titleSnapshot,

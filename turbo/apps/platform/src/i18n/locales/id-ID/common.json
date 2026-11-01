@@ -2100,19 +2100,6 @@
       "threads": "Chat",
       "title": "Teruskan ke"
     },
-    "landingFiles": {
-      "back": "Kembali ke file",
-      "editFailed": "File tidak dapat diperbarui. Coba lagi.",
-      "failed": "Tidak dapat menyelesaikan. File dan permintaan Anda disimpan di sini. Coba lagi.",
-      "limit": "Tambahkan hingga 10 file (total 1 GB).",
-      "loading": "Memulihkan file Anda…",
-      "missing": "File Anda tidak tersedia. Kembali ke halaman di browser yang sama dan pilih lagi.",
-      "popupBlocked": "Izinkan pop-up untuk situs ini, lalu coba lagi untuk mentransfer file Anda.",
-      "prompt": "Permintaan Anda",
-      "retry": "Coba lagi",
-      "selected": "File yang dipilih",
-      "uploading": "Mengunggah file {{current}} dari {{total}}…"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

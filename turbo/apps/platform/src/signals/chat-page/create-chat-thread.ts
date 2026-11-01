@@ -3876,9 +3876,6 @@ export function createChatPanelSignals(
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
   });
-  const refreshMessages$ = command(async ({ set }, signal: AbortSignal) => {
-    await set(messagePipeline.ensureVisibleEventTrees$, true, signal);
-  });
   const messages: MessageListSignals = {
     ...messagePipeline,
     ...artifact,
@@ -3916,7 +3913,6 @@ export function createChatPanelSignals(
     threadId,
     agentId,
     threadDraft$,
-    refreshMessages$,
     threadMeta$,
     optimisticCreateUnsettled$,
     ...threadMetadata,
