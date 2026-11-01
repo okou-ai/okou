@@ -102,7 +102,7 @@ final class ChatArtifactTests: XCTestCase {
     XCTAssertNil(resolved.expiresAt)
   }
 
-  func testPublishedResourceCapabilitiesKeepTheirCredentialWithoutRequestingSiteAccess() async throws {
+  func testPublishedCapabilitiesAndLegacyResourcesKeepTheirAddresses() async throws {
     let fixture = ChatHTTPFixture { _ in throw URLError(.unsupportedURL) }
     for address in [
       "https://pv-token.okou.app/slide.html#next",
