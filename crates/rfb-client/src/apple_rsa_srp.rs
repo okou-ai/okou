@@ -14,7 +14,7 @@ use rsa::{
 };
 use subtle::ConstantTimeEq;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite},
     time::Instant,
 };
 use zeroize::Zeroizing;
@@ -23,10 +23,9 @@ use crate::{
     AppleRsaSrpCredentials, Authenticated, AuthenticatedStream, AuthenticationStage, Error,
     apple_srp::{expected_proof, parse_challenge_fields, write_message},
     authentication::{discard_reason, phase, read_security_result},
+    version::{ServerVersion, exchange_version},
 };
 
-const APPLE_VERSION: &[u8; 12] = b"RFB 003.889\n";
-const CLIENT_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const SECURITY_TYPE: u8 = 33;
 const KEY_REPLY_LEN: usize = 301;
 const KEY_DER_LEN: usize = 294;
@@ -46,7 +45,7 @@ where
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
-        exchange_version(&mut stream),
+        exchange_version(&mut stream, ServerVersion::Apple),
     )
     .await?;
     phase(
@@ -64,17 +63,6 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::apple_rsa_srp_raw(stream),
     })
-}
-
-async fn exchange_version<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let mut version = [0; 12];
-    stream.read_exact(&mut version).await?;
-    if &version != APPLE_VERSION {
-        return Err(Error::UnsupportedRfbVersion);
-    }
-    stream.write_all(CLIENT_VERSION).await?;
-    stream.flush().await?;
-    Ok(())
 }
 
 async fn verify_offer<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Error> {

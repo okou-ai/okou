@@ -20,10 +20,9 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{
     AppleSrpCredentials, Authenticated, AuthenticatedStream, AuthenticationStage, Error,
     authentication::{discard_reason, phase, read_security_result},
+    version::{ServerVersion, exchange_version},
 };
 
-const APPLE_VERSION: &[u8; 12] = b"RFB 003.889\n";
-const CLIENT_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const DIRECT_SRP: u8 = 36;
 const GROUP_BYTES: usize = 512;
 const GROUP_BITS: u32 = 4096;
@@ -51,7 +50,7 @@ where
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
-        exchange_version(&mut stream),
+        exchange_version(&mut stream, ServerVersion::Apple),
     )
     .await?;
     phase(
@@ -69,17 +68,6 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::apple_srp_raw(stream),
     })
-}
-
-async fn exchange_version<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let mut version = [0; 12];
-    stream.read_exact(&mut version).await?;
-    if &version != APPLE_VERSION {
-        return Err(Error::UnsupportedRfbVersion);
-    }
-    stream.write_all(CLIENT_VERSION).await?;
-    stream.flush().await?;
-    Ok(())
 }
 
 async fn verify_direct_srp_offer<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Error> {

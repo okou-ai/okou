@@ -14,10 +14,11 @@ use zeroize::Zeroizing;
 use crate::{
     Authenticated, AuthenticatedStream, AuthenticationStage, ClientCertificateAuthentication,
     ClientIdentity, Error, PlainCredentials, TrustRoots, VncPassword, X509Authentication,
-    qemu_sasl, trust::ClientAuthSelection,
+    qemu_sasl,
+    trust::ClientAuthSelection,
+    version::{ServerVersion, exchange_version},
 };
 
-const RFB_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const VENCRYPT: u8 = 19;
 const MAX_ERROR_BYTES: u32 = 4096;
 
@@ -117,7 +118,7 @@ where
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
-        exchange_version(&mut stream),
+        exchange_version(&mut stream, ServerVersion::Rfb38),
     )
     .await?;
     phase(
@@ -161,20 +162,6 @@ pub(crate) async fn phase<T>(
         return Err(expired());
     }
     Ok(value)
-}
-
-async fn exchange_version<S>(stream: &mut S) -> Result<(), Error>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    let mut version = [0; 12];
-    stream.read_exact(&mut version).await?;
-    if &version != RFB_VERSION {
-        return Err(Error::UnsupportedRfbVersion);
-    }
-    stream.write_all(RFB_VERSION).await?;
-    stream.flush().await?;
-    Ok(())
 }
 
 async fn negotiate_security<S>(stream: &mut S, subtype: u32) -> Result<(), Error>

@@ -21,10 +21,9 @@ use crate::{
     AppleDhCredentials, AppleDhParameterCheck, Authenticated, AuthenticatedStream,
     AuthenticationStage, Error,
     authentication::{discard_reason, phase, read_security_result},
+    version::{ServerVersion, exchange_version},
 };
 
-const APPLE_VERSION: &[u8; 12] = b"RFB 003.889\n";
-const CLIENT_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const APPLE_DH: u8 = 30;
 // A 2048-bit minimum and 4096-bit maximum bound both weak groups and peer CPU
 // work. The independently exercised macOS 26.6.2 server uses 512 bytes.
@@ -44,7 +43,7 @@ where
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
-        exchange_version(&mut stream),
+        exchange_version(&mut stream, ServerVersion::Apple),
     )
     .await?;
     phase(
@@ -62,17 +61,6 @@ where
     Ok(Authenticated {
         stream: AuthenticatedStream::apple_dh_raw(stream),
     })
-}
-
-async fn exchange_version<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let mut version = [0; 12];
-    stream.read_exact(&mut version).await?;
-    if &version != APPLE_VERSION {
-        return Err(Error::UnsupportedRfbVersion);
-    }
-    stream.write_all(CLIENT_VERSION).await?;
-    stream.flush().await?;
-    Ok(())
 }
 
 async fn select_apple_dh<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
