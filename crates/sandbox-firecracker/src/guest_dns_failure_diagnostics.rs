@@ -207,10 +207,7 @@ fn bounded_output(output: String) -> String {
     if output.len() <= LOG_OUTPUT_LIMIT_BYTES {
         return output;
     }
-    let mut end = LOG_OUTPUT_LIMIT_BYTES;
-    while !output.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = output.floor_char_boundary(LOG_OUTPUT_LIMIT_BYTES);
     format!("{}\n[output truncated]", &output[..end])
 }
 

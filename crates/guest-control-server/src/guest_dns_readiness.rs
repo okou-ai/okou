@@ -346,10 +346,7 @@ fn truncate_utf8(mut value: String, limit: usize) -> String {
     if value.len() <= limit {
         return value;
     }
-    let mut end = limit;
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = value.floor_char_boundary(limit);
     value.truncate(end);
     value
 }

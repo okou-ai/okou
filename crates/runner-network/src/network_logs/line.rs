@@ -154,10 +154,7 @@ impl BoundedLogLine {
         }
         // Copy validated chunks in bulk. A cap inside a UTF-8 character must
         // not retain a partial character, including discarded trailing spaces.
-        let mut end = value.len().min(self.max_bytes.saturating_sub(before));
-        while !value.is_char_boundary(end) {
-            end -= 1;
-        }
+        let end = value.floor_char_boundary(value.len().min(self.max_bytes.saturating_sub(before)));
         let required = self.content.len() + end;
         if required > self.content.capacity() {
             let capacity = required
