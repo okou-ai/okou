@@ -1019,7 +1019,7 @@ export function Browser({
         <div
           ref={surfaceRef}
           data-browser-surface
-          className="relative h-full w-full overflow-hidden"
+          className="relative h-full w-full touch-none overflow-hidden"
         >
           <canvas
             ref={canvasRef}
