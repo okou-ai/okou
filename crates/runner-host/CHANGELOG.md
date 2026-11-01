@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.12](https://github.com/okou-ai/okou/compare/runner-host-v0.10.11...runner-host-v0.10.12) (2026-11-01)
+
+
+### Refactoring
+
+* **runner-host:** separate gc primitive test source ownership ([#44464](https://github.com/okou-ai/okou/issues/44464)) ([a3dc599](https://github.com/okou-ai/okou/commit/a3dc5999a216bc0c4c7cf5a453dd936aa757ef57))
+* **runner-host:** separate host file test source ownership ([#44444](https://github.com/okou-ai/okou/issues/44444)) ([16eef7e](https://github.com/okou-ai/okou/commit/16eef7ef910de13525f39738710cfa46f6e0c086))
+* **runner-host:** separate service unit config test source ownership ([#44455](https://github.com/okou-ai/okou/issues/44455)) ([80e7521](https://github.com/okou-ai/okou/commit/80e752145536fad6fb416c9e0e952ba3c9ec92ac))
+
 ## [0.10.11](https://github.com/okou-ai/okou/compare/runner-host-v0.10.10...runner-host-v0.10.11) (2026-10-31)
 
 
