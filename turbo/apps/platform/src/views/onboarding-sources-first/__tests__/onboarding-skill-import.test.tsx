@@ -27,7 +27,6 @@ import {
   connectedGmailSource,
   mockOnboardingConnectorCatalog,
 } from "./onboarding-catalog-test-helpers.ts";
-import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 vi.hoisted(() => {
   // Product analytics resolves the deployment environment at module load.
@@ -490,22 +489,13 @@ test("The skills step names Claude Code when it was selected", async () => {
 
 test("Finishing onboarding sends the industry after a full Codex flow", async () => {
   mockAgentWorkflows();
-  mockChatLifecycle(context);
-  let sentIndustry: string | undefined;
-  context.mocks.api(
-    onboardingCompleteContract.complete,
-    ({ body, respond }) => {
-      sentIndustry = body.industry;
-      context.mocks.data.onboardingStatus({
-        needsOnboarding: false,
-        onboardingComplete: true,
-      });
-      return respond(200, {
-        onboardingComplete: true,
-        needsOnboarding: false,
-      });
-    },
-  );
+  const sentIndustry = context.mocks.deferred<string | undefined>();
+  context.mocks.api(onboardingCompleteContract.complete, ({ body, never }) => {
+    sentIndustry.resolve(body.industry);
+    // This case checks the submitted answer; shared teardown cancels the
+    // response before unrelated first-chat setup starts.
+    return never();
+  });
 
   await openSkillsStep(CODEX_CARD, true);
   click(getButtonByName("Not now"));
@@ -521,9 +511,7 @@ test("Finishing onboarding sends the industry after a full Codex flow", async ()
     screen.findByRole("heading", { name: "Let’s start your first task" }),
   ).resolves.toBeInTheDocument();
   click(getButtonByName("Start my first task"));
-  await waitFor(() => {
-    expect(sentIndustry).toBe("marketing");
-  });
+  await expect(sentIndustry.promise).resolves.toBe("marketing");
 });
 
 test("A resumed skills step without a work positioning continues to Slack", async () => {
