@@ -2814,16 +2814,17 @@ jobs:
     timeout-minutes: 8
     needs: [detect-release, detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false'
-    # Blocking for Desktop-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
+    # Blocking for Desktop- and iOS-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
     # Runner, Guest Agent, and MITM findings only warn.
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     permissions:
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          # The base commit supplies the base Desktop floor and base schema.
+          # The base commit supplies the native client floors and base schema.
           fetch-depth: 2
       - uses: ./.github/actions/toolchain-init
 
@@ -2880,6 +2881,8 @@ jobs:
           echo "Base commit: $base_sha"
           git show "$base_sha:turbo/apps/api/src/lib/desktop-compatibility.json" \
             > /tmp/runtime-api-schema/desktop-base-floor.json
+          git show "$base_sha:turbo/apps/api/src/lib/ios-client-compatibility.json" \
+            > /tmp/runtime-api-schema/ios-base-floor.json
 
           # Findings the base already has against production were proven by the
           # change that introduced them and must not block this one.
@@ -2892,7 +2895,7 @@ jobs:
           if ! (cd turbo/packages/api-contracts &&
             pnpm exec tsx .compat-base/src/runtime-api-schema/cli.ts build \
               --out /tmp/runtime-api-schema/base.json); then
-            echo "::warning::Base runtime API schema could not be built; every Desktop finding is treated as new."
+            echo "::warning::Base runtime API schema could not be built; every native client finding is treated as new."
             rm -f /tmp/runtime-api-schema/base.json
           fi
           rm -rf "$base_src"
@@ -2914,11 +2917,25 @@ jobs:
             echo "::warning::Published Desktop version unavailable from $url"
           fi
 
+      - name: Read published iOS TestFlight version
+        id: ios-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(node .github/scripts/checks/ios-published-version.mjs)
+          if [ -n "$version" ]; then
+            echo "Published iOS version: $version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check runtime API compatibility
         working-directory: turbo
         shell: bash
         env:
           DESKTOP_PUBLISHED_VERSION: ${{ steps.desktop-release.outputs.version }}
+          IOS_PUBLISHED_VERSION: ${{ steps.ios-release.outputs.version }}
         run: |
           set -euo pipefail
           schema_dir=/tmp/runtime-api-schema
@@ -2930,14 +2947,20 @@ jobs:
             --current "$schema_dir/candidate.json"
             --report-out "$schema_dir/report.json"
             --block-owner desktop
+            --block-owner ios
             --desktop-floor "$PWD/apps/api/src/lib/desktop-compatibility.json"
             --desktop-base-floor "$schema_dir/desktop-base-floor.json"
+            --ios-floor "$PWD/apps/api/src/lib/ios-client-compatibility.json"
+            --ios-base-floor "$schema_dir/ios-base-floor.json"
           )
           if [ -f "$schema_dir/base.json" ]; then
             args+=(--base-schema "$schema_dir/base.json")
           fi
           if [ -n "$DESKTOP_PUBLISHED_VERSION" ]; then
             args+=(--desktop-published-version "$DESKTOP_PUBLISHED_VERSION")
+          fi
+          if [ -n "$IOS_PUBLISHED_VERSION" ]; then
+            args+=(--ios-published-version "$IOS_PUBLISHED_VERSION")
           fi
           pnpm --filter @okouai/api-contracts run lint-runtime-api-compat -- "${args[@]}"
 

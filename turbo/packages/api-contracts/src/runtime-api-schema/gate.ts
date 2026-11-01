@@ -6,19 +6,46 @@ import { stableStringify } from "./schema";
 
 /*
  * Merge policy over runtime API compatibility findings. Findings on blocking
- * owners fail unless proven; Desktop accepts a floor raise (proof A) or a
+ * owners fail unless proven; native clients accept a floor raise (proof A) or a
  * registered response transform (proof B). See
  * docs/deployment-compatibility.md#desktop-contract-gate.
  */
 
-const DESKTOP_FLOOR_FILE = "turbo/apps/api/src/lib/desktop-compatibility.json";
-const DESKTOP_TRANSFORMS_FILE =
-  "turbo/packages/api-contracts/src/client-transforms/desktop.ts";
 export const DESKTOP_PUBLISHED_VERSION_ORACLE =
   "release tag version in the redirect from GET https://api.okou.ai/api/desktop/updates/stable/darwin/arm64/release";
 
-/** The Desktop floor in the change under review and on the base branch. */
-export interface DesktopFloorChange {
+export const IOS_PUBLISHED_VERSION_ORACLE =
+  "ios-v* release commit with a successful publish-ios-testflight job and successful internal availability verification in release-please.yml";
+
+type NativeOwner = "desktop" | "ios";
+interface NativeClientPolicy {
+  readonly owner: NativeOwner;
+  readonly label: string;
+  readonly floorFile: string;
+  readonly transformsFile: string;
+  readonly oracle: string;
+}
+
+const nativeClients: Readonly<Record<NativeOwner, NativeClientPolicy>> = {
+  desktop: {
+    owner: "desktop",
+    label: "Desktop",
+    floorFile: "turbo/apps/api/src/lib/desktop-compatibility.json",
+    transformsFile:
+      "turbo/packages/api-contracts/src/client-transforms/desktop.ts",
+    oracle: DESKTOP_PUBLISHED_VERSION_ORACLE,
+  },
+  ios: {
+    owner: "ios",
+    label: "iOS",
+    floorFile: "turbo/apps/api/src/lib/ios-client-compatibility.json",
+    transformsFile: "turbo/packages/api-contracts/src/client-transforms/ios.ts",
+    oracle: IOS_PUBLISHED_VERSION_ORACLE,
+  },
+};
+
+/** The native client floor in the change under review and on the base branch. */
+export interface NativeFloorChange {
   readonly floor: string | null;
   readonly baseFloor: string | null;
 }
@@ -34,10 +61,13 @@ export interface RuntimeApiGateInput {
    */
   readonly baseFindings?: readonly RuntimeApiCompatFinding[];
   readonly blockingOwners: ReadonlySet<RuntimeApiRouteOwner>;
-  readonly desktopFloor?: DesktopFloorChange;
+  readonly desktopFloor?: NativeFloorChange;
   /** Published Desktop version; undefined when the oracle was unavailable. */
   readonly desktopPublishedVersion?: string;
   readonly desktopTransforms: readonly ClientResponseTransform[];
+  readonly iosFloor?: NativeFloorChange;
+  readonly iosPublishedVersion?: string;
+  readonly iosTransforms?: readonly ClientResponseTransform[];
 }
 
 type RuntimeApiGateOutcome = "blocking" | "proven" | "inherited" | "warning";
@@ -45,15 +75,15 @@ type RuntimeApiGateOutcome = "blocking" | "proven" | "inherited" | "warning";
 interface RuntimeApiGateFinding extends RuntimeApiCompatFinding {
   readonly outcome: RuntimeApiGateOutcome;
   readonly resolution: string;
-  /** The two accepted proofs; set for every Desktop finding. */
+  /** The two accepted proofs; set for every native client finding. */
   readonly proofs?: string;
 }
 
 interface RuntimeApiGateError {
   readonly kind:
-    | "desktop-floor-invalid"
-    | "desktop-transform-invalid"
-    | "desktop-transform-unreachable";
+    | `${NativeOwner}-floor-invalid`
+    | `${NativeOwner}-transform-invalid`
+    | `${NativeOwner}-transform-unreachable`;
   readonly message: string;
 }
 
@@ -65,7 +95,7 @@ export interface RuntimeApiGateResult {
 
 type StableVersion = readonly [number, number, number];
 
-type DesktopFloorEvaluation =
+type NativeFloorEvaluation =
   | { readonly kind: "unchanged" }
   | {
       readonly kind: "raised";
@@ -76,9 +106,10 @@ type DesktopFloorEvaluation =
   | { readonly kind: "invalid"; readonly message: string };
 
 interface ClassifyContext {
+  readonly client: NativeClientPolicy;
   readonly blockingOwners: ReadonlySet<RuntimeApiRouteOwner>;
   readonly inherited: ReadonlySet<string>;
-  readonly floor: DesktopFloorEvaluation;
+  readonly floor: NativeFloorEvaluation;
   readonly publishedVersion: string | undefined;
   readonly transforms: readonly ClientResponseTransform[];
 }
@@ -87,29 +118,10 @@ export function evaluateRuntimeApiGate(
   input: RuntimeApiGateInput,
 ): RuntimeApiGateResult {
   const errors: RuntimeApiGateError[] = [];
-  const floor = evaluateDesktopFloor(
-    input.desktopFloor,
-    input.desktopPublishedVersion,
-  );
-  if (floor.kind === "invalid") {
-    errors.push({ kind: "desktop-floor-invalid", message: floor.message });
-  }
-  errors.push(
-    ...checkDesktopTransforms(
-      input.desktopTransforms,
-      input.desktopFloor?.floor ?? null,
-    ),
-  );
-
-  const context: ClassifyContext = {
-    blockingOwners: input.blockingOwners,
-    inherited: new Set((input.baseFindings ?? []).map(findingKey)),
-    floor,
-    publishedVersion: input.desktopPublishedVersion,
-    transforms: input.desktopTransforms,
-  };
+  const desktop = nativeContext(input, nativeClients.desktop, errors);
+  const ios = nativeContext(input, nativeClients.ios, errors);
   const findings = input.findings.map((finding) => {
-    return classifyFinding(finding, context);
+    return classifyFinding(finding, finding.owner === "ios" ? ios : desktop);
   });
 
   return {
@@ -120,6 +132,41 @@ export function evaluateRuntimeApiGate(
       }),
     findings,
     errors,
+  };
+}
+
+function nativeContext(
+  input: RuntimeApiGateInput,
+  client: NativeClientPolicy,
+  errors: RuntimeApiGateError[],
+): ClassifyContext {
+  const change =
+    client.owner === "desktop" ? input.desktopFloor : input.iosFloor;
+  const publishedVersion =
+    client.owner === "desktop"
+      ? input.desktopPublishedVersion
+      : input.iosPublishedVersion;
+  const transforms =
+    client.owner === "desktop"
+      ? input.desktopTransforms
+      : (input.iosTransforms ?? []);
+  const floor = evaluateNativeFloor(change, publishedVersion, client);
+  if (floor.kind === "invalid") {
+    errors.push({
+      kind: `${client.owner}-floor-invalid`,
+      message: floor.message,
+    });
+  }
+  errors.push(
+    ...checkNativeTransforms(transforms, change?.floor ?? null, client),
+  );
+  return {
+    client,
+    floor,
+    publishedVersion,
+    transforms,
+    blockingOwners: input.blockingOwners,
+    inherited: new Set((input.baseFindings ?? []).map(findingKey)),
   };
 }
 
@@ -145,7 +192,12 @@ export function renderRuntimeApiGateReport(
       `Impact: ${finding.impact}`,
       "",
       `Suggested fix: ${finding.recommendation}`,
-      ...(finding.proofs ? ["", `Desktop proofs: ${finding.proofs}`] : []),
+      ...(finding.proofs
+        ? [
+            "",
+            `${finding.owner === "ios" ? "iOS" : "Desktop"} proofs: ${finding.proofs}`,
+          ]
+        : []),
       "",
       `Gate: ${finding.resolution}`,
       "",
@@ -155,7 +207,7 @@ export function renderRuntimeApiGateReport(
   });
   for (const error of result.errors) {
     sections.push(
-      `Desktop contract gate error (${error.kind})\n\n${error.message}`,
+      `${error.kind.startsWith("ios-") ? "iOS" : "Desktop"} contract gate error (${error.kind})\n\n${error.message}`,
     );
   }
 
@@ -182,7 +234,7 @@ export function runtimeApiGateAnnotations(
   });
   for (const error of result.errors) {
     annotations.push(
-      `::error title=Desktop contract gate::${oneLine(error.message)}`,
+      `::error title=${error.kind.startsWith("ios-") ? "iOS" : "Desktop"} contract gate::${oneLine(error.message)}`,
     );
   }
   return annotations;
@@ -208,22 +260,25 @@ function compareVersions(left: StableVersion, right: StableVersion): number {
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
 }
 
-function evaluateDesktopFloor(
-  change: DesktopFloorChange | undefined,
+function evaluateNativeFloor(
+  change: NativeFloorChange | undefined,
   published: string | undefined,
-): DesktopFloorEvaluation {
+  client: NativeClientPolicy,
+): NativeFloorEvaluation {
   if (!change || change.floor === change.baseFloor) {
     return { kind: "unchanged" };
   }
 
   const { floor, baseFloor } = change;
-  const summary = `${DESKTOP_FLOOR_FILE} changes minimumSupportedVersion from ${JSON.stringify(baseFloor)} to ${JSON.stringify(floor)}`;
-  const invalid = (reason: string): DesktopFloorEvaluation => {
+  const summary = `${client.floorFile} changes minimumSupportedVersion from ${JSON.stringify(baseFloor)} to ${JSON.stringify(floor)}`;
+  const invalid = (reason: string): NativeFloorEvaluation => {
     return { kind: "invalid", message: `${summary}, ${reason}` };
   };
 
   if (floor === null) {
-    return invalid("which removes the Desktop floor. The floor may only rise.");
+    return invalid(
+      `which removes the ${client.label} floor. The floor may only rise.`,
+    );
   }
   const to = parseStableVersion(floor);
   if (!to) {
@@ -244,26 +299,27 @@ function evaluateDesktopFloor(
   }
   if (published === undefined) {
     return invalid(
-      `but the published Desktop version is unavailable, so the raise cannot be verified. Oracle: ${DESKTOP_PUBLISHED_VERSION_ORACLE}. Re-run the check once the oracle responds.`,
+      `but the published ${client.label} version is unavailable, so the raise cannot be verified. Oracle: ${client.oracle}. Re-run the check once the oracle responds.`,
     );
   }
   const publishedVersion = parseStableVersion(published);
   if (!publishedVersion) {
     return invalid(
-      `but the published Desktop version ${JSON.stringify(published)} from the oracle is not a stable x.y.z version. Oracle: ${DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
+      `but the published ${client.label} version ${JSON.stringify(published)} from the oracle is not a stable x.y.z version. Oracle: ${client.oracle}.`,
     );
   }
   if (compareVersions(to, publishedVersion) > 0) {
     return invalid(
-      `which is above the published Desktop version ${published}; users cannot update to it yet. Oracle: ${DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
+      `which is above the published ${client.label} version ${published}; users cannot update to it yet. Oracle: ${client.oracle}.`,
     );
   }
   return { kind: "raised", from: baseFloor, to: floor, published };
 }
 
-function checkDesktopTransforms(
+function checkNativeTransforms(
   transforms: readonly ClientResponseTransform[],
   floor: string | null,
+  client: NativeClientPolicy,
 ): readonly RuntimeApiGateError[] {
   const errors: RuntimeApiGateError[] = [];
   const floorVersion = floor === null ? undefined : parseStableVersion(floor);
@@ -272,19 +328,19 @@ function checkDesktopTransforms(
     if (transform.maxVersion === null) {
       continue;
     }
-    const label = `${transform.method} ${transform.path} ${transform.status} (since ${transform.since}) in ${DESKTOP_TRANSFORMS_FILE}`;
+    const label = `${transform.method} ${transform.path} ${transform.status} (since ${transform.since}) in ${client.transformsFile}`;
     const maxVersion = parseStableVersion(transform.maxVersion);
     if (!maxVersion) {
       errors.push({
-        kind: "desktop-transform-invalid",
-        message: `Desktop transform ${label} has maxVersion ${JSON.stringify(transform.maxVersion)}; it must be null or a stable x.y.z version.`,
+        kind: `${client.owner}-transform-invalid`,
+        message: `${client.label} transform ${label} has maxVersion ${JSON.stringify(transform.maxVersion)}; it must be null or a stable x.y.z version.`,
       });
       continue;
     }
     if (floorVersion && compareVersions(maxVersion, floorVersion) < 0) {
       errors.push({
-        kind: "desktop-transform-unreachable",
-        message: `Desktop transform ${label} is unreachable, delete it: its maxVersion ${transform.maxVersion} is below the Desktop floor ${floor}, so no supported Desktop build receives the transformed shape.`,
+        kind: `${client.owner}-transform-unreachable`,
+        message: `${client.label} transform ${label} is unreachable, delete it: its maxVersion ${transform.maxVersion} is below the ${client.label} floor ${floor}, so no supported ${client.label} build receives the transformed shape.`,
       });
     }
   }
@@ -298,8 +354,14 @@ function classifyFinding(
   return {
     ...finding,
     ...classifyOutcome(finding, context),
-    ...(finding.owner === "desktop"
-      ? { proofs: desktopProofs(finding, context.publishedVersion) }
+    ...(finding.owner === "desktop" || finding.owner === "ios"
+      ? {
+          proofs: nativeProofs(
+            finding,
+            context.publishedVersion,
+            context.client,
+          ),
+        }
       : {}),
   };
 }
@@ -323,17 +385,18 @@ function classifyOutcome(
     };
   }
 
-  if (finding.owner !== "desktop") {
+  if (finding.owner !== "desktop" && finding.owner !== "ios") {
     return {
       outcome: "blocking",
       resolution: `${finding.owner} findings block merges and accept no proof; keep the production contract.`,
     };
   }
 
+  const client = context.client;
   if (context.floor.kind === "raised") {
     return {
       outcome: "proven",
-      resolution: `Proof A: this change raises the Desktop floor in ${DESKTOP_FLOOR_FILE} from ${JSON.stringify(context.floor.from)} to ${context.floor.to}, not above the published Desktop version ${context.floor.published}. Review must confirm that ${context.floor.to} tolerates the new shape.`,
+      resolution: `Proof A: this change raises the ${client.label} floor in ${client.floorFile} from ${JSON.stringify(context.floor.from)} to ${context.floor.to}, not above the published ${client.label} version ${context.floor.published}. Review must confirm that ${context.floor.to} tolerates the new shape.`,
     };
   }
 
@@ -341,18 +404,19 @@ function classifyOutcome(
     finding,
     context.transforms,
     context.publishedVersion,
+    client,
   );
   if (transform.proof) {
     return {
       outcome: "proven",
-      resolution: `Proof B: ${DESKTOP_TRANSFORMS_FILE} registers a response transform for ${finding.method} ${finding.routePath} ${finding.responseStatus} (since ${transform.proof.since}, maxVersion ${JSON.stringify(transform.proof.maxVersion)}).`,
+      resolution: `Proof B: ${client.transformsFile} registers a response transform for ${finding.method} ${finding.routePath} ${finding.responseStatus} (since ${transform.proof.since}, maxVersion ${JSON.stringify(transform.proof.maxVersion)}).`,
     };
   }
 
   return {
     outcome: "blocking",
     resolution: [
-      "Blocking: installed Okou Desktop builds decode Desktop-consumed routes strictly, and this change carries neither accepted proof.",
+      `Blocking: installed Okou ${client.label} builds decode ${client.label}-consumed routes strictly, and this change carries neither accepted proof.`,
       ...(transform.rejection ? [transform.rejection] : []),
     ].join(" "),
   };
@@ -362,6 +426,7 @@ function transformProof(
   finding: RuntimeApiCompatFinding,
   transforms: readonly ClientResponseTransform[],
   published: string | undefined,
+  client: NativeClientPolicy,
 ): {
   readonly proof?: ClientResponseTransform;
   readonly rejection?: string;
@@ -373,8 +438,8 @@ function transformProof(
 
   const matches = transforms.filter((transform) => {
     return (
-      transform.client === "desktop" &&
-      transform.method.toUpperCase() === finding.method.toUpperCase() &&
+      transform.client === client.owner &&
+      transform.method === finding.method &&
       transform.path === finding.routePath &&
       transform.status === status
     );
@@ -390,7 +455,7 @@ function transformProof(
     const maxVersion = parseStableVersion(transform.maxVersion);
     if (!publishedVersion) {
       rejections.push(
-        `The matching transform (since ${transform.since}) has maxVersion ${transform.maxVersion}, but the published Desktop version is unavailable, so it cannot be verified. Oracle: ${DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
+        `The matching transform (since ${transform.since}) has maxVersion ${transform.maxVersion}, but the published ${client.label} version is unavailable, so it cannot be verified. Oracle: ${client.oracle}.`,
       );
       continue;
     }
@@ -398,21 +463,22 @@ function transformProof(
       return { proof: transform };
     }
     rejections.push(
-      `The matching transform (since ${transform.since}) has maxVersion ${transform.maxVersion}, below the published Desktop version ${published}, so published builds above it would receive the new shape.`,
+      `The matching transform (since ${transform.since}) has maxVersion ${transform.maxVersion}, below the published ${client.label} version ${published}, so published builds above it would receive the new shape.`,
     );
   }
 
   return rejections.length > 0 ? { rejection: rejections.join(" ") } : {};
 }
 
-function desktopProofs(
+function nativeProofs(
   finding: RuntimeApiCompatFinding,
   published: string | undefined,
+  client: NativeClientPolicy,
 ): string {
   const publishedLabel =
     published === undefined
-      ? `the published Desktop version (${DESKTOP_PUBLISHED_VERSION_ORACLE})`
-      : `the published Desktop version ${published}`;
+      ? `the published ${client.label} version (${client.oracle})`
+      : `the published ${client.label} version ${published}`;
   const status = transformableStatus(finding);
   const unprovable =
     finding.responseStatus === undefined
@@ -420,11 +486,11 @@ function desktopProofs(
       : `a non-2xx (${finding.responseStatus}) response finding, because the API transforms only 2xx bodies`;
   const proofB =
     status === undefined
-      ? `(B) a response transform in ${DESKTOP_TRANSFORMS_FILE}, which cannot prove ${unprovable}; use (A) or keep the production contract.`
-      : `(B) register a response transform for ${finding.method} ${finding.routePath} ${status} in ${DESKTOP_TRANSFORMS_FILE} with maxVersion null or at least ${publishedLabel}.`;
+      ? `(B) a response transform in ${client.transformsFile}, which cannot prove ${unprovable}; use (A) or keep the production contract.`
+      : `(B) register a response transform for ${finding.method} ${finding.routePath} ${status} in ${client.transformsFile} with maxVersion null or at least ${publishedLabel}.`;
 
   return [
-    `A breaking change here needs one proof in the same PR: (A) raise minimumSupportedVersion in ${DESKTOP_FLOOR_FILE} to a stable x.y.z version that is not lower than the base branch floor, not above ${publishedLabel}, and already tolerates the new shape; or`,
+    `A breaking change here needs one proof in the same PR: (A) raise minimumSupportedVersion in ${client.floorFile} to a stable x.y.z version that is not lower than the base branch floor, not above ${publishedLabel}, and already tolerates the new shape; or`,
     proofB,
   ].join(" ");
 }

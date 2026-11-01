@@ -17,6 +17,7 @@ import {
   webhookTelemetryContract,
   webhookUsageEventContract,
 } from "../contracts/webhooks";
+import { iosRouteBindings } from "./ios-routes";
 import { swiftRouteBindings } from "../swift-bindings/routes";
 
 export interface RuntimeApiRouteLike {
@@ -36,6 +37,7 @@ export const runtimeApiRouteOwners = [
   "guest-agent",
   "mitm-addon",
   "desktop",
+  "ios",
 ] as const;
 
 export type RuntimeApiRouteOwner = (typeof runtimeApiRouteOwners)[number];
@@ -138,4 +140,5 @@ const desktopRouteBindings: readonly RuntimeApiRouteBinding[] =
 export const runtimeApiRouteBindings: readonly RuntimeApiRouteBinding[] = [
   ...runtimeServiceRouteBindings,
   ...desktopRouteBindings,
+  ...iosRouteBindings,
 ];
