@@ -1,7 +1,6 @@
 use std::future::{Future, ready};
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 use guest_contracts::session_history_identity::{
@@ -19,6 +18,7 @@ use tokio::sync::oneshot;
 use tokio::time::{self, Instant};
 
 use crate::connection::FrameWriteDecision;
+use crate::request_progress::RequestWriteProgress;
 use crate::{
     CompositeNormalOperation, FrameWriteObserver, RequestTimeoutError, RequestTimeoutStage, Shared,
 };
@@ -43,34 +43,6 @@ use super::{EXEC_OPERATION_START_TIMEOUT_CANCEL_WRITE_TIMEOUT, SMALL_EXEC_CAPTUR
 
 fn exec_start_timeout_error() -> io::Error {
     io::Error::new(io::ErrorKind::TimedOut, "exec start timeout")
-}
-
-#[derive(Debug, Default)]
-struct SupervisedStartProgress {
-    stage: AtomicU8,
-}
-
-impl SupervisedStartProgress {
-    const BEFORE_FRAME_WRITE: u8 = 0;
-    const FRAME_WRITE: u8 = 1;
-    const AWAITING_TERMINAL_RESPONSE: u8 = 2;
-
-    fn mark_frame_write(&self) {
-        self.stage.store(Self::FRAME_WRITE, Ordering::Release);
-    }
-
-    fn mark_awaiting_terminal_response(&self) {
-        self.stage
-            .store(Self::AWAITING_TERMINAL_RESPONSE, Ordering::Release);
-    }
-
-    fn timeout_stage(&self) -> RequestTimeoutStage {
-        match self.stage.load(Ordering::Acquire) {
-            Self::BEFORE_FRAME_WRITE => RequestTimeoutStage::BeforeFrameWrite,
-            Self::FRAME_WRITE => RequestTimeoutStage::FrameWrite,
-            _ => RequestTimeoutStage::AwaitingTerminalResponse,
-        }
-    }
 }
 
 fn supervised_start_timeout_error(stage: RequestTimeoutStage, timeout: Duration) -> io::Error {
@@ -349,7 +321,7 @@ where
         ));
     }
     let deadline = exec_start_deadline(request.start_timeout)?;
-    let start_progress = Arc::new(SupervisedStartProgress::default());
+    let start_progress = Arc::new(RequestWriteProgress::default());
 
     let (start_tx, start_rx) = oneshot::channel();
     let ExecOperationRegistration {
