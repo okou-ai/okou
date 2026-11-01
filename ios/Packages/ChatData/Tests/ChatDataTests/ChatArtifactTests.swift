@@ -117,7 +117,8 @@ final class ChatArtifactTests: XCTestCase {
     }
     let legacy = try XCTUnwrap(
       ChatArtifactReference.parse(
-        "https://cdn.okou.io/artifacts/user/id/report.pdf", webURL: webURL, apiURL: fixture.baseURL))
+        "https://cdn.okou.io/artifacts/user/id/report.pdf", webURL: webURL,
+        apiURL: fixture.baseURL))
     let resolved = try await commands(fixture).artifacts.resolve(legacy)
     XCTAssertEqual(
       resolved.contentURL, URL(string: "https://cdn.vm0.io/artifacts/user/id/report.pdf"))
