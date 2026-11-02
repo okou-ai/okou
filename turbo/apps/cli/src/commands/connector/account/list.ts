@@ -175,7 +175,7 @@ export const listConnectorAccountsCommand = new Command()
   .addHelpText(
     "after",
     `
-Use only an exact connectionId returned for this connector; never invent an ID or reuse one from another connector. Inspect the current account with okou connector status <slug> --json. ${chatConnectorAccountsEnabled() ? "JSON includes enabled and isCurrent for this Chat. Switch an enabled account directly with connector account switch; request owner approval for a disabled account with switch-request." : "Requesting a switch changes only future runs in the current web chat."}`,
+Use only an exact connectionId returned for this connector; never invent an ID or reuse one from another connector. ${chatConnectorAccountsEnabled() ? "Inspect the current account with okou connector status <slug> --json. JSON includes enabled and isCurrent for this Chat. Switch an enabled account directly with connector account switch; request owner approval for a disabled account with switch-request." : "This is available-account inventory, not the account already admitted to the current Run. Inspect that selection with okou connector status <slug> --json. Requesting a switch changes only future runs in the current web chat."}`,
   )
   .action(
     withErrorHandler(
