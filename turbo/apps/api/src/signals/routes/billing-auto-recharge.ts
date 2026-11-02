@@ -67,7 +67,9 @@ const updateAutoRechargeInner$ = command(
       signal.throwIfAborted();
     }
 
-    return { status: 200 as const, body: result.data };
+    const config = await get(autoRechargeConfig(auth.orgId));
+    signal.throwIfAborted();
+    return { status: 200 as const, body: config };
   },
 );
 

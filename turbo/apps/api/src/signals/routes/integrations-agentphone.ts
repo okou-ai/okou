@@ -1171,6 +1171,20 @@ function classifyAgentPhoneEvent(args: {
     return "ignore";
   }
 
+  // SMS short codes can send notifications, but cannot identify an Okou user.
+  // Acknowledge them without admission so the provider does not retry them.
+  if (
+    args.channel === "sms" &&
+    /^\d{5,6}$/u.test(args.event.fromNumber.trim())
+  ) {
+    log.debug("Ignoring AgentPhone SMS from an unsupported short code", {
+      webhookId: args.webhookId,
+      channel: args.channel,
+      reason: "unsupported_sender_short_code",
+    });
+    return "ignore";
+  }
+
   const normalizedFrom = normalizeAgentPhoneHandle(
     args.event.fromNumber,
     args.channel,

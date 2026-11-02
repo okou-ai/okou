@@ -16,7 +16,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { delay } from "signal-timers";
+import { timeout } from "signal-timers";
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
@@ -190,7 +190,6 @@ function createMessageSharingSignals(
         return false;
       }
       const confirmationSignal = set(resetCopied$, signal);
-      set(copiedMessageEventId$, null);
       const eventIds = messageShareEventIds(
         get(allChatGroups$),
         assistantEventIds,
@@ -202,6 +201,18 @@ function createMessageSharingSignals(
       const client = get(apiClient$)(sharedThreadsContract);
       const visibilityEnabled =
         get(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility];
+      if (visibilityEnabled) {
+        // Match ShareLinkButton: confirm and start resetting in the click,
+        // while the server creates the optimistically generated link.
+        set(copiedMessageEventId$, firstEventId);
+        timeout(
+          () => {
+            set(copiedMessageEventId$, null);
+          },
+          2000,
+          { signal: confirmationSignal },
+        );
+      }
       const creation = visibilityEnabled
         ? accept(
             get(apiClient$)(sharedThreadVisibilityContract).create({
@@ -221,8 +232,23 @@ function createMessageSharingSignals(
             [201, 400, 403, 404, 409, 413],
             signal,
           );
-      const [copySucceeded, result] = await Promise.all([copied, creation]);
+      const [shared] = await Promise.allSettled([
+        Promise.all([copied, creation]),
+      ]);
       signal.throwIfAborted();
+      if (shared.status === "rejected") {
+        if (!confirmationSignal.aborted) {
+          set(copiedMessageEventId$, null);
+        }
+        throw shared.reason;
+      }
+      const [copySucceeded, result] = shared.value;
+      if (
+        (!copySucceeded || result.status !== 201) &&
+        !confirmationSignal.aborted
+      ) {
+        set(copiedMessageEventId$, null);
+      }
       if (!copySucceeded) {
         toast.error(
           i18n.t(($) => {
@@ -237,14 +263,6 @@ function createMessageSharingSignals(
           }),
         );
         return false;
-      }
-      // Message shares finish at their action button; only multi-selection
-      // shares enter the page-level created phase and replace the composer.
-      if (visibilityEnabled && copySucceeded && !confirmationSignal.aborted) {
-        set(copiedMessageEventId$, firstEventId);
-        await delay(2000, { signal: confirmationSignal });
-        signal.throwIfAborted();
-        set(copiedMessageEventId$, null);
       }
       return copySucceeded;
     },

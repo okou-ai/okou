@@ -11,6 +11,7 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import type { TestContext } from "../../../../__tests__/test-context";
+import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
 
 function s3BodyBuffer(body: unknown): Buffer {
   if (Buffer.isBuffer(body)) {
@@ -167,7 +168,7 @@ export function installWorkflowVolumeS3Fixture(
       if (!key) {
         throw new Error("Expected an S3 object key");
       }
-      const body = objects.get(key);
+      const body = objects.get(key) ?? seededSkillBundleArchive(key);
       if (!body) {
         throw missingS3Object(key);
       }
@@ -178,7 +179,7 @@ export function installWorkflowVolumeS3Fixture(
       if (!key) {
         throw new Error("Expected an S3 object key");
       }
-      const body = objects.get(key);
+      const body = objects.get(key) ?? seededSkillBundleArchive(key);
       if (!body) {
         throw missingS3Object(key);
       }

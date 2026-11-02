@@ -123,6 +123,39 @@ test("Quote a bare email into the existing draft and send only on explicit submi
   expect(sent.prompt).toContain("jane@example.com");
 });
 
+test.each(["jane@example.com.au", "notjane@example.com"])(
+  "Preserve the selected destination when the alias is another mailbox: %s",
+  async (alias) => {
+    const address = "jane@example.com";
+    const record = `Jane Doe — Growth Lead — ${alias}`;
+    const expectedQuote = `${record}\n${address}`;
+    const sends: CapturedChatSend[] = [];
+    await openEmailChat(
+      `**Jane Doe** — Growth Lead — [${alias}](mailto:${address})`,
+      sends,
+    );
+
+    click(await findButton(`Quote ${address}`));
+
+    await waitFor(() => {
+      expect(feedbackItems()).toHaveLength(1);
+    });
+    expect(feedbackItems()[0]).toHaveTextContent(`${record} ${address}`);
+    expect(mailtoLink(`mailto:${address}`)).toHaveTextContent(alias);
+    expect(sends).toHaveLength(0);
+
+    click(await findButton("Send"));
+
+    const sent = await waitForSend(sends, 1);
+    const feedback = sent.userMessage?.parts.filter((part) => {
+      return part.type === "feedback";
+    });
+    expect(feedback).toHaveLength(1);
+    expect(feedback?.[0]?.quote).toBe(expectedQuote);
+    expect(sent.prompt).toContain(`> ${record}\n> ${address}`);
+  },
+);
+
 test.each([
   [
     "raw HTML",

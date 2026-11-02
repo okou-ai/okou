@@ -93,7 +93,6 @@ export function BrowserSessionSidebar({
       <div className="flex min-h-0 flex-1 flex-col">
         <BrowserSessionPanel
           signals={signals}
-          showPausedScreenshot
           actions={refined ? actions : undefined}
           overlay={refined ? overlay : undefined}
         />

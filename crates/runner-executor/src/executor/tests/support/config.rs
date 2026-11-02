@@ -41,10 +41,6 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
         mitm_jsonl_flush: None,
         connector_runtime_sync: None,
         guest_rpc: None,
-        content_bundle_cache: runner_storage::content_bundle_cache::ContentBundleCache::new(
-            HomePaths::with_root(dir.to_owned()).bundles_dir(),
-        )
-        .unwrap(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
         decoded_cache: crate::storage_cache::decoded::DecodedCache::new(HomePaths::with_root(
             dir.to_owned(),
@@ -111,9 +107,24 @@ pub(in crate::executor::tests) fn test_budget_lease() -> crate::resource_budget:
 }
 
 pub(in crate::executor::tests) async fn make_reusable_idle_sandbox(
+    sandbox: Box<dyn Sandbox>,
+    source_ip: String,
+    session_id: &str,
+) -> (ReusableIdleSandbox, crate::resource_budget::BudgetLease) {
+    make_reusable_idle_sandbox_with_fingerprints(
+        sandbox,
+        source_ip,
+        session_id,
+        crate::storage_fingerprints::StorageFingerprints::default(),
+    )
+    .await
+}
+
+pub(in crate::executor::tests) async fn make_reusable_idle_sandbox_with_fingerprints(
     mut sandbox: Box<dyn Sandbox>,
     source_ip: String,
     session_id: &str,
+    fingerprints: crate::storage_fingerprints::StorageFingerprints,
 ) -> (ReusableIdleSandbox, crate::resource_budget::BudgetLease) {
     use crate::idle_pool::{
         IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult,
@@ -128,6 +139,7 @@ pub(in crate::executor::tests) async fn make_reusable_idle_sandbox(
     let candidate = ParkedIdleCandidateBuilder::new(session_id, test_budget_lease())
         .with_sandbox(sandbox)
         .with_source_ip(source_ip)
+        .with_storage_fingerprints(fingerprints)
         .build();
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
     let entry = pool.take(session_id).expect("idle entry should exist");

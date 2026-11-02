@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import {
-  remoteControlGuidedEnabled$,
   remoteVncConnectionOptionsAvailable$,
   remoteSetup$,
   updateRemoteSetup$,
@@ -72,7 +71,6 @@ import {
 
 function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   switch (kind) {
     case "create": {
       return {
@@ -95,7 +93,7 @@ function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
     case "delete": {
       return {
         title: t(($) => {
-          return guided ? $.remoteControlSetup.deleteConnection : $.vnc.delete;
+          return $.remoteControlSetup.deleteConnection;
         }),
         description: t(($) => {
           return $.vnc.deleteHelp;
@@ -470,14 +468,13 @@ function VncHostFields({
   readonly inline?: boolean;
   readonly disabled: boolean;
 }) {
-  const enabled = useGet(remoteControlGuidedEnabled$);
   const profile = useGet(vncProfile$);
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
   const guided =
     inline && dialog.kind === "create" && setup?.protocol === "vnc";
   const step = setup?.vncStep;
-  if (enabled && dialog.kind === "edit") {
+  if (dialog.kind === "edit") {
     return (
       <div className="grid gap-6">
         <VncDisplayNameField connection={dialog.connection} />
@@ -609,7 +606,6 @@ function useVncFormSubmission(
   const [operation, save] = useLoadableSet(saveAction);
   const saving = operation.state === "loading";
   const setup = useGet(remoteSetup$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   const profile = useGet(vncProfile$);
   const selection = useGet(vncCredentialSelection$);
   const confirmLogin = useSet(requestRemoteLoginSave$);
@@ -646,7 +642,6 @@ function useVncFormSubmission(
         return;
       }
       if (
-        guided &&
         dialog.kind === "edit" &&
         dialog.loginCredential &&
         selection === dialog.loginCredential.id &&
@@ -684,7 +679,6 @@ function VncForm({
     submit,
   } = useVncFormSubmission(dialog, saveAction, inline);
   const close = useSet(closeVncDialog$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   const mount = useSet(mountVncForm$);
   const clearSaveMessage = useSet(clearVncSaveMessage$);
   const { title, description } = useVncPresentation(dialog, inline);
@@ -701,7 +695,7 @@ function VncForm({
     >
       <form
         ref={mount}
-        id={guided ? "remote-vnc-edit-form" : undefined}
+        id="remote-vnc-edit-form"
         autoComplete="off"
         noValidate={inlineCreate}
         aria-busy={saving}
@@ -727,7 +721,7 @@ function VncForm({
           submit(event.currentTarget);
         }}
       >
-        <DialogBody className={guided ? "-m-1 grid gap-4 p-1" : "grid gap-4"}>
+        <DialogBody className="-m-1 grid gap-4 p-1">
           {fieldsDisabled ? disabledFields : enabledFields}
           {!saving && (
             <VncSaveNotice step={inlineCreate ? setup?.vncStep : undefined} />
@@ -746,7 +740,7 @@ function VncForm({
           </fieldset>
         ) : (
           <RemoteFormFooter
-            separated={inline || guided}
+            separated
             onCancel={
               !inline || dialog.kind === "edit"
                 ? (onCancel ?? close)
@@ -761,7 +755,7 @@ function VncForm({
             submitLabel={submitLabel}
           />
         )}
-        {guided && <RemoteLoginConfirmation protocol="vnc" />}
+        <RemoteLoginConfirmation protocol="vnc" />
       </form>
     </RemoteEditorFrame>
   );

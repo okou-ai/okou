@@ -1,14 +1,12 @@
 import { walletUserContract } from "@okouai/api-contracts/client/wallet";
 import { walletChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import { command, computed, state, type Command } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyPayloadLoop$, waitAblyPayloadLoopUntil$ } from "../realtime.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
@@ -171,14 +169,8 @@ function createWalletApprovalSignals(
   context: ChatActionContext,
 ) {
   const reload$ = state(0);
-  const enabled$ = computed((get) => {
-    return get(featureSwitch$)[FeatureSwitchKey.LinkWalletApprovalContinuation];
-  });
   const status$ = computed(async (get) => {
     get(reload$);
-    if (!get(enabled$)) {
-      return { status: "unavailable" as const };
-    }
     const response = await accept(
       get(apiClient$)(walletUserContract).spendStatus({
         body: { ...context, approvalUrl },
@@ -211,10 +203,7 @@ function createWalletApprovalSignals(
       return await set(refresh$, signal);
     },
   );
-  const subscribe$ = command(({ get, set }, signal: AbortSignal) => {
-    if (!get(enabled$)) {
-      return;
-    }
+  const subscribe$ = command(({ set }, signal: AbortSignal) => {
     set(
       setAblyPayloadLoop$,
       {

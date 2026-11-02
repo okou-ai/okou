@@ -3,8 +3,6 @@ import {
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import { command, computed, state } from "ccstate";
-import { getArtifactShareScope } from "../artifact-sharing.ts";
-import { getHostedSiteShareScope } from "../hosted-site-sharing.ts";
 import {
   openArtifactInOpenSidebar$,
   openArtifactSidebar$,
@@ -32,18 +30,6 @@ import type {
   ImageAnnotation,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
-
-export const lightboxShareMenuOpen$ = computed((get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions]) {
-    return false;
-  }
-  const artifact = get(getArtifactShareScope("dialog").session$);
-  const website = get(getHostedSiteShareScope("dialog").session$);
-  return !!(
-    (artifact && get(artifact.open$)) ||
-    (website && get(website.open$))
-  );
-});
 
 // ---------------------------------------------------------------------------
 // Lightbox state — tracks which attachment is open in the global preview UI

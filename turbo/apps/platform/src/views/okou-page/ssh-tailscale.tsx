@@ -15,9 +15,7 @@ import {
   sshConnectionModeEditor$,
 } from "../../signals/ssh.ts";
 import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
-import { TailscaleFields } from "./tailscale-fields.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 
 function TailscaleConfigGroup({
   scope,
@@ -27,7 +25,6 @@ function TailscaleConfigGroup({
   readonly configs: readonly TailscaleConfig[];
 }) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   const scoped = configs.filter((config) => {
     return config.scope === scope;
   });
@@ -52,13 +49,6 @@ function TailscaleConfigGroup({
           </SelectItem>
         );
       })}
-      {!guided && scope === "personal" && (
-        <SelectItem value="new">
-          {t(($) => {
-            return $.tailscale.createNew;
-          })}
-        </SelectItem>
-      )}
     </SelectGroup>
   );
 }
@@ -70,36 +60,17 @@ export function TailscaleSelection({
 }) {
   const { t } = useTranslation();
   const configs = useLoadable(tailscaleConfigs$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   const available = configs.state === "hasData" ? configs.data : null;
   const editor = useGet(sshConnectionModeEditor$);
   const choose = useSet(chooseSshTailscaleConfig$);
-  const items = [
-    ...(configs.state === "hasData" && configs.data
+  const items =
+    configs.state === "hasData" && configs.data
       ? configs.data.map((config) => {
           return { value: config.id, label: config.name };
         })
-      : []),
-    ...(!guided
-      ? [
-          {
-            value: "new",
-            label: t(($) => {
-              return $.tailscale.createNew;
-            }),
-          },
-        ]
-      : []),
-  ];
+      : [];
   return (
     <fieldset className="grid min-w-0 gap-4">
-      {!guided && (
-        <legend className="mb-3 text-sm font-semibold">
-          {t(($) => {
-            return $.tailscale.title;
-          })}
-        </legend>
-      )}
       {configs.state === "hasError" ? (
         <SshLoadError />
       ) : configs.state === "loading" ? (
@@ -113,9 +84,7 @@ export function TailscaleSelection({
           <div className="grid gap-2">
             <label htmlFor="ssh-tailscale-config">
               {t(($) => {
-                return guided
-                  ? $.remoteControlSetup.network
-                  : $.tailscale.title;
+                return $.remoteControlSetup.network;
               })}
             </label>
             <Select
@@ -150,7 +119,6 @@ export function TailscaleSelection({
               </SelectContent>
             </Select>
             {editor.tailscaleConfigId &&
-              editor.tailscaleConfigId !== "new" &&
               !available.some((config) => {
                 return config.id === editor.tailscaleConfigId;
               }) && (
@@ -163,18 +131,11 @@ export function TailscaleSelection({
           </div>
         )
       )}
-      {!guided && editor.tailscaleConfigId === "new" && (
-        <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
-          <TailscaleFields config={null} disabled={disabled} />
-        </div>
-      )}
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return guided && available?.length === 0
+          return available?.length === 0
             ? $.remoteControlSetup.networkManagementHelp
-            : guided
-              ? $.remoteConnectionHelp.tailscaleRoute
-              : $.tailscale.addressHelp;
+            : $.remoteConnectionHelp.tailscaleRoute;
         })}
       </p>
     </fieldset>

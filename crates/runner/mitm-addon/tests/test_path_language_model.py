@@ -359,13 +359,14 @@ def test_exhaustive_small_joint_literal_choices_against_independent_model():
     patterns = [
         "/files/" + left + "{id}" + right for left, right in itertools.product(alphabet, repeat=2)
     ]
+    forms_by_pattern = {pattern: _source_forms(pattern) for pattern in patterns}
     for path in (
         "/files/" + left + "x" + right for left, right in itertools.product(alphabet, repeat=2)
     ):
         views = _views(path)
         analysis = PathAnalysis(request_language(path))
         for pattern in patterns:
-            forms = _source_forms(pattern)
+            forms = forms_by_pattern[pattern]
             outcomes = [_matches(candidate, form) for form in forms for candidate in views]
             priorities = [
                 _priority(form) for form in forms if any(_matches(p, form) for p in views)

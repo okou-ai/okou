@@ -13,6 +13,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   mockBrowserCdp,
+  recordBrowserStartupErrors,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -46,6 +47,7 @@ async function setupViewer(autoOpen: boolean) {
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, {
+      browser: session,
       cdpUrl: endpoint,
       extension: TEST_BROWSER_EXTENSION,
     });
@@ -54,10 +56,11 @@ async function setupViewer(autoOpen: boolean) {
     return respond(200, { browser: session });
   });
   await setupPage({ context, path: `/browsers/${threadId}` });
-  return { browser, sentry };
+  return { browser, sentry, session };
 }
 
 test("An opening failure preserves observations and supports explicit reconnect", async () => {
+  const startupErrors = recordBrowserStartupErrors();
   const { browser, sentry } = await setupViewer(false);
   await screen.findByText("Connecting to browser…");
   await waitFor(() => {
@@ -76,6 +79,8 @@ test("An opening failure preserves observations and supports explicit reconnect"
         error: expect.objectContaining({ name: "CdpFault", message }),
       }),
     );
+    expect(startupErrors).toHaveLength(1);
+    expect(startupErrors[0]?.message).toBe(message);
   });
 
   const reconnect = queryAllByRoleFast("button").find((button) => {
@@ -94,6 +99,40 @@ test("An opening failure preserves observations and supports explicit reconnect"
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
+});
+
+test("Revalidating an opening viewer retains its native startup and keeps cancellation quiet", async () => {
+  const startupErrors = recordBrowserStartupErrors();
+  const { browser, sentry, session } = await setupViewer(false);
+  await waitFor(() => {
+    expect(browser.connections()).toBe(1);
+  });
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    requested.resolve();
+    await release.promise;
+    return respond(200, {
+      browser: session,
+      cdpUrl: endpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await requested.promise;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    browser.openConnection();
+  });
+  release.resolve();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(browser.connections()).toBe(1);
+  expect(startupErrors).toHaveLength(0);
+  expect(sentry.reports).toStrictEqual([]);
 });
 
 test.each(["error", "close"] as const)(

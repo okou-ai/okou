@@ -152,7 +152,7 @@ export const browserExtensionSchema = object({
 
 export type BrowserExtension = zInfer<typeof browserExtensionSchema>;
 
-const browserViewerConnectionSchema = object({
+const browserViewerConnectionSchema = browserResponseSchema.extend({
   cdpUrl: url({ protocol: /^wss$/u }),
   extension: browserExtensionSchema,
 });

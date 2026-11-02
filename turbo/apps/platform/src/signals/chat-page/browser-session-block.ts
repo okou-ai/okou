@@ -1,6 +1,9 @@
 import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/validators/browser";
 import { browserContract } from "@okouai/api-contracts/client/browser";
-import type { BrowserSession } from "@okouai/api-contracts/contracts/browser";
+import type {
+  BrowserSession,
+  BrowserViewerConnection,
+} from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import {
   command,
@@ -51,13 +54,12 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly session$: Computed<Promise<BrowserSession | null>>;
   readonly panelSession$: Computed<Promise<BrowserSessionPanelState | null>>;
   readonly viewerConnection$: Computed<
-    Promise<{
-      readonly liveUrl: string | null;
-      readonly instanceId: string | null;
-      readonly windowId: number | null;
-      readonly cdpUrl: string;
-      readonly extension: BrowserConnection["extension"];
-    } | null>
+    Promise<
+      | (BrowserViewerConnection & {
+          readonly requestedSession: BrowserSession;
+        })
+      | null
+    >
   >;
   readonly browser: BrowserSignals;
   readonly reload$: Command<void, []>;
@@ -346,11 +348,10 @@ export function createBrowserSessionSignals(
     );
     return response.status === 200
       ? {
-          cdpUrl: response.body.cdpUrl,
-          extension: response.body.extension,
-          liveUrl: lifecycleSession.liveUrl,
-          instanceId: lifecycleSession.window?.instanceId ?? null,
-          windowId: lifecycleSession.window?.primaryWindowId ?? null,
+          ...response.body,
+          // This snapshot identifies the request for retained-panel visibility;
+          // native admission uses only the authoritative response below.
+          requestedSession: lifecycleSession,
         }
       : null;
   });
@@ -361,14 +362,13 @@ export function createBrowserSessionSignals(
       return connection
         ? {
             cdpUrl: connection.cdpUrl,
-            instanceId: connection.instanceId,
-            windowId: connection.windowId,
+            instanceId: connection.browser.window?.instanceId ?? null,
+            windowId: connection.browser.window?.primaryWindowId ?? null,
             extension: connection.extension,
           }
         : null;
     },
   );
-  const browser = createBrowserSignals(browserConnection$, onPageInput$);
   const reload$ = command(({ set }) => {
     set(leaseOverride$, undefined);
     set(sessionOverride$, undefined);
@@ -377,6 +377,11 @@ export function createBrowserSessionSignals(
     });
     set(browser.connectionChanged$);
   });
+  const browser = createBrowserSignals(
+    browserConnection$,
+    reload$,
+    onPageInput$,
+  );
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,

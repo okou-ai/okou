@@ -4,8 +4,6 @@ import {
   ArrowRight,
   Check,
   MessageCircle,
-  ChevronLeft,
-  ChevronRight,
   MessageSquare,
   MessageSquarePlus,
   X,
@@ -13,14 +11,14 @@ import {
   CircleMinus,
   SlidersHorizontal,
 } from "lucide-react";
-import type { SuggestionOption } from "@okouai/api-contracts/contracts/suggestions";
+import type {
+  Suggestion,
+  SuggestionOption,
+} from "@okouai/api-contracts/contracts/suggestions";
 import { Button, Textarea } from "@okouai/ui";
-import { cn } from "@okouai/ui/lib/utils";
 import {
-  agentSuggestionIndex$,
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
-  showAgentSuggestion$,
   visibleAgentSuggestions$,
   submitAgentSuggestionFeedback$,
   suggestionFeedbackConfirmation$,
@@ -37,70 +35,8 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-const PAGER = "data-disabled:pointer-events-none data-disabled:opacity-50";
-const DECK_EDGE =
-  "pointer-events-none absolute h-10 rounded-xl border border-border bg-card";
 const SUGGESTION_ACTION =
   "min-h-11 shrink-0 gap-1 whitespace-nowrap px-0.5 text-xs font-normal @min-[521px]/suggestion:min-h-9 @min-[521px]/suggestion:gap-2 @min-[521px]/suggestion:px-2";
-
-function AgentSuggestionHeader({
-  index,
-  total,
-}: {
-  readonly index: number;
-  readonly total: number;
-}) {
-  const { t } = useTranslation();
-  const show = useSet(showAgentSuggestion$);
-  return (
-    <div className="flex h-7 items-center justify-between gap-3">
-      <p aria-live="polite" className="text-xs text-muted-foreground">
-        {t(
-          ($) => {
-            return $.chat.agentSuggestions.position;
-          },
-          { current: index + 1, total },
-        )}
-      </p>
-      <div className="flex items-center gap-0.5">
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          showTooltip
-          focusableWhenDisabled
-          disabled={total <= 1}
-          className={PAGER}
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.previous;
-          })}
-          onClick={() => {
-            show((index + total - 1) % total);
-          }}
-        >
-          <ChevronLeft />
-        </Button>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          showTooltip
-          focusableWhenDisabled
-          disabled={total <= 1}
-          className={PAGER}
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.next;
-          })}
-          onClick={() => {
-            show((index + 1) % total);
-          }}
-        >
-          <ChevronRight />
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function AgentSuggestionOption({
   option,
@@ -424,94 +360,93 @@ export function SuggestionSaveErrors() {
     : null;
 }
 
-export function AgentSuggestions() {
+function AgentSuggestionCard({ item }: { readonly item: Suggestion }) {
   const { t } = useTranslation();
-  const result = useLastLoadable(visibleAgentSuggestions$);
   const start = useSet(startAgentSuggestion$);
   const prepare = useSet(prepareAgentSuggestion$);
   const submitFeedback = useSet(submitAgentSuggestionFeedback$);
   const signal = useGet(pageSignal$);
-  const requested = useGet(agentSuggestionIndex$);
+  return (
+    <article
+      aria-labelledby={`suggestion-title-${item.id}`}
+      className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4"
+    >
+      <div className="flex flex-col gap-3 motion-safe:animate-composer-panel-in">
+        <div className="flex flex-col gap-2">
+          <h3
+            id={`suggestion-title-${item.id}`}
+            className="text-base font-medium leading-6 text-foreground"
+          >
+            {item.title}
+          </h3>
+          <p className="line-clamp-4 text-sm leading-5 text-muted-foreground">
+            {item.rationale}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 pt-1">
+          <p className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.chat.agentSuggestions.useSuggestion;
+            })}
+          </p>
+          {item.options.map((option) => {
+            return (
+              <AgentSuggestionOption
+                key={option.id}
+                option={option}
+                onClick={() => {
+                  detach(start(item, option.id, signal), Reason.DomCallback);
+                }}
+              />
+            );
+          })}
+          <CustomDirectionOption
+            onClick={() => {
+              detach(prepare(item, signal), Reason.DomCallback);
+            }}
+          />
+          <AgentSuggestionActions
+            onDismiss={() => {
+              detach(
+                submitFeedback(item, "dismissed", signal),
+                Reason.DomCallback,
+              );
+            }}
+            onSelect={(kind) => {
+              detach(submitFeedback(item, kind, signal), Reason.DomCallback);
+            }}
+          />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+export function AgentSuggestions() {
+  const { t } = useTranslation();
+  const result = useLastLoadable(visibleAgentSuggestions$);
   if (result.state !== "hasData" || result.data.length === 0) {
     return <SuggestionFeedbackNotice />;
   }
-  const items = result.data;
-  const index = Math.min(requested, items.length - 1);
-  const item = items[index];
-  const behind = Math.min(items.length - 1, 2);
-
   return (
     <>
       <section
         aria-label={t(($) => {
           return $.chat.agentSuggestions.label;
         })}
-        className={cn("relative", behind > 0 && "pb-3")}
       >
-        {behind >= 2 && (
-          <div aria-hidden className={cn(DECK_EDGE, "inset-x-6 bottom-0")} />
-        )}
-        {behind >= 1 && (
-          <div aria-hidden className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")} />
-        )}
-        <div className="@container/suggestion relative min-w-0">
-          <article className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4">
-            <AgentSuggestionHeader index={index} total={items.length} />
-            <div
-              key={item.id}
-              className="flex flex-col gap-3 motion-safe:animate-composer-panel-in"
-            >
-              <div className="flex flex-col gap-2">
-                <h3 className="text-base font-medium leading-6 text-foreground">
-                  {item.title}
-                </h3>
-                <p className="line-clamp-4 text-sm leading-5 text-muted-foreground">
-                  {item.rationale}
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 pt-1">
-                <p className="text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.chat.agentSuggestions.useSuggestion;
-                  })}
-                </p>
-                {item.options.map((option) => {
-                  return (
-                    <AgentSuggestionOption
-                      key={option.id}
-                      option={option}
-                      onClick={() => {
-                        detach(
-                          start(item, option.id, signal),
-                          Reason.DomCallback,
-                        );
-                      }}
-                    />
-                  );
-                })}
-                <CustomDirectionOption
-                  onClick={() => {
-                    detach(prepare(item, signal), Reason.DomCallback);
-                  }}
-                />
-                <AgentSuggestionActions
-                  onDismiss={() => {
-                    detach(
-                      submitFeedback(item, "dismissed", signal),
-                      Reason.DomCallback,
-                    );
-                  }}
-                  onSelect={(kind) => {
-                    detach(
-                      submitFeedback(item, kind, signal),
-                      Reason.DomCallback,
-                    );
-                  }}
-                />
-              </div>
-            </div>
-          </article>
-        </div>
+        <ul className="flex flex-col gap-4">
+          {result.data.map((item) => {
+            return (
+              <li
+                key={item.id}
+                className="@container/suggestion relative min-w-0"
+              >
+                <AgentSuggestionCard item={item} />
+              </li>
+            );
+          })}
+        </ul>
       </section>
       <SuggestionFeedbackNotice />
     </>

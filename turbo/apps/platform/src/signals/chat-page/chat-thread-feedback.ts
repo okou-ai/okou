@@ -492,9 +492,11 @@ function createEmailQuote(
             })
             .join(" · ")
         : sourceText;
-    const quote = recordText.includes(address)
-      ? recordText
-      : `${recordText}\n${address}`;
+    // Only the link's complete label proves its destination is already present.
+    const quote =
+      link.textContent?.trim() === address
+        ? recordText
+        : `${recordText}\n${address}`;
     // Synthetic labels/addresses have no exact rendered-text range.
     const location =
       quote === sourceText ? resolveFeedbackLocation(range) : undefined;

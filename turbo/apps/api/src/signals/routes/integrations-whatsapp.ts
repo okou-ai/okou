@@ -42,7 +42,6 @@ import {
   isWhatsappSupportedHandle,
   whatsappConfigured,
   whatsappEnabled$,
-  whatsappFileUploadEnabled$,
   whatsappPhoneNumber,
 } from "../services/whatsapp-config";
 import { logger } from "../../lib/log";
@@ -401,11 +400,6 @@ const sendUploadedFile$ = command(async ({ get, set }, signal: AbortSignal) => {
     return result.response;
   }
   const auth = get(organizationAuthContext$);
-  if (
-    !(await set(whatsappFileUploadEnabled$, auth.orgId, auth.userId, signal))
-  ) {
-    return notFound("WhatsApp file delivery is not enabled");
-  }
   const { enabled, link } = await set(loadLink$, signal);
   if (!enabled || !link || !isWhatsappSupportedHandle(link.phoneHandle)) {
     return notFound("No supported WhatsApp account is connected");
