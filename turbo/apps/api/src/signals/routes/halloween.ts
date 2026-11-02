@@ -1,6 +1,4 @@
 import { halloweenContract } from "@okouai/api-contracts/contracts/halloween";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import { conflict } from "../../lib/error";
 import { authContext$ } from "../auth/auth-context";
@@ -8,7 +6,6 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { getUserEmail$ } from "../services/email-common.service";
 import {
   answerHalloweenRound$,
@@ -18,28 +15,24 @@ import {
   startHalloweenRound$,
 } from "../services/halloween.service";
 
-const phase$ = command(async ({ get, set }, signal: AbortSignal) => {
+const phase$ = command(({ get, set }) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(authContext$);
   if (!auth.orgId) {
     return "unavailable" as const;
   }
-  const context = await get(userFeatureSwitchContext(auth.orgId, auth.userId));
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.HalloweenQuiz, context)
-    ? ("open" as const)
-    : ("unavailable" as const);
+  return "open" as const;
 });
 
-const status$ = command(async ({ set }, signal: AbortSignal) => {
-  const phase = await set(phase$, signal);
+const status$ = command(({ set }) => {
+  const phase = set(phase$);
   return {
     status: 200 as const,
     body: { phase },
   };
 });
 const current$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if ((await set(phase$, signal)) !== "open") {
+  if (set(phase$) !== "open") {
     return conflict("This Halloween quiz is not open");
   }
   const current = await get(currentHalloweenRound$);
@@ -52,7 +45,7 @@ const start$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  if ((await set(phase$, signal)) !== "open") {
+  if (set(phase$) !== "open") {
     return conflict("This Halloween quiz is not open");
   }
   const auth = get(authContext$);
@@ -78,7 +71,7 @@ const answer$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  if ((await set(phase$, signal)) !== "open") {
+  if (set(phase$) !== "open") {
     return conflict("This Halloween quiz is not open");
   }
   return await set(
@@ -93,7 +86,7 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  if ((await set(phase$, signal)) !== "open") {
+  if (set(phase$) !== "open") {
     return conflict("This Halloween quiz is not open");
   }
   return await set(
@@ -108,7 +101,7 @@ const leave$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  if ((await set(phase$, signal)) !== "open") {
+  if (set(phase$) !== "open") {
     return conflict("This Halloween quiz is not open");
   }
   return await set(
