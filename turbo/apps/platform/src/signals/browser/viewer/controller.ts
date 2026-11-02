@@ -3200,8 +3200,6 @@ function createDisposalGraph(
     readinessFailure$,
     closingState$,
     closedState$,
-    bootstrapping$,
-    startedState$,
     retirements$,
     wake$,
     waitEvent$,
@@ -3211,10 +3209,6 @@ function createDisposalGraph(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const [result] = await Promise.allSettled([
         (async () => {
-          // Startup may still return a real native handle after admission was revoked.
-          while (get(startedState$) && get(bootstrapping$)) {
-            await set(waitEvent$, signal);
-          }
           // Retirement wrote its input releases when it began, so detaching
           // now follows them on the wire. The peer can vanish at any moment, so
           // closing never waits for their acknowledgement.
@@ -3223,20 +3217,24 @@ function createDisposalGraph(
               set(get(links$).detachAttached$, retirement.session.attached);
             }
           }
-          await get(nativeState$)?.close();
+          // Revoke native observers before terminating the original sockets.
+          // Bootstrap and bridge cleanup may both be waiting on this failing
+          // peer; closing the wire rejects those waits and releases its CDP
+          // sessions without closing any remote tab or window.
+          const failure = get(readinessFailure$);
+          const fault =
+            get(disconnectingState$) && failure instanceof CdpFault
+              ? failure
+              : undefined;
+          const nativeClosed = get(nativeState$)?.close();
+          get(framesState$)?.close(fault);
+          get(clientState$)?.close(fault);
+          set(resetOwner$, AbortSignal.abort());
+          await nativeClosed;
         })(),
       ]);
       signal.throwIfAborted();
-      // This signal is the independent original closure owner, never a finite observer.
-      // Native close precedes both CDP closure and the final wire-owner cancellation.
-      const failure = get(readinessFailure$);
-      const fault =
-        get(disconnectingState$) && failure instanceof CdpFault
-          ? failure
-          : undefined;
-      get(framesState$)?.close(fault);
-      get(clientState$)?.close(fault);
-      set(resetOwner$, AbortSignal.abort());
+      // Publish only after local retirement, never after a peer acknowledgement.
       set(closedState$, result);
       set(wake$);
       set(resetClosing$, AbortSignal.abort());

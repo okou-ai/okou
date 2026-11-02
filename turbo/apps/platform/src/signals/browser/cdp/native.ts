@@ -43,6 +43,7 @@ export async function connectNative(
   const [result] = await Promise.allSettled([
     OkouBrowserClient.connect({
       runtimeId,
+      signal,
       transport: {
         request: (method, params, sessionId) => {
           const late = async (value: unknown) => {
@@ -62,6 +63,7 @@ export async function connectNative(
               method === "Target.attachToTarget"
               ? late
               : undefined,
+            signal,
           );
         },
         onEvent: (listener) => {
