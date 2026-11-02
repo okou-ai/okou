@@ -328,23 +328,35 @@ public struct ChatConnectorService: Sendable {
     let account = Account(
       intent: status.account == nil ? "add" : "reconnect", connectionId: status.account?.id)
     if let slug = status.target.connectorSlug, let method {
-      let route: String
-      switch method.grantKind {
-      case "auth-code": route = "oauth/start"
-      case "openid-auth": route = "openid/start"
-      case "automatic": route = "automatic/start"
-      case "none": route = "no-auth"
-      case "manual": route = "manual-grant"
-      case "device-auth": route = "oauth/device/sessions"
-      case "external-code": route = "external-code/sessions"
-      default: throw APIClientError.incompatibleData
-      }
       let body = Body(
         account: account, agentId: action.agentID, authorizeAgent: true, authMethod: method.id,
         values: method.grantKind == "manual" ? values : nil,
         options: method.grantKind == "device-auth" ? options : nil)
-      return try await client.request(
-        "/api/connectors/\(slug)/\(route)", method: "POST", body: JSONEncoder().encode(body))
+      let data = try JSONEncoder().encode(body)
+      switch method.grantKind {
+      case "auth-code":
+        return try await client.request(
+          "/api/connectors/\(slug)/oauth/start", method: "POST", body: data)
+      case "openid-auth":
+        return try await client.request(
+          "/api/connectors/\(slug)/openid/start", method: "POST", body: data)
+      case "automatic":
+        return try await client.request(
+          "/api/connectors/\(slug)/automatic/start", method: "POST", body: data)
+      case "none":
+        return try await client.request(
+          "/api/connectors/\(slug)/no-auth", method: "POST", body: data)
+      case "manual":
+        return try await client.request(
+          "/api/connectors/\(slug)/manual-grant", method: "POST", body: data)
+      case "device-auth":
+        return try await client.request(
+          "/api/connectors/\(slug)/oauth/device/sessions", method: "POST", body: data)
+      case "external-code":
+        return try await client.request(
+          "/api/connectors/\(slug)/external-code/sessions", method: "POST", body: data)
+      default: throw APIClientError.incompatibleData
+      }
     }
     guard let custom = status.custom else { throw APIClientError.invalidResponse }
     if custom.usesBrowserAuthorization {
@@ -405,9 +417,12 @@ public struct ChatConnectorService: Sendable {
     else { throw APIClientError.invalidResponse }
     var body = ["sessionToken": token]
     body["code"] = code
-    let route =
-      code == nil ? "oauth/device/sessions/\(id)/poll" : "external-code/sessions/\(id)/complete"
+    let data = try JSONEncoder().encode(body)
+    if code == nil {
+      return try await client.request(
+        "/api/connectors/\(slug)/oauth/device/sessions/\(id)/poll", method: "POST", body: data)
+    }
     return try await client.request(
-      "/api/connectors/\(slug)/\(route)", method: "POST", body: JSONEncoder().encode(body))
+      "/api/connectors/\(slug)/external-code/sessions/\(id)/complete", method: "POST", body: data)
   }
 }

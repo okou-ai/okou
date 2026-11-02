@@ -215,24 +215,31 @@ public actor ChatCommands {
   public func setPinned(
     threadID: String, pinned: Bool, eventID: String, pinOrder: String? = nil
   ) async throws {
-    let action = pinned ? "pin" : "unpin"
     var query = [URLQueryItem(name: "eventId", value: eventID)]
     if pinned, let pinOrder { query.append(URLQueryItem(name: "pinOrder", value: pinOrder)) }
-    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST", query: query)
+    if pinned {
+      try await client.data("/api/chat-threads/\(threadID)/pin", method: "POST", query: query)
+    } else {
+      try await client.data("/api/chat-threads/\(threadID)/unpin", method: "POST", query: query)
+    }
   }
 
   public func setMuted(threadID: String, muted: Bool, eventID: String) async throws {
-    let action = muted ? "mute" : "unmute"
-    try await client.data(
-      "/api/chat-threads/\(threadID)/\(action)", method: "POST",
-      query: [URLQueryItem(name: "eventId", value: eventID)])
+    let query = [URLQueryItem(name: "eventId", value: eventID)]
+    if muted {
+      try await client.data("/api/chat-threads/\(threadID)/mute", method: "POST", query: query)
+    } else {
+      try await client.data("/api/chat-threads/\(threadID)/unmute", method: "POST", query: query)
+    }
   }
 
   public func setArchived(threadID: String, archived: Bool, eventID: String? = nil) async throws {
-    let action = archived ? "archive" : "unarchive"
-    try await client.data(
-      "/api/chat-threads/\(threadID)/\(action)", method: "POST",
-      query: eventID.map { [URLQueryItem(name: "eventId", value: $0)] } ?? [])
+    let query = eventID.map { [URLQueryItem(name: "eventId", value: $0)] } ?? []
+    if archived {
+      try await client.data("/api/chat-threads/\(threadID)/archive", method: "POST", query: query)
+    } else {
+      try await client.data("/api/chat-threads/\(threadID)/unarchive", method: "POST", query: query)
+    }
   }
 
   public func rename(threadID: String, title: String, eventID: String) async throws {
@@ -243,8 +250,8 @@ public actor ChatCommands {
   private func loadThreadSettings(threadID: String, expectedAgentID: String?) async throws
     -> ThreadMetadata
   {
-    let path = "/api/chat-threads/\(threadID)"
-    let metadata: ThreadMetadata = try await client.request(path + "/metadata")
+    let metadata: ThreadMetadata = try await client.request(
+      "/api/chat-threads/\(threadID)/metadata")
     if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
       throw ChatError.agentUnavailable
     }

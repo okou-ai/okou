@@ -378,6 +378,15 @@ progress independently; installed iOS clients retain their compiled Codable
 readers. iOS and Desktop registrations of a shared route are separate consumers,
 so a proof for one never proves compatibility for the other.
 
+The required job runs `lint-ios-api-consumption` for API changes and pure
+iOS PRs, including their merge groups. It checks Swift `APIClient.request`
+and `data` calls against the iOS inventory by HTTP method and path.
+Write the API path and HTTP method explicitly at the call site; interpolate
+only path parameters and enumerate endpoint or method choices in branches.
+Computed paths, unknown methods, and unregistered calls fail with their source
+location. First-party API requests belong in this shared transport; direct
+storage downloads and browser navigation remain separate operations.
+
 The iOS gate compares request schemas, route identities, and every declared
 response status. Requests use Zod input schemas and responses use output schemas,
 so adding a request default does not force an update on clients that omit it.

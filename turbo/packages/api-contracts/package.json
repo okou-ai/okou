@@ -36,6 +36,7 @@
     "generate:rust": "tsx src/rust-bindings/generate.ts",
     "generate:swift": "tsx src/swift-bindings/generate.ts",
     "lint-runtime-api-compat": "tsx src/runtime-api-schema/cli.ts lint",
+    "lint-ios-api-consumption": "tsx src/runtime-api-schema/cli.ts lint-ios-consumption",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint && oxlint --type-aware -c ../../.oxlintrc.typeaware.json && eslint . --max-warnings 0",
