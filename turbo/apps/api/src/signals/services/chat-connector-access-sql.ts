@@ -4,7 +4,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import {
   connectorAccessAccountOwner,
   type ConnectorAccessOwner,
@@ -60,7 +60,7 @@ export function accountDefaultEnabledSql(
       AND EXISTS (SELECT 1 FROM changed)
     RETURNING id
   ) SELECT id, display_name, default_enabled_for_chats, is_default FROM changed
-    WHERE (SELECT count(*) FROM promoted) >= 0`;
+    WHERE (SELECT ${count()} FROM promoted) >= 0`;
 }
 
 /** Repair stored invalid choices on normal configuration writes, without touching Runs. */
@@ -99,7 +99,7 @@ export function repairChatConnectorSelectionsSql(
     WHERE ${chatThreadConnectorSelections.chatThreadId} = invalid.chat_thread_id
       AND ${connectorAccessSelectionTarget(owner.target)}
       AND NOT EXISTS (SELECT 1 FROM choices WHERE choices.chat_thread_id = invalid.chat_thread_id)
-      AND (SELECT count(*) FROM replaced) >= 0`;
+      AND (SELECT ${count()} FROM replaced) >= 0`;
 }
 
 export function saveChatConnectorCurrentSql(

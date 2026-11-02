@@ -1,7 +1,7 @@
 import type { ApplyConnectorPermissions } from "@okouai/api-contracts/contracts/connector-permissions";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
-import { and, eq, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, notInArray, sql } from "drizzle-orm";
 
 import {
   connectorAccessAccountOwner,
@@ -50,13 +50,13 @@ export function connectorPermissionMutationSql(
   });
   const saved =
     values.length === 0
-      ? sql`SELECT count(*) FROM removed_connector_grants`
+      ? sql`SELECT ${count()} FROM removed_connector_grants`
       : sql`INSERT INTO ${connectorPermissionGrants}
       (org_id, user_id, connector_slug, custom_connector_id, permission, action, expires_at)
       SELECT requested.* FROM (VALUES ${sql.join(values, sql`, `)})
         AS requested(org_id, user_id, connector_slug, custom_connector_id, permission, action, expires_at)
       WHERE EXISTS (SELECT 1 FROM owned_connector)
-        AND (SELECT count(*) FROM removed_connector_grants) >= 0
+        AND (SELECT ${count()} FROM removed_connector_grants) >= 0
       ON CONFLICT ${conflict} DO UPDATE SET action = excluded.action, expires_at = excluded.expires_at
       RETURNING id`;
   return sql`WITH owned_connector AS MATERIALIZED (
@@ -67,5 +67,5 @@ export function connectorPermissionMutationSql(
       AND ${notInArray(connectorPermissionGrants.permission, requested)}
       AND EXISTS (SELECT 1 FROM owned_connector) RETURNING id
   ), saved_connector_grants AS (${saved})
-    SELECT id FROM owned_connector WHERE (SELECT count(*) FROM saved_connector_grants) >= 0`;
+    SELECT id FROM owned_connector WHERE (SELECT ${count()} FROM saved_connector_grants) >= 0`;
 }
