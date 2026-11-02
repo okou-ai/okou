@@ -30,6 +30,7 @@ export interface CdpEvent {
 }
 interface Pending {
   readonly method: string;
+  readonly sessionId: string | undefined;
   readonly resolve: (result: unknown) => void;
   readonly reject: (error: unknown) => void;
   unwatch: (() => void) | undefined;
@@ -179,6 +180,7 @@ function createRequests(
     );
     const entry: Pending = {
       method,
+      sessionId,
       resolve: (result) => {
         if (!deferred.settled()) {
           deferred.resolve(result);
@@ -309,6 +311,28 @@ function receiveResponse(
   }
 }
 
+function endSession(connection: Connection, sessionId: string): void {
+  for (const [id, entry] of connection.pending) {
+    if (entry.sessionId !== sessionId) {
+      continue;
+    }
+    connection.pending.delete(id);
+    entry.unwatch?.();
+    entry.unwatch = undefined;
+    if (!entry.settled) {
+      entry.settled = true;
+      entry.reject(
+        new CdpFault(
+          "target-unavailable",
+          "The browser target session is closed.",
+          undefined,
+          Object.freeze({ method: entry.method }),
+        ),
+      );
+    }
+  }
+}
+
 function receiveMessage(
   connection: Connection,
   wire: Wire,
@@ -343,6 +367,12 @@ function receiveMessage(
         ? { sessionId: value.sessionId }
         : {}),
     };
+    if (
+      message.method === "Target.detachedFromTarget" &&
+      typeof message.params.sessionId === "string"
+    ) {
+      endSession(connection, message.params.sessionId);
+    }
     const subscribers = [...connection.listeners];
     for (const listener of subscribers) {
       listener(message);

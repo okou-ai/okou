@@ -4,6 +4,7 @@ import { CdpFault, isRecord } from "../cdp/errors.ts";
 import { pageTarget, type TargetDirectory } from "../cdp/targets.ts";
 import type { CdpEvent } from "../cdp/client.ts";
 import type { ViewerSnapshot, ViewerTarget } from "./types.ts";
+import type { ViewerIntent } from "./lifecycle.ts";
 import {
   currentObservation,
   currentRound,
@@ -16,6 +17,7 @@ import {
 interface DiscoveryModel {
   readonly inventoryState$: Computed<TargetInventory>;
   readonly snapshot$: Computed<ViewerSnapshot>;
+  readonly intent$: Computed<ViewerIntent>;
   readonly inventory$: Command<TargetInventory, [InventoryEvent]>;
 }
 interface DiscoveryOptions {
@@ -170,6 +172,7 @@ function createMembershipReader(
       if (!observation) {
         return;
       }
+      const selection = get(model.intent$).selection;
       const [result] = await Promise.allSettled([
         set(directory.contains$, id, signal),
       ]);
@@ -178,13 +181,36 @@ function createMembershipReader(
       if (!set(accepts$, observation, round)) {
         return;
       }
-      if (
-        result.status === "rejected" &&
-        (!(result.reason instanceof CdpFault) ||
-          result.reason.kind !== "scope" ||
-          get(model.snapshot$).selectedTargetId === id)
-      ) {
-        throw result.reason;
+      if (result.status === "rejected") {
+        if (
+          !(result.reason instanceof CdpFault) ||
+          result.reason.kind !== "scope"
+        ) {
+          throw result.reason;
+        }
+        if (get(model.snapshot$).selectedTargetId === id) {
+          if (get(model.intent$).selection !== selection) {
+            return;
+          }
+          // A scope fault alone cannot distinguish target loss from request failure.
+          const resolution = await set(directory.resolve$, id, signal);
+          signal.throwIfAborted();
+          if (!set(accepts$, observation, round)) {
+            return;
+          }
+          if (resolution.kind === "window-error") {
+            throw resolution.error;
+          }
+          if (get(model.intent$).selection !== selection) {
+            return;
+          }
+          if (resolution.kind === "inventory-error") {
+            throw resolution.error;
+          }
+          if (resolution.kind === "present") {
+            throw result.reason;
+          }
+        }
       }
       // Preserve main's background scope-fault classification as negative membership.
       // Native bridge/window validation remains fail-closed in assertWindow$/contains$.

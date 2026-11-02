@@ -1,4 +1,5 @@
-import { command, state, type Command } from "ccstate";
+import { command, state, type Command, type State } from "ccstate";
+import { createDeferredPromise } from "../../utils.ts";
 import type { OkouBrowserClient } from "@okouai/browser-extension-client";
 import type { ViewerTarget } from "../viewer/types.ts";
 import type { CdpClient } from "./client.ts";
@@ -25,12 +26,20 @@ export function pageTarget(info: unknown): ViewerTarget | null {
   });
 }
 
+export type TargetResolution =
+  | { readonly kind: "present" | "absent" }
+  | {
+      readonly kind: "window-error" | "inventory-error";
+      readonly error: unknown;
+    };
+
 export interface TargetDirectory {
   readonly invalidate$: Command<void, []>;
   readonly assertWindow$: Command<Promise<void>, [AbortSignal]>;
   readonly contains$: Command<Promise<boolean>, [string, AbortSignal]>;
   readonly assertMember$: Command<Promise<void>, [string, AbortSignal]>;
   readonly read$: Command<Promise<readonly ViewerTarget[]>, [AbortSignal]>;
+  readonly resolve$: Command<Promise<TargetResolution>, [string, AbortSignal]>;
 }
 
 function createWindowLookup(client: CdpClient) {
@@ -66,6 +75,87 @@ function createWindowLookup(client: CdpClient) {
   );
 }
 
+function createWindowAssertion(
+  native: OkouBrowserClient,
+  scopedWindowId: number | null,
+  revision$: State<number>,
+  assertNative$: Command<void, [AbortSignal]>,
+): TargetDirectory["assertWindow$"] {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    set(assertNative$, signal);
+    const revision = get(revision$);
+    if (scopedWindowId !== null) {
+      const interrupted = createDeferredPromise<never>(
+        { rejection: "owner" },
+        signal,
+      );
+      using _observer = {
+        [Symbol.dispose]() {
+          if (!interrupted.settled()) {
+            interrupted.reject(
+              new DOMException(
+                "Window verification observer ended.",
+                "AbortError",
+              ),
+            );
+          }
+        },
+      };
+      const observation = await Promise.race([
+        native.call("getWindow", { windowId: scopedWindowId }),
+        interrupted.promise,
+      ]);
+      signal.throwIfAborted();
+      set(assertNative$, signal);
+      if (revision !== get(revision$)) {
+        throw new CdpFault(
+          "scope",
+          "Window membership changed during verification.",
+        );
+      }
+      if (observation.value?.id !== scopedWindowId) {
+        throw new CdpFault(
+          "scope",
+          "The assigned browser window is unavailable.",
+        );
+      }
+    }
+  });
+}
+
+function createTargetResolution(
+  read$: TargetDirectory["read$"],
+  assertWindow$: TargetDirectory["assertWindow$"],
+): TargetDirectory["resolve$"] {
+  return command(
+    async (
+      { set },
+      targetId: string,
+      signal: AbortSignal,
+    ): Promise<TargetResolution> => {
+      // These are independent proofs; neither a lookup error nor native IDs prove absence.
+      const [targets, window] = await Promise.allSettled([
+        set(read$, signal),
+        set(assertWindow$, signal),
+      ]);
+      signal.throwIfAborted();
+      if (window.status === "rejected") {
+        return { kind: "window-error", error: window.reason };
+      }
+      if (targets.status === "rejected") {
+        return { kind: "inventory-error", error: targets.reason };
+      }
+      return {
+        kind: targets.value.some((target) => {
+          return target.id === targetId;
+        })
+          ? "present"
+          : "absent",
+      };
+    },
+  );
+}
+
 /** Native invalidations revoke observations, never replace authoritative CDP IDs. */
 export function createTargetDirectory(
   client: CdpClient,
@@ -90,29 +180,12 @@ export function createTargetDirectory(
       throw nativeFault(native.signal.reason);
     }
   });
-  const assertWindow$ = command(async ({ get, set }, signal: AbortSignal) => {
-    set(assertNative$, signal);
-    const revision = get(revision$);
-    if (scopedWindowId !== null) {
-      const observation = await native.call("getWindow", {
-        windowId: scopedWindowId,
-      });
-      signal.throwIfAborted();
-      set(assertNative$, signal);
-      if (revision !== get(revision$)) {
-        throw new CdpFault(
-          "scope",
-          "Window membership changed during verification.",
-        );
-      }
-      if (observation.value?.id !== scopedWindowId) {
-        throw new CdpFault(
-          "scope",
-          "The assigned browser window is unavailable.",
-        );
-      }
-    }
-  });
+  const assertWindow$ = createWindowAssertion(
+    native,
+    scopedWindowId,
+    revision$,
+    assertNative$,
+  );
   const lookup$ = createWindowLookup(client);
   const contains$ = command(
     async ({ get, set }, targetId: string, signal: AbortSignal) => {
@@ -172,5 +245,13 @@ export function createTargetDirectory(
       return Object.freeze(pages);
     },
   );
-  return { invalidate$, assertWindow$, contains$, assertMember$, read$ };
+  const resolve$ = createTargetResolution(read$, assertWindow$);
+  return {
+    invalidate$,
+    assertWindow$,
+    contains$,
+    assertMember$,
+    read$,
+    resolve$,
+  };
 }

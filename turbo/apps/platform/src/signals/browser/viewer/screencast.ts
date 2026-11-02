@@ -50,6 +50,7 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
   const desired$ = state(settings);
   const applied$ = state<CaptureSettings | null>(null);
   const native$ = state<NativeCapture>({ kind: "stopped" });
+  const detachedState$ = state(false);
   const lane$ = state<CaptureLane | null>(null);
   const reservation$ = state<object | null>(null);
   const laneWaiters$ = state<readonly LaneWaiter[]>([]);
@@ -60,7 +61,12 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
   );
 
   const current$ = computed((get) => {
-    return get(ownerActive$) && !get(disposed$) && get(owner.current$);
+    return (
+      get(ownerActive$) &&
+      !get(disposed$) &&
+      !get(detachedState$) &&
+      get(owner.current$)
+    );
   });
   const acceptingFrames$ = computed((get) => {
     return get(current$) && !get(halted$) && get(accepting$);
@@ -79,6 +85,7 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
     desired$,
     applied$,
     native$,
+    detachedState$,
     lane$,
     reservation$,
     laneWaiters$,
@@ -166,6 +173,8 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
     accepting$,
     revision$,
     current$,
+    native$,
+    detachedState$,
   } = graph;
   const navigationSettled$ = command(({ get, set }, done: boolean) => {
     const listeners = get(navigationListeners$);
@@ -200,15 +209,23 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
     },
   );
 
+  const detached$ = command(({ set }) => {
+    // CDP session teardown disables Page and releases its native screencast.
+    set(detachedState$, true);
+    set(native$, { kind: "stopped" });
+    set(suspend$);
+  });
+
   return {
     navigationSettled$,
     suspend$,
     fail$,
+    detached$,
   };
 }
 
 function createCaptureStop(owner: ScreencastOwner, graph: CaptureState) {
-  const { native$, accepting$, revision$ } = graph;
+  const { native$, accepting$, revision$, detachedState$ } = graph;
   const stopConfirmed$ = command(({ get, set }, native: NativeCapture) => {
     const latest = get(native$);
     if (
@@ -222,19 +239,31 @@ function createCaptureStop(owner: ScreencastOwner, graph: CaptureState) {
   const stop$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       signal.throwIfAborted();
+      if (get(detachedState$)) {
+        return;
+      }
       const native = get(native$);
       set(accepting$, false);
       set(revision$, get(revision$) + 1);
       owner.sink.invalidate();
-      await owner.client.request(
-        "Page.stopScreencast",
-        undefined,
-        owner.sessionId,
-        () => {
-          set(stopConfirmed$, native);
-        },
-        signal,
-      );
+      const [result] = await Promise.allSettled([
+        owner.client.request(
+          "Page.stopScreencast",
+          undefined,
+          owner.sessionId,
+          () => {
+            set(stopConfirmed$, native);
+          },
+          signal,
+        ),
+      ]);
+      signal.throwIfAborted();
+      if (get(detachedState$)) {
+        return;
+      }
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
       set(stopConfirmed$, native);
       signal.throwIfAborted();
     },
@@ -904,6 +933,7 @@ export function createScreencast(
     ...frames,
     exclusive$: exclusive.exclusive$,
     suspend$: core.suspend$,
+    detached$: core.detached$,
     ...cleanup,
     ...retry,
     ...stop,

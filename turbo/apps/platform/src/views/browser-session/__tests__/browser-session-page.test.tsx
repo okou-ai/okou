@@ -606,7 +606,7 @@ test.each([
     await waitFor(() => {
       expect(browser.input).toContainEqual({
         method: "Input.insertText",
-        sessionId: "example-page-session",
+        sessionId: browser.pageSession("example-page"),
         params: { text: "fresh" },
       });
     });

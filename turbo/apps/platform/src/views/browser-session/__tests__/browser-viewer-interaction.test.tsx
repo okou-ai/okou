@@ -115,7 +115,7 @@ test.each([undefined, 0])(
   async (windowId) => {
     const browser = await setupViewer(windowId);
     const created = browser.holdNextNative("createTab");
-    const image = browser.holdFrames("created-1-session");
+    const image = browser.holdTargetFrames("created-1");
     click(screen.getByLabelText("New tab", { selector: "button" }));
     expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
     await act(async () => {
@@ -255,7 +255,7 @@ test.each(["created", "existing"] as const)(
       expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
     });
     const targetId = origin === "created" ? "created-1" : "blank-page";
-    const image = browser.holdFrames(`${targetId}-session`);
+    const image = browser.holdTargetFrames(targetId);
     click(
       screen.getByLabelText("New tab", {
         selector: origin === "created" ? "button" : '[role="tab"]',
@@ -276,7 +276,7 @@ test.each(["created", "existing"] as const)(
             url: "https://destination.example.com/page",
           },
         },
-        `${targetId}-session`,
+        browser.pageSession(targetId),
       );
     });
     await waitFor(() => {
@@ -337,7 +337,7 @@ test.each(["first image", "input initialization"] as const)(
 
 test("A created tab with a failed first image retries the image without creating another tab", async () => {
   const browser = await setupViewer(0);
-  const image = browser.holdFrames("created-1-session");
+  const image = browser.holdTargetFrames("created-1");
   const created = browser.holdNextNative("createTab");
   const newTab = screen.getByLabelText("New tab", { selector: "button" });
   click(newTab);
@@ -458,7 +458,7 @@ test("Moving another page into the window preserves the selected page and input"
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
 });
 
-test("A selected page moved away loses input while remaining pages stay selectable", async () => {
+test("A selected page moved away automatically continues on a scoped survivor", async () => {
   const browser = await setupViewer(0);
   act(() => {
     browser.move("other-page", 0);
@@ -470,17 +470,15 @@ test("A selected page moved away loses input while remaining pages stay selectab
   act(() => {
     browser.move("example-page", 1);
   });
-  await screen.findByText("Browser view unavailable");
-  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(
-    screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
-  ).toBeNull();
-  await userEvent.click(
-    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
-  );
   await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
+  expect(
+    screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
+  ).not.toBeInTheDocument();
   expect(screen.getByLabelText("Address")).toHaveValue(
     "https://other.example.com",
   );
@@ -564,7 +562,12 @@ test("A native close distinguishes cancelled late attachments from unfinished re
   act(() => {
     browser.move("other-page", 1);
   });
-  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
 
   act(() => {
     browser.disconnect({ code: 1001, wasClean: true });
@@ -2255,6 +2258,687 @@ test("Mixed IME support retains the safe unsupported receipt and same-tab fence"
   });
 });
 
+test.each(["closed", "still open"])(
+  "A selected CDP session detaching while its tab is %s automatically revalidates and resumes",
+  async (tabState) => {
+    const browser = mockViewer(0);
+    browser.targets[1]!.windowId = 0;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      if (tabState === "closed") {
+        browser.targets.splice(0, 1);
+      }
+      browser.event("Target.detachedFromTarget", {
+        sessionId: "example-page-session",
+        targetId: "example-page",
+      });
+    });
+    await membership.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await membership.release();
+    const survivor = tabState === "closed" ? "Other" : "Example";
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(survivor, { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    if (tabState === "closed") {
+      act(() => {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      });
+    }
+    const address = screen.getByLabelText("Address");
+    await fill(address, "resumed.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://resumed.example/ready");
+    });
+    expect(browser.targets[0]?.url).toBe("http://resumed.example/ready");
+  },
+);
+
+test.each(["closed", "moved away", "still open"])(
+  "A session detached before page initialization finishes recovers while its tab is %s",
+  async (tabState) => {
+    const browser = await setupScopedPair();
+    const initialization = browser.holdNext("Page.enable");
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await initialization.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      if (tabState === "closed") {
+        browser.targets.splice(1, 1);
+      } else if (tabState === "moved away") {
+        browser.targets[1]!.windowId = 1;
+      }
+      browser.event("Target.detachedFromTarget", {
+        sessionId: "other-page-session",
+        targetId: "other-page",
+      });
+    });
+    const survivor = tabState === "still open" ? "Other" : "Example";
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(survivor, { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    await initialization.release();
+    const address = screen.getByLabelText("Address");
+    await fill(address, "initialized-session.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://initialized-session.example/ready");
+    });
+  },
+);
+
+test("A received session detaching during membership admission releases its original wait", async () => {
+  const browser = await setupScopedPair();
+  const attachment = browser.holdNext("Target.attachToTarget");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await attachment.received;
+  const membership = browser.holdNextMembership("other-page");
+  await attachment.release();
+  await membership.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    browser.event("Target.detachedFromTarget", {
+      sessionId: "other-page-session",
+      targetId: "other-page",
+    });
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await membership.release();
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  const address = screen.getByLabelText("Address");
+  await fill(address, "admitted-session.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://admitted-session.example/ready");
+  });
+});
+
+test("A retired initializing session cannot revoke the newer selected tab", async () => {
+  const browser = mockViewer(0);
+  browser.targets[1]!.windowId = 0;
+  browser.targets.push({
+    targetId: "last-page",
+    title: "Last",
+    url: "https://last.example.com",
+    windowId: 0,
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const initialization = browser.holdNext("Page.enable");
+  act(() => {
+    browser.targets.splice(0, 1);
+    browser.event("Target.targetDestroyed", { targetId: "example-page" });
+  });
+  await initialization.received;
+  click(screen.getByLabelText("Last", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  act(() => {
+    browser.event("Target.detachedFromTarget", {
+      sessionId: "other-page-session",
+      targetId: "other-page",
+    });
+  });
+  await initialization.release();
+  expect(
+    screen.getByLabelText("Last", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  const address = screen.getByLabelText("Address");
+  await fill(address, "newer-selection.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://newer-selection.example/ready");
+  });
+});
+
+test("A split connection recovers if the control session detaches while its image attachment is pending", async () => {
+  const browser = await setupScopedPair();
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.click(await screen.findByText("Connection mode"));
+  await userEvent.click(await screen.findByText("Separate image connection"));
+  await waitFor(() => {
+    expect(browser.connections()).toBe(3);
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const control = browser.holdNext("Target.attachToTarget");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await control.received;
+  const image = browser.holdNext("Target.attachToTarget");
+  await control.release();
+  await image.received;
+  act(() => {
+    browser.event("Target.detachedFromTarget", {
+      sessionId: "other-page-session",
+      targetId: "other-page",
+    });
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await image.release();
+  const address = screen.getByLabelText("Address");
+  await fill(address, "separate-image.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://separate-image.example/ready");
+  });
+});
+
+test.each(["Page.enable", "Page.getFrameTree"])(
+  "An ordinary initialization failure in %s during opening remains visible",
+  async (method) => {
+    const browser = mockViewer(0);
+    browser.failNext(method, "Page initialization failed");
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  },
+);
+
+test("A split viewer reconnects after image-connection loss during page admission", async () => {
+  const browser = await setupScopedPair();
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.click(await screen.findByText("Connection mode"));
+  await userEvent.click(await screen.findByText("Separate image connection"));
+  await waitFor(() => {
+    expect(browser.connections()).toBe(3);
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const admission = browser.holdNext("Page.enable");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await admission.received;
+  act(() => {
+    browser.disconnect({ code: 1006, wasClean: false }, 1);
+  });
+  await screen.findByText("Browser disconnected");
+  const reconnect = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Missing reconnect control");
+  }
+  click(reconnect);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const current = browser.pageSession("example-page");
+  await act(async () => {
+    await admission.release();
+  });
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "reconnected" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual({
+      method: "Input.insertText",
+      sessionId: current,
+      params: { text: "reconnected" },
+    });
+  });
+});
+
+test.each(["Page.enable", "Page.getFrameTree"])(
+  "An initialization failure in %s after opening selection handoff stays failed",
+  async (method) => {
+    const browser = mockViewer(0);
+    const firstCapture = browser.holdNext("Page.startScreencast");
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await firstCapture.received;
+    browser.failNext(method, "Successor initialization failed");
+    const failure = browser.holdNext(method);
+    act(() => {
+      browser.event("Target.detachedFromTarget", {
+        sessionId: "example-page-session",
+        targetId: "example-page",
+      });
+    });
+    await failure.received;
+    // An erroneous replay would now remain visibly pending instead of failing.
+    browser.holdNext("Target.attachToTarget");
+    await act(async () => {
+      await failure.release();
+      await firstCapture.release();
+    });
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  },
+);
+
+test("A late detach from a previous visit cannot retire the current same-target session", async () => {
+  const browser = await setupScopedPair();
+  const original = browser.pageSession("example-page");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const current = browser.pageSession("example-page");
+  act(() => {
+    browser.event("Target.detachedFromTarget", { sessionId: original });
+  });
+  const input = screen.getByLabelText("Remote browser input");
+  expect(input).toBeEnabled();
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "current visit" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual({
+      method: "Input.insertText",
+      sessionId: current,
+      params: { text: "current visit" },
+    });
+  });
+});
+
+test.each([
+  ["membership", "closed"],
+  ["page initialization", "closed"],
+  ["membership", "moved"],
+  ["page initialization", "moved"],
+] as const)(
+  "A target disappearing during %s (%s) recovers before its delayed lifecycle event",
+  async (phase, loss) => {
+    const browser = await setupScopedPair();
+    if (phase === "page initialization") {
+      browser.failNext(
+        "Page.enable",
+        "Target disappeared during initialization",
+      );
+    }
+    const membership =
+      phase === "membership" ? browser.holdNextMembership("other-page") : null;
+    const admission = membership ?? browser.holdNext("Page.enable");
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await admission.received;
+    const lostTarget = browser.targets[1]!;
+    if (loss === "closed") {
+      browser.targets.splice(1, 1);
+    } else {
+      lostTarget.windowId = 1;
+    }
+    await act(async () => {
+      if (membership) {
+        await membership.releaseFailure();
+      } else {
+        await admission.release();
+      }
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(
+        screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+    });
+    act(() => {
+      if (loss === "closed") {
+        browser.event("Target.targetDestroyed", { targetId: "other-page" });
+      } else {
+        browser.nativeEvent("tab-detached", lostTarget, { oldWindowId: 0 });
+        browser.nativeEvent("tab-attached", lostTarget);
+      }
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const address = screen.getByLabelText("Address");
+    await fill(address, "admission-survivor.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://admission-survivor.example/ready");
+    });
+  },
+);
+
+test("Cancelling a lost selection releases tab controls while its old native proof is unacknowledged", async () => {
+  const browser = mockViewer(0);
+  browser.targets[1]!.windowId = 0;
+  browser.targets.push({
+    targetId: "last-page",
+    title: "Last",
+    url: "https://last.example.com",
+    windowId: 0,
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const membership = browser.holdNextMembership("other-page");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await membership.received;
+  const proof = browser.holdNextNative("getWindow");
+  await membership.releaseFailure();
+  await proof.received;
+  act(() => {
+    browser.targets.splice(1, 1);
+    browser.event("Target.targetDestroyed", { targetId: "other-page" });
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(
+      screen.getByLabelText("Last", { selector: '[role="tab"]' }),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(screen.getByLabelText("Last", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(
+      screen.getByLabelText("Last", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  await act(async () => {
+    await proof.release();
+  });
+  const address = screen.getByLabelText("Address");
+  await fill(address, "after-old-proof.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://after-old-proof.example/ready");
+  });
+});
+
+test("A detached session releases a held capture request without waiting for its late reply", async () => {
+  const browser = mockViewer(0);
+  const capture = browser.holdNext("Page.startScreencast");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await capture.received;
+  act(() => {
+    browser.event("Target.detachedFromTarget", {
+      sessionId: "example-page-session",
+      targetId: "example-page",
+    });
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await capture.release();
+  const address = screen.getByLabelText("Address");
+  await fill(address, "fresh-session.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://fresh-session.example/ready");
+  });
+});
+
+test("A late session-detachment receipt resolves capture-only retirement uncertainty", async () => {
+  const browser = await setupViewer(0);
+  const proof = browser.holdNextDetach("example-page-session");
+  browser.failNext("Page.stopScreencast", "Capture stop unconfirmed");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+  });
+  await screen.findByText("Browser view unavailable");
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+async function setupScopedPair() {
+  const browser = mockViewer(0);
+  browser.targets[1]!.windowId = 0;
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  return browser;
+}
+
+async function chooseHealthyTabAfterRetirementFailure(
+  browser: ReturnType<typeof mockViewer>,
+  method: string,
+) {
+  const proof = browser.holdNextDetach("example-page-session");
+  browser.failNext(method, "Original cleanup unconfirmed");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+  });
+  await screen.findByText("Browser view unavailable");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  return proof;
+}
+
+test("A late capture-detachment proof leaves the newer selection live and allows revisiting the retired tab", async () => {
+  const browser = await setupScopedPair();
+  const proof = await chooseHealthyTabAfterRetirementFailure(
+    browser,
+    "Page.stopScreencast",
+  );
+  await act(async () => {
+    await proof.release();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test.each(
+  ["capture-end-input", "capture-input-end", "input-capture-end"].flatMap(
+    (order) => {
+      return [true, false].map((confirmed) => {
+        return { order, confirmed };
+      });
+    },
+  ),
+)(
+  "Original cleanup remains independent for $order (input confirmed=$confirmed)",
+  async ({ order, confirmed }) => {
+    const browser = await setupScopedPair();
+    click(screen.getByLabelText("Browser settings"));
+    click(await screen.findByText("Connection mode"));
+    click(await screen.findByText("Separate image connection"));
+    await waitFor(() => {
+      expect(browser.connections()).toBe(3);
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const frameSession = [...browser.requests].reverse().find((request) => {
+      return request.method === "Page.startScreencast";
+    })?.sessionId;
+    if (!frameSession) {
+      throw new Error("Missing original frame session");
+    }
+    const proof = browser.holdNextDetach(frameSession);
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.dispatchKeyEvent",
+          params: expect.objectContaining({ type: "rawKeyDown", key: "Shift" }),
+        }),
+      );
+    });
+    if (!confirmed) {
+      browser.failNext("Input.dispatchKeyEvent", "Input release unconfirmed");
+    }
+    const release = browser.holdNext("Input.dispatchKeyEvent");
+    browser.failNext("Page.stopScreencast", "Capture stop unconfirmed");
+    const stop = browser.holdNext("Page.stopScreencast");
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await release.received;
+    await stop.received;
+    if (order === "input-capture-end") {
+      await act(async () => {
+        await release.release();
+      });
+    }
+    await act(async () => {
+      await stop.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://other.example.com",
+      );
+    });
+    if (order === "capture-end-input") {
+      act(() => {
+        browser.event("Target.detachedFromTarget", {
+          sessionId: frameSession,
+          targetId: "example-page",
+        });
+      });
+    } else {
+      if (order === "capture-input-end") {
+        await act(async () => {
+          await release.release();
+        });
+      }
+      await proof.received;
+    }
+    await act(async () => {
+      await proof.release();
+    });
+    if (order === "capture-end-input") {
+      await act(async () => {
+        await release.release();
+      });
+    }
+    click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+    if (!confirmed) {
+      await screen.findByText("Browser view unavailable");
+    }
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toHaveProperty(
+        "disabled",
+        !confirmed,
+      );
+    });
+    if (!confirmed) {
+      return;
+    }
+    const address = screen.getByLabelText("Address");
+    expect(address).toHaveValue("https://example.com");
+    await fill(address, "cleanup-proof.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://cleanup-proof.example/ready");
+    });
+  },
+);
+
+test("A capture-detachment proof cannot clear unconfirmed input cleanup", async () => {
+  const browser = await setupScopedPair();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.dispatchKeyEvent",
+        params: expect.objectContaining({ type: "rawKeyDown" }),
+      }),
+    );
+  });
+  const proof = await chooseHealthyTabAfterRetirementFailure(
+    browser,
+    "Input.dispatchKeyEvent",
+  );
+  await act(async () => {
+    await proof.release();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+});
+
+test.each(["before", "after"])(
+  "Selected target destruction %s its failed membership response automatically recovers a scoped survivor",
+  async (destruction) => {
+    const browser = mockViewer(0);
+    browser.targets[1]!.windowId = 0;
+    browser.targets.push({
+      targetId: "foreign-page",
+      title: "Foreign",
+      url: "https://foreign.example.com",
+      windowId: 1,
+    });
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+    });
+    await membership.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      browser.targets.splice(0, 1);
+      if (destruction === "before") {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      }
+    });
+    await membership.releaseFailure();
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    if (destruction === "after") {
+      act(() => {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      });
+    }
+    expect(
+      queryAllByRoleFast("tab").map((tab) => {
+        return tab.getAttribute("aria-label");
+      }),
+    ).toStrictEqual(["Other"]);
+    const address = screen.getByLabelText("Address");
+    await fill(address, "survivor.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://survivor.example/ready");
+    });
+    expect(browser.targets[0]?.url).toBe("http://survivor.example/ready");
+    expect(browser.targets[1]?.url).toBe("https://foreign.example.com");
+  },
+);
+
 test("A background window lookup failure leaves a valid scoped tab usable", async () => {
   mockViewer(0, ["other-page"]);
   await setupPage({ context, path: `/browsers/${threadId}` });
@@ -2268,6 +2952,147 @@ test("A background window lookup failure leaves a valid scoped tab usable", asyn
   ).toStrictEqual(["Example"]);
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
 });
+
+test("Losing the last scoped target keeps foreign tabs excluded and permits a native new tab", async () => {
+  const browser = await setupViewer(0);
+  const membership = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+  });
+  await membership.received;
+  browser.targets.splice(0, 1);
+  await membership.releaseFailure();
+  await screen.findByText("No tabs open");
+  expect(queryAllByRoleFast("tab")).toHaveLength(0);
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(
+    screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+  expect(browser.targets[0]?.url).toBe("https://other.example.com");
+});
+
+test.each(["present target", "failed inventory", "unsupported membership"])(
+  "A selected membership failure with %s retains the connection-wide failure boundary",
+  async (failure) => {
+    const browser = await setupViewer(0);
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+    });
+    await membership.received;
+    if (failure === "failed inventory") {
+      browser.targets.splice(0, 1);
+      browser.failNext("Target.getTargets", "Inventory unavailable");
+    }
+    await membership.releaseFailure(
+      "Membership unavailable",
+      failure === "unsupported membership" ? -32_601 : -32_000,
+    );
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+  },
+);
+
+test.each([
+  ["successful", true],
+  ["failed", true],
+  ["successful", false],
+  ["failed", false],
+] as const)(
+  "A late %s target-loss confirmation (destroyed=%s) cannot revoke a newer selection",
+  async (confirmationResult, destroyed) => {
+    const browser = mockViewer(0);
+    browser.targets[1]!.windowId = 0;
+    browser.targets.push({
+      targetId: "last-page",
+      title: "Last",
+      url: "https://last.example.com",
+      windowId: 0,
+    });
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+    });
+    await membership.received;
+    browser.targets.splice(0, 1);
+    if (confirmationResult === "failed") {
+      browser.failNext("Target.getTargets", "Late inventory failure");
+    }
+    const confirmation = browser.holdNext("Target.getTargets");
+    await membership.releaseFailure();
+    await confirmation.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    if (destroyed) {
+      act(() => {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      });
+    }
+    click(screen.getByLabelText("Last", { selector: '[role="tab"]' }));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Last", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+    });
+    await confirmation.release();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://last.example.com",
+      );
+    });
+    expect(
+      screen.getByLabelText("Last", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    if (!destroyed) {
+      act(() => {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      });
+    }
+    expect(
+      screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test.each(["window removal", "connection loss"])(
+  "A pending target-loss confirmation cannot hide %s",
+  async (failure) => {
+    const browser = await setupViewer(0);
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+    });
+    await membership.received;
+    browser.targets.splice(0, 1);
+    const confirmation = browser.holdNext("Target.getTargets");
+    await membership.releaseFailure();
+    await confirmation.received;
+    act(() => {
+      if (failure === "window removal") {
+        browser.nativeEvent("window-removed", undefined, { windowId: 0 });
+      } else {
+        browser.disconnect({ code: 1006, wasClean: false });
+      }
+    });
+    await screen.findByText("Browser disconnected");
+    await confirmation.release();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+  },
+);
 
 test("A retired background membership failure cannot revoke the usable selected page", async () => {
   const browser = await setupViewer(0);
@@ -2304,7 +3129,7 @@ test("A retired background membership failure cannot revoke the usable selected 
   await waitFor(() => {
     expect(browser.input).toContainEqual({
       method: "Input.insertText",
-      sessionId: "example-page-session",
+      sessionId: browser.pageSession("example-page"),
       params: { text: "still usable" },
     });
   });

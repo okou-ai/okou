@@ -1,6 +1,7 @@
 import { array, number, object, string, unknown } from "zod";
 import { vi } from "vitest";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
+import type { BrowserWebSocketPeer } from "../signals/__tests__/test-mocks.ts";
 
 export const TEST_BROWSER_EXTENSION = Object.freeze({
   id: "11111111-1111-4111-8111-111111111111",
@@ -43,7 +44,13 @@ const requestSchema = object({
   sessionId: string().optional(),
   params: object({ targetId: string().optional() }).loose().optional(),
 });
-type BrowserRequest = ReturnType<typeof requestSchema.parse>;
+type BrowserRequest = ReturnType<typeof requestSchema.parse> & {
+  readonly connectionId: number;
+};
+interface ProtocolReply {
+  readonly message: string;
+  readonly peer: BrowserWebSocketPeer;
+}
 type BrowserResponse =
   | { readonly result: unknown }
   | { readonly error: { readonly code: number; readonly message: string } };
@@ -94,21 +101,78 @@ export function mockBrowserCdp(
   const requests: BrowserRequest[] = [];
   const input: { method: string; params: unknown; sessionId?: string }[] = [];
   const detached: string[] = [];
+  const retiredSessions = new Set<string>();
+  const sessionTargets = new Map<string, string>();
+  const sessionPeers = new Map<string, BrowserWebSocketPeer>();
+  const discoveryPeers = new Set<BrowserWebSocketPeer>();
+  const capturing = new Set<string>();
   const captures: unknown[] = [];
-  const heldReplies = new Map<string, (response: string) => void>();
-  const heldFrames = new Map<string, () => void>();
+  const heldReplies = new Map<string, (response: ProtocolReply) => void>();
+  const heldFrames = new Map<string, (sessionId: string) => void>();
   const nextResponses = new Map<
     string,
     (request: BrowserRequest) => BrowserResponse
   >();
 
   function event(method: string, params: unknown, sessionId?: string) {
-    socket.receive(cdpUrl, JSON.stringify({ method, params, sessionId }));
+    if (method === "Target.detachedFromTarget") {
+      const detached = object({ sessionId: string() }).parse(params);
+      retiredSessions.add(detached.sessionId);
+      capturing.delete(detached.sessionId);
+      bindings.delete(detached.sessionId);
+      const peer = sessionPeers.get(detached.sessionId);
+      if (peer) {
+        const message = JSON.stringify({ method, params, sessionId });
+        const key = `detach:${detached.sessionId}`;
+        const held = heldReplies.get(key);
+        if (held) {
+          heldReplies.delete(key);
+          held({ message, peer });
+        } else {
+          peer.receive(message);
+        }
+      }
+      return;
+    }
+    const destroyed: string[] = [];
+    if (method === "Target.targetDestroyed") {
+      const { targetId } = object({ targetId: string() }).parse(params);
+      const index = targets.findIndex((target) => target.targetId === targetId);
+      if (index !== -1) {
+        targets.splice(index, 1);
+      }
+      for (const [id, target] of sessionTargets) {
+        if (target === targetId && !retiredSessions.has(id)) {
+          retiredSessions.add(id);
+          capturing.delete(id);
+          destroyed.push(id);
+        }
+      }
+    }
+    const message = JSON.stringify({ method, params, sessionId });
+    if (sessionId) {
+      sessionPeers.get(sessionId)?.receive(message);
+    } else if (method.startsWith("Target.target")) {
+      for (const peer of discoveryPeers) {
+        peer.receive(message);
+      }
+    } else {
+      socket.receive(cdpUrl, message);
+    }
+    for (const sessionId of destroyed) {
+      event("Target.detachedFromTarget", { sessionId });
+    }
   }
 
-  function frame(data: string, sessionId = "example-page-session") {
+  function frame(data: string, sessionId?: string) {
+    sessionId ??= [...capturing].reverse().find((id) => {
+      return sessionTargets.get(id) === "example-page";
+    });
+    if (!sessionId) {
+      throw new Error("No current frame session for the example target");
+    }
     const target = targets.find((candidate) => {
-      return `${candidate.targetId}-session` === sessionId;
+      return candidate.targetId === sessionTargets.get(sessionId);
     });
     if (target && windowStates.get(target.windowId ?? 0) === "minimized") {
       return;
@@ -262,7 +326,9 @@ export function mockBrowserCdp(
 
   function targetForSession(sessionId: string | undefined) {
     const target = targets.find((candidate) => {
-      return `${candidate.targetId}-session` === sessionId;
+      return (
+        candidate.targetId === (sessionId && sessionTargets.get(sessionId))
+      );
     });
     if (!target) {
       throw new Error("Unknown viewer target session");
@@ -270,8 +336,43 @@ export function mockBrowserCdp(
     return target;
   }
 
-  function targetResult(request: BrowserRequest): unknown {
+  function attachTarget(
+    request: BrowserRequest,
+    peer: BrowserWebSocketPeer,
+  ): unknown {
+    if (request.params?.targetId !== "okou-worker" && corruptPageAttachment) {
+      corruptPageAttachment = false;
+      return { sessionId: "" };
+    }
+    if (request.params?.targetId === "okou-worker") {
+      const sessionId = `worker-${++sessionSequence}`;
+      sessionPeers.set(sessionId, peer);
+      return { sessionId };
+    }
+    const targetId = request.params?.targetId ?? "example-page";
+    const original = `${targetId}-session`;
+    let sessionId = original;
+    while (sessionPeers.has(sessionId)) {
+      sessionId = `${original}-${++sessionSequence}`;
+    }
+    sessionTargets.set(sessionId, targetId);
+    sessionPeers.set(sessionId, peer);
+    return { sessionId };
+  }
+
+  function targetResult(
+    request: BrowserRequest,
+    peer: BrowserWebSocketPeer,
+  ): unknown {
     switch (request.method) {
+      case "Target.setDiscoverTargets": {
+        if (request.params?.discover === true) {
+          discoveryPeers.add(peer);
+        } else {
+          discoveryPeers.delete(peer);
+        }
+        return {};
+      }
       case "Target.getTargets": {
         return {
           targetInfos: request.sessionId
@@ -314,28 +415,25 @@ export function mockBrowserCdp(
         return { success: true };
       }
       case "Target.detachFromTarget": {
-        detached.push(
-          object({ sessionId: string() }).parse(request.params).sessionId,
+        const { sessionId } = object({ sessionId: string() }).parse(
+          request.params,
         );
+        detached.push(sessionId);
+        retiredSessions.add(sessionId);
+        capturing.delete(sessionId);
+        bindings.delete(sessionId);
+        queueMicrotask(() => {
+          event("Target.detachedFromTarget", { sessionId }, request.sessionId);
+        });
         return {};
       }
       case "Target.attachToTarget": {
-        if (
-          request.params?.targetId !== "okou-worker" &&
-          corruptPageAttachment
-        ) {
-          corruptPageAttachment = false;
-          return { sessionId: "" };
-        }
-        return {
-          sessionId:
-            request.params?.targetId === "okou-worker"
-              ? `worker-${++sessionSequence}`
-              : `${request.params?.targetId ?? "example-page"}-session`,
-        };
+        return attachTarget(request, peer);
       }
       case "Target.attachToBrowserTarget": {
-        return { sessionId: `native-browser-${++sessionSequence}` };
+        const sessionId = `native-browser-${++sessionSequence}`;
+        sessionPeers.set(sessionId, peer);
+        return { sessionId };
       }
       default: {
         return {};
@@ -459,17 +557,27 @@ export function mockBrowserCdp(
       }
       case "Page.startScreencast": {
         captures.push(request.params);
+        capturing.add(request.sessionId!);
         if (options.streaming !== false) {
           queueMicrotask(() => {
             const sessionId = request.sessionId ?? "example-page-session";
-            const held = heldFrames.get(sessionId);
+            if (!capturing.has(sessionId)) {
+              return;
+            }
+            const held =
+              heldFrames.get(sessionId) ??
+              heldFrames.get(`target:${targetForSession(sessionId).targetId}`);
             if (held) {
-              held();
+              held(sessionId);
             } else {
               frame("AAAA", sessionId);
             }
           });
         }
+        return {};
+      }
+      case "Page.stopScreencast": {
+        capturing.delete(request.sessionId!);
         return {};
       }
       case "Page.getFrameTree": {
@@ -522,7 +630,22 @@ export function mockBrowserCdp(
     }
   }
 
-  function respond(request: BrowserRequest): BrowserResponse {
+  function respond(
+    request: BrowserRequest,
+    peer: BrowserWebSocketPeer,
+  ): BrowserResponse {
+    const addressed =
+      request.method === "Target.detachFromTarget"
+        ? object({ sessionId: string() }).parse(request.params).sessionId
+        : request.sessionId;
+    if (
+      addressed &&
+      (retiredSessions.has(addressed) || sessionPeers.get(addressed) !== peer)
+    ) {
+      return {
+        error: { code: -32_001, message: "Session with given id not found." },
+      };
+    }
     const next = nextResponses.get(request.method);
     if (next) {
       nextResponses.delete(request.method);
@@ -530,7 +653,7 @@ export function mockBrowserCdp(
     }
     switch (request.method.split(".")[0]) {
       case "Target": {
-        return { result: targetResult(request) };
+        return { result: targetResult(request, peer) };
       }
       case "Browser": {
         return browserResponse(request);
@@ -561,17 +684,23 @@ export function mockBrowserCdp(
     return { result: {} };
   }
 
-  const socket = context.mocks.browser.webSocket((data, url) => {
+  const socket = context.mocks.browser.webSocket((data, url, peer) => {
     if (url !== cdpUrl) {
       throw new Error("Unexpected viewer endpoint");
     }
-    const request = requestSchema.parse(JSON.parse(data));
+    const request = {
+      ...requestSchema.parse(JSON.parse(data)),
+      connectionId: peer.id,
+    };
     requests.push(request);
     if (request.id === undefined) {
       return null;
     }
     // Native effects and notifications precede a held protocol receipt.
-    const response = JSON.stringify({ id: request.id, ...respond(request) });
+    const response = JSON.stringify({
+      id: request.id,
+      ...respond(request, peer),
+    });
     let receiptKey = request.method;
     if (request.method === "Runtime.evaluate") {
       const { expression } = object({ expression: string() }).parse(
@@ -596,11 +725,30 @@ export function mockBrowserCdp(
       !(request.method === "Target.getTargets" && request.sessionId)
     ) {
       heldReplies.delete(receiptKey);
-      held(response);
+      held({ message: response, peer });
       return null;
     }
     return response;
   }, options);
+
+  function holdFrames(key: string) {
+    const requested = context.mocks.deferred<void>();
+    let receivedSession: string | null = null;
+    heldFrames.set(key, (sessionId) => {
+      receivedSession = sessionId;
+      requested.resolve();
+    });
+    return {
+      received: requested.promise,
+      release(data = "AAAA") {
+        if (!receivedSession) {
+          throw new Error("No screencast request received for the held frame");
+        }
+        heldFrames.delete(key);
+        frame(data, receivedSession);
+      },
+    };
+  }
 
   return {
     event,
@@ -610,6 +758,20 @@ export function mockBrowserCdp(
     detached,
     captures,
     viewport,
+    pageSession(targetId: string) {
+      const request = [...requests].reverse().find((request) => {
+        return (
+          request.method === "Page.enable" &&
+          request.sessionId &&
+          sessionTargets.get(request.sessionId) === targetId &&
+          !retiredSessions.has(request.sessionId)
+        );
+      });
+      if (!request?.sessionId) {
+        throw new Error(`No current page session for ${targetId}`);
+      }
+      return request.sessionId;
+    },
     setFocusedEditing(value: unknown) {
       focusedEditing = value;
     },
@@ -657,16 +819,9 @@ export function mockBrowserCdp(
         return { result: navigate(request, url) };
       });
     },
-    holdFrames(sessionId: string) {
-      const requested = context.mocks.deferred<void>();
-      heldFrames.set(sessionId, requested.resolve);
-      return {
-        received: requested.promise,
-        release(data = "AAAA") {
-          heldFrames.delete(sessionId);
-          frame(data, sessionId);
-        },
-      };
+    holdFrames,
+    holdTargetFrames(targetId: string) {
+      return holdFrames(`target:${targetId}`);
     },
     requests,
     nativeEvent,
@@ -706,44 +861,64 @@ export function mockBrowserCdp(
       updateBeforeTabRead = true;
     },
     holdNextNative(method: string) {
-      const response = context.mocks.deferred<string>();
+      const response = context.mocks.deferred<ProtocolReply>();
       heldReplies.set(`native:${method}`, response.resolve);
       return {
-        received: response.promise,
+        get received() {
+          return response.promise.then((reply) => reply.message);
+        },
         async release() {
-          socket.receive(cdpUrl, await response.promise);
+          const reply = await response.promise;
+          reply.peer.receive(reply.message);
+        },
+      };
+    },
+    holdNextDetach(sessionId: string) {
+      const response = context.mocks.deferred<ProtocolReply>();
+      heldReplies.set(`detach:${sessionId}`, response.resolve);
+      return {
+        get received() {
+          return response.promise.then((reply) => reply.message);
+        },
+        async release() {
+          const reply = await response.promise;
+          reply.peer.receive(reply.message);
         },
       };
     },
     holdNextMembership(targetId: string) {
-      const response = context.mocks.deferred<string>();
+      const response = context.mocks.deferred<ProtocolReply>();
       heldReplies.set(`membership:${targetId}`, response.resolve);
       return {
-        received: response.promise,
+        get received() {
+          return response.promise.then((reply) => reply.message);
+        },
         async release() {
-          socket.receive(cdpUrl, await response.promise);
+          const reply = await response.promise;
+          reply.peer.receive(reply.message);
         },
         async releaseFailure(
           message = "Target no longer exists",
           code = -32_000,
         ) {
+          const reply = await response.promise;
           const { id } = object({ id: number() }).parse(
-            JSON.parse(await response.promise),
+            JSON.parse(reply.message),
           );
-          socket.receive(
-            cdpUrl,
-            JSON.stringify({ id, error: { code, message } }),
-          );
+          reply.peer.receive(JSON.stringify({ id, error: { code, message } }));
         },
       };
     },
     holdNext(method: string) {
-      const response = context.mocks.deferred<string>();
+      const response = context.mocks.deferred<ProtocolReply>();
       heldReplies.set(method, response.resolve);
       return {
-        received: response.promise,
+        get received() {
+          return response.promise.then((reply) => reply.message);
+        },
         async release() {
-          socket.receive(cdpUrl, await response.promise);
+          const reply = await response.promise;
+          reply.peer.receive(reply.message);
         },
       };
     },

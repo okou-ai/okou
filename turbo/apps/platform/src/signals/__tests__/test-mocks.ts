@@ -404,7 +404,11 @@ export function createTestMocks(getSignal: () => AbortSignal) {
     },
     browser: {
       webSocket: (
-        respond: (data: string, url: string) => string | null,
+        respond: (
+          data: string,
+          url: string,
+          peer: BrowserWebSocketPeer,
+        ) => string | null,
         options?: { readonly autoOpen?: boolean },
       ): ReturnType<typeof mockBrowserWebSocket> => {
         return mockBrowserWebSocket(getSignal(), respond, options);
@@ -1503,9 +1507,19 @@ function mockImageDimensions(
   return { createdUrls, revokedUrls };
 }
 
+export interface BrowserWebSocketPeer {
+  readonly id: number;
+  readonly url: string;
+  receive(data: string): void;
+}
+
 function mockBrowserWebSocket(
   signal: AbortSignal,
-  respond: (data: string, url: string) => string | null,
+  respond: (
+    data: string,
+    url: string,
+    peer: BrowserWebSocketPeer,
+  ) => string | null,
   options: { readonly autoOpen?: boolean } = {},
 ) {
   const sockets = new Set<TestWebSocket>();
@@ -1516,10 +1530,12 @@ function mockBrowserWebSocket(
     static readonly CLOSING = 2;
     static readonly CLOSED = 3;
     readyState = TestWebSocket.CONNECTING;
+    readonly id: number;
 
     constructor(readonly url: string) {
       super();
       connectionCount += 1;
+      this.id = connectionCount;
       sockets.add(this);
       if (options.autoOpen !== false) {
         queueMicrotask(() => {
@@ -1537,15 +1553,19 @@ function mockBrowserWebSocket(
     }
 
     send(data: string): void {
-      const response = respond(data, this.url);
+      const response = respond(data, this.url, this);
       if (response === null) {
         return;
       }
       queueMicrotask(() => {
-        if (this.readyState === TestWebSocket.OPEN) {
-          this.dispatchEvent(new MessageEvent("message", { data: response }));
-        }
+        this.receive(response);
       });
+    }
+
+    receive(data: string): void {
+      if (this.readyState === TestWebSocket.OPEN) {
+        this.dispatchEvent(new MessageEvent("message", { data }));
+      }
     }
 
     close(): void {
