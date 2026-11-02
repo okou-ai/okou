@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-server"
-version = "0.24.67"
+version = "0.24.68"
 edition.workspace = true
 
 [dependencies]

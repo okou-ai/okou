@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.810.0](https://github.com/okou-ai/okou/compare/core-v8.809.1...core-v8.810.0) (2026-11-02)
+
+
+### Features
+
+* **connector:** add chat accounts and shared connector permissions ([#44669](https://github.com/okou-ai/okou/issues/44669)) ([4785f0d](https://github.com/okou-ai/okou/commit/4785f0df14390de71e59178a4138d0689411cb85))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.34.0
+
 ## [8.809.1](https://github.com/okou-ai/okou/compare/core-v8.809.0...core-v8.809.1) (2026-11-02)
 
 
