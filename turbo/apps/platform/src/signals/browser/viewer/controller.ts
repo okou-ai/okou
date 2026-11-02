@@ -769,6 +769,7 @@ function createDiscoveryGraph(
           {
             inventoryState$: model.inventoryState$,
             snapshot$: model.snapshot$,
+            intent$: model.intent$,
             inventory$: model.inventoryUpdate$,
           },
           {

@@ -2374,9 +2374,14 @@ test.each(["present target", "failed inventory", "unsupported membership"])(
   },
 );
 
-test.each(["successful", "failed"])(
-  "A late %s target-loss confirmation cannot revoke a newer selection",
-  async (confirmationResult) => {
+test.each([
+  ["successful", true],
+  ["failed", true],
+  ["successful", false],
+  ["failed", false],
+] as const)(
+  "A late %s target-loss confirmation (destroyed=%s) cannot revoke a newer selection",
+  async (confirmationResult, destroyed) => {
     const browser = mockViewer(0);
     browser.targets[1]!.windowId = 0;
     browser.targets.push({
@@ -2402,9 +2407,11 @@ test.each(["successful", "failed"])(
     await membership.releaseFailure();
     await confirmation.received;
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    act(() => {
-      browser.event("Target.targetDestroyed", { targetId: "example-page" });
-    });
+    if (destroyed) {
+      act(() => {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      });
+    }
     click(screen.getByLabelText("Last", { selector: '[role="tab"]' }));
     await waitFor(() => {
       expect(
@@ -2421,6 +2428,11 @@ test.each(["successful", "failed"])(
     expect(
       screen.getByLabelText("Last", { selector: '[role="tab"]' }),
     ).toHaveAttribute("aria-selected", "true");
+    if (!destroyed) {
+      act(() => {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      });
+    }
     expect(
       screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
     ).not.toBeInTheDocument();

@@ -4,6 +4,7 @@ import { CdpFault, isRecord } from "../cdp/errors.ts";
 import { pageTarget, type TargetDirectory } from "../cdp/targets.ts";
 import type { CdpEvent } from "../cdp/client.ts";
 import type { ViewerSnapshot, ViewerTarget } from "./types.ts";
+import type { ViewerIntent } from "./lifecycle.ts";
 import {
   currentObservation,
   currentRound,
@@ -16,6 +17,7 @@ import {
 interface DiscoveryModel {
   readonly inventoryState$: Computed<TargetInventory>;
   readonly snapshot$: Computed<ViewerSnapshot>;
+  readonly intent$: Computed<ViewerIntent>;
   readonly inventory$: Command<TargetInventory, [InventoryEvent]>;
 }
 interface DiscoveryOptions {
@@ -170,6 +172,7 @@ function createMembershipReader(
       if (!observation) {
         return;
       }
+      const selection = get(model.intent$).selection;
       const [result] = await Promise.allSettled([
         set(directory.contains$, id, signal),
       ]);
@@ -186,6 +189,9 @@ function createMembershipReader(
           throw result.reason;
         }
         if (get(model.snapshot$).selectedTargetId === id) {
+          if (get(model.intent$).selection !== selection) {
+            return;
+          }
           // A scope fault alone cannot distinguish target loss from request failure.
           const [targets, windowResult] = await Promise.allSettled([
             set(directory.read$, signal),
@@ -195,11 +201,14 @@ function createMembershipReader(
           if (!set(accepts$, observation, round)) {
             return;
           }
-          if (targets.status === "rejected") {
-            throw targets.reason;
-          }
           if (windowResult.status === "rejected") {
             throw windowResult.reason;
+          }
+          if (get(model.intent$).selection !== selection) {
+            return;
+          }
+          if (targets.status === "rejected") {
+            throw targets.reason;
           }
           if (
             targets.value.some((target) => {
