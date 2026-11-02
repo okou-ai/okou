@@ -9,6 +9,9 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::firewall_hostname_policy::{raw_host_from_authority, raw_url_authority};
 use crate::ids::RunId;
+use crate::percent_decode::{
+    decode_bytes as percent_decode_segment_bytes, decode_utf8 as percent_decode_segment,
+};
 use crate::storage_manifest::StorageManifest;
 
 pub const MAX_HELD_SANDBOX_STATES: usize = 1024;
@@ -1439,37 +1442,6 @@ fn segment_has_unsafe_syntax_parts_for_cache(segment: &str) -> bool {
 fn path_part_is_dot_segment_for_cache(segment: &str) -> bool {
     let path_part = segment.split_once(';').map_or(segment, |(part, _)| part);
     path_part == "." || path_part == ".."
-}
-
-fn percent_decode_segment(segment: &str) -> Option<String> {
-    String::from_utf8(percent_decode_segment_bytes(segment)?).ok()
-}
-
-fn percent_decode_segment_bytes(segment: &str) -> Option<Vec<u8>> {
-    let bytes = segment.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while let Some(&byte) = bytes.get(index) {
-        if byte != b'%' {
-            decoded.push(byte);
-            index += 1;
-            continue;
-        }
-        let high = *bytes.get(index + 1)?;
-        let low = *bytes.get(index + 2)?;
-        decoded.push((hex_value(high)? << 4) | hex_value(low)?);
-        index += 3;
-    }
-    Some(decoded)
-}
-
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
 }
 
 fn raw_authority_has_empty_port(value: &str) -> bool {
