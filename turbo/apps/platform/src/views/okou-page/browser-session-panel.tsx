@@ -13,14 +13,11 @@ import {
 } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Browser } from "../browser/browser.tsx";
-import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
-  readonly showPausedScreenshot?: boolean;
   /**
    * Panel actions for a host without its own header. The live viewer places
    * them at the end of its tab row; other states give them a row of their own.
@@ -225,25 +222,18 @@ function BrowserCdpViewer({
 
 function PausedBrowserSession({
   signals,
-  screenshotUrl,
-  screenshotLoad,
-  showPausedScreenshot,
   starting,
   onStart,
   refined,
   actions,
 }: {
   readonly signals: BrowserSessionSignals;
-  readonly screenshotUrl?: string | null;
-  readonly screenshotLoad: ImageLoadSignals;
-  readonly showPausedScreenshot: boolean;
   readonly starting: boolean;
   readonly onStart: () => void;
   readonly refined: boolean;
   readonly actions: ReactNode;
 }) {
   const { t } = useTranslation();
-  const showScreenshot = showPausedScreenshot && screenshotUrl;
   const startContent = (
     <>
       {starting ? (
@@ -262,25 +252,7 @@ function PausedBrowserSession({
   );
   const pausedMessage = (
     <PanelMessage
-      icon={
-        showScreenshot ? (
-          <div className="relative mb-3 aspect-[16/10] w-full max-w-80 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/20">
-            <ArtifactThumbnailImage
-              src={screenshotUrl}
-              load={screenshotLoad}
-              testId="browser-session-panel-screenshot"
-              className="absolute inset-0 h-full w-full object-cover object-top"
-              fallback={
-                <span className="absolute inset-0 flex items-center justify-center">
-                  <AppWindow size={26} className="text-muted-foreground" />
-                </span>
-              }
-            />
-          </div>
-        ) : (
-          <AppWindow size={26} className="text-muted-foreground" />
-        )
-      }
+      icon={<AppWindow size={26} className="text-muted-foreground" />}
       title={t(($) => {
         return $.browserSession.panel.notLive;
       })}
@@ -312,10 +284,7 @@ function PausedBrowserSession({
           </button>
         )
       }
-      className={cn(
-        "absolute inset-0 z-10 justify-center-safe overflow-y-auto py-6 *:shrink-0",
-        !refined && "bg-muted/20",
-      )}
+      className={cn("absolute inset-0 z-10", !refined && "bg-muted/20")}
     />
   );
   return (
@@ -349,7 +318,6 @@ function equalPanelSessions(
 
 export function BrowserSessionPanel({
   signals,
-  showPausedScreenshot = false,
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
@@ -385,9 +353,6 @@ export function BrowserSessionPanel({
     return (
       <PausedBrowserSession
         signals={signals}
-        screenshotUrl={session?.screenshotUrl}
-        screenshotLoad={signals.screenshotImageLoad}
-        showPausedScreenshot={showPausedScreenshot}
         starting={starting}
         onStart={() => {
           detach(start(pageSignal), Reason.DomCallback);

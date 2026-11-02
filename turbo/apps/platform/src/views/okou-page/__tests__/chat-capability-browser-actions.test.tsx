@@ -415,7 +415,7 @@ test("Browser cards show status and thumbnail changes on events and continuity g
 });
 
 test.each([false, true])(
-  "A paused browser frames its original screenshot with cloud browser panel=%s",
+  "A stopped browser keeps its card thumbnail and offers a start action with cloud browser panel=%s",
   async (cloudBrowserPanel) => {
     const screenshotUrl =
       `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/browser-screenshot.webp` +
@@ -451,32 +451,16 @@ test.each([false, true])(
     );
 
     click(card);
-    const screenshot = await screen.findByTestId(
-      "browser-session-panel-screenshot",
-    );
-    expect(screenshot).toHaveAttribute("src", screenshotUrl);
-    const renderAppStyles = await createRenderedAppStyles(context.signal);
-    renderAppStyles(screenshot.parentElement!);
-    expect(getComputedStyle(screenshot.parentElement!).aspectRatio).toBe(
-      "16 / 10",
-    );
-    renderAppStyles(screenshot);
-    expect(getComputedStyle(screenshot).objectFit).toBe("cover");
-    expect(getComputedStyle(screenshot).objectPosition).toBe("top");
-    const sidebar = screen.getByRole("complementary", {
+    const sidebar = await screen.findByRole("complementary", {
       name: "Cloud browser",
     });
-    const pausedContent =
-      within(sidebar).getByText("Browser not live").parentElement!;
-    renderAppStyles(pausedContent);
-    expect(getComputedStyle(pausedContent).overflowY).toBe("auto");
-    expect(getComputedStyle(pausedContent).justifyContent).toBe("safe center");
-
-    fireEvent.error(screenshot);
-    renderAppStyles(screenshot);
-    expect(screenshot).not.toBeVisible();
-    expect(within(sidebar).getByText("Browser not live")).toBeInTheDocument();
+    await expect(
+      within(sidebar).findByText("Browser not live"),
+    ).resolves.toBeInTheDocument();
     expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeDisabled();
   },
 );
 
@@ -512,11 +496,11 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       "Stopped",
     );
   });
-  expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
   await expect(
-    screen.findByTestId("browser-session-panel-screenshot"),
-  ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);
-  expect(within(sidebar).getByText("Browser not live")).toBeVisible();
+    within(sidebar).findByText("Browser not live"),
+  ).resolves.toBeInTheDocument();
+  expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
+  expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
 
   updateBrowser(
     managedBrowserSession({
@@ -534,7 +518,6 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       within(sidebar).getByDisplayValue("https://example.com"),
     ).toBeEnabled();
   });
-  expect(screen.queryByTestId("browser-session-panel-screenshot")).toBeNull();
 });
 
 test("Keep foreign and untrusted browser URLs as ordinary links", async () => {
