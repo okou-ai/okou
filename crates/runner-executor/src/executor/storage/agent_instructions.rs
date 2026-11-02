@@ -5,7 +5,8 @@ use super::super::{
 };
 use super::{format_helper_exec_failure, guest_storage_apply_env, helper_exec_succeeded};
 use guest_contracts::agent_instructions::{
-    InstructionApplication, MAX_METADATA_BYTES, instruction_paths,
+    InstructionApplication, InstructionCheck, MAX_CHECK_METADATA_BYTES, MAX_METADATA_BYTES,
+    instruction_paths,
 };
 use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
 use guest_contracts::home_mount::HOME_DIR;
@@ -15,6 +16,7 @@ use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecResult, Sandbox};
 use std::{path::Path, time::Instant};
 
 const _: () = assert!(MAX_METADATA_BYTES <= guest_control_proto::MAX_EXEC_STDIN_BYTES);
+const _: () = assert!(MAX_CHECK_METADATA_BYTES <= guest_control_proto::MAX_EXEC_STDIN_BYTES);
 
 pub(in crate::executor) enum InstructionReuse {
     Apply,
@@ -76,23 +78,12 @@ pub(in crate::executor) async fn check_instruction_reuse(
         return Ok(InstructionReuse::Repair(repaired));
     }
     let started = Instant::now();
-    let checked = async {
-        let result = exec(
-            sandbox,
-            context,
-            "--instructions-check-stdin",
-            "instruction-file-check",
-        )
-        .await?;
-        if !helper_exec_succeeded(&result) {
-            return Err(RunnerError::Internal(format_helper_exec_failure(
-                "instruction file check",
-                &result,
-            )));
-        }
-        serde_json::from_slice::<bool>(&result.stdout)
-            .map_err(|_| RunnerError::Internal("Invalid instruction file check response".into()))
-    }
+    let checked = check_preserved_targets(
+        sandbox,
+        context,
+        framework,
+        plan.preserved_download_mounts(),
+    )
     .await;
     telemetry.record(
         "runner_agent_instructions_check",
@@ -112,6 +103,67 @@ pub(in crate::executor) async fn check_instruction_reuse(
     }
 }
 
+async fn check_preserved_targets(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    framework: &str,
+    mounts: Vec<String>,
+) -> RunnerResult<bool> {
+    let mut batch = InstructionCheck {
+        framework: framework.into(),
+        preserved_download_mounts: Vec::new(),
+    };
+    let empty_size = serde_json::to_vec(&batch)
+        .map_err(|_| RunnerError::Internal("Instruction metadata encoding failed".into()))?
+        .len();
+    let mut size = empty_size;
+    for mount in mounts {
+        let encoded_size = serde_json::to_vec(&mount)
+            .map_err(|_| RunnerError::Internal("Instruction path encoding failed".into()))?
+            .len();
+        if empty_size + encoded_size > MAX_CHECK_METADATA_BYTES {
+            return Err(RunnerError::Internal(
+                "Instruction check path exceeds bound".into(),
+            ));
+        }
+        let comma = usize::from(!batch.preserved_download_mounts.is_empty());
+        if size + encoded_size + comma > MAX_CHECK_METADATA_BYTES {
+            if !check_batch(sandbox, context, &batch).await? {
+                return Ok(false);
+            }
+            batch.preserved_download_mounts.clear();
+            size = empty_size;
+        }
+        size += encoded_size + usize::from(!batch.preserved_download_mounts.is_empty());
+        batch.preserved_download_mounts.push(mount);
+    }
+    check_batch(sandbox, context, &batch).await
+}
+
+async fn check_batch(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    input: &InstructionCheck,
+) -> RunnerResult<bool> {
+    let result = exec(
+        sandbox,
+        context,
+        "--instructions-check-stdin",
+        "instruction-file-check",
+        input,
+        MAX_CHECK_METADATA_BYTES,
+    )
+    .await?;
+    if !helper_exec_succeeded(&result) {
+        return Err(RunnerError::Internal(format_helper_exec_failure(
+            "instruction file check",
+            &result,
+        )));
+    }
+    serde_json::from_slice::<bool>(&result.stdout)
+        .map_err(|_| RunnerError::Internal("Invalid instruction file check response".into()))
+}
+
 pub(in crate::executor) async fn apply_agent_instructions(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
@@ -119,11 +171,19 @@ pub(in crate::executor) async fn apply_agent_instructions(
 ) -> RunnerResult<()> {
     let started = Instant::now();
     let result = async {
+        let input = InstructionApplication {
+            framework: super::super::cli_framework::normalized_cli_agent_type(
+                &context.cli_agent_type,
+            )
+            .into(),
+        };
         let result = exec(
             sandbox,
             context,
             "--instructions-stdin",
             "agent-instructions",
+            &input,
+            MAX_METADATA_BYTES,
         )
         .await?;
         if !helper_exec_succeeded(&result) {
@@ -150,15 +210,13 @@ async fn exec(
     context: &ExecutionContext,
     flag: &str,
     label: &'static str,
+    input: &impl serde::Serialize,
+    metadata_limit: usize,
 ) -> RunnerResult<ExecResult> {
     let runtime = guest_runtime_dir(context.run_id)?;
-    let input = InstructionApplication {
-        framework: super::super::cli_framework::normalized_cli_agent_type(&context.cli_agent_type)
-            .into(),
-    };
-    let metadata = serde_json::to_vec(&input)
+    let metadata = serde_json::to_vec(input)
         .map_err(|_| RunnerError::Internal("Instruction metadata encoding failed".into()))?;
-    if metadata.len() > MAX_METADATA_BYTES {
+    if metadata.len() > metadata_limit {
         return Err(RunnerError::Internal(
             "Instruction metadata exceeds bound".into(),
         ));

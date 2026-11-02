@@ -30,7 +30,10 @@ fn main() {
     };
 
     if matches!(&input, ManifestInput::InstructionsStdin { check: true }) {
-        match read_instruction_metadata().and_then(|metadata| {
+        match read_instruction_metadata(
+            guest_contracts::agent_instructions::MAX_CHECK_METADATA_BYTES,
+        )
+        .and_then(|metadata| {
             guest_storage_apply::check_agent_instructions(
                 std::path::Path::new("/home/user"),
                 &metadata,
@@ -107,9 +110,8 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
     }
 }
 
-fn read_instruction_metadata() -> io::Result<Vec<u8>> {
+fn read_instruction_metadata(limit: usize) -> io::Result<Vec<u8>> {
     let mut metadata = Vec::new();
-    let limit = guest_contracts::agent_instructions::MAX_METADATA_BYTES;
     io::stdin()
         .take(limit as u64 + 1)
         .read_to_end(&mut metadata)?;
@@ -122,7 +124,9 @@ fn read_instruction_metadata() -> io::Result<Vec<u8>> {
 fn run(input: ManifestInput) -> bool {
     match input {
         ManifestInput::InstructionsStdin { .. } => {
-            let Ok(metadata) = read_instruction_metadata() else {
+            let Ok(metadata) =
+                read_instruction_metadata(guest_contracts::agent_instructions::MAX_METADATA_BYTES)
+            else {
                 return false;
             };
             guest_storage_apply::apply_agent_instructions(

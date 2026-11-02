@@ -1,5 +1,5 @@
 use guest_contracts::agent_instructions::{
-    InstructionApplication, SOURCE_FILENAME, instruction_paths,
+    InstructionApplication, InstructionCheck, SOURCE_FILENAME, instruction_paths,
 };
 use guest_storage_apply::{apply_agent_instructions, check_agent_instructions, run_manifest_bytes};
 use std::{fs, io, path::Path};
@@ -154,5 +154,33 @@ fn instruction_presence_checks_reject_unsafe_targets() {
             fs::read(outside.path().join("AGENTS.md")).unwrap(),
             b"outside"
         );
+    }
+}
+
+#[test]
+fn instruction_presence_checks_resolve_preserved_mount_aliases_without_writes() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = instruction_paths(home.path(), "codex").unwrap();
+    fs::create_dir_all(paths.target.parent().unwrap()).unwrap();
+    fs::write(&paths.target, b"local instruction edit").unwrap();
+    let alias = home.path().join("settings-alias");
+    std::os::unix::fs::symlink(paths.target.parent().unwrap(), &alias).unwrap();
+    for (mount, reusable) in [
+        (alias.to_str().unwrap().to_owned(), false),
+        ("settings-alias".to_owned(), false),
+        ("unrelated/missing/child".to_owned(), true),
+    ] {
+        let input = serde_json::to_vec(&InstructionCheck {
+            framework: "codex".into(),
+            preserved_download_mounts: vec![mount],
+        })
+        .unwrap();
+        assert_eq!(
+            check_agent_instructions(home.path(), &input).unwrap(),
+            reusable
+        );
+        assert_eq!(fs::read(&paths.target).unwrap(), b"local instruction edit");
+        assert!(!home.path().join("unrelated").exists());
+        assert!(!paths.staging.exists());
     }
 }

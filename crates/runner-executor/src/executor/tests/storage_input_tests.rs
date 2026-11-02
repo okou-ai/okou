@@ -5,7 +5,7 @@ use std::{
 };
 
 use guest_contracts::{
-    agent_instructions::{InstructionApplication, SOURCE_FILENAME, instruction_paths},
+    agent_instructions::{InstructionCheck, SOURCE_FILENAME, instruction_paths},
     storage_files,
     storage_manifest::Manifest,
 };
@@ -118,8 +118,21 @@ fn apply_guest_instructions(overrides: &MockSandboxOverrides, root: &Path, first
 }
 
 fn instruction_check(overrides: &MockSandboxOverrides, root: &Path, framework: &str) {
-    let metadata = serde_json::to_vec(&InstructionApplication {
+    instruction_check_with_mounts(overrides, root, framework, &[]);
+}
+
+fn instruction_check_with_mounts(
+    overrides: &MockSandboxOverrides,
+    root: &Path,
+    framework: &str,
+    mounts: &[&str],
+) {
+    let metadata = serde_json::to_vec(&InstructionCheck {
         framework: framework.into(),
+        preserved_download_mounts: mounts
+            .iter()
+            .map(|path| guest_path(root, path).to_str().unwrap().into())
+            .collect(),
     })
     .unwrap();
     let checked =
@@ -968,6 +981,100 @@ async fn instruction_reuse_repairs_equivalent_parent_paths() {
 }
 
 #[tokio::test]
+async fn instruction_reuse_repairs_preserved_symlink_alias_writes() {
+    instruction_reuse_with_parent_reconciliation(InstructionParentCase::ReplacedSymlink).await;
+}
+
+#[tokio::test]
+async fn instruction_reuse_checks_all_preserved_mounts_in_bounded_guest_requests() {
+    let directory = tempfile::tempdir().unwrap();
+    let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+    let guest = tempfile::tempdir().unwrap();
+    let home = guest_path(guest.path(), "/home/user");
+    let target = home.join(".codex/AGENTS.md");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    fs::write(&target, b"local instruction edit").unwrap();
+    let mut current = instruction_context(&"a".repeat(64), 10, "codex", "instructions");
+    current
+        .storage_manifest
+        .as_mut()
+        .unwrap()
+        .storages
+        .push(super::support::api_storage(
+            "home",
+            home.to_str().unwrap(),
+            "v1",
+            "https://unreachable.invalid/home",
+        ));
+    let previous = current.storage_fingerprints();
+    let mounts = (0..128)
+        .map(|index| {
+            home.join(format!("check-{index}/{}/leaf", "long-prefix/".repeat(70)))
+                .to_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    for mount in &mounts {
+        current
+            .storage_manifest
+            .as_mut()
+            .unwrap()
+            .storages
+            .push(super::support::api_storage(
+                "settings",
+                mount,
+                "v2",
+                "https://unreachable.invalid/settings",
+            ));
+    }
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.add_persistent_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: " --instructions-check-stdin".into(),
+        exit_code: 0,
+        stdout: b"true".to_vec(),
+        stderr: Vec::new(),
+    });
+    let sandbox =
+        sandbox_mock::MockSandbox::with_overrides("bounded-check", Arc::clone(&overrides));
+    let mut telemetry = super::support::test_telemetry(&config, &current);
+    let reused = super::super::storage::check_instruction_reuse(
+        &sandbox,
+        &current,
+        Some(&previous),
+        None,
+        &mut telemetry,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        reused,
+        super::super::storage::InstructionReuse::Reused
+    ));
+    let calls = overrides.exec_calls();
+    assert!(calls.len() > 1);
+    let mut checked = Vec::new();
+    for call in calls {
+        let metadata = call.stdin_bytes.unwrap();
+        assert!(metadata.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES);
+        assert!(guest_storage_apply::check_agent_instructions(&home, &metadata).unwrap());
+        let input: InstructionCheck = serde_json::from_slice(&metadata).unwrap();
+        checked.extend(input.preserved_download_mounts);
+    }
+    assert_eq!(checked, mounts);
+    assert_eq!(fs::read(&target).unwrap(), b"local instruction edit");
+    assert!(!home.join("check-0").exists());
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn instruction_reuse_preserves_edits_when_cleanup_replaces_a_symlink_mount() {
+    instruction_reuse_with_parent_reconciliation(InstructionParentCase::ReplacedUnpreservedSymlink)
+        .await;
+}
+
+#[tokio::test]
 async fn instruction_reuse_preserves_files_under_cached_parent() {
     instruction_reuse_with_parent_reconciliation(InstructionParentCase::CachedRoot).await;
 }
@@ -979,22 +1086,34 @@ async fn instruction_reuse_preserves_files_with_cached_sibling() {
 
 enum InstructionParentCase {
     ReplacedAlias,
+    ReplacedSymlink,
+    ReplacedUnpreservedSymlink,
     CachedRoot,
     CachedChild,
 }
 
 async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCase) {
     let aliased_parent = matches!(&case, InstructionParentCase::ReplacedAlias);
+    let preserved_symlink = matches!(&case, InstructionParentCase::ReplacedSymlink);
+    let symlink_parent = matches!(
+        &case,
+        InstructionParentCase::ReplacedSymlink | InstructionParentCase::ReplacedUnpreservedSymlink
+    );
+    let changed_parent = aliased_parent || symlink_parent;
     let directory = tempfile::tempdir().unwrap();
     let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
     let guest = tempfile::tempdir().unwrap();
     fs::create_dir_all(guest_path(guest.path(), "/home/user/alias")).unwrap();
     let instructions = archive(&[(SOURCE_FILENAME, b"published instructions")]);
     let hash = hex::encode(Sha256::digest(&instructions));
-    let settings = archive(&[
+    let mut settings_files: Vec<(&str, &[u8])> = vec![
         ("config.toml", b"settings"),
         ("native-history", b"preserved"),
-    ]);
+    ];
+    if symlink_parent {
+        settings_files.push(("AGENTS.md", b"other Storage input"));
+    }
+    let settings = archive(&settings_files);
     let home = archive(&[("parent-data", b"other Storage input")]);
     for (name, version, bytes) in [
         (INSTRUCTION_STORAGE_NAME, hash.as_str(), &instructions),
@@ -1015,15 +1134,17 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
             "framework-settings",
             if matches!(&case, InstructionParentCase::CachedChild) {
                 "/home/user/.codex/memories"
+            } else if symlink_parent {
+                "/home/user/settings-alias"
             } else if aliased_parent {
                 "/home/user/alias/../.codex"
             } else {
                 "/home/user/.codex"
             },
-            if aliased_parent && !first { "v2" } else { "v1" },
+            if changed_parent && !first { "v2" } else { "v1" },
             "https://unreachable.invalid/settings",
         ));
-        if !aliased_parent && first {
+        if preserved_symlink || !changed_parent && first {
             manifest.storages.push(super::support::api_storage(
                 "home-extra",
                 "/home/user",
@@ -1055,6 +1176,11 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
     apply_guest_instructions(&overrides, guest.path(), 0);
     let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
     assert_eq!(fs::read(&target).unwrap(), b"published instructions");
+    if symlink_parent {
+        let alias = guest_path(guest.path(), "/home/user/settings-alias");
+        fs::remove_dir_all(&alias).unwrap();
+        std::os::unix::fs::symlink(target.parent().unwrap(), alias).unwrap();
+    }
     fs::write(
         target.parent().unwrap().join("native-history"),
         b"preserved",
@@ -1068,7 +1194,16 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
         first.storage_fingerprints,
     )
     .await;
-    instruction_check(&overrides, guest.path(), "codex");
+    instruction_check_with_mounts(
+        &overrides,
+        guest.path(),
+        "codex",
+        if preserved_symlink {
+            &["/home/user/settings-alias"]
+        } else {
+            &[]
+        },
+    );
     let first_storage = overrides.storage_manifest_calls().len();
     let first_exec = overrides.exec_calls().len();
     let (mut next, _) = execute_job_reuse(
@@ -1080,6 +1215,24 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
     )
     .await;
     assert_eq!(next.exit_code(), 0, "{:?}", next.error());
+    if symlink_parent {
+        let calls = overrides.exec_calls();
+        let check = calls
+            .iter()
+            .skip(first_exec)
+            .find(|call| call.cmd.ends_with(" --instructions-check-stdin"))
+            .unwrap();
+        let input: InstructionCheck =
+            serde_json::from_slice(check.stdin_bytes.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            input.preserved_download_mounts,
+            if preserved_symlink {
+                vec!["/home/user/settings-alias"]
+            } else {
+                Vec::<&str>::new()
+            }
+        );
+    }
     if let Some(report) = next.startup_report.take() {
         report.finish().await;
     }
@@ -1087,7 +1240,7 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
     apply_guest_instructions(&overrides, guest.path(), first_exec);
     assert_eq!(
         fs::read(&target).expect("the final instruction file must remain available"),
-        if aliased_parent {
+        if aliased_parent || preserved_symlink {
             b"published instructions".as_slice()
         } else {
             b"local instruction edit".as_slice()
