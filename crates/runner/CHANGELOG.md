@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.242.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.5...runner-rs-v0.242.6) (2026-11-02)
+
+
+### Bug Fixes
+
+* **runner:** fail benchmark when terminal output delivery fails ([#44705](https://github.com/okou-ai/okou/issues/44705)) ([bcbc794](https://github.com/okou-ai/okou/commit/bcbc7947953f9ec14ba5ab00d61f40104ebb365f))
+* **runner:** preserve single-tier websocket pricing decisions ([#44701](https://github.com/okou-ai/okou/issues/44701)) ([271799c](https://github.com/okou-ai/okou/commit/271799cf31b8df9dfb2e49ce0884ca48a01d49ac))
+
+
+### Refactoring
+
+* **python:** share bounded raw header value acquisition ([#44708](https://github.com/okou-ai/okou/issues/44708)) ([fee074f](https://github.com/okou-ai/okou/commit/fee074f475e963ba8a3a482faf34784112b49df4))
+* **python:** share capped stream capture writes ([#44674](https://github.com/okou-ai/okou/issues/44674)) ([540f776](https://github.com/okou-ai/okou/commit/540f77699714888f009b96068b1238f97111185c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.242.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.242.4...runner-rs-v0.242.5) (2026-11-02)
 
 ### Release Dependencies

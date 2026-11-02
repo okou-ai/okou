@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.55.3](https://github.com/okou-ai/okou/compare/desktop-v0.55.2...desktop-v0.55.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* **desktop:** treat suspended permission checks as expected expiry ([#44692](https://github.com/okou-ai/okou/issues/44692)) ([4bc8095](https://github.com/okou-ai/okou/commit/4bc8095ca0dbe01b33f3ae4f225ba4b5b55bc184))
+* handle desktop permission refreshes interrupted by sleep ([#44672](https://github.com/okou-ai/okou/issues/44672)) ([8a11d3b](https://github.com/okou-ai/okou/commit/8a11d3ba9c82ddc911a8b158141fa38834796de6))
+
 ## [0.55.2](https://github.com/okou-ai/okou/compare/desktop-v0.55.1...desktop-v0.55.2) (2026-11-02)
 
 

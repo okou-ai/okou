@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/ios-v0.22.6...ios-v0.23.0) (2026-11-02)
+
+
+### Features
+
+* implement private cross-agent projects behind release gate ([#44617](https://github.com/okou-ai/okou/issues/44617)) ([428f461](https://github.com/okou-ai/okou/commit/428f46154beb1a11cdf09f150650c388826e539c))
+
+
+### Bug Fixes
+
+* **ios:** enforce api consumption inventory ([#44689](https://github.com/okou-ai/okou/issues/44689)) ([adf382d](https://github.com/okou-ai/okou/commit/adf382d5b3c011c430d13fe44c3bf2c2ad745469))
+
 ## [0.22.6](https://github.com/okou-ai/okou/compare/ios-v0.22.5...ios-v0.22.6) (2026-11-01)
 
 

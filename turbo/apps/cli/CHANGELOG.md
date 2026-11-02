@@ -1,5 +1,22 @@
 # Changelog
 
+## [10.13.0](https://github.com/okou-ai/okou/compare/cli-v10.12.0...cli-v10.13.0) (2026-11-02)
+
+
+### Features
+
+* fall back to whatsapp task completion templates ([#44706](https://github.com/okou-ai/okou/issues/44706)) ([a74db41](https://github.com/okou-ai/okou/commit/a74db4120a1f1561897dba23d0625909f7a096ed))
+* implement private cross-agent projects behind release gate ([#44617](https://github.com/okou-ai/okou/issues/44617)) ([428f461](https://github.com/okou-ai/okou/commit/428f46154beb1a11cdf09f150650c388826e539c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.33.0
+    * @okouai/core bumped to 8.809.0
+    * @okouai/pi-agent-runtime bumped to 1.51.50
+
 ## [10.12.0](https://github.com/okou-ai/okou/compare/cli-v10.11.16...cli-v10.12.0) (2026-11-02)
 
 
