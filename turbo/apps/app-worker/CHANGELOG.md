@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.108](https://github.com/okou-ai/okou/compare/app-worker-v1.10.107...app-worker-v1.10.108) (2026-11-02)
+
+
+### Bug Fixes
+
+* align app connector introductions with 4,000+ catalog ([#44375](https://github.com/okou-ai/okou/issues/44375)) ([9b974cf](https://github.com/okou-ai/okou/commit/9b974cf48403e6daf872459231ad0d6a4e3ed8df))
+
 ## [1.10.107](https://github.com/okou-ai/okou/compare/app-worker-v1.10.106...app-worker-v1.10.107) (2026-11-01)
 
 
