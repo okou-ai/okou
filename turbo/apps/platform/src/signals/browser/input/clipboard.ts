@@ -32,7 +32,7 @@ interface CopyAttempt extends ClipboardOrigin {
 
 /** Clipboard snapshots and their original input identity are private atoms. */
 function createClipboardObservation(
-  proxy$: Computed<HTMLTextAreaElement | null>,
+  proxy$: Computed<HTMLInputElement | null>,
   input$: Computed<NativeInputPort | null>,
   ingress: InputIngress,
 ) {
@@ -390,7 +390,7 @@ function createClipboardActions(
 
 /** Local clipboard effects retain the original gesture, selection and owner. */
 export function createNativeClipboard(
-  proxy$: Computed<HTMLTextAreaElement | null>,
+  proxy$: Computed<HTMLInputElement | null>,
   input$: Computed<NativeInputPort | null>,
   ingress: InputIngress,
   composing$: Computed<boolean>,

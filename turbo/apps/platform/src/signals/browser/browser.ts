@@ -69,6 +69,7 @@ export interface BrowserSignals {
   readonly presentation$: Computed<BrowserPresentation>;
   readonly imageRecovery$: Computed<ImageRecovery | null>;
   readonly controls$: Computed<BrowserControls>;
+  readonly proxyType$: Computed<"text" | "password">;
   readonly capture$: Computed<ViewerCaptureOptions>;
   readonly transport$: Computed<ViewerTransport>;
   readonly windowSizeSync$: Computed<WindowSizeSync>;
@@ -114,7 +115,7 @@ export interface BrowserSignals {
   readonly refs: {
     readonly root$: Ref<HTMLDivElement>;
     readonly canvas$: Ref<HTMLCanvasElement>;
-    readonly input$: Ref<HTMLTextAreaElement>;
+    readonly input$: Ref<HTMLInputElement>;
     readonly toolbar$: Ref<HTMLDivElement>;
     readonly tabs$: Ref<HTMLDivElement>;
     readonly address$: Ref<HTMLInputElement>;

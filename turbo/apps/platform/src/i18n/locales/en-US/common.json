@@ -1483,7 +1483,7 @@
         },
         "connector": {
           "action": "Connect",
-          "description": "Gmail, Notion, and 100+ more",
+          "description": "Gmail, Notion, and 4,000+ more",
           "name": "Connect a connector",
           "unit": "per connector"
         },
