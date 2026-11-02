@@ -153,12 +153,13 @@ class ReturnedGuestTests(unittest.TestCase):
         self.validate()
 
     def test_all_missing_duplicate_and_out_of_order_phases_are_refused(self):
-        original = copy.deepcopy(self.witnesses)
+        original = self.witnesses
         for index in range(len(original)):
-            self.witnesses = copy.deepcopy(original)
+            self.witnesses = original.copy()
             self.witnesses.pop(index)
             with self.assertRaises(ValueError): self.validate()
-        self.witnesses = copy.deepcopy(original)
+        self.witnesses = original.copy()
+        self.validate()
         self.witnesses.append(copy.deepcopy(original[-1]))
         with self.assertRaises(ValueError): self.validate()
 
