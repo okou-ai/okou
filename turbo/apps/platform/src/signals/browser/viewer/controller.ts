@@ -90,6 +90,13 @@ interface AttachedSelection {
   readonly frameSessionId: string;
   readonly settings: CaptureSettings;
 }
+interface AttachingSelection {
+  readonly owner: SelectionOwner;
+  readonly sessions: readonly {
+    readonly client: CdpClient;
+    readonly sessionId: string;
+  }[];
+}
 interface FaviconDocument {
   readonly wanted: boolean;
   readonly waiting: boolean;
@@ -505,6 +512,7 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
   const bootstrapping$ = state(true);
   const chosenOnce$ = state(false);
   const selectedOwner$ = state<SelectionOwner | null>(null);
+  const attachingState$ = state<AttachingSelection | null>(null);
   const attachedState$ = state<AttachedSelection | null>(null);
   const retirements$ = state<ReadonlyMap<string, Retirement>>(new Map());
   const wakeListeners$ = state<ReadonlySet<() => void>>(new Set());
@@ -539,6 +547,7 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
     bootstrapping$,
     chosenOnce$,
     selectedOwner$,
+    attachingState$,
     attachedState$,
     retirements$,
     wakeListeners$,
@@ -1305,6 +1314,7 @@ function createRetirementsGraph(
     sink,
     disposedState$,
     selectedOwner$,
+    attachingState$,
     attachedState$,
     retirements$,
     captureStartedState$,
@@ -1370,6 +1380,7 @@ function createRetirementsGraph(
         set(creationOwner$, null);
       }
       set(selectedOwner$, null);
+      set(attachingState$, null);
       set(attachedState$, null);
       set(captureStartedState$, null);
       set(get(links$).cancelCapture$);
@@ -1500,7 +1511,8 @@ function createAttachmentAdmission(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const { selectedOwner$, available$, waitEvent$ } = context;
+  const { selectedOwner$, available$, waitEvent$, clientState$, directory$ } =
+    context;
   const assertCurrent$ = command(
     ({ get }, owner: SelectionOwner, signal: AbortSignal) => {
       signal.throwIfAborted();
@@ -1519,7 +1531,30 @@ function createAttachmentAdmission(
       set(assertCurrent$, owner, signal);
     },
   );
-  return { assertCurrent$, waitForDiscovery$ };
+  const activate$ = command(
+    async ({ get, set }, owner: SelectionOwner, signal: AbortSignal) => {
+      const client = get(clientState$)!;
+      const directory = get(directory$)!;
+      await set(waitForDiscovery$, owner, signal);
+      await set(get(links$).waitRetirement$, owner.targetId, signal);
+      set(assertCurrent$, owner, signal);
+      await set(directory.assertMember$, owner.targetId, signal);
+      signal.throwIfAborted();
+      set(assertCurrent$, owner, signal);
+      await client.request(
+        "Target.activateTarget",
+        { targetId: owner.targetId },
+        undefined,
+        undefined,
+        signal,
+      );
+      set(assertCurrent$, owner, signal);
+      await set(directory.assertMember$, owner.targetId, signal);
+      signal.throwIfAborted();
+      set(assertCurrent$, owner, signal);
+    },
+  );
+  return { assertCurrent$, activate$ };
 }
 
 function createAttachmentInitialization(
@@ -1572,12 +1607,13 @@ function createAttachmentGraph(
   const {
     clientState$,
     framesState$,
+    attachingState$,
     attachedState$,
     settings$,
     directory$,
     nativeHost,
   } = context;
-  const { assertCurrent$, waitForDiscovery$ } = createAttachmentAdmission(
+  const { assertCurrent$, activate$ } = createAttachmentAdmission(
     context,
     links$,
   );
@@ -1595,28 +1631,15 @@ function createAttachmentGraph(
       const client = get(clientState$)!;
       const frames = get(framesState$)!;
       const directory = get(directory$)!;
-      await set(waitForDiscovery$, owner, signal);
-      await set(get(links$).waitRetirement$, owner.targetId, signal);
-      set(assertCurrent$, owner, signal);
-      await set(directory.assertMember$, owner.targetId, signal);
-      signal.throwIfAborted();
-      set(assertCurrent$, owner, signal);
-      await client.request(
-        "Target.activateTarget",
-        { targetId: owner.targetId },
-        undefined,
-        undefined,
-        signal,
-      );
-      set(assertCurrent$, owner, signal);
-      await set(directory.assertMember$, owner.targetId, signal);
-      signal.throwIfAborted();
-      set(assertCurrent$, owner, signal);
+      await set(activate$, owner, signal);
       let sessionId: string | null = null;
       let frameSessionId: string | null = null;
       let published = false;
       using _unpublished = {
         [Symbol.dispose]: () => {
+          if (get(attachingState$)?.owner === owner) {
+            set(attachingState$, null);
+          }
           if (published) {
             return;
           }
@@ -1645,6 +1668,10 @@ function createAttachmentGraph(
         "The browser returned an invalid target session.",
       );
       set(assertCurrent$, owner, signal);
+      set(attachingState$, {
+        owner,
+        sessions: [{ client, sessionId }],
+      });
       if (frames === client) {
         frameSessionId = sessionId;
       } else {
@@ -1665,6 +1692,13 @@ function createAttachmentGraph(
           "The browser returned an invalid frame session.",
         );
         set(assertCurrent$, owner, signal);
+        set(attachingState$, {
+          owner,
+          sessions: [
+            { client, sessionId },
+            { client: frames, sessionId: frameSessionId },
+          ],
+        });
       }
       await set(directory.assertMember$, owner.targetId, signal);
       signal.throwIfAborted();
@@ -1686,6 +1720,7 @@ function createAttachmentGraph(
         settings: get(settings$),
       };
       set(attachedState$, selection);
+      set(attachingState$, null);
       set(nativeHost.synchronize$);
       published = true;
       return set(initialize$, selection, signal);
@@ -1778,6 +1813,10 @@ function createSelectionGraph(
         signal.throwIfAborted();
         return;
       }
+      // Classify cancellation before local retirement aborts this operation.
+      if (operation.aborted) {
+        throw cancelled();
+      }
       if (get(selectedOwner$) === owner && !get(disposedState$)) {
         const selected = get(get(links$).selectedSession$);
         if (selected && get(model.imageRecovery$)) {
@@ -1793,9 +1832,7 @@ function createSelectionGraph(
           }
         }
       }
-      if (signal.aborted || operation.aborted) {
-        throw cancelled();
-      }
+      signal.throwIfAborted();
       throw result.reason;
     },
   );
@@ -2036,30 +2073,45 @@ function createDetachedEvent(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const { closingTargets$ } = context;
+  const { closingTargets$, selectedOwner$, attachingState$, clientState$ } =
+    context;
   return command(
     (
       { get, set },
       event: CdpEvent,
       source: CdpClient,
-      selected: SelectedSession,
+      selected: SelectedSession | null,
     ) => {
-      const expected =
-        source === selected.attached.client
-          ? selected.attached.sessionId
-          : selected.attached.frameSessionId;
+      const attaching = get(attachingState$);
+      const owner = selected?.attached.owner ?? attaching?.owner;
       if (
-        event.params.sessionId === expected &&
-        !get(closingTargets$).has(selected.attached.owner.targetId)
+        !owner ||
+        get(selectedOwner$) !== owner ||
+        get(closingTargets$).has(owner.targetId)
       ) {
-        if (source === selected.attached.frames) {
+        return;
+      }
+      const matches = selected
+        ? event.params.sessionId ===
+          (source === selected.attached.client
+            ? selected.attached.sessionId
+            : selected.attached.frameSessionId)
+        : attaching?.sessions.some((session) => {
+            return (
+              session.client === source &&
+              session.sessionId === event.params.sessionId
+            );
+          });
+      if (matches) {
+        if (selected && source === selected.attached.frames) {
           set(selected.stream.detached$);
         }
+        // Received sessions belong to this selection even before input starts.
         set(get(links$).retireCurrent$, "target-replaced", false, true);
         const discovery = get(get(links$).discovery$);
         if (discovery) {
           detach(
-            set(discovery.refresh$, selected.attached.client.signal),
+            set(discovery.refresh$, get(clientState$)!.signal),
             Reason.DomCallback,
             "browser detached target validation",
           );
@@ -2159,7 +2211,7 @@ function createProtocolEventDispatch(
         set(screencastEvent$, event, source);
         return;
       }
-      if (event.method === "Target.detachedFromTarget" && selected) {
+      if (event.method === "Target.detachedFromTarget") {
         set(detachedEvent$, event, source, selected);
       }
       if (source !== get(clientState$)) {
