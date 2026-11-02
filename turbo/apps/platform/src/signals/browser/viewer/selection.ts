@@ -25,16 +25,20 @@ export interface AttachedSelection {
 /** Supersession is a selection result, not a classification of arbitrary errors. */
 export type SelectionOutcome = "ready" | "superseded";
 
+interface SelectionIdentity {
+  readonly targetId: string;
+}
+
 type Selection =
-  | { readonly phase: "pending"; readonly owner: SelectionOwner }
+  | { readonly phase: "pending"; readonly identity: SelectionIdentity }
   | {
       readonly phase: "admitting";
-      readonly owner: SelectionOwner;
+      readonly identity: SelectionIdentity;
       readonly sessions: readonly SessionReceipt[];
     }
   | {
       readonly phase: "attached";
-      readonly owner: SelectionOwner;
+      readonly identity: SelectionIdentity;
       readonly attachment: AttachedSelection;
     };
 
@@ -57,8 +61,12 @@ function createSelectionOwner(targetId: string): SelectionOwner {
 /** One current selection; retired resources retain their original independent owners. */
 export function createSelectionLifecycle() {
   const current$ = state<Selection | null>(null);
+  const identity$ = computed((get) => {
+    return get(current$)?.identity ?? null;
+  });
   const owner$ = computed((get) => {
-    return get(current$)?.owner ?? null;
+    const identity = get(identity$);
+    return identity ? createSelectionOwner(identity.targetId) : null;
   });
   const attachment$ = computed((get) => {
     const current = get(current$);
@@ -80,20 +88,19 @@ export function createSelectionLifecycle() {
           { client: frames, sessionId: frameSessionId },
         ];
   });
-  const begin$ = command(({ set }, targetId: string): SelectionOwner => {
-    const owner = createSelectionOwner(targetId);
-    set(current$, { phase: "pending", owner });
-    return owner;
+  const begin$ = command(({ get, set }, targetId: string): SelectionOwner => {
+    set(current$, { phase: "pending", identity: { targetId } });
+    return get(owner$)!;
   });
   const receive$ = command(
     ({ get, set }, owner: SelectionOwner, receipt: SessionReceipt): boolean => {
       const current = get(current$);
-      if (current?.owner !== owner || current.phase === "attached") {
+      if (!current || get(owner$) !== owner || current.phase === "attached") {
         return false;
       }
       set(current$, {
         phase: "admitting",
-        owner,
+        identity: current.identity,
         sessions: [
           ...(current.phase === "admitting" ? current.sessions : []),
           receipt,
@@ -105,21 +112,22 @@ export function createSelectionLifecycle() {
   const publish$ = command(
     ({ get, set }, attachment: AttachedSelection): boolean => {
       const current = get(current$);
-      if (
-        current?.phase !== "admitting" ||
-        current.owner !== attachment.owner
-      ) {
+      if (current?.phase !== "admitting" || get(owner$) !== attachment.owner) {
         return false;
       }
-      set(current$, { phase: "attached", owner: attachment.owner, attachment });
+      set(current$, {
+        phase: "attached",
+        identity: current.identity,
+        attachment,
+      });
       return true;
     },
   );
   const release$ = command(({ get, set }, owner: SelectionOwner) => {
     const current = get(current$);
-    if (current?.phase === "admitting" && current.owner === owner) {
+    if (current?.phase === "admitting" && get(owner$) === owner) {
       // Keep the operation owner until its original failure is classified.
-      set(current$, { phase: "pending", owner });
+      set(current$, { phase: "pending", identity: current.identity });
     }
   });
   const clear$ = command(({ set }) => {
