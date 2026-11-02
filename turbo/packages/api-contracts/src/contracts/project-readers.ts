@@ -61,7 +61,8 @@ function readableProjectPart(value: unknown): unknown {
 /**
  * Preparation-only display projection. Preserve the ID/name as a portable link
  * while raw event storage retains the structured part unchanged. Activation
- * replaces this projection with the canonical Project part/editor rendering.
+ * replaces this projection with canonical Project rendering (#44591); supported
+ * release-1 assets retain it until their Web/PWA reader floor excludes them.
  */
 export const projectAwareUserMessageDocumentSchema = preprocess((value) => {
   if (!isRecord(value) || !Array.isArray(value.parts)) {

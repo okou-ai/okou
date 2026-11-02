@@ -207,7 +207,10 @@ const persistedChatThreadServiceTierSchema = zEnum(["priority", "ultrafast"])
 
 export const chatThreadSnapshotProjectionSchema = object({
   id: uuid(),
-  /** Historical R2 snapshots predate Project membership. */
+  /**
+   * Pre-Project snapshots and API writers omit membership. Require it only after
+   * retained snapshots are rewritten and those API rollback targets retire (#44591).
+   */
   projectId: uuid().nullable().optional(),
   agentId: uuid(),
   title: string().nullable(),
