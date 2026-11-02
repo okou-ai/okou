@@ -20,6 +20,10 @@ import {
   type CdpEvent,
 } from "../cdp/client.ts";
 import { CdpFault, isRecord, validateConfiguration } from "../cdp/errors.ts";
+import {
+  captureSentryLogError,
+  sentryLogContext,
+} from "../../../lib/sentry-config.ts";
 import { diagnostic } from "./diagnostic.ts";
 import {
   createTargetDirectory,
@@ -2197,6 +2201,24 @@ function createDisconnectionHandling(
     }
     set(disconnectingState$, true);
     const established = get(connectedState$);
+    if (established) {
+      captureSentryLogError("Browser", [
+        "Browser viewer disconnected",
+        fault,
+        sentryLogContext({
+          tags: { browser_event: "established-disconnect" },
+          contexts: {
+            browser_viewer: {
+              kind: fault.kind,
+              role: source === get(clientState$) ? "control" : "frames",
+            },
+            ...(fault.connection
+              ? { browser_connection: { ...fault.connection } }
+              : {}),
+          },
+        }),
+      ]);
+    }
     set(connectedState$, false);
     set(readinessFailure$, fault);
     set(get(links$).retireCurrent$, "disconnected", false);

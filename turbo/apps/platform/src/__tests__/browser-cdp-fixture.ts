@@ -638,8 +638,8 @@ export function mockBrowserCdp(
     failConnection() {
       socket.fail(cdpUrl);
     },
-    disconnect(event: CloseEventInit) {
-      socket.disconnect(cdpUrl, event);
+    disconnect(event: CloseEventInit, connectionIndex?: number) {
+      socket.disconnect(cdpUrl, event, connectionIndex);
     },
     failNext(method: string, message: string, code = -32_000) {
       nextResponses.set(method, () => {

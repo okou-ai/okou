@@ -12,8 +12,26 @@ import {
 import { ApiError } from "../api-error.ts";
 import { captureSentryLogError } from "../sentry-config.ts";
 import { initSentry } from "../sentry.ts";
+import { createDeferredPromise } from "../../signals/utils.ts";
 
 const context = testContext();
+
+test("unrelated deferred failures retain their default error report", async () => {
+  const sentry = context.mocks.sentry();
+  initSentry();
+  const receipt = createDeferredPromise<void>(context.signal);
+  const error = new Error("Unexpected background failure");
+  receipt.reject(error);
+  await Promise.allSettled([receipt.promise]);
+  expect(sentry.reports).toStrictEqual([
+    {
+      type: "exception",
+      error,
+      runtime: "page",
+      context: { tags: { logger: "Promise" } },
+    },
+  ]);
+});
 
 test("reports only safe CDP request diagnostics from the original exception", async () => {
   const sentry = context.mocks.sentry();

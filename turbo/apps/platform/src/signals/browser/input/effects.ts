@@ -39,6 +39,9 @@ function receiptFault(
     `Original ${phase} receipt failed: ${method}${code === undefined ? "" : ` (CDP ${code})`}.`,
     code,
     Object.freeze({ method, ...(code === undefined ? {} : { code }) }),
+    // CDP faults contain bounded diagnostics. Keep their incident identity for
+    // cleanup deduplication without retaining arbitrary native error payloads.
+    error instanceof CdpFault ? { cause: error } : undefined,
   );
 }
 

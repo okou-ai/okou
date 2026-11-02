@@ -149,6 +149,9 @@ export function captureSentryLogError(
     return arg instanceof Error || arg instanceof DOMException;
   });
   if (error) {
+    if (!claimCdpReport(error)) {
+      return;
+    }
     Sentry.captureException(error, captureContext);
     return;
   }
@@ -156,6 +159,27 @@ export function captureSentryLogError(
     ...captureContext,
     level: "error",
   });
+}
+
+/** Deduplicate only a captured CDP fault, including later causal wrappers. */
+function claimCdpReport(error: Error): boolean {
+  const visited = new Set<Error>();
+  const faults: CdpFault[] = [];
+  let current: unknown = error;
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    if (current instanceof CdpFault) {
+      if (current.reported) {
+        return false;
+      }
+      faults.push(current);
+    }
+    current = current.cause;
+  }
+  for (const fault of faults) {
+    fault.reported = true;
+  }
+  return true;
 }
 
 export function setupSentryLogger(): void {
