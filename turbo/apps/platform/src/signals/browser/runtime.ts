@@ -9,6 +9,7 @@ import {
   type DeferredPromise,
 } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import { logger } from "../log.ts";
 import type { BrowserSignals } from "./browser.ts";
 import { CdpFault } from "./cdp/errors.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
@@ -32,6 +33,8 @@ import type {
   ViewerTransport,
   WindowSizeSync,
 } from "./viewer/types.ts";
+
+const L = logger("Browser");
 
 interface Mounted<E extends HTMLElement> {
   readonly node: E;
@@ -869,6 +872,7 @@ function createRootObservation(
           if (result.status === "rejected" && !isAbortError(result.reason)) {
             // Reconciliation already published its current failure. A future actual
             // notification, not an automatic retry, owns the next attempt.
+            L.error("Browser viewer startup failed", result.reason);
             set(observer$, null);
           }
           await notification.promise;
@@ -974,18 +978,34 @@ function createConfigurationActions(
   context: RuntimeState,
   graph: RuntimeGraph,
   lifecycle: NativeLifecycle,
+  reloadConnection$: Command<void, []>,
 ) {
-  const { model, authority$, generation$ } = context;
+  const { model, connection$, generation$ } = context;
   const { requireController$, nodes$, native } = graph;
   const reconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    if (!get(authority$) || !get(nodes$)) {
+    if (!get(nodes$)) {
       throw cancelled();
     }
     set(generation$, (value) => {
       return value + 1;
     });
-    await set(lifecycle.install$, signal);
+    set(reloadConnection$);
+    const interrupted = createDeferredPromise<void>(signal);
+    using _interruption = {
+      [Symbol.dispose]() {
+        if (!interrupted.settled()) {
+          interrupted.resolve();
+        }
+      },
+    };
+    // The root observer owns bootstrap and its error report. Refreshing the
+    // descriptor must not start or report a second native attempt here.
+    await Promise.race([
+      Promise.allSettled([get(connection$)]),
+      interrupted.promise,
+    ]);
+    signal.throwIfAborted();
   });
   const retryImage$ = command(async ({ set }, signal: AbortSignal) => {
     const lease = set(requireController$, signal);
@@ -1122,6 +1142,7 @@ function createLayoutSync(context: RuntimeState) {
 /** Compose private graphs in the existing App Store; expose only the public API. */
 export function createBrowserRuntime(
   connection$: Computed<Promise<BrowserConnection | null>>,
+  reloadConnection$: Command<void, []>,
   onPageInput$?: Command<void, []>,
 ): BrowserSignals {
   const context = createRuntimeState(connection$);
@@ -1135,6 +1156,7 @@ export function createBrowserRuntime(
     context,
     graph,
     lifecycle,
+    reloadConnection$,
   );
   const presentation = createPresentation(context, graph);
   const { model } = context;

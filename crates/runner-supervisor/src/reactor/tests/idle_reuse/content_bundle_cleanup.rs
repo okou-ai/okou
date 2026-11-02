@@ -41,9 +41,9 @@ async fn content_bundle_paths_are_cleaned_after_finalization_and_exact_reuse() {
         .unwrap();
     let archive = tar.into_inner().unwrap().finish().unwrap();
     let hash = hex::encode(Sha256::digest(&archive));
-    let cache = config.exec_config.home.bundles_dir();
+    let cache = config.exec_config.home.storage_cache_dir("workflow", &hash);
     std::fs::create_dir_all(&cache).unwrap();
-    std::fs::write(cache.join(format!("{hash}.tar.gz")), &archive).unwrap();
+    std::fs::write(cache.join("archive.tar.gz"), &archive).unwrap();
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let runner = tokio::spawn(run(config));
     let reuse_key = "content-bundle-cleanup";
@@ -64,9 +64,8 @@ async fn content_bundle_paths_are_cleaned_after_finalization_and_exact_reuse() {
     assert_eq!(completed.exit_code, 0, "{:?}", completed.error);
     assert!(
         overrides
-            .private_write_files_calls()
+            .write_file_calls()
             .iter()
-            .flat_map(|call| &call.files)
             .any(|file| file.content == archive)
     );
     wait_idle_pool_reuse_keys(&idle_pool, &[reuse_key], Duration::from_secs(5)).await;

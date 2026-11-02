@@ -6,7 +6,6 @@ import {
   logsListContract,
   type LogEntry,
 } from "@okouai/api-contracts/contracts/logs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -78,7 +77,6 @@ function mockTaskHistory(runIds: readonly string[]) {
 async function loadUpgradeChat(
   tier = "limited-free-1",
   history: readonly string[] = [FIRST_CAPABILITY_RUN_ID],
-  enabled = true,
 ) {
   mockBilling(tier);
   const historyRead = mockTaskHistory(history);
@@ -108,7 +106,6 @@ async function loadUpgradeChat(
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: enabled },
   });
   await readyChat();
   return { historyRead };
@@ -267,34 +264,6 @@ test("Keep the general plans action for an existing paid workspace", async () =>
   ).resolves.toBeVisible();
 });
 
-test("Keep the free workspace plans action when the first-task rollout is disabled", async () => {
-  mockBilling();
-  installRunChat({
-    chatEvents: [
-      ...completedConversation(`Your report is ready.\n\n${UPGRADE_LINK}`),
-      completedEvent({
-        id: "upgrade-completed",
-        runId: FIRST_CAPABILITY_RUN_ID,
-        seqId: 3,
-      }),
-    ],
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: false },
-  });
-  await readyChat();
-
-  const card = await screen.findByTestId("plan-upgrade-card");
-  expect(within(card).getByText("Upgrade your workspace")).toBeInTheDocument();
-  click(await findEnabledButton("Compare plans", card));
-  await expect(
-    screen.findByRole("dialog", { name: "Choose a plan" }),
-  ).resolves.toBeVisible();
-});
-
 test("Wait for successful completion, show one trailing card, and retire it on the next task", async () => {
   mockBilling();
   mockTaskHistory([FIRST_CAPABILITY_RUN_ID]);
@@ -308,7 +277,6 @@ test("Wait for successful completion, show one trailing card, and retire it on t
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: true },
   });
   await readyChat();
   await findButton("Stop");
@@ -352,7 +320,6 @@ test("Do not promote an upgrade link from an unsuccessful response", async () =>
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.FirstTaskUpgrade]: true },
   });
   await readyChat();
   await screen.findByText("The report could not be completed.");
@@ -367,12 +334,6 @@ test("Do not repeat the offer in another chat when the user already has task his
   await act(async () => {
     await historyRead.promise;
   });
-  expect(screen.getByText("Your report is ready.")).toBeInTheDocument();
-  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
-});
-
-test("Keep the automatic offer hidden when its rollout switch is disabled", async () => {
-  await loadUpgradeChat("limited-free-1", [FIRST_CAPABILITY_RUN_ID], false);
   expect(screen.getByText("Your report is ready.")).toBeInTheDocument();
   expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
 });

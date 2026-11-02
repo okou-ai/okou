@@ -266,7 +266,7 @@ const connectFromApp$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   switch (result.kind) {
     case "invalid": {
-      return badRequestMessage("Invalid or expired bot connect link");
+      return invalidFeishuConnectLink();
     }
     case "installation_not_found": {
       return notFound("Bot installation not found");
@@ -297,6 +297,18 @@ const connectFromApp$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
   }
 });
+
+function invalidFeishuConnectLink() {
+  return {
+    status: 400 as const,
+    body: {
+      error: {
+        message: "Invalid or expired bot connect link",
+        code: "FEISHU_CONNECT_LINK_INVALID",
+      },
+    },
+  };
+}
 
 function browserInstallationReadPlan(installationId: string) {
   return {
@@ -368,7 +380,7 @@ const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
       signature: query.sig,
     })
   ) {
-    return badRequestMessage("Invalid or expired bot connect link");
+    return invalidFeishuConnectLink();
   }
 
   const db = set(writeDb$);

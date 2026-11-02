@@ -1066,6 +1066,7 @@
       "amountTitle": "Aufladebetrag",
       "automaticTopUps": "Automatische Aufladungen",
       "description": "Credits automatisch kaufen, wenn Ihr Credit-Guthaben unter einen Schwellenwert fällt.",
+      "disabledAfterFailures": "Das automatische Aufladen wurde nach wiederholten Zahlungsfehlern deaktiviert. Prüfe deine Zahlungsmethode, bevor du es wieder aktivierst.",
       "enableAria": "Automatisches Aufladen aktivieren",
       "thresholdAria": "Credit-Schwellenwert für automatisches Aufladen",
       "thresholdDescription": "Einen Kauf auslösen, wenn Ihr Credit-Guthaben diesen Wert unterschreitet.",
@@ -3569,6 +3570,7 @@
         "backToSettings": "Zurück zu den Einstellungen",
         "checkingTitle": "Kontostatus wird geprüft...",
         "connectionFailed": "Verbindung fehlgeschlagen",
+        "invalidBotConnectLink": "Dieser Verbindungslink ist ungültig oder abgelaufen. Kehre zu {{provider}} zurück und sende dem Bot eine Nachricht, um einen neuen Link zu erhalten.",
         "invalidLink": "Ungültiger Link",
         "verifying": "Bitte warten Sie, während wir Ihre Verbindung überprüfen."
       },

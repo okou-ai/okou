@@ -1098,6 +1098,8 @@ function sharedBrowserViewer(
         return unavailable();
       }
       const providerSessionId = view.profile.providerSessionId;
+      const browser = view.browser;
+      const window = view.window;
       const operation = await settleIncludingAbort(
         (async (): Promise<Result<BrowserViewerConnection> | null> => {
           const session = await provider(
@@ -1107,18 +1109,32 @@ function sharedBrowserViewer(
           if (!session || session.status !== "active" || !session.cdpUrl) {
             return unavailable();
           }
+          const cdpUrl = await provider(
+            resolveBrowserUseViewerConnection(
+              session.cdpUrl,
+              session.liveUrl,
+              signal,
+            ),
+            signal,
+          );
+          const currentBrowser = presentation(
+            browser,
+            view.profile,
+            window,
+            session,
+            null,
+          );
+          // Expiry during provider lookup must never turn a scoped connection
+          // into an unscoped viewer response.
+          if (currentBrowser.status !== "active") {
+            return unavailable();
+          }
           return {
             kind: "ok",
             value: {
+              browser: currentBrowser,
               extension: browserUseNativeConnection(session).extension,
-              cdpUrl: await provider(
-                resolveBrowserUseViewerConnection(
-                  session.cdpUrl,
-                  session.liveUrl,
-                  signal,
-                ),
-                signal,
-              ),
+              cdpUrl,
             },
           };
         })(),

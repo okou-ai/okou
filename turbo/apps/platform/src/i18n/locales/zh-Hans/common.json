@@ -1064,6 +1064,7 @@
       "amountTitle": "充值数量",
       "automaticTopUps": "自动充值",
       "description": "当余额低于设定值时自动购买积分。",
+      "disabledAfterFailures": "自动充值因连续支付失败已关闭。请检查支付方式后重新开启。",
       "enableAria": "启用自动充值",
       "thresholdAria": "自动充值的积分阈值",
       "thresholdDescription": "当积分余额低于这个数值时触发购买。",
@@ -3555,6 +3556,7 @@
         "backToSettings": "返回设置",
         "checkingTitle": "正在检查账号状态…",
         "connectionFailed": "连接失败",
+        "invalidBotConnectLink": "此绑定链接无效或已过期。请返回 {{provider}}，向机器人发送消息以获取新的绑定链接。",
         "invalidLink": "链接无效",
         "verifying": "我们正在验证你的连接，请稍候。"
       },

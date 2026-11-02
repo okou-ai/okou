@@ -41,7 +41,12 @@ export function AutoRechargeSection({
   const config =
     configLoadable.state === "hasData"
       ? configLoadable.data
-      : { enabled: false, threshold: "", amount: "" };
+      : {
+          enabled: false,
+          threshold: "",
+          amount: "",
+          disabledReason: undefined,
+        };
 
   const pendingEnabled = useGet(pendingEnabled$);
   const setPendingEnabled = useSet(setPendingEnabled$);
@@ -139,6 +144,16 @@ export function AutoRechargeSection({
               })}
             />
           </div>
+          {config.disabledReason === "consecutive_failures" && (
+            <p
+              role="status"
+              className="px-5 pb-4 text-[13px] text-amber-600 dark:text-amber-400"
+            >
+              {t(($) => {
+                return $.billing.autoRecharge.disabledAfterFailures;
+              })}
+            </p>
+          )}
           {displayEnabled && (
             <>
               <div className="h-0 border-t border-t-gray-400 mx-5" />

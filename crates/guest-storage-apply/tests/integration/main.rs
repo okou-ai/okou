@@ -12,4 +12,4 @@ mod process;
 mod rooted_extraction;
 mod scheduling;
 
-mod content_bundle;
+mod agent_instructions;

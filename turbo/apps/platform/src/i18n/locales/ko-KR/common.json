@@ -1064,6 +1064,7 @@
       "amountTitle": "충전 금액",
       "automaticTopUps": "자동 충전",
       "description": "잔액이 임계값 아래로 떨어지면 크레딧을 구매합니다.",
+      "disabledAfterFailures": "결제가 연속으로 실패하여 자동 충전이 꺼졌습니다. 결제 수단을 확인한 후 다시 켜세요.",
       "enableAria": "자동 충전 활성화",
       "thresholdAria": "자동 충전 크레딧 임계값",
       "thresholdDescription": "크레딧 잔액이 이 숫자 아래로 떨어지면 구매가 시작됩니다.",
@@ -3555,6 +3556,7 @@
         "backToSettings": "설정으로 돌아가기",
         "checkingTitle": "계정 상태 확인 중...",
         "connectionFailed": "연결 실패",
+        "invalidBotConnectLink": "이 연결 링크는 유효하지 않거나 만료되었습니다. {{provider}}로 돌아가 봇에게 메시지를 보내 새 링크를 받으세요.",
         "invalidLink": "유효하지 않은 링크",
         "verifying": "연결 확인 중입니다. 잠시만 기다려 주세요."
       },

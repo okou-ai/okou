@@ -505,6 +505,130 @@ describe("PUT /api/billing/auto-recharge", () => {
     },
   );
 
+  it("turns off after three consecutive failures and resets when enabled again", async () => {
+    const { admin, entitlement } = await createProActor();
+    const before = await billingApi.readBillingStatus(admin);
+    acceptAutoRechargeStripeInvoice(entitlement.customerId);
+    context.mocks.stripe.invoices.pay.mockRejectedValue(
+      new StripeSDK.errors.StripeCardError({
+        type: "card_error",
+        code: "card_declined",
+        message: "Your card was declined",
+      }),
+    );
+    const config = {
+      enabled: true,
+      threshold: before.credits + 1000,
+      amount: before.credits + 6000,
+    };
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const response = await billingApi.updateAutoRecharge(
+        admin,
+        config,
+        [200],
+      );
+      expect(response.body).toStrictEqual(
+        attempt < 3
+          ? config
+          : {
+              ...config,
+              enabled: false,
+              disabledReason: "consecutive_failures",
+            },
+      );
+    }
+
+    const disabled = await billingApi.readAutoRecharge(admin);
+    expect(disabled).toStrictEqual({
+      ...config,
+      enabled: false,
+      disabledReason: "consecutive_failures",
+    });
+    const after = await billingApi.readBillingStatus(admin);
+    expect(after.autoRecharge).toStrictEqual(disabled);
+    expect(after.credits).toBe(before.credits);
+
+    // Enabling starts a new streak, even when its first payment also fails.
+    const reopened = await billingApi.updateAutoRecharge(admin, config, [200]);
+    expect(reopened.body).toStrictEqual(config);
+    const secondFailure = await billingApi.updateAutoRecharge(
+      admin,
+      config,
+      [200],
+    );
+    expect(secondFailure.body).toStrictEqual(config);
+    const thirdFailure = await billingApi.updateAutoRecharge(
+      admin,
+      config,
+      [200],
+    );
+    expect(thirdFailure.body).toStrictEqual(disabled);
+  });
+
+  it("starts a new failure streak after a paid recharge", async () => {
+    const { admin, entitlement } = await createProActor();
+    const before = await billingApi.readBillingStatus(admin);
+    const invoiceId = acceptAutoRechargeStripeInvoice(entitlement.customerId);
+    const decline = new StripeSDK.errors.StripeCardError({
+      type: "card_error",
+      code: "card_declined",
+      message: "Your card was declined",
+    });
+    context.mocks.stripe.invoices.pay
+      .mockRejectedValueOnce(decline)
+      .mockRejectedValueOnce(decline);
+    const config = {
+      enabled: true,
+      threshold: before.credits + 1000,
+      amount: before.credits + 6000,
+    };
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+
+    webhooks.configureStripeWebhookSecret();
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_auto_recharge_reset_${randomUUID()}`,
+        type: "invoice.paid",
+        data: {
+          object: {
+            id: invoiceId,
+            customer: entitlement.customerId,
+            status: "paid",
+            amount_paid: Math.ceil(config.amount / 1000) * 100,
+            metadata: {
+              type: "auto_recharge",
+              orgId: admin.orgId,
+              creditsAmount: String(config.amount),
+            },
+            lines: { has_more: false, data: [] },
+            parent: null,
+          },
+        },
+      },
+      [200],
+    );
+
+    const afterPaid = await billingApi.readBillingStatus(admin);
+    expect(afterPaid.credits).toBe(before.credits + config.amount);
+    acceptAutoRechargeStripeInvoice(entitlement.customerId);
+    context.mocks.stripe.invoices.pay.mockRejectedValue(decline);
+    const nextConfig = {
+      enabled: true,
+      threshold: afterPaid.credits + 1000,
+      amount: afterPaid.credits + 6000,
+    };
+    await billingApi.updateAutoRecharge(admin, nextConfig, [200]);
+    const secondFailure = await billingApi.updateAutoRecharge(
+      admin,
+      nextConfig,
+      [200],
+    );
+    expect(secondFailure.body).toStrictEqual(nextConfig);
+  });
+
   it("clears a failed recharge after its organization row is rewritten", async () => {
     const { admin, entitlement } = await createProActor();
     const before = await billingApi.readBillingStatus(admin);

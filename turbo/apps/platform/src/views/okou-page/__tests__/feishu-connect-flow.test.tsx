@@ -4,7 +4,7 @@ import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { startPage } from "../../../__tests__/page-helper.ts";
+import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
@@ -70,6 +70,95 @@ describe.each(["feishu", "lark"] as const)(
         expect(window.location.href).toBe(openUrl);
       });
       expect(submitted).toStrictEqual(connectBody);
+    });
+
+    it("shows recovery guidance when a signed connection link is rejected", async () => {
+      context.mocks.api(
+        feishuBrowserConnectContract.connectFromApp,
+        ({ respond }) => {
+          return respond(400, {
+            error: {
+              code: "FEISHU_CONNECT_LINK_INVALID",
+              message: "Invalid or expired bot connect link",
+            },
+          });
+        },
+      );
+
+      await setupPage({
+        context,
+        host: "app.okou.ai",
+        path: connectPath,
+        featureSwitches: { [provider.featureSwitch]: false },
+      });
+
+      expect(
+        screen.getByRole("heading", { name: "Connection failed" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          `This connection link is invalid or has expired. Return to ${provider.name} and message the bot for a new link.`,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Back to settings")).toHaveAttribute(
+        "href",
+        "/works",
+      );
+    });
+
+    it("shows the same recovery guidance for an incomplete connection link", async () => {
+      await setupPage({
+        context,
+        host: "app.okou.ai",
+        path: `${provider.settingsPath}?connect=account`,
+      });
+
+      expect(
+        screen.getByText(
+          `This connection link is invalid or has expired. Return to ${provider.name} and message the bot for a new link.`,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it.each([
+      {
+        label: "other client errors",
+        status: 400 as const,
+        code: "BAD_REQUEST",
+        message: "Finish setting up this bot before connecting",
+      },
+      {
+        label: "legacy invalid-link errors",
+        status: 400 as const,
+        code: "BAD_REQUEST",
+        message: "Invalid or expired bot connect link",
+      },
+      {
+        label: "server errors",
+        status: 500 as const,
+        code: "INTERNAL_SERVER_ERROR",
+        message: "The connection service is unavailable",
+      },
+    ])("preserves $label", async (failure) => {
+      context.mocks.api(
+        feishuBrowserConnectContract.connectFromApp,
+        ({ respond }) => {
+          return respond(failure.status, {
+            error: { code: failure.code, message: failure.message },
+          });
+        },
+      );
+
+      const page = await startPage({
+        context,
+        host: "app.okou.ai",
+        path: connectPath,
+      });
+
+      await expect(page.ready).rejects.toThrow(failure.message);
+      await expect(
+        screen.findByText(failure.message),
+      ).resolves.toBeInTheDocument();
     });
 
     it("shows the provider on OAuth callbacks and returns to its bot", async () => {

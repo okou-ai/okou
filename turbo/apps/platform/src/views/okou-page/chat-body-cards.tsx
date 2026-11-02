@@ -1,7 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { now } from "../../lib/time.ts";
 import type { ArtifactSignals } from "../../signals/chat-page/artifact-card-signals.ts";
 import type { ComputerUseAuthorizationSignals } from "../../signals/chat-page/computer-use-authorization-block.ts";
@@ -752,17 +750,14 @@ export function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
   const pageSignal = useGet(pageSignal$);
   const open = useSet(signals.open$);
   const billing = useLastLoadable(billingStatusAsync$);
-  const firstTaskUpgrade =
-    useGet(featureSwitch$)[FeatureSwitchKey.FirstTaskUpgrade];
 
   const handleClick = () => {
     detach(open(pageSignal), Reason.DomCallback);
   };
 
   if (
-    firstTaskUpgrade &&
-    (billing.state === "loading" ||
-      (billing.state === "hasData" && billing.data.tier === "limited-free-1"))
+    billing.state === "loading" ||
+    (billing.state === "hasData" && billing.data.tier === "limited-free-1")
   ) {
     return null;
   }

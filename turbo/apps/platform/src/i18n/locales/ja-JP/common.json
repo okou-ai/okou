@@ -1064,6 +1064,7 @@
       "amountTitle": "チャージ金額",
       "automaticTopUps": "自動補充",
       "description": "残高がしきい値を下回ったときにクレジットを購入します。",
+      "disabledAfterFailures": "支払いが連続して失敗したため、自動チャージをオフにしました。支払い方法を確認してから、再度オンにしてください。",
       "enableAria": "自動リチャージを有効にする",
       "thresholdAria": "オートリチャージのクレジットしきい値",
       "thresholdDescription": "クレジット残高がこの数値を下回ったときに購入をトリガーします。",
@@ -3555,6 +3556,7 @@
         "backToSettings": "設定に戻る",
         "checkingTitle": "アカウントのステータスを確認しています...",
         "connectionFailed": "接続に失敗しました",
+        "invalidBotConnectLink": "この接続リンクは無効か、有効期限が切れています。{{provider}} に戻り、ボットにメッセージを送信して新しいリンクを取得してください。",
         "invalidLink": "無効なリンク",
         "verifying": "接続を確認するまでお待ちください。"
       },

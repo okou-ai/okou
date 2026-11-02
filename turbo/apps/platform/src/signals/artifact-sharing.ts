@@ -8,8 +8,6 @@ import type {
   ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
@@ -110,14 +108,14 @@ function createAudienceSignals(
       const details = await get(details$);
       signal.throwIfAborted();
       if (!details?.status) {
-        return false;
+        return;
       }
       if (
         details.audience === audience &&
         (audience === "private" ||
           details.status.selectedTarget?.id === details.target.id)
       ) {
-        return false;
+        return;
       }
       await accept(
         get(apiClient$)(artifactSharesContract).update({
@@ -138,7 +136,6 @@ function createAudienceSignals(
           return $.artifacts.sharing.permissionsUpdated;
         }),
       );
-      return true;
     },
   );
   return { change$: persist$ };
@@ -160,28 +157,18 @@ function createArtifactShareSession(source: ShareSource) {
     set(resetOpenSignal$);
     set(linkCopy.clear$);
   });
-  const show$ = command(
-    async (
-      { get, set },
-      copyIfReadOnly: boolean,
-      parentSignal: AbortSignal,
-    ) => {
-      const signal = set(resetOpenSignal$, parentSignal);
-      set(open$, true);
-      const details = await get(details$);
-      signal.throwIfAborted();
-      if (!details?.status) {
-        set(open$, false);
-        if (details && copyIfReadOnly) {
-          await copyAttachmentLinkToClipboard(
-            details.copyUrl,
-            undefined,
-            signal,
-          );
-        }
+  const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
+    const signal = set(resetOpenSignal$, parentSignal);
+    set(open$, true);
+    const details = await get(details$);
+    signal.throwIfAborted();
+    if (!details?.status) {
+      set(open$, false);
+      if (details) {
+        await copyAttachmentLinkToClipboard(details.copyUrl, undefined, signal);
       }
-    },
-  );
+    }
+  });
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const details = await get(details$);
     signal.throwIfAborted();
@@ -191,15 +178,9 @@ function createArtifactShareSession(source: ShareSource) {
   });
   const audience = createAudienceSignals(details$, reload$);
   const change$ = throttleCommand(
-    command(async ({ get, set }, choice: Audience, signal: AbortSignal) => {
+    command(({ set }, choice: Audience, signal: AbortSignal) => {
       set(linkCopy.clear$);
-      const updated = await set(audience.change$, choice, signal);
-      if (
-        updated &&
-        get(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions]
-      ) {
-        await set(copy$, signal);
-      }
+      return set(audience.change$, choice, signal);
     }),
     0,
   );

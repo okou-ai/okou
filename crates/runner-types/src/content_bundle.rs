@@ -1,6 +1,11 @@
 //! Prepared claim reader for immutable hash-addressed input packages.
 use serde::Deserialize;
 
+/// Business namespaces for immutable packages in the shared Storage cache.
+pub const WORKFLOW_BUNDLE_STORAGE_NAME: &str = "workflow";
+/// Agent instructions share content within their own cache namespace.
+pub const INSTRUCTION_BUNDLE_STORAGE_NAME: &str = "instruction";
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BundleReference {
@@ -63,14 +68,7 @@ pub enum BundleFormat {
     #[serde(rename = "tar-gzip-v1")]
     TarGzipV1,
 }
-#[derive(Debug)]
-pub struct PreparedBundle {
-    pub mount_path: Option<String>,
-    pub sha256: String,
-    pub archive: Vec<u8>,
-}
-
-/// Track managed bundle mounts for cleanup, never as Storage download inputs.
+/// Include selected Workflow mounts in cleanup accounting, including before normalization.
 pub fn fingerprints(
     context: &crate::types::ExecutionContext,
 ) -> crate::storage_fingerprints::StorageFingerprints {
@@ -82,7 +80,10 @@ pub fn fingerprints(
     for skill in &context.content_bundles.skills {
         result.storages.insert(
             skill.mount_path.clone(),
-            crate::storage_fingerprints::StorageFingerprint::new("content-bundle", &skill.sha256),
+            crate::storage_fingerprints::StorageFingerprint::new(
+                WORKFLOW_BUNDLE_STORAGE_NAME,
+                &skill.sha256,
+            ),
         );
     }
     result

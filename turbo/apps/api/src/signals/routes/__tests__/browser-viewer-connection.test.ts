@@ -141,6 +141,12 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
       [200],
     );
     expect(connected.body).toStrictEqual({
+      browser: expect.objectContaining({
+        threadId: params.threadId,
+        status: "active",
+        liveUrl: scenario.provider.liveUrl,
+        screenshotUrl: null,
+      }),
       cdpUrl: scenario.webSocketUrl,
       extension: TEST_BROWSER_EXTENSION,
     });
@@ -195,6 +201,11 @@ test.each(["provider WSS", "live WSS", "double-encoded live WSS"] as const)(
         [200],
       );
       expect(connected.body).toStrictEqual({
+        browser: expect.objectContaining({
+          threadId: scenario.params.threadId,
+          status: "active",
+          liveUrl: scenario.provider.liveUrl,
+        }),
         cdpUrl: scenario.webSocketUrl,
         extension: TEST_BROWSER_EXTENSION,
       });

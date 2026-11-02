@@ -155,6 +155,7 @@
     "src/signals/services/billing-restore.service.ts",
     "src/signals/services/billing-status.service.ts",
     "src/signals/services/credit-low-balance-email-renderer.ts",
+    "src/signals/services/credit-recharge-policy.ts",
     "src/signals/services/credit-recharge.service.ts",
     "src/signals/services/get-started-invitation-acceptance.service.ts",
     "src/signals/services/get-started-invitation.service.ts",

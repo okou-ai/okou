@@ -1064,6 +1064,7 @@
       "amountTitle": "Jumlah isi ulang",
       "automaticTopUps": "Isi ulang otomatis",
       "description": "Beli kredit saat saldo Anda turun di bawah ambang batas.",
+      "disabledAfterFailures": "Isi ulang otomatis dinonaktifkan setelah pembayaran gagal berulang kali. Periksa metode pembayaran sebelum mengaktifkannya kembali.",
       "enableAria": "Aktifkan isi ulang otomatis",
       "thresholdAria": "Ambang kredit untuk isi ulang otomatis",
       "thresholdDescription": "Lakukan pembelian saat saldo kredit Anda di bawah angka ini.",
@@ -3555,6 +3556,7 @@
         "backToSettings": "Kembali ke setelan",
         "checkingTitle": "Memeriksa status akun...",
         "connectionFailed": "Koneksi gagal",
+        "invalidBotConnectLink": "Tautan koneksi ini tidak valid atau sudah kedaluwarsa. Kembali ke {{provider}} dan kirim pesan ke bot untuk mendapatkan tautan baru.",
         "invalidLink": "Tautan tidak valid",
         "verifying": "Harap tunggu saat kami memverifikasi koneksi Anda."
       },

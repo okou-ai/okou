@@ -124,7 +124,14 @@ function mockBrowserApi(
       : {}),
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    if (!currentSession) {
+      throw new Error("Expected an active browser for viewer connection");
+    }
+    return respond(200, {
+      browser: currentSession,
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
   });
 
   return {

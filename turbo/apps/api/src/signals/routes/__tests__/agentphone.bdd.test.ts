@@ -4455,30 +4455,94 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(sends.messages).toHaveLength(0);
   });
 
-  it("returns 500 for direct messages with an invalid sender", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    integrations.configureAgentPhoneWebhook();
-    const invalidSenderEvent = JSON.stringify({
-      event: "agent.message",
-      channel: "sms",
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      data: {
-        messageId: `ap-invalid-sender-${randomUUID()}`,
-        from: "not-a-phone-number",
-        to: AGENTPHONE_BDD_PHONE_NUMBER,
-        message: "this sender cannot be routed safely",
-      },
-    });
+  it.each(["12345", "123456"])(
+    "acks SMS short-code notifications from %s without consuming a connection code or replying",
+    async (shortCode) => {
+      const bdd = createBddApi(context);
+      const integrations = createBddIntegrationApi(context);
+      const ap = createAgentPhoneBddApi(context);
+      const actor = bdd.user();
+      integrations.configureAgentPhoneProvider();
+      integrations.configureAgentPhoneWebhook();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      const sends = ap.captureAgentPhoneSends();
+      const issued = await integrations.requestCreateAgentPhoneLinkCode(
+        actor,
+        [200],
+      );
 
-    const response = await ap.postRawAgentPhoneInboundWebhook(
-      invalidSenderEvent,
-      [500],
-    );
-    expect(response.body).toBe(
-      "AgentPhone message webhook has an invalid sender",
-    );
-  });
+      const response = await ap.postRawAgentPhoneInboundWebhook(
+        JSON.stringify({
+          event: "agent.message",
+          channel: "sms",
+          agentId: AGENTPHONE_BDD_AGENT_ID,
+          data: {
+            messageId: `ap-short-code-${randomUUID()}`,
+            from: shortCode,
+            to: AGENTPHONE_BDD_PHONE_NUMBER,
+            message: issued.body.code,
+          },
+        }),
+        [200],
+      );
+      expect(response.body).toBe("OK");
+      await expect(
+        integrations.getAgentPhoneLinkStatus(actor),
+      ).resolves.toMatchObject({
+        linked: false,
+      });
+      expect(sends.messages).toHaveLength(0);
+
+      const phone = uniquePhoneHandle();
+      await ap.postAgentPhoneInboundMessage({
+        channel: "sms",
+        from: phone,
+        body: issued.body.code,
+      });
+      await expect(
+        integrations.getAgentPhoneLinkStatus(actor),
+      ).resolves.toMatchObject({
+        linked: true,
+        phoneHandle: phone,
+      });
+      expectConnectedWelcome(sends.messages);
+    },
+  );
+
+  it.each([
+    { channel: "sms", from: "not-a-phone-number" },
+    { channel: "sms", from: "sender12345" },
+    { channel: "sms", from: "15555551212" },
+    { channel: "imessage", from: "12345" },
+    { channel: "mms", from: "12345" },
+    { channel: "whatsapp", from: "12345" },
+  ])(
+    "returns 500 for direct messages with an invalid sender: $channel $from",
+    async ({ channel, from }) => {
+      const integrations = createBddIntegrationApi(context);
+      const ap = createAgentPhoneBddApi(context);
+      integrations.configureAgentPhoneWebhook();
+      const invalidSenderEvent = JSON.stringify({
+        event: "agent.message",
+        channel,
+        agentId: AGENTPHONE_BDD_AGENT_ID,
+        data: {
+          messageId: `ap-invalid-sender-${randomUUID()}`,
+          from,
+          to: AGENTPHONE_BDD_PHONE_NUMBER,
+          message: "this sender cannot be routed safely",
+        },
+      });
+
+      const response = await ap.postRawAgentPhoneInboundWebhook(
+        invalidSenderEvent,
+        [500],
+      );
+      expect(response.body).toBe(
+        "AgentPhone message webhook has an invalid sender",
+      );
+    },
+  );
 
   it("returns 500 for group webhooks without stable provider identities", async () => {
     const integrations = createBddIntegrationApi(context);

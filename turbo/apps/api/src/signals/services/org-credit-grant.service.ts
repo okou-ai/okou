@@ -117,7 +117,10 @@ export const grantPurchasedOrgCredits$ = command(
         .set({
           credits: sql`${orgMetadata.credits} + ${grant.amount}`,
           ...(grant.clearAutoRechargePending
-            ? { autoRechargePendingAt: null }
+            ? {
+                autoRechargePendingAt: null,
+                autoRechargeFailureCount: sql`CASE WHEN ${orgMetadata.autoRechargeEnabled} THEN 0 ELSE ${orgMetadata.autoRechargeFailureCount} END`,
+              }
             : {}),
           updatedAt: at,
         })

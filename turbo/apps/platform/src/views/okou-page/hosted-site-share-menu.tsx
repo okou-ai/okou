@@ -1,8 +1,6 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { Check, Loader2, Pencil, Share2 } from "lucide-react";
 import {
   Button,
@@ -512,9 +510,6 @@ function HostedSiteSharePopover({
   const settings = useLoadable(session.hasSettings$);
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
-  const editing = useGet(session.editing$);
-  const quickActions =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions];
   const setOpen = useSet(session.setOpen$);
   const show = useSet(session.show$);
   if (!signal) {
@@ -524,20 +519,13 @@ function HostedSiteSharePopover({
     <Popover
       open={open && !(settings.state === "hasData" && !settings.data)}
       onOpenChange={(nextOpen, details) => {
-        // Leaving the hover region must not discard a URL draft. Explicit
-        // dismissal still cancels editing; an in-flight save keeps its owner.
-        if (
-          saving ||
-          (!nextOpen && editing && details.reason === "trigger-hover")
-        ) {
+        // An in-flight save keeps its owner until it completes.
+        if (saving) {
           details.cancel();
           return;
         }
         if (nextOpen) {
-          detach(
-            show(details.reason !== "trigger-hover", signal),
-            Reason.DomCallback,
-          );
+          detach(show(signal), Reason.DomCallback);
         } else {
           setOpen(false);
         }
@@ -545,11 +533,6 @@ function HostedSiteSharePopover({
     >
       <HostedSiteSharePreload session={session} />
       <PopoverTrigger
-        openOnHover={
-          quickActions && !(settings.state === "hasData" && !settings.data)
-        }
-        delay={100}
-        closeDelay={150}
         aria-label={ariaLabel}
         render={<Button variant="quiet" size="icon-sm" className={className} />}
       >

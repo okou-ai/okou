@@ -173,7 +173,7 @@ test("Maintainer filters narrow the feature list", async () => {
   await user.click(bingjie);
 
   expect(
-    featureSwitchRow(FeatureSwitchKey.ArtifactQuickActions),
+    featureSwitchRow(FeatureSwitchKey.PresentationConvert),
   ).toBeInTheDocument();
   expect(
     screen.queryByText(FeatureSwitchKey.AhrefsConnector),
@@ -196,7 +196,7 @@ test("Maintainer filters narrow the feature list", async () => {
 
 test.each([
   [FeatureSwitchKey.TestOauthConnector, false],
-  [FeatureSwitchKey.FirstTaskUpgrade, true],
+  [FeatureSwitchKey.Dummy, true],
 ] as const)(
   "Toggle and reset a Lab override: %s",
   async (featureKey, defaultEnabled) => {
