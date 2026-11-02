@@ -118,13 +118,16 @@ async def test_account_replacement_resolves_new_credentials_and_retains_same_acc
 
     assert len(endpoint.requests) == 2
     for index, request in enumerate(endpoint.requests):
-        matched = request.json_body()["matchedFirewall"]
+        body = request.json_body()
+        matched = body["matchedFirewall"]
+        assert isinstance(matched, dict)
         assert matched["sourceId"] == accounts[index]
         assert matched["routingVariables"] == {
             "workspace": str(index) if change_routing else "shared"
         }
         if include_alias_metadata:
-            assert (
-                request.json_body()["secretConnectorMetadataMap"]["TOKEN"]["sourceId"]
-                == accounts[index]
-            )
+            metadata = body["secretConnectorMetadataMap"]
+            assert isinstance(metadata, dict)
+            token_metadata = metadata["TOKEN"]
+            assert isinstance(token_metadata, dict)
+            assert token_metadata["sourceId"] == accounts[index]
