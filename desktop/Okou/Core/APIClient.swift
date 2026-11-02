@@ -9,6 +9,7 @@ public struct APIResponse: Sendable {
   /// Raw response bytes, decoded on demand into generated contract types.
   public let data: Data
   /// Dynamic view of the body for payloads the app relays without reading them.
+  /// Non-JSON error responses expose `.null`; their status and raw bytes remain available.
   public let body: JSONValue
   public let retryAfter: TimeInterval?
 
@@ -208,7 +209,14 @@ public actor APIClient {
     guard let http = response as? HTTPURLResponse else {
       throw DesktopFailure("network_error", "Invalid API response")
     }
-    let value = data.isEmpty ? JSONValue.null : try JSONDecoder().decode(JSONValue.self, from: data)
+    let value: JSONValue
+    do {
+      value = data.isEmpty ? .null : try JSONDecoder().decode(JSONValue.self, from: data)
+    } catch let error as DecodingError {
+      guard !(200..<300).contains(http.statusCode) else { throw error }
+      // An edge's error page must not hide the HTTP status from auth/recovery handling.
+      value = .null
+    }
     let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
     return APIResponse(status: http.statusCode, data: data, body: value, retryAfter: retryAfter)
   }
