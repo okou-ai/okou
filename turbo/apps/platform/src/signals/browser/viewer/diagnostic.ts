@@ -1,3 +1,4 @@
+import { BrowserBridgeError } from "@okouai/browser-extension-client";
 import { i18n } from "../../../i18n/index.ts";
 import { CdpFault } from "../cdp/errors.ts";
 import type { ViewerError } from "./types.ts";
@@ -13,6 +14,9 @@ export function diagnostic(error: unknown): ViewerError {
             })
           : error.message,
       ...(error.request ? { request: error.request } : {}),
+      ...(error.cause instanceof BrowserBridgeError
+        ? { bridge: error.cause.diagnostics }
+        : {}),
     });
   }
   return Object.freeze({

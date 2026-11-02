@@ -1,14 +1,20 @@
 import {
+  BrowserBridgeError,
   OkouBrowserClient,
   type NativeEvent,
 } from "@okouai/browser-extension-client";
 import type { CdpClient } from "./client.ts";
 import { CdpFault, isRecord } from "./errors.ts";
 
-export function nativeFault(): CdpFault {
+export function nativeFault(error?: unknown): CdpFault {
+  // The shared client owns sanitization; never attach an arbitrary transport cause.
+  const cause = error instanceof BrowserBridgeError ? error : undefined;
   return new CdpFault(
     "extension",
     "The required Okou Browser extension is unavailable. Reconnect the browser.",
+    undefined,
+    cause?.diagnostics.request,
+    cause ? { cause } : undefined,
   );
 }
 
@@ -74,7 +80,7 @@ export async function connectNative(
   ]);
   if (result.status === "rejected") {
     signal.throwIfAborted();
-    throw nativeFault();
+    throw nativeFault(result.reason);
   }
   if (signal.aborted) {
     await result.value.close();

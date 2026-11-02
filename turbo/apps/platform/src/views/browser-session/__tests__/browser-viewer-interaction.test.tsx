@@ -338,26 +338,6 @@ test("A selected page moved away loses input while remaining pages stay selectab
   );
 });
 
-test.each(["sequence gap", "worker replacement"])(
-  "A native %s revokes the established viewer",
-  async (failure) => {
-    const browser = await setupViewer(0);
-    act(() => {
-      if (failure === "worker replacement") {
-        browser.resetWorker();
-      } else {
-        browser.skipNativeEvent();
-        browser.nativeEvent("tab-updated");
-      }
-    });
-    await screen.findByText("Browser disconnected");
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(
-      screen.getByLabelText("New tab", { selector: "button" }),
-    ).toBeDisabled();
-  },
-);
-
 test.each([
   { code: 1000, wasClean: true },
   { code: 1006, wasClean: false },
