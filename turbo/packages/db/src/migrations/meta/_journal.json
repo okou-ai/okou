@@ -3060,6 +3060,13 @@
       "when": 1793618241490,
       "tag": "1515_chat_connector_account_access",
       "breakpoints": true
+    },
+    {
+      "idx": 1516,
+      "version": "7",
+      "when": 1793627178908,
+      "tag": "1516_seed_skill_storage_binding_retirement",
+      "breakpoints": true
     }
   ]
 }

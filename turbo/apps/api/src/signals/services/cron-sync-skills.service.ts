@@ -564,6 +564,8 @@ const commitSeedSkillPublication$ = command(
     const database = set(writeDb$);
     const record = {
       ...skillSourceValues(args.context, args.timestamp),
+      storageId: null,
+      s3Key: null,
       contentBundle: args.contentBundle,
       contentBundleSourceVersionHash: args.context.versionHash,
     };
@@ -572,7 +574,6 @@ const commitSeedSkillPublication$ = command(
       .values({ url: args.context.url, ...record })
       .onConflictDoUpdate({
         target: skills.url,
-        // Historical Storage bindings are retained for a separate data inventory.
         set: { ...record, updatedAt: args.timestamp },
       });
     signal.throwIfAborted();
