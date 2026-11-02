@@ -52,12 +52,17 @@ interface Target {
   window: number;
   tab: number;
   page?: string;
+  parent?: string;
 }
 interface Connection {
   socket: WebSocket;
   sessions: Map<string, string>;
   discovery: Set<string | undefined>;
   automatic: Map<string | undefined, Set<string>>;
+  related: Map<
+    string | undefined,
+    { filter: unknown; roots: Map<string, boolean> }
+  >;
 }
 interface HeldWindowLookup {
   targetId: string;
@@ -147,6 +152,10 @@ export async function browserCdpProvider() {
     ],
   ]);
   const connections = new Set<Connection>();
+  const attachments: {
+    targetId: string;
+    waitingForDebugger: boolean;
+  }[] = [];
   const commands: {
     method: string;
     params: Record<string, unknown>;
@@ -168,6 +177,7 @@ export async function browserCdpProvider() {
       url: target.url,
       title: "private-title",
       browserContextId: "default",
+      ...(target.parent ? { parentId: target.parent } : {}),
     };
   };
   const send = (connection: Connection, value: unknown) => {
@@ -232,7 +242,11 @@ export async function browserCdpProvider() {
     targetId: string,
     parent?: string,
     automatic = false,
+    waitingForDebugger = false,
   ) {
+    if (automatic)
+      for (const id of connection.automatic.get(parent) ?? [])
+        if (connection.sessions.get(id) === targetId) return { sessionId: id };
     const sessionId = "session-" + ++nextSession;
     connection.sessions.set(sessionId, targetId);
     if (automatic) {
@@ -241,22 +255,42 @@ export async function browserCdpProvider() {
       entries.add(sessionId);
     }
     const target = targets.get(targetId);
-    if (target)
+    if (target) {
+      attachments.push({ targetId, waitingForDebugger });
       send(connection, {
         method: "Target.attachedToTarget",
         sessionId: parent,
         params: {
           sessionId,
           targetInfo: info(target),
-          waitingForDebugger: false,
+          waitingForDebugger,
         },
       });
+    }
     return { sessionId };
+  }
+  function publish(target: Target) {
+    targets.set(target.id, target);
+    broadcast("Target.targetCreated", { targetInfo: info(target) });
+    for (const connection of connections)
+      for (const [channel, handler] of connection.related) {
+        if (!selectedType(target.type, handler.filter)) continue;
+        for (const [id, wait] of handler.roots) {
+          const root = targets.get(id);
+          if (
+            root?.type === "browser" ||
+            target.parent === id ||
+            (root?.type === "tab" && target.tab === root.tab)
+          )
+            attach(connection, target.id, channel, true, wait);
+        }
+      }
   }
   function detach(connection: Connection, sessionId: string, parent?: string) {
     for (const child of connection.automatic.get(sessionId) ?? [])
       detach(connection, child, sessionId);
     connection.automatic.delete(sessionId);
+    connection.related.delete(sessionId);
     connection.sessions.delete(sessionId);
     send(connection, {
       method: "Target.detachedFromTarget",
@@ -270,6 +304,7 @@ export async function browserCdpProvider() {
       sessions: new Map(),
       discovery: new Set(),
       automatic: new Map(),
+      related: new Map(),
     };
     connections.add(connection);
     socket.on("close", () => {
@@ -373,6 +408,7 @@ export async function browserCdpProvider() {
             for (const entry of connection.automatic.get(sessionId) ?? [])
               detach(connection, entry, sessionId);
             connection.automatic.delete(sessionId);
+            connection.related.delete(sessionId);
             reply({});
           } else if (selected === "BROWSER")
             fail(-32000, "Global auto-attach would pause sibling pages");
@@ -397,20 +433,25 @@ export async function browserCdpProvider() {
           }
           const target = String(params.targetId);
           const root = targets.get(target);
-          if (
-            root?.type === "browser" &&
-            ["page", "tab", "iframe", "browser_ui"].some((type) => {
-              return selectedType(type, params.filter);
-            })
-          ) {
-            fail(-32000, "Global related selection would pause sibling pages");
-            return;
+          let handler = connection.related.get(sessionId);
+          if (!handler) {
+            handler = { filter: params.filter, roots: new Map() };
+            connection.related.set(sessionId, handler);
           }
+          const added = !handler.roots.has(target);
+          handler.filter = params.filter;
+          handler.roots.set(target, params.waitForDebuggerOnStart === true);
           if (root && selectedType(root.type, params.filter))
             attach(connection, target, sessionId, true);
           const child = targets.get(root?.page ?? "IFRAME-" + target);
-          if (child && selectedType(child.type, params.filter))
-            attach(connection, child.id, sessionId, true);
+          if (added && child && selectedType(child.type, params.filter))
+            attach(
+              connection,
+              child.id,
+              sessionId,
+              true,
+              params.waitForDebuggerOnStart === true,
+            );
           reply({});
         },
         "ServiceWorker.enable": () => {
@@ -567,7 +608,31 @@ export async function browserCdpProvider() {
   return {
     endpoint: `ws://127.0.0.1:${address.port}`,
     commands,
+    attachments,
     move,
+    addFrame(parent: string, id: string) {
+      const page = targets.get(parent);
+      if (!page) throw new Error("Missing parent fixture page");
+      publish({
+        id,
+        type: "iframe",
+        url: "https://frame.test/" + id,
+        window: page.window,
+        tab: page.tab,
+        parent,
+      });
+    },
+    addPage(id: string, window: number) {
+      const tab = ++nextTarget + 100;
+      publish({ id: "TAB-" + id, type: "tab", url: "", window, tab, page: id });
+      publish({
+        id,
+        type: "page",
+        url: "https://example.test/" + id,
+        window,
+        tab,
+      });
+    },
     rejectNextRelated() {
       rejectRelated = true;
     },

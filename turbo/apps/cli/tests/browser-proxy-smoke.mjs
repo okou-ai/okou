@@ -11,6 +11,7 @@ import console from "node:console";
 import { performance } from "node:perf_hooks";
 import { setTimeout, clearTimeout } from "node:timers";
 import { parseArgs, promisify } from "node:util";
+import WebSocket, { WebSocketServer } from "ws";
 import {
   openWire,
   tabTargetForPage,
@@ -32,6 +33,7 @@ const cliEntry = resolve(
 const children = [];
 const wires = [];
 const sessions = [];
+const relays = [];
 let browser;
 let browserClosed;
 const server = createServer((_request, response) => {
@@ -45,6 +47,62 @@ async function wire(endpoint) {
   const value = await openWire(endpoint);
   wires.push(value);
   return value;
+}
+
+// Observe native side effects before the proxy can hide their notifications.
+async function traceRelay(endpoint) {
+  const listener = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await once(listener, "listening");
+  const pairs = new Set();
+  const attachments = [];
+  listener.on("connection", (client) => {
+    const upstream = new WebSocket(endpoint);
+    const pair = { client, upstream };
+    const queued = [];
+    pairs.add(pair);
+    client.on("message", (data) => {
+      if (upstream.readyState === WebSocket.OPEN)
+        upstream.send(data.toString());
+      else queued.push(data.toString());
+    });
+    upstream.addEventListener("open", () => {
+      for (const raw of queued.splice(0)) upstream.send(raw);
+    });
+    upstream.addEventListener("message", ({ data }) => {
+      const event = JSON.parse(data);
+      if (event.method === "Target.attachedToTarget")
+        attachments.push(event.params);
+      if (client.readyState === client.OPEN) client.send(data);
+    });
+    upstream.addEventListener("error", () => {
+      return client.terminate();
+    });
+    upstream.addEventListener("close", () => {
+      return client.terminate();
+    });
+    client.on("error", () => {
+      return upstream.close();
+    });
+    client.on("close", () => {
+      pairs.delete(pair);
+      upstream.close();
+    });
+  });
+  const relay = {
+    endpoint: `ws://127.0.0.1:${listener.address().port}/devtools/browser`,
+    attachments,
+    async close() {
+      for (const { client, upstream } of pairs) {
+        client.terminate();
+        upstream.close();
+      }
+      await new Promise((resolve) => {
+        return listener.close(resolve);
+      });
+    },
+  };
+  relays.push(relay);
+  return relay;
 }
 
 function observe(wire, predicate, operation) {
@@ -394,27 +452,27 @@ try {
         if (address === proxyA.endpoint) {
           const relatedUrl =
             origin + (browserSession ? "/related-browser" : "/related-root");
-          let created;
-          const event = await observe(
-            connection,
-            (event) => {
-              return (
-                event.method === "Target.attachedToTarget" &&
-                event.sessionId === channel &&
-                event.params.targetInfo.url === relatedUrl
-              );
-            },
-            async () => {
-              created = await connection.request(
-                "Target.createTarget",
-                {
-                  url: relatedUrl,
-                },
-                channel,
-              );
-            },
+          const created = await connection.request(
+            "Target.createTarget",
+            { url: relatedUrl },
+            channel,
           );
-          assert.equal(event.params.targetInfo.targetId, created.targetId);
+          await connection.request("Target.getTargets", {}, channel);
+          // The latest iframe filter applies to the whole handler, including
+          // the earlier browser selector; it must not attach this new page.
+          assert.ok(
+            ![...attached.values()].some((info) => {
+              return info.targetId === created.targetId;
+            }),
+          );
+          assert.equal(
+            (
+              await direct.request("Browser.getWindowForTarget", {
+                targetId: created.targetId,
+              })
+            ).windowId,
+            winA,
+          );
         }
       } finally {
         off();
@@ -755,6 +813,149 @@ try {
     assert.equal(result.ok, true);
     return result.value;
   };
+  // Changing the last watched root must not resurrect an earlier root's filter.
+  const selected = await scopedA.request("Target.createTarget", {
+    url: origin + "/filter-root",
+  });
+  const selectedTab = (
+    await invoke({ method: "getWindow", windowId: winA, populate: true })
+  ).tabs.find((tab) => {
+    return tab.url === origin + "/filter-root";
+  });
+  assert.ok(selectedTab);
+  const nativeFilters = await wire(endpoint);
+  const scopedFilters = await wire(proxyA.endpoint);
+  const filteredAttachments = new Map([
+    [nativeFilters, new Set()],
+    [scopedFilters, new Set()],
+  ]);
+  const filterListeners = [];
+  for (const [connection, attached] of filteredAttachments) {
+    filterListeners.push(
+      connection.onEvent((event) => {
+        if (event.method === "Target.attachedToTarget")
+          attached.add(event.params.targetInfo.targetId);
+      }),
+    );
+    await connection.request("Target.autoAttachRelated", {
+      targetId: a,
+      waitForDebuggerOnStart: false,
+      filter: [{ type: "iframe" }],
+    });
+    await connection.request("Target.autoAttachRelated", {
+      targetId: selected.targetId,
+      waitForDebuggerOnStart: false,
+      filter: [{ type: "page" }],
+    });
+    await connection.request("Target.getTargets");
+    assert.ok(attached.has(frame.targetId));
+  }
+  await observe(
+    scopedFilters,
+    (event) => {
+      return (
+        event.method === "Target.attachedToTarget" &&
+        event.params.targetInfo.targetId === a
+      );
+    },
+    () => {
+      return invoke({
+        method: "moveTabs",
+        tabIds: [selectedTab.id],
+        windowId: winB,
+        index: -1,
+      });
+    },
+  );
+  const lateFrameUrl =
+    origin.replace("127.0.0.1", "frame.test") + "/late-filter-frame";
+  await value(
+    scopedA,
+    sa,
+    `new Promise(resolve => {
+    const frame = document.createElement('iframe');
+    frame.onload = () => resolve(true);
+    frame.src = location.origin.replace('127.0.0.1', 'frame.test') + '/late-filter-frame';
+    document.body.append(frame);
+  })`,
+  );
+  const lateFrame = (
+    await direct.request("Target.getTargets", { filter: [{}] })
+  ).targetInfos.find((info) => {
+    return info.url === lateFrameUrl;
+  });
+  assert.ok(lateFrame);
+  for (const [connection, attached] of filteredAttachments) {
+    await connection.request("Target.getTargets");
+    assert.equal(attached.has(lateFrame.targetId), false);
+    connection.close();
+  }
+  for (const off of filterListeners) off();
+  await direct.request("Target.closeTarget", { targetId: selected.targetId });
+
+  // A new owned root must never widen a native browser-global attachment source.
+  const relay = await traceRelay(endpoint);
+  const traced = await proxy(relay.endpoint, runtimeId, winA);
+  const scopedTrace = await wire(traced.endpoint);
+  const browserRoot = (await scopedTrace.request("Target.getTargetInfo"))
+    .targetInfo.targetId;
+  await scopedTrace.request("Target.autoAttachRelated", {
+    targetId: browserRoot,
+    waitForDebuggerOnStart: true,
+    filter: [{}],
+  });
+  const known = new Set(
+    (
+      await direct.request("Target.getTargets", { filter: [{}] })
+    ).targetInfos.map((info) => {
+      return info.targetId;
+    }),
+  );
+  let traceCreated;
+  await observe(
+    scopedTrace,
+    (event) => {
+      return (
+        event.method === "Target.attachedToTarget" &&
+        event.params.targetInfo.type === "page" &&
+        !known.has(event.params.targetInfo.targetId)
+      );
+    },
+    async () => {
+      traceCreated = await scopedTrace.request("Target.createTarget", {
+        url: "about:blank",
+        background: true,
+      });
+    },
+  );
+  const foreign = await direct.request("Target.createTarget", {
+    url: origin + "/foreign-debugger",
+    newWindow: true,
+  });
+  const traceInventory = (
+    await scopedTrace.request("Target.getTargets", { filter: [{}] })
+  ).targetInfos;
+  assert.ok(
+    !traceInventory.some((info) => {
+      return info.targetId === foreign.targetId;
+    }),
+  );
+  assert.deepEqual(
+    relay.attachments.filter((event) => {
+      return event.targetInfo.targetId === foreign.targetId;
+    }),
+    [],
+  );
+  await scopedTrace.request("Target.setAutoAttach", {
+    autoAttach: false,
+    waitForDebuggerOnStart: false,
+    flatten: true,
+  });
+  scopedTrace.close();
+  await direct.request("Target.closeTarget", {
+    targetId: traceCreated.targetId,
+  });
+  await direct.request("Target.closeTarget", { targetId: foreign.targetId });
   const nativeWindow = await invoke({
     method: "getWindow",
     windowId: winA,
@@ -902,6 +1103,8 @@ try {
         nativeAutoAttachFilters: true,
         browserRootRelatedSelection: true,
         overlappingRelatedSelectors: true,
+        handlerFilterSurvivesRootRemoval: true,
+        noForeignNativeDebuggerAttachment: true,
         oopifParentage: true,
         agentBrowser: true,
         guestTaskAdmission: options["guest-task"],
@@ -932,6 +1135,7 @@ try {
       child.kill("SIGTERM");
     await closed;
   }
+  for (const relay of relays) await relay.close();
   if (browser) {
     if (browser.exitCode === null && browser.signalCode === null)
       browser.kill("SIGTERM");

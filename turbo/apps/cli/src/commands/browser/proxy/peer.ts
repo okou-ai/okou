@@ -27,13 +27,18 @@ type AutoAttachment =
   | {
       readonly kind: "automatic";
       readonly params: Message;
-      readonly roots: Map<string, Message>;
+      readonly roots: Map<string, boolean>;
       readonly flatten: boolean;
     }
   | {
       readonly kind: "related";
-      readonly selectors: Map<string, Message>;
-      readonly roots: Map<string, Message>;
+      // Latest handler filter/opaque parameters, independent of root wait flags.
+      readonly params: Message;
+      readonly selectors: Map<string, boolean>;
+      // Applied subscriptions, not a second copy of selector/filter intent.
+      readonly roots: Map<string, boolean>;
+      // null retains an explicitly detached root until an explicit reselection.
+      readonly direct: Map<string, string | null>;
       readonly flatten: true;
     };
 const key = (channel: string | undefined, id: unknown) => {
@@ -195,6 +200,10 @@ export class ProxyPeer {
 
   private forgetSession(id: string): boolean {
     if (!this.sessions.delete(id)) return false;
+    for (const auto of this.autoAttach.values())
+      if (auto.kind === "related")
+        for (const [target, session] of auto.direct)
+          if (session === id) auto.direct.set(target, null);
     for (const [child, session] of this.sessions)
       if (session.parent === id) this.forgetSession(child);
     this.autoAttach.delete(id);
@@ -295,17 +304,17 @@ export class ProxyPeer {
     // A native disable operation cannot carry a nonempty filter. The caller's
     // filter controls root selection below, not this cancellation command.
     const { filter: _filter, ...reset } = params;
-    await this.inject(
-      "Target.setAutoAttach",
-      { ...reset, autoAttach: false, flatten: true },
-      channel,
-    );
+    await this.disableAutomatic(channel, this.autoAttach.get(channel), {
+      ...reset,
+      autoAttach: false,
+      flatten: true,
+    });
     this.autoAttach.delete(channel);
     if (params.autoAttach !== true) return;
     const auto: AutoAttachment = {
       kind: "automatic",
       params,
-      roots: new Map<string, Message>(),
+      roots: new Map(),
       flatten: params.flatten === true,
     };
     this.autoAttach.set(channel, auto);
@@ -325,6 +334,30 @@ export class ProxyPeer {
       throw error;
     }
   }
+  private async disableAutomatic(
+    channel: string | undefined,
+    auto: AutoAttachment | undefined,
+    params: Message = {
+      autoAttach: false,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    },
+  ): Promise<void> {
+    await this.inject("Target.setAutoAttach", params, channel);
+    auto?.roots.clear();
+    if (auto?.kind !== "related") return;
+    // Browser-self sessions are explicit attachments, never global sources.
+    // Native cancellation must release these owned sessions separately.
+    try {
+      for (const sessionId of auto.direct.values())
+        if (sessionId !== null)
+          await this.inject("Target.detachFromTarget", { sessionId }, channel);
+      auto.direct.clear();
+    } catch (error) {
+      this.close();
+      throw error;
+    }
+  }
   private async configureRelated(
     targetId: string,
     params: Message,
@@ -334,21 +367,18 @@ export class ProxyPeer {
     // Native autoAttachRelated replaces setAutoAttach, whose window-scoped
     // implementation uses related selectors too. Cancel those before switching.
     if (previous?.kind === "automatic") {
-      await this.inject(
-        "Target.setAutoAttach",
-        { autoAttach: false, waitForDebuggerOnStart: false, flatten: true },
-        channel,
-      );
-      previous.roots.clear();
+      await this.disableAutomatic(channel, previous);
     }
     const selectors = new Map(
       previous?.kind === "related" ? previous.selectors : [],
     );
-    selectors.set(targetId, params);
+    selectors.set(targetId, params.waitForDebuggerOnStart === true);
     const auto: AutoAttachment = {
       kind: "related",
+      params,
       selectors,
       roots: new Map(previous?.kind === "related" ? previous.roots : []),
+      direct: new Map(previous?.kind === "related" ? previous.direct : []),
       flatten: true,
     };
     this.autoAttach.set(channel, auto);
@@ -358,13 +388,10 @@ export class ProxyPeer {
       return result;
     } catch (error) {
       try {
-        await this.inject(
-          "Target.setAutoAttach",
-          { autoAttach: false, waitForDebuggerOnStart: false, flatten: true },
-          channel,
-        );
+        await this.disableAutomatic(channel, auto);
         if (previous) {
           previous.roots.clear();
+          if (previous.kind === "related") previous.direct.clear();
           this.autoAttach.set(channel, previous);
           await this.relate(channel, previous);
         } else this.autoAttach.delete(channel);
@@ -595,23 +622,6 @@ export class ProxyPeer {
         });
       else this.autoAttach.delete(channel);
     }
-    if (
-      method === "Target.autoAttachRelated" &&
-      typeof requested.targetId === "string"
-    ) {
-      let auto = this.autoAttach.get(channel);
-      if (auto?.kind !== "related") {
-        auto = {
-          kind: "related",
-          selectors: new Map(),
-          roots: new Map(),
-          flatten: true,
-        };
-        this.autoAttach.set(channel, auto);
-      }
-      auto.roots.set(requested.targetId, requested);
-      auto.selectors.set(requested.targetId, requested);
-    }
   }
 
   private async response(
@@ -672,9 +682,12 @@ export class ProxyPeer {
         ? [request.command.params.targetId]
         : [];
     });
-    const roots = parent
-      ? [parent]
-      : [...(auto?.roots.keys() ?? []), ...related];
+    const roots =
+      typeof info.parentId === "string" && this.scope.admits(info.parentId)
+        ? [info.parentId]
+        : parent
+          ? [parent]
+          : [...(auto?.roots.keys() ?? []), ...related];
     if (roots.length) this.scope.inherit(info, roots);
 
     return {
@@ -871,7 +884,7 @@ export class ProxyPeer {
             // not: descendants are attached by their own parent sessions.
             filter: [{ type: info.type }, { exclude: true }],
           });
-    } else await this.relatedRoots(auto.selectors, roots);
+    } else await this.relatedRoots(auto, roots);
     if (
       [...auto.roots.keys()].some((id) => {
         return !roots.has(id);
@@ -888,10 +901,10 @@ export class ProxyPeer {
     for (const [targetId, params] of roots) {
       if (
         !this.refreshedRoot(targetId, refresh) &&
-        JSON.stringify(auto.roots.get(targetId)) === JSON.stringify(params)
+        auto.roots.get(targetId) === (params.waitForDebuggerOnStart === true)
       )
         continue;
-      auto.roots.set(targetId, params);
+      auto.roots.set(targetId, params.waitForDebuggerOnStart === true);
       try {
         const result = await this.inject(
           "Target.autoAttachRelated",
@@ -904,7 +917,33 @@ export class ProxyPeer {
         throw error;
       }
     }
+    if (auto.kind === "related")
+      await this.attachBrowserRoots(channel, auto, refresh);
     return response;
+  }
+
+  private async attachBrowserRoots(
+    channel: string | undefined,
+    auto: Extract<AutoAttachment, { kind: "related" }>,
+    refresh?: string,
+  ): Promise<void> {
+    for (const id of auto.selectors.keys()) {
+      if (
+        this.scope.targets.get(id)?.type !== "browser" ||
+        (auto.direct.has(id) &&
+          !(id === refresh && auto.direct.get(id) === null)) ||
+        !this.matches({ type: "browser" }, auto.params)
+      )
+        continue;
+      const result = await this.inject(
+        "Target.attachToTarget",
+        { targetId: id, flatten: true },
+        channel,
+      );
+      if (!record(result) || typeof result.sessionId !== "string")
+        throw new Error("Invalid Browser attachment");
+      auto.direct.set(id, result.sessionId);
+    }
   }
 
   private refreshedRoot(id: string, selector?: string): boolean {
@@ -919,14 +958,16 @@ export class ProxyPeer {
   }
 
   private async relatedRoots(
-    selectors: Map<string, Message>,
+    auto: Extract<AutoAttachment, { kind: "related" }>,
     roots: Map<string, Message>,
   ): Promise<void> {
-    for (const [id, params] of selectors) {
+    for (const [id, waitForDebuggerOnStart] of auto.selectors) {
       if (!(await this.scope.allows(id))) {
-        selectors.delete(id);
+        auto.selectors.delete(id);
         continue;
       }
+      // Chromium shares the filter across this handler's watched roots.
+      const params = { ...auto.params, waitForDebuggerOnStart };
       if (this.scope.targets.get(id)?.type !== "browser") {
         this.mergeRelatedRoot(roots, id, params);
         continue;
@@ -942,13 +983,12 @@ export class ProxyPeer {
             targetId: info.targetId,
           });
         } else if (
-          ["browser", "service_worker", "shared_worker"].includes(info.type) &&
-          this.matches(info, params)
+          ["service_worker", "shared_worker"].includes(info.type) &&
+          (this.matches(info, params) || auto.roots.has(info.targetId))
         ) {
           this.mergeRelatedRoot(roots, info.targetId, {
             ...params,
             targetId: info.targetId,
-            filter: [{ type: info.type }, { exclude: true }],
           });
         }
       }
@@ -961,45 +1001,11 @@ export class ProxyPeer {
     params: Message,
   ): void {
     const previous = roots.get(id);
-    if (!previous) {
-      roots.set(id, params);
-      return;
-    }
-    // Multiple logical selectors may use the same native tab. Retain their
-    // union, including the default decision for future target types.
-    const selectors = [previous, params];
-    const entries = selectors.flatMap((selector) => {
-      return this.filter(selector);
-    });
-    const types = new Set(
-      entries.flatMap((entry) => {
-        return record(entry) && typeof entry.type === "string"
-          ? [entry.type]
-          : [];
-      }),
-    );
-    const filter: Message[] = [...types].map((type) => {
-      return {
-        type,
-        exclude: !selectors.some((selector) => {
-          return this.matches({ type }, selector);
-        }),
-      };
-    });
-    filter.push({
-      exclude: !selectors.some((selector) => {
-        const wildcard = this.filter(selector).find((entry) => {
-          return record(entry) && entry.type === undefined;
-        });
-        return record(wildcard) && wildcard.exclude !== true;
-      }),
-    });
     roots.set(id, {
-      ...previous,
       ...params,
-      filter,
+      targetId: id,
       waitForDebuggerOnStart:
-        previous.waitForDebuggerOnStart === true ||
+        previous?.waitForDebuggerOnStart === true ||
         params.waitForDebuggerOnStart === true,
     });
   }

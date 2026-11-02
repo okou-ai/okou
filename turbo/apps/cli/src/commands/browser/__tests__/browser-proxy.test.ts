@@ -707,23 +707,36 @@ describe("chat-window CDP proxy protocol", () => {
           String(page.params?.sessionId),
         ),
       ).toStrictEqual({});
+      await connection.request(
+        "Target.setDiscoverTargets",
+        { discover: true },
+        channel,
+      );
       const entered = connection.event((message) => {
         return (
-          message.method === "Target.attachedToTarget" &&
+          message.method === "Target.targetCreated" &&
           message.sessionId === channel &&
           (message.params?.targetInfo as { targetId?: string })?.targetId ===
             "B"
         );
       });
+      const start = provider.attachments.length;
       provider.move("B", 0);
-      const incoming = await entered;
+      await entered;
+      await connection.request(
+        "Target.autoAttachRelated",
+        {
+          targetId: "TAB-A",
+          waitForDebuggerOnStart: false,
+          filter: [{ type: "iframe" }],
+        },
+        channel,
+      );
       expect(
-        await connection.request(
-          "Runtime.enable",
-          {},
-          String(incoming.params?.sessionId),
-        ),
-      ).toStrictEqual({});
+        provider.attachments.slice(start).some(({ targetId }) => {
+          return targetId === "B";
+        }),
+      ).toBe(false);
     },
   );
 
@@ -779,52 +792,155 @@ describe("chat-window CDP proxy protocol", () => {
     ).toStrictEqual([]);
   });
 
-  it("retains each explicit selector's parameters when another selected root leaves", async () => {
-    await connection.request("Target.setDiscoverTargets", { discover: true });
-    const discovered = connection.event((message) => {
+  it.each([
+    { browserSession: false, iframe: false },
+    { browserSession: true, iframe: false },
+    { browserSession: false, iframe: true },
+    { browserSession: true, iframe: true },
+  ])(
+    "retains the latest handler filter and surviving root wait after a root leaves: %j",
+    async ({ browserSession, iframe }) => {
+      const channel = browserSession
+        ? String(
+            (await connection.request("Target.attachToBrowserTarget"))
+              .sessionId,
+          )
+        : undefined;
+      await connection.request(
+        "Target.setDiscoverTargets",
+        { discover: true },
+        channel,
+      );
+      const entered = connection.event((message) => {
+        return (
+          message.method === "Target.targetCreated" &&
+          message.sessionId === channel &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "B"
+        );
+      });
+      provider.move("B", 0);
+      await entered;
+      await connection.request(
+        "Target.autoAttachRelated",
+        {
+          targetId: "A",
+          waitForDebuggerOnStart: false,
+          filter: [{ type: "iframe" }],
+        },
+        channel,
+      );
+      await connection.request(
+        "Target.autoAttachRelated",
+        {
+          targetId: "B",
+          waitForDebuggerOnStart: true,
+          filter: [{ type: iframe ? "iframe" : "page" }],
+        },
+        channel,
+      );
+      const rebuilt = connection.event((message) => {
+        return (
+          message.method === "Target.attachedToTarget" &&
+          message.sessionId === channel &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            (iframe ? "IFRAME-A" : "A")
+        );
+      });
+      provider.move("B", 1);
+      await rebuilt;
+      const added = iframe
+        ? connection.event((message) => {
+            return (
+              message.method === "Target.attachedToTarget" &&
+              message.sessionId === channel &&
+              (message.params?.targetInfo as { targetId?: string })
+                ?.targetId === "LATE-FRAME"
+            );
+          })
+        : undefined;
+      provider.addFrame("A", "LATE-FRAME");
+      if (added) expect((await added).params?.waitingForDebugger).toBe(false);
+      await connection.request("Target.getTargets", {}, channel);
+      expect(
+        provider.attachments.filter(({ targetId }) => {
+          return targetId === "LATE-FRAME";
+        }),
+      ).toStrictEqual(
+        iframe ? [{ targetId: "LATE-FRAME", waitingForDebugger: false }] : [],
+      );
+    },
+  );
+
+  it("never attaches foreign pages through a browser-global source and releases only owned browser sessions", async () => {
+    const explicit = String(
+      (
+        await connection.request("Target.attachToTarget", {
+          targetId: "BROWSER",
+          flatten: true,
+        })
+      ).sessionId,
+    );
+    const browser = connection.event((message) => {
       return (
-        message.method === "Target.targetCreated" &&
-        (message.params?.targetInfo as { targetId?: string })?.targetId === "B"
+        message.method === "Target.attachedToTarget" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId ===
+          "BROWSER"
       );
     });
-    provider.move("B", 0);
-    await discovered;
-    const first = {
-      targetId: "A",
-      waitForDebuggerOnStart: false,
-      filter: [{ type: "page" }],
-      futureOption: "first",
-    };
-    const second = {
-      targetId: "B",
+    await connection.request("Target.autoAttachRelated", {
+      targetId: "BROWSER",
       waitForDebuggerOnStart: true,
-      filter: [{ type: "iframe" }, {}],
-      futureOption: "second",
-    };
-    await connection.request("Target.autoAttachRelated", first);
-    await connection.request("Target.autoAttachRelated", second);
-    const removed = connection.event((message) => {
+      filter: [{}],
+    });
+    let ownedBrowser = String((await browser).params?.sessionId);
+    await connection.request("Target.detachFromTarget", {
+      sessionId: ownedBrowser,
+    });
+    await connection.request("Target.getTargets");
+    const reselected = connection.event((message) => {
       return (
-        message.method === "Target.targetDestroyed" &&
-        message.params?.targetId === "A"
+        message.method === "Target.attachedToTarget" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId ===
+          "BROWSER"
       );
     });
-    provider.move("A", 1);
-    await removed;
+    await connection.request("Target.autoAttachRelated", {
+      targetId: "BROWSER",
+      waitForDebuggerOnStart: true,
+      filter: [{}],
+    });
+    ownedBrowser = String((await reselected).params?.sessionId);
+    const own = connection.event((message) => {
+      return (
+        message.method === "Target.attachedToTarget" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId === "C"
+      );
+    });
+    provider.addPage("C", 0);
+    await own;
+    provider.addPage("D", 1);
+    await connection.request("Target.getTargets", { filter: [{}] });
+    expect(
+      provider.attachments.filter(({ targetId }) => {
+        return targetId === "D" || targetId === "TAB-D";
+      }),
+    ).toStrictEqual([]);
     await connection.request("Target.setAutoAttach", {
       autoAttach: false,
       waitForDebuggerOnStart: false,
       flatten: true,
     });
+    await connection.request("Target.getTargets");
     expect(
-      provider.commands
-        .filter((command) => {
-          return command.method === "Target.autoAttachRelated";
-        })
-        .map((command) => {
-          return command.params;
-        }),
-    ).toStrictEqual([first, second, second]);
+      await connection.request("Runtime.enable", {}, explicit),
+    ).toStrictEqual({});
+    await expect(
+      connection.request("Runtime.enable", {}, ownedBrowser),
+    ).rejects.toMatchObject({
+      code: -32000,
+      message: "The target is outside this chat's Browser window",
+    });
   });
 
   it.each([
