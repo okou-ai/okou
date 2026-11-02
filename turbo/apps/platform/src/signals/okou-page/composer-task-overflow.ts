@@ -46,34 +46,19 @@ export function createComposerTaskOverflowSignals() {
       }
     } else {
       const available = root.clientWidth - padding;
-      // Suggestions stays outside More whenever it fits. The remaining choices
-      // retain their original order, including Tasks when that rollout is on.
-      const priority = items.findIndex((item) => {
-        return item.dataset.priority !== undefined;
-      });
-      const order = items.map((_, index) => {
-        return index;
-      });
-      if (priority !== -1) {
-        order.splice(priority, 1);
-        order.unshift(priority);
-      }
+      // Choices keep their order; the leading ones that fit stay outside More.
       // The trigger shrinks with its hidden count. Measure all candidates in
       // one pass instead of letting the previous stack determine the next fit.
       let usedWidth = 0;
       let visibleCount = 0;
-      for (const [position, index] of order.entries()) {
+      for (const [position, width] of widths.entries()) {
         const moreWidth = moreWidths[items.length - position - 1];
         if (moreWidth !== undefined && usedWidth + moreWidth <= available) {
           visibleCount = position;
         }
-        const width = widths[index];
-        if (width === undefined) {
-          break;
-        }
         usedWidth += width + gap;
       }
-      for (const index of order.slice(0, visibleCount)) {
+      for (let index = 0; index < visibleCount; index++) {
         visible.add(index);
       }
     }

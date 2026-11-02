@@ -18,16 +18,8 @@ import { homeJobSummaries$ } from "./entrusted-jobs.ts";
 import { createComposerTaskOverflowSignals } from "./composer-task-overflow.ts";
 
 export type ComposerTask =
-  | ComposerCreateMode
-  | "workflow"
-  | "website"
-  | "visualization"
-  | "suggestions"
-  | "jobs";
-export type ComposerIdeaTask = Exclude<
-  ComposerTask,
-  "visualization" | "suggestions" | "jobs"
->;
+  ComposerCreateMode | "workflow" | "website" | "visualization" | "jobs";
+export type ComposerIdeaTask = Exclude<ComposerTask, "visualization" | "jobs">;
 /** The tasks whose ideas render as a prompt row; workflow has its own surface. */
 export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;
 /**
@@ -42,12 +34,11 @@ export type ComposerTemplateTask = Exclude<
 /** A general task owns the chip row itself; the rest resolve to a create mode. */
 function isComposerGeneralTask(
   task: ComposerTask | null,
-): task is "workflow" | "website" | "visualization" | "suggestions" | "jobs" {
+): task is "workflow" | "website" | "visualization" | "jobs" {
   return (
     task === "workflow" ||
     task === "website" ||
     task === "visualization" ||
-    task === "suggestions" ||
     task === "jobs"
   );
 }
@@ -132,7 +123,7 @@ export function createComposerTaskChipsSignals(
   workflowActions: WorkflowRecommendationActions,
 ) {
   const internalGeneralTask$ = state<
-    "workflow" | "website" | "visualization" | "suggestions" | "jobs" | null
+    "workflow" | "website" | "visualization" | "jobs" | null
   >(null);
   const explicitSelection$ = state(false);
   const visualization = createComposerVisualizationSignals();
@@ -237,10 +228,10 @@ export function createComposerTaskChipsSignals(
     },
   );
   // Choosing a task hands focus to the composer and removes More. Ordinary
-  // dismissal (or browsing Suggestions/Tasks) returns focus to the trigger.
+  // dismissal (or browsing Tasks) returns focus to the trigger.
   const taskMenuFinalFocus$ = command(({ get }) => {
     const task = get(task$);
-    return task === null || task === "suggestions" || task === "jobs";
+    return task === null || task === "jobs";
   });
   const { railTravel$, setRailTravel$, bindRail$ } = createTaskRailSignals();
   return {

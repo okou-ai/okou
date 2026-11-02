@@ -404,6 +404,7 @@
         "agents": "Agenten",
         "artifacts": "Artefakte",
         "connectors": "Integrationen",
+        "feed": "Feed",
         "settings": "Einstellungen",
         "workflows": "Workflows",
         "works": "Einsatzorte von {{agentName}}"
@@ -1595,8 +1596,6 @@
       "customDirection": "Ich möchte…",
       "customDirectionDescription": "Stelle eine Frage oder beschreibe, was du tun möchtest.",
       "customPlaceholder": "Was hast du im Sinn?",
-      "customPrepared": "Erzähl weiter…",
-      "customPreparedDescription": "Schreibe deine Nachricht oben und sende sie ab.",
       "dismiss": "Verwerfen",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2630,7 +2629,6 @@
         "image": "Bild",
         "jobs": "Tasks",
         "presentation": "Folien",
-        "suggestions": "Vorschläge",
         "visualization": "Visualisierung",
         "website": "Website",
         "workflow": "Workflow"
@@ -4117,6 +4115,12 @@
     "previous": "Zurück",
     "previousFeature": "Vorherige Funktion",
     "tryPrompt": "Diese Aufgabe ausprobieren"
+  },
+  "feed": {
+    "description": "Vorgeschlagene nächste Schritte auf Basis deiner letzten Arbeit.",
+    "emptyDescription": "Neue Vorschläge erscheinen hier.",
+    "emptyTitle": "Du bist auf dem neuesten Stand",
+    "title": "Feed"
   },
   "global": {
     "errors": {

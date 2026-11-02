@@ -8,7 +8,6 @@ import type {
 } from "@okouai/api-contracts/contracts/suggestions";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { currentChatAgentId$ } from "../agent-chat.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -108,15 +107,17 @@ interface FeedbackConfirmation {
   readonly note: string;
 }
 
-export const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
+/** The Feed page and its sidebar entry follow the Suggestions rollout. */
+export const suggestionFeedEnabled$ = computed((get) => {
+  return get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] === true;
+});
+
+const agentSuggestionsEnabled$ = computed(async (get) => {
+  if (!get(suggestionFeedEnabled$)) {
     return false;
   }
-  const [current, primary] = await Promise.all([
-    get(currentChatAgentId$),
-    get(defaultAgentId$),
-  ]);
-  return primary !== null && current === primary;
+  // A new-chat option continues in the default agent's composer.
+  return (await get(defaultAgentId$)) !== null;
 });
 
 const readAgentSuggestions$ = command(

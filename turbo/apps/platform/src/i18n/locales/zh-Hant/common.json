@@ -404,6 +404,7 @@
         "agents": "智能體",
         "artifacts": "成果",
         "connectors": "連接器",
+        "feed": "動態",
         "settings": "設定",
         "workflows": "工作流",
         "works": "{{agentName}} 的工作渠道"
@@ -1593,8 +1594,6 @@
       "customDirection": "我想……",
       "customDirectionDescription": "提出問題，或說說你想做什麼。",
       "customPlaceholder": "你有什麼想法？",
-      "customPrepared": "接著說……",
-      "customPreparedDescription": "在上方輸入訊息，然後傳送。",
       "dismiss": "忽略",
       "dismissRecorded": "已收起這則建議",
       "doneRecorded": "已記下，這件事已經處理了",
@@ -2619,7 +2618,6 @@
         "image": "圖片",
         "jobs": "任務",
         "presentation": "簡報",
-        "suggestions": "建議",
         "visualization": "視覺化",
         "website": "網站",
         "workflow": "工作流"
@@ -4102,6 +4100,12 @@
     "previous": "上一步",
     "previousFeature": "上一個功能",
     "tryPrompt": "試試這個任務"
+  },
+  "feed": {
+    "description": "根據你最近的工作推薦的下一步。",
+    "emptyDescription": "新的建議會顯示在這裡。",
+    "emptyTitle": "已全部處理",
+    "title": "動態"
   },
   "global": {
     "errors": {

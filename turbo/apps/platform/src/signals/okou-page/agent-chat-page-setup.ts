@@ -34,7 +34,6 @@ import {
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 import { detach, Reason } from "../utils.ts";
-import { enterAgentSuggestions$ } from "./agent-suggestion-session.ts";
 import {
   enterEntrustedJobs$,
   subscribeEntrustedJobs$,
@@ -59,11 +58,6 @@ export const setupAgentChatPage$ = command(
     );
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
-    detach(
-      set(enterAgentSuggestions$, signal),
-      Reason.Daemon,
-      "home suggestions",
-    );
     set(enterEntrustedJobs$);
     set(get(agentChatComposerSignals$).voice.setup$, signal);
     set(setTalkDraft$, agentDraft.draft);

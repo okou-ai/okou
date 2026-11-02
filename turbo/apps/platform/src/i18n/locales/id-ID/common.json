@@ -404,6 +404,7 @@
         "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
+        "feed": "Feed",
         "settings": "Pengaturan",
         "workflows": "Alur kerja",
         "works": "Tempat {{agentName}} bekerja"
@@ -1593,8 +1594,6 @@
       "customDirection": "Saya ingin…",
       "customDirectionDescription": "Ajukan pertanyaan atau jelaskan apa yang ingin Anda lakukan.",
       "customPlaceholder": "Apa yang Anda pikirkan?",
-      "customPrepared": "Silakan lanjutkan…",
-      "customPreparedDescription": "Tulis pesan Anda di atas, lalu kirim.",
       "dismiss": "Abaikan",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
@@ -2619,7 +2618,6 @@
         "image": "Gambar",
         "jobs": "Tasks",
         "presentation": "Slide",
-        "suggestions": "Saran",
         "visualization": "Visualisasi",
         "website": "Situs web",
         "workflow": "Alur kerja"
@@ -4102,6 +4100,12 @@
     "previous": "Sebelumnya",
     "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
+  },
+  "feed": {
+    "description": "Langkah berikutnya yang disarankan berdasarkan pekerjaan terbaru Anda.",
+    "emptyDescription": "Saran baru akan muncul di sini.",
+    "emptyTitle": "Semua sudah terkini",
+    "title": "Feed"
   },
   "global": {
     "errors": {

@@ -860,10 +860,7 @@ function createSubmitCurrentInput({
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
         taskSelection: {
-          task:
-            selectedTask === "suggestions" || selectedTask === "jobs"
-              ? null
-              : (selectedTask ?? mode),
+          task: selectedTask === "jobs" ? null : (selectedTask ?? mode),
           presentationSlideCount: get(create.presentationSlideCount$),
           visualization: get(taskChips.visualization.preferences$),
         },
