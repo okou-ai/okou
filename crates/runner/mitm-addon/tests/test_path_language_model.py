@@ -21,25 +21,20 @@ from path_automaton import (
 from path_language import AnalysisLimitError, InvalidPathError, WorkBudget, request_language
 
 _OPERATORS = {"": "\ue000", "+": "\ue001", "*": "\ue002"}
-_HEX = frozenset(b"0123456789abcdefABCDEF")
 _UNRESERVED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-")
 _ESCAPED = frozenset(' "<>[]^`{|}')
 
 
 def _one_layer(value: bytes) -> set[bytes]:
     outputs = {b""}
-    positions: dict[int, set[bytes]] = {0: outputs}
-    for index, byte in enumerate(value):
-        current = positions.get(index, set())
-        positions.setdefault(index + 1, set()).update(x + bytes([byte]) for x in current)
-        if (
-            byte == 37
-            and index + 2 < len(value)
-            and all(x in _HEX for x in value[index + 1 : index + 3])
-        ):
-            decoded = bytes([int(value[index + 1 : index + 3], 16)])
-            positions.setdefault(index + 3, set()).update(x + decoded for x in current)
-    return positions.get(len(value), set())
+    previous = 0
+    for match in re.finditer(rb"%[0-9a-fA-F]{2}", value):
+        literal = value[previous : match.start()]
+        encoded = match.group()
+        decoded = bytes([int(encoded[1:], 16)])
+        outputs = {prefix + literal + suffix for prefix in outputs for suffix in (encoded, decoded)}
+        previous = match.end()
+    return {prefix + value[previous:] for prefix in outputs}
 
 
 def _canonical(value: str) -> str:
