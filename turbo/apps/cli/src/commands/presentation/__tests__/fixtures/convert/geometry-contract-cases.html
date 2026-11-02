@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>Measured geometry contracts</title
+  ><style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f8fafc;
+    }
+    .slide {
+      width: 1600px;
+      height: 900px;
+      padding: 80px;
+      position: relative;
+      background: white;
+    }
+    .slide + .slide {
+      border-top: 1px solid #ddd;
+    }
+    h1 {
+      margin: 0 0 70px;
+      font-size: 42px;
+    }
+    p {
+      font-size: 36px;
+      line-height: 1.6;
+      margin: 0 0 30px;
+    }
+    .label {
+      position: absolute;
+      bottom: 50px;
+      font-size: 20px;
+      color: #475569;
+    }
+    .wrap {
+      width: 570px;
+    }
+    .hidden {
+      visibility: hidden;
+      padding: 20px;
+      border: 2px solid red;
+    }
+    .visible {
+      visibility: visible;
+    }
+    .region {
+      font-size: 48px;
+      margin: 25px 0;
+    }
+    .paint {
+      position: absolute;
+      top: 270px;
+      left: 100px;
+      width: 450px;
+      height: 200px;
+      background: #2563eb;
+      color: white;
+      padding: 35px;
+      font-size: 32px;
+    }
+    .circle {
+      left: 750px;
+      width: 250px;
+      height: 250px;
+      background: #14b8a6;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .outside {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 400px;
+      height: 35px;
+      background: #ffeb3b;
+      font-size: 16px;
+      z-index: 100;
+    }
+  </style>
+  <body>
+    <div class="outside">UI_ONLY_OUTSIDE_SELECTED_PAGES</div>
+    <section class="slide">
+      <h1>Wrapped inline frames retain each line's real origin</h1>
+      <p class="wrap">
+        A leading label then
+        <span style="font-weight: bold"
+          >several words which wrap onto the next physical line</span
+        >
+        and finish.
+      </p>
+      <p>Repeated token</p>
+      <p>Repeated token</p>
+      <div class="label">
+        R01 / a bounding-rectangle union is not a text layout
+      </div>
+    </section>
+    <section class="slide">
+      <h1>Visibility overrides survive hidden ancestors</h1>
+      <div class="hidden">
+        <div class="visible">
+          <span class="visible" style="font-size: 64px">Q</span>
+          <p class="visible">VISIBLE_DESCENDANT</p>
+        </div>
+        <p>HIDDEN_ANCESTOR_TEXT</p>
+      </div>
+      <div class="label">
+        R02 / visibility overrides, single characters, and selected scope
+      </div>
+    </section>
+    <section class="slide">
+      <h1>The same glyphs retain their per-region font slots</h1>
+      <p
+        class="region"
+        style="font-family: Arial, &quot;Noto Sans CJK SC&quot;, sans-serif"
+      >
+        SC: 骨直令
+      </p>
+      <p
+        class="region"
+        style="font-family: Arial, &quot;Noto Sans CJK JP&quot;, sans-serif"
+      >
+        JP: 骨直令
+      </p>
+      <p
+        class="region"
+        style="font-family: Arial, &quot;Noto Sans CJK KR&quot;, sans-serif"
+      >
+        KR: 骨直令
+      </p>
+      <div class="label">
+        R03 / native font metadata, not a global operating-system guess
+      </div>
+    </section>
+    <section class="slide">
+      <h1>Paint geometry does not grow or shrink with its text</h1>
+      <div class="paint">450 × 200<br />Fixed paint frame</div>
+      <div class="paint circle">250 circle</div>
+      <div class="label">
+        R04 / native text and native paint are independent objects
+      </div>
+    </section>
+  </body>
+</html>

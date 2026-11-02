@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Browser paint contracts</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        font-family: "Liberation Sans", sans-serif;
+        color: #14243e;
+      }
+      .slide {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        background: #f4f7fb;
+        padding: 70px;
+      }
+      h1 {
+        margin: 0 0 50px;
+        font-size: 46px;
+      }
+      p {
+        margin: 0;
+        font-size: 32px;
+        line-height: 1.4;
+      }
+      .row {
+        display: flex;
+        gap: 40px;
+      }
+      .card {
+        position: relative;
+        width: 450px;
+        height: 400px;
+        border: 3px solid #cbd5e1;
+        border-radius: 28px;
+        padding: 30px;
+      }
+      .label {
+        font-size: 30px;
+        color: white;
+        font-weight: bold;
+      }
+      .footer {
+        position: absolute;
+        bottom: 35px;
+        font-size: 22px;
+      }
+      #paint3 img {
+        filter: grayscale(1) !important;
+        opacity: 0.8 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="slide" id="paint1">
+      <h1>Backgrounds retain native labels</h1>
+      <div class="row">
+        <div
+          class="card"
+          style="background: linear-gradient(135deg, #2563eb, #f43f5e)"
+        >
+          <p class="label">NATIVE_LINEAR_LABEL</p>
+        </div>
+        <div
+          class="card"
+          style="
+            background: radial-gradient(
+              circle at 25% 60%,
+              #d9fff9,
+              #0d9488,
+              #064e3b
+            );
+          "
+        >
+          <p class="label">NATIVE_RADIAL_LABEL</p>
+        </div>
+        <div
+          class="card"
+          style="
+            position: static;
+            background: conic-gradient(
+              from 45deg,
+              #2563eb,
+              #14b8a6,
+              #f59e0b,
+              #f43f5e,
+              #2563eb
+            );
+          "
+        >
+          <p class="label">NATIVE_CONIC_LABEL</p>
+          <span
+            style="
+              position: absolute;
+              left: 1080px;
+              top: 720px;
+              color: #14243e;
+              font-size: 25px;
+            "
+            >ABSOLUTE_NATIVE_LABEL</span
+          >
+        </div>
+      </div>
+      <p style="margin-top: 55px">
+        NATIVE_ORDINARY_BODY stays independently editable.
+      </p>
+      <p class="footer">Paint contract 1 / 5</p>
+    </section>
+    <section class="slide" id="paint2">
+      <h1>Clip and ellipsis are composited, not exposed text</h1>
+      <div class="row">
+        <div
+          style="
+            position: relative;
+            width: 680px;
+            height: 400px;
+            overflow: hidden;
+            border-radius: 75px;
+            background: #cbd5e1;
+          "
+        >
+          <div
+            style="
+              position: absolute;
+              width: 900px;
+              height: 260px;
+              left: -55px;
+              top: 150px;
+              background: #2563eb;
+              color: white;
+              transform: rotate(-12deg);
+              padding: 45px;
+              font-size: 42px;
+            "
+          >
+            CLIPPED_CONTENT inside the rounded mask
+          </div>
+        </div>
+        <div style="width: 690px">
+          <p
+            style="
+              width: 660px;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              background: #dbeafe;
+              padding: 20px;
+              font-size: 38px;
+            "
+          >
+            VISIBLE_HEADING with a long clipped tail that must not spill
+          </p>
+          <p
+            style="
+              display: -webkit-box;
+              -webkit-box-orient: vertical;
+              -webkit-line-clamp: 3;
+              overflow: hidden;
+              margin-top: 45px;
+            "
+          >
+            A paragraph is limited to three visible lines. Browser paint keeps
+            the exact visible result, including the final ellipsis. Hidden
+            source words must not become native text outside the clipping area.
+            This last sentence is deliberately outside the visible area.
+          </p>
+        </div>
+      </div>
+      <p class="footer">Paint contract 2 / 5</p>
+    </section>
+    <section class="slide" id="paint3">
+      <h1>Composed filter and transformed group</h1>
+      <div class="row" style="align-items: flex-start">
+        <div
+          style="
+            width: 600px;
+            background: white;
+            padding: 40px;
+            border-radius: 24px;
+          "
+        >
+          <img
+            alt=""
+            style="display: block; width: 500px; height: 250px"
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='250'%3E%3Crect width='500' height='250' fill='%232563eb'/%3E%3Ccircle cx='180' cy='125' r='100' fill='%23f43f5e'/%3E%3Crect x='300' y='30' width='150' height='190' fill='%23f59e0b'/%3E%3C/svg%3E"
+          />
+          <p style="margin-top: 25px">NATIVE_FILTER_CAPTION</p>
+        </div>
+        <div
+          style="width: 760px; background: white; padding: 45px; height: 400px"
+        >
+          <div
+            style="
+              width: 650px;
+              height: 240px;
+              transform: scale(0.8) skewX(-10deg);
+              transform-origin: left top;
+              opacity: 0.45;
+              background: #14b8a6;
+              position: relative;
+            "
+          >
+            <div
+              style="
+                position: absolute;
+                left: 70px;
+                top: 35px;
+                width: 280px;
+                height: 165px;
+                background: #2563eb;
+              "
+            ></div>
+            <div
+              style="
+                position: absolute;
+                left: 235px;
+                top: 70px;
+                width: 280px;
+                height: 165px;
+                background: #f43f5e;
+              "
+            ></div>
+            <p
+              style="
+                position: absolute;
+                left: 100px;
+                top: 100px;
+                color: white;
+                font-size: 38px;
+              "
+            >
+              COMPOSED_GROUP_TEXT
+            </p>
+          </div>
+          <p style="margin-top: 35px">NATIVE_GROUP_CAPTION</p>
+        </div>
+      </div>
+      <p class="footer">Paint contract 3 / 5</p>
+    </section>
+    <section class="slide" id="paint4">
+      <h1>Header containing PAINTED_TOKEN</h1>
+      <p
+        style="
+          font-size: 95px;
+          font-weight: bold;
+          background: linear-gradient(90deg, #2563eb, #14b8a6);
+          background-clip: text;
+          -webkit-background-clip: text;
+          color: transparent;
+        "
+      >
+        PAINTED_TOKEN
+      </p>
+      <p
+        style="
+          margin-top: 35px;
+          font-size: 75px;
+          -webkit-text-stroke: 2px #2563eb;
+          color: transparent;
+        "
+      >
+        OUTLINED_WORD
+      </p>
+      <p style="margin-top: 45px; font-size: 50px">
+        Native equation label:
+        <math xmlns="http://www.w3.org/1998/Math/MathML"
+          ><mfrac
+            ><mn>1</mn><mrow><mi>x</mi><mo>+</mo><mn>2</mn></mrow></mfrac
+          ></math
+        >
+      </p>
+      <p style="margin-top: 65px; font-size: 40px">
+        Native before
+        <a href="https://example.invalid/paint-contract">EDITABLE_LINK</a> and
+        native after.
+      </p>
+      <p class="footer">Paint contract 4 / 5</p>
+    </section>
+    <section
+      class="slide"
+      id="paint5"
+      style="
+        background: linear-gradient(135deg, #0f172a, #1e40af);
+        color: white;
+      "
+    >
+      <h1>Selected-page gradient and complex table background</h1>
+      <p>NATIVE_PAGE_GRADIENT_LABEL</p>
+      <table
+        style="
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 32px;
+          margin-top: 65px;
+        "
+      >
+        <tr>
+          <td
+            style="
+              padding: 28px;
+              border: 2px solid white;
+              background: linear-gradient(90deg, #2563eb, #14b8a6);
+            "
+          >
+            TABLE_GRADIENT_CELL
+          </td>
+          <td style="padding: 28px; border: 2px solid white">
+            COMPOSITED_TABLE_CELL
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 28px; border: 2px solid white">Second row</td>
+          <td style="padding: 28px; border: 2px solid white">
+            Browser row geometry
+          </td>
+        </tr>
+      </table>
+      <p style="margin-top: 60px">NATIVE_TEXT_OUTSIDE_TABLE</p>
+      <p class="footer">Paint contract 5 / 5</p>
+    </section>
+  </body>
+</html>

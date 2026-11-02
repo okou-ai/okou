@@ -7,7 +7,7 @@ export const PRESENTATION_STATIC_HTML_INSTRUCTION =
   "- Keep all slides and visible content in index.html; render the first slide without JavaScript, which may only enhance controls, themes, or animation.";
 
 export const PRESENTATION_DELIVERY_INSTRUCTION =
-  "- Presentation delivery: first author and check the deck as HTML, then choose HTML or PPTX from the user's request, remembered preferences, and intended use. Explicit requests take priority. Deliver one format unless the user requests multiple formats.";
+  "- Presentation delivery: first author and check the deck as HTML. Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX. Do not infer a conversion request from remembered preferences or intended use. Deliver one format unless the user requests multiple formats.";
 
 export function presentationImageInstructions(
   imageGenerationEnabled: boolean,
@@ -25,7 +25,7 @@ export function presentationDeliveryInstructions(
     "okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png --json";
   return [
     PRESENTATION_DELIVERY_INSTRUCTION,
-    "- For PPTX, follow the platform's conversion instructions. For HTML, follow the preview and hosting steps below.",
+    "- For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions. Otherwise, follow the HTML preview and hosting steps below.",
     ...artifactPreviewInstructions(),
     `- For HTML delivery, host the finished deck: ${hostCommand}`,
     "- Return the exact URL printed by the selected delivery command.",
