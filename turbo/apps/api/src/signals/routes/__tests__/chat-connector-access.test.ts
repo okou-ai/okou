@@ -178,6 +178,7 @@ describe("Chat connector account configuration", () => {
       }),
       [200],
     );
+    expect((await threadAccess(owner.threadId)).currentConnectionId).toBe(b.id);
     expect((await threadAccess(second.id)).currentConnectionId).toBe(a.id);
     await setDefaultEnabled(b.id, false);
     expect((await threadAccess(owner.threadId)).currentConnectionId).toBe(a.id);

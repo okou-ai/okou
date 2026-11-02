@@ -299,6 +299,18 @@ describe("Member connector permissions", () => {
       }),
       [200],
     );
+    expect(
+      (
+        await accept(
+          access().getThread({
+            headers,
+            params: { threadId: thread.id },
+            query: target,
+          }),
+          [200],
+        )
+      ).body.currentConnectionId,
+    ).toBe(second.connectionId);
     await expect(read(target)).resolves.toStrictEqual(rules);
     await accept(
       access().updateAccountDefault({
