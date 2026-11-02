@@ -52,11 +52,12 @@ const captureSelection = `/* okou-browser selection */ (() => {
   } else {
     const selection = root.getSelection?.() ?? doc.getSelection();
     const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
-    // Focusable page containers can own ordinary text selections. Validate the
-    // selected DOM root instead of requiring a particular focused element tag.
-    if (range && (range.startContainer.getRootNode() !== root ||
+    // Focusable page containers can own ordinary text selections. A native
+    // shadow selection can project to a collapsed range in an outer root.
+    if (range && ((range.collapsed && selection.type === 'Range') ||
+                  range.startContainer.getRootNode() !== root ||
                   range.endContainer.getRootNode() !== root)) status = 'unsupported';
-    else if (range) {
+    else if (range && !range.collapsed) {
       // Range text is bounded before it crosses the protocol boundary.
       text = selection.toString();
       status = text.length > ${clipboardTextLimit} ? 'too-large' : text ? 'ok' : 'empty';
