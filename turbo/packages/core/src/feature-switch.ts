@@ -73,14 +73,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  // Visibility checks remain enforced independently of this management gate.
-  [FeatureSwitchKey.SharedThreadVisibility]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Conversation share visibility",
-    description: "Choose who can view a shared conversation.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",

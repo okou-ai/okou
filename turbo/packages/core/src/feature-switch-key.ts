@@ -8,7 +8,6 @@ export enum FeatureSwitchKey {
   FeatureGuides = "featureGuides",
   TeamsWorkspaceIdentity = "teamsWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
-  SharedThreadVisibility = "sharedThreadVisibility",
   DesktopShell = "desktopShell",
   RemoteControlGuidedSetup = "remoteControlGuidedSetup",
   Dummy = "_dummy",

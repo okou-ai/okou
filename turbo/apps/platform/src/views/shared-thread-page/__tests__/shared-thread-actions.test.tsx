@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sharedThreadVisibilityContract,
   type SharedThreadAudience,
@@ -216,13 +215,17 @@ test("A visitor can copy the public conversation link", async () => {
   const shareButton = getButtonByName("Share");
 
   click(shareButton);
+  await screen.findByText("Copy link");
+  click(getButtonByName("Copy link"));
 
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([
       `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
     ]);
   });
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(getButtonByName("Copied")).toBeInTheDocument();
+  });
 });
 
 test("The creator can manage visibility after reopening a shared conversation", async () => {
@@ -267,7 +270,6 @@ test("The creator can manage visibility after reopening a shared conversation", 
   await setupSharedThreadPage(context, {
     host: "app.okou.ai",
     auth: { user: { id: "user_owner", fullName: "Owner" } },
-    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
   });
   click(getButtonByName("Share"));
   await waitFor(() => {
@@ -318,7 +320,6 @@ test("An unavailable conversation permission read keeps access unknown", async (
   await setupSharedThreadPage(context, {
     host: "app.okou.ai",
     auth: { user: { id: "user_owner", fullName: "Owner" } },
-    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
   });
   click(getButtonByName("Share"));
   await screen.findByText("Unable to load permissions");
@@ -345,7 +346,6 @@ test("A signed-in recipient can copy the shared link without access controls", a
   await setupSharedThreadPage(context, {
     host: "app.okou.ai",
     auth: { user: { id: "user_recipient", fullName: "Recipient" } },
-    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
   });
   click(getButtonByName("Share"));
   await screen.findByText("Copy link");
