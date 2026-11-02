@@ -185,7 +185,7 @@ describe("runtime API schema CLI lint", () => {
 
   it.each([
     [["--warn-only"], "Unknown option: --warn-only"],
-    [["--block-owner", "ios"], "Unknown --block-owner value: ios"],
+    [["--block-owner", "unknown"], "Unknown --block-owner value: unknown"],
     [["--block-owner"], "Option --block-owner requires a value"],
     [
       ["--desktop-floor", "floor.json"],

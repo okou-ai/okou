@@ -3088,6 +3088,14 @@ async function main(): Promise<void> {
       ),
     );
 
+    console.log("=== Official Workflow bundle preparation CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/028-official-workflow-bundles/test-backfill.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
     console.log("=== Content bundle preparation CLI ===");
     console.log(
       execCommand(

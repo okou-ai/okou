@@ -160,28 +160,45 @@ type CustomConnectorNonOAuthAuthResponse<
 const customConnectorManualAuthResponseSchema = object({
   authMode: literal("manual"),
   oauthConfig: zNever().optional(),
-}).transform((value): CustomConnectorNonOAuthAuthResponse<"manual"> => {
-  return { authMode: value.authMode };
-});
+})
+  .transform((value): CustomConnectorNonOAuthAuthResponse<"manual"> => {
+    return { authMode: value.authMode };
+  })
+  .pipe(
+    object({ authMode: literal("manual"), oauthConfig: zNever().optional() }),
+  );
 
 const customConnectorNoAuthResponseSchema = object({
   authMode: literal("none"),
   oauthConfig: zNever().optional(),
-}).transform((value): CustomConnectorNonOAuthAuthResponse<"none"> => {
-  return { authMode: value.authMode };
-});
+})
+  .transform((value): CustomConnectorNonOAuthAuthResponse<"none"> => {
+    return { authMode: value.authMode };
+  })
+  .pipe(
+    object({ authMode: literal("none"), oauthConfig: zNever().optional() }),
+  );
 
 const customConnectorCustomOAuthResponseSchema = object({
   authMode: literal("oauth"),
   oauthConfig: customConnectorOAuthConfigSchema.extend({
     providerAdapter: literal("standard"),
   }),
-}).transform((value) => {
-  return {
-    authMode: value.authMode,
-    oauthConfig: value.oauthConfig,
-  };
-});
+})
+  .transform((value) => {
+    return {
+      authMode: value.authMode,
+      oauthConfig: value.oauthConfig,
+    };
+  })
+  .pipe(
+    object({
+      authMode: literal("oauth"),
+      oauthConfig: customConnectorOAuthConfigSchema.extend({
+        providerAdapter: literal("standard"),
+      }),
+    }),
+  );
 
 const customConnectorManagedOAuthResponseSchema = object({
   authMode: literal("oauth"),
@@ -194,9 +211,16 @@ const customConnectorManagedOAuthResponseSchema = object({
 const customConnectorAutomaticResponseSchema = object({
   authMode: literal("automatic"),
   oauthConfig: zNever().optional(),
-}).transform((value): CustomConnectorNonOAuthAuthResponse<"automatic"> => {
-  return { authMode: value.authMode };
-});
+})
+  .transform((value): CustomConnectorNonOAuthAuthResponse<"automatic"> => {
+    return { authMode: value.authMode };
+  })
+  .pipe(
+    object({
+      authMode: literal("automatic"),
+      oauthConfig: zNever().optional(),
+    }),
+  );
 
 export const customConnectorHttpAuthResponseSchema = union([
   customConnectorNoAuthResponseSchema,

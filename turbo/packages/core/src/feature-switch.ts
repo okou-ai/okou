@@ -46,13 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.LandingFileHandoff]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Landing page files",
-    description:
-      "Carry browser-local files from Marketing through sign-in into a task.",
-    enabled: true,
-  },
   [FeatureSwitchKey.FirstTaskUpgrade]: {
     maintainer: "ming@okou.ai",
     displayName: "First task upgrade",
@@ -257,6 +250,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Share website logins across chats with a separate window for each chat",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",

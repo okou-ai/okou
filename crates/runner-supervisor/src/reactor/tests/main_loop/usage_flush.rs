@@ -46,7 +46,9 @@ def handle(conn):
         req = json.loads(read_exact(conn, size))
         assert req['generation'] == 'test-usage-state-id'
         method = req['method']
-        if method == 'delivery.flush':
+        if method == 'catalog.warm':
+            data = {'state': 'unavailable', 'file': None, 'reason': 'cache_path_missing'}
+        elif method == 'delivery.flush':
             assert req['params'] == {}
             print('flush-received', flush=True)
             until = time.monotonic() + 5

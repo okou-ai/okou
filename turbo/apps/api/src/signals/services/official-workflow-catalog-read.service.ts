@@ -14,7 +14,7 @@ import {
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { array, string } from "zod";
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
 
 import { db$ } from "../external/db";
 
@@ -22,8 +22,8 @@ export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
 
 /**
  * Schema v1 predates every supported reader: its accepted catalog reads as
- * absent so the writer republishes, and its retired revisions are not
- * enumerated. Supported versions parse strictly; any other version throws.
+ * absent so the writer republishes. Exact revision readers decode only the
+ * supported immutable versions; any other version throws.
  */
 const OLDEST_SUPPORTED_CATALOG_SCHEMA_VERSION = 2;
 
@@ -37,9 +37,10 @@ interface OfficialWorkflowRevisionRow {
   readonly definitionName: string;
   readonly revision: string;
   readonly payload: unknown;
-  readonly storageName: string;
-  readonly storageId: string;
-  readonly storageVersion: string;
+  readonly storageName: string | null;
+  readonly storageId: string | null;
+  readonly storageVersion: string | null;
+  readonly contentBundle: unknown;
 }
 
 function officialWorkflowPayloadSchemaVersion(payload: unknown): number {
@@ -71,11 +72,18 @@ export function acceptedRevisionFromRow(
   }
   return officialWorkflowAcceptedRevisionSchema.parse({
     definition,
-    artifact: {
-      storageName: row.storageName,
-      storageId: row.storageId,
-      storageVersion: row.storageVersion,
-    },
+    ...(row.storageName === null &&
+    row.storageId === null &&
+    row.storageVersion === null
+      ? { contentBundle: row.contentBundle }
+      : {
+          artifact: {
+            storageName: row.storageName,
+            storageId: row.storageId,
+            storageVersion: row.storageVersion,
+          },
+          contentBundle: row.contentBundle,
+        }),
   });
 }
 
@@ -153,6 +161,7 @@ export function acceptedOfficialWorkflowRevisionReadPlan(args: {
       definitionName: officialWorkflowDefinitionRevisions.definitionName,
       revision: officialWorkflowDefinitionRevisions.revision,
       payload: officialWorkflowDefinitionRevisions.payload,
+      contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
       storageName: officialWorkflowDefinitionRevisions.storageName,
       storageId: officialWorkflowDefinitionRevisions.storageId,
       storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
@@ -173,6 +182,15 @@ export function acceptedOfficialWorkflowRevisionReadPlan(args: {
         officialWorkflowDefinitionRevisions.storageId,
       ),
     ),
+    deliveryCondition: or(
+      and(
+        isNull(officialWorkflowDefinitionRevisions.storageName),
+        isNull(officialWorkflowDefinitionRevisions.storageId),
+        isNull(officialWorkflowDefinitionRevisions.storageVersion),
+        isNotNull(officialWorkflowDefinitionRevisions.contentBundle),
+      ),
+      and(isNotNull(storages.id), isNotNull(storageVersions.id)),
+    ),
     condition: and(
       eq(officialWorkflowDefinitionRevisions.definitionName, args.name),
       eq(officialWorkflowDefinitionRevisions.revision, args.revision),
@@ -189,78 +207,26 @@ export const readAcceptedOfficialWorkflowRevision$ = command(
     const db = get(db$);
     const plan = acceptedOfficialWorkflowRevisionReadPlan(args);
     const [row] = await db
-      .select(plan.columns)
-      .from(officialWorkflowDefinitionRevisions)
-      .innerJoin(storages, plan.storageJoin)
-      .innerJoin(storageVersions, plan.storageVersionJoin)
-      .where(plan.condition)
-      .limit(1);
-    signal.throwIfAborted();
-    return row ? acceptedRevisionFromRow(row) : null;
-  },
-);
-
-export const readAllSupportedOfficialWorkflowRevisions$ = command(
-  async (
-    { get },
-    signal: AbortSignal,
-  ): Promise<readonly OfficialWorkflowAcceptedRevision[]> => {
-    const db = get(db$);
-    const rows = await db
       .select({
-        definitionName: officialWorkflowDefinitionRevisions.definitionName,
-        revision: officialWorkflowDefinitionRevisions.revision,
-        payload: officialWorkflowDefinitionRevisions.payload,
-        storageName: officialWorkflowDefinitionRevisions.storageName,
-        storageId: officialWorkflowDefinitionRevisions.storageId,
-        storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
+        ...plan.columns,
         verifiedStorageId: storages.id,
         verifiedStorageVersion: storageVersions.id,
       })
       .from(officialWorkflowDefinitionRevisions)
-      .leftJoin(
-        storages,
-        and(
-          eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
-          eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
-          eq(storages.orgId, SYSTEM_ORG_ID),
-          eq(storages.userId, VOLUME_ORG_USER_ID),
-        ),
-      )
-      .leftJoin(
-        storageVersions,
-        and(
-          eq(
-            storageVersions.id,
-            officialWorkflowDefinitionRevisions.storageVersion,
-          ),
-          eq(
-            storageVersions.storageId,
-            officialWorkflowDefinitionRevisions.storageId,
-          ),
-        ),
-      )
-      .orderBy(
-        asc(officialWorkflowDefinitionRevisions.definitionName),
-        asc(officialWorkflowDefinitionRevisions.revision),
-      );
+      .leftJoin(storages, plan.storageJoin)
+      .leftJoin(storageVersions, plan.storageVersionJoin)
+      .where(plan.condition)
+      .limit(1);
     signal.throwIfAborted();
-    return rows.flatMap((row) => {
-      if (
-        officialWorkflowPayloadSchemaVersion(row.payload) <
-        OLDEST_SUPPORTED_CATALOG_SCHEMA_VERSION
-      ) {
-        return [];
-      }
-      if (
-        row.verifiedStorageId !== row.storageId ||
-        row.verifiedStorageVersion !== row.storageVersion
-      ) {
-        throw new Error(
-          "Official Workflow revision artifact registration is inconsistent",
-        );
-      }
-      return [acceptedRevisionFromRow(row)];
-    });
+    if (
+      row &&
+      (row.verifiedStorageId !== row.storageId ||
+        row.verifiedStorageVersion !== row.storageVersion)
+    ) {
+      throw new Error(
+        "Official Workflow revision artifact registration is inconsistent",
+      );
+    }
+    return row ? acceptedRevisionFromRow(row) : null;
   },
 );

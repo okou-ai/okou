@@ -6,6 +6,7 @@ export const ONBOARDING_OUTPUT_FORMATS = [
   "image",
   "presentation",
   "website",
+  // Document keeps the persisted ID so version-2 drafts survive app rollbacks.
   "report",
   "research",
   "people",

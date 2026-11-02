@@ -1,3 +1,4 @@
+import { iosResponseTransforms } from "@okouai/api-contracts/client-transforms/ios";
 import { desktopResponseTransforms } from "@okouai/api-contracts/client-transforms/desktop";
 
 import { ROUTES } from "../signals/route";
@@ -11,8 +12,9 @@ describe("API route registrations", () => {
     }
   });
 
-  it("mounts the Desktop compatibility inventory on its owning routes", () => {
-    for (const transform of desktopResponseTransforms) {
+  it("mounts the native client compatibility inventories on its owning routes", () => {
+    const transforms = [...desktopResponseTransforms, ...iosResponseTransforms];
+    for (const transform of transforms) {
       const entry = ROUTES.find(({ route }) => {
         return (
           route.method === transform.method && route.path === transform.path
@@ -21,7 +23,7 @@ describe("API route registrations", () => {
       expect(entry?.responseTransforms).toContain(transform);
     }
     for (const entry of ROUTES) {
-      const expected = desktopResponseTransforms.filter((transform) => {
+      const expected = transforms.filter((transform) => {
         return (
           transform.method === entry.route.method &&
           transform.path === entry.route.path

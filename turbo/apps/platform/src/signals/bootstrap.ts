@@ -54,7 +54,6 @@ import { setupAgentChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
-import { captureLandingFilePreview$ } from "./prompt-page/landing-file-preview.ts";
 import {
   setupOnboardingEntryPage$,
   setupOnboardingExperiencePage$,
@@ -645,7 +644,6 @@ export const bootstrap$ = command(
     setupVisualViewportKeyboardState(signal, () => {
       return set(resetViewportSettleSignal$, signal);
     });
-    set(captureLandingFilePreview$, signal);
     set(captureDiscordApprovalFragment$, signal);
     set(initializeAppVersion$, appVersion);
     set(initBootstrapPhaseTiming$);

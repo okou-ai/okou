@@ -1453,38 +1453,41 @@ describe("POST /api/connectors/diagnostics/check", () => {
 
   describe("run-admitted custom connector diagnostics", () => {
     it("returns unsafe input when a configured prefix exceeds analysis capacity", async () => {
-      const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
-      await bdd.readOnboardingStatus(actor);
-      const authority = `https://${randomUUID()}.analysis-capacity.test`;
-      const definition = await connectorsApi.createCustomConnector(
-        actor,
-        manualHttpCustomConnectorCreateBody({
-          displayName: "Encoded prefix",
-          prefixTemplates: [`${authority}/${"a%2Fb".repeat(9)}/`],
-        }),
-      );
-      await trackCustomFixture(
-        Promise.resolve({ actor, connectorId: definition.id }),
-      );
-      await connectorsApi.setCustomConnectorValues(actor, definition.id, [
-        { key: "secret", kind: "secret", value: "analysis-fixture-secret" },
-      ]);
-      const { runId } = await createOwnedRun(actor, {
-        customConnectorIds: [definition.id],
-      });
-      const result = await checkWithToken(
-        okouToken(actor, runId, ["connector:read", "agent-run:read"]),
-        {
+      const fixture = await publicChatActor(context);
+      const { actor, agentId, runnerGroup, run: own } = fixture;
+      await own(async () => {
+        const authority = `https://${randomUUID()}.analysis-capacity.test`;
+        const definition = await connectorsApi.createCustomConnector(
+          actor,
+          manualHttpCustomConnectorCreateBody({
+            displayName: "Encoded prefix",
+            prefixTemplates: [`${authority}/${"a%2Fb".repeat(9)}/`],
+          }),
+        );
+        await trackCustomFixture(
+          Promise.resolve({ actor, connectorId: definition.id }),
+        );
+        await connectorsApi.setCustomConnectorValues(actor, definition.id, [
+          { key: "secret", kind: "secret", value: "analysis-fixture-secret" },
+        ]);
+        await connectorsApi.updateAgentCustomConnectors(actor, agentId, [
+          definition.id,
+        ]);
+        const sent = await fixture.sendChatRun(actor, {
+          agentId,
+          prompt: "Inspect the admitted encoded prefix",
+        });
+        const claimed = await fixture.claimChatRun(runnerGroup, sent.runId);
+        const result = await checkWithToken(okouTokenFromClaim(claimed.claim), {
           mode: "url",
           method: "GET",
           url: `${authority}/outside`,
           target: { kind: "custom", customConnectorId: definition.id },
-        },
-      );
-      expect(result.body).toStrictEqual({
-        outcome: "unsafe-input",
-        reason: "unsafe-path",
+        });
+        expect(result.body).toStrictEqual({
+          outcome: "unsafe-input",
+          reason: "unsafe-path",
+        });
       });
     });
 

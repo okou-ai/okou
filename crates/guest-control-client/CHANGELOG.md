@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.66](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.65...guest-control-client-v0.23.66) (2026-11-01)
+
+
+### Refactoring
+
+* **guest-control-client:** share request write progress ([#44534](https://github.com/okou-ai/okou/issues/44534)) ([68434aa](https://github.com/okou-ai/okou/commit/68434aa23a706284279c921991cdc1791ad576de))
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
 ## [0.23.65](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.64...guest-control-client-v0.23.65) (2026-10-31)
 
 ## [0.23.64](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.63...guest-control-client-v0.23.64) (2026-10-30)

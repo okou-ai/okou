@@ -210,12 +210,15 @@ pub(super) async fn start(
         inventory.test_hooks,
     ));
 
-    let readiness: RunnerResult<()> = ctx
-        .provider
-        .provider
-        .prepare_startup_readiness()
-        .await
-        .map_err(Into::into);
+    let readiness: RunnerResult<()> = async {
+        ctx.provider.provider.prepare_startup_readiness().await?;
+        tokio::select! {
+            biased;
+            () = ctx.provider.cancel.cancelled() => Err(RunnerError::Internal("catalog initialization cancelled".into())),
+            result = startup.resources.proxy.mitm.prepare_catalog() => result.map_err(Into::into),
+        }
+    }
+    .await;
     if let Err(error) = readiness {
         let startup_readiness_cancelled = ctx.provider.cancel.is_cancelled();
         let cleanup_reason = if startup_readiness_cancelled {

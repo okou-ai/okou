@@ -156,6 +156,7 @@ import {
 import type { ModelCatalog } from "./model-catalog.service";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
+  pinnedOfficialWorkflowBundles,
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowRunObservation,
@@ -4618,9 +4619,25 @@ function bestEffortTelemetry(record: () => unknown): void {
   safeSync(record);
 }
 
-function ingestRunContextSnapshot(snapshot: RunContextAxiomSnapshot): void {
+function ingestRunContextSnapshot(
+  snapshot: RunContextAxiomSnapshot,
+  officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"],
+): void {
   bestEffortTelemetry(() => {
-    return ingestToAxiom(getDatasetName("run-context"), [snapshot]);
+    return ingestToAxiom(getDatasetName("run-context"), [
+      {
+        ...snapshot,
+        officialWorkflowBundles: (officialWorkflowBundles ?? []).map(
+          (bundle) => {
+            return {
+              sha256: bundle.sha256,
+              archiveBytes: bundle.archiveBytes,
+              mountPath: bundle.mountPath,
+            };
+          },
+        ),
+      },
+    ]);
   });
 }
 
@@ -4676,6 +4693,16 @@ function prepareAtomicLaunchPersistence(
 ): PreparedAtomicLaunchPersistence {
   const payload = runnerJobPayload({
     ...commit.launch.runnerJobPayload,
+    executionContext: {
+      ...commit.launch.runnerJobPayload.executionContext,
+      ...(commit.context.officialWorkflowRun?.provenance.schemaVersion === 2
+        ? {
+            officialWorkflowBundles: pinnedOfficialWorkflowBundles(
+              commit.context.officialWorkflowRun,
+            ),
+          }
+        : {}),
+    },
     reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
   });
   const rowsArgs = preparedLaunchRowsArgs({
@@ -4887,7 +4914,10 @@ function committedAtomicLaunchResponse(args: {
     args.transactionReturnedAt,
   );
   args.phaseTiming.appendTo(args.timing);
-  ingestRunContextSnapshot(args.committed.runContextSnapshot);
+  ingestRunContextSnapshot(
+    args.committed.runContextSnapshot,
+    args.committed.runnerJobPayload.executionContext.officialWorkflowBundles,
+  );
   const runContextRegisteredAt = now();
   const dispatchedProfile = args.committed.runnerJobPayload.profile;
   args.timing.flush({

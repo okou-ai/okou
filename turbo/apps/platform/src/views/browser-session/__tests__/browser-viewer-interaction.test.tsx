@@ -649,6 +649,240 @@ test.each([
   },
 );
 
+test("Soft-keyboard deletion forwards after committed text without duplicating desktop Backspace", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "d" },
+    data: "d",
+    inputType: "insertText",
+  });
+  fireEvent.keyDown(input, {
+    key: "Unidentified",
+    keyCode: 229,
+  });
+  for (let index = 0; index < 2; index++) {
+    fireEvent(
+      input,
+      new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "deleteContentBackward",
+      }),
+    );
+  }
+  fireEvent.keyDown(input, {
+    key: "Backspace",
+    code: "Backspace",
+    keyCode: 8,
+  });
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  fireEvent.keyUp(input, {
+    key: "Backspace",
+    code: "Backspace",
+    keyCode: 8,
+  });
+  fireEvent.input(input, {
+    target: { value: "next" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "next" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.dispatchKeyEvent";
+    }),
+  ).toStrictEqual(
+    Array.from({ length: 3 }, () => {
+      return [
+        {
+          method: "Input.dispatchKeyEvent",
+          sessionId: "example-page-session",
+          params: expect.objectContaining({
+            type: "rawKeyDown",
+            key: "Backspace",
+          }),
+        },
+        {
+          method: "Input.dispatchKeyEvent",
+          sessionId: "example-page-session",
+          params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+        },
+      ];
+    }).flat(),
+  );
+});
+
+test("Queued soft-keyboard deletion cannot reach a replacement tab", async () => {
+  const browser = await setupViewer();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  // A pending native preedit keeps the subsequent commit and deletion queued.
+  const pending = browser.holdNext("Input.imeSetComposition");
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "old" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await pending.received;
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "old",
+    }),
+  );
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  await userEvent.click(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await pending.release();
+  const successor = screen.getByLabelText("Remote browser input");
+  await userEvent.click(successor);
+  fireEvent(
+    successor,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  fireEvent.input(successor, {
+    target: { value: "fresh" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toStrictEqual({
+      method: "Input.insertText",
+      params: { text: "fresh" },
+      sessionId: "other-page-session",
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.dispatchKeyEvent";
+    }),
+  ).toStrictEqual([
+    {
+      method: "Input.dispatchKeyEvent",
+      sessionId: "other-page-session",
+      params: expect.objectContaining({ type: "rawKeyDown", key: "Backspace" }),
+    },
+    {
+      method: "Input.dispatchKeyEvent",
+      sessionId: "other-page-session",
+      params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+    },
+  ]);
+});
+
+test("Backward deletion preserves preedit and consumes committed composition residuals", async () => {
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "中国" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+      isComposing: true,
+    }),
+  );
+  fireEvent.input(input, {
+    target: { value: "中" },
+    inputType: "deleteCompositionText",
+    isComposing: true,
+  });
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "中",
+    }),
+  );
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+  fireEvent.input(input, {
+    inputType: "deleteContentBackward",
+  });
+  fireEvent.input(input, {
+    target: { value: "fresh" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "fresh" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.insertText";
+    }),
+  ).toStrictEqual([
+    {
+      method: "Input.insertText",
+      sessionId: "example-page-session",
+      params: { text: "中" },
+    },
+    {
+      method: "Input.insertText",
+      sessionId: "example-page-session",
+      params: { text: "fresh" },
+    },
+  ]);
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.dispatchKeyEvent";
+    }),
+  ).toStrictEqual([
+    {
+      method: "Input.dispatchKeyEvent",
+      sessionId: "example-page-session",
+      params: expect.objectContaining({ type: "rawKeyDown", key: "Backspace" }),
+    },
+    {
+      method: "Input.dispatchKeyEvent",
+      sessionId: "example-page-session",
+      params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+    },
+  ]);
+});
+
 test("IME confirmation commits text once to the current remote session", async () => {
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");

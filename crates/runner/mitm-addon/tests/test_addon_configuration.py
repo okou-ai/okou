@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -75,6 +76,10 @@ class _Options:
         self.okou_client_version = client_version
         self.okou_api_url = api_url
         self.okou_proxy_registry_path = "/unused-registry.json"
+        self.server = False
+
+    def update(self, *, server: bool) -> None:
+        self.server = server
 
 
 def _addon_file_path(tmp_path: Path) -> str:
@@ -94,8 +99,12 @@ def _usage_event(source_key: str) -> usage_buffer.UsageEvent:
 @pytest.fixture
 def addon_control_cleanup(fresh_usage_executor):
     """Finish real addon shutdown before the executor owner restores the original."""
-    yield
-    mitm_addon.done()
+    with patch.object(mitm_addon.ctx, "master", create=True) as master:
+        # External mitmproxy listener metadata; native startup coverage uses
+        # the real server and verifies not_ready while binding is blocked.
+        master.addons.get.return_value.servers = [SimpleNamespace(is_running=True)]
+        yield
+        mitm_addon.done()
 
 
 class TestAddonConfiguration:

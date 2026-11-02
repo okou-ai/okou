@@ -1073,6 +1073,7 @@ const withClaimedContentBundles$ = command(
       readonly responseBody: BaseClaimResponse;
       readonly claim: ClaimedTransitionResult;
       readonly workflowInput: WorkflowClaimInput;
+      readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
     },
     signal: AbortSignal,
   ): Promise<ExecutionContext> => {
@@ -1085,14 +1086,27 @@ const withClaimedContentBundles$ = command(
             signal,
           );
     const skills = await Promise.all(
-      args.claim.workflows.map(async (workflow) => {
+      [
+        ...args.claim.workflows.map((workflow) => {
+          return {
+            contentBundle: workflow.contentBundle,
+            mountPath: `${args.workflowInput.skillRoot}/${workflow.name}`,
+          };
+        }),
+        ...(args.officialWorkflowBundles ?? []).map((bundle) => {
+          return {
+            contentBundle: bundle,
+            mountPath: bundle.mountPath,
+          };
+        }),
+      ].map(async (workflow) => {
         return {
           ...(await set(
             signClaimedContentBundle$,
             workflow.contentBundle,
             signal,
           )),
-          mountPath: `${args.workflowInput.skillRoot}/${workflow.name}`,
+          mountPath: workflow.mountPath,
         };
       }),
     );
@@ -1399,6 +1413,7 @@ function claimResponseBody(args: {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
+    officialWorkflowBundles: _officialWorkflowBundles,
     storageMounts: _storedStorageMounts,
     ...runnerStoredContext
   } = args.storedContext;
@@ -2035,6 +2050,7 @@ const claimAuthorizedJob$ = command(
         responseBody: baseResponseBody,
         claim: claimResult,
         workflowInput,
+        officialWorkflowBundles: storedContext.officialWorkflowBundles,
       },
       signal,
     );

@@ -2,9 +2,11 @@
 
 import asyncio
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future
 
 import addon_process_logging
+import builtin_firewall_cache
 import registry
 import registry_observation
 
@@ -18,6 +20,18 @@ class RegistryControl:
         self._closed = False
 
     def apply(self, digest: str) -> Future[dict[str, object] | None] | None:
+        return self._submit(lambda: self._application(digest))
+
+    def warm_catalog(self) -> Future[dict[str, object] | None] | None:
+        return self._submit(
+            lambda: registry_observation.catalog_snapshot(
+                builtin_firewall_cache.load_configured_catalog_snapshot()
+            )
+        )
+
+    def _submit(
+        self, operation: Callable[[], dict[str, object]]
+    ) -> Future[dict[str, object] | None] | None:
         """Reserve until the owner finishes, independently of a control waiter."""
         with self._lock:
             if self._closed or self._pending is not None:
@@ -25,7 +39,7 @@ class RegistryControl:
             future: Future[dict[str, object] | None] = Future()
             self._pending = future
             try:
-                self._loop.call_soon_threadsafe(self._apply, digest, future)
+                self._loop.call_soon_threadsafe(self._run, operation, future)
             except RuntimeError:
                 self._pending = None
                 raise
@@ -39,29 +53,36 @@ class RegistryControl:
                 self._pending.cancel()
                 self._pending = None
 
-    def _apply(self, digest: str, future: Future[dict[str, object] | None]) -> None:
+    def _application(self, digest: str) -> dict[str, object]:
+        state = registry.load_registry_state(self._registry_path)
+        outcome = (
+            "rejected"
+            if isinstance(state, registry.RegistryUnavailable)
+            else ("applied" if state.digest == digest else "superseded")
+        )
+        return {
+            "expectedDigest": digest,
+            "state": outcome,
+            "snapshot": registry_observation.snapshot(),
+        }
+
+    def _run(
+        self,
+        operation: Callable[[], dict[str, object]],
+        future: Future[dict[str, object] | None],
+    ) -> None:
         with self._lock:
             if self._closed:
                 return
         try:
-            state = registry.load_registry_state(self._registry_path)
-            outcome = (
-                "rejected"
-                if isinstance(state, registry.RegistryUnavailable)
-                else ("applied" if state.digest == digest else "superseded")
-            )
-            result: dict[str, object] | None = {
-                "expectedDigest": digest,
-                "state": outcome,
-                "snapshot": registry_observation.snapshot(),
-            }
+            result: dict[str, object] | None = operation()
         except Exception as error:
             # The owner reports failures even after its waiter times out. Do not
             # leave raw exceptions in shielded futures: asyncio can log them
             # after the control handler has gone. None maps to internal_error,
             # never a successful receipt or malformed registry input.
             addon_process_logging.emit_addon_process_event(
-                "error", f"Registry control application failed ({type(error).__name__})"
+                "error", f"Registry control operation failed ({type(error).__name__})"
             )
             result = None
         # Release completed owner work before waking the control thread;

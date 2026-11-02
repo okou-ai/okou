@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.51](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.50...guest-home-mount-v0.2.51) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.2.50](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.49...guest-home-mount-v0.2.50) (2026-10-31)
 
 ## [0.2.49](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.48...guest-home-mount-v0.2.49) (2026-10-30)

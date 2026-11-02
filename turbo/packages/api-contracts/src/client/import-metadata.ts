@@ -288,8 +288,11 @@ export async function discoverClientContractImportModules({
     const source = ts.createSourceFile(
       file,
       text,
-      ts.ScriptTarget.Latest,
-      true,
+      {
+        languageVersion: ts.ScriptTarget.Latest,
+        jsDocParsingMode: ts.JSDocParsingMode.ParseNone,
+      },
+      false,
       ts.ScriptKind.TS,
     );
     const locals = new Map<string, Binding>();

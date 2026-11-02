@@ -15,7 +15,7 @@ import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connec
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
-import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
+import { createImmutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
@@ -342,18 +342,20 @@ export const readConnectorResolver$ = command(
  * Loads only these connectors from immutable entries, so callers that
  * check a handful of slugs avoid materializing the full catalog snapshot.
  */
-export function executableConnectorSlugs(
-  connectorSlugs: readonly ConnectorSlug[],
+export function createExecutableConnectorSlugs(
+  connectorSlugs$: Computed<Promise<readonly ConnectorSlug[]>>,
 ): Computed<Promise<readonly ConnectorSlug[]>> {
+  const input$ = computed(async (get) => {
+    const requestedConnectorSlugs = await get(connectorSlugs$);
+    return { requestedConnectorSlugs };
+  });
+  const selection$ = createImmutableConnectorRuntimeSelection(input$);
   return computed(async (get): Promise<readonly ConnectorSlug[]> => {
+    const connectorSlugs = await get(connectorSlugs$);
     if (connectorSlugs.length === 0) {
       return [];
     }
-    const selection = await get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: connectorSlugs,
-      }),
-    );
+    const selection = await get(selection$);
     return connectorSlugs.filter((connectorSlug) => {
       const runtimeConnector = getConnectorRuntimeConnector(
         selection,

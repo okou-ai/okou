@@ -88,6 +88,7 @@ mod guest_state_restore;
 mod guest_storage_manifest;
 mod home_drive_mount;
 mod operation_tracker;
+mod request_progress;
 #[cfg(feature = "test-support")]
 pub mod test_support;
 #[cfg(test)]

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.46](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.45...guest-tool-exec-v0.3.46) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.3.45](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.44...guest-tool-exec-v0.3.45) (2026-10-31)
 
 ## [0.3.44](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.43...guest-tool-exec-v0.3.44) (2026-10-30)

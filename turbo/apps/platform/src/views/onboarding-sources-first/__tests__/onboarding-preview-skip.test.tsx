@@ -95,7 +95,7 @@ test("Skipping sources in a preview continues onboarding", async () => {
   click(buttonNamed("Skip"));
 
   await screen.findByRole("dialog", {
-    name: "Okou works better with your tools",
+    name: "Start without connecting a tool?",
   });
   expect(pathname()).toBe(ROUTES.onboardingSources);
   click(buttonNamed("Skip for now"));

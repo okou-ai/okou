@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.109.26](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.25...guest-agent-v0.109.26) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
 ## [0.109.25](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.24...guest-agent-v0.109.25) (2026-10-31)
 
 ## [0.109.24](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.23...guest-agent-v0.109.24) (2026-10-30)

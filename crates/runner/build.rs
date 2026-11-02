@@ -39,7 +39,7 @@ fn main() {
     println!("cargo::rerun-if-changed=scripts/customize-rootfs.sh");
     println!("cargo::rerun-if-changed=scripts/verify-rootfs.sh");
     println!("cargo::rerun-if-changed={GUEST_BINARIES_FILE}");
-    println!("cargo::rerun-if-changed=cli_package.rs");
+    println!("cargo::rerun-if-changed=cli_package/mod.rs");
 
     generate_addon_files();
     let guests = load_guest_binaries();

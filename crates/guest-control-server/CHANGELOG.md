@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.62](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.61...guest-control-server-v0.24.62) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native owned blocking pipes ([#44536](https://github.com/okou-ai/okou/issues/44536)) ([a6c71bd](https://github.com/okou-ai/okou/commit/a6c71bd5e2ac41228ab4d704a43de9715bfbb67d))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
 ## [0.24.61](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.60...guest-control-server-v0.24.61) (2026-10-31)
 
 ## [0.24.60](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.59...guest-control-server-v0.24.60) (2026-10-30)

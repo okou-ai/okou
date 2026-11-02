@@ -4,6 +4,7 @@ pub(crate) mod records;
 use crate::{
     Authenticated, AuthenticatedStream, AuthenticationStage, Error,
     authentication::{phase, read_security_result},
+    version::{ServerVersion, exchange_version},
 };
 use crypto_bigint::BoxedUint;
 use rand::{
@@ -163,16 +164,6 @@ fn wire(key: &RsaPublicKey) -> Result<Vec<u8>, Error> {
     }
     Ok(result)
 }
-async fn version<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Result<(), Error> {
-    let mut banner = [0; 12];
-    stream.read_exact(&mut banner).await?;
-    if &banner != b"RFB 003.008\n" {
-        return Err(Error::UnsupportedRfbVersion);
-    }
-    stream.write_all(&banner).await?;
-    stream.flush().await?;
-    Ok(())
-}
 async fn select<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
     security: RsaAesSecurity,
@@ -267,7 +258,7 @@ where
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
-        version(&mut stream),
+        exchange_version(&mut stream, ServerVersion::Rfb38),
     )
     .await?;
     phase(
@@ -383,53 +374,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::{sync::mpsc, time::Duration};
-    use tokio::sync::oneshot;
-
-    #[tokio::test]
-    async fn cancelled_waiters_do_not_release_running_crypto_job_capacity() {
-        // Native task lifetime has no public socket observation once its waiter
-        // is cancelled. Real blocking jobs use explicit test-owned completion gates.
-        let (release_first, wait_first) = mpsc::channel();
-        let (entered_first, started_first) = oneshot::channel();
-        let first = tokio::spawn(crypto(move || {
-            entered_first
-                .send(())
-                .map_err(|_| Error::InvalidRsaAesExchange)?;
-            wait_first
-                .recv()
-                .map_err(|_| Error::InvalidRsaAesExchange)?;
-            Ok(())
-        }));
-        let (release_second, wait_second) = mpsc::channel();
-        let (entered_second, started_second) = oneshot::channel();
-        let second = tokio::spawn(crypto(move || {
-            entered_second
-                .send(())
-                .map_err(|_| Error::InvalidRsaAesExchange)?;
-            wait_second
-                .recv()
-                .map_err(|_| Error::InvalidRsaAesExchange)?;
-            Ok(())
-        }));
-        started_first.await.unwrap();
-        started_second.await.unwrap();
-        first.abort();
-        second.abort();
-        assert!(first.await.unwrap_err().is_cancelled());
-        assert!(second.await.unwrap_err().is_cancelled());
-        assert!(matches!(crypto(|| Ok(())).await, Err(Error::ResourceLimit)));
-        release_first.send(()).unwrap();
-        release_second.send(()).unwrap();
-        // Acquisition waits for actual native permit teardown, not elapsed time
-        // or the already-cancelled async JoinHandles.
-        let permits = tokio::time::timeout(Duration::from_secs(5), CRYPTO.acquire_many(2))
-            .await
-            .unwrap()
-            .unwrap();
-        drop(permits);
-        assert!(crypto(|| Ok(())).await.is_ok());
-    }
-}
+mod tests;

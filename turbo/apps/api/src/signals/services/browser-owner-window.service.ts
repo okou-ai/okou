@@ -8,6 +8,7 @@ import { array, string } from "zod";
 import { command } from "ccstate";
 import { and, eq, exists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import type { BrowserDisplaySize } from "@okouai/core/browser-display";
 import { db$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
@@ -21,6 +22,7 @@ import {
   tryCloseBrowserUseWindow,
   initialBrowserUseWindow,
   resizeBrowserUseSession,
+  prepareBrowserUseWindowDisplay,
   restoreBrowserUseWindowTabUrls,
   createBrowserUseWindow,
   type BrowserUseWindowCandidate,
@@ -73,6 +75,7 @@ const cleanupWindowCandidate$ = command(
 );
 
 interface BrowserOwnerWindowInput extends BrowserUseNativeConnection {
+  readonly initialDisplay?: BrowserDisplaySize;
   readonly owner: BrowserPublicAuthority;
   readonly instanceId: string;
   readonly initial: boolean;
@@ -84,13 +87,22 @@ async function prepareBrowserOwnerWindow(
   encryptedTabUrls: string | null,
   signal: AbortSignal,
 ): Promise<void> {
-  await resizeBrowserUseSession(
-    input.cdpUrl,
-    BROWSER_SCREEN_WIDTH,
-    BROWSER_INITIAL_SCREEN_HEIGHT,
-    signal,
-    candidate.primaryWindowId,
-  );
+  if (input.initialDisplay) {
+    await prepareBrowserUseWindowDisplay(
+      input.cdpUrl,
+      candidate,
+      input.initialDisplay,
+      signal,
+    );
+  } else {
+    await resizeBrowserUseSession(
+      input.cdpUrl,
+      BROWSER_SCREEN_WIDTH,
+      BROWSER_INITIAL_SCREEN_HEIGHT,
+      signal,
+      candidate.primaryWindowId,
+    );
+  }
   signal.throwIfAborted();
   if (encryptedTabUrls === null) {
     return;
@@ -153,7 +165,11 @@ export const createBrowserOwnerWindow$ = command(
     const creationWork = (async () => {
       const candidate = input.initial
         ? await initialBrowserUseWindow(input.cdpUrl, signal)
-        : await createBrowserUseWindow(input.cdpUrl, signal);
+        : await createBrowserUseWindow(
+            input.cdpUrl,
+            input.initialDisplay,
+            signal,
+          );
       cleanup.candidate = candidate;
       signal.throwIfAborted();
       await prepareBrowserOwnerWindow(

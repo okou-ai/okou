@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   browserSessionReclaimHint,
+  type BrowserSessionPanelState,
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -223,6 +224,7 @@ function BrowserCdpViewer({
 }
 
 function PausedBrowserSession({
+  signals,
   screenshotUrl,
   screenshotLoad,
   showPausedScreenshot,
@@ -231,6 +233,7 @@ function PausedBrowserSession({
   refined,
   actions,
 }: {
+  readonly signals: BrowserSessionSignals;
   readonly screenshotUrl?: string | null;
   readonly screenshotLoad: ImageLoadSignals;
   readonly showPausedScreenshot: boolean;
@@ -291,39 +294,57 @@ function PausedBrowserSession({
           </button>
         )
       }
-      className={
+      className={cn(
+        "absolute inset-0 z-10",
         showScreenshot
-          ? "absolute inset-0 z-10 bg-background/50 backdrop-blur-md"
+          ? "bg-background/50 backdrop-blur-md"
           : refined
             ? ""
-            : undefined
-      }
+            : undefined,
+      )}
     />
   );
-  if (!showScreenshot) {
-    return (
-      <PanelFrame>
-        <PanelActions actions={actions} />
-        {pausedMessage}
-      </PanelFrame>
-    );
-  }
   return (
     <PanelFrame>
-      <PanelActions actions={actions} />
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/20">
-        <ArtifactThumbnailImage
-          src={screenshotUrl}
-          load={screenshotLoad}
-          testId="browser-session-panel-screenshot"
-          className="absolute inset-x-0 top-0 h-auto w-full object-contain object-top"
-          fallback={
-            <span className="absolute inset-0 bg-muted/20" aria-hidden />
-          }
-        />
-        <div data-browser-session-screenshot-mask>{pausedMessage}</div>
-      </div>
+      {refined ? null : <PanelActions actions={actions} />}
+      <Browser
+        signals={signals.browser}
+        actions={refined ? actions : null}
+        presence={null}
+        placeholder={
+          <>
+            {showScreenshot && (
+              <ArtifactThumbnailImage
+                src={screenshotUrl}
+                load={screenshotLoad}
+                testId="browser-session-panel-screenshot"
+                className="absolute inset-x-0 top-0 h-auto w-full object-contain object-top"
+                fallback={
+                  <span className="absolute inset-0 bg-muted/20" aria-hidden />
+                }
+              />
+            )}
+            <div data-browser-session-screenshot-mask>{pausedMessage}</div>
+          </>
+        }
+      />
     </PanelFrame>
+  );
+}
+
+function equalPanelSessions(
+  previous: BrowserSessionPanelState | null,
+  next: BrowserSessionPanelState | null,
+): boolean {
+  return (
+    previous === next ||
+    (previous !== null &&
+      next !== null &&
+      previous.status === next.status &&
+      previous.screenshotUrl === next.screenshotUrl &&
+      previous.liveUrl === next.liveUrl &&
+      previous.instanceId === next.instanceId &&
+      previous.windowId === next.windowId)
   );
 }
 
@@ -333,7 +354,9 @@ export function BrowserSessionPanel({
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
-  const sessionLoadable = useLastLoadable(signals.panelSession$);
+  const sessionLoadable = useLastLoadable(signals.panelSession$, {
+    equalityFn: equalPanelSessions,
+  });
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
@@ -362,6 +385,7 @@ export function BrowserSessionPanel({
   if (session?.status !== "active") {
     return (
       <PausedBrowserSession
+        signals={signals}
         screenshotUrl={session?.screenshotUrl}
         screenshotLoad={signals.screenshotImageLoad}
         showPausedScreenshot={showPausedScreenshot}
@@ -380,8 +404,8 @@ export function BrowserSessionPanel({
       <BrowserCdpViewer
         signals={signals}
         liveUrl={session.liveUrl}
-        instanceId={session.window?.instanceId}
-        windowId={session.window?.primaryWindowId}
+        instanceId={session.instanceId}
+        windowId={session.windowId}
         refined={refined}
         actions={actions}
         overlay={overlay}

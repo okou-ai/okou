@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.40](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.39...codex-mock-v0.12.40) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.12.39](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.38...codex-mock-v0.12.39) (2026-10-31)
 
 ## [0.12.38](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.37...codex-mock-v0.12.38) (2026-10-30)

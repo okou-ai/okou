@@ -477,9 +477,7 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       "Stopped",
     );
   });
-  expect(
-    within(sidebar).queryByRole("region", { name: "Remote browser viewer" }),
-  ).toBeNull();
+  expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
   await expect(
     screen.findByTestId("browser-session-panel-screenshot"),
   ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);

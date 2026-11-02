@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.266](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.265...guest-write-file-v0.1.266) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.1.265](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.264...guest-write-file-v0.1.265) (2026-10-31)
 
 ## [0.1.264](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.263...guest-write-file-v0.1.264) (2026-10-30)

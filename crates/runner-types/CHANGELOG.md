@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.5](https://github.com/okou-ai/okou/compare/runner-types-v0.11.4...runner-types-v0.11.5) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** share strict percent decoding in runner types ([#44539](https://github.com/okou-ai/okou/issues/44539)) ([49b47df](https://github.com/okou-ai/okou/commit/49b47df4bccfb397ff7475050d68c8fd12e3a762))
+
+## [0.11.4](https://github.com/okou-ai/okou/compare/runner-types-v0.11.3...runner-types-v0.11.4) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [0.11.3](https://github.com/okou-ai/okou/compare/runner-types-v0.11.2...runner-types-v0.11.3) (2026-10-31)
 
 

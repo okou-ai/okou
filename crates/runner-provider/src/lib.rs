@@ -36,8 +36,4 @@ pub use run_cancellation::{
 };
 
 #[cfg(test)]
-mod test_fixtures {
-    pub(crate) mod execution_context;
-    pub(crate) mod firewall_base_url_contract;
-    pub(crate) use raw_http_test_support::raw_http;
-}
+mod test_fixtures;

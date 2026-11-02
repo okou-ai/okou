@@ -162,7 +162,7 @@ checks remain mandatory. Retain immutable historical packages while captured
 contexts can still reference them; current API contexts use the installed CLI.
 CLI changes trigger a Runner release through the existing release dependency.
 
-The build-only native module `crates/runner/cli_package.rs` validates external
+The build-only native module `crates/runner/cli_package/mod.rs` validates external
 inputs inside the existing Runner package. Compilation snapshots the exact
 verified package buffer and generates `installed.json` through `guest-contracts`
 from that same buffer's identity, SHA and size. Both are embedded resources;

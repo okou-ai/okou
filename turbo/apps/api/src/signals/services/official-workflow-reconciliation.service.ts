@@ -472,9 +472,11 @@ const persistMorningBriefScheduleRecovery$ = command(
             db
               .select(revisionPlan.columns)
               .from(officialWorkflowDefinitionRevisions)
-              .innerJoin(storages, revisionPlan.storageJoin)
-              .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
-              .where(revisionPlan.condition),
+              .leftJoin(storages, revisionPlan.storageJoin)
+              .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
+              .where(
+                and(revisionPlan.condition, revisionPlan.deliveryCondition),
+              ),
           ),
           args.userTimezone === null
             ? notExists(timezoneQuery)
@@ -1815,9 +1817,11 @@ function structureTransitionOwnership(
             builder
               .select(revisionPlan.columns)
               .from(officialWorkflowDefinitionRevisions)
-              .innerJoin(storages, revisionPlan.storageJoin)
-              .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
-              .where(revisionPlan.condition),
+              .leftJoin(storages, revisionPlan.storageJoin)
+              .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
+              .where(
+                and(revisionPlan.condition, revisionPlan.deliveryCondition),
+              ),
           ),
         ),
       )
@@ -3372,9 +3376,9 @@ const retainDormantIdentity$ = command(
         await readDb
           .select(revisionPlan.columns)
           .from(officialWorkflowDefinitionRevisions)
-          .innerJoin(storages, revisionPlan.storageJoin)
-          .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
-          .where(revisionPlan.condition)
+          .leftJoin(storages, revisionPlan.storageJoin)
+          .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
+          .where(and(revisionPlan.condition, revisionPlan.deliveryCondition))
           .limit(1),
       );
     signal.throwIfAborted();
@@ -3409,23 +3413,13 @@ const retainDormantIdentity$ = command(
     const revisionAuthority = db
       .select({ revision: officialWorkflowDefinitionRevisions.revision })
       .from(officialWorkflowDefinitionRevisions)
-      .innerJoin(storages, revisionPlan.storageJoin)
-      .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
+      .leftJoin(storages, revisionPlan.storageJoin)
+      .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
       .where(
         and(
           revisionPlan.condition,
-          eq(
-            officialWorkflowDefinitionRevisions.storageName,
-            revisionRow.storageName,
-          ),
-          eq(
-            officialWorkflowDefinitionRevisions.storageId,
-            revisionRow.storageId,
-          ),
-          eq(
-            officialWorkflowDefinitionRevisions.storageVersion,
-            revisionRow.storageVersion,
-          ),
+          revisionPlan.deliveryCondition,
+          admittedCreationRevisionCondition(revisionRow),
         ),
       );
     const [retained] = await db
@@ -3506,16 +3500,14 @@ function reservedCreationOrphanCondition(args: ReservedCreationOrphanArgs) {
 function admittedCreationRevisionCondition(
   revision: Pick<
     typeof officialWorkflowDefinitionRevisions.$inferSelect,
-    "storageName" | "storageId" | "storageVersion"
+    "storageName" | "storageId" | "storageVersion" | "contentBundle"
   >,
 ) {
   return and(
-    eq(officialWorkflowDefinitionRevisions.storageName, revision.storageName),
-    eq(officialWorkflowDefinitionRevisions.storageId, revision.storageId),
-    eq(
-      officialWorkflowDefinitionRevisions.storageVersion,
-      revision.storageVersion,
-    ),
+    sql`${officialWorkflowDefinitionRevisions.storageName} IS NOT DISTINCT FROM ${revision.storageName}`,
+    sql`${officialWorkflowDefinitionRevisions.storageId} IS NOT DISTINCT FROM ${revision.storageId}`,
+    sql`${officialWorkflowDefinitionRevisions.storageVersion} IS NOT DISTINCT FROM ${revision.storageVersion}`,
+    sql`${officialWorkflowDefinitionRevisions.contentBundle} IS NOT DISTINCT FROM ${sql.param(revision.contentBundle, officialWorkflowDefinitionRevisions.contentBundle)}`,
   );
 }
 
@@ -3555,9 +3547,9 @@ const deleteReservedCreationOrphan$ = command(
         await readDb
           .select(revisionPlan.columns)
           .from(officialWorkflowDefinitionRevisions)
-          .innerJoin(storages, revisionPlan.storageJoin)
-          .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
-          .where(revisionPlan.condition)
+          .leftJoin(storages, revisionPlan.storageJoin)
+          .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
+          .where(and(revisionPlan.condition, revisionPlan.deliveryCondition))
           .limit(1),
       );
     signal.throwIfAborted();
@@ -3588,8 +3580,8 @@ const deleteReservedCreationOrphan$ = command(
       db
         .select({ revision: officialWorkflowDefinitionRevisions.revision })
         .from(officialWorkflowDefinitionRevisions)
-        .innerJoin(storages, revisionPlan.storageJoin)
-        .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
+        .leftJoin(storages, revisionPlan.storageJoin)
+        .leftJoin(storageVersions, revisionPlan.storageVersionJoin)
         .where(
           and(
             revisionPlan.condition,
@@ -3742,6 +3734,7 @@ const validateDormantMaterialization$ = command(
           definitionName: officialWorkflowDefinitionRevisions.definitionName,
           revision: officialWorkflowDefinitionRevisions.revision,
           payload: officialWorkflowDefinitionRevisions.payload,
+          contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
           storageName: officialWorkflowDefinitionRevisions.storageName,
           storageId: officialWorkflowDefinitionRevisions.storageId,
           storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
@@ -3824,8 +3817,12 @@ const validateDormantMaterialization$ = command(
     // Missing artifact registration has the same absence outcome as the old inner joins.
     if (
       !acceptedRevisionBlueprintMatches(
-        row.registeredStorageId !== null &&
-          row.registeredStorageVersion !== null
+        (row.registeredStorageId !== null &&
+          row.registeredStorageVersion !== null) ||
+          (row.revision?.storageName === null &&
+            row.revision.storageId === null &&
+            row.revision.storageVersion === null &&
+            row.revision.contentBundle !== null)
           ? (row.revision ?? undefined)
           : undefined,
         catalogIdentity,

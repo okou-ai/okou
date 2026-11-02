@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.14.2",
+  "version": "2.15.2",
   "private": true,
   "type": "module",
   "exports": {
@@ -72,6 +72,7 @@
     "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts",
     "test:run-output-memory-citation-retirement": "tsx scripts/test-run-output-memory-citation-retirement.ts",
     "test:workflow-attachments": "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts",
+    "test:official-workflow-bundles": "node --import tsx scripts/migrations/028-official-workflow-bundles/test-backfill.ts",
     "test:content-bundles": "node --import tsx scripts/migrations/027-content-bundles/test-backfill.ts",
     "test:workflow-storage-retirement": "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts"
   },
@@ -83,7 +84,7 @@
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1155.0",
+    "@aws-sdk/client-s3": "^3.1159.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",

@@ -492,6 +492,7 @@ export function mockBrowserCdp(
           [
             "Input.insertText",
             "Input.dispatchKeyEvent",
+            "Input.dispatchMouseEvent",
             "Input.imeSetComposition",
           ].includes(request.method)
         ) {

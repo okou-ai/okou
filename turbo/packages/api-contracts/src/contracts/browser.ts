@@ -26,6 +26,12 @@ export const BROWSER_SCREEN_WIDTH = 1440;
 export const BROWSER_INITIAL_SCREEN_HEIGHT = 900;
 export const BROWSER_MIN_SCREEN_HEIGHT = 320;
 export const BROWSER_MAX_SCREEN_HEIGHT = 3456;
+// Transient viewer measurements; the API and viewer apply the same raster budget.
+const browserInitialDisplaySchema = object({
+  width: number().positive().max(65_536),
+  height: number().positive().max(65_536),
+  dpr: number().positive().max(32),
+});
 export const browserStatusSchema = zEnum([
   "creating",
   "active",
@@ -222,7 +228,7 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/open",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: object({}),
+    body: object({ initialDisplay: browserInitialDisplaySchema.optional() }),
     responses: {
       200: browserResponseSchema,
       ...commonErrorResponses,

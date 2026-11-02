@@ -6,6 +6,7 @@ const GENERATION_FORMATS = Object.freeze({
   presentation: "presentation",
   slides: "presentation",
   website: "website",
+  document: "report",
   report: "report",
 } as const satisfies Record<string, OnboardingOutputFormat>);
 
@@ -32,7 +33,7 @@ const OUTPUT_REQUESTS: readonly {
   {
     format: "report",
     pattern:
-      /\b(?:create|make|generate|write|produce|deliver|return|present)\b[^.!?;,\n]{0,80}?\breport\b|\b(?:as|into)\s+[^.!?;,\n]{0,60}?\breport\b|(?:制作|製作|生成|撰写|撰寫|写|寫|输出|輸出|整理|转换|轉換|转成|轉成)[^。！？；，\n]{0,30}?(?:报告|報告)/giu,
+      /\b(?:create|make|generate|write|produce|deliver|return|present)\b[^.!?;,\n]{0,80}?\b(?:report|document|docx|pdf)\b|\b(?:as|into)\s+[^.!?;,\n]{0,60}?\b(?:report|document|docx|pdf)\b|(?:制作|製作|生成|撰写|撰寫|写|寫|输出|輸出|整理|转换|轉換|转成|轉成)[^。！？；，\n]{0,30}?(?:报告|報告|文档|文檔|文件)/giu,
   },
 ];
 
@@ -132,7 +133,7 @@ export function defaultOnboardingOutputFormat(
   ) {
     return "research";
   }
-  // A general business task starts with a report; the visitor can change it.
+  // A general business task starts with a document; the visitor can change it.
   return requests.some(({ format, negated }) => {
     return format === "report" && negated;
   })

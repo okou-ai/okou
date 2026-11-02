@@ -23,7 +23,7 @@ const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const SKILLS_QUESTION = "Bring your existing skills into Okou";
 const SLACK_QUESTION = "Keep Okou a message away";
 const CODEX_CARD = "Codex";
-const NEW_TO_THIS_CARD = "I'm new to AI agents";
+const OKOU_START_CARD = "Start with Okou";
 const CONNECT_CODEX = "Connect Codex";
 
 /** The step is only reachable once a source is connected. */
@@ -151,7 +151,7 @@ test("The guided start comes before subscription plans", async () => {
   const choices = screen.getAllByRole("radio").map((radio) => {
     return radio.closest("label")?.textContent ?? "";
   });
-  expect(choices[0]).toContain(NEW_TO_THIS_CARD);
+  expect(choices[0]).toContain(OKOU_START_CARD);
   expect(choices[1]).toContain(CODEX_CARD);
   expect(choices[2]).toContain("Claude Code");
 });
@@ -219,10 +219,10 @@ test("A failed connection does not prevent continuing onboarding", async () => {
   expect(pathname()).toBe(ROUTES.onboardingSkills);
 });
 
-test("Answering new to this keeps skipping the skills step", async () => {
+test("Starting with Okou skips the optional skills step", async () => {
   await openExperienceStep(true);
 
-  click(answerRadio(NEW_TO_THIS_CARD));
+  click(answerRadio(OKOU_START_CARD));
 
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();

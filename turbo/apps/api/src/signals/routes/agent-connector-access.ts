@@ -19,7 +19,26 @@ import {
   agentCustomConnectorGrantsCondition,
   visibleAgentIdentityCondition,
 } from "../services/agent-data.service";
-import { executableConnectorSlugs } from "../services/connector-action-resolver.service";
+import { createExecutableConnectorSlugs } from "../services/connector-action-resolver.service";
+
+const builtinConnectorSlugs$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const { id: agentId } = get(pathParamsOf(agentConnectorAccessContract.agent));
+  const owner = { orgId: auth.orgId, userId: auth.userId, agentId };
+  const rows = await get(db$)
+    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+    .from(userBuiltinConnectors)
+    .where(agentEnabledConnectorSlugsCondition(owner))
+    .orderBy(asc(userBuiltinConnectors.connectorSlug));
+
+  return rows.map((row) => {
+    return connectorSlugSchema.parse(row.connectorSlug);
+  });
+});
+
+const executableConnectorSlugs$ = createExecutableConnectorSlugs(
+  builtinConnectorSlugs$,
+);
 
 const agent$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -34,18 +53,8 @@ const agent$ = computed(async (get) => {
   if (!exists) {
     return notFound(`Agent not found: ${agentId}`);
   }
-  const [slugs, grants] = await Promise.all([
-    (async () => {
-      const rows = await get(db$)
-        .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
-        .from(userBuiltinConnectors)
-        .where(agentEnabledConnectorSlugsCondition(owner))
-        .orderBy(asc(userBuiltinConnectors.connectorSlug));
-
-      return rows.map((row) => {
-        return connectorSlugSchema.parse(row.connectorSlug);
-      });
-    })(),
+  const [, grants] = await Promise.all([
+    get(builtinConnectorSlugs$),
     (async () => {
       const rows = await get(db$)
         .select({
@@ -68,7 +77,7 @@ const agent$ = computed(async (get) => {
       });
     })(),
   ]);
-  const enabledConnectorSlugs = await get(executableConnectorSlugs(slugs));
+  const enabledConnectorSlugs = await get(executableConnectorSlugs$);
   return {
     status: 200 as const,
     body: {

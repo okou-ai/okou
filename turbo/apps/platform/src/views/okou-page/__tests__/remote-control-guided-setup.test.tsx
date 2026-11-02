@@ -966,6 +966,7 @@ test.each(["tailscale", "cloudflare"] as const)(
     await screen.findByRole("heading", { name: "Choose a VNC login method" });
     click(group);
     click(await screen.findByRole("option", { name: "Certificate-based VNC" }));
+    expect(group).toHaveTextContent("Certificate-based VNC");
     click(getAction("button", "Continue"));
     await screen.findByRole("heading", { name: "Connect a device" });
     expect(
@@ -1528,11 +1529,6 @@ test("VNC keeps empty SSH selection disabled and preserves the draft between ste
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", { name: "Connect a device" });
   expect(screen.getByLabelText("Port")).toHaveValue(5901);
-  click(getAction("button", "Back"));
-  await screen.findByLabelText("Service type");
-  click(group);
-  click(await screen.findByRole("option", { name: "Certificate-based VNC" }));
-  expect(group).toHaveTextContent("Certificate-based VNC");
 });
 test("VNC with no saved network hides dependent fields and preserves the address when switching back", async () => {
   await page("/connectors?scope=remote-control&setup=vnc");

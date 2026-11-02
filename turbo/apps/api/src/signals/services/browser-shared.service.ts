@@ -19,6 +19,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { BrowserDisplaySize } from "@okouai/core/browser-display";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -74,6 +75,7 @@ import {
 import { reconcileSharedBrowsers$ } from "./browser-shared-reconcile.service";
 
 interface SharedBrowserInput {
+  readonly initialDisplay?: BrowserDisplaySize;
   readonly orgId: string;
   readonly userId: string;
   readonly runId?: string;
@@ -231,6 +233,7 @@ type SharedBrowserInputNode = Computed<
 >;
 
 interface ProvisionSharedBrowser {
+  readonly initialDisplay?: BrowserDisplaySize;
   readonly owner: BrowserPublicAuthority;
   readonly previous: Profile | null;
 }
@@ -296,7 +299,11 @@ const settleSharedInstancePublication$ = command(
 const publishSharedInstance$ = command(
   async (
     { set },
-    args: { readonly owner: BrowserPublicAuthority; readonly profile: Profile },
+    args: {
+      readonly owner: BrowserPublicAuthority;
+      readonly profile: Profile;
+      readonly initialDisplay?: BrowserDisplaySize;
+    },
     signal: AbortSignal,
   ): Promise<Result<Profile>> => {
     const { owner, profile } = args;
@@ -311,6 +318,7 @@ const publishSharedInstance$ = command(
           proxyCountryCode: null,
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
           instanceId: profile.instanceId,
+          initialDisplay: args.initialDisplay,
         },
         signal,
       ),
@@ -413,7 +421,11 @@ const provisionSharedInstance$ = command(
     }
     const published = await set(
       publishSharedInstance$,
-      { owner: args.owner, profile: currentProfile },
+      {
+        owner: args.owner,
+        profile: currentProfile,
+        initialDisplay: args.initialDisplay,
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -424,6 +436,7 @@ const provisionSharedInstance$ = command(
 );
 
 interface AdmitSharedWindow extends BrowserUseNativeConnection {
+  readonly initialDisplay?: BrowserDisplaySize;
   readonly owner: BrowserPublicAuthority;
   readonly profile: Profile;
   readonly initial: boolean;
@@ -443,6 +456,7 @@ const admitSharedWindow$ = command(
         cdpUrl: args.cdpUrl,
         extension: args.extension,
         initial: args.initial,
+        initialDisplay: args.initialDisplay,
       },
       signal,
     );
@@ -809,6 +823,7 @@ function sharedBrowserOpen(
             {
               owner: ctx.owner,
               previous: view?.profile ?? null,
+              initialDisplay: ctx.mode.input.initialDisplay,
             },
             signal,
           );
@@ -838,6 +853,7 @@ function sharedBrowserOpen(
               profile,
               ...browserUseNativeConnection(session),
               initial: created,
+              initialDisplay: ctx.mode.input.initialDisplay,
               window:
                 view?.profile.instanceId === profile.instanceId
                   ? view.window

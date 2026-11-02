@@ -143,6 +143,20 @@ describe("HTTP client descriptor generation", () => {
       ).toBe(expected);
       expect(runtimeImports(expected)).toEqual([]);
     }
+    expect(
+      await readFile(new URL("../manifest.ts", import.meta.url), "utf8"),
+    ).toBe(renderClientDescriptorManifest(modules));
+    expect(runtimeImports(renderClientDescriptorManifest(modules))).toEqual([]);
+    expect(
+      await readFile(new URL("../testing.ts", import.meta.url), "utf8"),
+    ).toBe(renderClientDescriptorTestingRegistry(modules));
+    expect(
+      await readFile(new URL("../agents.ts", import.meta.url), "utf8"),
+    ).toBe(renderAgentsClientDescriptors());
+  });
+
+  it("renders deterministic schema-free contract import metadata", async () => {
+    const modules = await discoverClientContractModules();
     const importModules = await discoverClientContractImportModules({
       modules,
       sourceDirectory: fileURLToPath(
@@ -158,16 +172,6 @@ describe("HTTP client descriptor generation", () => {
       await readFile(new URL("../imports.ts", import.meta.url), "utf8"),
     ).toBe(importManifest);
     expect(runtimeImports(importManifest)).toEqual([]);
-    expect(
-      await readFile(new URL("../manifest.ts", import.meta.url), "utf8"),
-    ).toBe(renderClientDescriptorManifest(modules));
-    expect(runtimeImports(renderClientDescriptorManifest(modules))).toEqual([]);
-    expect(
-      await readFile(new URL("../testing.ts", import.meta.url), "utf8"),
-    ).toBe(renderClientDescriptorTestingRegistry(modules));
-    expect(
-      await readFile(new URL("../agents.ts", import.meta.url), "utf8"),
-    ).toBe(renderAgentsClientDescriptors());
   });
 
   it("checks all fresh outputs without rewriting them", async () => {

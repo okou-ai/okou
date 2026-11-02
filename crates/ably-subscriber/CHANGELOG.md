@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.4](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.3...ably-subscriber-v2.0.4) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+
 ## [2.0.3](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.2...ably-subscriber-v2.0.3) (2026-10-27)
 
 

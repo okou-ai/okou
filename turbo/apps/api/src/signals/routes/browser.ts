@@ -1,5 +1,6 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { command, computed } from "ccstate";
+import { constrainBrowserDisplay } from "@okouai/core/browser-display";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -188,6 +189,21 @@ const leaseBrowserByThreadInner$ = command(
 
 const openParams$ = pathParamsOf(browserContract.open);
 const openBody$ = bodyResultOf(browserContract.open);
+const sharedOpenInput$ = computed(async (get) => {
+  const body = await get(openBody$);
+  if (!body.ok) {
+    return null;
+  }
+  const initialDisplay = body.data.initialDisplay
+    ? constrainBrowserDisplay(body.data.initialDisplay)
+    : undefined;
+  // The request's dimension and density limits guarantee a representable raster.
+  if (initialDisplay === null) {
+    throw new Error("Validated Browser display cannot fit the raster budget");
+  }
+  return { ...(await get(sharedThreadInput$)), initialDisplay };
+});
+const sharedOpen = createSharedBrowserGraph(sharedOpenInput$);
 const openBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(openBody$);
   signal.throwIfAborted();
@@ -195,7 +211,7 @@ const openBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const auth = get(organizationAuthContext$);
-  const shared = await set(sharedThread.open$, signal);
+  const shared = await set(sharedOpen.open$, signal);
   if (shared) {
     return shared.kind === "error"
       ? errorResponse(shared)

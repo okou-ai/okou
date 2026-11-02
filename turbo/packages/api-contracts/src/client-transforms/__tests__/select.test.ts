@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CLIENT_TYPE_APP,
   CLIENT_TYPE_DESKTOP,
+  CLIENT_TYPE_IOS,
 } from "../../contracts/client-headers";
 import { selectClientResponseTransforms } from "../select";
 import type { ClientResponseTransform } from "../types";
@@ -49,6 +50,23 @@ function select(
 }
 
 describe("selectClientResponseTransforms", () => {
+  it("selects iOS transforms independently from Desktop with inclusive version bounds", () => {
+    const ios = fixtureTransform({ client: "ios", maxVersion: "1.2.3" });
+    const entries = [bounded, ios];
+    expect(
+      select(entries, { client: CLIENT_TYPE_IOS, version: "1.2.3" }),
+    ).toStrictEqual([ios]);
+    expect(
+      select(entries, { client: CLIENT_TYPE_DESKTOP, version: "1.2.3" }),
+    ).toStrictEqual([bounded]);
+    expect(
+      select(entries, { client: CLIENT_TYPE_IOS, version: "1.2.4" }),
+    ).toStrictEqual([]);
+    expect(select(entries, { client: "ios", version: "1.2.3" })).toStrictEqual(
+      [],
+    );
+  });
+
   it("selects a null maxVersion for every stable Desktop version", () => {
     for (const version of ["0.0.0", "1.2.3", "99.0.0"]) {
       expect(select([unbounded], { version })).toStrictEqual([unbounded]);

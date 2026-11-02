@@ -1,5 +1,4 @@
 import type { ViewerError } from "../viewer/types.ts";
-import { i18n } from "../../../i18n/index.ts";
 
 export class CdpFault extends Error {
   constructor(
@@ -11,27 +10,6 @@ export class CdpFault extends Error {
     super(message);
     this.name = "CdpFault";
   }
-}
-
-export function diagnostic(error: unknown): ViewerError {
-  if (error instanceof CdpFault) {
-    return Object.freeze({
-      kind: error.code === -32_601 ? "unsupported-capability" : error.kind,
-      message:
-        error.code === -32_601
-          ? i18n.t(($) => {
-              return $.browserViewer.unsupportedCapability;
-            })
-          : error.message,
-      ...(error.request ? { request: error.request } : {}),
-    });
-  }
-  return Object.freeze({
-    kind: "protocol",
-    message: i18n.t(($) => {
-      return $.browserViewer.operationFailed;
-    }),
-  });
 }
 
 /** Preserve diagnostic context without changing a wrapper's control-flow code. */

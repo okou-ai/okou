@@ -333,8 +333,9 @@ test.each(["https://viewer.example/live", null])(
         return tab.getAttribute("aria-label");
       }),
     ).toStrictEqual(["Example"]);
-    await fill(within(sidebar).getByLabelText("Address"), "next.example/path");
-    await userEvent.keyboard("{Enter}");
+    const address = within(sidebar).getByLabelText<HTMLInputElement>("Address");
+    await fill(address, "next.example/path");
+    fireEvent.submit(address.form!);
     await waitFor(() => {
       expect(within(sidebar).getByLabelText("Address")).toHaveValue(
         "http://next.example/path",
@@ -424,6 +425,60 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   });
 });
 
+test("The chat browser sidebar forwards a touch tap exactly once", async () => {
+  mockWideScreen();
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this instanceof HTMLCanvasElement
+        ? new DOMRect(0, 0, 1440, 900)
+        : original.call(this);
+    },
+  );
+  const { native } = mockBrowserApi(liveBrowserSession());
+  await openConversation([]);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const input = await within(liveBrowserSidebar()).findByLabelText(
+    "Remote browser input",
+  );
+  await waitFor(() => {
+    return expect(input).toBeEnabled();
+  });
+  const surface = within(liveBrowserSidebar()).getByRole("img", {
+    name: "Live browser view",
+  }).parentElement!;
+  for (const type of ["pointerdown", "pointerup"]) {
+    fireEvent(
+      surface,
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        pointerType: "touch",
+        pointerId: 5,
+        isPrimary: true,
+        clientX: 720,
+        clientY: 450,
+      }),
+    );
+  }
+  await waitFor(() => {
+    return expect(native.input).toHaveLength(2);
+  });
+  expect(native.input).toStrictEqual([
+    expect.objectContaining({
+      params: expect.objectContaining({ type: "mousePressed", x: 720, y: 450 }),
+    }),
+    expect.objectContaining({
+      params: expect.objectContaining({
+        type: "mouseReleased",
+        x: 720,
+        y: 450,
+      }),
+    }),
+  ]);
+});
+
 test("Start and close a browser from the thread sidebar", async () => {
   mockWideScreen();
   const browser = mockBrowserApi(null);
@@ -456,21 +511,40 @@ test("Start and close a browser from the thread sidebar", async () => {
     name: "Cloud browser",
   });
   click(buttonByName("Start browser", reopened));
-  const input = await within(reopened).findByLabelText("Remote browser input");
-  await waitFor(() => {
-    expect(input).toBeEnabled();
+  const input = await waitFor(() => {
+    const currentInput = within(reopened).getByLabelText(
+      "Remote browser input",
+    );
+    expect(currentInput).toBeEnabled();
+    return currentInput;
   });
   fireEvent.input(retiredInput, {
     target: { value: "retired surface" },
     data: "retired surface",
     inputType: "insertText",
   });
+  fireEvent(
+    retiredInput,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
   await userEvent.click(input);
   fireEvent.input(input, {
     target: { value: "reopened surface" },
     data: "reopened surface",
     inputType: "insertText",
   });
+  fireEvent(
+    input,
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
   await waitFor(() => {
     expect(browser.native.input).toContainEqual({
       method: "Input.insertText",
@@ -482,6 +556,27 @@ test("Start and close a browser from the thread sidebar", async () => {
     method: "Input.insertText",
     params: { text: "retired surface" },
     sessionId: "example-page-session",
+  });
+  await waitFor(() => {
+    expect(
+      browser.native.input.filter((request) => {
+        return request.method === "Input.dispatchKeyEvent";
+      }),
+    ).toStrictEqual([
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({
+          type: "rawKeyDown",
+          key: "Backspace",
+        }),
+      },
+      {
+        method: "Input.dispatchKeyEvent",
+        sessionId: "example-page-session",
+        params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
+      },
+    ]);
   });
 });
 

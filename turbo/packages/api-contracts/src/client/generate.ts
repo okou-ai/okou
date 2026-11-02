@@ -129,8 +129,11 @@ export async function discoverClientContractModules({
     const source = ts.createSourceFile(
       path,
       await readFile(path, "utf8"),
-      ts.ScriptTarget.Latest,
-      true,
+      {
+        languageVersion: ts.ScriptTarget.Latest,
+        jsDocParsingMode: ts.JSDocParsingMode.ParseNone,
+      },
+      false,
       ts.ScriptKind.TS,
     );
     const names = runtimeExportNames(source);

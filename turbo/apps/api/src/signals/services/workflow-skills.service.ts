@@ -25,21 +25,26 @@ export function createWorkflowSkills(
           workflow.officialDefinitionName !== null
         );
       })
-      .map((workflow): SkillVolume => {
+      .flatMap((workflow): readonly SkillVolume[] => {
         const definition = official?.definitions.find((candidate) => {
           return candidate.workflowId === workflow.workflowId;
         });
         if (!definition) {
           throw new OfficialWorkflowRunAdmissionError();
         }
-        return {
-          name: definition.artifact.storageName,
-          version: definition.artifact.storageVersion,
-          skillName: workflow.name,
-          system: true,
-          expectedStorageId: definition.artifact.storageId,
-          source: "official_workflow",
-        };
+        if (definition.contentBundle) {
+          return [];
+        }
+        return [
+          {
+            name: definition.artifact.storageName,
+            version: definition.artifact.storageVersion,
+            skillName: workflow.name,
+            system: true,
+            expectedStorageId: definition.artifact.storageId,
+            source: "official_workflow",
+          },
+        ];
       });
     return {
       systemPromptVariables: {},

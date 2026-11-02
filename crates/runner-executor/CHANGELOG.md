@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.10...runner-executor-v0.18.11) (2026-11-02)
+
+## [0.18.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.9...runner-executor-v0.18.10) (2026-11-01)
+
+
+### Refactoring
+
+* **rust:** consolidate remaining test modules ([#44510](https://github.com/okou-ai/okou/issues/44510)) ([118202f](https://github.com/okou-ai/okou/commit/118202f39eea0d0872205d09a1ef19f90882fad9))
+* **rust:** use native utf-8 boundary rounding ([#44532](https://github.com/okou-ai/okou/issues/44532)) ([7e7eb67](https://github.com/okou-ai/okou/commit/7e7eb6773786732ac409ff513b6e164c36493895))
+
+## [0.18.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.8...runner-executor-v0.18.9) (2026-11-01)
+
+## [0.18.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.7...runner-executor-v0.18.8) (2026-11-01)
+
 ## [0.18.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.6...runner-executor-v0.18.7) (2026-10-31)
 
 ## [0.18.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.18.5...runner-executor-v0.18.6) (2026-10-31)

@@ -37,11 +37,19 @@ export interface BrowserSessionDescriptor {
   readonly href: string;
 }
 
+export interface BrowserSessionPanelState {
+  readonly status: BrowserSession["status"];
+  readonly screenshotUrl: BrowserSession["screenshotUrl"];
+  readonly liveUrl: BrowserSession["liveUrl"];
+  readonly instanceId: string | undefined;
+  readonly windowId: number | undefined;
+}
+
 export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   /** Load state of the session's screenshot thumbnail. */
   readonly screenshotImageLoad: ImageLoadSignals;
   readonly session$: Computed<Promise<BrowserSession | null>>;
-  readonly panelSession$: Computed<Promise<BrowserSession | null>>;
+  readonly panelSession$: Computed<Promise<BrowserSessionPanelState | null>>;
   readonly viewerConnection$: Computed<
     Promise<{
       readonly liveUrl: string | null;
@@ -114,19 +122,27 @@ interface BrowserMutationSignalContext {
   readonly connectionChanged$: BrowserSignals["connectionChanged$"];
 }
 
-function createStartBrowserSignals({
-  descriptor,
-  sessionOverride$,
-  reload$,
-  connectionChanged$,
-}: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "start$"> {
+function createStartBrowserSignals(
+  {
+    descriptor,
+    sessionOverride$,
+    reload$,
+    connectionChanged$,
+  }: BrowserMutationSignalContext,
+  measureInitialDisplay$: BrowserSignals["measureInitialDisplay$"],
+  session$: Computed<Promise<BrowserSession | null>>,
+): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const current = await get(session$);
+    signal.throwIfAborted();
+    const initialDisplay =
+      current?.status === "active" ? null : set(measureInitialDisplay$);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const started = await withCleanup(
       accept(
         get(apiClient$)(browserContract).open({
           params: { threadId: descriptor.threadId },
-          body: {},
+          body: initialDisplay ? { initialDisplay } : {},
           fetchOptions: { signal },
         }),
         [200],
@@ -298,6 +314,22 @@ export function createBrowserSessionSignals(
   const session$ = computed(async (get): Promise<BrowserSession | null> => {
     return get(leaseOverride$) ?? (await get(lifecycleSession$));
   });
+  // Lease timestamps remain authoritative in session$, but do not change the
+  // panel's presentation or the mounted viewer's connection identity.
+  const panelSession$ = computed(
+    async (get): Promise<BrowserSessionPanelState | null> => {
+      const session = await get(session$);
+      return session
+        ? {
+            status: session.status,
+            screenshotUrl: session.screenshotUrl,
+            liveUrl: session.liveUrl,
+            instanceId: session.window?.instanceId,
+            windowId: session.window?.primaryWindowId,
+          }
+        : null;
+    },
+  );
   // Lifecycle reloads (including open/close) can replace the connection. Lease
   // responses only refresh presentation and must not interrupt live input.
   const viewerConnection$ = computed(async (get) => {
@@ -350,7 +382,11 @@ export function createBrowserSessionSignals(
     reload$,
     connectionChanged$: browser.connectionChanged$,
   };
-  const startSignals = createStartBrowserSignals(mutationContext);
+  const startSignals = createStartBrowserSignals(
+    mutationContext,
+    browser.measureInitialDisplay$,
+    lifecycleSession$,
+  );
   const closeSignals = createCloseBrowserSignals(mutationContext);
   const subscriptionSignals = createBrowserSessionSubscriptionSignals(
     descriptor,
@@ -369,7 +405,7 @@ export function createBrowserSessionSignals(
     ...descriptor,
     screenshotImageLoad,
     session$,
-    panelSession$: session$,
+    panelSession$,
     viewerConnection$,
     browser,
     ...startSignals,
@@ -382,7 +418,7 @@ export function createBrowserSessionSignals(
 }
 
 export function browserSessionReclaimHint(
-  session: BrowserSession,
+  session: Pick<BrowserSession, "status">,
 ): string | null {
   return session.status === "active"
     ? i18n.t(

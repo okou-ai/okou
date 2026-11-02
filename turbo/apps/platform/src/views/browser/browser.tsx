@@ -89,7 +89,13 @@ function BrowserOperationError({
   );
 }
 
-function BrowserSettings({ signals }: { readonly signals: BrowserSignals }) {
+function BrowserSettings({
+  signals,
+  disabled,
+}: {
+  readonly signals: BrowserSignals;
+  readonly disabled: boolean;
+}) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   // The owner remains mounted when the menu closes, including its operation errors.
@@ -121,6 +127,7 @@ function BrowserSettings({ signals }: { readonly signals: BrowserSignals }) {
           render={
             <IconButton
               type="button"
+              disabled={disabled}
               aria-label={t(($) => {
                 return $.browserViewer.settings;
               })}
@@ -435,7 +442,15 @@ function TransportSettingsMenu({
   );
 }
 
-function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
+interface BrowserNavigationProps {
+  readonly signals: BrowserSignals;
+  readonly settingsDisabled: boolean;
+}
+
+function BrowserNavigation({
+  signals,
+  settingsDisabled,
+}: BrowserNavigationProps) {
   const { t } = useTranslation();
   const history = useLoadable(signals.history$);
   const scope = useGet(signals.navigationScope$);
@@ -498,51 +513,58 @@ function BrowserNavigation({ signals }: { readonly signals: BrowserSignals }) {
       >
         <RotateCw size={15} />
       </IconButton>
-      <Input
-        ref={addressRef}
-        data-browser-address
-        aria-label={t(($) => {
-          return $.browserViewer.address;
-        })}
-        placeholder={t(($) => {
-          return $.browserSession.addressPlaceholder;
-        })}
-        className="h-8 min-w-0 flex-1"
-        value={address}
-        disabled={!controls.streaming || navigating}
-        aria-busy={navigating}
-        onFocus={() => {
-          return focus();
-        }}
-        onBlur={() => {
-          return blur();
-        }}
-        onChange={(event) => {
-          return edit(event.currentTarget.value);
-        }}
-        onKeyDown={(event) => {
-          if (
-            event.nativeEvent.isComposing ||
-            event.nativeEvent.keyCode === 229
-          ) {
-            return;
+      <form
+        className="flex min-w-0 flex-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (controls.streaming && !navigating) {
+            detach(navigate("submit-address", pageSignal), Reason.DomCallback);
           }
-          if (event.key === "Enter") {
-            event.preventDefault();
-            if (!navigating) {
-              detach(
-                navigate("submit-address", pageSignal),
-                Reason.DomCallback,
-              );
+        }}
+      >
+        <Input
+          ref={addressRef}
+          data-browser-address
+          aria-label={t(($) => {
+            return $.browserViewer.address;
+          })}
+          placeholder={t(($) => {
+            return $.browserSession.addressPlaceholder;
+          })}
+          className="h-8 min-w-0 flex-1"
+          value={address}
+          inputMode="url"
+          enterKeyHint="go"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          disabled={!controls.streaming || navigating}
+          aria-busy={navigating}
+          onFocus={() => {
+            return focus();
+          }}
+          onBlur={() => {
+            return blur();
+          }}
+          onChange={(event) => {
+            return edit(event.currentTarget.value);
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.nativeEvent.isComposing ||
+              event.nativeEvent.keyCode === 229
+            ) {
+              return;
             }
-          } else if (event.key === "Escape") {
-            event.preventDefault();
-            reset();
-            event.currentTarget.select();
-          }
-        }}
-      />
-      <BrowserSettings signals={signals} />
+            if (event.key === "Escape") {
+              event.preventDefault();
+              reset();
+              event.currentTarget.select();
+            }
+          }}
+        />
+      </form>
+      <BrowserSettings signals={signals} disabled={settingsDisabled} />
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
       <BrowserOperationError
         failed={failed}
@@ -944,10 +966,13 @@ export function Browser({
   signals,
   actions,
   presence,
+  placeholder,
 }: {
   readonly signals: BrowserSignals;
   readonly actions: ReactNode;
   readonly presence: ReactNode;
+  /** Paused content uses the real surface geometry before Browser creation. */
+  readonly placeholder?: ReactNode;
 }) {
   const { t } = useTranslation();
   const selectedTabId = useGet(signals.selectedTabId$);
@@ -990,7 +1015,10 @@ export function Browser({
           return createTab(pageSignal);
         }}
       />
-      <BrowserNavigation signals={signals} />
+      <BrowserNavigation
+        signals={signals}
+        settingsDisabled={placeholder !== undefined}
+      />
       <TabsContent
         keepMounted
         value={selectedTabId}
@@ -1012,7 +1040,7 @@ export function Browser({
         <div
           ref={surfaceRef}
           data-browser-surface
-          className="relative h-full w-full overflow-hidden"
+          className="relative h-full w-full touch-none overflow-hidden"
         >
           <canvas
             ref={canvasRef}
@@ -1040,13 +1068,15 @@ export function Browser({
             className="pointer-events-none absolute left-0 top-0 h-px min-h-0 w-px resize-none overflow-hidden rounded-none border-0 p-0 opacity-0 shadow-none"
           />
         </div>
-        <BrowserStatus
-          signals={signals}
-          creating={createOperation.state === "loading"}
-          onCreate={() => {
-            return createTab(pageSignal);
-          }}
-        />
+        {placeholder ?? (
+          <BrowserStatus
+            signals={signals}
+            creating={createOperation.state === "loading"}
+            onCreate={() => {
+              return createTab(pageSignal);
+            }}
+          />
+        )}
         {controls.streaming && navigation?.url === "about:blank" && (
           <div className="absolute inset-0 bg-background">
             <BrowserBlankPage />

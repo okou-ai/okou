@@ -1,5 +1,52 @@
 # Changelog
 
+## [8.807.2](https://github.com/okou-ai/okou/compare/core-v8.807.1...core-v8.807.2) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.30.0
+
+## [8.807.1](https://github.com/okou-ai/okou/compare/core-v8.807.0...core-v8.807.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **browser:** seed new viewer windows from the target display ([#44486](https://github.com/okou-ai/okou/issues/44486)) ([c544f6f](https://github.com/okou-ai/okou/commit/c544f6f2b7b41015b290cb6bec04758b765ac558))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.29.1
+
+## [8.807.0](https://github.com/okou-ai/okou/compare/core-v8.806.1...core-v8.807.0) (2026-11-01)
+
+
+### Features
+
+* enable shared browser for staff ([#44435](https://github.com/okou-ai/okou/issues/44435)) ([a85f2d2](https://github.com/okou-ai/okou/commit/a85f2d2bf7b06fef0d225bc47e70c202f207562f))
+* **workflows:** prepare official workflow content bundles ([#44471](https://github.com/okou-ai/okou/issues/44471)) ([868fad8](https://github.com/okou-ai/okou/commit/868fad832660a1430be8f847a4af489888cefa3c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.29.0
+
+## [8.806.1](https://github.com/okou-ai/okou/compare/core-v8.806.0...core-v8.806.1) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.28.0
+
 ## [8.806.0](https://github.com/okou-ai/okou/compare/core-v8.805.6...core-v8.806.0) (2026-10-31)
 
 

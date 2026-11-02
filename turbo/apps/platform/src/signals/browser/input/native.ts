@@ -8,6 +8,7 @@ import { imagePoint, localPoint } from "./geometry.ts";
 import type { Point } from "../display/geometry.ts";
 import type { NativeInputHost, NativeInputPort } from "./port.ts";
 import { createInputIngress, type InputBinding } from "./ingress.ts";
+import { createTouchInput } from "./touch.ts";
 
 const buttons = ["left", "middle", "right", "back", "forward"] as const;
 const buttonMasks = [1, 4, 2, 8, 16] as const;
@@ -96,6 +97,7 @@ function createNativeState(
     admission$,
     composition,
     ingress,
+    touch: createTouchInput(elements$, ingress),
     clipboard,
   };
 }
@@ -129,6 +131,7 @@ function createNativeReset(graph: NativeBase) {
     pointerInput$,
     pressedButtons$,
     resetting$,
+    touch,
   } = graph;
   const acknowledge$ = command(({ get, set }) => {
     const input = get(input$);
@@ -151,6 +154,7 @@ function createNativeReset(graph: NativeBase) {
       };
       set(clipboard.reset$, reason === "blur");
       set(composition.reset$);
+      set(touch.reset$);
       const elements = get(elements$);
       if (elements) {
         elements.proxy.value = "";
@@ -202,6 +206,7 @@ function createNativeCoordination(
     reset$,
     resetLocal$,
     resetting$,
+    touch,
   } = graph;
   const place$ = command(({ get }, point: Point) => {
     const elements = get(elements$);
@@ -247,8 +252,8 @@ function createNativeCoordination(
     set(ingress.blur$);
     set(reset$, "blur");
   });
-  const lostCapture$ = command(({ get, set }) => {
-    if (get(pointerId$) !== null) {
+  const lostCapture$ = command(({ get, set }, event: PointerEvent) => {
+    if (get(pointerId$) !== null || set(touch.owns$, event.pointerId)) {
       set(cancel$);
     }
   });
@@ -279,6 +284,7 @@ function createNativePress(graph: NativeGraph) {
     pressedButtons$,
     resetLocal$,
     synchronize$,
+    touch,
   } = graph;
   const pointerDown$ = command(({ get, set }, event: PointerEvent) => {
     set(synchronize$);
@@ -286,8 +292,19 @@ function createNativePress(graph: NativeGraph) {
     if (!elements) {
       return;
     }
+    if (event.pointerType === "touch" && !event.isPrimary) {
+      set(touch.reset$);
+      set(ingress.reset$);
+      return;
+    }
+    if (
+      get(touch.active$) ||
+      (event.pointerType === "touch" && get(pointerId$) !== null)
+    ) {
+      return;
+    }
     const point = imagePoint(elements.canvas, event.clientX, event.clientY);
-    if (!point || event.pointerType !== "mouse") {
+    if (!point || !["mouse", "touch"].includes(event.pointerType)) {
       return;
     }
     const composing = get(composition.composing$);
@@ -306,6 +323,10 @@ function createNativePress(graph: NativeGraph) {
       set(resetLocal$, "pointer-restarted");
     }
     if (!get(input.owner$)) {
+      return;
+    }
+    if (event.pointerType === "touch") {
+      set(touch.press$, event, point, input);
       return;
     }
     // Preserve queued gestures, held modifiers and consumed composition for
@@ -366,10 +387,15 @@ function createNativeMovement(graph: NativeGraph) {
     pointerId$,
     pointerInput$,
     synchronize$,
+    touch,
   } = graph;
   const pointerMove$ = command(
     ({ get, set }, event: PointerEvent, signal: AbortSignal) => {
       set(synchronize$);
+      if (event.pointerType === "touch") {
+        set(touch.move$, event, modifiers(event), signal);
+        return;
+      }
       if (event.pointerType !== "mouse") {
         return;
       }
@@ -447,19 +473,44 @@ function createNativeRelease(graph: NativeGraph) {
     pointerInput$,
     pressedButtons$,
     synchronize$,
+    place$,
+    touch,
   } = graph;
-  const pointerUp$ = command(({ get, set }, event: PointerEvent) => {
-    set(synchronize$);
-    const elements = get(elements$);
-    if (!elements || event.pointerId !== get(pointerId$)) {
-      return;
-    }
-    set(ingress.boundary$, undefined, get(pointerInput$));
-    set(pointerId$, null);
-    if (elements.surface.hasPointerCapture(event.pointerId)) {
-      elements.surface.releasePointerCapture(event.pointerId);
-    }
-  });
+  const pointerUp$ = command(
+    ({ get, set }, event: PointerEvent, signal: AbortSignal) => {
+      set(synchronize$);
+      const elements = get(elements$);
+      if (event.pointerType === "touch") {
+        const tap = set(touch.release$, event, modifiers(event), signal);
+        if (elements && tap) {
+          set(place$, tap.point);
+          set(tap.input.pointer$, "mousePressed", tap.point, {
+            button: "left",
+            buttons: 1,
+            modifiers: modifiers(event),
+            clickCount: 1,
+          });
+          set(tap.input.pointer$, "mouseReleased", tap.point, {
+            button: "left",
+            buttons: 0,
+            modifiers: modifiers(event),
+            clickCount: 1,
+          });
+          // Keep taps' text-entry handoff in the trusted gesture; swipes never focus.
+          elements.proxy.focus({ preventScroll: true });
+        }
+        return;
+      }
+      if (!elements || event.pointerId !== get(pointerId$)) {
+        return;
+      }
+      set(ingress.boundary$, undefined, get(pointerInput$));
+      set(pointerId$, null);
+      if (elements.surface.hasPointerCapture(event.pointerId)) {
+        elements.surface.releasePointerCapture(event.pointerId);
+      }
+    },
+  );
   const mouseUp$ = command(({ get, set }, event: MouseEvent) => {
     set(synchronize$);
     const elements = get(elements$);
@@ -578,7 +629,39 @@ function createNativeCompositionEvents(graph: NativeGraph) {
 }
 
 function createNativeTextEvents(graph: NativeGraph) {
-  const { composition, ingress, proxy$, synchronize$ } = graph;
+  const { composition, forwarded$, ingress, proxy$, synchronize$ } = graph;
+  const beforeInput$ = command(({ get, set }, event: InputEvent) => {
+    set(synchronize$);
+    if (
+      event.inputType !== "deleteContentBackward" ||
+      event.isComposing ||
+      get(composition.composing$)
+    ) {
+      return;
+    }
+    const proxy = get(proxy$);
+    if (!proxy || document.activeElement !== proxy) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const input = set(ingress.boundary$, event);
+    // Committed composition text may still await its trailing input event.
+    set(composition.reset$);
+    proxy.value = "";
+    if (!input || get(forwarded$).has("Backspace")) {
+      return;
+    }
+    for (const type of ["rawKeyDown", "keyUp"] as const) {
+      set(input.key$, {
+        type,
+        key: "Backspace",
+        code: "Backspace",
+        windowsVirtualKeyCode: 8,
+        modifiers: 0,
+      });
+    }
+  });
   const text$ = command(({ get, set }, event: Event) => {
     set(synchronize$);
     const proxy = get(proxy$);
@@ -620,7 +703,7 @@ function createNativeTextEvents(graph: NativeGraph) {
       set(text$, event);
     }
   });
-  return { text$, selection$ };
+  return { beforeInput$, text$, selection$ };
 }
 
 function createNativeKeyDown(graph: NativeGraph) {
@@ -799,7 +882,7 @@ function createNativePointerBindings(graph: NativeHandlers) {
       surface.addEventListener(
         "pointerup",
         (event) => {
-          set(pointerUp$, event);
+          set(pointerUp$, event, owner);
         },
         { signal: owner },
       );
@@ -812,8 +895,8 @@ function createNativePointerBindings(graph: NativeHandlers) {
       );
       surface.addEventListener(
         "lostpointercapture",
-        () => {
-          set(lostCapture$);
+        (event) => {
+          set(lostCapture$, event);
         },
         { signal: owner },
       );
@@ -845,6 +928,7 @@ function createNativePointerBindings(graph: NativeHandlers) {
 
 function createNativeTextBindings(graph: NativeHandlers) {
   const {
+    beforeInput$,
     cancel$,
     compositionEnd$,
     compositionStart$,
@@ -904,6 +988,13 @@ function createNativeTextBindings(graph: NativeHandlers) {
         "compositionend",
         (event) => {
           set(compositionEnd$, event);
+        },
+        { signal: owner },
+      );
+      proxy.addEventListener(
+        "beforeinput",
+        (event) => {
+          set(beforeInput$, event);
         },
         { signal: owner },
       );

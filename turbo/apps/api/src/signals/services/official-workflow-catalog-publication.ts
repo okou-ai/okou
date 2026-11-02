@@ -1,5 +1,6 @@
 import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
+  OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION,
   type OfficialWorkflowAcceptedDefinition,
   type OfficialWorkflowArtifactReference,
   type OfficialWorkflowCatalogDiagnostic,
@@ -8,14 +9,13 @@ import {
   type OfficialWorkflowDefinitionRevisionPayload,
   type OfficialWorkflowPublishedCatalogReleasePayload,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import {
   officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
   officialWorkflowReconciliationWork,
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { storages } from "@okouai/db/schema/storage";
 import { and, count, eq, exists, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
@@ -28,8 +28,6 @@ import {
   officialWorkflowFingerprint,
   type ValidatedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-validation.service";
-import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
-import { preparedVolumePublicationPlan } from "./storage-volume-publication-sql";
 export class OfficialWorkflowCatalogRegistrationError extends Error {
   readonly definitionName: string | undefined;
 
@@ -45,8 +43,8 @@ export class OfficialWorkflowCatalogRegistrationError extends Error {
 
 export interface PreparedOfficialWorkflowDefinition {
   readonly definition: OfficialWorkflowDefinitionRevisionPayload;
-  readonly volume: PreparedServerSideVolume;
-  readonly artifact: OfficialWorkflowArtifactReference;
+  readonly artifact: OfficialWorkflowArtifactReference | undefined;
+  readonly contentBundle: ContentBundle;
 }
 
 type CandidateReleaseResult =
@@ -78,40 +76,27 @@ export function releaseDiagnostics(
       });
     }
   }
-  const previousNames = new Set(
-    previous?.definitions.map((definition) => {
-      return definition.name;
-    }) ?? [],
-  );
-  for (const [index, definition] of catalog.source.definitions.entries()) {
-    if (
-      definition.lifecycle === "retired" &&
-      !previousNames.has(definition.name)
-    ) {
-      diagnostics.push({
-        code: "unknown-retired-definition",
-        path: ["definitions", index, "lifecycle"],
-        definitionName: definition.name,
-      });
-    }
-  }
   return diagnostics;
 }
 
 /**
- * A retired definition keeps its immutable revision, artifact and Blueprint
+ * A retired definition keeps its immutable revision, bundle and Blueprint
  * fingerprints. Its Blueprints are projected onto the publication schema, which
  * drops the retired v2 completion-email runtime setting.
  */
 function retiredDefinition(
   previous: OfficialWorkflowAcceptedDefinition,
+  prepared: PreparedOfficialWorkflowDefinition,
   presentation: OfficialWorkflowPublishedCatalogReleasePayload["definitions"][number]["presentation"],
 ): OfficialWorkflowPublishedCatalogReleasePayload["definitions"][number] {
+  if (prepared.definition.revision !== previous.revision) {
+    throw new OfficialWorkflowCatalogRegistrationError(previous.name);
+  }
   return {
     name: previous.name,
     lifecycle: "retired",
     revision: previous.revision,
-    artifact: previous.artifact,
+    contentBundle: prepared.contentBundle,
     blueprints: previous.blueprints.map((blueprint) => {
       return {
         key: blueprint.key,
@@ -143,18 +128,26 @@ function buildCandidateRelease(
     [];
   for (const sourceDefinition of catalog.source.definitions) {
     const previousDefinition = previousByName.get(sourceDefinition.name);
+    const prepared = preparedByName.get(sourceDefinition.name);
     if (sourceDefinition.lifecycle === "retired") {
+      // A tombstone retains an accepted identity; a fresh environment has none.
       if (!previousDefinition) {
+        continue;
+      }
+      if (!prepared) {
         throw new OfficialWorkflowCatalogRegistrationError(
           sourceDefinition.name,
         );
       }
       definitions.push(
-        retiredDefinition(previousDefinition, sourceDefinition.presentation),
+        retiredDefinition(
+          previousDefinition,
+          prepared,
+          sourceDefinition.presentation,
+        ),
       );
       continue;
     }
-    const prepared = preparedByName.get(sourceDefinition.name);
     if (
       !prepared ||
       prepared.definition.schemaVersion !==
@@ -172,7 +165,7 @@ function buildCandidateRelease(
       name: sourceDefinition.name,
       lifecycle: "active",
       revision: prepared.definition.revision,
-      artifact: prepared.artifact,
+      contentBundle: prepared.contentBundle,
       blueprints: prepared.definition.blueprints,
       releasedBlueprintKeys: [...releasedBlueprintKeys].sort(compareStrings),
       presentation: sourceDefinition.presentation,
@@ -181,7 +174,7 @@ function buildCandidateRelease(
   return {
     kind: "valid",
     payload: {
-      schemaVersion: catalog.source.schemaVersion,
+      schemaVersion: OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION,
       definitions: definitions.sort((left, right) => {
         return compareStrings(left.name, right.name);
       }),
@@ -213,7 +206,7 @@ function blueprintDesiredStateChanged(
 }
 
 function preparedCandidateConflict(
-  payload: OfficialWorkflowCatalogReleasePayload,
+  payload: OfficialWorkflowPublishedCatalogReleasePayload,
   preparedByName: ReadonlyMap<string, PreparedOfficialWorkflowDefinition>,
 ): OfficialWorkflowCatalogDiagnostic | null {
   for (const [definitionIndex, definition] of payload.definitions.entries()) {
@@ -221,9 +214,8 @@ function preparedCandidateConflict(
     if (
       !prepared ||
       prepared.definition.revision !== definition.revision ||
-      prepared.artifact.storageName !== definition.artifact.storageName ||
-      prepared.artifact.storageId !== definition.artifact.storageId ||
-      prepared.artifact.storageVersion !== definition.artifact.storageVersion
+      canonicalJsonString(prepared.contentBundle) !==
+        canonicalJsonString(definition.contentBundle)
     ) {
       return {
         code: "activation-conflict",
@@ -259,9 +251,6 @@ export function catalogPublicationPlan(
       readonly hiddenThreadDefinitionNames: readonly string[];
     } {
   const currentReleaseId = current?.releaseId ?? null;
-  // Every decodable accepted catalog (v2 or v3) is at or below the publication
-  // version, so this writer may upgrade it. A newer catalog fails its strict
-  // read before any plan, so it is never replaced.
   const previous = current?.payload ?? null;
   const stale = currentReleaseId !== input.observedReleaseId;
   const candidate = buildCandidateRelease(
@@ -352,46 +341,31 @@ export function catalogPublicationCondition(previousReleaseId: string) {
     eq(officialWorkflowCatalogState.acceptedReleaseId, previousReleaseId),
   );
 }
-function preparedStorageCondition(artifact: OfficialWorkflowArtifactReference) {
-  return and(
-    eq(storages.id, artifact.storageId),
-    eq(storages.orgId, SYSTEM_ORG_ID),
-    eq(storages.userId, VOLUME_ORG_USER_ID),
-    eq(storages.name, artifact.storageName),
-  );
-}
-/** Publish the owned volume and its exact immutable definition together. */
+/** Register bundle delivery without rewriting an existing revision or Storage identity. */
 export function preparedDefinitionPublicationPlan(
   prepared: PreparedOfficialWorkflowDefinition,
-  publishedAt: Date,
   admitted: SQL,
   namespace: string,
 ) {
-  const volume = preparedVolumePublicationPlan(
-    prepared.volume,
-    publishedAt,
-    and(preparedStorageCondition(prepared.artifact), admitted),
-    namespace,
-  );
   const query = new QueryBuilder();
   const table = officialWorkflowDefinitionRevisions;
   const registered = query.$with(`${namespace}registered_definition`, {
     definitionName: table.definitionName,
   }).as(sql`INSERT INTO ${table}
-      (definition_name, revision, payload, storage_name, storage_id, storage_version)
+      (definition_name, revision, payload, storage_name, storage_id, storage_version, content_bundle)
     SELECT ${prepared.definition.name}, ${prepared.definition.revision},
-      ${sql.param(prepared.definition, table.payload)}, ${prepared.artifact.storageName},
-      ${prepared.artifact.storageId}, ${prepared.artifact.storageVersion}
-    FROM ${volume.published}
-    WHERE true
+      ${sql.param(prepared.definition, table.payload)}, ${prepared.artifact?.storageName ?? null},
+      ${prepared.artifact?.storageId ?? null}, ${prepared.artifact?.storageVersion ?? null}, ${sql.param(prepared.contentBundle, table.contentBundle)}
+    WHERE ${admitted}
     ON CONFLICT (definition_name, revision) DO UPDATE
-      SET definition_name = EXCLUDED.definition_name
+      SET content_bundle = COALESCE(official_workflow_definition_revisions.content_bundle, EXCLUDED.content_bundle)
     WHERE ${table.payload} = EXCLUDED.payload
-      AND ${table.storageName} = EXCLUDED.storage_name
-      AND ${table.storageId} = EXCLUDED.storage_id
-      AND ${table.storageVersion} = EXCLUDED.storage_version
+      AND ${table.storageName} IS NOT DISTINCT FROM EXCLUDED.storage_name
+      AND ${table.storageId} IS NOT DISTINCT FROM EXCLUDED.storage_id
+      AND ${table.storageVersion} IS NOT DISTINCT FROM EXCLUDED.storage_version
+      AND (${table.contentBundle} IS NULL OR ${table.contentBundle} = EXCLUDED.content_bundle)
     RETURNING definition_name`);
-  return { ctes: [...volume.ctes, registered], registered };
+  return { ctes: [registered], registered };
 }
 
 export function changedWorkflowDefinitions(
@@ -614,7 +588,6 @@ export function catalogActivationSql(
     (prepared, index) => {
       const definition = preparedDefinitionPublicationPlan(
         prepared,
-        publishedAt,
         ready,
         `catalog_definition_${index}_`,
       );

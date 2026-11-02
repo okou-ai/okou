@@ -73,7 +73,7 @@ function agentStorageRequests(
           return definition.name === workflow.officialDefinitionName;
         },
       );
-      if (accepted) {
+      if (accepted?.artifact) {
         add(
           SYSTEM_ORG_ID,
           accepted.artifact.storageName,
