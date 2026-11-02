@@ -4934,7 +4934,9 @@
     }
   },
   "projects": {
+    "active": "Active conversations",
     "archived": "已归档的聊天",
+    "close": "Close",
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
     "delete": "删除",
@@ -4944,13 +4946,15 @@
     "deleteTitle": "删除 Project？",
     "description": "将不同 Agent 的相关聊天归到一起",
     "empty": "暂无聊天",
+    "emptyArchive": "No archived chats",
     "fromChat": "从此聊天创建 Project",
     "move": "移至 Project",
-    "moveDescription": "聊天将保留原来的 Agent 和历史记录",
     "moveError": "无法移动聊天",
     "moveTitle": "移动聊天",
     "name": "Project 名称",
     "newChat": "新建聊天",
+    "noMatches": "No projects found",
+    "options": "Options for {{name}}",
     "projects": "Projects",
     "remove": "移出 Project",
     "rename": "重命名",
@@ -4958,8 +4962,9 @@
     "save": "保存",
     "saveError": "无法保存 Project",
     "saving": "正在保存…",
-    "unavailable": "Project 不可用",
-    "unavailableDescription": "此 Project 已删除，或在当前工作区中不可用"
+    "search": "Search projects…",
+    "showMore": "Show more chats",
+    "unavailable": "Project 不可用"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} 个并发运行",

@@ -3,11 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { test, expect } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import {
+  chatThreadsContract,
+  type ChatThreadEvent,
+  type ChatThreadSnapshotProjection,
+  chatThreadMetadataContract,
+  chatThreadByIdContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import {
   fill,
   setupPage,
-  click,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -19,6 +25,41 @@ import {
 const context = testContext();
 const id = "30000000-0000-4000-8000-000000000071";
 const at = "2026-11-02T00:00:00.000Z";
+function folder(projectId = id) {
+  const found = document.querySelector<HTMLElement>(
+    `[data-project-folder-id="${projectId}"]`,
+  );
+  if (!found) {
+    throw new Error("Project folder not found");
+  }
+  return found;
+}
+function button(name: string, container: HTMLElement | Document = document) {
+  const found = queryAllByRoleFast("button", container).find((item) => {
+    return (
+      item.getAttribute("aria-label") === name ||
+      item.textContent?.trim() === name
+    );
+  });
+  if (!found) {
+    throw new Error(`Button ${name} not found`);
+  }
+  return found;
+}
+function findMenuItem(name: string) {
+  return waitFor(() => {
+    const item = queryAllByRoleFast("menuitem").find((candidate) => {
+      return (
+        candidate.textContent?.trim() === name ||
+        candidate.getAttribute("aria-label") === name
+      );
+    });
+    if (!item) {
+      throw new Error(`Menu item ${name} not found`);
+    }
+    return item;
+  });
+}
 function namedLink(container: HTMLElement, name: string) {
   return (
     queryAllByRoleFast("link", container).find((link) => {
@@ -26,10 +67,23 @@ function namedLink(container: HTMLElement, name: string) {
     }) ?? null
   );
 }
-function metadata() {
+function metadata(extra: readonly { id: string; name: string }[] = []) {
   const p = { id, name: "Launch", createdAt: at, updatedAt: at };
   context.mocks.api(projectsContract.snapshot, ({ respond }) => {
-    return respond(200, { projects: [p], latestEventId: null, latestSeqId: 1 });
+    return respond(200, {
+      projects: [
+        p,
+        ...extra.map((project) => {
+          return {
+            ...project,
+            createdAt: at,
+            updatedAt: at,
+          };
+        }),
+      ],
+      latestEventId: null,
+      latestSeqId: 1,
+    });
   });
   context.mocks.api(projectsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -47,7 +101,7 @@ function metadata() {
     return respond(204);
   });
 }
-test("Project view shows conversations across Agents, filters archives and preserves original chat links", async () => {
+test("Project folders show cross-Agent chats inline without leaving the current conversation", async () => {
   const ordinary = continuityThread(90, 1, "Ordinary chat");
   const member = {
     ...continuityThread(90, 2, "Launch planning"),
@@ -70,25 +124,26 @@ test("Project view shows conversations across Agents, filters archives and prese
   metadata();
   await setupPage({
     context,
-    path: `/projects/${id}?projectAgent=${other.agentId}`,
+    path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  const main = await screen.findByRole("main");
-  await waitFor(() => {
-    return expect(namedLink(main, "Launch planning")).toBeVisible();
-  });
-  expect(namedLink(main, "Other Agent research")).toHaveAttribute(
+  const user = userEvent.setup({ delay: null });
+  await user.click(button("Launch", folder()));
+  expect(namedLink(folder(), "Launch planning")).toBeVisible();
+  expect(namedLink(folder(), "Other Agent research")).toHaveAttribute(
     "href",
     expect.stringContaining("/chats/" + other.id),
   );
-  expect(namedLink(main, "Launch planning")?.getAttribute("href")).toContain(
-    "projectAgent=" + other.agentId,
-  );
-  expect(namedLink(main, "Ordinary chat")).toBeNull();
-  expect(namedLink(main, "Archived research")).toBeNull();
-  click(within(main).getByRole("checkbox", { name: "Archived conversations" }));
-  expect(namedLink(main, "Archived research")).toBeVisible();
+  expect(namedLink(folder(), "Ordinary chat")).toBeNull();
+  expect(namedLink(folder(), "Archived research")).toBeNull();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  await user.click(button("Options for Launch", folder()));
+  await user.click(await findMenuItem("Archived conversations"));
+  expect(namedLink(folder(), "Archived research")).toBeVisible();
+  await user.click(button("Launch", folder()));
+  expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "false");
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
 });
 test("ordinary lists hide assigned chats and @Project inserts captured identity without navigating", async () => {
   const ordinary = continuityThread(91, 1, "Ordinary chat");
@@ -206,41 +261,350 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
   const user = userEvent.setup({ delay: null });
-  function button(name: string, container: HTMLElement | Document = document) {
-    const found = queryAllByRoleFast("button", container).find((item) => {
-      return (
-        item.getAttribute("aria-label") === name ||
-        item.textContent?.trim() === name
-      );
-    });
-    if (!found) {
-      throw new Error(`Button ${name} not found`);
-    }
-    return found;
-  }
   await user.click(button("Create Project"));
   await user.type(
     await screen.findByRole("textbox", { name: "Project name" }),
     "Campaign",
   );
   await user.click(button("Save"));
-  const link = await waitFor(() => {
-    const found = namedLink(document.body, "Campaign");
-    if (!found) {
-      throw new Error("Created Project did not appear");
-    }
-    return found;
+  await waitFor(() => {
+    return expect(button("Campaign")).toHaveAttribute("aria-expanded", "true");
   });
-  await user.click(link);
-  await screen.findByRole("heading", { name: "Campaign" });
-  await user.click(button("Rename"));
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  await user.click(button("Options for Campaign"));
+  await user.click(await findMenuItem("Rename"));
   const input = await screen.findByRole("textbox", { name: "Project name" });
   await fill(input, "Campaign two");
   await user.click(button("Save"));
-  await screen.findByRole("heading", { name: "Campaign two" });
-  await user.click(button("Delete"));
+  await waitFor(() => {
+    return expect(button("Campaign two")).toBeInTheDocument();
+  });
+  await user.click(button("Options for Campaign two"));
+  await user.click(await findMenuItem("Delete"));
   const dialog = await screen.findByRole("dialog");
   await user.click(button("Delete Project", dialog));
-  await screen.findByRole("heading", { name: "Project unavailable" });
-  expect(namedLink(document.body, "Campaign two")).toBeNull();
+  await waitFor(() => {
+    return expect(
+      queryAllByRoleFast("button").some((item) => {
+        return item.textContent?.trim() === "Campaign two";
+      }),
+    ).toBeFalsy();
+  });
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+});
+
+test("Thread menu searches and changes Project membership while preserving the open chat", async () => {
+  const ordinary = continuityThread(93, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 93,
+    threads: [ordinary],
+  });
+  const secondId = "30000000-0000-4000-8000-000000000072";
+  metadata([{ id: secondId, name: "Research" }]);
+  const events: ChatThreadEvent[] = [];
+  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > (query.sinceSeqId ?? 0);
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(
+    projectsContract.membership,
+    ({ params, body, respond }) => {
+      events.push({
+        id: body.eventId,
+        seqId: events.length + 2,
+        kind: "sort_touched",
+        chatThreadId: params.id,
+        agentId: ordinary.agentId,
+        title: ordinary.title,
+        projectId: body.projectId,
+        projectMembershipUpdated: true,
+        selectedModel: ordinary.selectedModel,
+        serviceTier: null,
+        computerUseHostId: null,
+        createdAt: at,
+      });
+      return respond(200, { threadId: params.id, projectId: body.projectId });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const user = userEvent.setup({ delay: null });
+  function rowMenu() {
+    const row = document.querySelector<HTMLElement>(
+      `[data-sidebar-chat-thread-row-id="${ordinary.id}"]`,
+    );
+    if (!row) {
+      throw new Error("Thread row missing");
+    }
+    return within(row).getByTestId("chat-thread-menu-trigger");
+  }
+  await user.click(rowMenu());
+  await user.click(await findMenuItem("Move to Project"));
+  await screen.findByRole("textbox", { name: "Search projects…" });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(
+      document.querySelector(`[data-sidebar-chat-thread-id="${ordinary.id}"]`),
+    ).toHaveFocus();
+  });
+  await user.click(rowMenu());
+  await user.click(await findMenuItem("Move to Project"));
+  const search = await screen.findByRole("textbox", {
+    name: "Search projects…",
+  });
+  await user.type(search, "missing");
+  await expect(
+    screen.findByText("No projects found"),
+  ).resolves.toBeInTheDocument();
+  await fill(search, "laun");
+  await user.click(
+    button(
+      "Launch",
+      await screen.findByRole("dialog", { name: "Move conversation" }),
+    ),
+  );
+  await waitFor(() => {
+    return expect(namedLink(folder(), "Ordinary chat")).toBeInTheDocument();
+  });
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("textbox", { name: "Search projects…" }),
+    ).not.toBeInTheDocument();
+  });
+  await user.click(rowMenu());
+  await user.click(await findMenuItem("Move to Project"));
+  await user.click(
+    button(
+      "Research",
+      await screen.findByRole("dialog", { name: "Move conversation" }),
+    ),
+  );
+  await waitFor(() => {
+    return expect(
+      namedLink(folder(secondId), "Ordinary chat"),
+    ).toBeInTheDocument();
+  });
+  expect(namedLink(folder(), "Ordinary chat")).toBeNull();
+  await user.click(rowMenu());
+  await user.click(await findMenuItem("Move to Project"));
+  await user.click(
+    button(
+      "Remove from Project",
+      await screen.findByRole("dialog", { name: "Move conversation" }),
+    ),
+  );
+  await waitFor(() => {
+    return expect(namedLink(folder(), "Ordinary chat")).toBeNull();
+  });
+  expect(
+    document.querySelector(`[data-sidebar-chat-thread-id="${ordinary.id}"]`),
+  ).toBeInTheDocument();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+});
+
+test("Project deep links open the Chat workspace with the folder expanded", async () => {
+  const member = {
+    ...continuityThread(94, 1, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 94,
+    threads: [member],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/projects/${id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  await waitFor(() => {
+    return expect(button("Launch", folder())).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+  expect(namedLink(folder(), "Launch planning")).toBeInTheDocument();
+  expect(location.pathname).toContain("/chat");
+});
+
+test("Folder new chat retains its entry Agent after opening another Agent's member", async () => {
+  const ordinary = continuityThread(95, 1, "Ordinary chat");
+  const other = {
+    ...continuityThread(95, 2, "Other Agent research"),
+    projectId: id,
+    agentId: "c7000000-0000-4000-a000-000000000009",
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 95,
+    threads: [ordinary, other],
+  });
+  metadata();
+  const threads = new Map<string, ChatThreadSnapshotProjection>([
+    [ordinary.id, ordinary],
+    [other.id, other],
+  ]);
+  const events: ChatThreadEvent[] = [];
+  let createdId: string | undefined;
+  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > (query.sinceSeqId ?? 0);
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    const thread = threads.get(params.id);
+    if (!thread) {
+      throw new Error("Unknown chat");
+    }
+    return respond(200, {
+      ...thread,
+      modelSettings: thread.modelSettings ?? {},
+      muted: thread.muted ?? false,
+      cloudBrowserEnabled: false,
+    });
+  });
+  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+    return respond(200, {
+      lastReadAt: null,
+      cancellationRecoveryPending: false,
+    });
+  });
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    if (!body.clientThreadId) {
+      throw new Error("Client chat identity missing");
+    }
+    expect(body.agentId).toBe(ordinary.agentId);
+    expect(body.projectId).toBe(id);
+    createdId = body.clientThreadId;
+    const thread = {
+      ...continuityThread(95, 3, "New folder chat"),
+      id: body.clientThreadId,
+      agentId: body.agentId,
+      projectId: body.projectId ?? null,
+    };
+    threads.set(thread.id, thread);
+    events.push({
+      id: body.eventId ?? crypto.randomUUID(),
+      seqId: 2,
+      kind: "created",
+      chatThreadId: thread.id,
+      agentId: thread.agentId,
+      projectId: thread.projectId,
+      title: thread.title,
+      selectedModel: thread.selectedModel,
+      serviceTier: null,
+      computerUseHostId: null,
+      createdAt: at,
+    });
+    return respond(201, {
+      id: thread.id,
+      title: thread.title,
+      createdAt: at,
+      selectedModel: thread.selectedModel,
+      serviceTier: null,
+      projectId: thread.projectId,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(button("Launch", folder()));
+  const link = namedLink(folder(), "Other Agent research");
+  if (!link) {
+    throw new Error("Member chat missing");
+  }
+  await waitFor(() => {
+    return expect(link.getAttribute("href")).toContain(
+      `projectAgent=${ordinary.agentId}`,
+    );
+  });
+  await user.click(link);
+  await waitFor(() => {
+    return expect(location.pathname).toBe(`/chats/${other.id}`);
+  });
+  expect(location.search).toContain(`projectAgent=${ordinary.agentId}`);
+  await user.click(button("New chat", folder()));
+  await waitFor(() => {
+    return expect(namedLink(folder(), "New folder chat")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+  expect(location.pathname).toBe(`/chats/${createdId}`);
+});
+
+test("PWA uses the same folders and a bottom sheet for Thread membership", async () => {
+  context.mocks.browser.matchMedia(false);
+  const ordinary = continuityThread(96, 1, "Ordinary chat");
+  const member = {
+    ...continuityThread(96, 2, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 96,
+    threads: [ordinary, member],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/agents/${ordinary.agentId}/chat`,
+    ...workspace.pageOptions,
+    featureSwitches: {
+      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.PwaNavigation]: true,
+    },
+  });
+  const user = userEvent.setup({ delay: null });
+  await waitFor(() => {
+    return expect(button("Launch", folder())).toBeInTheDocument();
+  });
+  await user.click(button("Launch", folder()));
+  const row = document.querySelector<HTMLElement>(
+    `[data-sidebar-chat-thread-row-id="${member.id}"]`,
+  );
+  if (!row) {
+    throw new Error("Member chat missing");
+  }
+  await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
+  await user.click(await findMenuItem("Move to Project"));
+  const sheet = await screen.findByRole("dialog", {
+    name: "Move conversation",
+  });
+  expect(sheet).toHaveAttribute("data-slot", "drawer-popup");
+  expect(
+    within(sheet).getByRole("textbox", { name: "Search projects…" }),
+  ).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("dialog", { name: "Move conversation" }),
+    ).not.toBeInTheDocument();
+  });
+  const link = namedLink(folder(), "Launch planning");
+  if (!link) {
+    throw new Error("Member link missing");
+  }
+  await user.click(link);
+  await waitFor(() => {
+    return expect(location.pathname).toBe(`/chats/${member.id}`);
+  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
 });

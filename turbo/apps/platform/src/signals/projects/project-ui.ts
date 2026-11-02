@@ -5,7 +5,11 @@ export type ProjectDialog =
       readonly projectId?: string;
       readonly fromThreadId?: string;
     }
-  | { readonly kind: "membership"; readonly threadId: string }
+  | {
+      readonly kind: "membership";
+      readonly threadId: string;
+      readonly anchor: HTMLElement;
+    }
   | { readonly kind: "delete"; readonly projectId: string };
 const internalDialog$ = state<ProjectDialog | null>(null);
 export const projectDialog$ = computed((get) => {
@@ -23,13 +27,19 @@ export const projectEditorName$ = computed((get) => {
 export const setProjectEditorName$ = command(({ set }, value: string) => {
   set(internalName$, value);
 });
-const internalArchive$ = state(false);
-export const projectArchiveFilter$ = computed((get) => {
-  return get(internalArchive$);
+const internalSearch$ = state("");
+export const projectSearch$ = computed((get) => {
+  return get(internalSearch$);
 });
-export const setProjectArchiveFilter$ = command(({ set }, value: boolean) => {
-  set(internalArchive$, value);
+export const setProjectSearch$ = command(({ set }, value: string) => {
+  return set(internalSearch$, value);
 });
+export const openProjectMembership$ = command(
+  ({ set }, threadId: string, anchor: HTMLElement) => {
+    set(internalSearch$, "");
+    set(internalDialog$, { kind: "membership", threadId, anchor });
+  },
+);
 export const openProjectEditor$ = command(
   (
     { set },
@@ -53,5 +63,12 @@ export const closeProjectDialog$ = command(
 export const resetProjectUi$ = command(({ set }) => {
   set(internalDialog$, null);
   set(internalName$, "");
-  set(internalArchive$, false);
+  set(internalSearch$, "");
 });
+
+export const projectDialogHasSuccessor$ = command(
+  ({ get }, expected: ProjectDialog) => {
+    const current = get(projectDialog$);
+    return current !== null && current !== expected;
+  },
+);

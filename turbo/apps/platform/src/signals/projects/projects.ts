@@ -1,4 +1,5 @@
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
+import { expandProject$ } from "./project-folders.ts";
 import { now } from "../../lib/time.ts";
 import { command, computed, state } from "ccstate";
 import { projectsContract } from "@okouai/api-contracts/client/projects";
@@ -11,9 +12,12 @@ import { installedSharedDatabaseBridge$ } from "../shared-database-bridge-state.
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import { detachedNavigateTo$, searchParams$ } from "../route.ts";
+import { detachedNavigateTo$, searchParams$, pathParams$ } from "../route.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
-import { catchUpChatThreadEventSource$ } from "../chat-page/chat-thread-event-sourcing.ts";
+import {
+  catchUpChatThreadEventSource$,
+  eventDrivenChatThreads$,
+} from "../chat-page/chat-thread-event-sourcing.ts";
 
 export const projectsEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.Projects] ?? false;
@@ -64,6 +68,16 @@ export const hydrateProjects$ = command(
       ),
     );
     await set(syncProjects$, signal);
+    const threadId = get(pathParams$)?.threadId;
+    const projectId =
+      typeof threadId === "string"
+        ? get(eventDrivenChatThreads$).find((thread) => {
+            return thread.id === threadId;
+          })?.projectId
+        : get(searchParams$).get("project");
+    if (projectId) {
+      set(expandProject$, projectId);
+    }
   },
 );
 function operation() {
@@ -87,6 +101,7 @@ export const createProject$ = command(
     );
     await set(syncProjects$, signal);
     await set(catchUpChatThreadEventSource$, signal);
+    set(expandProject$, result.body.id);
     return result.body;
   },
 );
@@ -136,6 +151,9 @@ export const moveProjectThread$ = command(
       signal,
     );
     await set(catchUpChatThreadEventSource$, signal);
+    if (projectId) {
+      set(expandProject$, projectId);
+    }
   },
 );
 export const newProjectThread$ = command(
@@ -160,6 +178,7 @@ export const newProjectThread$ = command(
       signal,
     );
     await set(catchUpChatThreadEventSource$, signal);
+    set(expandProject$, projectId);
     set(detachedNavigateTo$, "/chats/:threadId", {
       pathParams: { threadId: response.body.id },
       searchParams: new URLSearchParams({

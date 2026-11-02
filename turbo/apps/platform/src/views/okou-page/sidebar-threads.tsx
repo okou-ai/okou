@@ -1,3 +1,8 @@
+import { projectsEnabled$ } from "../../signals/projects/projects.ts";
+import {
+  openProjectMembership$,
+  projectDialog$,
+} from "../../signals/projects/project-ui.ts";
 import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
@@ -22,6 +27,7 @@ import {
   ArchiveRestore,
   BellOff,
   Bell,
+  FolderInput,
 } from "lucide-react";
 import {
   ChatThreadStateText,
@@ -69,6 +75,7 @@ import {
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import type {
+  SidebarProjectContext,
   SidebarChatThreadIndicatorState,
   SidebarChatThreadItemSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
@@ -483,9 +490,11 @@ function ChatThreadMenuTrigger({
   touch = false,
 }: ChatThreadMenuProps) {
   const { t } = useTranslation();
+  const menuRef = useSet(signals.menuTriggerRef$);
 
   return (
     <DropdownMenuTrigger
+      ref={menuRef}
       render={<ChatThreadMenuButton signals={signals} touch={touch} />}
     >
       <Tooltip>
@@ -509,6 +518,9 @@ function ChatThreadMenuItems({
 }: Pick<ChatThreadMenuProps, "signals">) {
   const { t } = useTranslation();
   const requestDelete = useSet(signals.requestDelete$);
+  const projectsEnabled = useGet(projectsEnabled$);
+  const anchor = useGet(signals.menuTrigger$);
+  const move = useSet(openProjectMembership$);
 
   return (
     <>
@@ -517,6 +529,20 @@ function ChatThreadMenuItems({
       <ChatThreadMuteMenuItem signals={signals} />
       <ChatThreadArchiveMenuSection signals={signals} />
       <ChatThreadRenameMenuItem signals={signals} />
+      {projectsEnabled && (
+        <DropdownMenuItem
+          onClick={() => {
+            if (anchor) {
+              move(signals.threadId, anchor);
+            }
+          }}
+        >
+          <FolderInput size={16} className="mr-2" />
+          {t(($) => {
+            return $.projects.move;
+          })}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem
         onClick={() => {
           requestDelete();
@@ -537,6 +563,7 @@ function ChatThreadMenu({
   rowIndex,
   touch = false,
 }: ChatThreadMenuProps) {
+  const projectDialog = useGet(projectDialog$);
   return (
     <TooltipProvider delay={200}>
       <DropdownMenu>
@@ -548,6 +575,8 @@ function ChatThreadMenu({
         <DropdownMenuContent
           align="end"
           className={chatThreadMenuContentClassName(touch)}
+          // The Project picker/editor owns focus after this menu hands it off.
+          finalFocus={projectDialog ? false : undefined}
           data-chat-thread-menu-thread-id={signals.threadId}
         >
           <ChatThreadMenuItems signals={signals} />
@@ -575,10 +604,12 @@ function ChatThreadItemLink({
   signals,
   shortcutNumber,
   touch,
+  projectContext,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
   touch: boolean;
+  projectContext?: SidebarProjectContext;
 }) {
   const { t } = useTranslation();
   const title = useGet(signals.title$);
@@ -594,14 +625,22 @@ function ChatThreadItemLink({
   return (
     <Link
       pathname="/chats/:threadId"
-      options={{ pathParams: { threadId: signals.threadId } }}
+      options={{
+        pathParams: { threadId: signals.threadId },
+        searchParams: projectContext
+          ? new URLSearchParams({
+              project: projectContext.projectId,
+              projectAgent: projectContext.agentId,
+            })
+          : undefined,
+      }}
       aria-current={isCurrentPage ? "page" : undefined}
       data-sidebar-chat-thread-id={signals.threadId}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey) {
           return;
         }
-        if (select(e.altKey ? "sidebar" : "main")) {
+        if (select(e.altKey ? "sidebar" : "main", projectContext)) {
           e.preventDefault();
         }
       }}
@@ -764,11 +803,13 @@ export function ChatThreadItem({
   shortcutNumber,
   rowIndex,
   touch = false,
+  projectContext,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
   rowIndex: number;
   touch?: boolean;
+  projectContext?: SidebarProjectContext;
 }) {
   return (
     <div
@@ -779,6 +820,7 @@ export function ChatThreadItem({
         signals={signals}
         shortcutNumber={shortcutNumber}
         touch={touch}
+        projectContext={projectContext}
       />
       <ChatThreadItemRename signals={signals} touch={touch} />
       <div

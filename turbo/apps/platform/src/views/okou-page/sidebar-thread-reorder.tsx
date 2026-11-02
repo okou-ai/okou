@@ -1,3 +1,5 @@
+import { projectsEnabled$ } from "../../signals/projects/projects.ts";
+import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowUp, ArrowDown } from "lucide-react";
@@ -20,9 +22,14 @@ export function ThreadPinMoveMenuItems({
   const { t } = useTranslation();
   const enabled = useGet(pinnedThreadReorderEnabled$);
   const pinned = useGet(signals.pinned$);
+  const projectsEnabled = useGet(projectsEnabled$);
+  const projectMember = useGet(eventDrivenChatThreads$).some((thread) => {
+    return thread.id === signals.threadId && thread.projectId !== null;
+  });
   const move = useSet(stepPinnedThread$);
   const signal = useGet(pageSignal$);
-  if (!enabled || !pinned) {
+  // Pin ranks belong to an Agent; cross-Agent folders offer pin/unpin only.
+  if (!enabled || !pinned || (projectsEnabled && projectMember)) {
     return null;
   }
   const upLabel = t(($) => {
