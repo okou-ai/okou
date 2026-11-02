@@ -292,29 +292,31 @@ export function ComposerGenerationSuggestions({
         </ToggleGroup>
       )}
       <GenerationTemplateRail signals={signals} intent={intent} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <GenerationOptions key={intent} signals={signals} intent={intent} />
-        <Button
-          type="button"
-          variant="neutral"
-          size="sm"
-          className="ml-auto"
-          onClick={() => {
-            apply();
-          }}
-        >
-          {t(($) => {
-            return $.chat.composer.generationSuggestions.apply;
-          })}
-        </Button>
+      <div className="sticky bottom-0 shrink-0 space-y-2 bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <GenerationOptions key={intent} signals={signals} intent={intent} />
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="ml-auto"
+            onClick={() => {
+              apply();
+            }}
+          >
+            {t(($) => {
+              return $.chat.composer.generationSuggestions.apply;
+            })}
+          </Button>
+        </div>
+        {intent === "image" && (
+          <p className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.chat.composer.generationSuggestions.ratioHint;
+            })}
+          </p>
+        )}
       </div>
-      {intent === "image" && (
-        <p className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.chat.composer.generationSuggestions.ratioHint;
-          })}
-        </p>
-      )}
     </section>
   );
 }
