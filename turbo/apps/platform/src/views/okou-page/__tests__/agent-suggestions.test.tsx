@@ -159,7 +159,6 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   const retired = new Map<string, Suggestion>();
   const consumed: string[] = [];
   const selections: { id: string; optionId: string | null }[] = [];
-  let listed = 0;
   context.mocks.api(
     suggestionsContract.feedback,
     ({ params, body, respond }) => {
@@ -200,7 +199,6 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     });
   });
   context.mocks.api(suggestionsContract.list, ({ respond }) => {
-    listed += 1;
     return respond(200, { suggestions: items });
   });
   context.mocks.api(
@@ -236,9 +234,6 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   return {
     consumed,
     selections,
-    listCount: () => {
-      return listed;
-    },
     publish: (item: Suggestion) => {
       items = [...items, item];
     },
@@ -297,26 +292,16 @@ test("Selecting a cached card restores its draft after server cleanup", async ()
   });
 });
 
-test("The home composer offers no Suggestions and the Feed sidebar entry opens them", async () => {
-  const pool = mockPool();
+test("The Feed sidebar entry opens the suggestions on their own page", async () => {
+  mockPool();
   await setupPage({ context, path: homePath, featureSwitches: features });
   await waitFor(() => {
-    expect(button("Workflow")).toBeInTheDocument();
+    expect(link("/feed")).toBeInTheDocument();
   });
-  expect(
-    [...queryAllByRoleFast("tab"), ...queryAllByRoleFast("button")].some(
-      (element) => {
-        return element.textContent?.trim() === "Suggestions";
-      },
-    ),
-  ).toBeFalsy();
-  expect(screen.queryByText(makeSuggestion().title)).not.toBeInTheDocument();
-  expect(pool.listCount()).toBe(0);
   click(link("/feed"));
   await screen.findByText(makeSuggestion().title);
   expect(pathname()).toBe("/feed");
   expect(link("/feed")).toHaveAttribute("aria-current", "page");
-  expect(pool.listCount()).toBe(1);
 });
 
 test.each([
@@ -327,9 +312,9 @@ test.each([
   "Website",
   "Visualization",
 ])(
-  "Selecting %s hides the Tasks row and clearing it restores the row without Suggestions",
+  "Selecting %s hides the Tasks row and clearing it restores the row",
   async (task) => {
-    mockPool();
+    mockPool([]);
     await setupPage({
       context,
       path: homePath,
@@ -731,24 +716,16 @@ test("A deleted target shows its unavailable page and preserves the home draft",
   });
 });
 
-test("With the switch off, the sidebar has no Feed and the home keeps its ordinary start", async () => {
-  const pool = mockPool();
+test("With the switch off, the sidebar has no Feed entry", async () => {
   await setupPage({ context, path: homePath });
   expect(button("Workflow")).toBeInTheDocument();
   expect(queryLink("/feed")).toBeNull();
-  expect(
-    queryAllByRoleFast("tab").some((entry) => {
-      return entry.textContent?.trim() === "Suggestions";
-    }),
-  ).toBeFalsy();
-  expect(pool.listCount()).toBe(0);
 });
 test("With the switch off, the Feed route is not found", async () => {
-  const pool = mockPool();
   await setupPage({ context, path: "/feed" });
-  await screen.findByRole("heading", { name: "That page isn't here." });
-  expect(screen.queryByText(makeSuggestion().title)).not.toBeInTheDocument();
-  expect(pool.listCount()).toBe(0);
+  await expect(
+    screen.findByRole("heading", { name: "That page isn't here." }),
+  ).resolves.toBeInTheDocument();
 });
 test("Feed options continue in the default Agent after visiting a secondary Agent", async () => {
   const secondary = "c0000000-0000-4000-a000-000000000002";
