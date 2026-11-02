@@ -1066,6 +1066,7 @@
       "amountTitle": "Aufladebetrag",
       "automaticTopUps": "Automatische Aufladungen",
       "description": "Credits automatisch kaufen, wenn Ihr Credit-Guthaben unter einen Schwellenwert fällt.",
+      "disabledAfterFailures": "Das automatische Aufladen wurde nach wiederholten Zahlungsfehlern deaktiviert. Prüfe deine Zahlungsmethode, bevor du es wieder aktivierst.",
       "enableAria": "Automatisches Aufladen aktivieren",
       "thresholdAria": "Credit-Schwellenwert für automatisches Aufladen",
       "thresholdDescription": "Einen Kauf auslösen, wenn Ihr Credit-Guthaben diesen Wert unterschreitet.",

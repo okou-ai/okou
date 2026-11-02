@@ -1064,6 +1064,7 @@
       "amountTitle": "チャージ金額",
       "automaticTopUps": "自動補充",
       "description": "残高がしきい値を下回ったときにクレジットを購入します。",
+      "disabledAfterFailures": "支払いが連続して失敗したため、自動チャージをオフにしました。支払い方法を確認してから、再度オンにしてください。",
       "enableAria": "自動リチャージを有効にする",
       "thresholdAria": "オートリチャージのクレジットしきい値",
       "thresholdDescription": "クレジット残高がこの数値を下回ったときに購入をトリガーします。",

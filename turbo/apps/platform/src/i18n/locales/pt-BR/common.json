@@ -1086,6 +1086,7 @@
       "amountTitle": "Valor da recarga",
       "automaticTopUps": "Recargas automáticas",
       "description": "Compre créditos quando o saldo ficar abaixo de um limite.",
+      "disabledAfterFailures": "A recarga automática foi desativada após falhas consecutivas no pagamento. Verifique a forma de pagamento antes de ativá-la novamente.",
       "enableAria": "Ativar recarga automática",
       "thresholdAria": "Limite de créditos para recarga automática",
       "thresholdDescription": "Faça uma compra quando o saldo de créditos ficar abaixo deste número.",

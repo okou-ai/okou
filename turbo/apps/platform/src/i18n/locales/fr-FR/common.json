@@ -1086,6 +1086,7 @@
       "amountTitle": "Montant de la recharge",
       "automaticTopUps": "Recharges automatiques",
       "description": "Achetez des crédits lorsque votre solde tombe en dessous d'un seuil.",
+      "disabledAfterFailures": "La recharge automatique a été désactivée après plusieurs échecs de paiement. Vérifiez votre moyen de paiement avant de la réactiver.",
       "enableAria": "Activer la recharge automatique",
       "thresholdAria": "Seuil de crédit pour le rechargement automatique",
       "thresholdDescription": "Déclenchez un achat lorsque votre solde de crédit passe en dessous de ce chiffre.",
