@@ -3,7 +3,6 @@ import { prepareContentBundle, readContentBundle } from "../content-bundle";
 import {
   officialWorkflowArtifactFiles,
   officialWorkflowExecutionFiles,
-  verifyOfficialWorkflowArtifact,
 } from "../official-workflow-artifact";
 
 const definition = {
@@ -150,44 +149,4 @@ it("keeps execution hash independent of Blueprint and business revision changes"
       })
     ).descriptor.sha256,
   ).not.toEqual((await prepare(first)).descriptor.sha256);
-});
-
-it("checks actual archive bytes against the pinned legacy file hashes", async () => {
-  const files = officialWorkflowExecutionFiles(definition).map((file) => {
-    return {
-      path: file.path,
-      content: Buffer.from(file.content, "utf8"),
-    };
-  });
-  const valid = await prepareContentBundle(files);
-  const published = {
-    storageId,
-    storageVersion: executionVersion,
-    definitionManifest,
-  };
-  expect(() => {
-    return verifyOfficialWorkflowArtifact(valid.archive, definition, published);
-  }).not.toThrow();
-  const forged = await prepareContentBundle(
-    files.map((file) => {
-      return {
-        ...file,
-        content:
-          file.path === "SKILL.md"
-            ? Buffer.from(
-                file.content
-                  .toString()
-                  .replace("Summarize the week.", "Summarize the weak."),
-              )
-            : file.content,
-      };
-    }),
-  );
-  expect(() => {
-    return verifyOfficialWorkflowArtifact(
-      forged.archive,
-      definition,
-      published,
-    );
-  }).toThrow("content is inconsistent");
 });

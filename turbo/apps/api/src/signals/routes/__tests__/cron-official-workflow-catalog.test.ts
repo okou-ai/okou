@@ -9,6 +9,7 @@ import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/pr
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
+  workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { proactiveSuggestionsRoutes } from "../proactive-preferences";
@@ -144,6 +145,50 @@ test.each([false, true])(
     if (!workflow) {
       throw new Error("Expected the Official Suggestions installation");
     }
+    const detail = await owned.run(() => {
+      return accept(
+        app(workflowsDetailContract).get({
+          headers,
+          params: { workflowId: workflow.id },
+        }),
+        [200],
+      );
+    });
+    expect(detail.body.instruction).toContain("# Proactive Suggestions");
+    expect(detail.body.fileContents).toStrictEqual(expect.any(Array));
+    const target = await owned.run(() => {
+      return fixture.bdd.createAgent(actor, { visibility: "private" });
+    });
+    const copied = await owned.run(() => {
+      return accept(
+        app(workflowsDetailContract).copy({
+          headers,
+          params: { workflowId: workflow.id },
+          body: { toAgentId: target.agentId },
+        }),
+        [201],
+      );
+    });
+    const copiedDetail = await owned.run(() => {
+      return accept(
+        app(workflowsDetailContract).get({
+          headers,
+          params: { workflowId: copied.body.id },
+        }),
+        [200],
+      );
+    });
+    expect(copiedDetail.body).toMatchObject({
+      instruction: detail.body.instruction,
+      fileContents: detail.body.fileContents,
+    });
+    const installedSync = await owned.run(() => {
+      return accept(
+        app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders }),
+        [200],
+      );
+    });
+    expect(installedSync.body).toStrictEqual(repeated.body);
     const automations = await owned.run(() => {
       return accept(
         app(workflowAutomationsContract).list({
