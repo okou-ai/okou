@@ -370,7 +370,6 @@ fn write_graceful_parent_with_descendant_mitmdump(path: &Path) {
 exec @ADDON_PYTHON@ - "$0" "$@" <<'PY'
 import os
 import signal
-import socket
 import sys
 import time
 from pathlib import Path
@@ -381,18 +380,13 @@ Path(f"{sys.argv[0]}.env").write_text(
     f"{os.environ['OKOU_MITMDUMP_RUNTIME_DIR']}\n",
     encoding="utf-8",
 )
-port = None
 control_dir = None
 usage_state_id = None
-previous = None
 for argument in sys.argv[1:]:
-    if previous == "--listen-port":
-        port = int(argument)
     if argument.startswith("okou_control_socket_dir="):
         control_dir = Path(argument.removeprefix("okou_control_socket_dir="))
     if argument.startswith("okou_usage_state_id="):
         usage_state_id = argument.removeprefix("okou_usage_state_id=")
-    previous = argument
 
 descendant_pid = os.fork()
 if descendant_pid == 0:
@@ -405,18 +399,13 @@ if descendant_pid == 0:
         time.sleep(60)
 
 signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
-sock = socket.socket()
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sock.bind(("127.0.0.1", port))
-sock.listen(1)
 sys.path.insert(0, str(Path(sys.argv[sys.argv.index("--scripts") + 1]).parent))
 from runner_control import ControlServer
 @ADDON_REGISTRY_OWNER@
 control = ControlServer(control_dir, usage_state_id, registry_owner)
 control.start()
 while True:
-    connection, _ = sock.accept()
-    connection.close()
+    signal.pause()
 PY
 "#,
         ),
@@ -1439,9 +1428,14 @@ async fn assert_graceful_stop_with_cleanup_stat(
     write_graceful_parent_with_descendant_mitmdump(&fake_mitmdump);
     let config = test_proxy_config(dir.path(), &home, fake_mitmdump.clone());
     let runtime_dir = config.runtime_dir.clone();
+    // This lifecycle fixture owns its readiness listener for the whole test;
+    // the child only serves control requests, so no port rebind can race a peer.
+    let readiness_listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let readiness_port = readiness_listener.local_addr().unwrap().port();
     let (mut proxy, _crash_rx) = MitmProxy::new(config, ADDON_FILES.as_slice())
         .await
         .unwrap();
+    proxy.port = readiness_port;
     proxy.start().await.unwrap();
 
     let descendant_path = fake_mitmdump.with_extension("descendant");
