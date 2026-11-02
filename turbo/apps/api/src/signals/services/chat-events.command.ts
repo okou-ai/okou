@@ -18,7 +18,6 @@ import type {
   CodexServiceTier,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
@@ -171,7 +170,8 @@ import {
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import { webChatContextId } from "./web-chat-queue-context.service";
 /** Canonical ChatEvent write commands. */
-type SendBody = zInfer<typeof chatEventsContract.send.body>;
+type SendBody =
+  import("@okouai/api-contracts/contracts/chat-event-send").ChatEventSendBody;
 interface NormalSendBody {
   readonly agentId: string;
   readonly prompt: string;
@@ -246,7 +246,7 @@ type NormalSendFailure =
  * The run, or an `input.rejected` explaining why none started, appears in the
  * thread's event stream.
  */
-interface CreatedChatEventResponse {
+export interface CreatedChatEventResponse {
   /** Server-side only: whether an earlier send already stored this input. */
   readonly replayed?: boolean;
   readonly status: 201;
@@ -839,7 +839,10 @@ function normalSendRequestFacts(
   previousBinding:
     | Pick<
         ChatThreadRequestFacts["thread"],
-        "framework" | "frameworkSessionId" | "frameworkSessionRunId"
+        | "framework"
+        | "frameworkSessionId"
+        | "frameworkSessionRunId"
+        | "projectId"
       >
     | undefined,
   event: Pick<
@@ -851,6 +854,7 @@ function normalSendRequestFacts(
     orgId: args.orgId,
     thread: {
       id: thread.threadId,
+      projectId: previousBinding?.projectId ?? null,
       userId: args.userId,
       agentId: args.body.agentId,
       ...thread.runSettings,

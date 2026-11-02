@@ -207,6 +207,11 @@ const persistedChatThreadServiceTierSchema = zEnum(["priority", "ultrafast"])
 
 export const chatThreadSnapshotProjectionSchema = object({
   id: uuid(),
+  /**
+   * Pre-Project snapshots and API writers omit membership. Require it only after
+   * retained snapshots are rewritten and those API rollback targets retire (#44591).
+   */
+  projectId: uuid().nullable().optional(),
   agentId: uuid(),
   title: string().nullable(),
   sortAt: string(),
@@ -250,9 +255,12 @@ export const chatThreadEventSchema = object({
     "unarchived",
   ]),
   chatThreadId: uuid(),
+  projectId: uuid().nullable().optional(),
   agentId: uuid(),
   /** On sort_touched, an explicit canonical agent reassignment. */
   reassignedAgentId: uuid().optional(),
+  /** Release-1 membership bridge; remove with the #44591 wire activation. */
+  projectMembershipUpdated: boolean().optional(),
   title: string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: string().nullable().optional(),

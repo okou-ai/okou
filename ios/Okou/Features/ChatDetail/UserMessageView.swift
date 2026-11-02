@@ -144,13 +144,15 @@ struct UserMessageInlineText: View {
             text[start..<end].link = url
           }
         }
-      case "chat_thread", "agent", "template":
+      case "chat_thread", "agent", "project", "template":
         text.foregroundColor = .accentColor
         text.font = .body.weight(.medium)
         text.backgroundColor = Color(uiColor: .tertiarySystemFill)
         let path: String?
         if part.type == "chat_thread", let id = part.threadId, UUID(uuidString: id) != nil {
           path = "chats/\(id)"
+        } else if part.type == "project", let id = part.projectId, UUID(uuidString: id) != nil {
+          path = "projects/\(id)"
         } else if part.type == "agent", let id = part.agentId, UUID(uuidString: id) != nil {
           path = "agents/\(id)/chat"
         } else {

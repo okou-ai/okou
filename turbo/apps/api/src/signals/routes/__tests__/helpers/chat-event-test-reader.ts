@@ -1,3 +1,5 @@
+import { projectMessageDocumentSchema } from "@okouai/api-contracts/validators/project-message";
+import { projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/contracts/project-readers";
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
@@ -25,11 +27,21 @@ export function projectChatEventRows(
     if (event === null) {
       return [];
     }
-    const serialized = JSON.stringify(event);
+    const document =
+      "userMessage" in event && event.userMessage !== undefined
+        ? projectMessageDocumentSchema.parse(event.userMessage)
+        : null;
+    const serialized = JSON.stringify({
+      ...event,
+      ...(document
+        ? { userMessage: projectAwareUserMessageDocumentSchema.parse(document) }
+        : {}),
+    });
     if (serialized === undefined) {
       throw new Error(`Failed to serialize chat event ${row.id}`);
     }
-    return [chatEventSchema.parse(JSON.parse(serialized))];
+    const parsed = chatEventSchema.parse(JSON.parse(serialized));
+    return [{ ...parsed, ...(document ? { userMessage: document } : {}) }];
   });
 }
 

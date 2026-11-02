@@ -1,6 +1,9 @@
 /** Canonical ChatEvent route adapter. */
 import { command } from "ccstate";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import {
+  chatEventsContract,
+  type ChatEventSendBody,
+} from "@okouai/api-contracts/contracts/chat-event-send";
 
 import { authRoute } from "../auth/auth-route";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -20,32 +23,26 @@ import {
 
 const sendEventBody$ = bodyResultOf(chatEventsContract.send);
 
-const sendChatEventInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const body = await get(sendEventBody$);
+export const sendValidatedChatEvent$ = command(
+  async ({ get, set }, data: ChatEventSendBody, signal: AbortSignal) => {
     signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
     const auth = get(organizationAuthContext$);
     const scope =
-      typeof body.data.prompt === "string"
-        ? "okou:chat:send"
-        : "okou:run:cancel";
+      typeof data.prompt === "string" ? "okou:chat:send" : "okou:run:cancel";
     if (auth.tokenType === "oauth" && !auth.scopes.includes(scope)) {
       return resourceUnavailable("Insufficient scope");
     }
     const candidate =
       auth.tokenType === "session" &&
-      body.data.userMessage &&
-      suggestionFeedbacks(body.data.userMessage).length > 0;
+      data.userMessage &&
+      suggestionFeedbacks(data.userMessage).length > 0;
     const access = candidate ? await set(suggestionAccess$, signal) : null;
     const custom = access !== null && !("status" in access);
-    if (custom && body.data.userMessage) {
+    if (custom && data.userMessage) {
       if (
-        !body.data.threadId ||
-        !body.data.clientEventId ||
-        hasEmptySuggestionNote(body.data.userMessage)
+        !data.threadId ||
+        !data.clientEventId ||
+        hasEmptySuggestionNote(data.userMessage)
       ) {
         return badRequestMessage(
           "Add your question or direction before sending this suggestion.",
@@ -55,9 +52,9 @@ const sendChatEventInner$ = command(
         validateSuggestionFollowup$,
         auth,
         {
-          threadId: body.data.threadId,
-          eventId: body.data.clientEventId,
-          document: body.data.userMessage,
+          threadId: data.threadId,
+          eventId: data.clientEventId,
+          document: data.userMessage,
         },
         signal,
       );
@@ -65,17 +62,28 @@ const sendChatEventInner$ = command(
         return invalid;
       }
     }
-    const result = await set(handleSendChatEvent$, body.data, signal);
-    if (custom && result.status === 201 && body.data.clientEventId) {
+    const result = await set(handleSendChatEvent$, data, signal);
+    if (custom && result.status === 201 && data.clientEventId) {
       await set(
         recordAcceptedSuggestionFollowup$,
         auth,
         result.body.threadId,
-        body.data.clientEventId,
+        data.clientEventId,
         signal,
       );
     }
     return result;
+  },
+);
+
+const sendChatEventInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const body = await get(sendEventBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    return await set(sendValidatedChatEvent$, body.data, signal);
   },
 );
 

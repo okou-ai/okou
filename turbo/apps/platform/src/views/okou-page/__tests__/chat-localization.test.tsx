@@ -1,3 +1,4 @@
+import { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
@@ -159,7 +160,7 @@ function configureExistingChat(args: {
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, {
-      draftUserMessage: args.draft,
+      draftUserMessage: userMessageInputDocumentSchema.parse(args.draft),
       draftAttachments: null,
     });
   });

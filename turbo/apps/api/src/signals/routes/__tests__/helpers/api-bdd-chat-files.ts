@@ -1,3 +1,4 @@
+import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { randomUUID } from "node:crypto";
 import {
   chatEventsContract,
@@ -909,7 +910,7 @@ export function createChatFilesBddApi(context: TestContext) {
         threadByIdClient().patch({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: requestBody,
+          body: composerDraftSchema.parse(requestBody),
         }),
         [204],
       );
@@ -1718,7 +1719,7 @@ export function createChatFilesBddApi(context: TestContext) {
           ...(options.extraHeaders === undefined
             ? {}
             : { extraHeaders: options.extraHeaders }),
-          body: requestBody,
+          body: chatEventsContract.send.body.parse(requestBody),
         }),
         statuses,
       );

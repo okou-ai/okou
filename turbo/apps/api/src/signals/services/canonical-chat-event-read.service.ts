@@ -1,5 +1,5 @@
+import { projectMessageDocumentSchema } from "@okouai/api-contracts/validators/project-message";
 import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
-import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQLWrapper } from "drizzle-orm";
@@ -12,7 +12,7 @@ import {
 } from "../../lib/db-structured-result";
 
 const chatEventUserMessageDecoder = zodDriverValueDecoder(
-  userMessageDocumentSchema,
+  projectMessageDocumentSchema,
 );
 const requiredOfficialWorkflowIdsDecoder = zodDriverValueDecoder(
   array(uuid())
@@ -67,7 +67,7 @@ export function canonicalArchivedChatEventUserMessage(row: ChatEventRow) {
   const userMessage = row.payload?.userMessage;
   return userMessage === undefined
     ? null
-    : userMessageDocumentSchema.parse(userMessage);
+    : projectMessageDocumentSchema.parse(userMessage);
 }
 
 export function canonicalArchivedChatEventError(

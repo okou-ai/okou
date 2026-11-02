@@ -1,3 +1,5 @@
+import type { infer as zInfer } from "zod";
+import type { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { randomUUID, createHash } from "node:crypto";
 import { suggestionContextPart } from "@okouai/api-contracts/contracts/suggestion-context";
 import { chatEventsRoutes } from "../chat-events";
@@ -12,7 +14,6 @@ import {
   chatThreadsContract,
   chatThreadByIdContract,
   chatEventsContract,
-  type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -32,6 +33,7 @@ import { suggestionLearningContract } from "@okouai/api-contracts/contracts/sugg
 import { SUGGESTION_MEMORY_PATH } from "@okouai/api-contracts/contracts/suggestion-memory";
 import { commitMemoryVersion } from "./helpers/memory";
 
+type UserMessageDocument = zInfer<typeof userMessageDocumentSchema>;
 const context = testContext();
 function learningClient() {
   return setupApp({ context, routes: suggestionsRoutes })(

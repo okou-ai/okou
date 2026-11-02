@@ -1,3 +1,4 @@
+import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { randomUUID } from "node:crypto";
 
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
@@ -854,12 +855,12 @@ export function createChatEventsFixture(context: TestContext) {
         body: {
           ...body,
           hasTextContent: true,
-          userMessage:
-            body.userMessage ??
-            ({
+          userMessage: userMessageDocumentSchema.parse(
+            body.userMessage ?? {
               version: 1,
               parts: [{ type: "text", text: body.prompt }],
-            } satisfies UserMessageInputDocument),
+            },
+          ),
         },
       }),
       statuses,

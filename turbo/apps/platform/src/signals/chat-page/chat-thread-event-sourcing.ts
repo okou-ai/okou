@@ -1,7 +1,7 @@
+import type { ProjectAwareChatThreadEvent as ChatThreadEvent } from "@okouai/api-contracts/contracts/project-readers";
 import { command, computed, state, type Command } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import type {
-  ChatThreadEvent,
   ChatThreadMetadata,
   ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";

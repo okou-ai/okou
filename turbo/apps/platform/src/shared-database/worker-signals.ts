@@ -278,6 +278,12 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
       // Coalesce indicator refreshes without delaying the thread invalidation.
       set(startChatThreadIndicatorsRefresh$);
     }
+    if (topic === "threadListChanged") {
+      set(broadcastSharedDatabaseWorkerMessage$, {
+        type: "invalidate",
+        dataKey: { kind: "project-event" },
+      });
+    }
     if (dataKey) {
       set(broadcastSharedDatabaseWorkerMessage$, {
         type: "invalidate",

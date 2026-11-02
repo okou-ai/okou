@@ -1,3 +1,9 @@
+import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
+import { array } from "zod";
+import {
+  projectAwareChatThreadEventSchema,
+  type ProjectAwareChatThreadEvent,
+} from "@okouai/api-contracts/contracts/project-readers";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   type ChatEventSendBody,
@@ -6,7 +12,6 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
-  type ChatThreadEvent as ApiChatThreadEvent,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
   chatThreadRenameContract,
@@ -22,13 +27,26 @@ import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-ro
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { getClientConfig, handleError } from "../core/client-factory";
 
+// Client preparation must not widen the server's published response enum.
+const projectAwareChatThreadsReadContract = {
+  events: {
+    ...chatThreadsContract.events,
+    responses: {
+      ...chatThreadsContract.events.responses,
+      200: chatThreadsContract.events.responses[200].extend({
+        events: array(projectAwareChatThreadEventSchema),
+      }),
+    },
+  },
+};
+
 export interface ChatThreadSnapshot {
   readonly chatThreads: readonly ChatThreadSnapshotProjection[];
   readonly latestEventId: string | null;
   readonly latestSeqId: number | null;
 }
 
-export type ChatThreadEvent = ApiChatThreadEvent;
+export type ChatThreadEvent = ProjectAwareChatThreadEvent;
 
 type ChatEventSnapshotResult =
   | {
@@ -116,7 +134,7 @@ export async function listChatThreadEvents(options: {
   sinceSeqId?: number;
 }): Promise<ChatThreadEventsResult> {
   const config = await getClientConfig();
-  const client = initClient(chatThreadsContract, config);
+  const client = initClient(projectAwareChatThreadsReadContract, config);
   const result = await client.events({
     query:
       options.sinceSeqId === undefined
@@ -147,6 +165,7 @@ export async function getChatIndicators(): Promise<Indicators> {
 }
 
 export async function createChatThread(options: {
+  projectId?: string;
   agentId: string;
   title: string;
   /** Null selects Auto; omit to use the member default. */
@@ -159,6 +178,7 @@ export async function createChatThread(options: {
   const result = await client.create({
     body: {
       agentId: options.agentId,
+      projectId: options.projectId,
       title: options.title,
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.serviceTier === undefined
@@ -243,7 +263,19 @@ export async function sendChatEvent(
 ): Promise<ChatEventSendResult> {
   const config = await getClientConfig();
   const client = initClient(chatEventsContract, config);
-  const result = await client.send({ body });
+  const result = body.userMessage?.parts.some((p) => {
+    return (
+      p.type === "project" ||
+      (p.type === "feedback" &&
+        p.note.some((n) => {
+          return n.type === "project";
+        }))
+    );
+  })
+    ? await initClient(projectChatContract, config).send({
+        body: projectChatContract.send.body.parse(body),
+      })
+    : await client.send({ body: chatEventsContract.send.body.parse(body) });
   if (result.status === 201) {
     return result.body;
   }

@@ -1,4 +1,8 @@
 import {
+  createProjectMentionNode,
+  projectMentionText,
+} from "./composer-project-mention-node.ts";
+import {
   suggestionContextSchema,
   type SuggestionContext,
 } from "@okouai/api-contracts/contracts/suggestion-context";
@@ -84,6 +88,7 @@ import {
   type SlashWorkflowRange,
 } from "./workflow-composer-domain.ts";
 import {
+  PROJECT_MENTION_NODE_NAME,
   AGENT_MENTION_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
@@ -1445,6 +1450,9 @@ function valueToWorkflowComposerDoc(value: string): JSONContent {
 }
 
 function composerLeafText(node: ProseMirrorNode): string {
+  if (node.type.name === PROJECT_MENTION_NODE_NAME) {
+    return projectMentionText(node);
+  }
   if (node.type.name === AGENT_MENTION_NODE_NAME) {
     return agentMentionText(node);
   }
@@ -1826,6 +1834,7 @@ function createWorkflowEditor(
       createTemplateAttachmentNode(runtime),
       createInlineTemplateNode(runtime),
       createFeedbackItemNode(runtime),
+      createProjectMentionNode(),
       createAgentMentionNode(
         COMPOSER_INLINE_REFERENCE_CLASS,
         agentMentionAvatarRuntime,
@@ -2662,8 +2671,12 @@ function createInsertChatThreadCommand(
     const from = head - (range.end - range.start);
     const content: JSONContent[] = [
       {
-        type: CHAT_THREAD_MENTION_NODE_NAME,
-        attrs: { threadId: chatThread.id, title: chatThread.title },
+        type: chatThread.project
+          ? PROJECT_MENTION_NODE_NAME
+          : CHAT_THREAD_MENTION_NODE_NAME,
+        attrs: chatThread.project
+          ? { projectId: chatThread.id, name: chatThread.title }
+          : { threadId: chatThread.id, title: chatThread.title },
       },
     ];
     if (!textblock.value.slice(range.end).startsWith(" ")) {

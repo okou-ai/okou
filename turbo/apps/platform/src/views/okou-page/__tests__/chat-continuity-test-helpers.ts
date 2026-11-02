@@ -1,3 +1,8 @@
+import type { infer as zInfer } from "zod";
+import {
+  composerDraftSchema,
+  userMessageInputDocumentSchema,
+} from "@okouai/api-contracts/validators/chat-threads";
 import {
   chatEventRowSchema,
   type ChatEventRow,
@@ -8,7 +13,6 @@ import {
   chatThreadEventsContract,
   chatThreadMetadataContract,
   chatThreadsContract,
-  type ChatThreadDraft,
   type ChatThreadSnapshotProjection,
   type PersistedAttachment,
   type UserMessageInputDocument,
@@ -29,6 +33,8 @@ import {
   installChatListStream,
   sidebarThreadLinks,
 } from "./chat-list-test-helpers.ts";
+
+type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 
 interface ContinuityDraftPatch {
   readonly threadId: string;
@@ -148,7 +154,10 @@ export function continuityDraft(
   return {
     draftUserMessage:
       inputParts.length > 0
-        ? { version: 1, parts: inputParts as UserMessageInputDocument["parts"] }
+        ? userMessageInputDocumentSchema.parse({
+            version: 1,
+            parts: inputParts,
+          })
         : null,
     draftAttachments: attachments.length > 0 ? [...attachments] : null,
   };
@@ -171,7 +180,10 @@ export function textContinuityDraft(
     });
   }
   return {
-    draftUserMessage: parts.length > 0 ? { version: 1, parts } : null,
+    draftUserMessage:
+      parts.length > 0
+        ? userMessageInputDocumentSchema.parse({ version: 1, parts })
+        : null,
     draftAttachments: attachments.length > 0 ? [...attachments] : null,
   };
 }
@@ -329,7 +341,10 @@ export function installContinuityWorkspace(
       };
       draftPatches.push(patch);
       drafts.set(params.id, {
-        draftUserMessage: patch.draftUserMessage,
+        draftUserMessage:
+          patch.draftUserMessage === null
+            ? null
+            : userMessageInputDocumentSchema.parse(patch.draftUserMessage),
         draftAttachments: patch.draftAttachments,
       });
       return respond(204);

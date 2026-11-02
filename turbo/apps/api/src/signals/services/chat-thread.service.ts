@@ -784,6 +784,7 @@ export function chatThreadArtifacts(args: {
 }
 
 export interface CreatedChatThread {
+  readonly projectId?: string | null;
   readonly kind: "created";
   readonly id: string;
   readonly createdAt: Date;
@@ -791,6 +792,7 @@ export interface CreatedChatThread {
 
 /** The thread a duplicate delivery of one create request replays. */
 export interface ExistingChatThread {
+  readonly projectId?: string | null;
   readonly kind: "existing";
   readonly id: string;
   readonly createdAt: Date;
@@ -799,6 +801,7 @@ export interface ExistingChatThread {
   readonly codexServiceTier: CodexServiceTier | null;
 }
 const existingClientThreadSelection = Object.freeze({
+  projectId: chatThreads.projectId,
   id: chatThreads.id,
   createdAt: chatThreads.createdAt,
   title: chatThreads.title,
@@ -824,6 +827,7 @@ function existingClientThreadCondition(args: {
 }
 
 interface CreateChatThreadArgs {
+  readonly projectId?: string;
   /** Only supplied from the authenticated agent token. */
   readonly sourceRunId?: string;
   readonly userId: string;
@@ -856,6 +860,7 @@ function ordinaryChatThreadInsertPlan(args: CreateChatThreadArgs) {
     userId: args.userId,
     agentId: args.agentId,
     title: args.title ?? null,
+    projectId: args.projectId,
     // Positive classification belongs to the INSERT itself. A conflicting
     // replay below returns the existing row without writing this value, so a
     // client id that already names an unknown or excluded thread keeps it.
@@ -901,6 +906,7 @@ function preparedOrdinaryThread(
   const thread = createdChatThreadFromRow(
     {
       id: args.clientThreadId ?? read.id,
+      projectId: args.projectId,
       userId: args.userId,
       title: args.title ?? null,
       selectedModel: plan.values.selectedModel,
@@ -1076,7 +1082,10 @@ export const createChatThread$ = command(
           );
           signal.throwIfAborted();
           if (created) {
-            return createdThreadResult(created);
+            return {
+              ...createdThreadResult(created),
+              projectId: args.projectId ?? null,
+            };
           }
         }
         if (canReplayClientThread(args)) {

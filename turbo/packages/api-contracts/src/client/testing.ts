@@ -561,6 +561,10 @@ import { proactiveLearningContract as OriginalProactiveLearningContract } from "
 import { proactiveLearningContract } from "./proactive-nightly";
 import { proactiveSuggestionsContract as OriginalProactiveSuggestionsContract } from "../contracts/proactive-suggestions";
 import { proactiveSuggestionsContract } from "./proactive-suggestions";
+import { projectChatContract as OriginalProjectChatContract } from "../contracts/project-chat";
+import { projectChatContract } from "./project-chat";
+import { projectsContract as OriginalProjectsContract } from "../contracts/projects";
+import { projectsContract } from "./projects";
 import { pushSubscriptionsContract as OriginalPushSubscriptionsContract } from "../contracts/push-subscriptions";
 import { pushSubscriptionsContract } from "./push-subscriptions";
 import {
@@ -1233,6 +1237,8 @@ export const clientDescriptorContracts: readonly (readonly [
   [proactiveJobsContract, OriginalProactiveJobsContract],
   [proactiveLearningContract, OriginalProactiveLearningContract],
   [proactiveSuggestionsContract, OriginalProactiveSuggestionsContract],
+  [projectChatContract, OriginalProjectChatContract],
+  [projectsContract, OriginalProjectsContract],
   [pushSubscriptionsContract, OriginalPushSubscriptionsContract],
   [platformRealtimeTokenContract, OriginalPlatformRealtimeTokenContract],
   [runnerRealtimeTokenContract, OriginalRunnerRealtimeTokenContract],

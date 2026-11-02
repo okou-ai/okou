@@ -49,6 +49,7 @@ import { OrgSwitcher, OrgSwitcherCompact } from "./org-switcher.tsx";
 import { Link } from "../router/link.tsx";
 import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { AccountDropdown } from "./sidebar-account.tsx";
+import { ProjectSidebar } from "../projects/project-page.tsx";
 import { ChatThreadDialogs, ChatThreadsSection } from "./sidebar-threads.tsx";
 import {
   responsiveSidebarChatThreadScrollSignals,
@@ -443,6 +444,7 @@ function ExpandedSidebarSections() {
       <div className="px-2">
         <PinnedAgentListSection />
       </div>
+      <ProjectSidebar />
       <ChatThreadsSection
         scrollSignals={responsiveSidebarChatThreadScrollSignals}
         contentClassName="px-2"
@@ -974,6 +976,7 @@ function ChatListColumn() {
         <div className={CHAT_LIST_INSET}>
           <PinnedAgentListSection layout="horizontal" />
         </div>
+        <ProjectSidebar />
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
           contentClassName={CHAT_LIST_INSET}
