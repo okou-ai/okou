@@ -199,6 +199,9 @@ export async function browserCdpProvider() {
     return { sessionId };
   }
   function detach(connection: Connection, sessionId: string, parent?: string) {
+    for (const child of connection.automatic.get(sessionId) ?? [])
+      detach(connection, child, sessionId);
+    connection.automatic.delete(sessionId);
     connection.sessions.delete(sessionId);
     send(connection, {
       method: "Target.detachedFromTarget",
@@ -238,6 +241,10 @@ export async function browserCdpProvider() {
       const selected = sessionId
         ? connection.sessions.get(sessionId)
         : "BROWSER";
+      if (sessionId && !selected) {
+        fail(-32001, "Native session not found");
+        return;
+      }
       const handlers: Record<string, () => void> = {
         "Target.attachToBrowserTarget": () => {
           const sessionId = "browser-" + ++nextSession;
@@ -268,6 +275,13 @@ export async function browserCdpProvider() {
           reply({});
         },
         "Target.attachToTarget": () => {
+          if (
+            params.flatten !== undefined &&
+            typeof params.flatten !== "boolean"
+          ) {
+            fail(-32602, "Native invalid flatten parameter");
+            return;
+          }
           if (!targets.has(String(params.targetId)))
             fail(-32000, "No target with given id");
           else reply(attach(connection, String(params.targetId), sessionId));
@@ -277,6 +291,15 @@ export async function browserCdpProvider() {
           reply({});
         },
         "Target.setAutoAttach": () => {
+          if (
+            typeof params.autoAttach !== "boolean" ||
+            typeof params.waitForDebuggerOnStart !== "boolean" ||
+            (params.flatten !== undefined &&
+              typeof params.flatten !== "boolean")
+          ) {
+            fail(-32602, "Native invalid auto-attach parameters");
+            return;
+          }
           if (params.autoAttach === false) {
             for (const entry of connection.automatic.get(sessionId) ?? [])
               detach(connection, entry, sessionId);

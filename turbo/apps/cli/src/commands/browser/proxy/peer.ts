@@ -54,6 +54,7 @@ const ADAPTED_REPLIES = new Set([
 export class ProxyPeer {
   private readonly sessions = new Map<string, Session>();
   private readonly requests = new Map<string, Pending>();
+  private readonly reserved = new Set<string>();
   private readonly internal = new Map<string, Internal>();
   private readonly visible = new Map<string | undefined, Set<string>>();
   private readonly discovery = new Map<string | undefined, Message>();
@@ -167,6 +168,16 @@ export class ProxyPeer {
       session !== undefined &&
       (session.target === null || this.scope.admits(session.target))
     );
+  }
+
+  private forgetSession(id: string): boolean {
+    if (!this.sessions.delete(id)) return false;
+    for (const [child, session] of this.sessions)
+      if (session.parent === id) this.forgetSession(child);
+    this.autoAttach.delete(id);
+    this.discovery.delete(id);
+    this.visible.delete(id);
+    return true;
   }
 
   private emit(
@@ -314,7 +325,12 @@ export class ProxyPeer {
       return true;
     }
     const browser = !channel || this.sessions.get(channel)?.target === null;
-    if (method === "Target.setAutoAttach" && browser) {
+    if (
+      method === "Target.setAutoAttach" &&
+      browser &&
+      typeof params.autoAttach === "boolean" &&
+      (params.flatten === undefined || typeof params.flatten === "boolean")
+    ) {
       const operation = this.control.then(() => {
         return this.configureAutomatic(params, channel);
       });
@@ -358,7 +374,7 @@ export class ProxyPeer {
       });
     } else if (
       ["Target.attachToTarget", "Target.setAutoAttach"].includes(method) &&
-      params.flatten !== true
+      (params.flatten === undefined || params.flatten === false)
     ) {
       return JSON.stringify({
         ...message,
@@ -379,6 +395,9 @@ export class ProxyPeer {
     const respond = (value: Message) => {
       this.emit(channel, { id: message.id, ...value });
     };
+    const requestKey = key(channel, message.id);
+    // Reserve before authorization yields so private control IDs cannot race ingress.
+    this.reserved.add(requestKey);
     try {
       const conflict = this.internal.get(key(channel, message.id));
       // Only wait for private ID release; its outcome belongs to its caller.
@@ -422,6 +441,8 @@ export class ProxyPeer {
       if (typeof message.sessionId === "string")
         this.send(JSON.stringify({ ...failure, sessionId: channel }));
       else this.emit(channel, failure);
+    } finally {
+      this.reserved.delete(requestKey);
     }
   }
 
@@ -525,10 +546,12 @@ export class ProxyPeer {
     const parent = channel ? this.sessions.get(channel)?.target : null;
     const pending = [...this.requests.values()].find((request) => {
       return (
-        request.command.method === "Target.attachToTarget" &&
         request.channel === channel &&
         record(request.command.params) &&
-        request.command.params.targetId === info.targetId
+        ((request.command.method === "Target.attachToTarget" &&
+          request.command.params.targetId === info.targetId) ||
+          (request.command.method === "Target.setAutoAttach" &&
+            request.command.params.autoAttach === true))
       );
     });
     const requested =
@@ -642,12 +665,9 @@ export class ProxyPeer {
       case "Target.detachedFromTarget":
         if (
           typeof params.sessionId !== "string" ||
-          !this.sessions.delete(params.sessionId)
+          !this.forgetSession(params.sessionId)
         )
           return;
-        this.autoAttach.delete(params.sessionId);
-        this.discovery.delete(params.sessionId);
-        this.visible.delete(params.sessionId);
         break;
     }
     this.emit(channel, message, raw);
@@ -659,7 +679,11 @@ export class ProxyPeer {
     sessionId?: string,
   ): Promise<unknown> {
     let id = this.internalId--;
-    while (this.requests.has(key(sessionId, id))) id = this.internalId--;
+    while (
+      this.requests.has(key(sessionId, id)) ||
+      this.reserved.has(key(sessionId, id))
+    )
+      id = this.internalId--;
     let resolve!: (value: unknown) => void;
     let reject!: (error: Error) => void;
     const promise = new Promise<unknown>((accept, fail) => {
@@ -806,7 +830,11 @@ export class ProxyPeer {
     }
     this.internal.clear();
     this.requests.clear();
+    this.reserved.clear();
     this.sessions.clear();
+    this.autoAttach.clear();
+    this.discovery.clear();
+    this.visible.clear();
     this.finished();
   }
 }

@@ -58,8 +58,8 @@ async function client(endpoint: string) {
       method: string,
       params: Record<string, unknown> = {},
       sessionId?: string,
+      id = ++sequence,
     ) {
-      const id = ++sequence;
       return new Promise<Record<string, unknown>>((resolve, reject) => {
         pending.set(id, { resolve, reject });
         socket.send(JSON.stringify({ id, method, params, sessionId }));
@@ -188,6 +188,59 @@ describe("chat-window CDP proxy protocol", () => {
     ).toHaveLength(lookups);
   });
 
+  it("preserves native errors for invalid adapted attachment parameters", async () => {
+    await expect(
+      connection.request("Target.setAutoAttach", {
+        autoAttach: "invalid",
+        waitForDebuggerOnStart: false,
+      }),
+    ).rejects.toStrictEqual({
+      code: -32602,
+      message: "Native invalid auto-attach parameters",
+    });
+    await expect(
+      connection.request("Target.setAutoAttach", {
+        autoAttach: true,
+        waitForDebuggerOnStart: false,
+        flatten: "invalid",
+      }),
+    ).rejects.toStrictEqual({
+      code: -32602,
+      message: "Native invalid auto-attach parameters",
+    });
+    await expect(
+      connection.request("Target.attachToTarget", {
+        targetId: "A",
+        flatten: "invalid",
+      }),
+    ).rejects.toStrictEqual({
+      code: -32602,
+      message: "Native invalid flatten parameter",
+    });
+    expect(
+      await connection.request("Future.echo", { targetId: "still-opaque" }),
+    ).toStrictEqual({ opaque: { targetId: "still-opaque" } });
+  });
+
+  it("keeps concurrent negative client IDs distinct from private creation requests", async () => {
+    const [created, echoed, error] = await Promise.all([
+      connection.request("Target.createTarget", { url: "about:blank" }),
+      connection.request("Future.echo", { id: "opaque" }, undefined, -1),
+      connection
+        .request("Future.error", {}, undefined, -2)
+        .catch((error: unknown) => {
+          return error;
+        }),
+    ]);
+    expect(created.targetId).toEqual(expect.any(String));
+    expect(echoed).toStrictEqual({ opaque: { id: "opaque" } });
+    expect(error).toStrictEqual({
+      code: -32601,
+      message: "Native error remains unchanged",
+      data: { original: true },
+    });
+  });
+
   it("encodes legacy nested sessions while preserving nested command IDs", async () => {
     const { sessionId } = await connection.request("Target.attachToTarget", {
       targetId: "A",
@@ -254,6 +307,70 @@ describe("chat-window CDP proxy protocol", () => {
     ).toStrictEqual([]);
     const inventory = await connection.request("Target.getTargets");
     expect(JSON.stringify(inventory)).not.toContain("IFRAME-B");
+  });
+
+  it("retains legacy envelope mode for child auto-attachments arriving before their response", async () => {
+    const parent = await connection.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: false,
+    });
+    const attached = connection.event((message) => {
+      return (
+        message.method === "Target.receivedMessageFromTarget" &&
+        message.params?.sessionId === parent.sessionId &&
+        JSON.parse(String(message.params?.message)).method ===
+          "Target.attachedToTarget"
+      );
+    });
+    await connection.request("Target.sendMessageToTarget", {
+      sessionId: parent.sessionId,
+      message: JSON.stringify({
+        id: 871,
+        method: "Target.setAutoAttach",
+        params: {
+          autoAttach: true,
+          waitForDebuggerOnStart: false,
+          flatten: false,
+        },
+      }),
+    });
+    const child = JSON.parse(String((await attached).params?.message)).params
+      .sessionId;
+    const replied = connection.event((message) => {
+      if (
+        message.method !== "Target.receivedMessageFromTarget" ||
+        message.params?.sessionId !== parent.sessionId
+      )
+        return false;
+      const nested = JSON.parse(String(message.params?.message));
+      return (
+        nested.method === "Target.receivedMessageFromTarget" &&
+        nested.params.sessionId === child &&
+        JSON.parse(nested.params.message).id === 872
+      );
+    });
+    await connection.request("Target.sendMessageToTarget", {
+      sessionId: child,
+      message: JSON.stringify({
+        id: 872,
+        method: "Future.echo",
+        params: { value: "nested-child" },
+      }),
+    });
+    const nested = JSON.parse(String((await replied).params?.message));
+    expect(JSON.parse(nested.params.message)).toStrictEqual({
+      id: 872,
+      result: { opaque: { value: "nested-child" } },
+    });
+    await connection.request("Target.detachFromTarget", {
+      sessionId: parent.sessionId,
+    });
+    await expect(
+      connection.request("Future.echo", {}, child),
+    ).rejects.toMatchObject({ code: -32000 });
+    expect(
+      await connection.request("Future.echo", { value: "still-connected" }),
+    ).toStrictEqual({ opaque: { value: "still-connected" } });
   });
 
   it("places a blank-created target using exact native correlation and retires a moved session", async () => {
