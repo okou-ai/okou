@@ -11,6 +11,7 @@ from tests.jsonl_log_helpers import (
     read_jsonl_entries_after_flush,
     read_jsonl_text_after_flush,
 )
+from tests.x_connector_usage.helpers import XUsageHarness
 from tests.x_flow_helpers import make_x_usage_flow
 
 
@@ -19,31 +20,11 @@ class TestConnectorUsageDispatcher:
 
     @pytest.fixture(autouse=True)
     def _sync_executor(self, sync_usage_executor, usage_webhook_api):
-        """All tests here route billing through ``_call_and_get_billing`` which
-        inspects webhook delivery inline; the sync executor makes that work
-        without each test needing its own ``fresh_usage_executor`` + shutdown.
-        """
-        self._usage_webhook_api = usage_webhook_api
+        """Keep shared-harness webhook assertions synchronous under the existing executor."""
+        self._x_usage = XUsageHarness(usage_webhook_api)
 
     def _make_x_flow(self, real_flow, tmp_path, **kwargs):
         return make_x_usage_flow(real_flow, tmp_path, **kwargs)
-
-    def _call_and_get_billing(self, flow, run_id="run-abc-123"):
-        """Call report_connector_usage and return the webhook payload(s).
-
-        Relies on the class-level ``_sync_executor`` autouse fixture to
-        route submissions inline.
-        """
-        with self._usage_webhook_api() as webhook:
-            start_count = webhook.request_count
-            usage.report_connector_usage(flow, run_id)
-            usage.flush_usage_events(trigger="test")
-        return [
-            event
-            for request in webhook.requests[start_count:]
-            for body in [request.json_body()]
-            for event in body["events"]
-        ]
 
     def test_x_usage_flow_buffer_state_matches_response_stream_contract(self, tmp_path, real_flow):
         body = b'{"data":[{"id":"1","text":"hi"}]}'
@@ -59,7 +40,7 @@ class TestConnectorUsageDispatcher:
         firewall_billable=True."""
         flow = self._make_x_flow(real_flow, tmp_path)
         flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
-        assert self._call_and_get_billing(flow) == []
+        assert self._x_usage.call_and_get_billing(flow) == []
         proxy_log = tmp_path / "proxy.jsonl"
         if jsonl_exists_after_flush(proxy_log):
             assert "no registered handler" not in read_jsonl_text_after_flush(proxy_log)
@@ -74,7 +55,7 @@ class TestConnectorUsageDispatcher:
         )
         flow.metadata[metadata_keys.FIREWALL_NAME] = firewall_name
 
-        assert self._call_and_get_billing(flow) == []
+        assert self._x_usage.call_and_get_billing(flow) == []
 
         proxy_log = tmp_path / "proxy.jsonl"
         if jsonl_exists_after_flush(proxy_log):
@@ -88,14 +69,14 @@ class TestConnectorUsageDispatcher:
         billable without also adding it to ``_REGISTRATIONS``."""
         flow = self._make_x_flow(real_flow, tmp_path)
         flow.metadata[metadata_keys.FIREWALL_NAME] = "github"
-        assert self._call_and_get_billing(flow) == []
+        assert self._x_usage.call_and_get_billing(flow) == []
 
     def test_unregistered_handler_does_not_require_original_url(self, tmp_path, real_flow):
         flow = self._make_x_flow(real_flow, tmp_path)
         flow.metadata[metadata_keys.FIREWALL_NAME] = "github"
         flow.metadata.pop(metadata_keys.ORIGINAL_URL)
 
-        assert self._call_and_get_billing(flow) == []
+        assert self._x_usage.call_and_get_billing(flow) == []
 
     def test_logs_underbilling_once_per_unregistered_firewall_name(self, tmp_path, real_flow):
         """First billable flow for an unregistered firewall_name emits an error;
@@ -104,7 +85,7 @@ class TestConnectorUsageDispatcher:
         for _ in range(3):
             flow = self._make_x_flow(real_flow, tmp_path)
             flow.metadata[metadata_keys.FIREWALL_NAME] = "github"
-            assert self._call_and_get_billing(flow) == []
+            assert self._x_usage.call_and_get_billing(flow) == []
 
         lines = [
             entry
@@ -126,7 +107,7 @@ class TestConnectorUsageDispatcher:
         for name in ("github", "slack", "github"):  # github repeats; slack new
             flow = self._make_x_flow(real_flow, tmp_path)
             flow.metadata[metadata_keys.FIREWALL_NAME] = name
-            assert self._call_and_get_billing(flow) == []
+            assert self._x_usage.call_and_get_billing(flow) == []
 
         warned_names = [
             entry["firewall_name"]
@@ -141,7 +122,7 @@ class TestConnectorUsageDispatcher:
         proxy_log = tmp_path / "proxy.jsonl"
         flow = self._make_x_flow(real_flow, tmp_path)
         flow.metadata[metadata_keys.FIREWALL_NAME] = ""
-        assert self._call_and_get_billing(flow) == []
+        assert self._x_usage.call_and_get_billing(flow) == []
 
         if jsonl_exists_after_flush(proxy_log):
             assert "no registered handler" not in read_jsonl_text_after_flush(proxy_log)
