@@ -167,12 +167,14 @@ export function acceptedOfficialWorkflowRevisionReadPlan(args: {
       storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
     },
     storageJoin: and(
+      isNull(officialWorkflowDefinitionRevisions.contentBundle),
       eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
       eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
       eq(storages.orgId, SYSTEM_ORG_ID),
       eq(storages.userId, VOLUME_ORG_USER_ID),
     ),
     storageVersionJoin: and(
+      isNull(officialWorkflowDefinitionRevisions.contentBundle),
       eq(
         storageVersions.id,
         officialWorkflowDefinitionRevisions.storageVersion,
@@ -183,13 +185,12 @@ export function acceptedOfficialWorkflowRevisionReadPlan(args: {
       ),
     ),
     deliveryCondition: or(
+      isNotNull(officialWorkflowDefinitionRevisions.contentBundle),
       and(
-        isNull(officialWorkflowDefinitionRevisions.storageName),
-        isNull(officialWorkflowDefinitionRevisions.storageId),
-        isNull(officialWorkflowDefinitionRevisions.storageVersion),
-        isNotNull(officialWorkflowDefinitionRevisions.contentBundle),
+        isNull(officialWorkflowDefinitionRevisions.contentBundle),
+        isNotNull(storages.id),
+        isNotNull(storageVersions.id),
       ),
-      and(isNotNull(storages.id), isNotNull(storageVersions.id)),
     ),
     condition: and(
       eq(officialWorkflowDefinitionRevisions.definitionName, args.name),
@@ -220,6 +221,7 @@ export const readAcceptedOfficialWorkflowRevision$ = command(
     signal.throwIfAborted();
     if (
       row &&
+      row.contentBundle === null &&
       (row.verifiedStorageId !== row.storageId ||
         row.verifiedStorageVersion !== row.storageVersion)
     ) {

@@ -155,9 +155,11 @@ const prepareDefinitionBundle$ = command(
       return artifactPreparationRejected(definition.name, path);
     }
     const artifact = registered?.artifact;
-    // Retain exact legacy identities for queued Runs without republishing Storage.
+    // Bundle delivery is authenticated below. Legacy-only revisions still need
+    // their exact Storage identity verified before conversion to a bundle.
     if (
       artifact &&
+      !registered?.contentBundle &&
       (artifact.storageName !==
         getOfficialWorkflowDefinitionStorageName(definition.name) ||
         officialWorkflowArtifactFiles(definition, {

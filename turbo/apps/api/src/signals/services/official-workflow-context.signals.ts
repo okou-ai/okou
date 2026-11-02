@@ -1,6 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { and, asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import {
   storageVersionCacheKeySql,
@@ -47,8 +47,9 @@ function publishedRevision(
   },
 ) {
   if (
-    row.verifiedStorageId !== row.storageId ||
-    row.verifiedStorageVersion !== row.storageVersion
+    row.contentBundle === null &&
+    (row.verifiedStorageId !== row.storageId ||
+      row.verifiedStorageVersion !== row.storageVersion)
   ) {
     throw new OfficialWorkflowRunAdmissionError();
   }
@@ -113,6 +114,7 @@ export function createOfficialWorkflowFacts(
       .leftJoin(
         storages,
         and(
+          isNull(officialWorkflowDefinitionRevisions.contentBundle),
           eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
           eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
           eq(storages.orgId, SYSTEM_ORG_ID),
@@ -122,6 +124,7 @@ export function createOfficialWorkflowFacts(
       .leftJoin(
         storageVersions,
         and(
+          isNull(officialWorkflowDefinitionRevisions.contentBundle),
           eq(
             storageVersions.id,
             officialWorkflowDefinitionRevisions.storageVersion,
@@ -182,7 +185,7 @@ export function createOfficialWorkflowFacts(
 
 type PublishedRevisionStorage = Pick<
   typeof officialWorkflowDefinitionRevisions.$inferSelect,
-  "storageName" | "storageId" | "storageVersion"
+  "storageName" | "storageId" | "storageVersion" | "contentBundle"
 > & {
   readonly headVersionId: string | null;
   readonly s3Prefix: string | null;
@@ -197,9 +200,10 @@ function publishedStorageIndex(
   return new Map(
     rows.flatMap((revision) => {
       if (
-        revision.storageName === null &&
-        revision.storageId === null &&
-        revision.storageVersion === null
+        revision.contentBundle !== null ||
+        (revision.storageName === null &&
+          revision.storageId === null &&
+          revision.storageVersion === null)
       ) {
         return [];
       }
