@@ -4262,11 +4262,17 @@
   },
   "markdown": {
     "tableExport": {
+      "columns_one": "{{formattedCount}} coluna",
+      "columns_many": "{{formattedCount}} colunas",
+      "columns_other": "{{formattedCount}} colunas",
       "drive": "Salvar no Google Drive",
       "excel": "Exportar para Excel",
       "export": "Exportar",
       "filename": "Tabela",
       "googleUnavailable": "Abra esta tabela no seu chat ou verifique sua conexão com o Google Drive.",
+      "rows_one": "{{formattedCount}} linha",
+      "rows_many": "{{formattedCount}} linhas",
+      "rows_other": "{{formattedCount}} linhas",
       "savedDrive": "Salvo no Google Drive",
       "savedSheets": "Salvo no Google Sheets",
       "saving": "Salvando…",

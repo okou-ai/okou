@@ -4208,11 +4208,15 @@
   },
   "markdown": {
     "tableExport": {
+      "columns_one": "{{formattedCount}} कॉलम",
+      "columns_other": "{{formattedCount}} कॉलम",
       "drive": "Google Drive में सेव करें",
       "excel": "Excel में एक्सपोर्ट करें",
       "export": "एक्सपोर्ट करें",
       "filename": "तालिका",
       "googleUnavailable": "इस तालिका को अपने चैट में खोलें या अपना Google Drive कनेक्शन जाँचें।",
+      "rows_one": "{{formattedCount}} पंक्ति",
+      "rows_other": "{{formattedCount}} पंक्तियाँ",
       "savedDrive": "Google Drive में सेव किया गया",
       "savedSheets": "Google Sheets में सेव किया गया",
       "saving": "सेव हो रहा है…",

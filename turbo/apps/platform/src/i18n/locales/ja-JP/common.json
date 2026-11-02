@@ -4193,11 +4193,13 @@
   },
   "markdown": {
     "tableExport": {
+      "columns_other": "{{formattedCount}} 列",
       "drive": "Google Drive に保存",
       "excel": "Excel にエクスポート",
       "export": "エクスポート",
       "filename": "表",
       "googleUnavailable": "自分のチャットでこの表を開くか、Google Drive の接続を確認してください。",
+      "rows_other": "{{formattedCount}} 行",
       "savedDrive": "Google Drive に保存しました",
       "savedSheets": "Google Sheets に保存しました",
       "saving": "保存中…",

@@ -2,7 +2,7 @@ import type { ComponentPropsWithoutRef } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Download, Loader2 } from "lucide-react";
+import { ChevronDown, Download, Loader2 } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   BrandGoogleDrive,
@@ -21,6 +21,8 @@ import {
   DropdownMenuTrigger,
 } from "@okouai/ui";
 import type { Element } from "hast";
+import { formatAppNumber } from "../../i18n/format.ts";
+import { getMarkdownTableDimensions } from "../../lib/markdown-table-dimensions.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
@@ -63,6 +65,8 @@ function ExportableTable({
   const connection = useGet(markdownTableConnection$);
   const [operation, exportTable] = useLoadableSet(exportMarkdownTable$);
   const pending = operation.state === "loading";
+  const { rows: rowCount, columns: columnCount } =
+    getMarkdownTableDimensions(node);
   const run = (mode: "excel" | "original" | "google") => {
     detach(
       exportTable(node, mode, signal),
@@ -71,34 +75,25 @@ function ExportableTable({
     );
   };
   return (
-    <Card className="group/markdown-table relative my-3 min-w-0 rounded-3xl p-2">
-      <div data-markdown-ui>
+    <Card className="my-3 min-w-0 rounded-3xl p-2">
+      <div className="overflow-x-auto rounded-2xl">
+        <table {...props} className={cn("m-0! min-w-max border-0!", className)}>
+          {children}
+        </table>
+      </div>
+      <div
+        data-markdown-ui
+        className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-0.5"
+      >
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <Button
                 variant="quiet"
-                size="xs"
+                size="sm"
                 disabled={pending || connection?.params.table === node}
                 aria-busy={pending}
-                className={cn(
-                  "absolute top-1.5 right-1.5 h-11 bg-gray-200 duration-300 ease-[ease]",
-                  "[&:hover:not(:active)]:bg-gray-300 [&:active:enabled]:bg-gray-400 [&:active:enabled]:text-foreground",
-                  // Only mouse-only devices hide the control. Touch-capable
-                  // hybrids keep the same visible, 44px-high target as phones.
-                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:h-7",
-                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:gap-1.5",
-                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:rounded-md",
-                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:text-[12px]",
-                  // Opacity keeps Export in the tab order. These state
-                  // selectors outrank the idle media rule, including while
-                  // the portalled menu owns focus or an export is pending.
-                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:pointer-events-none",
-                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:opacity-0",
-                  "group-hover/markdown-table:pointer-events-auto group-hover/markdown-table:opacity-100",
-                  "group-focus-within/markdown-table:pointer-events-auto group-focus-within/markdown-table:opacity-100",
-                  "data-popup-open:pointer-events-auto data-popup-open:opacity-100 aria-busy:opacity-100",
-                )}
+                className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:h-11"
               />
             }
           >
@@ -110,8 +105,9 @@ function ExportableTable({
               : t(($) => {
                   return $.markdown.tableExport.export;
                 })}
+            <ChevronDown />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="start">
             <DropdownMenuItem
               className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:min-h-11"
               onClick={() => {
@@ -149,11 +145,24 @@ function ExportableTable({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-      <div className="overflow-x-auto rounded-2xl">
-        <table {...props} className={cn("m-0! min-w-max border-0!", className)}>
-          {children}
-        </table>
+        <p className="m-0 ml-auto text-right text-xs text-muted-foreground">
+          {t(
+            ($) => {
+              return $.markdown.tableExport.rows;
+            },
+            { count: rowCount, formattedCount: formatAppNumber(rowCount) },
+          )}
+          {" · "}
+          {t(
+            ($) => {
+              return $.markdown.tableExport.columns;
+            },
+            {
+              count: columnCount,
+              formattedCount: formatAppNumber(columnCount),
+            },
+          )}
+        </p>
       </div>
       <TableGoogleConnectionDialog node={node} />
     </Card>

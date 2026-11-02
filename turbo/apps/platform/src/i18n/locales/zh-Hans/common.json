@@ -4193,11 +4193,13 @@
   },
   "markdown": {
     "tableExport": {
+      "columns_other": "{{formattedCount}} 列",
       "drive": "保存到 Google Drive",
       "excel": "导出 Excel",
       "export": "导出",
       "filename": "表格",
       "googleUnavailable": "请在你的聊天中保存表格，或检查 Google Drive 连接。",
+      "rows_other": "{{formattedCount}} 行",
       "savedDrive": "已保存到 Google Drive",
       "savedSheets": "已保存到 Google Sheets",
       "saving": "正在保存…",

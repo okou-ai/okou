@@ -75,10 +75,10 @@ const SOURCE = [
   "| Team | 42 |",
 ].join("\n");
 
-async function openTables() {
+async function openTables(source = SOURCE) {
   const chat = createMarkdownChatFixture(context);
   const rows = [
-    chat.outputMessage(SOURCE, { seqId: 1 }),
+    chat.outputMessage(source, { seqId: 1 }),
     chat.runCompleted({ seqId: 2 }),
   ];
   chat.install({
@@ -92,7 +92,7 @@ async function openTables() {
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.MarkdownTableExport]: true },
   });
-  await screen.findByText("张敏");
+  await screen.findAllByRole("table");
   return chat;
 }
 
@@ -260,7 +260,82 @@ function mockTableCloudFiles(
   });
 }
 
-test("Keyboard activation of Export preserves the menu and dismissal focus", async () => {
+test("Each table footer reports its own data rows and columns", async () => {
+  await openTables();
+  expect(screen.getByText("2 rows · 2 columns")).toBeInTheDocument();
+  expect(screen.getByText("1 row · 2 columns")).toBeInTheDocument();
+});
+
+test("A header-only table reports zero data rows and one column", async () => {
+  await openTables("| Metric |\n| --- |");
+  expect(screen.getByText("0 rows · 1 column")).toBeInTheDocument();
+  expect(tableExportButton()).toBeEnabled();
+});
+
+test.each([
+  {
+    name: "headerless body",
+    source: "<table><tbody><tr><td>A</td><td>B</td></tr></tbody></table>",
+    summary: "1 row · 2 columns",
+  },
+  {
+    name: "multiple merged header rows",
+    source: [
+      "<table><thead>",
+      '<tr><th rowspan="2">Quarter</th><th colspan="2">Revenue</th></tr>',
+      "<tr><th>Plan</th><th>Actual</th></tr>",
+      "</thead><tbody><tr><td>Q1</td><td>10</td><td>12</td></tr></tbody></table>",
+    ].join(""),
+    summary: "1 row · 3 columns",
+  },
+  {
+    name: "body row spans",
+    source: [
+      '<table><tbody><tr><td rowspan="2">Region</td><td>A</td></tr>',
+      "<tr><td>B</td><td>C</td></tr></tbody></table>",
+    ].join(""),
+    summary: "2 rows · 3 columns",
+  },
+  {
+    name: "implicit column headers",
+    source: [
+      "<table><tr><th>Item</th><th>Value</th></tr>",
+      "<tr><td>A</td><td>B</td></tr></table>",
+    ].join(""),
+    summary: "1 row · 2 columns",
+  },
+  {
+    name: "row headers without data cells",
+    source: [
+      '<table><tbody><tr><th scope="row">North</th></tr>',
+      '<tr><th scope="row">South</th></tr></tbody></table>',
+    ].join(""),
+    summary: "2 rows · 1 column",
+  },
+  {
+    name: "row headers spanning the rest of their group",
+    source: [
+      '<table><tbody><tr><th scope="row" rowspan="0">North</th><td>A</td></tr>',
+      "<tr><td>B</td><td>C</td></tr>",
+      "<tr><td>D</td><td>E</td></tr></tbody></table>",
+    ].join(""),
+    summary: "3 rows · 3 columns",
+  },
+  {
+    name: "row spans bounded to their section and footer data",
+    source: [
+      '<table><thead><tr><th rowspan="0">Key</th><th>Value</th></tr></thead>',
+      "<tbody><tr><td>A</td><td>B</td></tr></tbody>",
+      "<tfoot><tr><td>Total</td><td>2</td></tr></tfoot></table>",
+    ].join(""),
+    summary: "2 rows · 2 columns",
+  },
+])("Raw HTML table dimensions: $name", async ({ source, summary }) => {
+  await openTables(source);
+  expect(screen.getByText(summary)).toBeInTheDocument();
+});
+
+test("Keyboard activation of footer Export preserves the menu and dismissal focus", async () => {
   await openTables();
   const user = userEvent.setup();
   const trigger = tableExportButton();
