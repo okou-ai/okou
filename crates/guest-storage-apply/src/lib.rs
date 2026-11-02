@@ -60,7 +60,6 @@ mod http_failure;
 pub mod input_telemetry;
 mod instructions;
 mod manifest;
-mod path;
 mod plan;
 mod source;
 mod tar_metadata;

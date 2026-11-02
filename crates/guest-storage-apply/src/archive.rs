@@ -1,8 +1,8 @@
 use crate::LOG_TAG;
 use crate::error::DownloadError;
-use crate::path::normalize_path;
 use crate::source::ArchiveSource;
 use crate::tar_metadata::{MetadataBudget, MetadataReader};
+use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::log_warn;
 use std::io::{self, Read};
 use std::path::Path;

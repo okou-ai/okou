@@ -1,11 +1,11 @@
 use crate::LOG_TAG;
 use crate::archive;
 use crate::error::DownloadError;
-use crate::path::normalize_path;
 use crate::source;
 use crate::telemetry::{
     DownloadRunTelemetry, DownloadTaskTelemetry, LocalArchiveTaskMetrics, RemoteArchiveTaskMetrics,
 };
+use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::{log_error, log_info};
 use std::any::Any;
 use std::collections::VecDeque;

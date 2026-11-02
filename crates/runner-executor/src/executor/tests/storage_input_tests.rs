@@ -963,6 +963,145 @@ async fn instruction_reuse_reapplies_after_storage_reconciles_its_parent() {
 }
 
 #[tokio::test]
+async fn instruction_reuse_repairs_equivalent_parent_paths() {
+    instruction_reuse_with_parent_reconciliation(InstructionParentCase::ReplacedAlias).await;
+}
+
+#[tokio::test]
+async fn instruction_reuse_preserves_files_under_cached_parent() {
+    instruction_reuse_with_parent_reconciliation(InstructionParentCase::CachedRoot).await;
+}
+
+#[tokio::test]
+async fn instruction_reuse_preserves_files_with_cached_sibling() {
+    instruction_reuse_with_parent_reconciliation(InstructionParentCase::CachedChild).await;
+}
+
+enum InstructionParentCase {
+    ReplacedAlias,
+    CachedRoot,
+    CachedChild,
+}
+
+async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCase) {
+    let aliased_parent = matches!(&case, InstructionParentCase::ReplacedAlias);
+    let directory = tempfile::tempdir().unwrap();
+    let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+    let guest = tempfile::tempdir().unwrap();
+    fs::create_dir_all(guest_path(guest.path(), "/home/user/alias")).unwrap();
+    let instructions = archive(&[(SOURCE_FILENAME, b"published instructions")]);
+    let hash = hex::encode(Sha256::digest(&instructions));
+    let settings = archive(&[
+        ("config.toml", b"settings"),
+        ("native-history", b"preserved"),
+    ]);
+    let home = archive(&[("parent-data", b"other Storage input")]);
+    for (name, version, bytes) in [
+        (INSTRUCTION_STORAGE_NAME, hash.as_str(), &instructions),
+        ("framework-settings", "v1", &settings),
+        ("framework-settings", "v2", &settings),
+        ("home-extra", "v1", &home),
+    ] {
+        let cache = config.home.storage_cache_dir(name, version);
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("archive.tar.gz"), bytes).unwrap();
+    }
+    let make_context = |first: bool| {
+        let mut current =
+            instruction_context(&hash, instructions.len() as u64, "codex", "instructions");
+        current.run_id = runner_types::ids::RunId::new_v4();
+        let manifest = current.storage_manifest.as_mut().unwrap();
+        manifest.storages.push(super::support::api_storage(
+            "framework-settings",
+            if matches!(&case, InstructionParentCase::CachedChild) {
+                "/home/user/.codex/memories"
+            } else if aliased_parent {
+                "/home/user/alias/../.codex"
+            } else {
+                "/home/user/.codex"
+            },
+            if aliased_parent && !first { "v2" } else { "v1" },
+            "https://unreachable.invalid/settings",
+        ));
+        if !aliased_parent && first {
+            manifest.storages.push(super::support::api_storage(
+                "home-extra",
+                "/home/user",
+                "v1",
+                "https://unreachable.invalid/home",
+            ));
+        }
+        current
+    };
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let (mut first, _) = execute_job(
+        &factory,
+        make_context(true),
+        NewSandboxDispatch {
+            id: SandboxId::new_v4(),
+            reuse_result: SandboxReuseResult::NoReuseKey,
+        },
+        &config,
+        &default_params(),
+        CancellationToken::new(),
+    )
+    .await;
+    assert_eq!(first.exit_code(), 0, "{:?}", first.error());
+    if let Some(report) = first.startup_report.take() {
+        report.finish().await;
+    }
+    apply_guest_storage(&overrides, guest.path(), 0, None);
+    apply_guest_instructions(&overrides, guest.path(), 0);
+    let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
+    assert_eq!(fs::read(&target).unwrap(), b"published instructions");
+    fs::write(
+        target.parent().unwrap().join("native-history"),
+        b"preserved",
+    )
+    .unwrap();
+    fs::write(&target, b"local instruction edit").unwrap();
+    let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
+        first.sandbox.take().unwrap(),
+        first.source_ip,
+        "instruction-effective-parent",
+        first.storage_fingerprints,
+    )
+    .await;
+    instruction_check(&overrides, guest.path(), "codex");
+    let first_storage = overrides.storage_manifest_calls().len();
+    let first_exec = overrides.exec_calls().len();
+    let (mut next, _) = execute_job_reuse(
+        idle,
+        make_context(false),
+        &config,
+        &default_params(),
+        CancellationToken::new(),
+    )
+    .await;
+    assert_eq!(next.exit_code(), 0, "{:?}", next.error());
+    if let Some(report) = next.startup_report.take() {
+        report.finish().await;
+    }
+    apply_guest_storage(&overrides, guest.path(), first_storage, None);
+    apply_guest_instructions(&overrides, guest.path(), first_exec);
+    assert_eq!(
+        fs::read(&target).expect("the final instruction file must remain available"),
+        if aliased_parent {
+            b"published instructions".as_slice()
+        } else {
+            b"local instruction edit".as_slice()
+        }
+    );
+    assert_eq!(
+        fs::read(target.parent().unwrap().join("native-history")).unwrap(),
+        b"preserved"
+    );
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn home_restored_workflow_storage_preserves_matching_local_content() {
     use crate::home_image_cache::HomeImageCache;
     use runner_host::paths::RunnerPaths;

@@ -8,6 +8,7 @@ use guest_contracts::agent_instructions::{
     InstructionApplication, MAX_METADATA_BYTES, instruction_paths,
 };
 use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
+use guest_contracts::home_mount::HOME_DIR;
 use runner_storage::storage_plan::{StoragePlan, build_storage_plan};
 use runner_types::{storage_fingerprints::StorageFingerprints, types::ExecutionContext};
 use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecResult, Sandbox};
@@ -55,7 +56,7 @@ pub(in crate::executor) async fn check_instruction_reuse(
         return Ok(InstructionReuse::Apply);
     }
     let framework = super::super::cli_framework::normalized_cli_agent_type(&context.cli_agent_type);
-    let target = instruction_paths(Path::new("/home/user"), framework)
+    let target = instruction_paths(Path::new(HOME_DIR), framework)
         .ok_or_else(|| RunnerError::Internal("Unsupported instruction framework".into()))?
         .target;
     let owned_plan;
@@ -69,7 +70,7 @@ pub(in crate::executor) async fn check_instruction_reuse(
         owned_plan = build_storage_plan(manifest, Some(previous))?;
         &owned_plan
     };
-    if plan.replaces_existing_file(&target) {
+    if plan.replaces_existing_file(&target, Path::new(HOME_DIR)) {
         let mut repaired = previous.clone();
         repaired.storages.remove(&instruction.storage_mount);
         return Ok(InstructionReuse::Repair(repaired));

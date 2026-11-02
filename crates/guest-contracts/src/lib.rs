@@ -36,6 +36,7 @@ pub mod session_history_identity;
 pub mod stdout_framing;
 pub mod storage_files;
 pub mod storage_manifest;
+pub mod storage_paths;
 pub mod storage_resources;
 
 pub mod agent_instructions;

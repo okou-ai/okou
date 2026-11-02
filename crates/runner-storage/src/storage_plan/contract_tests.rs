@@ -55,6 +55,57 @@ fn run_plan(plan: super::StoragePlan) {
 }
 
 #[test]
+fn existing_file_effects_match_guest_relative_cleanup_and_cached_mounts() {
+    let working_dir = std::env::current_dir().unwrap();
+    for (relative_cleanup, relative_cached) in [
+        (true, None),
+        (true, Some(true)),
+        (true, Some(false)),
+        (false, Some(true)),
+    ] {
+        let dir = tempfile::tempdir_in(&working_dir).unwrap();
+        let parent = dir.path().join(".codex");
+        let cached = parent.join("memories");
+        let target = parent.join("AGENTS.md");
+        fs::create_dir_all(&cached).unwrap();
+        fs::write(&target, b"local instruction edit").unwrap();
+        let logical = |path: &Path, relative: bool| {
+            if relative {
+                path.strip_prefix(&working_dir).unwrap().to_path_buf()
+            } else {
+                path.to_path_buf()
+            }
+        };
+        let cleanup = logical(dir.path(), relative_cleanup);
+        let mut previous = StorageFingerprints::default();
+        previous.storages.insert(
+            cleanup.to_str().unwrap().into(),
+            StorageFingerprint::new("removed-parent", "v1"),
+        );
+        let mut current = StorageManifest::default();
+        if let Some(relative) = relative_cached {
+            let entry = storage(&logical(&cached, relative), "memories", "v1", String::new());
+            previous.storages.insert(
+                entry.mount_path.clone(),
+                StorageFingerprint::new("memories", "v1"),
+            );
+            current.storages.push(entry);
+        }
+        let plan = build_storage_plan(&current, Some(&previous)).unwrap();
+        let replaces = plan.replaces_existing_file(&target, &working_dir);
+        run_plan(plan);
+        assert_eq!(
+            replaces,
+            !target.exists(),
+            "relative cleanup={relative_cleanup}, relative cached={relative_cached:?}"
+        );
+        if target.exists() {
+            assert_eq!(fs::read(&target).unwrap(), b"local instruction edit");
+        }
+    }
+}
+
+#[test]
 fn canonical_home_state_roundtrip_rematerializes_changed_removed_tainted_and_empty_inputs() {
     let dir = tempfile::tempdir().unwrap();
     let changed = dir.path().join("changed");
