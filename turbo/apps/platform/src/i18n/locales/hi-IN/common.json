@@ -4208,6 +4208,9 @@
       "export": "एक्सपोर्ट करें",
       "filename": "तालिका",
       "googleUnavailable": "इस तालिका को अपने चैट में खोलें या अपना Google Drive कनेक्शन जाँचें।",
+      "savedDrive": "Google Drive में सेव किया गया",
+      "savedSheets": "Google Sheets में सेव किया गया",
+      "saving": "सेव हो रहा है…",
       "sheets": "Google Sheets में सेव करें",
       "uploadFailed": "तालिका अपलोड नहीं हो सकी। फिर से कोशिश करें।"
     }

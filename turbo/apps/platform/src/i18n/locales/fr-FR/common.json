@@ -4262,6 +4262,9 @@
       "export": "Exporter",
       "filename": "Tableau",
       "googleUnavailable": "Ouvre ce tableau dans ton chat ou vérifie ta connexion à Google Drive.",
+      "savedDrive": "Enregistré dans Google Drive",
+      "savedSheets": "Enregistré dans Google Sheets",
+      "saving": "Enregistrement…",
       "sheets": "Enregistrer dans Google Sheets",
       "uploadFailed": "Impossible d’importer le tableau. Réessaie."
     }

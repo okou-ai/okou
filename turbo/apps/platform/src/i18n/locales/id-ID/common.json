@@ -4193,6 +4193,9 @@
       "export": "Ekspor",
       "filename": "Tabel",
       "googleUnavailable": "Buka tabel ini di chat Anda atau periksa koneksi Google Drive Anda.",
+      "savedDrive": "Disimpan ke Google Drive",
+      "savedSheets": "Disimpan ke Google Sheets",
+      "saving": "Menyimpan…",
       "sheets": "Simpan ke Google Sheets",
       "uploadFailed": "Tabel tidak dapat diunggah. Coba lagi."
     }

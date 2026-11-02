@@ -4262,6 +4262,9 @@
       "export": "Exportar",
       "filename": "Tabela",
       "googleUnavailable": "Abra esta tabela no seu chat ou verifique sua conexão com o Google Drive.",
+      "savedDrive": "Salvo no Google Drive",
+      "savedSheets": "Salvo no Google Sheets",
+      "saving": "Salvando…",
       "sheets": "Salvar no Google Sheets",
       "uploadFailed": "Não foi possível enviar a tabela. Tente novamente."
     }
