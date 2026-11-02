@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.4...guest-contracts-v0.29.5) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** share guest cgroup populated-state parsing ([#44583](https://github.com/okou-ai/okou/issues/44583)) ([f06f9c1](https://github.com/okou-ai/okou/commit/f06f9c1ddc0986c80cfdf807f30b81d076e28cc7))
+
 ## [0.29.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.29.3...guest-contracts-v0.29.4) (2026-11-01)
 
 

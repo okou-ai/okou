@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.28.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.4...guest-storage-apply-v0.28.5) (2026-11-02)
+
 ## [0.28.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.28.3...guest-storage-apply-v0.28.4) (2026-11-01)
 
 
