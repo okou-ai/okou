@@ -50,6 +50,7 @@ export function createBrowserPresenceSignals({
   // The Run that was latest when the member took over.
   const memberRun$ = state<{ readonly runId: string | null } | null>(null);
   const takeOverSend$ = state<Promise<void> | null>(null);
+  const pendingSend$ = state<Promise<void> | null>(null);
   const takeOverSent$ = computed((get) => {
     return get(takeOverSend$) ?? Promise.resolve();
   });
@@ -66,8 +67,13 @@ export function createBrowserPresenceSignals({
     async (
       { get, set },
       message: string,
+      after: Promise<void> | null,
       signal: AbortSignal,
     ): Promise<void> => {
+      if (after) {
+        await after;
+      }
+      signal.throwIfAborted();
       const userMessage = textToMessageDocument(message);
       if (!userMessage) {
         throw new Error("Failed to serialize the browser presence message");
@@ -87,6 +93,20 @@ export function createBrowserPresenceSignals({
     },
   );
 
+  // A later takeover must reach the agent after an older, delayed handback.
+  const sendInOrder$ = command(
+    async ({ get, set }, message: string, signal: AbortSignal) => {
+      const sending = set(sendMessage$, message, get(pendingSend$), signal);
+      set(pendingSend$, sending);
+      await sending.finally(() => {
+        // Release only this queue tail, including on failure or cancellation.
+        if (get(pendingSend$) === sending) {
+          set(pendingSend$, null);
+        }
+      });
+    },
+  );
+
   const takeOver$ = command(
     async ({ get, set }, message: string, signal: AbortSignal) => {
       if (get(controller$) === "member") {
@@ -98,7 +118,7 @@ export function createBrowserPresenceSignals({
       if (get(liveRunId$) === null) {
         return;
       }
-      const sending = set(sendMessage$, message, signal);
+      const sending = set(sendInOrder$, message, signal);
       set(takeOverSend$, sending);
       await sending;
     },
@@ -107,7 +127,7 @@ export function createBrowserPresenceSignals({
   const handBack$ = command(
     async ({ get, set }, message: string, signal: AbortSignal) => {
       const memberRun = get(memberRun$);
-      await set(sendMessage$, message, signal);
+      await set(sendInOrder$, message, signal);
       // A newer Run may have been taken over while this send was in flight.
       if (get(memberRun$) === memberRun) {
         set(memberRun$, null);

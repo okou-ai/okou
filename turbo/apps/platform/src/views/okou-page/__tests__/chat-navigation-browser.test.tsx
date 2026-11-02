@@ -3,6 +3,11 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import {
+  chatThreadEventsContract,
+  userMessageDocumentSchema,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { initClient } from "@okouai/api-contracts/client/transport";
+import {
   act,
   fireEvent,
   screen,
@@ -1118,14 +1123,40 @@ test("A delayed handback cannot clear a newer run's page-input takeover", async 
     coords: { clientX: 720, clientY: 450 },
   });
   await within(viewer).findByText("You're in control");
-  await waitFor(() => {
-    expect(screen.getAllByText(TAKE_OVER_MESSAGE)).toHaveLength(2);
-  });
+  // Local ownership moves immediately, but its notice waits for the older send.
+  expect(screen.getAllByText(TAKE_OVER_MESSAGE)).toHaveLength(1);
   handBackAccepted.resolve();
   await waitFor(() => {
     expect(buttonByName("Hand back", viewer)).toBeEnabled();
   });
   expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
+
+  // Read the public event tail, not optimistic UI or request invocation order.
+  const events = await initClient(chatThreadEventsContract, {
+    baseUrl: "https://api.okou.ai",
+  }).rows({
+    params: { threadId: THREAD_ID },
+    query: { sinceSeqId: 0, limit: 100 },
+    fetchOptions: { signal: context.signal },
+  });
+  expect(events.status).toBe(200);
+  if (events.status !== 200) {
+    throw new Error("Expected the persisted handoff events");
+  }
+  expect(
+    events.body.rows
+      .filter((row) => {
+        return row.eventType === "input.prompt" && row.runId === null;
+      })
+      .map((row) => {
+        return userMessageDocumentSchema
+          .parse(row.payload?.userMessage)
+          .parts.flatMap((part) => {
+            return part.type === "text" ? [part.text] : [];
+          })
+          .join("");
+      }),
+  ).toStrictEqual([TAKE_OVER_MESSAGE, HAND_BACK_MESSAGE, TAKE_OVER_MESSAGE]);
 
   click(buttonByName("Hand back", viewer));
   await waitFor(() => {
@@ -1136,6 +1167,60 @@ test("A delayed handback cannot clear a newer run's page-input takeover", async 
       /is working$/u,
     );
   });
+});
+
+test("A failed handback does not poison the next explicit handback", async () => {
+  mockWideScreen();
+  mockBrowserApi(liveBrowserSession());
+  const runId = "d0000000-0000-4000-a000-000000000908";
+  const rejected = createDeferredPromise<void>(context.signal);
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    chatEvents: [
+      {
+        id: "retry-handback-user",
+        role: "user",
+        content: "Compare these pages",
+        runId,
+        seqId: 1,
+        createdAt: "2026-09-01T12:00:00.000Z",
+      },
+    ],
+    activeRunIds: [runId],
+    onQueuedEventAppend: ({ content }) => {
+      if (content === HAND_BACK_MESSAGE && !rejected.settled()) {
+        rejected.resolve();
+        throw new Error("The first handback request failed");
+      }
+    },
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  click(buttonByName("Take over", viewer));
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
+
+  click(buttonByName("Hand back", viewer));
+  await rejected.promise;
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
+  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
+
+  click(buttonByName("Hand back", viewer));
+  await within(viewer).findByText(/is working$/u);
 });
 
 test("Hand back after using the cloud browser between runs continues in one step", async () => {
