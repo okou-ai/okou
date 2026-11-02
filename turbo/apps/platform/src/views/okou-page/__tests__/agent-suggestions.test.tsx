@@ -99,8 +99,12 @@ function makeOption(
     ...overrides,
   };
 }
-function button(name: string, role: "button" | "tab" = "button") {
-  const found = queryAllByRoleFast(role).find((element) => {
+function button(
+  name: string,
+  role: "button" | "tab" = "button",
+  container: ParentNode = document.body,
+) {
+  const found = queryAllByRoleFast(role, container).find((element) => {
     return (
       element.textContent?.trim().startsWith(name) ||
       element.getAttribute("aria-label") === name
@@ -108,7 +112,10 @@ function button(name: string, role: "button" | "tab" = "button") {
   });
   if (!found) {
     throw new Error(
-      `Missing ${role}: ${name}; available: ${queryAllByRoleFast(role)
+      `Missing ${role}: ${name}; available: ${queryAllByRoleFast(
+        role,
+        container,
+      )
         .map((element) => {
           return element.textContent;
         })
@@ -628,44 +635,63 @@ function numberedSuggestions(count: number): Suggestion[] {
     };
   });
 }
-test("Suggestions loop in both directions on the Feed", async () => {
-  const user = userEvent.setup();
-  mockPool(numberedSuggestions(3));
+test("The Feed lists every suggestion card and opens the chosen card's draft", async () => {
+  const items = numberedSuggestions(3).map((item, index) => {
+    return {
+      ...item,
+      options: [
+        makeOption({
+          label: `Review option ${index + 1}`,
+          draft: {
+            draftUserMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "text",
+                  text: `Draft for suggested action ${index + 1}`,
+                },
+              ],
+            },
+            draftAttachments: null,
+          },
+        }),
+      ],
+    };
+  });
+  mockPool(items);
   await openFeed();
-  await screen.findByText("Suggested action 1");
-  expect(screen.getByText("1 of 3")).toBeInTheDocument();
-  expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
-  await user.click(button("Next suggestion"));
-  await screen.findByText("Suggested action 2");
-  expect(screen.getByText("2 of 3")).toBeInTheDocument();
-  expect(screen.queryByText("Suggested action 1")).not.toBeInTheDocument();
-  await user.keyboard("{Enter}");
-  await screen.findByText("Suggested action 3");
-  expect(screen.getByText("3 of 3")).toBeInTheDocument();
-  await user.keyboard("{Enter}");
-  await screen.findByText("Suggested action 1");
-  expect(screen.getByText("1 of 3")).toBeInTheDocument();
-  expect(button("Next suggestion")).toHaveFocus();
-  await user.click(button("Previous suggestion"));
-  await screen.findByText("Suggested action 3");
-  expect(screen.getByText("3 of 3")).toBeInTheDocument();
-  expect(button("Previous suggestion")).toHaveFocus();
-  await user.keyboard("{Enter}");
-  await screen.findByText("Suggested action 2");
-  expect(pathname()).toBe("/feed");
+  const suggestions = await screen.findByRole("region", {
+    name: "Suggestions",
+  });
+  const cards = within(suggestions).getAllByRole("article");
+  expect(
+    cards.map((card) => {
+      return within(card).getByRole("heading").textContent;
+    }),
+  ).toStrictEqual(
+    items.map((item) => {
+      return item.title;
+    }),
+  );
+  for (const [index, card] of cards.entries()) {
+    expect(button(items[index].options[0].label, "button", card)).toBeEnabled();
+    expect(button("I’d like to…", "button", card)).toBeEnabled();
+    expect(button("Dismiss", "button", card)).toBeEnabled();
+  }
+  click(button(items[1].options[0].label, "button", cards[1]));
+  await waitForFocusedHomeComposer();
+  expect(composer()).toHaveTextContent("Draft for suggested action 2");
 });
-test("Dismissing a suggestion consumes it without opening it and brings up the next one", async () => {
+test("Dismissing a suggestion removes only its card and keeps the remaining suggestion available", async () => {
   const pool = mockPool(numberedSuggestions(2));
   await openFeed();
   await screen.findByText("Suggested action 1");
   click(button("Dismiss"));
-  await screen.findByText("Suggested action 2");
-  expect(screen.getByText("1 of 1")).toBeInTheDocument();
-  expect(button("Previous suggestion")).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  expect(button("Next suggestion")).toHaveAttribute("aria-disabled", "true");
+  await screen.findByText("Suggestion dismissed");
+  expect(
+    screen.getByRole("article", { name: "Suggested action 2" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("Suggested action 1")).not.toBeInTheDocument();
   await waitFor(() => {
     expect(pool.consumed).toStrictEqual([
       "a0000000-0000-4000-a000-000000000001",
@@ -856,9 +882,13 @@ test("Choosing another card's custom direction replaces the prepared context and
   await userEvent.setup().keyboard("Assess the risks first");
   click(link("/feed"));
   await screen.findByText(first.title);
-  await userEvent.setup().click(button("Next suggestion"));
-  await screen.findByText(second.title);
-  await userEvent.setup().click(button("I’d like to…"));
+  click(
+    button(
+      "I’d like to…",
+      "button",
+      screen.getByRole("article", { name: second.title }),
+    ),
+  );
   await waitFor(() => {
     expect(pathname()).toBe(homePath);
     expect(composer()).toHaveTextContent(second.title);
@@ -1090,7 +1120,7 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
   expect(attemptedIds[1]).toBe(attemptedIds[0]);
 });
 
-test("Slow feedback leaves the next card usable and Undo restores the original card immediately", async () => {
+test("Slow feedback leaves other cards usable and Undo restores the original card in order", async () => {
   const items = numberedSuggestions(3);
   mockPool(items);
   const requested = context.mocks.deferred<void>();
@@ -1119,17 +1149,35 @@ test("Slow feedback leaves the next card usable and Undo restores the original c
   await screen.findByText(items[0].title);
   click(button("Already done"));
   await requested.promise;
-  await screen.findByText(items[1].title);
-  expect(button("Not planned")).toBeEnabled();
-  expect(button("Next suggestion")).toBeEnabled();
+  await screen.findByText("Noted — this is already done");
+  expect(
+    button(
+      "Not planned",
+      "button",
+      screen.getByRole("article", { name: items[1].title }),
+    ),
+  ).toBeEnabled();
   click(button("Undo"));
   await screen.findByText(items[0].title);
-  expect(screen.getByText("1 of 3")).toBeInTheDocument();
-  // The restored card is interactive even while its original feedback waits.
-  click(button("Next suggestion"));
-  await screen.findByText(items[1].title);
-  click(button("Not planned"));
-  await screen.findByText(items[2].title);
+  expect(
+    within(screen.getByRole("region", { name: "Suggestions" }))
+      .getAllByRole("heading")
+      .map((heading) => {
+        return heading.textContent;
+      }),
+  ).toStrictEqual(
+    items.map((item) => {
+      return item.title;
+    }),
+  );
+  // Another card stays interactive while the restored card's feedback waits.
+  click(
+    button(
+      "Not planned",
+      "button",
+      screen.getByRole("article", { name: items[1].title }),
+    ),
+  );
   await screen.findByText("Noted — this is not planned");
   await otherCardSaved.promise;
   release.resolve();

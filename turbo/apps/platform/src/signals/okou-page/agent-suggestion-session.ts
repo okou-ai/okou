@@ -160,7 +160,6 @@ function createSuggestionSession() {
     snapshot$,
     entries$,
     visible$,
-    index$: state(0),
     confirmation$: state<FeedbackConfirmation | null>(null),
     reasonOpen$: state(false),
   };
@@ -177,9 +176,6 @@ export const agentSuggestionEntries$ = computed((get) => {
 export const visibleAgentSuggestions$ = computed((get) => {
   return get(get(session$).visible$);
 });
-export const agentSuggestionIndex$ = computed((get) => {
-  return get(get(session$).index$);
-});
 export const suggestionFeedbackConfirmation$ = computed((get) => {
   return get(get(session$).confirmation$);
 });
@@ -194,9 +190,6 @@ export const enterAgentSuggestions$ = command(
     return snapshot;
   },
 );
-export const showAgentSuggestion$ = command(({ get, set }, index: number) => {
-  set(get(session$).index$, index);
-});
 export const closeSuggestionFeedback$ = command(({ get, set }) => {
   const session = get(session$);
   set(session.confirmation$, null);
@@ -252,20 +245,7 @@ export const undoSuggestionFeedback$ = command(
     if (!last) {
       return;
     }
-    const entries = await get(session.entries$);
-    pageSignal.throwIfAborted();
-    if (get(session.confirmation$)?.id !== last.id) {
-      return;
-    }
     set(last.entry.hidden$, false);
-    set(
-      session.index$,
-      entries.slice(0, entries.indexOf(last.entry)).filter((entry) => {
-        return (
-          !get(entry.hidden$) && getSuggestionExpiresAt(entry.item) > now()
-        );
-      }).length,
-    );
     set(session.confirmation$, null);
     set(session.reasonOpen$, false);
     await set(
