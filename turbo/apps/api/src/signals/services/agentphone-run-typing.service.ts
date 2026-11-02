@@ -10,7 +10,7 @@ import { onRejection } from "../utils";
 
 const L = logger("AgentPhoneRunTyping");
 
-export const AGENTPHONE_TYPING_REQUEST_TIMEOUT_MS = 2000;
+export const AGENTPHONE_TYPING_REQUEST_TIMEOUT_MS = 3000;
 const TYPING_REPEAT_HOLD_MS = 1000;
 const MAX_TYPING_ENTRIES = 1000;
 
