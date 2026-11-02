@@ -18,3 +18,16 @@ export function enteringNetworkConfig(
       WHERE ${predicate} RETURNING ${config.id}`,
   );
 }
+
+/** Statement-snapshot admission for SSH; existing FKs preserve references. */
+export function readNetworkConfig(
+  qb: QueryBuilder,
+  alias: string,
+  provider: NetworkProvider,
+  predicate: SQL,
+) {
+  const config = networkConfigTable(provider);
+  return qb
+    .$with(alias)
+    .as(qb.select({ id: config.id }).from(config).where(predicate));
+}

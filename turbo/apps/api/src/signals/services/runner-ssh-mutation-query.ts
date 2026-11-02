@@ -14,7 +14,6 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
-  pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { runThreadSshAccess } from "./run-thread-remote-access.service";
 
@@ -25,6 +24,7 @@ export interface RunnerSshHostIdentity {
   readonly id: string;
   readonly orgId: string;
   readonly userId: string;
+  readonly createdAt: string;
 }
 function hostQueries(initial: RunnerSshHostIdentity) {
   const qb = new QueryBuilder();
@@ -32,38 +32,24 @@ function hostQueries(initial: RunnerSshHostIdentity) {
     eq(sshConnections.id, initial.id),
     eq(sshConnections.orgId, initial.orgId),
     eq(sshConnections.userId, initial.userId),
+    eq(sshConnections.createdAt, sql`${initial.createdAt}::timestamp`),
   );
-  const observed = qb.$with("observed_runner_ssh_host").as(
-    qb
-      .select({
-        id: sshConnections.id,
-        version: sql`${sshConnections}.xmin::text`
-          .mapWith(pgTextDecoder)
-          .as("observed_host_version"),
-      })
-      .from(sshConnections)
-      .where(owner),
-  );
-  const host = qb.$with("locked_runner_ssh_host").as(
+  const host = qb.$with("authorized_runner_ssh_host").as(
     qb
       .select({
         ...getTableColumns(sshConnections),
         needsRebind: sql`${sshConnectionNeedsRebind}`
           .mapWith(pgBooleanDecoder)
           .as("derived_needs_rebind"),
-        version: sql`${sshConnections}.xmin::text`
-          .mapWith(pgTextDecoder)
-          .as("locked_host_version"),
       })
       .from(sshConnections)
-      .where(and(owner, exists(qb.select({ id: observed.id }).from(observed))))
-      .for("update"),
+      .where(owner),
   );
-  return { observed, host };
+  return { host };
 }
 function authorityPredicate(
   input: RunnerSshMutationInput,
-  { host, observed }: ReturnType<typeof hostQueries>,
+  { host }: ReturnType<typeof hostQueries>,
 ) {
   return and(
     eq(agentRuns.id, input.runId),
@@ -74,10 +60,6 @@ function authorityPredicate(
       input.runnerIdentity.heartbeatGeneration,
     ),
     runThreadSshAccess(host),
-    eq(
-      host.version,
-      new QueryBuilder().select({ version: observed.version }).from(observed),
-    ),
   );
 }
 function authorityQuery(
@@ -193,28 +175,20 @@ function authorityQuery(
             ),
           ),
         ),
-      )
-      .for("share", {
-        of: [agentRuns, agents],
-      }),
+      ),
   );
 }
 
-// Only sessionless builders leave this module. The retained Run SHARE fence
-// also protects its chat lifetime through the existing ON DELETE SET NULL FK;
-// thread deletion fences attached Runs first, so do not add a thread-first lock.
-// Host drift is known-unwritten. Every serving/rollback SSH override and
-// observation writer must stamp that tuple before its dependent write. A mixed
-// unstamped cohort does not establish freshness; floors/notices do not drain it.
-// Effective credential/config changes fence the referenced Host first; restrictive FKs
-// preserve identity. Resource predicates remain plain reads under that Host fence.
+// Authorization is evaluated by the mutation statement's snapshot. Revocation
+// denies later requests; admitted in-flight work may complete. Generation and
+// Host incarnation are business identities, not a cross-writer lock protocol.
 export function createRunnerSshMutationReads(
   input: RunnerSshMutationInput,
   initial: RunnerSshHostIdentity,
 ) {
   const qb = new QueryBuilder();
-  const { host, observed } = hostQueries(initial);
-  const current = authorityQuery(input, { host, observed });
+  const { host } = hostQueries(initial);
+  const current = authorityQuery(input, { host });
   const access = qb.$with("runner_access_authority").as(
     qb
       .select({ id: cloudflareAccessConfigs.id })
@@ -299,11 +273,10 @@ export function createRunnerSshMutationReads(
     tailscaleConfigId: current.tailscaleConfigId,
   };
   return {
-    observed,
     host,
     current,
     eligible,
     fields,
-    ctes: [observed, host, current, access, tailscale, eligible],
+    ctes: [host, current, access, tailscale, eligible],
   };
 }

@@ -33,12 +33,14 @@ export const commitThreadSshOverride$ = command(
           eq(chatThreads.userId, owner.userId),
         ),
       );
-    // Publishing an MVCC version fences insertion, replacement and removal alike,
-    // including the otherwise-unlockable absence of an override. Metadata is intact.
-    const stamped = db.$with("stamped_thread_ssh_host").as(
+    const host = db.$with("authorized_thread_ssh_host").as(
       db
-        .update(sshConnections)
-        .set({ displayName: sql`${sshConnections.displayName}` })
+        .select({
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+          defaultEnabledForChats: sshConnections.defaultEnabledForChats,
+        })
+        .from(sshConnections)
         .where(
           and(
             eq(sshConnections.id, owner.connectionId),
@@ -46,12 +48,7 @@ export const commitThreadSshOverride$ = command(
             eq(sshConnections.userId, owner.userId),
             exists(thread),
           ),
-        )
-        .returning({
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-          defaultEnabledForChats: sshConnections.defaultEnabledForChats,
-        }),
+        ),
     );
     const changed = db.$with("changed_thread_ssh_override").as(
       enabled === null
@@ -67,7 +64,7 @@ export const commitThreadSshOverride$ = command(
                   chatThreadSshAccessOverrides.connectionId,
                   owner.connectionId,
                 ),
-                exists(db.select({ id: stamped.id }).from(stamped)),
+                exists(db.select({ id: host.id }).from(host)),
               ),
             )
             .returning({ id: chatThreadSshAccessOverrides.connectionId })
@@ -79,12 +76,12 @@ export const commitThreadSshOverride$ = command(
                   chatThreadId: sql`${owner.chatThreadId}::uuid`
                     .mapWith(chatThreadSshAccessOverrides.chatThreadId)
                     .as("chat_thread_id"),
-                  connectionId: stamped.id,
+                  connectionId: host.id,
                   enabled: sql`${enabled}::boolean`
                     .mapWith(chatThreadSshAccessOverrides.enabled)
                     .as("enabled"),
                 })
-                .from(stamped),
+                .from(host),
             )
             .onConflictDoUpdate({
               target: [
@@ -95,16 +92,16 @@ export const commitThreadSshOverride$ = command(
             })
             .returning({ id: chatThreadSshAccessOverrides.connectionId }),
     );
-    const [host] = await db
-      .with(stamped, changed)
+    const [authorized] = await db
+      .with(host, changed)
       .select({
-        id: stamped.id,
-        displayName: stamped.displayName,
-        defaultEnabledForChats: stamped.defaultEnabledForChats,
+        id: host.id,
+        displayName: host.displayName,
+        defaultEnabledForChats: host.defaultEnabledForChats,
       })
-      .from(stamped)
-      .leftJoin(changed, eq(changed.id, stamped.id));
+      .from(host)
+      .leftJoin(changed, eq(changed.id, host.id));
     signal.throwIfAborted();
-    return host ?? null;
+    return authorized ?? null;
   },
 );

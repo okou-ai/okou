@@ -15,6 +15,7 @@ export const sshConnections = pgTable(
         table.orgId,
         table.userId,
       ),
+      unique("uq_ssh_connections_incarnation").on(table.id, table.createdAt),
       foreignKey({
         name: "ssh_connections_cloudflare_access_org_fk",
         columns: [table.cloudflareAccessId, table.orgId],

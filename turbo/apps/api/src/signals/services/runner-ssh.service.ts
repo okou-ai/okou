@@ -170,18 +170,19 @@ function availableConnection(row: Connection | null | undefined) {
   if (!row || row.needsRebind) {
     return null;
   }
+  // An admitted binding can outlive config visibility; later requests are denied.
   if (
     (row.connectionMode === "tailscale" ||
       row.connectionMode === "tailscale_ssh") &&
     (row.tailscale === null || row.tailscaleId === null)
   ) {
-    throw new Error("SSH Tailscale configuration is missing");
+    return null;
   }
   if (
     row.connectionMode === "cloudflare_access" &&
     (row.access === null || row.accessId === null)
   ) {
-    throw new Error("SSH Cloudflare Access is missing");
+    return null;
   }
   return row;
 }
@@ -339,31 +340,21 @@ export const pinRunnerSsh$ = command(
     if (!initial) {
       return unavailable;
     }
-    let attempt = await set(
+    const result = await set(
       commitRunnerSshPinAttempt$,
       args.input,
       initial,
       signal,
     );
-    if (attempt.retry) {
-      // Drift gated off every effect. Only this known-unwritten case gets one
-      // fresh statement; exceptions and uncertain effects are never replayed.
-      attempt = await set(
-        commitRunnerSshPinAttempt$,
-        args.input,
-        initial,
-        signal,
-      );
-    }
     signal.throwIfAborted();
-    if (attempt.result.outcome === "pinned") {
+    if (result.outcome === "pinned") {
       await publishSshClientInvalidation({
         orgId: initial.orgId,
         userId: initial.userId,
       });
     }
     signal.throwIfAborted();
-    return attempt.result;
+    return result;
   },
 );
 
@@ -400,22 +391,13 @@ export const recordRunnerSshObservation$ = command(
     if (!observedAt) {
       return { outcome: "ignored" };
     }
-    let result = await set(
+    const result = await set(
       commitRunnerSshObservationAttempt$,
       args.input,
       initial,
       observedAt,
       signal,
     );
-    if (result.retry) {
-      result = await set(
-        commitRunnerSshObservationAttempt$,
-        args.input,
-        initial,
-        observedAt,
-        signal,
-      );
-    }
     signal.throwIfAborted();
     if (result.notify) {
       await publishSshClientInvalidation({

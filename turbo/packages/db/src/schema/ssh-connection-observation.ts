@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   integer,
   pgTable,
   timestamp,
@@ -30,6 +31,11 @@ export const sshConnectionObservations = pgTable(
   },
   (table) => {
     return [
+      foreignKey({
+        name: "ssh_observation_incarnation_fk",
+        columns: [table.connectionId, table.connectionCreatedAt],
+        foreignColumns: [sshConnections.id, sshConnections.createdAt],
+      }).onDelete("cascade"),
       check(
         "chk_ssh_connection_observation_generation",
         sql`${table.generation} > 0`,

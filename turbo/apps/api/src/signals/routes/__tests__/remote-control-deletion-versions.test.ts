@@ -135,7 +135,7 @@ async function fixture(target: Target): Promise<Fixture> {
                 displayName: updatedName,
               },
             }),
-            [200, 404],
+            [200, 404, 409],
           );
         },
         remove: async (version = generation) => {
@@ -241,7 +241,7 @@ async function fixture(target: Target): Promise<Fixture> {
               params,
               body: { expectedRevision: revision, name: updatedName },
             }),
-            [200, 404],
+            [200, 404, 409],
           );
         },
         remove: async (version = revision) => {
@@ -387,9 +387,9 @@ describe.each(targets)("%s reviewed-version deletion", (target) => {
         },
       ]);
     } else {
-      // VNC PATCH can observe the row before DELETE commits and then lose its
-      // conditional write with 409; an earlier miss returns 404. Neither wins.
-      expect(target === "VNC host" ? [404, 409] : [404]).toContain(
+      // A conditional PATCH can observe the row before DELETE commits and
+      // reject its stale publication; an earlier miss returns 404. Neither wins.
+      expect(target === "VNC credential" ? [404] : [404, 409]).toContain(
         updated.status,
       );
       expect(updated.body).toMatchObject({

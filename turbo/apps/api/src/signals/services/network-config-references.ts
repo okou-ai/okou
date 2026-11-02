@@ -5,7 +5,6 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { enum as zEnum } from "zod";
 import {
   pgBooleanDecoder,
-  pgTextDecoder,
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import {
@@ -44,9 +43,6 @@ export function networkReferencesQuery(
       userId: sshConnections.userId,
       displayName: sshConnections.displayName,
       generation: sshConnections.generation,
-      version: sql`${sshConnections}.xmin::text`
-        .mapWith(pgTextDecoder)
-        .as("host_version"),
       rfb: sql`false`.mapWith(pgBooleanDecoder).as("rfb"),
       kdc: sql`false`.mapWith(pgBooleanDecoder).as("kdc"),
     })
@@ -60,9 +56,6 @@ export function networkReferencesQuery(
           userId: vncConnections.userId,
           displayName: vncConnections.displayName,
           generation: vncConnections.generation,
-          version: sql`${vncConnections}.xmin::text`
-            .mapWith(pgTextDecoder)
-            .as("host_version"),
           rfb: sql`coalesce(${eq(columns.rfb, configId)}, false)`
             .mapWith(pgBooleanDecoder)
             .as("rfb"),

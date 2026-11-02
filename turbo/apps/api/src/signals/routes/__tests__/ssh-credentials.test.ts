@@ -470,7 +470,7 @@ describe("reusable SSH credential owner routes", () => {
     expect(kms.generateDataKeyCalls).toBe(0);
   });
 
-  it("publishes a delayed low-frequency edit and keeps the current credential usable", async () => {
+  it("rejects a delayed stale edit and keeps the winning credential usable", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -504,7 +504,7 @@ describe("reusable SSH credential owner routes", () => {
           },
         },
       }),
-      [200],
+      [409],
     );
     await entered.promise;
     const renamed = await accept(
@@ -516,16 +516,17 @@ describe("reusable SSH credential owner routes", () => {
       [200],
     );
     release.resolve();
-    const saved = await delayed;
-    expect(saved.body).toMatchObject({
+    const rejected = await delayed;
+    expect(rejected.body.error.code).toBe("SSH_CREDENTIAL_REVISION_CONFLICT");
+    expect(renamed.body).toMatchObject({
       id: created.body.id,
-      name: renamed.body.name,
-      revision: 3,
-      authMethod: "private_key",
+      name: "Concurrent winner",
+      revision: 2,
+      authMethod: "password",
     });
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([saved.body]);
+    ).toStrictEqual([renamed.body]);
     const staleDeletion = await accept(
       credentials().delete({ headers, params, body: { expectedRevision: 1 } }),
       [409],
@@ -534,7 +535,7 @@ describe("reusable SSH credential owner routes", () => {
       "SSH_CREDENTIAL_REVISION_CONFLICT",
     );
     await accept(
-      credentials().delete({ headers, params, body: { expectedRevision: 3 } }),
+      credentials().delete({ headers, params, body: { expectedRevision: 2 } }),
       [204],
     );
   });
