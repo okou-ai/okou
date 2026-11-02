@@ -5007,7 +5007,9 @@
     }
   },
   "projects": {
+    "active": "Active conversations",
     "archived": "Archived conversations",
+    "close": "Close",
     "create": "Create Project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
@@ -5017,13 +5019,15 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related conversations together across Agents",
     "empty": "No conversations here yet",
+    "emptyArchive": "No archived chats",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
-    "moveDescription": "The Agent and conversation history stay with this chat",
     "moveError": "Could not move conversation",
     "moveTitle": "Move conversation",
     "name": "Project name",
     "newChat": "New chat",
+    "noMatches": "No projects found",
+    "options": "Options for {{name}}",
     "projects": "Projects",
     "remove": "Remove from Project",
     "rename": "Rename",
@@ -5031,8 +5035,9 @@
     "save": "Save",
     "saveError": "Could not save Project",
     "saving": "Saving…",
-    "unavailable": "Project unavailable",
-    "unavailableDescription": "This Project was deleted or is not available in this workspace"
+    "search": "Search projects…",
+    "showMore": "Show more chats",
+    "unavailable": "Project unavailable"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} exécution(s) simultanée(s)",

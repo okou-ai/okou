@@ -1,3 +1,5 @@
+import { hydrateProjects$ } from "../projects/projects.ts";
+import { resetProjectUi$ } from "../projects/project-ui.ts";
 import {
   loadMarketingHandoff$,
   importMarketingHandoffFiles$,
@@ -79,6 +81,7 @@ const restoreMarketingAgentDraft$ = command(
 
 export const setupAgentChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(resetProjectUi$);
     const agentId = get(currentAgentId$);
 
     if (!agentId) {
@@ -177,6 +180,7 @@ export const setupAgentChatPage$ = command(
       "initial Jobs selection",
     );
 
+    await set(hydrateProjects$, signal);
     await set(checkUnifiedSettingsParam$, signal);
 
     const params = get(searchParams$);

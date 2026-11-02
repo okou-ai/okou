@@ -1,7 +1,4 @@
-import {
-  ProjectMembership,
-  ProjectReference,
-} from "../projects/project-page.tsx";
+import { ProjectReference } from "../projects/project-reference.tsx";
 import {
   MessageShareMenu,
   SharedThreadAudiencePicker,
@@ -827,7 +824,6 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <ProjectMembership threadId={thread.threadId} />
           <AutomationMenuButton thread={thread} />
           <ThreadMailButton thread={thread} />
           <BrowserMenuButton thread={thread} />

@@ -1,5 +1,3 @@
-import { selectedProjectId$ } from "../projects/project-navigation.ts";
-import { projectsEnabled$, newProjectThread$ } from "../projects/projects.ts";
 import { command, computed, state } from "ccstate";
 import { detachedNavigateTo$, pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
@@ -37,11 +35,6 @@ export const navigateToChat$ = command(({ set }, chatThreadId: string) => {
 // chat asks for the composer explicitly.
 export const navigateToNewChat$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const projectId = get(selectedProjectId$);
-    if (get(projectsEnabled$) && projectId) {
-      await set(newProjectThread$, projectId, signal);
-      return;
-    }
     const agentId = await get(currentChatAgentId$);
     signal.throwIfAborted();
     if (!agentId) {
@@ -216,6 +209,15 @@ export const sidebarExpanded$ = computed((get) => {
 
 export const setSidebarExpanded$ = command(({ set }, expanded: boolean) => {
   set(internalSidebarExpanded$, expanded);
+});
+
+export const showChatSidebar$ = command(({ get, set }) => {
+  if (get(unifiedChatWorkspace$)) {
+    set(setStoredChatListHidden$, false);
+  } else {
+    set(internalSidebarOff$, false);
+  }
+  set(internalSidebarExpanded$, true);
 });
 
 export function isChatRoute(key: RouteKey | null): boolean {

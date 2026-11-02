@@ -1,4 +1,3 @@
-import { selectedProjectId$ } from "./projects/project-navigation.ts";
 import { command, computed, state, type Computed } from "ccstate";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
@@ -130,13 +129,11 @@ function createChatThreadListSignals(
       return [];
     }
     const enabled = get(featureSwitch$)[FeatureSwitchKey.Projects] === true;
-    const projectId = enabled ? get(selectedProjectId$) : null;
     return sortChatThreads(
       get(eventDrivenChatThreads$).filter((thread) => {
-        return projectId
-          ? thread.projectId === projectId
-          : thread.agentId === agentId &&
-              (!enabled || thread.projectId === null);
+        return (
+          thread.agentId === agentId && (!enabled || thread.projectId === null)
+        );
       }),
     );
   });
@@ -213,9 +210,13 @@ export const unreadChatThreads$ = computed(
       return [];
     }
     const indicators = await get(chatThreadIndicatorsFromWorker$);
+    const projectsEnabled =
+      get(featureSwitch$)[FeatureSwitchKey.Projects] === true;
     const threads = get(eventDrivenChatThreads$).filter((thread) => {
       return (
-        thread.agentId === agentId && indicators.threads[thread.id] === "unread"
+        thread.agentId === agentId &&
+        indicators.threads[thread.id] === "unread" &&
+        (!projectsEnabled || thread.projectId === null)
       );
     });
     return sortChatThreads(threads);
