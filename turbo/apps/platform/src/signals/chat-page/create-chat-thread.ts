@@ -1693,6 +1693,7 @@ interface EventTree {
   readonly requireUrlTerminator: boolean;
   readonly tree: Root | undefined;
   readonly batchConnectorPermissions: boolean;
+  readonly cjkEmphasis: boolean;
   /** Diagram sources this event shows, prepared when it becomes visible. */
   readonly diagramCodes?: readonly string[];
 }
@@ -1704,6 +1705,7 @@ interface RichEventTreePlan {
   readonly descriptors: readonly CardDescriptorBlock[];
   readonly requireUrlTerminator: boolean;
   readonly batchConnectorPermissions: boolean;
+  readonly cjkEmphasis: boolean;
 }
 
 function createEventTreeParser(registries: EventTreeRegistries) {
@@ -1731,6 +1733,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
         math: true,
         mermaid: true,
         cards,
+        cjkEmphasis: plan.cjkEmphasis,
       });
       const diagramCodes: string[] = [];
       embedMermaidSignals(tree, (code) => {
@@ -1757,6 +1760,7 @@ function planEventTreeUpdates(
   current: ReadonlyMap<string, EventTree>,
   chatActionContext: ChatActionContext,
   batchConnectorPermissions: boolean,
+  cjkEmphasis: boolean,
 ): {
   readonly next: Map<string, EventTree> | undefined;
   readonly richPlans: RichEventTreePlan[];
@@ -1773,7 +1777,8 @@ function planEventTreeUpdates(
     if (
       cached?.content === content &&
       cached.requireUrlTerminator === requireUrlTerminator &&
-      cached.batchConnectorPermissions === batchConnectorPermissions
+      cached.batchConnectorPermissions === batchConnectorPermissions &&
+      cached.cjkEmphasis === cjkEmphasis
     ) {
       continue;
     }
@@ -1794,6 +1799,7 @@ function planEventTreeUpdates(
         content: plan.content,
         requireUrlTerminator: plan.requireUrlTerminator,
         batchConnectorPermissions,
+        cjkEmphasis,
         tree: plainTree,
       });
       continue;
@@ -1804,9 +1810,15 @@ function planEventTreeUpdates(
       content: plan.content,
       requireUrlTerminator: plan.requireUrlTerminator,
       batchConnectorPermissions,
+      cjkEmphasis,
       tree: undefined,
     });
-    richPlans.push({ eventId: event.id, ...plan, batchConnectorPermissions });
+    richPlans.push({
+      eventId: event.id,
+      ...plan,
+      batchConnectorPermissions,
+      cjkEmphasis,
+    });
   }
   return { next, richPlans };
 }
@@ -1862,6 +1874,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
           pendingEntry.requireUrlTerminator !== plan.requireUrlTerminator ||
           pendingEntry.batchConnectorPermissions !==
             plan.batchConnectorPermissions ||
+          pendingEntry.cjkEmphasis !== plan.cjkEmphasis ||
           pendingEntry.tree !== undefined
         ) {
           continue;
@@ -1872,6 +1885,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
           content: plan.content,
           requireUrlTerminator: plan.requireUrlTerminator,
           batchConnectorPermissions: plan.batchConnectorPermissions,
+          cjkEmphasis: plan.cjkEmphasis,
           tree,
           diagramCodes,
         });
@@ -1898,12 +1912,13 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
     ): Promise<void> => {
       signal.throwIfAborted();
       const current = get(internalEventTrees$);
+      const features = get(featureSwitch$);
       const { next, richPlans } = planEventTreeUpdates(
         events,
         current,
         chatActionContext,
-        get(featureSwitch$)[FeatureSwitchKey.BatchConnectorPermissions] ===
-          true,
+        features[FeatureSwitchKey.BatchConnectorPermissions] === true,
+        features[FeatureSwitchKey.MarkdownCjkEmphasis] === true,
       );
       if (next) {
         set(internalEventTrees$, next);

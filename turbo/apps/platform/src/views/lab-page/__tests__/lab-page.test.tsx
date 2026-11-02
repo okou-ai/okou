@@ -214,6 +214,7 @@ test("Maintainer filters narrow the feature list", async () => {
 test.each([
   [FeatureSwitchKey.TestOauthConnector, false],
   [FeatureSwitchKey.RemoteControlGuidedSetup, true],
+  [FeatureSwitchKey.MarkdownCjkEmphasis, false],
 ] as const)(
   "Toggle and reset a Lab override: %s",
   async (featureKey, defaultEnabled) => {

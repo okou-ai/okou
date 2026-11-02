@@ -27,6 +27,21 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("defaults CJK emphasis to staff and honors explicit overrides", () => {
+    const key = FeatureSwitchKey.MarkdownCjkEmphasis;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ orgId: "external-org" }, false],
+      [staff, true],
+      [{ ...staff, overrides: { [key]: false } }, false],
+      [{ orgId: "external-org", overrides: { [key]: true } }, true],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");

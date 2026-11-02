@@ -66,6 +66,42 @@ function inlineMathToken(source: string): MathToken | undefined {
     : undefined;
 }
 
+/** Keep formula asterisks out of a display parser's emphasis boundary scan. */
+export function maskMarkdownInlineMath(
+  source: string,
+  upstreamMask: string,
+): string {
+  let masked = upstreamMask;
+  let from = 0;
+  for (;;) {
+    const start = source.indexOf(String.raw`\(`, from);
+    if (start === -1) {
+      return masked;
+    }
+    from = start + 2;
+    let precedingSlashes = 0;
+    for (let index = start - 1; index >= 0 && source[index] === "\\"; index--) {
+      precedingSlashes++;
+    }
+    // Marked masks active escaped punctuation as ++. An opener inside code,
+    // a link destination or HTML instead belongs to its existing block mask.
+    if (
+      precedingSlashes % 2 !== 0 ||
+      upstreamMask.slice(start, start + 2) !== "++"
+    ) {
+      continue;
+    }
+    const formula = inlineMathToken(source.slice(start));
+    if (formula) {
+      masked =
+        masked.slice(0, start) +
+        "a".repeat(formula.raw.length) +
+        masked.slice(start + formula.raw.length);
+      from = start + formula.raw.length;
+    }
+  }
+}
+
 function embedMath(
   tree: Root,
   marker: string,
