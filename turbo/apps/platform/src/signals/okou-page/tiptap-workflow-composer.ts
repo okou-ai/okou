@@ -269,15 +269,9 @@ export interface WorkflowComposerSignals {
     void,
     [GenerationTemplateRequest, ComposerTemplateAttachment]
   >;
-  readonly updateTemplate$: Command<
-    boolean,
-    [
-      GenerationTemplateRequest,
-      {
-        readonly request: GenerationTemplateRequest;
-        readonly attachment: ComposerTemplateAttachment;
-      } | null,
-    ]
+  readonly setGenerationSuggestionTemplate$: Command<
+    void,
+    [string, GenerationTemplateRequest, ComposerTemplateAttachment]
   >;
   readonly openTemplatePicker$: Command<
     void,
@@ -1739,6 +1733,7 @@ function createInlineTemplateNode(
       return {
         templateType: { default: "presentation" },
         template: { default: null },
+        generationSuggestionId: { default: null, rendered: false },
         title: { default: "" },
         category: { default: "slides" },
         previewImageUrl: { default: null },
@@ -2863,12 +2858,14 @@ function inlineTemplateNode(
   editor: Editor,
   request: GenerationTemplateRequest,
   attachment: ComposerTemplateAttachment,
+  generationSuggestionId: string | null = null,
 ): ProseMirrorNode {
   return editor.schema.nodeFromJSON({
     type: INLINE_TEMPLATE_NODE_NAME,
     attrs: {
       templateType: attachment.type,
       template: request,
+      generationSuggestionId,
       title: attachment.title,
       category: attachment.category,
       previewImageUrl: attachment.previewImageUrl ?? null,
@@ -2946,12 +2943,7 @@ function createInsertTemplateCommand(
   );
 }
 
-/**
- * Rewrites one inline template in place, addressed by position rather than by
- * the editor selection. setNodeMarkup maps a NodeSelection to a TextSelection,
- * so a selection-based update only works once; every later edit would fall
- * through to inserting another chip.
- */
+/** A manual insert appends beside a selected template instead of replacing it. */
 function createPrepareTemplateInsertionCommand(editor: Editor) {
   return command(() => {
     const { selection } = editor.state;
@@ -2980,40 +2972,36 @@ function createReadSelectedTemplateCommand(editor: Editor) {
   });
 }
 
-function createUpdateTemplateCommand(
+/** A stable node identity keeps recommendation replacement correct after undo. */
+function createSetGenerationSuggestionTemplateCommand(
   editor: Editor,
-): WorkflowComposerSignals["updateTemplate$"] {
-  return command((_context, previous, replacement) => {
-    const previousJson = JSON.stringify(previous);
+): WorkflowComposerSignals["setGenerationSuggestionTemplate$"] {
+  return command((_context, id, request, attachment) => {
+    const replacement = inlineTemplateNode(editor, request, attachment, id);
     let position: number | null = null;
-    let nodeSize = 0;
     editor.state.doc.descendants((node, offset) => {
       if (
         position === null &&
         node.type.name === INLINE_TEMPLATE_NODE_NAME &&
-        JSON.stringify(node.attrs.template) === previousJson
+        node.attrs.generationSuggestionId === id
       ) {
         position = offset;
-        nodeSize = node.nodeSize;
       }
     });
-    if (position === null) {
-      return false;
+    if (position !== null) {
+      editor.view.dispatch(
+        editor.state.tr
+          .setNodeMarkup(position, undefined, replacement.attrs)
+          .scrollIntoView(),
+      );
+      return;
     }
-    const transaction =
-      replacement === null
-        ? editor.state.tr.delete(position, position + nodeSize)
-        : editor.state.tr.setNodeMarkup(
-            position,
-            undefined,
-            inlineTemplateNode(
-              editor,
-              replacement.request,
-              replacement.attachment,
-            ).attrs,
-          );
-    editor.view.dispatch(transaction.scrollIntoView());
-    return true;
+    editor
+      .chain()
+      .focus("end")
+      .insertContent(replacement.toJSON())
+      .scrollIntoView()
+      .run();
   });
 }
 
@@ -3046,7 +3034,8 @@ function createTemplateCommands(
     },
   );
   return {
-    updateTemplate$: createUpdateTemplateCommand(editor),
+    setGenerationSuggestionTemplate$:
+      createSetGenerationSuggestionTemplateCommand(editor),
     insertTemplate$: createInsertTemplateCommand(
       editor,
       draft,

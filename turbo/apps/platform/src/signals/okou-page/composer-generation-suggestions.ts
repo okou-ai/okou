@@ -30,7 +30,7 @@ interface AppliedGenerationSuggestion {
   readonly intent: ComposerGenerationIntent;
   readonly revision: number;
   readonly imageAspectRatio: GenerationImageAspectRatio;
-  readonly template: GenerationTemplateRequest | undefined;
+  readonly templateId: string;
 }
 
 function createRecommendationState() {
@@ -115,6 +115,7 @@ function createApplicationSignals({
     }
     const previous = get(appliedSelection$);
     set(tasks.openTask$, intent);
+    set(composer.focus$);
     if (intent === "presentation") {
       set(create.setPresentationSlideCount$, get(slideCount$));
     }
@@ -122,7 +123,7 @@ function createApplicationSignals({
       intent,
       revision: get(create.selectionRevision$),
       imageAspectRatio: get(imageAspectRatio$),
-      template: previous?.template,
+      templateId: previous?.templateId ?? crypto.randomUUID(),
     });
     set(
       dismissed$,
@@ -144,16 +145,12 @@ function createApplicationSignals({
       if (!applied) {
         return;
       }
-      if (
-        !applied.template ||
-        !set(composer.updateTemplate$, applied.template, {
-          request: template,
-          attachment,
-        })
-      ) {
-        set(composer.insertTemplate$, template, attachment);
-      }
-      set(applied$, { ...applied, template });
+      set(
+        composer.setGenerationSuggestionTemplate$,
+        applied.templateId,
+        template,
+        attachment,
+      );
     },
   );
   const change$ = command(({ get, set }) => {
