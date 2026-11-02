@@ -2099,6 +2099,78 @@
       "threads": "聊天",
       "title": "轉發到"
     },
+    "homeDiscovery": {
+      "create": {
+        "document": "Document",
+        "image": "Image",
+        "presentation": "Presentation",
+        "visualization": "Chart",
+        "website": "Website"
+      },
+      "entries": {
+        "briefs": {
+          "examples": {
+            "first": "幫我設定晨間郵件摘要，彙整需要我處理的郵件；先確認收件匣和傳送時間",
+            "second": "幫我設定每週競品簡報；先確認關注的公司、資訊來源和傳送排程",
+            "third": "幫我設定每日銷售摘要；先確認資料來源、指標和傳送時間"
+          },
+          "label": "Briefs",
+          "placeholder": "描述簡報要包含的內容，以及接收頻率…",
+          "title": "希望定期收到什麼簡報？"
+        },
+        "general": {
+          "examples": {
+            "first": "尋找適合新創團隊的品牌設計公司",
+            "second": "依功能和價格比較客戶管理工具",
+            "third": "研究某個產業的近期趨勢和領先企業"
+          },
+          "label": "綜合",
+          "placeholder": "描述你的問題，或想了解的內容…",
+          "title": "想查些什麼？"
+        },
+        "information": {
+          "examples": {
+            "first": "尋找近期關於小型企業採用 AI 的研究，並附上原始來源",
+            "second": "蒐集成功發表產品的公開案例，並說明哪些做法發揮了作用",
+            "third": "尋找可用於簡報的可靠產業資料，附上日期和來源連結"
+          },
+          "label": "資訊",
+          "placeholder": "描述主題、時間範圍，或資料的用途…",
+          "title": "想找哪方面的資料？"
+        },
+        "monitor": {
+          "examples": {
+            "first": "幫我關注競爭對手的價格變化；先確認公司、資訊來源和通知時間",
+            "second": "幫我關注寄給客戶的郵件是否收到回覆；先確認具體郵件和通知方式",
+            "third": "幫我關注某個產業的重要動態；先商定資訊來源、檢查頻率和關注重點"
+          },
+          "label": "Monitor",
+          "placeholder": "描述想持續關注的對象，以及哪些變化值得留意…",
+          "title": "想持續關注什麼變化？"
+        },
+        "people": {
+          "examples": {
+            "first": "為一場 AI 行銷活動尋找 5 位講者，說明適合的理由並附上公開來源",
+            "second": "尋找能觸及企業主的內容創作者，並說明其受眾為什麼合適",
+            "third": "為我的顧問服務尋找潛在客戶，並附上相關的公開背景資訊"
+          },
+          "label": "人物",
+          "placeholder": "描述職位、領域、公司或地區…",
+          "title": "找什麼樣的人？"
+        }
+      },
+      "groups": {
+        "automate": "Automate",
+        "create": "Create",
+        "search": "Search"
+      },
+      "label": "探索 Okou 能做什麼",
+      "placeholder": "描述你想完成的事…",
+      "sources": {
+        "trigger": "工具"
+      },
+      "workflows": "Workflows"
+    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",
