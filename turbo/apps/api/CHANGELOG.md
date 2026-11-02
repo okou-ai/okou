@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.38.1](https://github.com/okou-ai/okou/compare/api-v2.38.0...api-v2.38.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **api:** acknowledge unsupported sms short-code senders ([#44611](https://github.com/okou-ai/okou/issues/44611)) ([2f54813](https://github.com/okou-ai/okou/commit/2f5481306c4ce88dee30762a6ff5df3901e147cf))
+* **api:** seed auto fast pricing in development and preview ([#44640](https://github.com/okou-ai/okou/issues/44640)) ([f93ec17](https://github.com/okou-ai/okou/commit/f93ec17cbf05e800bbc13eb744af5cf85260ad00))
+* **api:** tune agentphone typing timeout and logging ([#44616](https://github.com/okou-ai/okou/issues/44616)) ([3343d8e](https://github.com/okou-ai/okou/commit/3343d8e2ef06b72f9c57811495c933e76c2d7067))
+* **billing:** turn off auto-recharge after consecutive failures ([#44587](https://github.com/okou-ai/okou/issues/44587)) ([5881a17](https://github.com/okou-ai/okou/commit/5881a17e5c332bef9ff4efe94f96048deef82962))
+* **browser:** acquire coherent viewer bindings on reconnect ([#44606](https://github.com/okou-ai/okou/issues/44606)) ([03444af](https://github.com/okou-ai/okou/commit/03444afe60a11dec7134c1e8872f72519ccef099))
+* handle invalid feishu bot connection links ([#44619](https://github.com/okou-ai/okou/issues/44619)) ([7801052](https://github.com/okou-ai/okou/commit/78010527837678d7e7f5e4bfc338c1d577de88f7))
+* keep whatsapp typing active during runs ([#44643](https://github.com/okou-ai/okou/issues/44643)) ([30dfc4a](https://github.com/okou-ai/okou/commit/30dfc4ae7724bb86ffff158fd531b4db3720312f))
+* require explicit requests for presentation pptx conversion ([#44614](https://github.com/okou-ai/okou/issues/44614)) ([3961310](https://github.com/okou-ai/okou/commit/3961310dfb81580fa11bc96ed60030faa220e64e))
+
+
+### Refactoring
+
+* remove released first task halloween and onboarding switches ([#44575](https://github.com/okou-ai/okou/issues/44575)) ([4571899](https://github.com/okou-ai/okou/commit/4571899bd04a73a9e13591326ad0f9b21f9612fd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.31.1
+    * @okouai/core bumped to 8.808.0
+    * @okouai/db bumped to 2.16.1
+    * @okouai/pi-agent-runtime bumped to 1.51.48
+
 ## [2.38.0](https://github.com/okou-ai/okou/compare/api-v2.37.2...api-v2.38.0) (2026-11-02)
 
 

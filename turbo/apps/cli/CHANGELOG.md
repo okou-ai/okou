@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.11.16](https://github.com/okou-ai/okou/compare/cli-v10.11.15...cli-v10.11.16) (2026-11-02)
+
+
+### Bug Fixes
+
+* require explicit requests for presentation pptx conversion ([#44614](https://github.com/okou-ai/okou/issues/44614)) ([3961310](https://github.com/okou-ai/okou/commit/3961310dfb81580fa11bc96ed60030faa220e64e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.31.1
+    * @okouai/core bumped to 8.808.0
+    * @okouai/pi-agent-runtime bumped to 1.51.48
+
 ## [10.11.15](https://github.com/okou-ai/okou/compare/cli-v10.11.14...cli-v10.11.15) (2026-11-02)
 
 
