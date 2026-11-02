@@ -23,10 +23,10 @@ const wires = [];
 const sessions = [];
 let browser;
 let browserClosed;
-const server = createServer((request, response) => {
+const server = createServer((_request, response) => {
   response.setHeader("Content-Type", "text/html");
   response.end(
-    `<!doctype html><title>Proxy fixture</title><input id="text" style="position:absolute;left:10px;top:10px"><button onclick="window.open('/popup')">Popup</button><p>${request.url}</p>`,
+    `<!doctype html><title>Proxy fixture</title><input id="text" style="position:absolute;left:10px;top:10px"><button onclick="window.open('/popup')">Popup</button><p>Proxy fixture</p>`,
   );
 });
 
