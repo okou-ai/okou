@@ -157,8 +157,7 @@ export const subscribeTailscaleChanged$ = command(
   },
 );
 
-export type TailscaleOperation =
-  "create" | "edit" | "delete" | "promote" | "adopt";
+export type TailscaleOperation = "create" | "edit" | "delete";
 export interface TailscaleDialogState {
   readonly identity: string;
   readonly sessionKey: string | null;
@@ -287,18 +286,7 @@ export const openTailscaleDialog$ = command(
     if (kind !== "create" && !config) {
       return;
     }
-    if (
-      (config?.scope === "organization" ||
-        kind === "promote" ||
-        kind === "adopt") &&
-      !admin
-    ) {
-      return;
-    }
-    if (
-      (kind === "promote" && config?.scope !== "personal") ||
-      (kind === "adopt" && config?.scope !== "organization")
-    ) {
+    if (config?.scope === "organization" && !admin) {
       return;
     }
     set(closeTailscaleDialog$, true);
@@ -321,7 +309,7 @@ export const tailscaleImpact$ = computed(async (get) => {
   if (
     !dialog?.config ||
     dialog.config.scope !== "organization" ||
-    (dialog.kind !== "adopt" && dialog.kind !== "delete")
+    dialog.kind !== "delete"
   ) {
     return null;
   }
@@ -332,7 +320,7 @@ export const tailscaleImpact$ = computed(async (get) => {
   const result = await accept(
     clients.client.impactPreview({
       params: { configId: dialog.config.id },
-      query: { operation: dialog.kind === "adopt" ? "convert" : "delete" },
+      query: { operation: "delete" },
     }),
     [200],
     undefined,
@@ -349,7 +337,7 @@ function formText(form: HTMLFormElement, name: string): string {
   }
   return field.value;
 }
-export function tailscaleFieldsFromForm(form: HTMLFormElement) {
+function tailscaleFieldsFromForm(form: HTMLFormElement) {
   return {
     name: formText(form, "tailscaleName"),
     tags: formText(form, "tailscaleTags")
@@ -475,32 +463,23 @@ const editTailscale$ = command(
   },
 );
 
-function canConfirmTailscaleChange(
-  dialog: TailscaleDialogState,
+function canDeleteTailscale(
+  config: TailscaleConfig,
   preview: TailscaleImpactPreview | null,
   acknowledged: string | null,
 ) {
-  if (dialog.kind === "promote") {
-    return acknowledged === "promote";
-  }
-  if (
-    dialog.config?.scope === "organization" &&
-    (dialog.kind === "delete" || dialog.kind === "adopt")
-  ) {
+  if (config.scope === "organization") {
     return (
       preview !== null &&
       (preview.otherHostCount === 0 ||
         acknowledged === preview.impactSnapshot) &&
-      (dialog.kind !== "delete" || preview.ownHostCount === 0)
+      preview.ownHostCount === 0
     );
   }
-  return (
-    dialog.kind !== "delete" ||
-    (!!dialog.config && privateNetworkHostCount(dialog.config) === 0)
-  );
+  return privateNetworkHostCount(config) === 0;
 }
 
-const confirmTailscaleChange$ = command(
+const deleteTailscale$ = command(
   async (
     { get, set },
     dialog: TailscaleDialogState,
@@ -518,57 +497,28 @@ const confirmTailscaleChange$ = command(
     }
     const params = { configId: config.id };
     const expectedRevision = preview?.expectedRevision ?? config.revision;
-    if (!canConfirmTailscaleChange(dialog, preview, get(acknowledged$))) {
+    if (!canDeleteTailscale(config, preview, get(acknowledged$))) {
       return false;
     }
     set(acknowledged$, null);
-    const result = await (async () => {
-      if (dialog.kind === "promote") {
-        return await accept(
-          clients.client.convertToOrganization({
-            params,
-            body: { expectedRevision },
-            fetchOptions: { signal },
-          }),
-          [200, 400, 401, 403, 404, 409, 500],
-          signal,
-          { showErrorToast: false },
-        );
-      }
-      if (dialog.kind === "adopt" && preview) {
-        return await accept(
-          clients.client.convertToPersonal({
-            params,
-            body: {
-              expectedRevision,
-              impactSnapshot: preview.impactSnapshot,
-            },
-            fetchOptions: { signal },
-          }),
-          [200, 400, 401, 403, 404, 409, 500],
-          signal,
-          { showErrorToast: false },
-        );
-      }
-      return await accept(
-        clients.client.delete({
-          params,
-          body: {
-            expectedRevision,
-            ...(preview ? { impactSnapshot: preview.impactSnapshot } : {}),
-          },
-          fetchOptions: { signal },
-        }),
-        [204, 400, 401, 403, 404, 409, 500],
-        signal,
-        { showErrorToast: false },
-      );
-    })();
+    const result = await accept(
+      clients.client.delete({
+        params,
+        body: {
+          expectedRevision,
+          ...(preview ? { impactSnapshot: preview.impactSnapshot } : {}),
+        },
+        fetchOptions: { signal },
+      }),
+      [204, 400, 401, 403, 404, 409, 500],
+      signal,
+      { showErrorToast: false },
+    );
     signal.throwIfAborted();
     if (get(dialog$) !== dialog) {
       return false;
     }
-    if (result.status === 200 || result.status === 204) {
+    if (result.status === 204) {
       return true;
     }
     throw new ApiError(
@@ -586,9 +536,7 @@ function tailscaleSaveNeedsAdmin(
 ) {
   return (
     (dialog.kind === "create" ? createScope : dialog.config?.scope) ===
-      "organization" ||
-    dialog.kind === "promote" ||
-    dialog.kind === "adopt"
+    "organization"
   );
 }
 
@@ -641,7 +589,7 @@ export const saveTailscale$ = command(
     } else {
       const preview = await get(tailscaleImpact$);
       signal.throwIfAborted();
-      completed = await set(confirmTailscaleChange$, dialog, preview, signal);
+      completed = await set(deleteTailscale$, dialog, preview, signal);
     }
     const identity = await get(tailscaleIdentity$);
     signal.throwIfAborted();

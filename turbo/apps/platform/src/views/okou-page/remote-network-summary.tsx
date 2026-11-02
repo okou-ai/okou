@@ -121,12 +121,10 @@ export function RemoteNetworkConnections({
 export function RemoteNetworkDeleteAction({
   label,
   disabled,
-  compact,
   onClick,
 }: {
   readonly label: string;
   readonly disabled: boolean;
-  readonly compact: boolean;
   readonly onClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -134,7 +132,7 @@ export function RemoteNetworkDeleteAction({
     <div className="flex items-center gap-1">
       <Button
         type="button"
-        variant={compact ? "neutral" : "outline"}
+        variant="neutral"
         disabled={disabled}
         onClick={onClick}
       >

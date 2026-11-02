@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -27,8 +26,11 @@ const host: SshConnectionResponse = Object.freeze({
   createdAt: "2026-09-01T00:00:00.000Z",
   updatedAt: "2026-09-01T00:00:00.000Z",
 });
-const empty =
-  "No SSH hosts configured. Add a host, then enable it by default or in individual chats.";
+const empty = "This configuration is unavailable or you no longer have access.";
+
+function deleteAction(container: ParentNode = document.body) {
+  return getAction("button", "Delete connection", container);
+}
 
 function mockSettings() {
   const data: { connections: SshConnectionResponse[]; failed: boolean } = {
@@ -51,8 +53,7 @@ function mockSettings() {
 async function openDeletion() {
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=ssh",
+    path: `/connectors?scope=remote-control&remoteResource=ssh:${host.id}`,
     auth: {
       user: owner,
       session: { id: "ssh-delete-session", token: "original-token" },
@@ -63,8 +64,8 @@ async function openDeletion() {
     },
   });
   await screen.findByText(host.displayName);
-  click(getAction("button", "Delete host"));
-  return await screen.findByRole("dialog", { name: "Delete host" });
+  click(deleteAction());
+  return await screen.findByRole("dialog", { name: "Delete connection" });
 }
 
 test.each([404, 409] as const)(
@@ -97,15 +98,15 @@ test.each([404, 409] as const)(
       });
     });
     const dialog = await openDeletion();
-    click(getAction("button", "Delete host", dialog));
+    click(deleteAction(dialog));
     await within(dialog).findByText(
       status === 404
         ? /This SSH host is no longer available/u
         : /This host changed/u,
     );
-    expect(getAction("button", "Delete host", dialog)).toBeDisabled();
+    expect(deleteAction(dialog)).toBeDisabled();
     click(getAction("button", "Cancel", dialog));
-    await screen.findByText(status === 404 ? empty : "Different host");
+    await screen.findByText(empty);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(requests).toStrictEqual([{ expectedGeneration: 4 }]);
   },
@@ -121,9 +122,9 @@ test("A host referenced by VNC cannot be deleted", async () => {
     });
   });
   const dialog = await openDeletion();
-  click(getAction("button", "Delete host", dialog));
+  click(deleteAction(dialog));
   await within(dialog).findByText(/This SSH host is used by a VNC route/u);
-  expect(getAction("button", "Delete host", dialog)).toBeDisabled();
+  expect(deleteAction(dialog)).toBeDisabled();
   expect(requests).toStrictEqual([{ expectedGeneration: 4 }]);
 });
 
@@ -142,7 +143,7 @@ test.each(["logout", "owner", "session"])(
     mockedClerk.sessionGetToken.mockImplementationOnce(() => {
       return token.promise;
     });
-    click(getAction("button", "Delete host", dialog));
+    click(deleteAction(dialog));
     await waitFor(() => {
       expect(mockedClerk.sessionGetToken.mock.calls).toHaveLength(previous + 1);
     });
@@ -191,9 +192,9 @@ test("A same-session token refresh preserves the deletion snapshot and uses the 
     clerk.stateChanged();
   });
   await waitFor(() => {
-    expect(getAction("button", "Delete host", dialog)).toBeEnabled();
+    expect(deleteAction(dialog)).toBeEnabled();
   });
-  click(getAction("button", "Delete host", dialog));
+  click(deleteAction(dialog));
   await screen.findByText(empty);
   expect(requests).toStrictEqual([
     {

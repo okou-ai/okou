@@ -1,6 +1,5 @@
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import type { ReactNode } from "react";
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { RemoteNetworkCredentialHelp } from "./remote-network-help.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -12,21 +11,17 @@ import {
   replaceTailscaleCredentials$,
   tailscaleReplaceCredentials$,
 } from "../../signals/tailscale.ts";
-import { TailscaleSetupGuide } from "./tailscale-setup-guide.tsx";
 
 function TailscaleCredentials() {
   const { t } = useTranslation();
   const mount = useSet(mountTailscaleSecrets$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   return (
     <fieldset ref={mount} className="grid min-w-0 gap-4">
-      {guided && <RemoteNetworkCredentialHelp provider="tailscale" />}
+      <RemoteNetworkCredentialHelp provider="tailscale" />
       <div className="grid gap-2">
         <label htmlFor="tailscale-tailscaleClientId">
           {t(($) => {
-            return guided
-              ? $.remoteNetworkGuide.clientId
-              : $.tailscale.clientId;
+            return $.remoteNetworkGuide.clientId;
           })}
         </label>
         <RemoteSecretInput
@@ -42,9 +37,7 @@ function TailscaleCredentials() {
       <div className="grid gap-2">
         <label htmlFor="tailscale-tailscaleClientSecret">
           {t(($) => {
-            return guided
-              ? $.remoteNetworkGuide.clientSecret
-              : $.tailscale.clientSecret;
+            return $.remoteNetworkGuide.clientSecret;
           })}
         </label>
         <RemoteSecretInput
@@ -63,33 +56,27 @@ function TailscaleCredentials() {
 
 function TailscaleTags({
   config,
-  guided,
 }: {
   readonly config: TailscaleConfig | null;
-  readonly guided: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <div className="grid gap-2">
       <label className="grid gap-2">
         {t(($) => {
-          return guided ? $.remoteControlSetup.allowedTags : $.tailscale.tags;
+          return $.remoteControlSetup.allowedTags;
         })}
         <Input
           name="tailscaleTags"
           required
           maxLength={1200}
-          defaultValue={
-            config?.tags.join(", ") ?? (guided ? "tag:okou" : undefined)
-          }
+          defaultValue={config?.tags.join(", ") ?? "tag:okou"}
           aria-describedby="tailscale-tags-help"
         />
       </label>
       <span id="tailscale-tags-help" className="text-sm text-muted-foreground">
         {t(($) => {
-          return guided
-            ? $.remoteControlSetup.allowedTagsHelp
-            : $.tailscale.tagsHelp;
+          return $.remoteControlSetup.allowedTagsHelp;
         })}
       </span>
     </div>
@@ -103,11 +90,10 @@ export function TailscaleFields({
 }: {
   readonly config: TailscaleConfig | null;
   readonly disabled: boolean;
-  readonly scopeField?: ReactNode;
+  readonly scopeField: ReactNode;
 }) {
   const { t } = useTranslation();
   const replace = useGet(tailscaleReplaceCredentials$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   const setReplace = useSet(replaceTailscaleCredentials$);
   return (
     <div className="grid min-w-0 gap-4">
@@ -115,39 +101,27 @@ export function TailscaleFields({
         <div className="grid gap-2">
           <label className="grid gap-2">
             {t(($) => {
-              return guided
-                ? $.remoteNetworkScope.networkName
-                : $.cloudflareAccess.name;
+              return $.remoteNetworkScope.networkName;
             })}
             <Input
               name="tailscaleName"
               placeholder={t(($) => {
-                return guided
-                  ? $.remoteNetworkScope.networkNamePlaceholder
-                  : $.cloudflareAccess.namePlaceholder;
+                return $.remoteNetworkScope.networkNamePlaceholder;
               })}
-              aria-describedby={guided ? "tailscale-name-help" : undefined}
+              aria-describedby="tailscale-name-help"
               required
               pattern=".*\S.*"
               maxLength={128}
               defaultValue={config?.name}
             />
           </label>
-          {guided && (
-            <p
-              id="tailscale-name-help"
-              className="text-sm text-muted-foreground"
-            >
-              {t(($) => {
-                return $.remoteNetworkScope.networkNameHelp;
-              })}
-            </p>
-          )}
+          <p id="tailscale-name-help" className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.remoteNetworkScope.networkNameHelp;
+            })}
+          </p>
         </div>
         {scopeField}
-        {config === null && !guided && <TailscaleSetupGuide />}
-
-        {!guided && <TailscaleTags config={config} guided={false} />}
         {config && (
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
@@ -163,8 +137,8 @@ export function TailscaleFields({
           </label>
         )}
         {(!config || replace) && <TailscaleCredentials />}
-        {guided && config && <TailscaleTags config={config} guided />}
-        {guided && !config && (
+        {config && <TailscaleTags config={config} />}
+        {!config && (
           <details className="border-t border-divider pt-4">
             <summary className="cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {t(($) => {
@@ -172,7 +146,7 @@ export function TailscaleFields({
               })}
             </summary>
             <div className="pt-3">
-              <TailscaleTags config={config} guided />
+              <TailscaleTags config={config} />
             </div>
           </details>
         )}

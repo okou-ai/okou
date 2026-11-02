@@ -6,7 +6,6 @@ import {
   vncCredentialsContract,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { screen, within } from "@testing-library/react";
@@ -20,7 +19,6 @@ import {
 } from "./connector-page-test-helpers.ts";
 import {
   mockHostInventories,
-  orderedNames,
   resourceId,
   sshHosts,
   timestamp,
@@ -114,7 +112,6 @@ test.each(["ssh", "vnc"] as const)(
     await setupPage({
       context,
       path: `/connectors?scope=remote-control&remoteView=credentials&type=${protocol}`,
-      featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: true },
     });
     await screen.findByRole("heading", { name: "Android login" });
     expect(
@@ -147,7 +144,6 @@ test.each(["ssh", "vnc"] as const)(
     await setupPage({
       context,
       path: `/connectors?scope=remote-control&setup=${protocol}`,
-      featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: true },
     });
     await screen.findByRole("heading", { name: "Add remote connection" });
     if (protocol === "ssh") {
@@ -200,30 +196,3 @@ test.each(["ssh", "vnc"] as const)(
     ).toBeInTheDocument();
   },
 );
-
-test("VNC jump-host choices use the same natural host order", async () => {
-  mockCredentials();
-  await setupPage({
-    context,
-    path: "/connectors?scope=remote-control&type=vnc",
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-  });
-  await screen.findByRole("heading", { name: vncHosts[0]!.displayName });
-  click(getConnectorAction("button", "Add host"));
-  const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  click(within(dialog).getByRole("combobox", { name: "Connection route" }));
-  click(await screen.findByRole("option", { name: "Through saved SSH host" }));
-  click(await within(dialog).findByRole("combobox", { name: "SSH host" }));
-  const list = await screen.findByRole("listbox");
-  expect(
-    within(list)
-      .getAllByRole("option")
-      .map((option) => {
-        return option.textContent?.split(" · ")[0];
-      }),
-  ).toStrictEqual(orderedNames);
-  click(within(list).getByText("dev-2 · ssh-2.example.com:22"));
-  expect(
-    within(dialog).getByRole("combobox", { name: "SSH host" }),
-  ).toHaveTextContent("dev-2");
-});

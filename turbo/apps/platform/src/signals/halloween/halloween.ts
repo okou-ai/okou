@@ -292,7 +292,7 @@ export const initializeHalloweenHome$ = command(
     set(bubbleTransitionState$, null);
     set(ghostExpandedState$, false);
     set(ghostGreetingLocked$, false);
-    const { switches } = await get(featureSwitches$);
+    const switches = await get(featureSwitches$);
     signal.throwIfAborted();
     if (!switches[FeatureSwitchKey.HalloweenQuiz]) {
       return;

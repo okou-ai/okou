@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sshCredentialsContract,
   type SshCredentialResponse,
@@ -15,7 +14,6 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
 import {
   getAction,
   queryAction,
@@ -61,78 +59,9 @@ beforeEach(() => {
   });
 });
 
-async function selectNewCredential(dialog: HTMLElement) {
-  await userEvent.click(await within(dialog).findByLabelText("Credential"));
-  await userEvent.click(
-    await screen.findByRole("option", { name: "Create new credential" }),
-  );
+function selectNewCredential(form: HTMLElement) {
+  click(getAction("radio", "SSH key", form));
 }
-
-test("An existing credential can be reused without entering or reading its secrets", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  const requests: unknown[] = [];
-  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-    requests.push(body);
-    return respond(201, base);
-  });
-  await openAddHostPage();
-  const dialog = await screen.findByRole("dialog");
-  const hostFields = within(dialog).getByRole("group", { name: "Host" });
-  const credentialFields = within(dialog).getByRole("group", {
-    name: "Credential",
-  });
-  const name = within(hostFields).getByLabelText("Display name");
-  expect(name).toHaveAttribute("placeholder", "e.g. Production server");
-  expect(name).toHaveValue("");
-  const host = within(hostFields).getByLabelText(
-    "Public hostname or IP address",
-  );
-  expect(host).toHaveAttribute("placeholder", "e.g. ssh.example.com");
-  expect(host).toHaveValue("");
-  expect(within(hostFields).getByLabelText("Port")).toHaveValue(22);
-  expect(within(hostFields).queryByLabelText("Credential name")).toBeNull();
-  await waitFor(() => {
-    return expect(
-      within(credentialFields).getByRole("combobox"),
-    ).toHaveTextContent("Deployment login · deploy");
-  });
-  expect(
-    within(credentialFields).queryByLabelText("Credential name"),
-  ).toBeNull();
-  expect(within(credentialFields).queryByLabelText("SSH username")).toBeNull();
-  expect(within(credentialFields).queryByLabelText("Private key")).toBeNull();
-  expect(within(credentialFields).queryByLabelText("Display name")).toBeNull();
-  await fill(within(hostFields).getByLabelText("Display name"), "Second host");
-  await fill(
-    within(hostFields).getByLabelText("Public hostname or IP address"),
-    "second.example.com",
-  );
-  await userEvent.click(within(credentialFields).getByRole("combobox"));
-  await userEvent.click(
-    await screen.findByRole("option", { name: "Deployment login · deploy" }),
-  );
-  expect(within(dialog).queryByLabelText("Private key")).toBeNull();
-  expect(within(dialog).queryByLabelText("SSH username")).toBeNull();
-  expect(within(hostFields).getByLabelText("Display name")).toHaveValue(
-    "Second host",
-  );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    {
-      id: expect.any(String),
-      displayName: "Second host",
-      host: "second.example.com",
-      port: 22,
-      transport: { type: "direct" },
-      credential: { id: credential.id },
-    },
-  ]);
-});
 
 test("Password credentials preserve whitespace, clear mode-switched secrets, and discard late key reads", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -144,7 +73,6 @@ test("Password credentials preserve whitespace, clear mode-switched secrets, and
     return respond(201, { ...credential, authMethod: "password", hosts: [] });
   });
   await page();
-  click(getAction("radio", "Credentials"));
   click(
     await waitFor(() => {
       return getAction("button", "Add credential");
@@ -195,7 +123,6 @@ test("A known credential rejection leaves the retained input editable", async ()
     });
   });
   await page();
-  click(getAction("radio", "Credentials"));
   click(
     await waitFor(() => {
       return getAction("button", "Add credential");
@@ -247,7 +174,6 @@ test("A concurrent shared-credential edit preserves its draft and blocks stale s
     });
   });
   await page();
-  click(getAction("radio", "Credentials"));
   await screen.findByText("Connections using this credential");
   expect(getAction("button", "Delete credential")).toBeDisabled();
   click(getAction("button", "Edit credential"));
@@ -288,7 +214,6 @@ test("An unused credential can be deleted with confirmation and the rendered rev
     },
   );
   await page();
-  click(getAction("radio", "Credentials"));
   await screen.findByText("1 credential configured");
   click(getAction("button", "Delete credential"));
   const dialog = await screen.findByRole("dialog");
@@ -333,7 +258,7 @@ test("Connection warnings explain the failure and recover through notifications"
       ],
     });
   });
-  await page();
+  await hostPage();
   await screen.findByText(/The server's host key does not match/u);
   expect(
     screen.getByText(/Independently verify the server before/u),
@@ -349,64 +274,24 @@ test("Connection warnings explain the failure and recover through notifications"
   expect(screen.getByText("Deployment")).toBeInTheDocument();
 });
 
-test("Invalid host errors preserve credentials so the host can be corrected and saved", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-    if (body.host === "ssh.example.com") {
-      return respond(201, base);
-    }
-    return respond(400, {
-      error: {
-        code: "SSH_INVALID_HOST",
-        message: "server diagnostic must not be UI copy",
-      },
-    });
-  });
-  await openAddHostPage();
-  const dialog = await screen.findByRole("dialog");
-  await selectNewCredential(dialog);
-  await fill(within(dialog).getByLabelText("Display name"), "Deployment");
-  await fill(
-    within(dialog).getByLabelText("Public hostname or IP address"),
-    "https://ssh.example.com",
-  );
-  await fill(
-    within(dialog).getByLabelText("Credential name"),
-    "Deployment login",
-  );
-  await fill(within(dialog).getByLabelText("SSH username"), "deploy");
-  await fill(within(dialog).getByLabelText("Private key"), "not-a-real-key");
-  click(getAction("button", "Save", dialog));
-  await screen.findByText(
-    "Enter a hostname or IP address without a URL scheme, path or spaces.",
-  );
-  expect(document.body.textContent).not.toContain(
-    "server diagnostic must not be UI copy",
-  );
-  expect(within(dialog).getByLabelText("Private key")).toHaveValue(
-    "not-a-real-key",
-  );
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    "Deployment",
-  );
-  await fill(
-    within(dialog).getByLabelText("Public hostname or IP address"),
-    "ssh.example.com",
-  );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-async function page(path = "/connectors?scope=remote-control&type=ssh") {
-  await setupPage({
-    context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path,
-    auth,
-  });
+async function page(
+  path = "/connectors?scope=remote-control&remoteView=credentials&type=ssh",
+) {
+  await setupPage({ context, path, auth });
+}
+
+async function hostPage() {
+  await page(`/connectors?scope=remote-control&remoteResource=ssh:${id}`);
+  await screen.findByRole("heading", { name: base.displayName });
+}
+
+async function connectionForm() {
+  const field = await screen.findByLabelText("SSH username");
+  const form = field.closest("form");
+  if (!form) {
+    throw new Error("Missing SSH connection form");
+  }
+  return form;
 }
 
 test.each([
@@ -457,24 +342,20 @@ test.each([
         });
       },
     );
-    await page();
+    await hostPage();
     const card = await screen.findByRole("article");
     expect(within(card).getByRole("alert").textContent).toBe(notice);
+    click(within(card).getByText("Server identity and chat permissions"));
     expect(within(card).getByText("SHA256:retained")).toBeInTheDocument();
-    expect(getAction("button", "Edit host", card)).toBeEnabled();
+    expect(getAction("button", "Edit connection", card)).toBeEnabled();
     expect(getAction("button", "Reset host key", card)).toBeEnabled();
-    expect(getAction("button", "Delete host", card)).toBeEnabled();
+    expect(getAction("button", "Delete connection", card)).toBeEnabled();
     expect(screen.queryByRole("dialog")).toBeNull();
   },
 );
 
 async function openAddHostPage() {
-  await page();
-  click(
-    await waitFor(() => {
-      return getAction("button", "Add host");
-    }),
-  );
+  await page("/connectors?scope=remote-control&setup=ssh&step=login");
 }
 
 test("SSH host settings update the chat remote access default", async () => {
@@ -515,10 +396,11 @@ test("SSH host settings update the chat remote access default", async () => {
   );
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=ssh",
+    path: `/connectors?scope=remote-control&remoteResource=ssh:${id}`,
     auth,
   });
+  await screen.findByRole("heading", { name: base.displayName });
+  click(screen.getByText("Server identity and chat permissions"));
   const toggle = await screen.findByRole("switch", {
     name: "Enabled by default for chats",
   });
@@ -534,33 +416,6 @@ test("SSH host settings update the chat remote access default", async () => {
     ).toBeChecked();
   });
   expect(updatedParams).toStrictEqual({ protocol: "ssh", connectionId: id });
-});
-
-test("SSH is managed in Connectors Remote control", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  await page();
-  await screen.findByText("0 hosts configured");
-  expect(pathname()).toBe("/connectors");
-  expect(window.location.search).toBe("?scope=remote-control&type=ssh");
-  expect(screen.getByRole("heading", { name: "SSH" })).toBeInTheDocument();
-  expect(
-    getAction(
-      "link",
-      "Connectors",
-      screen.getByRole("navigation", { name: "Sidebar" }),
-    ),
-  ).toHaveAttribute("aria-current", "page");
-  click(
-    getAction(
-      "link",
-      "Connectors",
-      screen.getByRole("navigation", { name: "Sidebar" }),
-    ),
-  );
-  await screen.findByPlaceholderText("Find connectors");
-  expect(pathname()).toBe("/connectors");
 });
 
 test("Shows configured credentials independently of hosts", async () => {
@@ -580,45 +435,36 @@ test("Shows configured credentials independently of hosts", async () => {
     return respond(200, { credentials });
   });
   await page();
-  await screen.findByText("0 hosts configured");
-  click(getAction("radio", "Credentials"));
   await expect(
     screen.findByText("2 credentials configured"),
   ).resolves.toBeVisible();
   expect(getAction("button", "Add credential")).toBeEnabled();
-  expect(screen.queryByText("0 hosts configured")).toBeNull();
 });
 
 test.each(["paste", "file"])(
-  "Create with %s credentials, then edit without replacing them",
+  "Create a credential from %s, then rename without replacing its secret",
   async (source) => {
-    let hosts: SshConnectionResponse[] = [];
+    let credentials: SshCredentialResponse[] = [];
     const requests: unknown[] = [];
-    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-      return respond(200, { connections: hosts });
+    context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+      return respond(200, { credentials });
     });
-    context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    context.mocks.api(sshCredentialsContract.create, ({ body, respond }) => {
       requests.push(body);
-      hosts = [base];
-      return respond(201, base);
+      credentials = [{ ...credential, hosts: [] }];
+      return respond(201, credentials[0]!);
     });
-    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+    context.mocks.api(sshCredentialsContract.update, ({ body, respond }) => {
       requests.push(body);
-      hosts = [{ ...base, displayName: "Renamed", generation: 2 }];
-      return respond(200, hosts[0]!);
+      credentials = [
+        { ...credential, name: "Renamed", revision: 2, hosts: [] },
+      ];
+      return respond(200, credentials[0]!);
     });
     await page();
-    await screen.findByText(
-      "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
-    );
-    click(getAction("button", "Add host"));
+    await screen.findByText("0 credentials configured");
+    click(getAction("button", "Add credential"));
     const dialog = await screen.findByRole("dialog");
-    await selectNewCredential(dialog);
-    await fill(within(dialog).getByLabelText("Display name"), "Deployment");
-    await fill(
-      within(dialog).getByLabelText("Public hostname or IP address"),
-      "ssh.example.com",
-    );
     await fill(
       within(dialog).getByLabelText("Credential name"),
       "Deployment login",
@@ -642,44 +488,29 @@ test.each(["paste", "file"])(
       " passphrase-canary ",
     );
     click(getAction("button", "Save", dialog));
-    await screen.findByText("deploy@ssh.example.com:22");
+    await screen.findByRole("heading", { name: "Deployment login" });
     expect(requests).toStrictEqual([
       {
         id: expect.any(String),
-        displayName: "Deployment",
-        host: "ssh.example.com",
-        port: 22,
-        transport: { type: "direct" },
-        credential: {
-          create: {
-            name: "Deployment login",
-            username: "deploy",
-            authentication: {
-              method: "private_key",
-              privateKey: " key-canary\n",
-              passphrase: " passphrase-canary ",
-            },
-          },
+        name: "Deployment login",
+        username: "deploy",
+        authentication: {
+          method: "private_key",
+          privateKey: " key-canary\n",
+          passphrase: " passphrase-canary ",
         },
       },
     ]);
     expect(document.body.textContent).not.toContain("canary");
-    click(getAction("button", "Edit host"));
+    click(getAction("button", "Edit credential"));
     const edit = await screen.findByRole("dialog");
     expect(
       within(edit).queryByLabelText("Private key"),
     ).not.toBeInTheDocument();
-    await fill(within(edit).getByLabelText("Display name"), "Renamed");
+    await fill(within(edit).getByLabelText("Credential name"), "Renamed");
     click(getAction("button", "Save", edit));
-    await screen.findByText("Renamed");
-    expect(requests[1]).toStrictEqual({
-      displayName: "Renamed",
-      host: "ssh.example.com",
-      port: 22,
-      credential: { id: credential.id },
-      expectedGeneration: 1,
-      transport: { type: "direct" },
-    });
+    await screen.findByRole("heading", { name: "Renamed" });
+    expect(requests[1]).toStrictEqual({ name: "Renamed", expectedRevision: 1 });
   },
 );
 
@@ -689,10 +520,9 @@ test("An oversized key file shows a recoverable error without submitting credent
   });
   const file = new File(["x".repeat(65_537)], "id_rsa");
   await page();
-  await screen.findByText("0 hosts configured");
-  click(getAction("button", "Add host"));
+  await screen.findByRole("heading", { name: "Deployment login" });
+  click(getAction("button", "Add credential"));
   const dialog = await screen.findByRole("dialog");
-  await selectNewCredential(dialog);
   const input = within(dialog).getByLabelText("Choose private key file");
   const key = within(dialog).getByLabelText("Private key");
   await fill(key, "previous-key");
@@ -710,44 +540,6 @@ test("An oversized key file shows a recoverable error without submitting credent
   expect(key).toHaveValue("pasted-key");
 });
 
-test("Whitespace-only host is rejected visibly before submission and can be corrected", async () => {
-  let hosts: SshConnectionResponse[] = [];
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: hosts });
-  });
-  context.mocks.api(sshConnectionsContract.create, ({ respond }) => {
-    hosts = [base];
-    return respond(201, base);
-  });
-  await page();
-  click(
-    await waitFor(() => {
-      return getAction("button", "Add host");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
-  await selectNewCredential(dialog);
-  await fill(within(dialog).getByLabelText("Display name"), "Deployment");
-  await fill(
-    within(dialog).getByLabelText("Public hostname or IP address"),
-    "ssh.example.com",
-  );
-  await fill(
-    within(dialog).getByLabelText("Credential name"),
-    "Deployment login",
-  );
-  await fill(within(dialog).getByLabelText("SSH username"), "deploy");
-  await fill(within(dialog).getByLabelText("Private key"), "test-key");
-  const field = within(dialog).getByLabelText("Public hostname or IP address");
-  await fill(field, "   ");
-  click(getAction("button", "Save", dialog));
-  expect(field).toBeInvalid();
-  expect(dialog).toBeInTheDocument();
-  await fill(field, "valid");
-  click(getAction("button", "Save", dialog));
-  await screen.findByText("deploy@ssh.example.com:22");
-});
-
 test("Credential replacement saves the selected key and clears secrets on close", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [base] });
@@ -758,7 +550,6 @@ test("Credential replacement saves the selected key and clears secrets on close"
     return respond(200, { ...credential, revision: 2 });
   });
   await page();
-  click(getAction("radio", "Credentials"));
   click(
     await waitFor(() => {
       return getAction("button", "Edit credential");
@@ -766,7 +557,7 @@ test("Credential replacement saves the selected key and clears secrets on close"
   );
   await userEvent.click(
     within(await screen.findByRole("dialog")).getByRole("checkbox", {
-      name: "Replace authentication",
+      name: "Change login details",
     }),
   );
   let dialog = await screen.findByRole("dialog");
@@ -778,7 +569,7 @@ test("Credential replacement saves the selected key and clears secrets on close"
   click(getAction("button", "Edit credential"));
   dialog = await screen.findByRole("dialog");
   await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
+    within(dialog).getByRole("checkbox", { name: "Change login details" }),
   );
   expect(within(dialog).getByLabelText("Private key")).toHaveValue("");
   await userEvent.upload(
@@ -807,7 +598,7 @@ test("Credential replacement saves the selected key and clears secrets on close"
   click(getAction("button", "Edit credential"));
   const reopened = await screen.findByRole("dialog");
   await userEvent.click(
-    within(reopened).getByRole("checkbox", { name: "Replace authentication" }),
+    within(reopened).getByRole("checkbox", { name: "Change login details" }),
   );
   expect(within(reopened).getByLabelText("Private key")).toHaveValue("");
 });
@@ -897,7 +688,8 @@ test.each([
       hosts = [];
       return respond(204);
     });
-    await page();
+    await hostPage();
+    click(screen.getByText("Server identity and chat permissions"));
     await screen.findByText("SHA256:fixture");
     click(getAction("button", "Reset host key"));
     const reset = await screen.findByRole("dialog");
@@ -914,32 +706,15 @@ test.each([
     });
     expect(screen.queryByText("SHA256:fixture")).toBeNull();
     expect(resetRequests).toStrictEqual([{ expectedGeneration: 1 }]);
-    click(getAction("button", "Delete host"));
+    await screen.findByRole("heading", { name: base.displayName });
+    click(getAction("button", "Delete connection"));
     const remove = await screen.findByRole("dialog");
-    expect(
-      screen.getByText(
-        `${base.username}@${connection.host}:${connection.port}`,
-      ),
-    ).toBeInTheDocument();
-    click(getAction("button", "Delete host", remove));
+    click(getAction("button", "Delete connection", remove));
     await screen.findByText(
-      "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
+      "This configuration is unavailable or you no longer have access.",
     );
   },
 );
-
-test("An opted-out owner can manage SSH", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [base] });
-  });
-  await setupPage({
-    context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=ssh",
-  });
-  await screen.findByText("deploy@ssh.example.com:22");
-  expect(getAction("button", "Add host")).toBeEnabled();
-});
 
 test("Changing owner while an SSH token is pending prevents the old mutation", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -950,19 +725,12 @@ test("Changing owner while an SSH token is pending prevents the old mutation", a
     requests.push(body);
     return respond(201, base);
   });
-  await page();
-  await screen.findByText("0 hosts configured");
-  click(getAction("button", "Add host"));
-  const dialog = await screen.findByRole("dialog");
-  await selectNewCredential(dialog);
-  await fill(within(dialog).getByLabelText("Display name"), "Old owner host");
+  await openAddHostPage();
+  const dialog = await connectionForm();
+  selectNewCredential(dialog);
   await fill(
-    within(dialog).getByLabelText("Public hostname or IP address"),
+    within(dialog).getByLabelText("Device address"),
     "old-owner.example.com",
-  );
-  await fill(
-    within(dialog).getByLabelText("Credential name"),
-    "Old owner credential",
   );
   await fill(within(dialog).getByLabelText("SSH username"), "old-owner");
   await fill(within(dialog).getByLabelText("Private key"), "old-owner-key");
@@ -972,7 +740,7 @@ test("Changing owner while an SSH token is pending prevents the old mutation", a
   mockedClerk.sessionGetToken.mockImplementationOnce(() => {
     return token.promise;
   });
-  click(getAction("button", "Save", dialog));
+  click(getAction("button", "Add connection", dialog));
   await waitFor(() => {
     expect(mockedClerk.sessionGetToken.mock.calls).toHaveLength(
       tokenRequestCount + 1,
@@ -993,7 +761,7 @@ test("Changing owner while an SSH token is pending prevents the old mutation", a
   });
 
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Private key")).not.toBeInTheDocument();
   });
   expect(requests).toStrictEqual([]);
 });
@@ -1003,18 +771,8 @@ test("Changing owner closes the credential form and clears its fields", async ()
     return respond(200, { connections: [base] });
   });
   await page();
-  click(
-    await waitFor(() => {
-      return getAction("button", "Edit host");
-    }),
-  );
-  const editDialog = await screen.findByRole("dialog");
-  await userEvent.click(
-    within(editDialog).getByRole("combobox", { name: "Credential" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("option", { name: "Create new credential" }),
-  );
+  await screen.findByRole("heading", { name: "Deployment login" });
+  click(getAction("button", "Add credential"));
   const dialog = await screen.findByRole("dialog");
   await fill(within(dialog).getByLabelText("Private key"), "old-owner-canary");
   const clerk = context.mocks.clerk();

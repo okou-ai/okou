@@ -1,8 +1,7 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -48,75 +47,17 @@ function mockSshHosts(count: number) {
   });
 }
 
-test("Remote control summarizes SSH hosts that need attention and recovers", async () => {
-  mockCatalog();
-  mockSshHosts(3);
-  let failed = true;
-  context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
-    return respond(200, {
-      observations: [
-        {
-          connectionId: sshHost(1).id,
-          connectionCreatedAt: sshHost(1).createdAt,
-          generation: 1,
-          observedAt: "2026-09-10T08:00:00.000Z",
-          failureReason: failed ? "authentication_failed" : null,
-        },
-        {
-          connectionId: sshHost(2).id,
-          connectionCreatedAt: sshHost(2).createdAt,
-          generation: 1,
-          observedAt: "2026-09-10T08:00:00.000Z",
-          failureReason: failed ? "network_failure" : null,
-        },
-        {
-          connectionId: sshHost(3).id,
-          connectionCreatedAt: sshHost(3).createdAt,
-          generation: 1,
-          observedAt: "2026-09-10T08:00:00.000Z",
-          failureReason: null,
-        },
-      ],
-    });
-  });
-  await setupPage({
-    context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=ssh",
-    auth: {
-      user: { id: "test-user-123", fullName: "Test User" },
-      organization: {
-        activeOrg: { id: orgId, name: "SSH test organization" },
-        memberships: [{ id: orgId }],
-      },
-    },
-  });
-  await screen.findByRole("status", { name: "2 SSH hosts need attention" });
-  expect(screen.getByText("Host 3")).toBeInTheDocument();
-  failed = false;
-  context.mocks.ably.trigger("ssh:changed", { orgId });
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("status", { name: "2 SSH hosts need attention" }),
-    ).toBeNull();
-  });
-  expect(screen.getByText("Host 1")).toBeInTheDocument();
-});
-
-test("Management scope changes release hidden lists and read current data on return", async () => {
+test("Management scope changes show current data on return", async () => {
   mockCatalog();
   mockSshHosts(1);
   let hostName = "Original SSH host";
   let networkName = "Original private network";
-  const reads: string[] = [];
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    reads.push("ssh");
     return respond(200, {
       connections: [{ ...sshHost(1), displayName: hostName }],
     });
   });
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    reads.push("private-network");
     return respond(200, {
       configs: [
         {
@@ -135,8 +76,7 @@ test("Management scope changes release hidden lists and read current data on ret
   });
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=ssh",
+    path: "/connectors?scope=remote-control",
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       organization: {
@@ -150,34 +90,18 @@ test("Management scope changes release hidden lists and read current data on ret
   click(screen.getByTestId("connectors-scope-private-network"));
   await screen.findByText(networkName);
   expect(screen.queryByText(hostName)).not.toBeInTheDocument();
-  const sshReads = reads.filter((kind) => {
-    return kind === "ssh";
-  });
   hostName = "Updated SSH host";
   networkName = "Network after SSH change";
   context.mocks.ably.trigger("ssh:changed", { orgId });
   await screen.findByText(networkName);
-  expect(
-    reads.filter((kind) => {
-      return kind === "ssh";
-    }),
-  ).toStrictEqual(sshReads);
 
   click(screen.getByTestId("connectors-scope-remote-control"));
   await screen.findByText(hostName);
   expect(screen.queryByText(networkName)).not.toBeInTheDocument();
-  const networkReads = reads.filter((kind) => {
-    return kind === "private-network";
-  });
   hostName = "Latest SSH host";
   networkName = "Latest private network";
   context.mocks.ably.trigger("ssh:changed", { orgId });
   await screen.findByText(hostName);
-  expect(
-    reads.filter((kind) => {
-      return kind === "private-network";
-    }),
-  ).toStrictEqual(networkReads);
 
   click(screen.getByTestId("connectors-scope-private-network"));
   await expect(screen.findByText(networkName)).resolves.toBeInTheDocument();
@@ -211,16 +135,19 @@ test.each([
         ],
       });
     });
-    await page("/connectors?scope=remote-control&type=ssh");
-    await screen.findByRole("status", { name: "1 SSH host needs attention" });
-    await screen.findByText(/The last SSH connection failed\./u);
+    await page(
+      `/connectors?scope=remote-control&remoteResource=ssh:${sshHost(1).id}`,
+    );
+    await screen.findByRole("heading", { name: "Host 1" });
     expect(screen.queryByText(/SSH authentication failed\./u)).toBeNull();
-    expect(screen.getByText("Host 1")).toBeInTheDocument();
-    expect(screen.getByText("Host 3")).toBeInTheDocument();
+    click(getConnectorAction("button", "Back to remote connections"));
+    const row = await screen.findByRole("listitem", { name: "Host 2" });
+    click(getConnectorAction("link", "Manage", row));
+    await screen.findByText(/The last SSH connection failed\./u);
   },
 );
 
-test("Remote control distinguishes unavailable SSH diagnostics from failed hosts", async () => {
+test("Remote control keeps saved hosts available when SSH diagnostics fail", async () => {
   mockCatalog();
   mockSshHosts(2);
   context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
@@ -229,10 +156,7 @@ test("Remote control distinguishes unavailable SSH diagnostics from failed hosts
     });
   });
   await page("/connectors?scope=remote-control&type=ssh");
-  await screen.findByRole("status", {
-    name: "SSH connection status is unavailable",
-  });
-  expect(screen.queryByText(/need attention/u)).toBeNull();
+  await screen.findByRole("listitem", { name: "Host 2" });
   expect(screen.queryByText("private error")).toBeNull();
   expect(screen.getByText("Host 2")).toBeInTheDocument();
 });
@@ -246,7 +170,6 @@ async function page(path: string) {
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
   });
 }
 
@@ -279,11 +202,13 @@ test("Deleting an SSH host referenced by VNC explains how to resolve the depende
       },
     });
   });
-  await page("/connectors?scope=remote-control&type=ssh");
-  await screen.findByText(host.displayName);
-  click(getConnectorAction("button", "Delete host"));
-  const dialog = await screen.findByRole("dialog", { name: "Delete host" });
-  click(getConnectorAction("button", "Delete host", dialog));
+  await page(`/connectors?scope=remote-control&remoteResource=ssh:${host.id}`);
+  await screen.findByRole("heading", { name: host.displayName });
+  click(getConnectorAction("button", "Delete connection"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete connection",
+  });
+  click(getConnectorAction("button", "Delete connection", dialog));
   await within(dialog).findByText(/This SSH host is used by a VNC route/u);
   expect(
     within(dialog).getByText(/switch them explicitly to Direct/u),
