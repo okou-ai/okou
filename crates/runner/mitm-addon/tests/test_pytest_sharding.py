@@ -27,10 +27,18 @@ def suite(tmp_path: Path) -> Path:
             'pytest.register_assert_rewrite("tests.pytest_sharding")\n'
             "from tests.pytest_sharding import COLLECTED_NODE_IDS\n"
             'pytest_plugins = ["tests.pytest_sharding"]\n'
+            "passed = []\nfailed = []\n"
+            "def pytest_runtest_logreport(report):\n"
+            "    if report.failed:\n"
+            '        failed.append(f"{report.when}:{report.nodeid}")\n'
+            '    elif report.when == "call" and report.passed:\n'
+            "        passed.append(report.nodeid)\n"
             "def pytest_sessionfinish(session, exitstatus):\n"
             '    Path("nodeids.json").write_text(json.dumps({\n'
             '        "collected": session.config.stash.get(COLLECTED_NODE_IDS, ()),\n'
             '        "selected": [item.nodeid for item in session.items],\n'
+            '        "passed": passed,\n'
+            '        "failed": failed,\n'
             "    }))\n"
         ),
         "tests/nested/conftest.py": (
@@ -96,30 +104,6 @@ def _run_suite(
         json.loads(report_path.read_text()) if report_path.exists() else {}
     )
     return result, report
-
-
-def test_shards_are_complete_disjoint_and_stable(suite: Path) -> None:
-    full, all_nodes = _run_suite(suite)
-    first, first_nodes = _run_suite(suite, ("--test-shard=1/2",))
-    second, second_nodes = _run_suite(suite, ("--test-shard=2/2",), hash_seed="42")
-    repeated, repeated_nodes = _run_suite(suite, ("--test-shard=1/2",), hash_seed="123")
-    for result in (full, first, second, repeated):
-        assert result.returncode == pytest.ExitCode.OK, result.stdout + result.stderr
-
-    assert len(all_nodes["selected"]) == 15
-    assert all_nodes["selected"] == all_nodes["collected"]
-    assert first_nodes["collected"] == second_nodes["collected"] == all_nodes["collected"]
-    assert first_nodes["selected"]
-    assert second_nodes["selected"]
-    assert set(first_nodes["selected"]).isdisjoint(second_nodes["selected"])
-    assert Counter(first_nodes["selected"] + second_nodes["selected"]) == Counter(
-        all_nodes["selected"]
-    )
-    assert repeated_nodes == first_nodes
-    for report in (first_nodes, second_nodes):
-        assert report["selected"] == [
-            node for node in all_nodes["selected"] if node in report["selected"]
-        ]
 
 
 @pytest.mark.shard_cost(1)
@@ -263,14 +247,42 @@ def test_empty_shard_does_not_pass(suite: Path) -> None:
 
 def test_failing_shard_preserves_pytest_failure(suite: Path) -> None:
     (suite / "tests/test_failure.py").write_text("def test_failure():\n    assert False\n")
-    results = [_run_suite(suite, (f"--test-shard={index}/2",)) for index in (1, 2)]
-    assert sorted(result.returncode for result, _ in results) == [
+    failure = "tests/test_failure.py::test_failure"
+    full, all_nodes = _run_suite(suite)
+    first, first_nodes = _run_suite(suite, ("--test-shard=1/2",))
+    second, second_nodes = _run_suite(suite, ("--test-shard=2/2",), hash_seed="42")
+    repeated, repeated_nodes = _run_suite(suite, ("--test-shard=1/2",), hash_seed="123")
+    for result, report in (
+        (full, all_nodes),
+        (first, first_nodes),
+        (second, second_nodes),
+        (repeated, repeated_nodes),
+    ):
+        fails = failure in report["selected"]
+        expected = pytest.ExitCode.TESTS_FAILED if fails else pytest.ExitCode.OK
+        assert result.returncode == expected, result.stdout + result.stderr
+        assert report["failed"] == ([f"call:{failure}"] if fails else [])
+        assert report["passed"] == [node for node in report["selected"] if node != failure]
+
+    assert len(all_nodes["selected"]) == 16
+    assert failure in all_nodes["selected"]
+    assert all_nodes["selected"] == all_nodes["collected"]
+    assert first_nodes["collected"] == second_nodes["collected"] == all_nodes["collected"]
+    assert first_nodes["selected"]
+    assert second_nodes["selected"]
+    assert set(first_nodes["selected"]).isdisjoint(second_nodes["selected"])
+    assert Counter(first_nodes["selected"] + second_nodes["selected"]) == Counter(
+        all_nodes["selected"]
+    )
+    assert repeated_nodes == first_nodes
+    for report in (first_nodes, second_nodes):
+        assert report["selected"] == [
+            node for node in all_nodes["selected"] if node in report["selected"]
+        ]
+    assert sorted((first.returncode, second.returncode)) == [
         pytest.ExitCode.OK,
         pytest.ExitCode.TESTS_FAILED,
     ]
-    for result, report in results:
-        if "tests/test_failure.py::test_failure" in report["selected"]:
-            assert result.returncode == pytest.ExitCode.TESTS_FAILED
 
 
 def test_node_id_guard_covers_deselected_cases(suite: Path) -> None:
