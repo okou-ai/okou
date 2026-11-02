@@ -228,6 +228,8 @@ from types import SimpleNamespace
 from mitmproxy import ctx
 from registry_control import RegistryControl
 
+assert 'server=false' in sys.argv
+
 def option(name):
     return next(argument.split('=', 1)[1] for argument in sys.argv if argument.startswith(name + '='))
 

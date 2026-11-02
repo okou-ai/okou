@@ -681,6 +681,10 @@ async fn spawn_mitmdump(
     let mut cmd = tokio::process::Command::new(&config.mitmdump_bin);
     cmd.arg("--mode")
         .arg("transparent")
+        // Script loading is asynchronous. The managed addon enables the
+        // listener only after its configure hook finishes catalog validation.
+        .arg("--set")
+        .arg("server=false")
         .arg("--listen-port")
         .arg(port.to_string())
         .arg("--set")
