@@ -144,6 +144,8 @@ class StatusFailureReportTests(unittest.TestCase):
             lambda: self.witnesses[2].update(sandbox_id=str(uuid.uuid4())),
             lambda: self.witnesses[3].update(backing_generation=str(uuid.uuid4())),
             lambda: self.witnesses[0].update(version=True),
+            lambda: self.witnesses[0].update(case=[]),
+            lambda: self.witnesses[0].update(case={}),
             lambda: self.witnesses[0].update(extra="unbound")))
 
     def test_original_nonempty_status_must_belong_to_original_sandbox(self):

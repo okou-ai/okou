@@ -71,6 +71,21 @@ def positive_integer(value):
     return type(value) is int and value > 0
 
 
+def valid_witness_envelope(event, case_matches):
+    """Check the strict v1 envelope; callers retain case policy and scenario proof."""
+    return (
+        isinstance(event, dict)
+        and set(event) == {"version", "case", "phase", "monotonic_ns", "unix_ns",
+                          "sandbox_id", "backing_generation", "evidence"}
+        and type(event["version"]) is int
+        and event["version"] == 1
+        and case_matches(event["case"])
+        and isinstance(event["evidence"], dict)
+        and positive_integer(event["monotonic_ns"])
+        and positive_integer(event["unix_ns"])
+    )
+
+
 def validate_residency(sample):
     age = sample.get("sample_age_ns")
     if type(age) is not int or age < 0:

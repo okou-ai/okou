@@ -62,12 +62,7 @@ def validate(directory, *, cases=CASES, policy_key="native_claim_loss_policy_jso
         if not line.startswith(PREFIX):
             continue
         event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure.unique_object)
-        if (not isinstance(event, dict) or set(event) != {"version", "case", "phase", "monotonic_ns",
-                "unix_ns", "sandbox_id", "backing_generation", "evidence"}
-                or type(event["version"]) is not int or event["version"] != 1
-                or event.get("case") not in cases or not isinstance(event["evidence"], dict)
-                or not report.positive_integer(event["monotonic_ns"])
-                or not report.positive_integer(event["unix_ns"])):
+        if not report.valid_witness_envelope(event, lambda value: value in cases):
             raise ValueError("invalid native claim rejection witness")
         witnesses[event["case"]].append(event)
     identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}
