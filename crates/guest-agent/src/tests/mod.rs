@@ -483,6 +483,55 @@ fn stop_heartbeat_aborts_pending_task_promptly() {
         });
 }
 
+#[tokio::test]
+async fn stopping_heartbeat_monitor_closes_inflight_request() {
+    use tokio::io::AsyncReadExt;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let http = HttpClient::with_api_config(
+        format!("http://{}", listener.local_addr().unwrap()),
+        "test-token",
+        "",
+        "heartbeat-monitor-cancel",
+        Duration::ZERO,
+    )
+    .unwrap();
+    let (status_tx, status_rx) = tokio::sync::oneshot::channel();
+    let monitor = tokio_util::task::AbortOnDropHandle::new(spawn_heartbeat(
+        "heartbeat-monitor-cancel".to_string(),
+        CancellationToken::new(),
+        http,
+        status_tx,
+    ));
+
+    let (mut peer, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+        .await
+        .expect("heartbeat should connect to the loopback peer")
+        .unwrap();
+    let mut first_byte = [0u8; 1];
+    tokio::time::timeout(Duration::from_secs(5), peer.read_exact(&mut first_byte))
+        .await
+        .expect("heartbeat should send request bytes before monitor cancellation")
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), stop_heartbeat(monitor.detach()))
+        .await
+        .expect("heartbeat monitor should abort and join");
+
+    // No response is sent: EOF proves the inner request's IO has retired,
+    // beyond the outer monitor's completed join. Runtime teardown owns tasks
+    // if an assertion fails.
+    let mut request = Vec::from(first_byte);
+    let closed = tokio::time::timeout(Duration::from_secs(5), peer.read_to_end(&mut request)).await;
+    drop(peer);
+    closed
+        .expect("stopping heartbeat monitor should close its in-flight request")
+        .unwrap();
+    let request = String::from_utf8(request).unwrap();
+    assert!(request.starts_with("POST /api/webhooks/agent/heartbeat HTTP/1.1\r\n"));
+    assert!(request.ends_with(r#"{"runId":"heartbeat-monitor-cancel"}"#));
+    assert!(status_rx.await.is_err());
+}
+
 #[test]
 fn complete_execution_creates_recovery_finalization_after_cli_failure() {
     let _test_state_guard = lock_test_state();
