@@ -54,7 +54,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
   [FeatureSwitchKey.ConnectorChatAccountAccess]: {
-    maintainer: "liangyou@vm0.ai",
+    maintainer: "liangyou@okou.ai",
     displayName: "Chat connector accounts",
     description:
       "Configure connector account access and shared permissions per chat.",

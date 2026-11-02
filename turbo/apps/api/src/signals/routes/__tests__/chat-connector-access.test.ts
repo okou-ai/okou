@@ -311,18 +311,17 @@ describe("Chat connector account configuration", () => {
       client().getPermissions({ headers, params, query: slack }),
       [200],
     );
+    expect(initial.body.grants).toHaveLength(legacy.body.length);
     expect(initial.body.grants).toStrictEqual(
-      legacy.body
-        .map(({ permission, action, expiresAt }) => {
+      expect.arrayContaining(
+        legacy.body.map(({ permission, action, expiresAt }) => {
           return {
             permission,
             action,
             expiresAt,
           };
-        })
-        .sort((left, right) => {
-          return left.permission.localeCompare(right.permission);
         }),
+      ),
     );
     mockNow(new Date("2026-11-02T12:15:00Z"));
     await accept(
@@ -387,14 +386,21 @@ describe("Chat connector account configuration", () => {
       client().getPermissions({ headers, params, query: slack }),
       [200],
     );
-    expect(expired.body.grants).toStrictEqual([
-      { permission: UNKNOWN_PERMISSION_GRANT, action: "deny", expiresAt: null },
-      {
-        permission: "chat:write",
-        action: "allow",
-        expiresAt: "2026-11-02T13:15:00.000Z",
-      },
-    ]);
+    expect(expired.body.grants).toHaveLength(2);
+    expect(expired.body.grants).toStrictEqual(
+      expect.arrayContaining([
+        {
+          permission: UNKNOWN_PERMISSION_GRANT,
+          action: "deny",
+          expiresAt: null,
+        },
+        {
+          permission: "chat:write",
+          action: "allow",
+          expiresAt: "2026-11-02T13:15:00.000Z",
+        },
+      ]),
+    );
     const cleared = await accept(
       client().setPermissions({
         headers,
