@@ -213,10 +213,6 @@ MONDAY_OAUTH_CLIENT_ID=op://Development/monday/MONDAY_OAUTH_CLIENT_ID
 MONDAY_OAUTH_CLIENT_SECRET=op://Development/monday/MONDAY_OAUTH_CLIENT_SECRET
 MONDAY_OAUTH_APP_ID=op://Development/monday/MONDAY_OAUTH_APP_ID
 
-# Optional: Wix OAuth Connector
-WIX_OAUTH_CLIENT_ID=op://Development/wix/WIX_OAUTH_CLIENT_ID
-WIX_OAUTH_CLIENT_SECRET=op://Development/wix/WIX_OAUTH_CLIENT_SECRET
-
 # Optional: Meta Ads OAuth Connector
 META_ADS_OAUTH_CLIENT_ID=op://Development/meta-ads/META_ADS_OAUTH_CLIENT_ID
 META_ADS_OAUTH_CLIENT_SECRET=op://Development/meta-ads/META_ADS_OAUTH_CLIENT_SECRET
@@ -261,10 +257,6 @@ AGENTPHONE_WEBHOOK_SECRET=op://Development/agentphone/AGENTPHONE_WEBHOOK_SECRET
 # Optional WhatsApp country calling prefixes, e.g. +49,+55,+90.
 # Empty or unset disables country filtering.
 WHATSAPP_ALLOWED_COUNTRY_PREFIXES=
-
-# Optional: ngrok (Computer Connector)
-NGROK_API_KEY=op://Development/ngrok/NGROK_API_KEY
-NGROK_COMPUTER_CONNECTOR_DOMAIN=computer.vm7.io
 
 # Optional: Blog Configuration
 BLOG_BASE_URL=
