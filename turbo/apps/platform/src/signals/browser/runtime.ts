@@ -10,7 +10,7 @@ import {
 } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import type { BrowserSignals } from "./browser.ts";
-import { CdpFault, diagnostic } from "./cdp/errors.ts";
+import { CdpFault } from "./cdp/errors.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus } from "./focus.ts";
@@ -22,6 +22,7 @@ import {
 } from "./navigation/action.ts";
 import { observeTabStrip } from "./tab-strip.ts";
 import { createBrowserController } from "./viewer/controller.ts";
+import { diagnostic } from "./viewer/diagnostic.ts";
 import { createViewerSignals } from "./viewer/model.ts";
 import type { TabSpace } from "./viewer/tab-layout.ts";
 import type {

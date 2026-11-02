@@ -19,12 +19,8 @@ import {
   type CdpClient,
   type CdpEvent,
 } from "../cdp/client.ts";
-import {
-  CdpFault,
-  diagnostic,
-  isRecord,
-  validateConfiguration,
-} from "../cdp/errors.ts";
+import { CdpFault, isRecord, validateConfiguration } from "../cdp/errors.ts";
+import { diagnostic } from "./diagnostic.ts";
 import {
   createTargetDirectory,
   pageTarget,
