@@ -2309,7 +2309,11 @@ function createConnectionBootstrap(
     );
     // The wire must survive admission/DOM cancellation until original releases drain.
     const lifetime = set(resetOwner$);
-    const client = createCdpClient(connection.cdpUrl, {}, lifetime);
+    const client = createCdpClient(
+      connection.cdpUrl,
+      { role: "control" },
+      lifetime,
+    );
     set(clientState$, client);
     set(framesState$, client);
     client.onEvent((event) => {
@@ -2323,7 +2327,11 @@ function createConnectionBootstrap(
       set(get(links$).disconnected$, fault, client);
     });
     if (transport === "split") {
-      const frames = createCdpClient(connection.cdpUrl, {}, lifetime);
+      const frames = createCdpClient(
+        connection.cdpUrl,
+        { role: "frames" },
+        lifetime,
+      );
       set(framesState$, frames);
       frames.onEvent((event) => {
         detach(
