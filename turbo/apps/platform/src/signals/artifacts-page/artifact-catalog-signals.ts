@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { downloadAttachment$ } from "../attachment-download.ts";
 import { createArtifactCatalogSidebarSignals } from "./artifact-catalog-sidebar.ts";
 import { artifactIdPathParamsSchema } from "@okouai/api-contracts/validators/artifact-catalog";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -204,19 +203,6 @@ export const openArtifact$ = command(
     }
 
     const preview = artifactDetailPreview(detail);
-    if (
-      preview.kind === "file" &&
-      !get(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion]
-    ) {
-      await set(
-        downloadAttachment$,
-        { filename: preview.filename, url: preview.url },
-        openSignal,
-      );
-      signal.throwIfAborted();
-      openSignal.throwIfAborted();
-      return;
-    }
     const previewSignals = await set(
       pageCatalog.ensureSelectedArtifactPreview$,
       artifactId,
