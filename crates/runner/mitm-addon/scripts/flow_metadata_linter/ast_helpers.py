@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from dataclasses import dataclass
 
 _STATIC_ITERABLE_WRAPPER_CALLS = {
@@ -76,6 +77,19 @@ def _static_first_call_argument_nodes(args: list[ast.expr]) -> list[ast.AST]:
 
 def _static_first_call_argument_outcomes(args: list[ast.expr]) -> _StaticIterableOutcomes:
     return _static_ordered_sequence_first_outcomes(args)
+
+
+def _static_projected_first_argument_outcomes(
+    args: list[ast.expr], project: Callable[[ast.AST], _StaticIterableOutcomes]
+) -> _StaticIterableOutcomes:
+    """Flatten first-argument projections while retaining missing or empty possibilities."""
+    argument_outcomes = _static_first_call_argument_outcomes(args)
+    projected = [project(argument) for argument in argument_outcomes.nodes]
+    return _static_outcomes(
+        [node for outcome in projected for node in outcome.nodes],
+        may_be_empty=argument_outcomes.may_be_empty
+        or any(outcome.may_be_empty for outcome in projected),
+    )
 
 
 def _deduplicate_static_nodes(nodes: list[ast.AST]) -> list[ast.AST]:
@@ -357,14 +371,8 @@ def _static_iterable_element_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
         ):
             return _static_mapping_key_outcomes(node.func.value)
         if isinstance(node.func, ast.Name) and node.func.id in _STATIC_ITERABLE_WRAPPER_CALLS:
-            argument_outcomes = _static_first_call_argument_outcomes(node.args)
-            element_outcomes = [
-                _static_iterable_element_outcomes(argument) for argument in argument_outcomes.nodes
-            ]
-            return _static_outcomes(
-                [item for outcome in element_outcomes for item in outcome.nodes],
-                may_be_empty=argument_outcomes.may_be_empty
-                or any(outcome.may_be_empty for outcome in element_outcomes),
+            return _static_projected_first_argument_outcomes(
+                node.args, _static_iterable_element_outcomes
             )
     return _static_outcomes((), may_be_empty=True)
 
@@ -468,54 +476,31 @@ def _static_mapping_key_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
 
 
 def _static_fromkeys_outcomes(node: ast.Call, *, include_all: bool) -> _StaticIterableOutcomes:
-    argument_outcomes = _static_first_call_argument_outcomes(node.args)
-    key_outcomes = [
-        (
-            _static_iterable_element_outcomes(argument)
-            if include_all
-            else _static_iterable_first_outcomes(argument)
-        )
-        for argument in argument_outcomes.nodes
-    ]
-    return _static_outcomes(
-        [key for outcome in key_outcomes for key in outcome.nodes],
-        may_be_empty=argument_outcomes.may_be_empty
-        or any(outcome.may_be_empty for outcome in key_outcomes),
+    return _static_projected_first_argument_outcomes(
+        node.args,
+        _static_iterable_element_outcomes if include_all else _static_iterable_first_outcomes,
     )
 
 
 def _static_unbound_mapping_outcomes(
     node: ast.Call, *, include_all: bool
 ) -> _StaticIterableOutcomes:
-    argument_outcomes = _static_first_call_argument_outcomes(node.args)
-    mapping_outcomes = [
-        (
-            _static_mapping_key_outcomes(argument)
-            if include_all
-            else _static_mapping_first_key_outcomes(argument)
-        )
-        for argument in argument_outcomes.nodes
-    ]
-    return _static_outcomes(
-        [key for outcome in mapping_outcomes for key in outcome.nodes],
-        may_be_empty=argument_outcomes.may_be_empty
-        or any(outcome.may_be_empty for outcome in mapping_outcomes),
+    return _static_projected_first_argument_outcomes(
+        node.args,
+        _static_mapping_key_outcomes if include_all else _static_mapping_first_key_outcomes,
     )
 
 
 def _static_dict_constructor_outcomes(
     node: ast.Call, *, include_all: bool
 ) -> _StaticIterableOutcomes:
-    argument_outcomes = _static_first_call_argument_outcomes(node.args)
-    input_outcomes = [
-        _static_mapping_input_key_outcomes(argument, include_all=include_all)
-        for argument in argument_outcomes.nodes
-    ]
-    positional_may_be_empty = argument_outcomes.may_be_empty or any(
-        outcome.may_be_empty for outcome in input_outcomes
+    input_outcomes = _static_projected_first_argument_outcomes(
+        node.args,
+        lambda argument: _static_mapping_input_key_outcomes(argument, include_all=include_all),
     )
+    positional_may_be_empty = input_outcomes.may_be_empty
     keyword_outcomes = _static_mapping_keyword_outcomes(node.keywords, include_all=include_all)
-    nodes = [key for outcome in input_outcomes for key in outcome.nodes]
+    nodes = list(input_outcomes.nodes)
     if include_all or positional_may_be_empty:
         nodes.extend(keyword_outcomes.nodes)
     return _static_outcomes(
