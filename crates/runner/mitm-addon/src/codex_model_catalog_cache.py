@@ -540,25 +540,17 @@ def _response_cache_control_is_unsafe(headers: http.Headers) -> bool:
 
 def _bounded_content_type(headers: http.Headers) -> str | None:
     """Preflight all raw values and folding separators before converting any value."""
-    fields = headers.fields
-    if len(fields) > _MAX_CONTENT_TYPE_FIELDS:
+    values = http_header_syntax.bounded_header_values(
+        headers.fields,
+        _RAW_CONTENT_TYPE,
+        max_fields=_MAX_CONTENT_TYPE_FIELDS,
+        max_value_bytes=_MAX_CONTENT_TYPE_BYTES,
+        separator_bytes=len(", "),
+    )
+    if values is None:
         return None
-
-    values: list[bytes] = []
-    value_bytes = 0
-    separator = ", "
-    for raw_name, raw_value in fields:
-        if len(raw_name) != len(_RAW_CONTENT_TYPE) or raw_name.lower() != _RAW_CONTENT_TYPE:
-            continue
-        value_bytes += len(raw_value)
-        if values:
-            value_bytes += len(separator)
-        if value_bytes > _MAX_CONTENT_TYPE_BYTES:
-            return None
-        values.append(raw_value)
-
     try:
-        return separator.join(value.decode("utf-8") for value in values)
+        return ", ".join(value.decode("utf-8") for value in values)
     except UnicodeDecodeError:
         return None
 
