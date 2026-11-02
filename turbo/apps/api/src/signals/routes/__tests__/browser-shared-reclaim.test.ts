@@ -120,8 +120,10 @@ describe("shared Browser expiry through public reopen", () => {
       const b = await f.start();
       const first = await open(a);
       const replacementExtensionId = "22222222-2222-4222-8222-222222222222";
+      expect(first.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
       mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", replacementExtensionId);
       const sibling = await open(b);
+      expect(sibling.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
       const retainedViewer = await accept(
         client().viewerConnection({
           headers,
@@ -152,6 +154,10 @@ describe("shared Browser expiry through public reopen", () => {
       mockNow(START + 11 * MINUTE);
       const reopened = await open(a);
       expect(reopened.window.instanceId).not.toBe(first.window.instanceId);
+      expect(reopened.extension).toStrictEqual({
+        ...TEST_BROWSER_EXTENSION,
+        id: replacementExtensionId,
+      });
       expect(f.provider.createdIds).toHaveLength(1);
       expect(f.provider.sessionRequests).toStrictEqual([
         expect.objectContaining({

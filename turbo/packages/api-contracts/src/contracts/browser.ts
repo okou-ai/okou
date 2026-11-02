@@ -163,6 +163,8 @@ export type BrowserViewerConnection = zInfer<
 
 const browserConnectionResponseSchema = browserResponseSchema.extend({
   cdpUrl: url(),
+  // Actual installed metadata accompanies shared connections and their live window.
+  extension: browserExtensionSchema.optional(),
 });
 
 const commonErrorResponses = {

@@ -15,6 +15,7 @@ import {
   BROWSER_PROVIDER_TIMEOUT_MINUTES,
   BROWSER_SCREEN_WIDTH,
   type BrowserSession,
+  type BrowserExtension,
   type BrowserViewerConnection,
 } from "@okouai/api-contracts/contracts/browser";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -91,7 +92,11 @@ type Metadata = Pick<
   typeof windows.$inferSelect,
   "chatThreadId" | "orgId" | "userId" | "name" | "createdAt" | "updatedAt"
 >;
-type Connection = { readonly browser: BrowserSession; readonly cdpUrl: string };
+type Connection = {
+  readonly browser: BrowserSession;
+  readonly cdpUrl: string;
+  readonly extension: BrowserExtension;
+};
 const unavailable = (): BrowserServiceError => {
   return {
     kind: "error",
@@ -846,12 +851,13 @@ function sharedBrowserOpen(
           if (!session || session.status !== "active" || !session.cdpUrl) {
             return unavailable();
           }
+          const connection = browserUseNativeConnection(session);
           const resolved = await set(
             resolveSharedWindow$,
             {
               owner: ctx.owner,
               profile,
-              ...browserUseNativeConnection(session),
+              ...connection,
               initial: created,
               initialDisplay: ctx.mode.input.initialDisplay,
               window:
@@ -885,6 +891,7 @@ function sharedBrowserOpen(
             value: {
               browser: presentation(meta.value, profile, window, session, null),
               cdpUrl: session.cdpUrl,
+              extension: connection.extension,
             },
           };
         })(),
