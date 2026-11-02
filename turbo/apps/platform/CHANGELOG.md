@@ -13,6 +13,30 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1083.6](https://github.com/okou-ai/okou/compare/app-v0.1083.5...app-v0.1083.6) (2026-11-02)
+
+
+### Bug Fixes
+
+* **browser:** end native input focus on remote navigation ([#44655](https://github.com/okou-ai/okou/issues/44655)) ([b9653cc](https://github.com/okou-ai/okou/commit/b9653ccec674b02b6c40a206a483b12097d36afd))
+
+
+### Refactoring
+
+* remove artifact deletion feature switch ([#44649](https://github.com/okou-ai/okou/issues/44649)) ([6fdcb0e](https://github.com/okou-ai/okou/commit/6fdcb0e11da48286252c8277d54c8fcf23d0abf3))
+* remove chat thread timeline feature switch ([#44651](https://github.com/okou-ai/okou/issues/44651)) ([9fa275a](https://github.com/okou-ai/okou/commit/9fa275ac619738a90345e866425fa3dfdeb4dd14))
+* remove shared thread visibility feature switch ([#44658](https://github.com/okou-ai/okou/issues/44658)) ([5578cdb](https://github.com/okou-ai/okou/commit/5578cdb5b540607a66f7c8d2de52a287ecd8ee09))
+* **teams:** remove workspace identity feature switch ([#44660](https://github.com/okou-ai/okou/issues/44660)) ([e77bc14](https://github.com/okou-ai/okou/commit/e77bc14635c0b1f8b8420aa1f8b5fb4fc9f01db5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.32.0
+    * @okouai/core bumped to 8.808.1
+    * @okouai/ui bumped to 1.18.8
+
 ## [0.1083.5](https://github.com/okou-ai/okou/compare/app-v0.1083.4...app-v0.1083.5) (2026-11-02)
 
 
