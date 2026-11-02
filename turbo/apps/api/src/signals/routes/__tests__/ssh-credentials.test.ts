@@ -679,7 +679,7 @@ describe("reusable SSH credential owner routes", () => {
           params,
           body: { expectedRevision: 1, name: "Concurrent edit" },
         }),
-        [200, 404],
+        [200, 404, 409],
       ),
       accept(
         credentials().delete({
@@ -692,22 +692,38 @@ describe("reusable SSH credential owner routes", () => {
     ]);
     const remaining = await accept(credentials().list({ headers }), [200]);
     if (deleted.status === 204) {
-      expect(updated.status).toBe(404);
+      // Deletion can win after the edit's statement snapshot read the row.
+      expect([404, 409]).toContain(updated.status);
+      expect(updated.body).toMatchObject({
+        error: {
+          code:
+            updated.status === 404
+              ? "SSH_CREDENTIAL_NOT_FOUND"
+              : "SSH_CREDENTIAL_REVISION_CONFLICT",
+        },
+      });
       expect(remaining.body.credentials).toStrictEqual([]);
       return;
     }
+    expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_REVISION_CONFLICT");
     expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({
+      id: created.body.id,
+      name: "Concurrent edit",
+      revision: 2,
+    });
     expect(remaining.body.credentials).toStrictEqual([updated.body]);
     await accept(
       credentials().delete({
         headers,
         params,
-        body: {
-          expectedRevision: remaining.body.credentials[0]?.revision ?? 0,
-        },
+        body: { expectedRevision: 2 },
       }),
       [204],
     );
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
   });
 
   it("preserves one valid outcome when creating a host races credential deletion", async () => {
