@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use sandbox::{ProcessExit, ProcessOutputChunk};
 use sandbox_mock::MockLifecycleGate;
 use sha2::{Digest, Sha256};
@@ -13,8 +14,9 @@ use crate::executor::agent_run::{ProcessCancelTimeouts, RunControls, RunStart, r
 use crate::executor::diagnostics::AgentStdoutStreamDiagnostics;
 use crate::executor::tests::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox, minimal_context,
-    spawn_run_in_sandbox_test, spawn_run_in_sandbox_test_with_cancellation,
-    spawn_run_in_sandbox_test_with_timeouts, test_executor_config, test_telemetry,
+    sandbox_write_file_error, spawn_run_in_sandbox_test,
+    spawn_run_in_sandbox_test_with_cancellation, spawn_run_in_sandbox_test_with_timeouts,
+    test_executor_config, test_telemetry,
 };
 use crate::executor::{
     EXIT_SIGKILL, PROCESS_CANCEL_TIMEOUTS, PROCESS_CANCEL_WRITE_TIMEOUT, SandboxReuseDisposition,
@@ -261,6 +263,178 @@ async fn run_in_sandbox_starts_no_guest_work_when_already_cancelled() {
     assert!(overrides.private_write_files_calls().is_empty());
     assert!(overrides.start_agent_process_calls().is_empty());
     assert!(overrides.wait_process_calls().is_empty());
+}
+
+#[tokio::test]
+async fn cooperative_cancel_settles_bootstrap_before_classifying_first_and_later_runs() {
+    for (is_first_run, write_error) in [
+        (true, None),
+        (false, None),
+        (
+            false,
+            Some(sandbox::SandboxError::Io(std::io::Error::other(
+                "accepted bootstrap write failed",
+            ))),
+        ),
+        (
+            false,
+            Some(sandbox_write_file_error(
+                "No space left on device (os error 28)",
+            )),
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let gate = MockLifecycleGate::new();
+        overrides.set_private_write_file_lifecycle_gate(gate.clone());
+        let expected_error = write_error.as_ref().map(ToString::to_string);
+        if let Some(error) = write_error {
+            overrides.push_private_write_files_result(Err(error));
+        }
+        let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+        let mut context = minimal_context();
+        context.is_first_run = Some(is_first_run);
+        let cancellation = RunCancellationHandle::new();
+        let mut telemetry = test_telemetry(&config, &context);
+        let execution = run_in_sandbox(
+            sandbox.as_ref(),
+            &context,
+            &config,
+            RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Home,
+                restore_guest_state: false,
+                reuse_result: SandboxReuseResult::PoolMiss,
+                home_reuse_result: runner_types::types::HomeReuseResult::Reused,
+                prev_storage: None,
+            },
+            &mut telemetry,
+            RunControls::from_cancellation(cancellation.signals(), None),
+        );
+        tokio::pin!(execution);
+        tokio::select! {
+            biased;
+            _ = &mut execution => panic!("bootstrap completed before its gate"),
+            entered = gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => entered.unwrap(),
+        };
+        cancellation.request_cooperative_user_cancellation().await;
+        assert!(
+            execution.as_mut().now_or_never().is_none(),
+            "user cancellation must retain the accepted bootstrap operation"
+        );
+        overrides.clear_private_write_file_lifecycle_gate();
+        gate.release_one();
+        let result = execution.await;
+        assert_eq!(overrides.private_write_files_calls().len(), 1);
+        assert!(overrides.start_agent_process_calls().is_empty());
+        if let Some(expected_error) = expected_error {
+            assert!(result.err().unwrap().to_string().contains(&expected_error));
+        } else {
+            let result = result.unwrap();
+            assert_eq!(result.failure.unwrap().error, "cancelled by user");
+            assert_eq!(
+                result.sandbox_reuse_disposition,
+                SandboxReuseDisposition::Eligible(SandboxReuseTerminal::CooperativeCancellation)
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn hard_cancel_interrupts_cooperative_bootstrap_settlement() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let gate = MockLifecycleGate::new();
+    overrides.set_private_write_file_lifecycle_gate(gate.clone());
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let context = minimal_context();
+    let cancellation = RunCancellationHandle::new();
+    let mut telemetry = test_telemetry(&config, &context);
+    let execution = run_in_sandbox(
+        sandbox.as_ref(),
+        &context,
+        &config,
+        RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Blank,
+            restore_guest_state: false,
+            reuse_result: SandboxReuseResult::PoolMiss,
+            home_reuse_result: runner_types::types::HomeReuseResult::CacheMiss,
+            prev_storage: None,
+        },
+        &mut telemetry,
+        RunControls::from_cancellation(cancellation.signals(), None),
+    );
+    tokio::pin!(execution);
+    tokio::select! {
+        biased;
+        _ = &mut execution => panic!("bootstrap completed before its gate"),
+        entered = gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => entered.unwrap(),
+    };
+    cancellation.request_cooperative_user_cancellation().await;
+    assert!(execution.as_mut().now_or_never().is_none());
+    cancellation.request_hard_cancellation().await;
+    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, execution)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        result.sandbox_reuse_disposition,
+        SandboxReuseDisposition::Ineligible(SandboxReuseRejection::ExecutionUncertain)
+    );
+    assert!(overrides.private_write_files_calls().is_empty());
+    assert!(overrides.start_agent_process_calls().is_empty());
+}
+
+#[tokio::test]
+async fn cooperative_cancel_retains_an_accepted_agent_start_until_controlled_exit() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let start_gate = MockLifecycleGate::new();
+    let wait_gate = MockLifecycleGate::new();
+    overrides.set_start_process_lifecycle_gate(start_gate.clone());
+    overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let context = minimal_context();
+    let cancellation = RunCancellationHandle::new();
+    let mut telemetry = test_telemetry(&config, &context);
+    let execution = run_in_sandbox(
+        sandbox.as_ref(),
+        &context,
+        &config,
+        RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
+            restore_guest_state: false,
+            reuse_result: SandboxReuseResult::Reused,
+            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
+            prev_storage: None,
+        },
+        &mut telemetry,
+        RunControls::from_cancellation(cancellation.signals(), None),
+    );
+    tokio::pin!(execution);
+    tokio::select! {
+        biased;
+        _ = &mut execution => panic!("Agent start completed before its gate"),
+        entered = start_gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => entered.unwrap(),
+    };
+    cancellation.request_cooperative_user_cancellation().await;
+    assert!(execution.as_mut().now_or_never().is_none());
+    start_gate.release_one();
+    tokio::select! {
+        biased;
+        _ = &mut execution => panic!("accepted Agent did not reach controlled wait"),
+        entered = wait_gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => entered.unwrap(),
+    };
+    wait_gate.release_one();
+    let result = execution.await.unwrap();
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    assert_eq!(overrides.process_control_calls().len(), 1);
+    assert_eq!(
+        result.sandbox_reuse_disposition,
+        SandboxReuseDisposition::Eligible(SandboxReuseTerminal::CooperativeCancellation)
+    );
 }
 
 #[tokio::test]

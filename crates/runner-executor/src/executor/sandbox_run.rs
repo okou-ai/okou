@@ -17,8 +17,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::agent_run::{
-    AgentExecutionResult, AgentRunLifecycle, PreparedGuestRuntime, PreparedRunInputs,
-    ProcessCancelTimeouts, RunControls, RunStart, run_in_sandbox_with_process_cancel_timeouts,
+    AgentExecutionResult, AgentRunLifecycle, PreparationCancellation, PreparedGuestRuntime,
+    PreparedRunInputs, ProcessCancelTimeouts, RunControls, RunStart,
+    run_in_sandbox_with_process_cancel_timeouts,
 };
 use super::cli_framework::{
     EffectiveCliFramework, effective_cli_framework, normalized_cli_agent_type,
@@ -598,6 +599,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     sandbox_prepared,
                     reuse_result,
                     cancel: &controls.cancel,
+                    hard_cancel: &controls.hard_cancel,
                     codex_model_catalog_prefetch,
                 },
             )
@@ -935,6 +937,7 @@ struct StartSandboxOptions<'a> {
     sandbox_prepared: Option<&'a SandboxPreparedNotifier>,
     reuse_result: SandboxReuseResult,
     cancel: &'a CancellationToken,
+    hard_cancel: &'a CancellationToken,
     codex_model_catalog_prefetch: bool,
 }
 
@@ -1093,6 +1096,7 @@ async fn create_started_sandbox(
         sandbox_prepared,
         reuse_result,
         cancel,
+        hard_cancel,
         codex_model_catalog_prefetch,
     } = options;
     let home_drive = match home_image {
@@ -1301,7 +1305,7 @@ async fn create_started_sandbox(
                 context,
                 params.restore_guest_state,
                 reuse_result,
-                cancel,
+                PreparationCancellation::new(cancel, hard_cancel),
                 telemetry,
             )
             .await
@@ -1311,7 +1315,7 @@ async fn create_started_sandbox(
                     sandbox.as_ref(),
                     context,
                     params.restore_guest_state,
-                    cancel,
+                    PreparationCancellation::new(cancel, hard_cancel),
                     telemetry,
                 )
                 .await,

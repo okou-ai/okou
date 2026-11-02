@@ -275,6 +275,15 @@ the `vm0-exec` hierarchy is empty before parking. A terminal result does not
 replace descendant cleanup: the operation's containment owner remains
 responsible for graceful or forced cleanup and hierarchy removal.
 
+Ordinary user cancellation stops admission of the next Agent preparation phase. An
+accepted phase retains its guest operation until its result or existing deadline;
+an accepted Agent start retains the process handle for controlled cancellation
+and confirmed exit. The enclosing sandbox startup still settles required Home
+mounting and ownership publication before finalization. Hard cancellation may
+interrupt the accepted Agent preparation phase. A settled
+pre-Agent cancellation may enter reuse preparation, but operation quiescence,
+descendant cleanup and transport health must still be proved before parking.
+
 Output drains retain their 64 KiB read capacity but allocate the read buffer
 uninitialized on the heap. This avoids faulting every page of a large stack
 buffer when a short-lived helper emits little or no output. Only the bytes

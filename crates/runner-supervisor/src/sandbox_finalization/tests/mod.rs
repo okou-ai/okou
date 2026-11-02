@@ -1197,16 +1197,39 @@ async fn finalizer_rejects_mismatched_home_promotion_before_parking() {
 
 #[tokio::test]
 async fn finalizer_republishes_failed_sessionless_home_hit_without_inventing_history_proof() {
-    assert_finalizer_republishes_sessionless_home_hit(false).await;
+    assert_finalizer_preserves_sessionless_home_hit(SessionlessHomeOutcome::Failure).await;
 }
 
 #[tokio::test]
 async fn finalizer_republishes_hard_cancelled_sessionless_home_hit_without_inventing_history_proof()
 {
-    assert_finalizer_republishes_sessionless_home_hit(true).await;
+    assert_finalizer_preserves_sessionless_home_hit(SessionlessHomeOutcome::HardCancellation).await;
 }
 
-async fn assert_finalizer_republishes_sessionless_home_hit(cancelled: bool) {
+#[tokio::test]
+async fn finalizer_parks_cooperatively_cancelled_home_hit_with_existing_workspace_bytes() {
+    assert_finalizer_preserves_sessionless_home_hit(
+        SessionlessHomeOutcome::CooperativeCancellation { park: true },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn finalizer_saves_cooperatively_cancelled_home_hit_when_parking_is_unavailable() {
+    assert_finalizer_preserves_sessionless_home_hit(
+        SessionlessHomeOutcome::CooperativeCancellation { park: false },
+    )
+    .await;
+}
+
+#[derive(Clone, Copy)]
+enum SessionlessHomeOutcome {
+    Failure,
+    CooperativeCancellation { park: bool },
+    HardCancellation,
+}
+
+async fn assert_finalizer_preserves_sessionless_home_hit(outcome: SessionlessHomeOutcome) {
     let (_budget, lease) = test_budget_lease();
     let fixture = FinalizeTestFixture::new().await;
     let network_log_session = fixture.network_log_session().await;
@@ -1246,10 +1269,17 @@ async fn assert_finalizer_republishes_sessionless_home_hit(cancelled: bool) {
         .unwrap();
     tokio::fs::rename(seed, &active_image).await.unwrap();
     let overrides = Arc::new(MockSandboxOverrides::new());
+    add_healthy_reuse_preparation_matcher(&overrides);
     let (factory, sandbox) = sandbox_with_overrides(sandbox_id, Arc::clone(&overrides)).await;
     let cancel = RunCancellationHandle::new();
-    if cancelled {
-        assert!(cancel.request_hard_cancellation().await);
+    match outcome {
+        SessionlessHomeOutcome::Failure => {}
+        SessionlessHomeOutcome::CooperativeCancellation { .. } => {
+            assert!(cancel.request_cooperative_user_cancellation().await);
+        }
+        SessionlessHomeOutcome::HardCancellation => {
+            assert!(cancel.request_hard_cancellation().await);
+        }
     }
     let mut context = fixture.finalize_context(
         run_id,
@@ -1264,12 +1294,20 @@ async fn assert_finalizer_republishes_sessionless_home_hit(cancelled: bool) {
     context.discovered_cli_agent_session_id = None;
     context.restored_session_identity = None;
     context.exit_code = 1;
-    context.sandbox_reuse_disposition = if cancelled {
-        SandboxReuseDisposition::Eligible(SandboxReuseTerminal::CooperativeCancellation)
-    } else {
-        SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit)
+    context.sandbox_reuse_disposition = match outcome {
+        SessionlessHomeOutcome::Failure => {
+            SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit)
+        }
+        SessionlessHomeOutcome::CooperativeCancellation { .. }
+        | SessionlessHomeOutcome::HardCancellation => {
+            SandboxReuseDisposition::Eligible(SandboxReuseTerminal::CooperativeCancellation)
+        }
     };
-    if !cancelled {
+    if matches!(
+        outcome,
+        SessionlessHomeOutcome::Failure
+            | SessionlessHomeOutcome::CooperativeCancellation { park: false }
+    ) {
         assert!(context.parking_gate.soft_drain());
     }
     context.home_image = Some(home_image);
@@ -1277,6 +1315,21 @@ async fn assert_finalizer_republishes_sessionless_home_hit(cancelled: bool) {
     let _ready =
         finalize_sandbox_for_completion(Some(sandbox), ActiveBudgetLease::new(lease), context)
             .await;
+    if matches!(
+        outcome,
+        SessionlessHomeOutcome::CooperativeCancellation { park: true }
+    ) {
+        assert_eq!(overrides.park_call_count(), 1);
+        assert_eq!(overrides.stop_call_count(), 0);
+        assert_eq!(overrides.destroy_call_count(), 0);
+        assert_eq!(tokio::fs::read(&active_image).await.unwrap(), home_bytes);
+        let reserved = fixture.idle_pool.lock().await.take_reserved(reuse_key);
+        assert!(
+            reserved.is_some(),
+            "cancelled sandbox must be available to the next Run"
+        );
+        return;
+    }
     assert_eq!(overrides.park_call_count(), 0);
     assert_eq!(overrides.stop_call_count(), 1);
     assert_eq!(overrides.destroy_call_count(), 1);

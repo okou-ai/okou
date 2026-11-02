@@ -1,7 +1,7 @@
 use super::super::super::*;
 use super::super::support::{
     minimal_context, mock_run_config_with_overrides, push_job, shutdown, test_profiles,
-    wait_budget_count, wait_cancel_handle,
+    wait_budget_count, wait_cancel_handle, wait_idle_pool_len,
 };
 use crate::home_image_cache::HomeImageCache;
 use runner_host::paths::RunnerPaths;
@@ -13,23 +13,32 @@ use tracing_test_support::CapturedEvents;
 
 #[tokio::test]
 async fn startup_finalization_classifies_cache_failures_and_preserves_healthy_cancelled_cache() {
-    for (cancelled, failure, expected_level) in [
-        (true, None, None),
+    for (cancelled, failure, expected_level, park) in [
+        (true, None, None, true),
+        (true, None, None, false),
         (
             true,
             Some(SandboxOperationReason::GuestConnectionUnavailable),
             Some(Level::INFO),
+            false,
         ),
-        (true, Some(SandboxOperationReason::Guest), Some(Level::WARN)),
+        (
+            true,
+            Some(SandboxOperationReason::Guest),
+            Some(Level::WARN),
+            false,
+        ),
         (
             true,
             Some(SandboxOperationReason::BackendCrashed),
             Some(Level::WARN),
+            false,
         ),
         (
             false,
             Some(SandboxOperationReason::GuestConnectionUnavailable),
             Some(Level::WARN),
+            false,
         ),
     ] {
         let captured = CapturedEvents::default();
@@ -85,6 +94,12 @@ async fn startup_finalization_classifies_cache_failures_and_preserves_healthy_ca
             let cancel =
                 wait_cancel_handle(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
             cancel.request_cooperative_user_cancellation().await;
+            if !park {
+                env.drain();
+            }
+            // Cancellation retains this accepted operation until its reply.
+            overrides.clear_private_write_file_lifecycle_gate();
+            private_write_gate.release_one();
         } else {
             overrides.push_private_write_files_result(Err(SandboxError::Io(
                 std::io::Error::other("private preparation failed"),
@@ -111,15 +126,23 @@ async fn startup_finalization_classifies_cache_failures_and_preserves_healthy_ca
                     .contains("private preparation failed")
             );
         }
+        if park {
+            wait_idle_pool_len(&env.idle_pool, 1, Duration::from_secs(5)).await;
+            assert_eq!(overrides.park_call_count(), 1);
+        } else {
+            wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
+        }
+        assert!(overrides.start_agent_process_calls().is_empty());
+
+        // Shutdown drains a parked candidate and joins heartbeat cache scans
+        // before inspecting the cache's nonblocking entry locks.
+        shutdown(&env, run_handle).await;
         wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
-        assert_eq!(overrides.stop_call_count(), 1);
+        assert_eq!(overrides.stop_call_count(), u32::from(!park));
+        assert_eq!(overrides.kill_call_count(), u32::from(park));
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(env.idle_pool.lock().await.len(), 0);
 
-        // Budget release does not drain heartbeat cache scans. Stop the runner
-        // before inspecting the cache so its nonblocking scan cannot skip a
-        // healthy entry whose lock is held by a concurrent heartbeat refresh.
-        shutdown(&env, run_handle).await;
         let states = cache.held_home_states().await;
         assert_eq!(states.len(), usize::from(failure.is_none()));
 

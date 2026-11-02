@@ -893,7 +893,7 @@ impl PreparedGuestRuntime {
         context: &ExecutionContext,
         restore_guest_state: bool,
         reuse_result: SandboxReuseResult,
-        cancel: &CancellationToken,
+        cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Option<Self> {
         if !is_codex_model_catalog_prefetch_eligible(context, reuse_result) {
@@ -906,7 +906,7 @@ impl PreparedGuestRuntime {
                 context,
                 restore_guest_state,
                 reuse_result,
-                cancel,
+                cancellation,
                 telemetry,
             )
             .await,
@@ -917,14 +917,14 @@ impl PreparedGuestRuntime {
         sandbox: &dyn Sandbox,
         context: &ExecutionContext,
         restore_guest_state: bool,
-        cancel: &CancellationToken,
+        cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Self {
         match prepare_guest_runtime_state_phase(
             sandbox,
             context,
             restore_guest_state,
-            cancel,
+            cancellation,
             telemetry,
         )
         .await
@@ -942,14 +942,14 @@ impl PreparedGuestRuntime {
         context: &ExecutionContext,
         restore_guest_state: bool,
         reuse_result: SandboxReuseResult,
-        cancel: &CancellationToken,
+        cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
     ) -> Self {
         match prepare_guest_runtime_state_phase(
             sandbox,
             context,
             restore_guest_state,
-            cancel,
+            cancellation,
             telemetry,
         )
         .await
@@ -959,7 +959,7 @@ impl PreparedGuestRuntime {
                     sandbox,
                     context,
                     reuse_result,
-                    cancel,
+                    cancellation.any,
                     telemetry,
                 )
                 .await
@@ -1004,7 +1004,7 @@ impl RunControls {
                 context,
                 start.restore_guest_state,
                 start.reuse_result,
-                &self.cancel,
+                PreparationCancellation::new(&self.cancel, &self.hard_cancel),
                 telemetry,
             )
             .await
@@ -1090,10 +1090,11 @@ impl AgentBootstrapInputs {
         sandbox: &'a dyn Sandbox,
         context: &ExecutionContext,
         reuse_result: SandboxReuseResult,
-        cancel: &CancellationToken,
+        cancellation: PreparationCancellation<'_>,
         telemetry: &mut JobTelemetry,
         prefetch: &mut CodexModelCatalogPrefetch<'a>,
     ) -> Result<RequiredAgentFiles, BootstrapFileFailure> {
+        let cancel = cancellation.any;
         let owner = OperationCancellationContext::new(
             &context.run_id.to_string(),
             sandbox.id(),
@@ -1104,7 +1105,7 @@ impl AgentBootstrapInputs {
         loop {
             let started = Instant::now();
             let result = prefetch
-                .race(run_pre_spawn_phase(cancel, &owner, async {
+                .race(run_pre_spawn_phase(cancellation, &owner, async {
                     // Storage reconciliation already finished. Prepare from
                     // captured inputs within this timed, cancellable owner.
                     let preparation_started = Instant::now();
@@ -1152,7 +1153,10 @@ impl AgentBootstrapInputs {
                 None,
                 private_write_timeout_stage(&error),
             );
-            if recovery_attempted || !super::disk_cleanup::is_disk_write_error(&error) {
+            if cancel.is_cancelled()
+                || recovery_attempted
+                || !super::disk_cleanup::is_disk_write_error(&error)
+            {
                 return Err(BootstrapFileFailure {
                     replace: recovery_attempted && super::disk_cleanup::is_disk_write_error(&error),
                     error,
@@ -1169,7 +1173,7 @@ impl AgentBootstrapInputs {
             );
             old_prefetch.finish(telemetry).await;
             let recovered = run_pre_spawn_phase(
-                cancel,
+                cancellation,
                 &owner,
                 super::disk_cleanup::recover(sandbox, context, reuse_result, cancel, telemetry),
             )
@@ -1199,23 +1203,38 @@ impl AgentBootstrapInputs {
     }
 }
 
+/// Admission observes every cancellation; accepted preparation only yields to a hard stop.
+#[derive(Clone, Copy)]
+pub(super) struct PreparationCancellation<'a> {
+    any: &'a CancellationToken,
+    hard: &'a CancellationToken,
+}
+
+impl<'a> PreparationCancellation<'a> {
+    pub(super) fn new(any: &'a CancellationToken, hard: &'a CancellationToken) -> Self {
+        Self { any, hard }
+    }
+}
+
 async fn run_pre_spawn_phase<T>(
-    cancel: &CancellationToken,
+    cancellation: PreparationCancellation<'_>,
     owner: &OperationCancellationContext,
     phase: impl Future<Output = T>,
 ) -> Option<T> {
-    if cancel.is_cancelled() {
+    if cancellation.any.is_cancelled() {
         return None;
     }
 
-    // Select on a borrow: the owned future must outlive branch selection so
-    // its guards see the selected cancellation before they are destroyed.
+    // Ordinary user cancellation must not abandon accepted guest writes or
+    // process starts. Keep their result/ownership; the next phase checks cancel
+    // before starting. Existing provider deadlines still bound this work.
+    // Hard cancellation can still interrupt the accepted phase.
     let phase = owner.scope(phase);
     tokio::pin!(phase);
     tokio::select! {
         biased;
         result = &mut phase => Some(result),
-        () = cancel.cancelled() => {
+        () = cancellation.hard.cancelled() => {
             owner.mark_cancelled();
             None
         },
@@ -1318,11 +1337,11 @@ async fn prepare_guest_runtime_state_phase(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     restore_guest_state_required: bool,
-    cancel: &CancellationToken,
+    cancellation: PreparationCancellation<'_>,
     telemetry: &mut JobTelemetry,
 ) -> GuestRuntimeStatePreparation {
     match run_pre_spawn_phase(
-        cancel,
+        cancellation,
         &OperationCancellationContext::new(
             &context.run_id.to_string(),
             sandbox.id(),
@@ -1332,6 +1351,7 @@ async fn prepare_guest_runtime_state_phase(
     )
     .await
     {
+        Some(Ok(())) if cancellation.any.is_cancelled() => GuestRuntimeStatePreparation::Cancelled,
         Some(Ok(())) => GuestRuntimeStatePreparation::Ready,
         Some(Err(error)) => GuestRuntimeStatePreparation::Failed(error),
         None => GuestRuntimeStatePreparation::Cancelled,
@@ -1463,12 +1483,21 @@ fn pre_spawn_cancelled(
     run_id: RunId,
     pre_spawn_started: Instant,
     telemetry: &mut JobTelemetry,
+    cooperative_cancel: &CancellationToken,
+    hard_cancel: &CancellationToken,
 ) -> AgentExecutionResult {
     info!(
         run_id = %run_id,
         "cancel received before guest process started"
     );
-    let result = AgentExecutionResult::cancelled();
+    let mut result = AgentExecutionResult::cancelled();
+    // This return is before accepting an Agent start. Accepted preparation has
+    // settled, or cancellation was observed before starting it. Finalization
+    // must still prove normal-operation quiescence and clean reuse preparation.
+    if cooperative_cancel.is_cancelled() && !hard_cancel.is_cancelled() {
+        result.sandbox_reuse_disposition =
+            SandboxReuseDisposition::Eligible(SandboxReuseTerminal::CooperativeCancellation);
+    }
     telemetry.record(
         "agent_execute",
         pre_spawn_started.elapsed(),
@@ -1602,7 +1631,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 start.restore_guest_state,
                 start.reuse_result,
-                &controls.cancel,
+                PreparationCancellation::new(&controls.cancel, &controls.hard_cancel),
                 telemetry,
             )
             .await
@@ -1625,7 +1654,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let result = match error {
                 Some(error) => pre_agent_preparation_failure(error, controls, prepared_run_payload),
                 None => {
-                    let result = pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
+                    let result = pre_spawn_cancelled(
+                        context.run_id,
+                        pre_spawn_started,
+                        telemetry,
+                        &controls.cooperative_user_cancel,
+                        &controls.hard_cancel,
+                    );
                     Ok(result)
                 }
             };
@@ -1636,7 +1671,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let deferred_background_fill = {
         let storage_result = model_catalog_prefetch
             .race(run_pre_spawn_phase(
-                &controls.cancel,
+                PreparationCancellation::new(&controls.cancel, &controls.hard_cancel),
                 &OperationCancellationContext::new(
                     &context.run_id.to_string(),
                     sandbox.id(),
@@ -1670,8 +1705,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         pre_agent_preparation_failure(error, controls, prepared_run_payload)
                     }
                     None => {
-                        let result =
-                            pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
+                        let result = pre_spawn_cancelled(
+                            context.run_id,
+                            pre_spawn_started,
+                            telemetry,
+                            &controls.cooperative_user_cancel,
+                            &controls.hard_cancel,
+                        );
                         Ok(result)
                     }
                 };
@@ -1697,119 +1737,126 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
     let startup_report_cancel = cancel.clone();
+    let cancellation = PreparationCancellation::new(&cancel, &hard_cancel);
     let pre_spawn_owner = OperationCancellationContext::new(
         &context.run_id.to_string(),
         sandbox.id(),
         "guest_agent_preparation",
     );
     let bootstrap = model_catalog_prefetch
-        .race(run_pre_spawn_phase(&cancel, &pre_spawn_owner, async move {
-            let cancel = pre_spawn_cancel;
-            let start = pre_spawn_start;
-            let telemetry = pre_spawn_telemetry;
+        .race(run_pre_spawn_phase(
+            cancellation,
+            &pre_spawn_owner,
+            async move {
+                let cancel = pre_spawn_cancel;
+                let start = pre_spawn_start;
+                let telemetry = pre_spawn_telemetry;
 
-            // Check the selected home image before crossing the process-spawn boundary.
-            let native_home_proof_failed = if let Some(binding) = home_history_proof {
-                let started = Instant::now();
-                let verified =
-                    super::home_history::verify_home_candidate(sandbox, context, binding, &cancel)
-                        .await?;
-                telemetry.record(
-                    "session_history_home_cache_verify",
-                    started.elapsed(),
-                    verified,
-                    None,
+                // Check the selected home image before crossing the process-spawn boundary.
+                let native_home_proof_failed = if let Some(binding) = home_history_proof {
+                    let started = Instant::now();
+                    let verified = super::home_history::verify_home_candidate(
+                        sandbox, context, binding, &cancel,
+                    )
+                    .await?;
+                    telemetry.record(
+                        "session_history_home_cache_verify",
+                        started.elapsed(),
+                        verified,
+                        None,
+                    );
+                    telemetry.record(
+                        if verified {
+                            "session_history_home_cache_hit"
+                        } else {
+                            "session_history_home_cache_miss"
+                        },
+                        Duration::ZERO,
+                        true,
+                        None,
+                    );
+                    !verified && context.native_continuation.is_some()
+                } else {
+                    false
+                };
+
+                // Finalize the prepared private run payload and build the environment used
+                // to bootstrap guest-agent. User-provided env is passed through a private
+                // guest file and injected into the CLI child after guest-agent has started.
+                let user_env_map = build_user_env_json(context);
+                let env_build_started = Instant::now();
+                let mut run_payload = match prepared_run_payload.into_run_payload(context) {
+                    Ok(run_payload) => run_payload,
+                    Err(error) => {
+                        telemetry.record(
+                            "runner_agent_env_build",
+                            env_build_started.elapsed(),
+                            false,
+                            None,
+                        );
+                        return Err(error);
+                    }
+                };
+                let original_native_continuation = if native_home_proof_failed {
+                    let mut native = context.native_continuation.clone().ok_or_else(|| {
+                        RunnerError::Internal("native home proof lost its intent".into())
+                    })?;
+                    native.session_id = None;
+                    native.generation_run_id = None;
+                    let fresh_native = serde_json::to_string(&native).map_err(|error| {
+                        RunnerError::Internal(format!("serialize fresh native intent: {error}"))
+                    })?;
+                    Some(std::mem::replace(
+                        &mut run_payload.native_continuation,
+                        fresh_native,
+                    ))
+                } else {
+                    None
+                };
+                info!(
+                    run_id = %context.run_id,
+                    prompt_bytes = run_payload.prompt.len(),
+                    append_system_prompt_bytes = run_payload.append_system_prompt.len(),
+                    secret_values_present = !run_payload.secret_values.is_empty(),
+                    disallowed_tools_bytes = run_payload.disallowed_tools.len(),
+                    tools_bytes = run_payload.tools.len(),
+                    settings_bytes = run_payload.settings.len(),
+                    artifacts_bytes = run_payload.artifacts.len(),
+                    feature_flags_bytes = run_payload.feature_flags.len(),
+                    "guest-agent run payload prepared"
+                );
+                let mut env_map =
+                    match build_env_json_for_run(context, &config.api_url, sandbox.id()) {
+                        Ok(env_map) => env_map,
+                        Err(error) => {
+                            telemetry.record(
+                                "runner_agent_env_build",
+                                env_build_started.elapsed(),
+                                false,
+                                None,
+                            );
+                            return Err(error);
+                        }
+                    };
+                env_map.insert(
+                    guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
+                    guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
                 );
                 telemetry.record(
-                    if verified {
-                        "session_history_home_cache_hit"
-                    } else {
-                        "session_history_home_cache_miss"
-                    },
-                    Duration::ZERO,
+                    "runner_agent_env_build",
+                    env_build_started.elapsed(),
                     true,
                     None,
                 );
-                !verified && context.native_continuation.is_some()
-            } else {
-                false
-            };
 
-            // Finalize the prepared private run payload and build the environment used
-            // to bootstrap guest-agent. User-provided env is passed through a private
-            // guest file and injected into the CLI child after guest-agent has started.
-            let user_env_map = build_user_env_json(context);
-            let env_build_started = Instant::now();
-            let mut run_payload = match prepared_run_payload.into_run_payload(context) {
-                Ok(run_payload) => run_payload,
-                Err(error) => {
-                    telemetry.record(
-                        "runner_agent_env_build",
-                        env_build_started.elapsed(),
-                        false,
-                        None,
-                    );
-                    return Err(error);
-                }
-            };
-            let original_native_continuation = if native_home_proof_failed {
-                let mut native = context.native_continuation.clone().ok_or_else(|| {
-                    RunnerError::Internal("native home proof lost its intent".into())
-                })?;
-                native.session_id = None;
-                native.generation_run_id = None;
-                let fresh_native = serde_json::to_string(&native).map_err(|error| {
-                    RunnerError::Internal(format!("serialize fresh native intent: {error}"))
-                })?;
-                Some(std::mem::replace(
-                    &mut run_payload.native_continuation,
-                    fresh_native,
-                ))
-            } else {
-                None
-            };
-            info!(
-                run_id = %context.run_id,
-                prompt_bytes = run_payload.prompt.len(),
-                append_system_prompt_bytes = run_payload.append_system_prompt.len(),
-                secret_values_present = !run_payload.secret_values.is_empty(),
-                disallowed_tools_bytes = run_payload.disallowed_tools.len(),
-                tools_bytes = run_payload.tools.len(),
-                settings_bytes = run_payload.settings.len(),
-                artifacts_bytes = run_payload.artifacts.len(),
-                feature_flags_bytes = run_payload.feature_flags.len(),
-                "guest-agent run payload prepared"
-            );
-            let mut env_map = match build_env_json_for_run(context, &config.api_url, sandbox.id()) {
-                Ok(env_map) => env_map,
-                Err(error) => {
-                    telemetry.record(
-                        "runner_agent_env_build",
-                        env_build_started.elapsed(),
-                        false,
-                        None,
-                    );
-                    return Err(error);
-                }
-            };
-            env_map.insert(
-                guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
-                guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
-            );
-            telemetry.record(
-                "runner_agent_env_build",
-                env_build_started.elapsed(),
-                true,
-                None,
-            );
-
-            RunnerResult::Ok(AgentBootstrapInputs {
-                user_env_map,
-                env_map,
-                run_payload,
-                original_native_continuation,
-            })
-        }))
+                RunnerResult::Ok(AgentBootstrapInputs {
+                    user_env_map,
+                    env_map,
+                    run_payload,
+                    original_native_continuation,
+                })
+            },
+        ))
         .await;
     model_catalog_prefetch.record_outcome(telemetry);
     let mut bootstrap = 'bootstrap: {
@@ -1824,6 +1871,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context.run_id,
                 pre_spawn_started,
                 telemetry,
+                &cooperative_user_cancel,
+                &hard_cancel,
             )),
             Some(error) => Err(error),
         };
@@ -1833,7 +1882,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             sandbox,
             context,
             start.reuse_result,
-            &cancel,
+            cancellation,
             telemetry,
             &mut model_catalog_prefetch,
         )
@@ -1852,6 +1901,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     context.run_id,
                     pre_spawn_started,
                     telemetry,
+                    &cooperative_user_cancel,
+                    &hard_cancel,
                 )),
                 error
                     if replace
@@ -1898,7 +1949,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
     let prepared_agent = model_catalog_prefetch
-        .race(run_pre_spawn_phase(&cancel, &pre_spawn_owner, async move {
+        .race(run_pre_spawn_phase(cancellation, &pre_spawn_owner, async move {
             let start = pre_spawn_start;
             let telemetry = pre_spawn_telemetry;
             let user_env_file = required_files.user_env_file;
@@ -2056,8 +2107,14 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         };
         model_catalog_prefetch.finish(telemetry).await;
         match preparation_error {
-            Some(RunnerError::Cancelled) | None => {
-                let result = pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
+            None => {
+                let result = pre_spawn_cancelled(
+                    context.run_id,
+                    pre_spawn_started,
+                    telemetry,
+                    &cooperative_user_cancel,
+                    &hard_cancel,
+                );
                 return Ok(result);
             }
             Some(error) => return Err(error),
