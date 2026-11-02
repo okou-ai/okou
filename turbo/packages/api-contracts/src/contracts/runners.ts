@@ -917,6 +917,14 @@ function requireCompletePiFields(
   }
 }
 
+const storedSkillBundleSchema = contentBundleSchema
+  .extend({
+    mountPath: string().regex(
+      /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/u,
+    ),
+  })
+  .strict();
+
 /**
  * Stored execution context (subset stored in database for late routing)
  * Contains prepared context without runtime-generated fields
@@ -924,15 +932,10 @@ function requireCompletePiFields(
  */
 const storedExecutionContextObjectSchema = object({
   // Exact Official content is selected at admission, never refreshed at claim.
-  officialWorkflowBundles: array(
-    contentBundleSchema
-      .extend({
-        mountPath: string().regex(
-          /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/u,
-        ),
-      })
-      .strict(),
-  ).optional(),
+  officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
+  // Preparation admissions omit Seed references. Make required only after those
+  // API/rollback writers and claimable Storage-only Runs retire (#44593).
+  seedSkillBundles: array(storedSkillBundleSchema).optional(),
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),
