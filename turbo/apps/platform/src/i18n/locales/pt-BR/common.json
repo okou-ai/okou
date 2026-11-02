@@ -5432,9 +5432,12 @@
       "settings": "Configurações",
       "signOut": "Sair",
       "subscriptions": {
+        "credits": "Créditos",
+        "fiveHourLimit": "Limite de 5 horas",
         "resetTimeUnavailable": "Horário de redefinição indisponível",
         "usage": "Uso de {{provider}}",
-        "usageRemaining": "{{provider}}: {{window}} restante"
+        "usageRemaining": "{{provider}}: {{window}} restante",
+        "weeklyLimit": "Limite semanal"
       },
       "switchAccount": "Trocar de conta",
       "userFallback": "Usuário"

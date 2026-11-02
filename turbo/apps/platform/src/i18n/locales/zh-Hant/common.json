@@ -5354,9 +5354,12 @@
       "settings": "設定",
       "signOut": "退出登入",
       "subscriptions": {
+        "credits": "點數",
+        "fiveHourLimit": "5 小時額度",
         "resetTimeUnavailable": "重置時間不可用",
         "usage": "{{provider}}用量",
-        "usageRemaining": "{{provider}}{{window}}剩餘用量"
+        "usageRemaining": "{{provider}}{{window}}剩餘用量",
+        "weeklyLimit": "每週額度"
       },
       "switchAccount": "切換帳號",
       "userFallback": "使用者"

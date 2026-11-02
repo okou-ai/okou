@@ -5354,9 +5354,12 @@
       "settings": "Setelan",
       "signOut": "Keluar",
       "subscriptions": {
+        "credits": "Kredit",
+        "fiveHourLimit": "Batas 5 jam",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",
-        "usageRemaining": "Sisa {{provider}} {{window}}"
+        "usageRemaining": "Sisa {{provider}} {{window}}",
+        "weeklyLimit": "Batas mingguan"
       },
       "switchAccount": "Ganti akun",
       "userFallback": "Pengguna"

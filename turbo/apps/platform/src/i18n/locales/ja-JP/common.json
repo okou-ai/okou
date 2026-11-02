@@ -5354,9 +5354,12 @@
       "settings": "設定",
       "signOut": "サインアウト",
       "subscriptions": {
+        "credits": "クレジット",
+        "fiveHourLimit": "5時間の上限",
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",
-        "usageRemaining": "{{provider}} {{window}} 残り"
+        "usageRemaining": "{{provider}} {{window}} 残り",
+        "weeklyLimit": "週間上限"
       },
       "switchAccount": "アカウントを切り替える",
       "userFallback": "ユーザー"

@@ -5432,9 +5432,12 @@
       "settings": "Impostazioni",
       "signOut": "Esci",
       "subscriptions": {
+        "credits": "Crediti",
+        "fiveHourLimit": "Limite di 5 ore",
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
-        "usageRemaining": "{{provider}} {{window}} rimanente"
+        "usageRemaining": "{{provider}} {{window}} rimanente",
+        "weeklyLimit": "Limite settimanale"
       },
       "switchAccount": "Cambia account",
       "userFallback": "Utente"

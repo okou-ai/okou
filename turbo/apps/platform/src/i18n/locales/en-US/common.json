@@ -5369,9 +5369,12 @@
       "settings": "Settings",
       "signOut": "Sign out",
       "subscriptions": {
+        "credits": "Credits",
+        "fiveHourLimit": "5-hour limit",
         "resetTimeUnavailable": "Reset time unavailable",
         "usage": "{{provider}} usage",
-        "usageRemaining": "{{provider}} {{window}} remaining"
+        "usageRemaining": "{{provider}} {{window}} remaining",
+        "weeklyLimit": "Weekly limit"
       },
       "switchAccount": "Switch account",
       "userFallback": "User"

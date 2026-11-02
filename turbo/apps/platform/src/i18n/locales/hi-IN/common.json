@@ -5371,9 +5371,12 @@
       "settings": "सेटिंग्स",
       "signOut": "साइन आउट",
       "subscriptions": {
+        "credits": "क्रेडिट",
+        "fiveHourLimit": "5 घंटे की सीमा",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
-        "usageRemaining": "{{provider}} {{window}} शेष"
+        "usageRemaining": "{{provider}} {{window}} शेष",
+        "weeklyLimit": "साप्ताहिक सीमा"
       },
       "switchAccount": "खाता स्थानांतरित करें",
       "userFallback": "उपयोगकर्ता"
