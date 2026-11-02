@@ -16,6 +16,7 @@ import {
   exists,
   getTableColumns,
   gt,
+  isNotNull,
   isNull,
   notExists,
   or,
@@ -85,56 +86,57 @@ export interface BrowserPublicAuthority {
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
-  readonly runId: string;
-  readonly requireLiveRun: boolean;
+  // Only Run-token callers carry a Run; session callers own the chat directly.
+  readonly runId?: string;
 }
 
 export function authorityStillCurrent(owner: BrowserPublicAuthority) {
   return exists(
     new QueryBuilder()
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          browserAuthorityRun(owner),
-          eq(agentRuns.orgId, owner.orgId),
-          eq(agentRuns.userId, owner.userId),
-          eq(agentRuns.chatThreadId, owner.chatThreadId),
-        ),
-      ),
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(browserAuthorityThread(owner)),
   );
 }
 
-function browserAuthorityRun(owner: BrowserPublicAuthority) {
+function browserAuthorityThread(owner: BrowserPublicAuthority) {
   return and(
-    eq(agentRuns.id, owner.runId),
-    eq(agentRuns.orgId, owner.orgId),
-    eq(agentRuns.userId, owner.userId),
-    eq(agentRuns.chatThreadId, owner.chatThreadId),
-    owner.requireLiveRun
-      ? or(eq(agentRuns.status, "pending"), eq(agentRuns.status, "running"))
-      : undefined,
+    eq(chatThreads.id, owner.chatThreadId),
+    eq(chatThreads.userId, owner.userId),
+    eq(chatThreads.cloudBrowserEnabled, true),
     exists(
       new QueryBuilder()
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .innerJoin(
-          agents,
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
           and(
             eq(agents.id, chatThreads.agentId),
             eq(agents.orgId, owner.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(chatThreads.id, owner.chatThreadId),
-            eq(chatThreads.userId, owner.userId),
-            eq(chatThreads.cloudBrowserEnabled, true),
-            eq(agentRuns.agentId, chatThreads.agentId),
             or(eq(agents.visibility, "public"), eq(agents.owner, owner.userId)),
           ),
         ),
     ),
+    owner.runId
+      ? exists(
+          new QueryBuilder()
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.id, owner.runId),
+                eq(agentRuns.orgId, owner.orgId),
+                eq(agentRuns.userId, owner.userId),
+                eq(agentRuns.chatThreadId, chatThreads.id),
+                eq(agentRuns.agentId, chatThreads.agentId),
+                isNotNull(agentRuns.triggerSource),
+                or(
+                  eq(agentRuns.status, "pending"),
+                  eq(agentRuns.status, "running"),
+                ),
+              ),
+            ),
+        )
+      : undefined,
   );
 }
 
@@ -244,8 +246,10 @@ const allocateOwnerBrowser$ = command(
           new QueryBuilder()
             .select({
               id: sql`${randomUUID()}::uuid`.mapWith(profiles.id).as("id"),
-              orgId: agentRuns.orgId,
-              userId: agentRuns.userId,
+              orgId: sql`${owner.orgId}::text`
+                .mapWith(profiles.orgId)
+                .as("org_id"),
+              userId: chatThreads.userId,
               providerProfileId: sql`${action.providerProfileId}::uuid`
                 .mapWith(profiles.providerProfileId)
                 .as("provider_profile_id"),
@@ -274,10 +278,10 @@ const allocateOwnerBrowser$ = command(
                 .mapWith(profiles.updatedAt)
                 .as("updated_at"),
             })
-            .from(agentRuns)
+            .from(chatThreads)
             .where(
               and(
-                browserAuthorityRun(owner),
+                browserAuthorityThread(owner),
                 action.previousProfile
                   ? exists(
                       new QueryBuilder()
