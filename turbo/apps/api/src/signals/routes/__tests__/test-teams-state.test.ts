@@ -1,15 +1,13 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { randomUUID } from "node:crypto";
 
 import { http, HttpResponse } from "msw";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { teamsConnectRoutes } from "../teams-connect";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -291,24 +289,7 @@ describe("Teams webhook dispatch", () => {
       fixture.orgId,
       "org:admin",
     );
-    await accept(
-      setupApp({ context, routes: teamsConnectRoutes })(
-        teamsConnectContract,
-      ).connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          tenantId: fixture.teamsTenantId,
-          teamsUserId: fixture.teamsUserId,
-          teamsAadObjectId: fixture.teamsAadObjectId,
-          teamsUserDisplayName: "Teams User",
-          teamsUserPrincipalName: fixture.teamsUserPrincipalName,
-          teamId: fixture.teamsTeamId,
-          teamName: fixture.teamsTeamName,
-          serviceUrl: fixture.serviceUrl,
-        },
-      }),
-      [200],
-    );
+    await connectTeamsAccountForTest(context, fixture, { learnSender: false });
     await flushWaitUntilForTest();
 
     context.mocks.ably.publish.mockClear();
@@ -399,7 +380,6 @@ describe("Teams webhook dispatch", () => {
         isInstalled: true,
         isConnected: true,
         tenantId: missingDefault.installation.teamsTenantId,
-        defaultAgentName: null,
       });
       await scenario.dispatch(missingDefault, "missing default teams");
       expect(missingDefault.notices).toContain(

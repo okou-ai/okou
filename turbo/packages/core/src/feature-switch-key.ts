@@ -6,7 +6,6 @@
 export enum FeatureSwitchKey {
   ChatThinkingBrandMotion = "chatThinkingBrandMotion",
   FeatureGuides = "featureGuides",
-  TeamsWorkspaceIdentity = "teamsWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",

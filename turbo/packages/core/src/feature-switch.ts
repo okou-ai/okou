@@ -59,13 +59,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Show published product updates once per user and edition.",
     enabled: false,
   },
-  [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Teams workspace identity",
-    description:
-      "Connect your Microsoft Teams identity independently of bot installation and use it in shared conversations.",
-    enabled: false,
-  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",

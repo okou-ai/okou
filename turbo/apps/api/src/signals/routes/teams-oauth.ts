@@ -11,10 +11,7 @@ import { authorization$, request$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
-  connectTeamsInstallation$,
   buildTeamsInstallUrl,
-  isTeamsInstallationActive,
-  prepareTeamsInstallation$,
   prepareTeamsBotInstallation$,
   publishTeamsChanged$,
   notifyPendingTeamsConnectWelcomes$,
@@ -39,9 +36,6 @@ import {
   createTeamsOAuthState$,
 } from "../services/teams-oauth-state";
 
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { connectTeamsAccount$ } from "../services/teams-workspace-identity.service";
 
 const L = logger("TeamsOAuth");
@@ -118,19 +112,11 @@ function settingsErrorRedirect(message: string): Response {
   );
 }
 
-function settingsSuccessRedirect(args: {
-  readonly tenantName?: string | null;
-  readonly teamName?: string | null;
-  readonly botName?: string | null;
-}): Response {
-  const params = new URLSearchParams({ status: "connected" });
-  if (args.tenantName) {
-    params.set("tenantName", args.tenantName);
-  }
-  if (args.teamName) {
-    params.set("teamName", args.teamName);
-  }
-  params.set("botName", teamsBotDisplayName(args.botName));
+function settingsSuccessRedirect(): Response {
+  const params = new URLSearchParams({
+    status: "connected",
+    botName: teamsBotDisplayName(undefined),
+  });
   return redirectResponse(
     appUrl(`${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`),
   );
@@ -436,7 +422,7 @@ const completeTeamsWorkspaceIdentity$ = command(
         signal,
       ),
     );
-    return settingsSuccessRedirect({});
+    return settingsSuccessRedirect();
   },
 );
 
@@ -507,78 +493,11 @@ const completeCallbackOauth$ = command(
       );
     }
 
-    const connectArgs = {
-      userId: auth.userId,
-      orgId: auth.orgId,
-      orgRole: auth.orgRole,
-      tenantId: exchange.tenantId,
-      teamsAadObjectId: exchange.user.id,
-      teamsUserDisplayName: exchange.user.displayName ?? undefined,
-      teamsUserPrincipalName:
-        exchange.user.userPrincipalName ?? exchange.user.mail ?? undefined,
-    };
-
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
+    return await set(
+      completeTeamsWorkspaceIdentity$,
+      { auth, exchange, flow: state.flow },
       signal,
     );
-    if (isFeatureEnabled(FeatureSwitchKey.TeamsWorkspaceIdentity, features)) {
-      return await set(
-        completeTeamsWorkspaceIdentity$,
-        { auth, exchange, flow: state.flow },
-        signal,
-      );
-    }
-
-    const result = await set(connectTeamsInstallation$, connectArgs, signal);
-    signal.throwIfAborted();
-
-    if (result.kind === "not_found") {
-      const prepared = await set(
-        prepareTeamsInstallation$,
-        connectArgs,
-        signal,
-      );
-      signal.throwIfAborted();
-
-      if (prepared.kind !== "ok") {
-        return settingsErrorRedirect(prepared.message);
-      }
-
-      await set(
-        publishTeamsChanged$,
-        { orgId: auth.orgId, userIds: [auth.userId] },
-        signal,
-      );
-      signal.throwIfAborted();
-
-      return teamsPendingInstallationRedirect(exchange.tenantId);
-    }
-
-    if (result.kind === "forbidden") {
-      return settingsErrorRedirect(result.message);
-    }
-
-    await set(
-      publishTeamsChanged$,
-      { orgId: auth.orgId, userIds: [auth.userId] },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if (!isTeamsInstallationActive(result.installation)) {
-      return teamsPendingInstallationRedirect(
-        result.installation.teamsTenantId,
-      );
-    }
-
-    return settingsSuccessRedirect({
-      tenantName: result.installation.teamsTenantName,
-      teamName: result.installation.teamsTeamName,
-      botName: result.installation.botName,
-    });
   },
 );
 

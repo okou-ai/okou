@@ -22,7 +22,7 @@ function status(
     pendingInstallation: false,
     linkedAccounts: [],
     connectUrl: "/api/teams/oauth/connect?orgId=org_default",
-    installUrl: "https://teams.microsoft.com/l/app/app-id",
+    installUrl: "/api/teams/oauth/connect?flow=install&orgId=org_default",
     ...overrides,
   };
 }
@@ -53,7 +53,7 @@ test.each(["focus", "visibility", "realtime"])(
     current = status({
       isInstalled: true,
       isConnected: true,
-      teamName: "Verified team",
+      tenantName: "Verified team",
       connectUrl: null,
     });
     if (trigger === "focus") {
@@ -82,7 +82,7 @@ test.each(["focus", "visibility", "realtime"])(
   },
 );
 
-test("Works sends prepared installations to the canonical page and does not mark them connected", async () => {
+test("Works opens the prepared bot installation separately from account connection", async () => {
   context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
     return respond(200, status({ pendingInstallation: true }));
   });
@@ -90,7 +90,9 @@ test("Works sends prepared installations to the canonical page and does not mark
   await setupPage({ context, path: "/works" });
   const card = getIntegrationCard("Microsoft Teams");
   click(getAction("button", "Install in Teams", card));
-  expect(new URL(open.calls[0]?.url ?? "").pathname).toBe("/settings/teams");
+  expect(new URL(open.calls[0]?.url ?? "").searchParams.get("flow")).toBe(
+    "install",
+  );
   expect(card).not.toHaveTextContent("Connected");
   expect(window.location.pathname).toBe("/works");
 });
@@ -127,8 +129,8 @@ test("Teams actions preserve prompt and protected preview access", async () => {
     return respond(
       200,
       status({
-        connectUrl:
-          "https://pr-431-api.vm6.ai/api/teams/oauth/connect?orgId=org_default",
+        installUrl:
+          "https://pr-431-api.vm6.ai/api/teams/oauth/connect?flow=install&orgId=org_default",
       }),
     );
   });
@@ -193,7 +195,7 @@ test("An overlapping focus refresh keeps later realtime notifications active", a
   current = status({
     isInstalled: true,
     isConnected: true,
-    teamName: "Later installation",
+    tenantName: "Later installation",
   });
   act(() => {
     context.mocks.ably.trigger("teams:changed");
@@ -210,7 +212,6 @@ test("Members can connect a Teams identity without an organization bot", async (
     return respond(
       200,
       status({
-        workspaceIdentity: true,
         isAdmin: false,
         installUrl: null,
         connectUrl: "/api/teams/oauth/connect?connectState=verified-identity",
@@ -231,7 +232,6 @@ test("An independent Teams identity remains connected after bot removal", async 
     return respond(
       200,
       status({
-        workspaceIdentity: true,
         isInstalled: false,
         isConnected: true,
         isAdmin: true,

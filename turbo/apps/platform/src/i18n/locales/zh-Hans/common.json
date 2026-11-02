@@ -3623,13 +3623,10 @@
         "install": "在 Teams 中安装",
         "invalidContext": "此链接缺少 Teams 账号信息。请从 Teams 获取新的连接链接。",
         "open": "打开 Teams",
-        "orgMismatch": "此链接属于其他组织。请切换到该组织后重试此链接。",
         "pendingDescription": "在 Teams 中安装应用，然后返回此页面完成连接。",
         "pendingTitle": "在 Teams 中安装以完成连接",
-        "providerName": "Microsoft Teams",
         "reinstall": "在 Teams 中重新安装",
         "statusFailed": "无法检查 Teams 连接。",
-        "successDescription": "你已连接到{{team}}。在 Teams 中@{{botName}}，即可开始对话。",
         "successTitle": "已连接到 Microsoft Teams",
         "unavailable": "Teams 设置暂不可用，请联系组织管理员。"
       },
@@ -7130,9 +7127,7 @@
       "uninstallTitle": "卸载 Slack 集成？"
     },
     "teams": {
-      "adminInstall": "请管理员安装 Microsoft Teams 集成",
       "connectAccount": "连接你的 Microsoft 账号以完成设置",
-      "connectThenInstall": "先连接你的 Microsoft 账号，再安装 Teams 应用",
       "description": "团队沟通与协作",
       "disconnect": "断开 Microsoft Teams",
       "install": "安装到 Teams",
@@ -7140,7 +7135,7 @@
       "permissionsUpdated": "Microsoft Teams 权限已更新",
       "title": "Microsoft Teams",
       "uninstall": "卸载 Microsoft Teams",
-      "uninstallDescription": "这会为你的工作区移除 {{brandName}} 中的 Microsoft Teams 集成。所有已连接的用户都会断开连接，在管理员重新连接之前，{{displayName}}不再回复这个工作区的 Teams 消息。",
+      "uninstallDescription": "这会从你的 {{brandName}} 工作区中移除 {{displayName}} 的 Microsoft Teams 集成。已连接的 Teams 账号将保留。",
       "uninstallTitle": "卸载 Microsoft Teams 集成？"
     },
     "telegram": {

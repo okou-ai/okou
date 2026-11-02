@@ -3637,13 +3637,10 @@
         "install": "Teams में इंस्टॉल करें",
         "invalidContext": "इस लिंक में Teams खाते की पूरी जानकारी नहीं है। Teams से नया कनेक्शन लिंक खोलें।",
         "open": "टीमें खोलें",
-        "orgMismatch": "यह लिंक दूसरे संगठन का है। उस संगठन में स्विच करके फिर प्रयास करें।",
         "pendingDescription": "Teams में ऐप इंस्टॉल करें, फिर कनेक्शन पूरा करने के लिए यहाँ लौटें।",
         "pendingTitle": "पूरा करने के लिए Teams में इंस्टॉल करें",
-        "providerName": "Microsoft Teams",
         "reinstall": "Teams में फिर से इंस्टॉल करें",
         "statusFailed": "Teams कनेक्शन की जाँच नहीं हो सकी।",
-        "successDescription": "आप {{team}} से जुड़े हैं। चैटिंग शुरू करने के लिए Teams में @{{botName}} का उल्लेख करें।",
         "successTitle": "Microsoft Teams से जुड़ा",
         "unavailable": "Teams सेटअप उपलब्ध नहीं है। अपने संगठन के व्यवस्थापक से सहायता लें।"
       },
@@ -7150,9 +7147,7 @@
       "uninstallTitle": "Slack एकीकरण अनइंस्टॉल करें?"
     },
     "teams": {
-      "adminInstall": "अपने व्यवस्थापक से Microsoft Teams एकीकरण स्थापित करने के लिए कहें",
       "connectAccount": "सेटअप पूरा करने के लिए अपना Microsoft खाता कनेक्ट करें",
-      "connectThenInstall": "अपना Microsoft खाता कनेक्ट करें, फिर Teams ऐप इंस्टॉल करें",
       "description": "टीम संचार और सहयोग",
       "disconnect": "Microsoft Teams को डिस्कनेक्ट करें",
       "install": "टीमों में स्थापित करें",
@@ -7160,7 +7155,7 @@
       "permissionsUpdated": "Microsoft Teams अनुमतियाँ अद्यतन कर दी गई हैं",
       "title": "Microsoft Teams",
       "uninstall": "Microsoft Teams को अनइंस्टॉल करें",
-      "uninstallDescription": "यह आपके वर्कस्पेस के लिए {{brandName}} से Microsoft Teams एकीकरण को हटा देता है। सभी कनेक्टेड उपयोगकर्ता डिस्कनेक्ट हो जाएंगे और {{displayName}} इस वर्कस्पेस के लिए टीम संदेशों का जवाब नहीं देगा जब तक कि कोई एडमिन इसे दोबारा कनेक्ट नहीं करता।",
+      "uninstallDescription": "इससे आपके {{brandName}} कार्यक्षेत्र से {{displayName}} का Microsoft Teams इंटीग्रेशन हट जाएगा। जुड़े हुए Teams खाते बने रहेंगे।",
       "uninstallTitle": "Microsoft Teams एकीकरण अनइंस्टॉल करें?"
     },
     "telegram": {

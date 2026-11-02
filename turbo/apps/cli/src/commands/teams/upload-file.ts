@@ -132,8 +132,8 @@ Notes:
           length: fileSize,
         });
 
-        // GA flag-off and non-Run responses omit canonical fields. Removal
-        // requires retiring those callers and the API/Runner gates in #43729.
+        // Non-Run responses and retained API targets can omit canonical fields.
+        // Remove this handling only after the caller and rollout gates in #43729.
         if (prepared.uploadRequired !== false) {
           const uploadResponse = await fetch(prepared.uploadUrl, {
             method: "PUT",

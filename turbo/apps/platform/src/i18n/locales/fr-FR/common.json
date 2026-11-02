@@ -3690,13 +3690,10 @@
         "install": "Installer dans Teams",
         "invalidContext": "Ce lien ne contient pas toutes les informations du compte Teams. Ouvrez un nouveau lien de connexion depuis Teams.",
         "open": "Ouvrir Teams",
-        "orgMismatch": "Ce lien concerne une autre organisation. Basculez vers celle-ci, puis réessayez.",
         "pendingDescription": "Installez l’application dans Teams, puis revenez ici pour terminer la connexion.",
         "pendingTitle": "Installer dans Teams pour terminer",
-        "providerName": "Microsoft Teams",
         "reinstall": "Réinstaller dans Teams",
         "statusFailed": "Impossible de vérifier votre connexion Teams.",
-        "successDescription": "Vous êtes connecté à {{team}}. Mentionnez @{{botName}} dans Teams pour commencer à discuter.",
         "successTitle": "Connecté à Microsoft Teams",
         "unavailable": "La configuration Teams est indisponible. Contactez l’administrateur de votre organisation."
       },
@@ -7223,9 +7220,7 @@
       "uninstallTitle": "Désinstaller l'intégration Slack ?"
     },
     "teams": {
-      "adminInstall": "Demandez à votre administrateur d'installer l'intégration Microsoft Teams",
       "connectAccount": "Connectez votre compte Microsoft pour terminer la configuration",
-      "connectThenInstall": "Connectez votre compte Microsoft, puis installez l'application Teams",
       "description": "Communication et collaboration d'équipe",
       "disconnect": "Déconnecter Microsoft Teams",
       "install": "Installer dans Teams",
@@ -7233,7 +7228,7 @@
       "permissionsUpdated": "Les autorisations de Microsoft Teams ont été mises à jour",
       "title": "Microsoft Teams",
       "uninstall": "Désinstaller Microsoft Teams",
-      "uninstallDescription": "Cela supprime l’intégration de Microsoft Teams de {{brandName}} pour votre espace de travail. Tous les utilisateurs connectés seront déconnectés et {{displayName}} ne répondra plus aux messages Teams pour cet espace de travail jusqu’à ce qu’un administrateur la reconnecte.",
+      "uninstallDescription": "Cette action supprime l’intégration Microsoft Teams de {{displayName}} de votre espace de travail {{brandName}}. Les comptes Teams connectés sont conservés.",
       "uninstallTitle": "Désinstaller l’intégration de Microsoft Teams ?"
     },
     "telegram": {
