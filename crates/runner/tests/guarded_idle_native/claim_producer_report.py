@@ -71,11 +71,8 @@ def validate(directory):
     if identity[0] == identity[1]:
         raise ValueError("producer loss conflated sandbox and backing generation")
     ordered = [terminals[0], events[0], terminals[1], *events[1:]]
-    fields = {"version", "case", "phase", "monotonic_ns", "unix_ns", "sandbox_id", "backing_generation", "evidence"}
     for event in ordered:
-        if (not isinstance(event, dict) or set(event) != fields or type(event["version"]) is not int
-                or event["version"] != 1 or event["case"] != case or not isinstance(event["evidence"], dict)
-                or not report.positive_integer(event["monotonic_ns"]) or not report.positive_integer(event["unix_ns"])):
+        if not report.valid_witness_envelope(event, lambda value: value == case):
             raise ValueError("malformed native producer-loss receipt")
     if any(tuple(e[key] for key in ("sandbox_id", "backing_generation")) != identity for e in ordered[1:]):
         raise ValueError("producer uncertainty changed original physical ownership")
