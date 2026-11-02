@@ -1,7 +1,4 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { sharedThreadVisibilityContract } from "@okouai/api-contracts/contracts/shared-thread-visibility";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   readSharedThreadVisibility$,
   updateSharedThreadVisibility$,
@@ -9,12 +6,7 @@ import {
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { command } from "ccstate";
 
-import {
-  badRequestMessage,
-  conflict,
-  notFound,
-  resourceUnavailable,
-} from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { deleteSharedThread$ } from "../services/shared-thread-artifacts.service";
 import {
   organizationAuthContext$,
@@ -74,12 +66,7 @@ const createSharedThreadResponse$ = command(
   ) => {
     const auth = get(organizationAuthContext$);
 
-    if (body.audience !== undefined) {
-      const denied = await set(visibilityAdmission$, signal);
-      if (denied) {
-        return denied;
-      }
-    }
+    set(setResHeader$, "Cache-Control", "private, no-store");
     const result = await set(
       createSharedThread$,
       {
@@ -216,29 +203,8 @@ const deleteSharedThreadInner$ = command(
   },
 );
 
-const visibilityAdmission$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    set(setResHeader$, "Cache-Control", "private, no-store");
-    const auth = get(organizationAuthContext$);
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    return isFeatureEnabled(FeatureSwitchKey.SharedThreadVisibility, features)
-      ? null
-      : resourceUnavailable(
-          "Conversation visibility management is not available",
-        );
-  },
-);
-
 const getVisibility$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(visibilityAdmission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const body = await set(
     readSharedThreadVisibility$,
     {
@@ -253,10 +219,7 @@ const getVisibility$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const updateVisibility$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(visibilityAdmission$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const parsed = await get(bodyResultOf(sharedThreadVisibilityContract.update));
   signal.throwIfAborted();
   if (!parsed.ok) {

@@ -1,3 +1,4 @@
+import { connectTeamsAccountForTest } from "./teams-account";
 import {
   createCipheriv,
   createHash,
@@ -14,7 +15,6 @@ import {
   integrationsTelegramContract,
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { expect } from "vitest";
@@ -32,7 +32,6 @@ import { feishuConnectRoutes } from "../../feishu-connect";
 import { feishuEventsRoutes } from "../../feishu-events";
 import { feishuOauthRoutes } from "../../feishu-oauth";
 import { integrationsTelegramRoutes } from "../../integrations-telegram";
-import { teamsConnectRoutes } from "../../teams-connect";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createBddIntegrationApi } from "./api-bdd-integrations";
@@ -554,21 +553,7 @@ export async function createPublicAnnotationIngress(
       await removeTeamsForTest(context.signal, fixture);
     });
     await flushWaitUntilForTest();
-    await accept(
-      setupApp({ context, routes: teamsConnectRoutes })(
-        teamsConnectContract,
-      ).connect({
-        headers: authenticate(context, actor),
-        body: {
-          tenantId: fixture.teamsTenantId,
-          teamsUserId: fixture.teamsUserId,
-          teamsAadObjectId: fixture.teamsAadObjectId,
-          teamsUserDisplayName: "Ada Lovelace",
-          teamsUserPrincipalName: fixture.teamsUserPrincipalName,
-        },
-      }),
-      [200],
-    );
+    await connectTeamsAccountForTest(context, fixture, { learnSender: false });
     await flushWaitUntilForTest();
     const response = await postTeamsActivityForTest({
       signal: context.signal,

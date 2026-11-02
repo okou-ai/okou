@@ -18,6 +18,7 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { parseChatEffort, printChatUsageError } from "./shared";
 
 interface CreateOptions {
+  readonly projectId?: string;
   readonly agent?: string;
   readonly json?: boolean;
   readonly model?: string;
@@ -75,6 +76,7 @@ export const createCommand = new Command()
     "--no-priority",
     "Use standard priority instead of your initial model preference",
   )
+  .option("--project-id <id>", "Create inside this Project")
   .option("--json", "Print machine-readable JSON")
   .addHelpText(
     "after",
@@ -110,6 +112,9 @@ Notes:
         );
       }
 
+      if (options.projectId && !isUuid(options.projectId)) {
+        throw new Error("Expected a Project UUID");
+      }
       const model =
         options.model === undefined
           ? undefined
@@ -129,6 +134,7 @@ Notes:
         thread = await createChatThread({
           agentId,
           title,
+          projectId: options.projectId,
           ...(model === undefined ? {} : { model }),
           ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
           ...(options.priority === undefined

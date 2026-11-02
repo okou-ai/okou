@@ -217,10 +217,15 @@ public struct ChatComposerAccess: Sendable {
     threadID: String, protocol: ChatRemoteProtocol, connectionID: String, enabled: Bool?
   ) async throws {
     struct Body: Encodable { let enabled: Bool }
-    try await client.data(
-      "/api/chat-threads/\(threadID)/remote-access/\(`protocol`.rawValue)/\(connectionID)",
-      method: enabled == nil ? "DELETE" : "PUT",
-      body: try enabled.map { try JSONEncoder().encode(Body(enabled: $0)) })
+    if let enabled {
+      try await client.data(
+        "/api/chat-threads/\(threadID)/remote-access/\(`protocol`.rawValue)/\(connectionID)",
+        method: "PUT", body: JSONEncoder().encode(Body(enabled: enabled)))
+    } else {
+      try await client.data(
+        "/api/chat-threads/\(threadID)/remote-access/\(`protocol`.rawValue)/\(connectionID)",
+        method: "DELETE")
+    }
   }
   public func computerAccess(threadID: String) async throws -> ChatComputerAccess {
     let metadata: ThreadMetadata = try await client.request(
@@ -274,8 +279,12 @@ public struct ChatComposerAccess: Sendable {
       try connectionID.map {
         try JSONEncoder().encode(ChatConnectorSelection(target: target, connectionId: $0))
       } ?? JSONEncoder().encode(target)
-    try await client.data(
-      "/api/chat-threads/\(threadID)/connector-selections",
-      method: connectionID == nil ? "DELETE" : "PUT", body: body)
+    if connectionID == nil {
+      try await client.data(
+        "/api/chat-threads/\(threadID)/connector-selections", method: "DELETE", body: body)
+    } else {
+      try await client.data(
+        "/api/chat-threads/\(threadID)/connector-selections", method: "PUT", body: body)
+    }
   }
 }

@@ -35,6 +35,8 @@ export const CAPABILITIES = [
   "chat-event:write",
   "chat-thread:read",
   "chat-thread:write",
+  "project:read",
+  "project:write",
   "connector:read",
   "connector:write",
   "billing:read",

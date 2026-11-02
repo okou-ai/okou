@@ -2819,7 +2819,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     needs: [detect-release, detect-turbo-ts-checks]
-    if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false'
+    if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true'
     # Blocking for Desktop- and iOS-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
     # Runner, Guest Agent, and MITM findings only warn.
     container:
@@ -2935,6 +2935,10 @@ jobs:
             echo "Published iOS version: $version"
             echo "version=$version" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Check iOS API consumption inventory
+        working-directory: turbo
+        run: pnpm --filter @okouai/api-contracts run lint-ios-api-consumption
 
       - name: Check runtime API compatibility
         working-directory: turbo
@@ -3083,7 +3087,6 @@ jobs:
           RUNTIME_API_COMPAT_SKIP_ALLOWED=""
           if [ "${{ needs.detect-turbo-ts-checks.outputs.ios-only }}" = "true" ]; then
             CF_APP_SKIP_ALLOWED="true"
-            RUNTIME_API_COMPAT_SKIP_ALLOWED="skipped"
           fi
           if [ "$EVENT_NAME" = "push" ]; then
             RUNTIME_API_COMPAT_SKIP_ALLOWED="skipped"
@@ -3145,7 +3148,7 @@ jobs:
           check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-link-approval" "${{ needs.test-link-approval.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-wechat-gateway" "${{ needs.test-wechat-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
-          # Same skip conditions as the job: pure iOS change sets and staging.
+          # Staging reuses the protected merge group compatibility check.
           check_result "lint-runtime-api-compat" "${{ needs.lint-runtime-api-compat.result }}" "$RUNTIME_API_COMPAT_SKIP_ALLOWED"
 
           # May-skip: 'success' or 'skipped' are both acceptable

@@ -122,6 +122,18 @@ impl RecordingServer {
             })
             .collect())
     }
+
+    /// Consume the recording after all request producers have finished.
+    pub fn into_requests(self) -> Result<Vec<RecordedRequest>, String> {
+        let events = std::mem::take(&mut *self.lock_events()?);
+        Ok(events
+            .into_iter()
+            .filter_map(|event| match event {
+                RecordedHttpEvent::Request(request) => Some(request),
+                RecordedHttpEvent::Response { .. } => None,
+            })
+            .collect())
+    }
 }
 
 impl Drop for RecordingServer {

@@ -1,5 +1,7 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
+import { activeRoute$ } from "./active-route.ts";
+import { resetProjectUi$ } from "./projects/project-ui.ts";
 import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
@@ -56,6 +58,8 @@ import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
 import { setupAgentChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
+import { setupProjectPage$ } from "./projects/project-page-setup.ts";
+import { hydrateProjects$ } from "./projects/projects.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
@@ -160,11 +164,15 @@ function setupSettingsParamAfterStableRoute(
   setupPage: Command<Promise<void> | void, [AbortSignal]>,
 ) {
   return command(async ({ get, set }, signal: AbortSignal) => {
+    set(resetProjectUi$);
     const initialPathname = get(pathname$);
     await set(setupPage, signal);
     signal.throwIfAborted();
     if (get(pathname$) !== initialPathname) {
       return;
+    }
+    if (get(activeRoute$) !== "project") {
+      await set(hydrateProjects$, signal);
     }
     await set(checkUnifiedSettingsParam$, signal);
   });
@@ -249,6 +257,10 @@ const ROUTE_CONFIG = [
     analytics: false,
   },
 
+  {
+    path: ROUTES.project,
+    setup: setupAuthSidebarPageWrapper(setupProjectPage$),
+  },
   // --- New routes ---
   {
     path: ROUTES.chat,
@@ -631,7 +643,7 @@ const completeBootstrap$ = command(
     set(applyFeatureSwitches$, featureSwitches);
 
     await Promise.all([
-      ...(featureSwitches.switches[FeatureSwitchKey.MarketingContentHandoff]
+      ...(featureSwitches[FeatureSwitchKey.MarketingContentHandoff]
         ? [set(enrollMarketingHandoffSession$, signal)]
         : []),
       set(setupAuthenticatedBootstrapData$, signal),

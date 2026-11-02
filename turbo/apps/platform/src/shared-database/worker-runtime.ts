@@ -1,10 +1,11 @@
+import { queryProjectEventStore } from "../signals/external/idb-project-event-store.ts";
 import { fetchResource } from "../lib/resource-fetch.ts";
 import {
   chatThreadsContract,
   chatThreadEventsContract,
 } from "@okouai/api-contracts/client/chat-threads";
 import { chatThreadSnapshotArchiveSchema } from "@okouai/api-contracts/validators/chat-threads";
-import type { ChatThreadEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ProjectAwareChatThreadEvent as ChatThreadEvent } from "@okouai/api-contracts/contracts/project-readers";
 import {
   chatEventRowSchema,
   type ChatEventRow,
@@ -583,6 +584,14 @@ export class SharedDatabaseWorkerRuntime {
         signal,
       );
       return result as SharedDatabaseQueryResult<TKey>;
+    }
+    if (dataKey.kind === "project-event") {
+      return (await queryProjectEventStore(
+        dataKey,
+        query.consistency,
+        this.createContractClient,
+        signal,
+      )) as SharedDatabaseQueryResult<TKey>;
     }
     if (dataKey.kind !== "chat-thread-event") {
       throw new Error("Shared database query data key is invalid");

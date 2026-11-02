@@ -236,12 +236,20 @@ class TestModelProviderWebSocketUsageAggregation:
         ]
         assert underbilling_entries == []
 
-    def test_model_websocket_late_output_recovers_evicted_long_context_fast_tier(
+    @pytest.mark.parametrize(
+        ("threshold", "category_suffix"),
+        [(0, ".fast"), (272_001, ".long_context.fast")],
+        ids=["single-tier", "long-context"],
+    )
+    def test_model_websocket_late_output_recovers_evicted_fast_tier(
         self,
         tmp_path,
         real_flow,
+        threshold,
+        category_suffix,
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = threshold
         mitm_addon.responseheaders(flow)
 
         with self._usage_webhook_api() as webhook:
@@ -282,7 +290,7 @@ class TestModelProviderWebSocketUsageAggregation:
 
             recovered = tiers["resp_ws_evicted"]
             assert len(tiers) == 100
-            assert recovered.tier == "long_context"
+            assert recovered.tier == ("long_context" if threshold else "base")
             assert recovered.service_tier == "fast"
             assert recovered.committed is True
 
@@ -294,8 +302,8 @@ class TestModelProviderWebSocketUsageAggregation:
             webhook.usage_events(),
             "provider",
             [
-                ("gpt-5.5", "tokens.input.long_context.fast", 272_001),
-                ("gpt-5.5", "tokens.output.long_context.fast", 12),
+                ("gpt-5.5", f"tokens.input{category_suffix}", 272_001),
+                ("gpt-5.5", f"tokens.output{category_suffix}", 12),
             ],
         )
         underbilling_entries = [
@@ -368,12 +376,13 @@ class TestModelProviderWebSocketUsageAggregation:
         assert duplicate_event["category"] == "tokens.output"
         assert duplicate_event["buffer_accepted"] is False
 
-    @pytest.mark.parametrize("intervening_responses", [99, 100])
+    @pytest.mark.parametrize("intervening_responses", [0, 99, 100])
     @pytest.mark.parametrize(
         "initial_output_tokens", [0, 12], ids=["late-output", "duplicate-output"]
     )
     @pytest.mark.parametrize(
         (
+            "threshold",
             "input_tokens",
             "service_tier",
             "replay_input_tokens",
@@ -381,8 +390,9 @@ class TestModelProviderWebSocketUsageAggregation:
             "category_suffix",
         ),
         [
-            pytest.param(20, "priority", 20, None, ".fast", id="fast-omitted-tier"),
+            pytest.param(272_001, 20, "priority", 20, None, ".fast", id="fast-omitted-tier"),
             pytest.param(
+                272_001,
                 272_001,
                 "priority",
                 272_001,
@@ -390,8 +400,11 @@ class TestModelProviderWebSocketUsageAggregation:
                 ".long_context.fast",
                 id="long-context-fast-omitted-tier",
             ),
-            pytest.param(20, "priority", 272_001, "default", ".fast", id="fast-changed-pricing"),
             pytest.param(
+                272_001, 20, "priority", 272_001, "default", ".fast", id="fast-changed-pricing"
+            ),
+            pytest.param(
+                272_001,
                 272_001,
                 "priority",
                 20,
@@ -399,8 +412,11 @@ class TestModelProviderWebSocketUsageAggregation:
                 ".long_context.fast",
                 id="long-context-fast-changed-pricing",
             ),
-            pytest.param(20, "default", 272_001, "priority", "", id="base-changed-pricing"),
             pytest.param(
+                272_001, 20, "default", 272_001, "priority", "", id="base-changed-pricing"
+            ),
+            pytest.param(
+                272_001,
                 272_001,
                 "default",
                 20,
@@ -408,14 +424,24 @@ class TestModelProviderWebSocketUsageAggregation:
                 ".long_context",
                 id="long-context-changed-pricing",
             ),
+            pytest.param(
+                0, 20, "priority", None, None, ".fast", id="single-tier-fast-omitted-tier"
+            ),
+            pytest.param(
+                0, 20, "priority", 272_001, "default", ".fast", id="single-tier-fast-changed-tier"
+            ),
+            pytest.param(
+                0, 272_001, "default", 20, "priority", "", id="single-tier-standard-changed-tier"
+            ),
         ],
     )
-    def test_model_websocket_input_replay_preserves_committed_pricing_at_eviction_boundary(
+    def test_model_websocket_replay_preserves_committed_pricing_at_eviction_boundary(
         self,
         tmp_path,
         real_flow,
         intervening_responses,
         initial_output_tokens,
+        threshold,
         input_tokens,
         service_tier,
         replay_input_tokens,
@@ -423,11 +449,15 @@ class TestModelProviderWebSocketUsageAggregation:
         category_suffix,
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = threshold
         mitm_addon.responseheaders(flow)
+        replay_usage = {"output_tokens": 12}
+        if replay_input_tokens is not None:
+            replay_usage["input_tokens"] = replay_input_tokens
         replay_response = {
             "id": "resp_ws_input_replay",
             "model": "gpt-5.5",
-            "usage": {"input_tokens": replay_input_tokens, "output_tokens": 12},
+            "usage": replay_usage,
         }
         if replay_service_tier is not None:
             replay_response["service_tier"] = replay_service_tier
@@ -468,12 +498,20 @@ class TestModelProviderWebSocketUsageAggregation:
             ],
         )
 
+    @pytest.mark.parametrize(
+        ("threshold", "category_suffix"),
+        [(0, ".fast"), (272_001, ".long_context.fast")],
+        ids=["single-tier", "long-context"],
+    )
     def test_model_websocket_zero_replay_keeps_recovered_pricing_committed(
         self,
         tmp_path,
         real_flow,
+        threshold,
+        category_suffix,
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = threshold
         mitm_addon.responseheaders(flow)
 
         with self._usage_webhook_api() as webhook:
@@ -512,8 +550,8 @@ class TestModelProviderWebSocketUsageAggregation:
             webhook.usage_events(),
             "provider",
             [
-                ("gpt-5.5", "tokens.input.long_context.fast", 272_001),
-                ("gpt-5.5", "tokens.output.long_context.fast", 12),
+                ("gpt-5.5", f"tokens.input{category_suffix}", 272_001),
+                ("gpt-5.5", f"tokens.output{category_suffix}", 12),
             ],
         )
 
@@ -555,12 +593,15 @@ class TestModelProviderWebSocketUsageAggregation:
             [("gpt-5.5", "tokens.output", 12)],
         )
 
+    @pytest.mark.parametrize("threshold", [0, 272_001], ids=["single-tier", "tiered"])
     def test_model_websocket_late_priority_output_commits_fast_tier(
         self,
         tmp_path,
         real_flow,
+        threshold,
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = threshold
         mitm_addon.responseheaders(flow)
 
         webhook = self._run_websocket_messages_and_end(
@@ -657,12 +698,15 @@ class TestModelProviderWebSocketUsageAggregation:
         assert entry["fallback_billing_tier"] == "long_context"
         assert entry["fallback_fast"] is False
 
+    @pytest.mark.parametrize("threshold", [0, 272_001], ids=["single-tier", "tiered"])
     def test_model_websocket_tier_state_is_bounded_and_terminally_released(
         self,
         tmp_path,
         real_flow,
+        threshold,
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = threshold
         mitm_addon.responseheaders(flow)
 
         for index in range(101):

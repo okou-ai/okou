@@ -5,6 +5,68 @@ use std::sync::mpsc;
 
 struct ChildGuard(Child);
 
+struct OomEvidenceExchange {
+    client: UnixStream,
+    cancel_writer: Option<OwnedFd>,
+    done_rx: mpsc::Receiver<()>,
+    worker: Option<thread::JoinHandle<()>>,
+    _directory: tempfile::TempDir,
+}
+
+impl OomEvidenceExchange {
+    fn start() -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let monitor = crate::oom_evidence::EvidenceMonitor::without_kernel_for_test(
+            directory.path().to_path_buf(),
+        );
+        let (client, server) = UnixStream::pair().unwrap();
+        let (cancel_reader, cancel_writer) = placement_cancel_pipe().unwrap();
+        let expected = current_cgroup_path();
+        // SAFETY: geteuid only returns the current identity.
+        let uid = unsafe { libc::geteuid() };
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            // Keep the flag false so cancellation must observe the pipe wake.
+            let cancel = AtomicBool::new(false);
+            serve_oom_evidence(
+                server,
+                Arc::new(Mutex::new(monitor)),
+                uid,
+                &expected,
+                &cancel,
+                cancel_reader.as_raw_fd(),
+            );
+            done_tx.send(()).unwrap();
+        });
+        Self {
+            client,
+            cancel_writer: Some(cancel_writer),
+            done_rx,
+            worker: Some(worker),
+            _directory: directory,
+        }
+    }
+
+    fn join(&mut self) {
+        self.done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("evidence server should finish while the peer remains open");
+        self.worker.take().unwrap().join().unwrap();
+    }
+}
+
+impl Drop for OomEvidenceExchange {
+    fn drop(&mut self) {
+        drop(self.cancel_writer.take());
+        // Failed assertions must also wake a cancellation-blind worker before
+        // joining. Successful tests join before this peer shutdown can help.
+        let _ = self.client.shutdown(std::net::Shutdown::Both);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 fn current_cgroup_path() -> PathBuf {
     let current_cgroup = fs::read_to_string("/proc/self/cgroup").unwrap();
     let relative = current_cgroup
@@ -70,44 +132,36 @@ fn oom_evidence_is_captured_before_forced_cleanup_removes_sources() {
 
 #[test]
 fn oom_evidence_exchange_is_owned_by_authenticated_peer_and_cancel_wake() {
-    let directory = tempfile::tempdir().unwrap();
-    let monitor = crate::oom_evidence::EvidenceMonitor::without_kernel_for_test(
-        directory.path().to_path_buf(),
-    );
-    let (mut client, server) = UnixStream::pair().unwrap();
-    let (cancel_reader, cancel_writer) = placement_cancel_pipe().unwrap();
-    let cancel = Arc::new(AtomicBool::new(false));
-    let expected = current_cgroup_path();
-    // SAFETY: geteuid only returns the current identity.
-    let uid = unsafe { libc::geteuid() };
-    let (done_tx, done_rx) = mpsc::channel();
-    let worker = thread::spawn(move || {
-        serve_oom_evidence(
-            server,
-            Arc::new(Mutex::new(monitor)),
-            uid,
-            &expected,
-            &cancel,
-            cancel_reader.as_raw_fd(),
-        );
-        done_tx.send(()).unwrap();
-    });
-    client.write_all(&[1]).unwrap();
-    let first = guest_contracts::oom_evidence::read_evidence(&client).unwrap();
-    client.write_all(&[2]).unwrap();
-    let error = guest_contracts::oom_evidence::read_evidence(&client).unwrap();
+    let mut exchange = OomEvidenceExchange::start();
+    exchange.client.write_all(&[1]).unwrap();
+    let first = guest_contracts::oom_evidence::read_evidence(&exchange.client).unwrap();
+    exchange.client.write_all(&[2]).unwrap();
+    let error = guest_contracts::oom_evidence::read_evidence(&exchange.client).unwrap();
     assert_eq!(first.operation_id, error.operation_id);
     assert!(first.incidents.is_empty());
     assert_eq!(error.incidents.len(), 1);
     assert!(error.incidents[0].kernel_events.is_empty());
+
+    // With the authenticated peer still open and silent, only the cancellation
+    // pipe can end the next wait, whether it starts before or after this close.
+    drop(exchange.cancel_writer.take());
+    exchange.join();
+}
+
+#[test]
+fn oom_evidence_exchange_rejects_malformed_opcode() {
+    let mut exchange = OomEvidenceExchange::start();
+    exchange.client.write_all(&[1]).unwrap();
+    guest_contracts::oom_evidence::read_evidence(&exchange.client).unwrap();
+
     // The request alphabet is exactly `1` and `2`. An unrecognized byte
     // ends the exchange rather than reading a payload the peer never
     // promised, so a desynchronized request cannot consume the next frame.
-    client.write_all(&[9]).unwrap();
-    assert!(guest_contracts::oom_evidence::read_evidence(&client).is_err());
-    drop(cancel_writer);
-    done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-    worker.join().unwrap();
+    exchange.client.write_all(&[9]).unwrap();
+    // Join before cleanup closes the cancellation writer or the peer.
+    exchange.join();
+    let error = guest_contracts::oom_evidence::read_evidence(&exchange.client).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
 }
 
 #[test]

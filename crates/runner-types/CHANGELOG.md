@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.7](https://github.com/okou-ai/okou/compare/runner-types-v0.11.6...runner-types-v0.11.7) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
 ## [0.11.6](https://github.com/okou-ai/okou/compare/runner-types-v0.11.5...runner-types-v0.11.6) (2026-11-02)
 
 ## [0.11.5](https://github.com/okou-ai/okou/compare/runner-types-v0.11.4...runner-types-v0.11.5) (2026-11-02)

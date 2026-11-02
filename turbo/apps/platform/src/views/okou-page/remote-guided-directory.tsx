@@ -64,9 +64,7 @@ import { TailscaleDialog } from "./tailscale-management.tsx";
 import {
   CloudflareAccessDialog,
   CloudflareAccessLoadError,
-  CloudflareAccessConversionDialog,
   CloudflareAccessDeletionDialog,
-  CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
 
 function PrivateNetworkGroup({
@@ -743,9 +741,7 @@ function OwnerPrivateNetworkPanel() {
       </Link>
       <TailscaleDialog />
       <CloudflareAccessDialog />
-      <CloudflareAccessConversionDialog />
       <CloudflareAccessDeletionDialog />
-      <CloudflareAccessPromotionDialog />
     </section>
   );
 }

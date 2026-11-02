@@ -1,6 +1,5 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   Button,
@@ -28,7 +27,6 @@ import {
   type PreviewArtifactDeletion,
   type ArtifactDeletionSourceKind,
 } from "../../signals/artifact-deletion.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -140,11 +138,10 @@ export function ArtifactDeleteButton({
   readonly onDeleted: () => void;
   readonly iconSize?: number;
 }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
   const scope = artifactPreviewDeletionScope(surface);
   const mountRef = useSet(scope.mountRef$);
   const session = useGet(scope.session$);
-  if (!enabled || !artifactId) {
+  if (!artifactId) {
     return null;
   }
   return (

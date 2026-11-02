@@ -289,7 +289,8 @@ export function ComposerTaskChipRow({
       <div ref={bindRoot} className="relative min-w-0" data-task-choices="">
         {/* Inert spans share button geometry, including choices inside More. */}
         <TaskChipSizing tasks={tasks} labels={labels} />
-        <div className="mx-auto flex w-max max-w-full items-center gap-2 overflow-hidden p-1">
+        {/* Keep SVG pixel snapping stable when Safari composites nearby animations. */}
+        <div className="mx-auto flex w-max max-w-full transform-gpu items-center gap-2 overflow-hidden p-1">
           <Row
             {...(tabs ? {} : { role: "group" })}
             aria-label={t(($) => {

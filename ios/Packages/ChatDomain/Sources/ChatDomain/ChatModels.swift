@@ -3,6 +3,7 @@ import Foundation
 public struct ChatThread: Identifiable, Equatable, Sendable {
   public let id: String
   public var agentID: String
+  public var projectId: String?
   public var title: String
   public var selectedModel: String?
   public var createdAt: Date
@@ -26,6 +27,7 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     id: String,
     agentID: String,
     title: String,
+    projectId: String? = nil,
     selectedModel: String? = nil,
     createdAt: Date,
     updatedAt: Date,
@@ -45,6 +47,7 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
   ) {
     self.id = id
     self.agentID = agentID
+    self.projectId = projectId
     self.title = title
     self.selectedModel = selectedModel
     self.createdAt = createdAt

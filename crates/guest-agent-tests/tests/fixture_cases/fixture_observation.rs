@@ -222,6 +222,14 @@ async fn raw_http_recording_preserves_headers_and_lossy_body()
         ]);
     }
     assert_eq!(server.events()?, expected);
+    let expected_requests = expected
+        .into_iter()
+        .filter_map(|event| match event {
+            RecordedHttpEvent::Request(request) => Some(request),
+            RecordedHttpEvent::Response { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(server.into_requests()?, expected_requests);
     Ok(())
 }
 
@@ -306,5 +314,6 @@ async fn quiet_recording_returns_complete_independent_http_snapshots()
     assert_eq!(next[2].path, "/third");
     assert_eq!(next[2].body, "third-body");
     assert_eq!(snapshot, expected);
+    assert_eq!(server.into_requests()?, next);
     Ok(())
 }

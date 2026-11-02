@@ -78,11 +78,18 @@ public enum JSONValue: Codable, Sendable, Equatable {
 }
 
 public struct DesktopFailure: Error, LocalizedError, Sendable {
+  public enum Interruption: Sendable, Equatable {
+    case suspendedPermissionRefresh
+    case suspendedCommandPreflight
+  }
+
   public let code: String
   public let message: String
-  public init(_ code: String, _ message: String) {
+  public let interruption: Interruption?
+  public init(_ code: String, _ message: String, interruption: Interruption? = nil) {
     self.code = code
     self.message = message
+    self.interruption = interruption
   }
   public var errorDescription: String? { message }
   public var response: JSONValue {

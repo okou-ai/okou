@@ -26,6 +26,8 @@ python3 - <<'PY'
 import smtplib
 import socket
 import struct
+import sys
+import time
 
 
 def dns_query(transaction_id, name):
@@ -43,11 +45,20 @@ def read_exact(connection, size):
     return bytes(data)
 
 
-with smtplib.SMTP(timeout=5) as connection:
-    status, _ = connection.connect("smtp.gmail.com", 587)
-    assert status == 220, status
-    status, _ = connection.quit()
-    assert status == 221, status
+smtp_attempts = 3
+for attempt in range(1, smtp_attempts + 1):
+    try:
+        with smtplib.SMTP(timeout=5) as connection:
+            status, _ = connection.connect("smtp.gmail.com", 587)
+            assert status == 220, status
+            status, _ = connection.quit()
+            assert status == 221, status
+        break
+    except (TimeoutError, ConnectionError, smtplib.SMTPServerDisconnected) as error:
+        print(f"SMTP probe attempt {attempt}/{smtp_attempts} failed: {error}", file=sys.stderr)
+        if attempt == smtp_attempts:
+            raise
+        time.sleep(1)
 print("RAW_TCP_PROBE_DONE")
 
 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as connection:

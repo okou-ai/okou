@@ -1,3 +1,4 @@
+import { ProjectSidebar } from "../projects/project-page.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { MessageSquare, Search, SquarePen } from "lucide-react";
@@ -284,6 +285,7 @@ export function PwaChatListPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PwaChatListHeader />
+      <ProjectSidebar />
       <InstatusStatusNotice placement="list" />
       <PwaChatListContent />
     </div>

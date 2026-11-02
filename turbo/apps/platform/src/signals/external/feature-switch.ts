@@ -23,11 +23,6 @@ interface FeatureSwitchIdentity {
   readonly userId: string;
 }
 
-interface FeatureSwitchSnapshot {
-  readonly owner: string | null;
-  readonly switches: Record<FeatureSwitchKey, boolean>;
-}
-
 function readFeatureSwitchIdentity(
   clerk: FeatureSwitchClerk,
 ): FeatureSwitchIdentity | null {
@@ -59,7 +54,6 @@ function applySwitches(
 }
 
 const internalReloadFeatureSwitches$ = state(0);
-const remoteUiOwner$ = state<string | null>(null);
 
 export const availableFeatureSwitchKeys$ = computed(async (get) => {
   get(authenticatedSessionKey$);
@@ -74,10 +68,9 @@ export const featureSwitches$ = computed(async (get) => {
   get(internalReloadFeatureSwitches$);
   const createClient = get(apiClient$);
   const clerk = await get(clerk$);
-  const owner = get(authenticatedSessionKey$);
   const identity = readFeatureSwitchIdentity(clerk);
   if (!identity) {
-    return { owner: null, switches: getAllFeatureStates({}) };
+    return getAllFeatureStates({});
   }
 
   const client = createClient(featureSwitchesContract, {
@@ -96,23 +89,15 @@ export const featureSwitches$ = computed(async (get) => {
   applySwitches(combined, getEmailEnabledFeatureStates(identity.email));
   applySwitches(combined, result.body.switches);
   // Reapply audience restrictions after both server and stored overrides.
-  return {
-    owner,
-    switches: getAllFeatureStates({ ...identity, overrides: combined }),
-  };
+  return getAllFeatureStates({ ...identity, overrides: combined });
 });
 
 export const featureSwitch$ = computed((get) => {
-  const switches = get(featureSwitchState$);
-  const owner = get(remoteUiOwner$);
-  return owner && owner === get(authenticatedSessionKey$)
-    ? switches
-    : { ...switches, [FeatureSwitchKey.RemoteControlGuidedSetup]: false };
+  return get(featureSwitchState$);
 });
 
 export const applyFeatureSwitches$ = command(
-  ({ set }, { owner, switches }: FeatureSwitchSnapshot) => {
-    set(remoteUiOwner$, owner);
+  ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(setFeatureSwitchState$, switches);
   },
 );

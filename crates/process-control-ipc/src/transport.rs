@@ -1,6 +1,6 @@
 use std::io::{self, Read, Write};
 use std::mem::{MaybeUninit, size_of};
-use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::{Duration, Instant};
 
@@ -89,8 +89,7 @@ pub fn bind_abstract_listener(name: &str) -> io::Result<UnixListener> {
     if ret != 0 {
         return Err(io::Error::last_os_error());
     }
-    // SAFETY: fd is a valid listener and ownership is transferred.
-    Ok(unsafe { UnixListener::from_raw_fd(fd.into_raw_fd()) })
+    Ok(UnixListener::from(fd))
 }
 
 /// Connect to a Linux abstract Unix operation-local endpoint.

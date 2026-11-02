@@ -1,12 +1,10 @@
 import { nowDate } from "../../lib/time";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { command } from "ccstate";
 import {
   artifactReferencesContract,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { notFound, resourceUnavailable } from "../../lib/error";
+import { notFound } from "../../lib/error";
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { authorization$, setResHeader$ } from "../context/hono";
@@ -25,24 +23,10 @@ import { artifactReferenceRecord$ } from "../services/artifact-reference.service
 import { resolveSharedThreadArtifactReference$ } from "../services/shared-thread-artifact-reference.service";
 import type { RouteEntry } from "../route-entry";
 import { getOwnedArtifactCatalogFromReference$ } from "../services/artifact-catalog.service";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
 const ownerArtifact$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
   const auth = get(organizationAuthContext$);
-  const features = await set(
-    loadUserFeatureSwitchContext$,
-    auth.orgId,
-    auth.userId,
-    signal,
-  );
-  signal.throwIfAborted();
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.ArtifactDeletion, features) &&
-    !isFeatureEnabled(FeatureSwitchKey.MarkdownTableExport, features)
-  ) {
-    return resourceUnavailable("Artifact ownership lookup is not available");
-  }
   const { reference } = get(
     pathParamsOf(artifactReferencesContract.ownerArtifact),
   );

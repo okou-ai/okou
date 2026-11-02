@@ -178,7 +178,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
 
     // Execution joined delivery, and the server records before responding.
     let requests = server
-        .requests()?
+        .into_requests()?
         .into_iter()
         .filter(|request| request.path == "/api/webhooks/agent/events")
         .collect::<Vec<_>>();

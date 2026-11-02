@@ -21,7 +21,7 @@ import {
 
 const c = initContract();
 
-const chatNormalSendBodyShape = {
+export const chatNormalSendBodyShape = {
   agentId: string().min(1),
   prompt: string().min(1),
   threadId: string().optional(),
@@ -160,4 +160,11 @@ export const chatEventsContract = c.router({
 });
 
 export type ChatEventsContract = typeof chatEventsContract;
-export type ChatEventSendBody = zInfer<typeof chatEventsContract.send.body>;
+type PreparedSend<T> = T extends { userMessage: unknown }
+  ? Omit<T, "userMessage"> & {
+      userMessage: import("../validators/project-message").ProjectMessageDocument;
+    }
+  : T;
+export type ChatEventSendBody = PreparedSend<
+  zInfer<typeof chatEventsContract.send.body>
+>;

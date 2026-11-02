@@ -8,7 +8,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 
@@ -190,7 +189,6 @@ test.each([
       context,
       path,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
     });
     const { dialog: cancelled, trigger } = await openDeletion();
     click(button("Cancel", cancelled));
@@ -229,7 +227,6 @@ test("a failed deletion keeps the shared page and allows retry", async () => {
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
   });
   const { dialog } = await openDeletion();
   click(button("Delete", dialog));
@@ -254,7 +251,6 @@ test.each(["file", "shared-thread"] as const)(
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
     });
     const { dialog } = await openDeletion();
     const finish = context.mocks.deferred<void>();
@@ -288,14 +284,13 @@ test.each(["file", "shared-thread"] as const)(
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
     });
     expect(button("Share")).toBeInTheDocument();
     expect(screen.queryByLabelText("Delete")).not.toBeInTheDocument();
   },
 );
 
-test.each(["signed-out", "disabled", "snapshot"] as const)(
+test.each(["signed-out", "snapshot"] as const)(
   "the %s artifact viewer does not offer deletion",
   async (scenario) => {
     const path = mockPage("file", scenario === "snapshot");
@@ -303,9 +298,6 @@ test.each(["signed-out", "disabled", "snapshot"] as const)(
       context,
       path,
       ...(scenario === "signed-out" ? { auth: null } : {}),
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactDeletion]: scenario !== "disabled",
-      },
     });
     await expect(
       screen.findByTestId("attachment-lightbox-image"),

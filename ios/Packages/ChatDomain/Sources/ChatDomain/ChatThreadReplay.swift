@@ -91,6 +91,7 @@ public enum ChatThreadReplay {
         id: event.chatThreadId,
         agentID: event.agentId,
         title: event.title ?? "",
+        projectId: event.projectId,
         selectedModel: event.selectedModel,
         createdAt: event.createdAt,
         updatedAt: event.createdAt,
@@ -171,6 +172,8 @@ public enum ChatThreadReplay {
       if event.createdAt > thread.sortAt { thread.sortAt = event.createdAt }
       threads[event.chatThreadId] = thread
       return
+    case .projectUpdated:
+      thread.projectId = event.projectId
     case .created, .deleted:
       return
     }
@@ -181,7 +184,7 @@ public enum ChatThreadReplay {
 
   private static func isDeferrable(_ kind: ChatThreadChange.Kind) -> Bool {
     switch kind {
-    case .modelSelectionUpdated, .serviceTierUpdated, .computerUseHostUpdated:
+    case .modelSelectionUpdated, .serviceTierUpdated, .computerUseHostUpdated, .projectUpdated:
       true
     default:
       false

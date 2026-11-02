@@ -31,11 +31,13 @@ public struct ChatThreadChange: Sendable {
     case computerUseHostUpdated = "computer_use_host_updated"
     case sortTouched = "sort_touched"
     case archived, unarchived
+    case projectUpdated = "project_updated"
   }
   public let kind: Kind
   public let chatThreadId: String
   public let agentId: String
   public let reassignedAgentId: String?
+  public let projectId: String?
   public let title: String?
   public let selectedModel: String?
   public let pinOrder: String?
@@ -53,6 +55,7 @@ public struct ChatThreadChange: Sendable {
     chatThreadId: String,
     agentId: String,
     reassignedAgentId: String? = nil,
+    projectId: String? = nil,
     title: String? = nil,
     selectedModel: String? = nil,
     pinOrder: String? = nil,
@@ -69,6 +72,7 @@ public struct ChatThreadChange: Sendable {
     self.chatThreadId = chatThreadId
     self.agentId = agentId
     self.reassignedAgentId = reassignedAgentId
+    self.projectId = projectId
     self.title = title
     self.selectedModel = selectedModel
     self.pinOrder = pinOrder

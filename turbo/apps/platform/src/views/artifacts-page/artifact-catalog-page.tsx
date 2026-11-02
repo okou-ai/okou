@@ -1,6 +1,5 @@
 import type { ReactNode, UIEvent as ReactUIEvent } from "react";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   ChevronRight,
   File,
@@ -50,7 +49,6 @@ import {
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type { ArtifactKind } from "../../signals/chat-page/artifact-card-signals.ts";
 import { officeFilePreviewKind } from "../okou-page/office-file-preview.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { artifactCatalogViewportRef$ } from "../../signals/artifact-deletion.ts";
 import {
   ArtifactDeleteDialog,
@@ -395,11 +393,9 @@ function ArtifactCatalogCard({
 
 function ArtifactSharedConversationList({
   artifacts,
-  canDelete = false,
   scrollToArtifactId,
 }: {
   readonly artifacts: readonly CatalogArtifact[];
-  readonly canDelete?: boolean;
   readonly scrollToArtifactId: string | null;
 }) {
   const { t } = useTranslation();
@@ -449,11 +445,9 @@ function ArtifactSharedConversationList({
                 className="shrink-0 transition-colors group-hover:text-foreground"
               />
             </a>
-            {canDelete && (
-              <div className="pr-3">
-                <ArtifactDeleteMenu artifact={artifact} />
-              </div>
-            )}
+            <div className="pr-3">
+              <ArtifactDeleteMenu artifact={artifact} />
+            </div>
           </li>
         );
       })}
@@ -706,8 +700,6 @@ export function ArtifactCatalogPage({
 }) {
   const { t } = useTranslation();
   const viewportRef = useSet(artifactCatalogViewportRef$);
-  const deletionEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
   const sidebarOpen = useGet(artifactCatalogSidebar.open$);
   const syncImageLayout = useSet(
     artifactCatalogSidebar.imageCanvas.syncLayout$,
@@ -787,7 +779,6 @@ export function ArtifactCatalogPage({
             ) : sharedConversationLayout ? (
               <ArtifactSharedConversationList
                 artifacts={artifacts}
-                canDelete={deletionEnabled}
                 scrollToArtifactId={scrollToArtifactId}
               />
             ) : (
@@ -805,7 +796,7 @@ export function ArtifactCatalogPage({
             )}
           </div>
         </main>
-        {deletionEnabled && <ArtifactDeleteDialog />}
+        <ArtifactDeleteDialog />
       </div>
     </ChatThreadSidebarShell>
   );

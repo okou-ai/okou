@@ -1,13 +1,15 @@
-import type {
-  ChatThreadEvent,
-  ChatThreadSnapshotProjection,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatThreadSnapshotProjection } from "@okouai/api-contracts/contracts/chat-threads";
 import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 
-export type ReplayChatThreadEvent = Omit<ChatThreadEvent, "seqId">;
+import type { ProjectAwareChatThreadEvent } from "@okouai/api-contracts/contracts/project-readers";
+
+type WithoutSequence<T> = T extends unknown ? Omit<T, "seqId"> : never;
+export type ReplayChatThreadEvent =
+  WithoutSequence<ProjectAwareChatThreadEvent>;
 
 export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
+  readonly projectId: string | null;
   readonly sortAt: string;
   readonly archived: boolean;
   readonly muted: boolean;
@@ -40,7 +42,8 @@ function isDeferrableUpdate(kind: ReplayChatThreadEvent["kind"]): boolean {
   return (
     kind === "model_selection_updated" ||
     kind === "service_tier_updated" ||
-    kind === "computer_use_host_updated"
+    kind === "computer_use_host_updated" ||
+    kind === "project_updated"
   );
 }
 
@@ -52,6 +55,12 @@ function updatedThreadFields(
   event: ReplayChatThreadEvent,
   thread: EventDrivenChatThread,
 ): Partial<EventDrivenChatThread> | null {
+  if (
+    event.kind === "project_updated" ||
+    (event.kind === "sort_touched" && event.projectMembershipUpdated)
+  ) {
+    return { projectId: event.projectId ?? null };
+  }
   if (event.kind === "renamed") {
     return { title: event.title, renamedAt: event.createdAt };
   }
@@ -122,6 +131,7 @@ function applyEvent(
   if (event.kind === "created") {
     threads.set(event.chatThreadId, {
       id: event.chatThreadId,
+      projectId: event.projectId ?? null,
       agentId: event.agentId,
       title: event.title,
       sortAt: event.createdAt,
@@ -155,7 +165,7 @@ function applyEvent(
 
   const thread = threads.get(event.chatThreadId);
   if (!thread) {
-    if (isDeferrableUpdate(event.kind)) {
+    if (isDeferrableUpdate(event.kind) || event.projectMembershipUpdated) {
       const pendingUpdates = pendingThreadUpdates.get(event.chatThreadId) ?? [];
       pendingThreadUpdates.set(event.chatThreadId, [...pendingUpdates, event]);
     }
@@ -200,6 +210,7 @@ export function replayChatThreadEvents(
   for (const thread of snapshot) {
     threads.set(thread.id, {
       ...thread,
+      projectId: thread.projectId ?? null,
       // Retained shared snapshots can omit mute; absence is the initial state.
       // Remove only after rewriting those snapshots and requiring the wire field.
       muted: thread.muted ?? false,

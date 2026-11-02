@@ -6,6 +6,7 @@ import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-t
 export function chatThreadRequestSelection() {
   return {
     id: chatThreads.id,
+    projectId: chatThreads.projectId,
     userId: chatThreads.userId,
     agentId: chatThreads.agentId,
     selectedModel: chatThreads.selectedModel,

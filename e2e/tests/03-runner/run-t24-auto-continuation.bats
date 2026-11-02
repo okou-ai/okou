@@ -42,9 +42,8 @@ assert_auto_route() {
     run set_runner_agent_instructions "$AGENT_ID" "Auto continuation test instructions."
     assert_success
 
-    local nonce expected first_session successor_result successor_run_id
-    nonce="$(_runner_uuid)"
-    expected="auto-${nonce%%-*}"
+    # Run and thread IDs isolate this invocation; keep live-model replies simple.
+    local expected='CONTINUE_OK' first_session successor_result successor_run_id
     run runner_chat_send "$AGENT_ID" "Reply with only this token: ${expected}" "" "auto"
     assert_success
     RUN_ID="$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")"

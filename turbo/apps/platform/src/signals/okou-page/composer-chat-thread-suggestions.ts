@@ -1,3 +1,4 @@
+import { projects$ } from "../projects/projects.ts";
 import { computed, type Computed } from "ccstate";
 import { agents$ } from "../agent.ts";
 import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
@@ -68,7 +69,13 @@ export function createComposerChatThreadSuggestions(
       }
     }
 
-    const chatThreads: ComposerChatThreadSuggestion[] = [];
+    const chatThreads: ComposerChatThreadSuggestion[] = get(projects$)
+      .filter((p) => {
+        return p.name.toLowerCase().includes(query);
+      })
+      .map((p) => {
+        return { id: p.id, title: p.name, avatarUrl: null, project: true };
+      });
     for (const thread of get(eventDrivenChatThreads$)) {
       const title = thread.title;
       if (!title || !title.toLowerCase().includes(query)) {
@@ -79,7 +86,7 @@ export function createComposerChatThreadSuggestions(
         title,
         avatarUrl: agentAvatarUrls.get(thread.agentId) ?? null,
       });
-      if (chatThreads.length === MAX_VISIBLE_CHAT_THREAD_SUGGESTIONS) {
+      if (chatThreads.length >= MAX_VISIBLE_CHAT_THREAD_SUGGESTIONS) {
         break;
       }
     }

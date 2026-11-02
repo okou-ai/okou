@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.9](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.8...nbd-cow-v0.5.9) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** use owned unix socket conversions ([#44612](https://github.com/okou-ai/okou/issues/44612)) ([dd36385](https://github.com/okou-ai/okou/commit/dd363859e034973698d1567bab3b676b61c54f8d))
+
 ## [0.5.8](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.7...nbd-cow-v0.5.8) (2026-11-01)
 
 

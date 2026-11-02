@@ -17,6 +17,7 @@ import {
 import { formatAppNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
+import { isNetworkRequestError } from "../../lib/network-error.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import {
   createBrowserSignals,
@@ -24,7 +25,8 @@ import {
   type BrowserSignals,
 } from "../browser/browser.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
-import { onRef, setLoop, withCleanup } from "../utils.ts";
+import { logger } from "../log.ts";
+import { onRef, setLoop, throwIfAbort, withCleanup } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -34,6 +36,7 @@ import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 // One heartbeat per minute keeps an open browser panel comfortably inside its
 // ten-minute idle lease without making the lease itself stackable.
 const LEASE_HEARTBEAT_INTERVAL_MS = 60_000;
+const L = logger("BrowserHeartbeat");
 
 export interface BrowserSessionDescriptor {
   readonly threadId: string;
@@ -105,6 +108,36 @@ async function fetchBrowserSession(
     [200, 404],
   );
   return response.status === 200 ? response.body.browser : null;
+}
+
+async function requestBrowserSessionLease(
+  createClient: ApiClientFactory,
+  threadId: string,
+  signal: AbortSignal,
+) {
+  const [lease] = await Promise.allSettled([
+    accept(
+      createClient(browserContract).leaseByThread({
+        params: { threadId },
+        body: {},
+        fetchOptions: { signal },
+      }),
+      [200, 404, 409, 502, 503],
+      signal,
+    ),
+  ]);
+  signal.throwIfAborted();
+  if (lease.status === "fulfilled") {
+    return lease.value;
+  }
+  const error: unknown = lease.reason;
+  throwIfAbort(error);
+  if (!isNetworkRequestError(error)) {
+    throw error;
+  }
+  // No response confirms this idempotent renewal; its owner decides when to
+  // renew again. Unknown failures and cancellation must still stop the work.
+  return null;
 }
 
 function sameBrowserWindow(
@@ -235,19 +268,34 @@ function createBrowserSessionKeepAliveSignals(
 ): Pick<BrowserSessionSignals, "keepAliveRef$"> {
   const keepAliveRef$ = onRef(
     command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+      let reportedFailure = false;
       setLoop(
         async () => {
           const mountedSession = await get(session$);
           signal.throwIfAborted();
-          const response = await accept(
-            get(apiClient$)(browserContract).leaseByThread({
-              params: { threadId: descriptor.threadId },
-              body: {},
-              fetchOptions: { signal },
-            }),
-            [200, 404, 409],
+          const response = await requestBrowserSessionLease(
+            get(apiClient$),
+            descriptor.threadId,
             signal,
           );
+          signal.throwIfAborted();
+          if (!response || response.status === 502 || response.status === 503) {
+            // Only this idempotent renewal can continue at the normal interval.
+            // An outage must not replay input or invalidate the mounted viewer.
+            if (!reportedFailure) {
+              // Gateway failures need not have an application error body.
+              L.error(
+                "Browser heartbeat failed; scheduled renewal will continue",
+                {
+                  threadId: descriptor.threadId,
+                  status: response?.status ?? "network",
+                },
+              );
+              reportedFailure = true;
+            }
+            return false;
+          }
+          reportedFailure = false;
           const currentSession = await get(session$);
           signal.throwIfAborted();
           // A response from the previous lifetime cannot replace a reopened

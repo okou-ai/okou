@@ -33,6 +33,7 @@ export const chatThreadEventKind = pgEnum("chat_thread_event_kind", [
   "sort_touched",
   "archived",
   "unarchived",
+  "project_updated",
 ]);
 
 export type ChatThreadEventKind =
@@ -62,6 +63,7 @@ export const chatThreadEvents = pgTable(
     /** Strictly increasing position within the owning user/org event stream. */
     seqId: bigint("seq_id", { mode: "number" }).notNull(),
     chatThreadId: uuid("chat_thread_id").notNull(),
+    projectId: uuid("project_id"),
     kind: chatThreadEventKind("kind").notNull(),
     agentId: uuid("agent_id"),
     /** Only canonical agent reassignment carries this identity update. */

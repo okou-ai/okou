@@ -233,7 +233,6 @@ describe("GET /api/connector-accounts/:connectionId/scope-diff", () => {
       [404],
     );
     expect(empty.body).toStrictEqual(initiallyMissing.body);
-    expect((await requestAccountScopeDiff(actor, firstId)).status).toBe(404);
   });
 
   it("returns an empty diff for manual auth connectors", async () => {

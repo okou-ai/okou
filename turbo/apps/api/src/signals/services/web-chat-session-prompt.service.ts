@@ -5,6 +5,7 @@ import type {
 } from "./chat-user-message.service";
 
 export interface WebChatSessionPromptContext {
+  readonly projectContext: string;
   readonly generationTemplatePrompt: string;
   readonly computerUseHostDisplayName: string | null;
   readonly triggerSource: "web" | "agent";
@@ -128,6 +129,7 @@ export function buildWebChatAppendSystemPrompt(args: {
   return [
     buildWebChatPrompt(args.context.integrationNote),
     buildCurrentThreadContext(args.threadId),
+    args.context.projectContext,
     buildReferencesContext(args.context.references),
     args.context.agentRunSource
       ? buildAgentRunSourceContext(

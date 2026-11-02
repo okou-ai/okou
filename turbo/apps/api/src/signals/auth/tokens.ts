@@ -47,6 +47,8 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["project:read", FeatureSwitchKey.Projects],
+  ["project:write", FeatureSwitchKey.Projects],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
@@ -57,7 +59,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
   ["wechat:write", FeatureSwitchKey.WechatIntegration],
   ["whatsapp:write", FeatureSwitchKey.WhatsappIntegration],
-  ["whatsapp:file:write", FeatureSwitchKey.WhatsappFileUpload],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 

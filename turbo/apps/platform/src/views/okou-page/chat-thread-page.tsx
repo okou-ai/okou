@@ -1,4 +1,8 @@
 import {
+  ProjectMembership,
+  ProjectReference,
+} from "../projects/project-page.tsx";
+import {
   MessageShareMenu,
   SharedThreadAudiencePicker,
   SharedThreadShareMenu,
@@ -90,7 +94,6 @@ import {
   getShortcutParts,
   Button,
   CopyButton,
-  ShareLinkButton,
   Checkbox,
   Input,
   Skeleton,
@@ -159,7 +162,10 @@ import {
 } from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
-import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
+import {
+  hasChatEventBodyContent,
+  isTransientOutputMessage,
+} from "../../signals/chat-page/chat-event-body-blocks.ts";
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -233,10 +239,7 @@ import {
   openVideoLightbox$ as openAttachmentVideoLightbox$,
 } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
-import {
-  writeToClipboard,
-  type ChatClipboardAttachment,
-} from "../../signals/okou-page/clipboard.ts";
+import type { ChatClipboardAttachment } from "../../signals/okou-page/clipboard.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type {
   HeaderAutomationSignals,
@@ -824,6 +827,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          <ProjectMembership threadId={thread.threadId} />
           <AutomationMenuButton thread={thread} />
           <ThreadMailButton thread={thread} />
           <BrowserMenuButton thread={thread} />
@@ -3439,28 +3443,22 @@ function ChatThreadEventGroups({
   statusRowGroupId: string | null;
 }) {
   const { i18n: translation } = useTranslation();
-  const timelineEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadTimeline];
-  const timelineEvents = timelineEnabled
-    ? groups.flatMap((group) => {
-        const section = runWorkSectionForGroup(runWorkFolding, group);
-        if (!groupRendersContent(group, section)) {
-          return [];
-        }
-        if (group.role === "user") {
-          return group.events;
-        }
-        const firstVisibleEvent =
-          group.events.find(isRenderableAssistantEvent) ?? group.events[0];
-        return firstVisibleEvent === undefined ? [] : [firstVisibleEvent];
-      })
-    : [];
-  const dateDividers = timelineEnabled
-    ? chatThreadDateDividers(
-        timelineEvents,
-        translation.resolvedLanguage ?? translation.language,
-      )
-    : undefined;
+  const timelineEvents = groups.flatMap((group) => {
+    const section = runWorkSectionForGroup(runWorkFolding, group);
+    if (!groupRendersContent(group, section)) {
+      return [];
+    }
+    if (group.role === "user") {
+      return group.events;
+    }
+    const firstVisibleEvent =
+      group.events.find(isRenderableAssistantEvent) ?? group.events[0];
+    return firstVisibleEvent === undefined ? [] : [firstVisibleEvent];
+  });
+  const dateDividers = chatThreadDateDividers(
+    timelineEvents,
+    translation.resolvedLanguage ?? translation.language,
+  );
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
@@ -3476,7 +3474,7 @@ function ChatThreadEventGroups({
           group.events.find(isRenderableAssistantEvent) ?? group.events[0];
         const assistantDate =
           group.role === "assistant" && firstAssistantEvent !== undefined
-            ? dateDividers?.get(firstAssistantEvent.id)
+            ? dateDividers.get(firstAssistantEvent.id)
             : undefined;
         const stackFirstOnPrevious =
           previousVisibleGroup !== undefined &&
@@ -3966,39 +3964,7 @@ function SharedThreadCreatedLink({
         className="min-w-0 flex-1"
       />
       <div className="flex shrink-0 items-center gap-2">
-        {visibility ? (
-          <SharedThreadShareMenu session={visibility} showLabel />
-        ) : (
-          <Button
-            onClick={() => {
-              detach(
-                (async () => {
-                  const copied = await writeToClipboard(shareUrl);
-                  if (copied) {
-                    toast.success(
-                      t(($) => {
-                        return $.chat.sharing.linkCopied;
-                      }),
-                    );
-                    return;
-                  }
-                  toast.error(
-                    t(($) => {
-                      return $.chat.sharing.copyFailed;
-                    }),
-                  );
-                })(),
-                Reason.DomCallback,
-                "copy shared thread link",
-              );
-            }}
-          >
-            <Copy size={16} />
-            {t(($) => {
-              return $.chat.sharing.copyLink;
-            })}
-          </Button>
-        )}
+        {visibility && <SharedThreadShareMenu session={visibility} showLabel />}
         <Button
           variant="outline"
           onClick={() => {
@@ -4023,8 +3989,6 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
   const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
-  const visibilityEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility];
   const audience = useGet(thread.sharing.audience$);
   const changeAudience = useSet(thread.sharing.changeAudience$);
   const pageSignal = useGet(pageSignal$);
@@ -4060,13 +4024,9 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                 )}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {visibilityEnabled
-                  ? t(($) => {
-                      return $.chat.sharing.visibilityDescription;
-                    })
-                  : t(($) => {
-                      return $.chat.sharing.publicDescription;
-                    })}
+                {t(($) => {
+                  return $.chat.sharing.visibilityDescription;
+                })}
               </p>
               {createLoadable.state === "hasError" ? (
                 <p className="mt-0.5 text-xs text-destructive">
@@ -4077,13 +4037,11 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {visibilityEnabled ? (
-                <SharedThreadAudiencePicker
-                  audience={audience}
-                  disabled={creating}
-                  onChange={changeAudience}
-                />
-              ) : null}
+              <SharedThreadAudiencePicker
+                audience={audience}
+                disabled={creating}
+                onChange={changeAudience}
+              />
               <Button
                 disabled={selectedCount === 0 || creating}
                 onClick={() => {
@@ -6357,7 +6315,7 @@ function PagedGroupRow({
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
-  dateDividers?: ReadonlyMap<string, ChatDateDivider>;
+  dateDividers: ReadonlyMap<string, ChatDateDivider>;
   runWorkSection?: RunWorkSectionControl;
   statusRow?: RunStatusRow;
   statusTailEvents?: readonly EnrichedChatEvent[];
@@ -6666,12 +6624,12 @@ function PagedUserGroup({
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
-  dateDividers?: ReadonlyMap<string, ChatDateDivider>;
+  dateDividers: ReadonlyMap<string, ChatDateDivider>;
 }) {
   return (
     <>
       {group.events.map((event, index) => {
-        const dateDivider = dateDividers?.get(event.id);
+        const dateDivider = dateDividers.get(event.id);
         const modelChange = modelChanges.get(event.id);
         const previousEvent = group.events[index - 1];
         // Anything the user sent back to back is one thing they said, so the
@@ -7417,6 +7375,15 @@ function UserMessageFeedbackNote({
             />
           );
         }
+        if (renderPart.type === "project") {
+          return (
+            <ProjectReference
+              key={key}
+              part={renderPart.part}
+              className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
+            />
+          );
+        }
         if (renderPart.type === "agent") {
           return (
             <UserMessageAgentReference
@@ -7598,6 +7565,14 @@ function UserMessagePartView({
       <ChatThreadLinkChip
         threadId={renderPart.part.threadId}
         title={renderPart.part.titleSnapshot}
+      />
+    );
+  }
+  if (renderPart.type === "project") {
+    return (
+      <ProjectReference
+        part={renderPart.part}
+        className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
       />
     );
   }
@@ -8401,6 +8376,9 @@ function PagedAssistantEventItem({
   thread: ChatPanelSignals;
   workHistory?: boolean;
 }) {
+  const emailQuoteEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatEmailQuote] === true;
+  const sharingPhase = useGet(thread.sharing.phase$);
   const error = chatEventDisplayError(event);
   if (error) {
     return (
@@ -8445,6 +8423,12 @@ function PagedAssistantEventItem({
           }
           tree={event.tree}
           mediaPreview
+          emailQuote={
+            emailQuoteEnabled &&
+            sharingPhase === "idle" &&
+            !workHistory &&
+            !isTransientOutputMessage(event)
+          }
         />
       </ChatAssistantMessageBody>
     );
@@ -8709,81 +8693,6 @@ function RelatedArtifactsDialog({
   );
 }
 
-function MessageShareAction({
-  onShare,
-  copied,
-}: {
-  onShare: (audience: SharedThreadAudience, revert?: () => void) => void;
-  copied: boolean;
-}) {
-  const { t } = useTranslation();
-  const visibilityEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility];
-  if (visibilityEnabled) {
-    return <MessageShareMenu copied={copied} onShare={onShare} />;
-  }
-  return (
-    <ShareLinkButton
-      onShare={(revert) => {
-        onShare("public", revert);
-      }}
-      render={({ onClick, ref }, { copied }) => {
-        const copiedLabel = t(($) => {
-          return $.chat.sharing.shareLinkCopied;
-        });
-        if (copied) {
-          // The button itself confirms the copy; no toast or tooltip.
-          return (
-            <Button
-              ref={ref}
-              type="button"
-              variant="quiet"
-              size="xs"
-              onClick={onClick}
-              className="gap-1 px-1.5 text-muted-foreground"
-              aria-label={copiedLabel}
-              data-testid="chat-message-share"
-            >
-              <Check />
-              {copiedLabel}
-            </Button>
-          );
-        }
-        return (
-          <TooltipProvider delay={300}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    ref={ref}
-                    type="button"
-                    variant="quiet"
-                    size="icon-xs"
-                    iconSize="sm"
-                    onClick={onClick}
-                    className="text-muted-foreground/60"
-                    aria-label={t(($) => {
-                      return $.chat.actions.shareMessage;
-                    })}
-                    data-testid="chat-message-share"
-                  >
-                    <Share2 />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">
-                {t(($) => {
-                  return $.chat.actions.shareMessage;
-                })}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        );
-      }}
-    />
-  );
-}
-
 function PagedGroupPrimaryActions({
   firstRunId,
   hasContent,
@@ -8800,8 +8709,7 @@ function PagedGroupPrimaryActions({
   showRunUsage: boolean;
   thread: ChatPanelSignals;
   onCopy: () => Promise<boolean>;
-  onShare:
-    ((audience: SharedThreadAudience, revert?: () => void) => void) | undefined;
+  onShare: ((audience: SharedThreadAudience) => void) | undefined;
   shareCopied: boolean;
   pdfAction?: ReactNode;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
@@ -8858,7 +8766,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
-      {onShare && <MessageShareAction onShare={onShare} copied={shareCopied} />}
+      {onShare && <MessageShareMenu onShare={onShare} copied={shareCopied} />}
       {pdfAction}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
@@ -8924,13 +8832,12 @@ function PagedGroupActions({
   });
   const handleShare =
     shareEventIds.length > 0
-      ? (audience: SharedThreadAudience, revert?: () => void) => {
-          const share = async () => {
-            if (!(await shareMessage(shareEventIds, audience, pageSignal))) {
-              revert?.();
-            }
-          };
-          detach(share(), Reason.DomCallback, "share chat message");
+      ? (audience: SharedThreadAudience) => {
+          detach(
+            shareMessage(shareEventIds, audience, pageSignal),
+            Reason.DomCallback,
+            "share chat message",
+          );
         }
       : undefined;
 

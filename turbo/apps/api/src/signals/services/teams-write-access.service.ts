@@ -1,8 +1,6 @@
 import { command } from "ccstate";
 import { and, eq, notExists } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
@@ -11,7 +9,6 @@ import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 
 import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import {
   resolveTeamsMessageTarget$,
@@ -117,14 +114,7 @@ export const resolveTeamsWriteTarget$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
     const source =
-      isFeatureEnabled(FeatureSwitchKey.TeamsWorkspaceIdentity, features) &&
       args.allowSource !== false &&
       args.runId &&
       args.body.conversationId &&

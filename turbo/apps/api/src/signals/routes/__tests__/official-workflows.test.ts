@@ -1,3 +1,4 @@
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
 import {
@@ -831,7 +832,7 @@ describe("Workflow Run admission", () => {
         current.runId,
       );
       const skills = claim.contentBundles.skills;
-      expect(skills).toHaveLength(2);
+      expect(skills).toHaveLength(2 + SEED_SKILLS.length);
       for (const workflow of published) {
         const skill = skills.find((item) => {
           return item.mountPath.endsWith(`/${workflow.workflowName}`);

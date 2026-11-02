@@ -3022,8 +3022,22 @@
     {
       "idx": 1510,
       "version": "7",
-      "when": 1793604891532,
-      "tag": "1510_marketing_content_handoff",
+      "when": 1793607132876,
+      "tag": "1510_project_reader_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1511,
+      "version": "7",
+      "when": 1793607150741,
+      "tag": "1511_project_thread_activity_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1512,
+      "version": "7",
+      "when": 1793611801134,
+      "tag": "1512_marketing_content_handoff",
       "breakpoints": true
     }
   ]

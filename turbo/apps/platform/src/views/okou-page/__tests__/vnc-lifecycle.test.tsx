@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import {
   vncCredentialsContract,
@@ -30,7 +29,11 @@ async function openCredential(
   name: string,
   method: "vnc_password" | "username_password" = "vnc_password",
 ) {
-  click(getAction("button", "Add credential"));
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add credential");
+    }),
+  );
   const dialog = await screen.findByRole("dialog", { name: "Add credential" });
   await fill(within(dialog).getByLabelText("Credential name"), name);
   if (method === "username_password") {
@@ -63,8 +66,7 @@ function mockEmptySettings() {
 async function credentialPage() {
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=vnc",
+    path: "/connectors?scope=remote-control&remoteView=credentials&type=vnc",
     auth: {
       user: owner,
       session: { id: "vnc-session-original", token: "original-token" },
@@ -74,8 +76,6 @@ async function credentialPage() {
       },
     },
   });
-  await screen.findByText("Add a VNC host to get started.");
-  click(getAction("radio", "Credentials"));
   await screen.findByText("No saved VNC credentials.");
 }
 
@@ -176,8 +176,7 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
   });
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=vnc",
+    path: "/connectors?scope=remote-control&remoteView=credentials&type=vnc",
     auth: {
       user: owner,
       organization: {
@@ -186,8 +185,6 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
       },
     },
   });
-  await screen.findByText("Add a VNC host to get started.");
-  click(getAction("radio", "Credentials"));
   await screen.findByText("No saved VNC credentials.");
   const dialog = await openCredential("Abandoned login");
   const secret = within(dialog).getByLabelText("VNC password");

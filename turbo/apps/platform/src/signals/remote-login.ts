@@ -1,7 +1,5 @@
 import { command, computed, state } from "ccstate";
 import { authenticatedSessionKey$ } from "./auth.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 export type RemoteLoginProtocol = "ssh" | "vnc";
 interface LoginImpact {
   readonly sessionKey: string | null;
@@ -19,8 +17,8 @@ const impact$ = state<LoginImpact | null>(null);
 const confirmed$ = state<RemoteLoginProtocol | null>(null);
 export const remoteLoginPicker$ = computed((get) => {
   const current = get(picker$);
-  return get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] &&
-    current?.sessionKey === get(authenticatedSessionKey$)
+  const sessionKey = get(authenticatedSessionKey$);
+  return sessionKey && current?.sessionKey === sessionKey
     ? current.protocol
     : null;
 });
@@ -34,10 +32,8 @@ export const setRemoteLoginPicker$ = command(
 );
 export const remoteLoginImpact$ = computed((get) => {
   const current = get(impact$);
-  return get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] &&
-    current?.sessionKey === get(authenticatedSessionKey$)
-    ? current
-    : null;
+  const sessionKey = get(authenticatedSessionKey$);
+  return sessionKey && current?.sessionKey === sessionKey ? current : null;
 });
 export const requestRemoteLoginSave$ = command(
   (

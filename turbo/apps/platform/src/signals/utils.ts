@@ -346,6 +346,8 @@ export function onRef<T extends HTMLElement | SVGSVGElement>(
 /**
  * Create a deferred promise that can be resolved/rejected externally.
  * The promise is automatically rejected when the abort signal is triggered.
+ * Caller-owned rejections stay tracked for teardown but are reported only by
+ * the operation consuming the receipt, after its domain-specific handling.
  */
 export interface DeferredPromise<T> {
   promise: Promise<T>;
@@ -355,8 +357,11 @@ export interface DeferredPromise<T> {
 }
 
 export function createDeferredPromise<T>(
-  signal: AbortSignal,
+  ...args:
+    | [signal: AbortSignal]
+    | [options: { readonly rejection: "owner" }, signal: AbortSignal]
 ): DeferredPromise<T> {
+  const signal = args.length === 1 ? args[0] : args[1];
   const { promise, resolve, reject } = Promise.withResolvers<T>();
   let settled = false;
   let removeAbortListener = () => {};
@@ -370,7 +375,11 @@ export function createDeferredPromise<T>(
     settlePromise();
   };
 
-  detach(promise, Reason.Deferred);
+  if (args.length === 1) {
+    detach(promise, Reason.Deferred);
+  } else {
+    detach(Promise.allSettled([promise]), Reason.Deferred);
+  }
 
   const guardedResolve = (value: T) => {
     settleOnce(() => {

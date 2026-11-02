@@ -1,3 +1,4 @@
+import { projectMessageDocumentSchema as projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/validators/project-message";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
@@ -1023,6 +1024,9 @@ const registerFeedbackNoteRenderPart$ = command(
       case "text": {
         return { type: "text", part };
       }
+      case "project": {
+        return { type: "project", part };
+      }
       case "chat_thread": {
         return { type: "chat_thread", part };
       }
@@ -1055,6 +1059,9 @@ const registerUserMessageRenderPart$ = command(
     switch (part.type) {
       case "text": {
         return { type: "text", part };
+      }
+      case "project": {
+        return { type: "project", part };
       }
       case "chat_thread": {
         return { type: "chat_thread", part };
@@ -1137,14 +1144,19 @@ const registerUserMessageRenderDocument$ = command(
     document: UserMessageDocument,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderDocument => {
+    const readableDocument =
+      projectAwareUserMessageDocumentSchema.parse(document);
     return {
+      // Registration uses the raw document identity across window updates.
       document,
-      parts: document.parts.flatMap((part, index) => {
+      parts: readableDocument.parts.flatMap((part, index) => {
         if (part.type === "additional_info") {
           return [];
         }
         const rendered = set(registerUserMessageRenderPart$, part, registries);
-        const context = readSuggestionContext(document.parts[index - 1]);
+        const context = readSuggestionContext(
+          readableDocument.parts[index - 1],
+        );
         return [
           rendered.type === "feedback" && context
             ? { ...rendered, suggestionContext: context }

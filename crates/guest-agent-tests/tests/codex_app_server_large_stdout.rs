@@ -71,7 +71,7 @@ async fn codex_app_server_delivers_notification_above_former_stdout_limit()
     assert!(saw_command && saw_completion);
     drop(log);
 
-    let requests = server.requests()?;
+    let requests = server.into_requests()?;
     let mut delivered_command = false;
     let mut delivered_completion = false;
     for request in requests {

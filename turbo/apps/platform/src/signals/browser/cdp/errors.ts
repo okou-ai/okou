@@ -1,15 +1,33 @@
 import type { ViewerError } from "../viewer/types.ts";
 
+export interface CdpConnectionObservation {
+  readonly source: "native-close" | "native-error";
+  readonly role?: "control" | "frames";
+  readonly phase: "opening" | "open";
+  readonly ready_state: number;
+  readonly code?: number;
+  readonly was_clean?: boolean;
+  readonly pending_requests: number;
+  readonly cancelled_awaiting_response: number;
+}
+
 export class CdpFault extends Error {
+  /** Capture ownership follows this fault through wrappers retaining its cause. */
+  reported = false;
+  readonly connection: CdpConnectionObservation | undefined;
+
   constructor(
     readonly kind: ViewerError["kind"],
     message: string,
     readonly code?: number,
     readonly request?: ViewerError["request"],
-    options?: ErrorOptions,
+    options?: ErrorOptions & {
+      readonly connection?: CdpConnectionObservation;
+    },
   ) {
     super(message, options);
     this.name = "CdpFault";
+    this.connection = options?.connection;
   }
 }
 

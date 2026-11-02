@@ -129,11 +129,6 @@ export const cloudflareAccessConfigs$ = computed(async (get) => {
     : null;
 });
 
-export const cloudflareAccessSummary$ = computed(async (get) => {
-  const configs = await get(cloudflareAccessConfigs$);
-  return configs ? { configuredCount: configs.length } : null;
-});
-
 const catchUpCloudflareAccess$ = command(({ set }) => {
   set(invalidateCloudflareAccess$);
   return false;
@@ -507,185 +502,12 @@ export const saveCloudflareAccess$ = command(
   },
 );
 
-interface ConversionDialog {
-  readonly identity: string;
-  readonly configId: string;
-  readonly name: string;
-}
-
-const conversionDialog$ = state<ConversionDialog | null>(null);
-const conversionError$ = state<string | null>(null);
-const conversionAcknowledgedSnapshot$ = state<string | null>(null);
-
-export const cloudflareAccessConversionAcknowledgedSnapshot$ = computed(
-  (get) => {
-    return get(conversionAcknowledgedSnapshot$);
-  },
-);
-
-export const acknowledgeCloudflareAccessConversion$ = command(
-  ({ set }, snapshot: string | null) => {
-    set(conversionAcknowledgedSnapshot$, snapshot);
-  },
-);
-
-export const cloudflareAccessConversionDialog$ = computed(async (get) => {
-  const dialog = get(conversionDialog$);
-  return dialog?.identity === (await get(cloudflareAccessIdentity$))
-    ? dialog
-    : null;
-});
-
-export const cloudflareAccessConversionError$ = computed((get) => {
-  return get(conversionError$);
-});
-
-export const openCloudflareAccessConversion$ = command(
-  async (
-    { get, set },
-    config: ScopedCloudflareAccessConfig,
-    signal: AbortSignal,
-  ) => {
-    const [identity, admin] = await Promise.all([
-      get(cloudflareAccessIdentity$),
-      get(isOrgAdmin$),
-    ]);
-    signal.throwIfAborted();
-    if (!identity || !admin || config.scope !== "organization") {
-      return;
-    }
-    set(conversionError$, null);
-    set(conversionAcknowledgedSnapshot$, null);
-    set(conversionDialog$, {
-      identity,
-      configId: config.id,
-      name: config.name,
-    });
-  },
-);
-
-export const closeCloudflareAccessConversion$ = command(({ set }) => {
-  set(conversionDialog$, null);
-  set(conversionError$, null);
-  set(conversionAcknowledgedSnapshot$, null);
-});
-
-export const cloudflareAccessConversionPreview$ = computed(async (get) => {
-  get(reload$);
-  const dialog = await get(cloudflareAccessConversionDialog$);
-  if (!dialog) {
-    return null;
-  }
-  const client = await get(cloudflareAccessClient$);
-  if (client.identity !== dialog.identity) {
-    return null;
-  }
-  const result = await accept(
-    client.client.impactPreview({
-      params: { configId: dialog.configId },
-      query: { operation: "convert" },
-    }),
-    [200, 403, 404],
-    undefined,
-    { showErrorToast: false },
-  );
-  return result.status === 200 ? result.body : null;
-});
-
 interface ReviewedAccessDialog {
   readonly identity: string;
   readonly configId: string;
   readonly name: string;
   readonly revision: number;
 }
-const promotionDialog$ = state<ReviewedAccessDialog | null>(null);
-const promotionError$ = state<string | null>(null);
-const promotionAcknowledged$ = state(false);
-export const cloudflareAccessPromotionAcknowledged$ = computed((get) => {
-  return get(promotionAcknowledged$);
-});
-export const acknowledgeCloudflareAccessPromotion$ = command(
-  ({ set }, checked: boolean) => {
-    return set(promotionAcknowledged$, checked);
-  },
-);
-export const cloudflareAccessPromotionDialog$ = computed(async (get) => {
-  const dialog = get(promotionDialog$);
-  return dialog?.identity === (await get(cloudflareAccessIdentity$))
-    ? dialog
-    : null;
-});
-export const cloudflareAccessPromotionError$ = computed((get) => {
-  return get(promotionError$);
-});
-export const openCloudflareAccessPromotion$ = command(
-  async (
-    { get, set },
-    config: ScopedCloudflareAccessConfig,
-    signal: AbortSignal,
-  ) => {
-    const [identity, admin] = await Promise.all([
-      get(cloudflareAccessIdentity$),
-      get(isOrgAdmin$),
-    ]);
-    signal.throwIfAborted();
-    if (!identity || !admin || config.scope !== "personal") {
-      return;
-    }
-    set(promotionError$, null);
-    set(promotionAcknowledged$, false);
-    set(promotionDialog$, {
-      identity,
-      configId: config.id,
-      name: config.name,
-      revision: config.revision,
-    });
-  },
-);
-export const closeCloudflareAccessPromotion$ = command(({ set }) => {
-  set(promotionDialog$, null);
-  set(promotionError$, null);
-  set(promotionAcknowledged$, false);
-});
-export const confirmCloudflareAccessPromotion$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const dialog = await get(cloudflareAccessPromotionDialog$);
-    signal.throwIfAborted();
-    if (!dialog || !get(promotionAcknowledged$) || !(await get(isOrgAdmin$))) {
-      set(promotionError$, CLOUDFLARE_ACCESS_ERROR_CODES.FORBIDDEN);
-      return;
-    }
-    const client = await get(cloudflareAccessClient$);
-    signal.throwIfAborted();
-    if (client.identity !== dialog.identity) {
-      return;
-    }
-    const [outcome] = await Promise.allSettled([
-      accept(
-        client.client.convertToOrganization({
-          params: { configId: dialog.configId },
-          body: { expectedRevision: dialog.revision },
-          fetchOptions: { signal },
-        }),
-        [200, 403, 404, 409],
-        signal,
-      ),
-    ]);
-    signal.throwIfAborted();
-    if (get(promotionDialog$) !== dialog) {
-      return;
-    }
-    if (outcome.status === "rejected") {
-      set(promotionError$, "uncertain");
-    } else if (outcome.value.status === 200) {
-      set(invalidateCloudflareAccess$);
-      set(closeCloudflareAccessPromotion$);
-    } else {
-      set(promotionError$, outcome.value.body.error.code);
-    }
-  },
-);
-
 const deletionDialog$ = state<ReviewedAccessDialog | null>(null);
 const deletionError$ = state<string | null>(null);
 const deletionAcknowledged$ = state<string | null>(null);
@@ -807,56 +629,5 @@ export const confirmCloudflareAccessDeletion$ = command(
     } else {
       set(deletionError$, outcome.value.body.error.code);
     }
-  },
-);
-
-export const confirmCloudflareAccessConversion$ = command(
-  async (
-    { get, set },
-    preview: CloudflareAccessImpactPreview,
-    signal: AbortSignal,
-  ) => {
-    const dialog = await get(cloudflareAccessConversionDialog$);
-    signal.throwIfAborted();
-    if (!dialog || !(await get(isOrgAdmin$))) {
-      set(conversionError$, CLOUDFLARE_ACCESS_ERROR_CODES.FORBIDDEN);
-      return;
-    }
-    const client = await get(cloudflareAccessClient$);
-    signal.throwIfAborted();
-    if (client.identity !== dialog.identity) {
-      return;
-    }
-    const [outcome] = await Promise.allSettled([
-      accept(
-        client.client.convertToPersonal({
-          params: { configId: dialog.configId },
-          body: {
-            expectedRevision: preview.expectedRevision,
-            impactSnapshot: preview.impactSnapshot,
-          },
-          fetchOptions: { signal },
-        }),
-        [200, 403, 404, 409],
-        signal,
-      ),
-    ]);
-    signal.throwIfAborted();
-    if (outcome.status === "rejected") {
-      if (dialog === get(conversionDialog$)) {
-        set(conversionError$, "uncertain");
-      }
-      return;
-    }
-    if (dialog !== get(conversionDialog$)) {
-      return;
-    }
-    const result = outcome.value;
-    if (result.status === 200) {
-      set(invalidateCloudflareAccess$);
-      set(closeCloudflareAccessConversion$);
-      return;
-    }
-    set(conversionError$, result.body.error.code);
   },
 );

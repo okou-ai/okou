@@ -1,4 +1,7 @@
 import * as marketingContentGrantSchema from "./schema/marketing-content-grant";
+import * as projectSchema from "./schema/project";
+import * as projectEventSchema from "./schema/project-event";
+import * as projectSnapshotSchema from "./schema/project-snapshot";
 import * as halloweenSchema from "./schema/halloween";
 import * as iosPushRegistrationSchema from "./schema/ios-push-registration";
 import * as dataRouterRequestSchema from "./schema/data-router-request";
@@ -168,6 +171,9 @@ import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
   ...marketingContentGrantSchema,
+  ...projectSchema,
+  ...projectEventSchema,
+  ...projectSnapshotSchema,
   ...iosPushRegistrationSchema,
   ...halloweenSchema,
   ...mailNotificationSchema,

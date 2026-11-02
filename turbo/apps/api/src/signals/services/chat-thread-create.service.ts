@@ -23,6 +23,7 @@ interface NewChatThreadArgs {
   readonly agentId: string;
   readonly id?: string;
   readonly title?: string | null;
+  readonly projectId?: string | null;
   readonly selectedModel: string | null;
   readonly hidden?: boolean;
   readonly modelSettings?: ModelSettings;
@@ -49,6 +50,7 @@ type CreatedThread = Pick<
   | "createdAt"
 > & {
   readonly agentId: string;
+  readonly projectId?: string | null;
 };
 
 /** Pure INSERT plan. The owning command executes it in its own statement. */
@@ -120,6 +122,7 @@ function createdThreadEventArgs(args: {
     agentId: thread.agentId,
     eventId: args.eventId,
     title: thread.title,
+    projectId: thread.projectId,
     selectedModel: thread.selectedModel,
     hidden: thread.hidden,
     modelSettings: thread.modelSettings,

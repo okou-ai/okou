@@ -1,6 +1,4 @@
 import { command, computed } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { searchParams$, updateSearchParams$ } from "./route.ts";
 
 type NetworkEditorProvider = "tailscale" | "cloudflare";
@@ -20,10 +18,7 @@ export function clearRemoteNetworkParams(params: URLSearchParams) {
 
 export const remoteNetworkLocation$ = computed((get) => {
   const params = get(searchParams$);
-  if (
-    !get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] ||
-    params.get("scope") !== "private-network"
-  ) {
+  if (params.get("scope") !== "private-network") {
     return null;
   }
   const provider = params.get("network");
@@ -44,10 +39,7 @@ export const openRemoteNetworkEditor$ = command(
     id: string | null = null,
   ) => {
     const params = new URLSearchParams(get(searchParams$));
-    if (
-      !get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] ||
-      params.get("scope") !== "private-network"
-    ) {
+    if (params.get("scope") !== "private-network") {
       return;
     }
     if (

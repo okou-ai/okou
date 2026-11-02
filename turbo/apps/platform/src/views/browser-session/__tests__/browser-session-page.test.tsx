@@ -13,6 +13,7 @@ import {
 } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse } from "msw";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
@@ -71,6 +72,23 @@ function getButton(name: string): HTMLButtonElement {
     throw new Error(`Button not found: ${name}`);
   }
   return button;
+}
+
+function recordHeartbeatFailures(): unknown[] {
+  const failures: unknown[] = [];
+  const consoleError = vi.spyOn(console, "error");
+  const unexpected = consoleError.getMockImplementation();
+  if (!unexpected) {
+    throw new Error("Expected the shared console error guard");
+  }
+  consoleError.mockImplementation((...args: unknown[]) => {
+    if (args[0] === "[E][BrowserHeartbeat]") {
+      failures.push(args[2]);
+      return;
+    }
+    unexpected(...args);
+  });
+  return failures;
 }
 
 function menuRadio(menu: HTMLElement, name: string): HTMLElement {
@@ -697,7 +715,7 @@ function mockSharedViewer(liveUrl: string | null = null) {
     window: { instanceId: INSTANCE_ID, primaryWindowId: 0 },
   });
   const cdpUrl = "wss://cdp.browser-use.com/shared-viewer";
-  mockBrowserCdp(context, cdpUrl, {
+  const browser = mockBrowserCdp(context, cdpUrl, {
     streaming: true,
     targets: [
       {
@@ -721,8 +739,153 @@ function mockSharedViewer(liveUrl: string | null = null) {
       extension: TEST_BROWSER_EXTENSION,
     });
   });
-  return { session, cdpUrl };
+  return { session, cdpUrl, browser };
 }
+
+test.each([502, 503, "network", "gateway"] as const)(
+  "A mounted panel renews after a transient %s lease failure and remains usable",
+  async (failure) => {
+    const failures = recordHeartbeatFailures();
+    const { session, browser } = mockSharedViewer();
+    mockBrowserSession(session);
+    const first = context.mocks.deferred<void>();
+    const fail = context.mocks.deferred<void>();
+    const recovered = context.mocks.deferred<void>();
+    const renew = context.mocks.deferred<void>();
+    const following = context.mocks.deferred<void>();
+    const hold = context.mocks.deferred<void>();
+    let failed = false;
+    let repeated = false;
+    context.mocks.api(
+      browserContract.leaseByThread,
+      async ({ params, body, respond }) => {
+        expect(params.threadId).toBe(THREAD_ID);
+        expect(body).toStrictEqual({});
+        if (typeof failure === "number" && !failed) {
+          failed = true;
+          first.resolve();
+          await fail.promise;
+          return respond(failure, {
+            error: {
+              code: "BROWSER_USE_SHARED_OPERATION_FAILED",
+              message: "Managed Browser operation could not be confirmed",
+            },
+          });
+        }
+        if (failure === 503 && !repeated) {
+          repeated = true;
+          return respond(503, {
+            error: {
+              code: "BROWSER_USE_SHARED_OPERATION_FAILED",
+              message: "Managed Browser operation still cannot be confirmed",
+            },
+          });
+        }
+        if (!recovered.settled()) {
+          recovered.resolve();
+          await renew.promise;
+        } else {
+          following.resolve();
+          await hold.promise;
+        }
+        return respond(200, { browser: session });
+      },
+    );
+    if (failure === "network" || failure === "gateway") {
+      // Transport and gateway failures do not have an application error body.
+      context.mocks.http.post(
+        `*/api/chat-threads/${THREAD_ID}/browser/lease`,
+        async ({ signal }) => {
+          if (failed) {
+            return;
+          }
+          failed = true;
+          first.resolve();
+          await fail.promise;
+          signal.throwIfAborted();
+          return failure === "network"
+            ? HttpResponse.error()
+            : HttpResponse.html("<html><body>Bad Gateway</body></html>", {
+                status: 502,
+              });
+        },
+      );
+    }
+    await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+    await expectStreamingViewer();
+    await first.promise;
+    fail.resolve();
+    if (failure === 502) {
+      act(() => {
+        browser.disconnect({ code: 1006, reason: "temporary connection loss" });
+      });
+      await screen.findByText("Browser disconnected");
+      click(getButton("Reconnect"));
+      await expectStreamingViewer();
+    }
+    await recovered.promise;
+    await userEvent.click(screen.getByLabelText("Address"));
+    renew.resolve();
+    await following.promise;
+    expect(failures).toStrictEqual([
+      {
+        threadId: THREAD_ID,
+        status: failure === "gateway" ? 502 : failure,
+      },
+    ]);
+    await userEvent.keyboard("{End}x");
+    expect(screen.getByLabelText("Address")).toHaveFocus();
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://example.comx",
+    );
+    await expectStreamingViewer();
+  },
+);
+
+test.each([404, 409] as const)(
+  "An expired browser pauses after transient recovery receives %s",
+  async (status) => {
+    const failures = recordHeartbeatFailures();
+    const { session } = mockSharedViewer();
+    let currentSession = session;
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return respond(200, { browser: currentSession });
+    });
+    const entered = context.mocks.deferred<void>();
+    const fail = context.mocks.deferred<void>();
+    let failed = false;
+    context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+      if (!failed) {
+        failed = true;
+        entered.resolve();
+        await fail.promise;
+        return respond(503, {
+          error: {
+            code: "BROWSER_USE_CAPACITY",
+            message: "Provider unavailable",
+          },
+        });
+      }
+      currentSession = browserSession({
+        status: "suspended",
+        liveUrl: null,
+        idleExpiresAt: null,
+        suspendedAt: "2026-09-01T10:10:00.000Z",
+        suspensionReason: "idle",
+      });
+      return respond(status, {
+        error: { code: "BROWSER_NOT_FOUND", message: "Browser expired" },
+      });
+    });
+    await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+    await expectStreamingViewer();
+    await entered.promise;
+    fail.resolve();
+    await screen.findByText("Browser not live");
+    expect(failures).toHaveLength(1);
+    expect(getButton("Start browser")).toBeEnabled();
+  },
+);
 
 test.each(["https://viewer.example/live", null])(
   "Shared panels with provider liveUrl=%s keep their own chat alive and operate only its native window",
@@ -911,8 +1074,9 @@ test.each([200, 404, 409] as const)(
 );
 
 test.each(["legacy", "instance", "window"] as const)(
-  "A late %s heartbeat preserves the replacement window and continues renewal",
+  "A late %s heartbeat after transient recovery preserves the replacement window and continues renewal",
   async (previous) => {
+    const failures = recordHeartbeatFailures();
     const { session, cdpUrl } = mockSharedViewer();
     const initialSession = previous === "legacy" ? browserSession() : session;
     let currentSession = initialSession;
@@ -937,11 +1101,21 @@ test.each(["legacy", "instance", "window"] as const)(
     const release = context.mocks.deferred<void>();
     const next = context.mocks.deferred<void>();
     const holdNext = context.mocks.deferred<void>();
+    let failed = false;
     context.mocks.api(
       browserContract.leaseByThread,
       async ({ params, body, respond }) => {
         expect(params.threadId).toBe(THREAD_ID);
         expect(body).toStrictEqual({});
+        if (!failed) {
+          failed = true;
+          return respond(502, {
+            error: {
+              code: "BROWSER_USE_SHARED_OPERATION_FAILED",
+              message: "Managed Browser operation could not be confirmed",
+            },
+          });
+        }
         if (!entered.settled()) {
           entered.resolve();
           await release.promise;
@@ -994,6 +1168,7 @@ test.each(["legacy", "instance", "window"] as const)(
     await expectStreamingViewer();
     release.resolve();
     await next.promise;
+    expect(failures).toHaveLength(1);
     await userEvent.click(screen.getByLabelText("Address"));
     await userEvent.keyboard("{End}x");
     expect(screen.getByLabelText("Address")).toHaveFocus();
@@ -1005,7 +1180,8 @@ test.each(["legacy", "instance", "window"] as const)(
   },
 );
 
-test("Navigating to another chat cancels the old heartbeat and renews only the new chat", async () => {
+test("Navigating after transient recovery cancels the old heartbeat and renews only the new chat", async () => {
+  const failures = recordHeartbeatFailures();
   const { session, cdpUrl } = mockSharedViewer();
   const nextThreadId = "44444444-4444-4444-8444-444444444444";
   function sessionForThread(threadId: string): BrowserSession {
@@ -1033,10 +1209,20 @@ test("Navigating to another chat cancels the old heartbeat and renews only the n
   const next = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   const requestedThreads: string[] = [];
+  let failed = false;
   context.mocks.api(
     browserContract.leaseByThread,
     async ({ params, body, request, respond }) => {
       expect(body).toStrictEqual({});
+      if (!failed) {
+        failed = true;
+        return respond(503, {
+          error: {
+            code: "BROWSER_USE_CAPACITY",
+            message: "Provider unavailable",
+          },
+        });
+      }
       requestedThreads.push(params.threadId);
       if (params.threadId === THREAD_ID) {
         request.signal.addEventListener(
@@ -1063,6 +1249,7 @@ test("Navigating to another chat cancels the old heartbeat and renews only the n
   });
   await cancelled.promise;
   await next.promise;
+  expect(failures).toHaveLength(1);
   expect(requestedThreads).toStrictEqual([THREAD_ID, nextThreadId]);
   await expectStreamingViewer();
   expect(

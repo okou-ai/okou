@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.14.3...runner-provider-v0.14.4) (2026-11-02)
+
+## [0.14.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.14.2...runner-provider-v0.14.3) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
 ## [0.14.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.14.1...runner-provider-v0.14.2) (2026-11-02)
 
 ## [0.14.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.14.0...runner-provider-v0.14.1) (2026-11-02)

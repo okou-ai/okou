@@ -1,35 +1,24 @@
 import { useGet, useLoadable } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, buttonVariants, cn } from "@okouai/ui";
 import { CircleCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import {
-  connectTeamsAccount$,
   teamsConnectPageState$,
   type TeamsConnectPageState,
 } from "../../signals/okou-page/teams-connect-signals.ts";
 import { teamsConnectUrl } from "../../signals/okou-page/teams-connect-context.ts";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import {
   CenterText,
   ConnectCheckingState,
   ConnectErrorAlert,
-  ConnectSubmitButton,
   PageShell,
   SettingsBackLink,
-  connectErrorMessage,
 } from "./connect-page-shell.tsx";
 
 type PageProps = { readonly page: TeamsConnectPageState };
-type BindingProps = {
-  readonly connecting: boolean;
-  readonly onConnect: () => void;
-};
-
 export function TeamsConnectPage() {
   return (
     <PageShell>
@@ -42,29 +31,14 @@ function PageContent() {
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const status = useLoadable(teamsConnectPageState$);
-  const [binding, connect] = useLoadableSet(connectTeamsAccount$);
-  const signal = useGet(pageSignal$);
   const failure = t(($) => {
     return $.connectors.providerConnect.common.connectionFailed;
   });
   return (
     <>
       <ConnectErrorAlert error={params.get("error")} />
-      <ConnectErrorAlert
-        error={
-          binding.state === "hasError"
-            ? connectErrorMessage(binding.error, failure)
-            : null
-        }
-      />
       {status.state === "hasData" ? (
-        <ConnectionResult
-          page={status.data}
-          connecting={binding.state === "loading"}
-          onConnect={() => {
-            detach(connect(signal), Reason.DomCallback);
-          }}
-        />
+        <ConnectionResult page={status.data} />
       ) : status.state === "loading" ? (
         <ConnectCheckingState />
       ) : (
@@ -78,7 +52,7 @@ function PageContent() {
       <div className="flex w-full flex-col gap-3">
         {status.state === "hasData" && (
           <a
-            href={status.data.returnUrl}
+            href="https://teams.microsoft.com/"
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
@@ -106,11 +80,7 @@ function PageContent() {
   );
 }
 
-function ConnectionResult({
-  page,
-  connecting,
-  onConnect,
-}: PageProps & BindingProps) {
+function ConnectionResult({ page }: PageProps) {
   return (
     <>
       {page.success ? (
@@ -121,11 +91,7 @@ function ConnectionResult({
       <ConnectionHeading page={page} />
       <TargetNotice page={page} />
       <PermissionActions page={page} />
-      <BindingAndInstallActions
-        page={page}
-        connecting={connecting}
-        onConnect={onConnect}
-      />
+      <InstallAction page={page} />
       <AuthorizationHelp page={page} />
     </>
   );
@@ -135,31 +101,14 @@ function ConnectionHeading({ page }: PageProps) {
   const { t } = useTranslation();
   const { data } = page;
   if (page.success) {
-    const body =
-      data.workspaceIdentity !== true && data.botName
-        ? t(
-            ($) => {
-              return $.connectors.providerConnect.teams.successDescription;
-            },
-            {
-              team:
-                data.teamName ??
-                data.tenantName ??
-                t(($) => {
-                  return $.connectors.providerConnect.teams.providerName;
-                }),
-              botName: data.botName,
-            },
-          )
-        : t(($) => {
-            return $.connectors.providerConnect.teams.connectedDescription;
-          });
     return (
       <CenterText
         title={t(($) => {
           return $.connectors.providerConnect.teams.successTitle;
         })}
-        body={body}
+        body={t(($) => {
+          return $.connectors.providerConnect.teams.connectedDescription;
+        })}
       />
     );
   }
@@ -191,15 +140,6 @@ function ConnectionHeading({ page }: PageProps) {
 function TargetNotice({ page }: PageProps) {
   const { t } = useTranslation();
   switch (page.target) {
-    case "orgMismatch": {
-      return (
-        <ConnectErrorAlert
-          error={t(($) => {
-            return $.connectors.providerConnect.teams.orgMismatch;
-          })}
-        />
-      );
-    }
     case "invalid": {
       return (
         <ConnectErrorAlert
@@ -245,37 +185,18 @@ function PermissionActions({ page }: PageProps) {
   );
 }
 
-function BindingAndInstallActions({
-  page,
-  connecting,
-  onConnect,
-}: PageProps & BindingProps) {
+function InstallAction({ page }: PageProps) {
   const { data } = page;
-  const pending = data.pendingInstallation === true && !data.isInstalled;
-  const installMatches = page.target === "none" || page.target === "match";
-  return (
-    <>
-      {((pending && installMatches) ||
-        (data.workspaceIdentity === true && !data.isInstalled)) &&
-        data.isAdmin &&
-        data.installUrl && <TeamsInstallLink url={data.installUrl} />}
-      {!page.success && page.canBind && !pending && (
-        <ConnectSubmitButton connecting={connecting} onConnect={onConnect} />
-      )}
-    </>
-  );
+  return !data.isInstalled && data.isAdmin && data.installUrl ? (
+    <TeamsInstallLink url={data.installUrl} />
+  ) : null;
 }
 
 function AuthorizationHelp({ page }: PageProps) {
   const { t } = useTranslation();
   const { data } = page;
-  const pending = data.pendingInstallation === true && !data.isInstalled;
   const oauthUrl = teamsConnectUrl(data.connectUrl);
-  const canAuthorize =
-    !page.success &&
-    (data.workspaceIdentity === true || !pending || !data.installUrl) &&
-    oauthUrl &&
-    page.target !== "orgMismatch";
+  const canAuthorize = !page.success && oauthUrl;
   return (
     <>
       {canAuthorize && (
@@ -290,32 +211,13 @@ function AuthorizationHelp({ page }: PageProps) {
           })}
         </Button>
       )}
-      {data.workspaceIdentity !== true &&
-        !data.isInstalled &&
-        !data.isAdmin && (
-          <p
-            role="status"
-            className="text-center text-sm text-muted-foreground"
-          >
-            {t(($) => {
-              return $.works.teams.adminInstall;
-            })}
-          </p>
-        )}
-      {!page.success &&
-        data.isAdmin &&
-        !canAuthorize &&
-        !page.canBind &&
-        !data.installUrl && (
-          <p
-            role="status"
-            className="text-center text-sm text-muted-foreground"
-          >
-            {t(($) => {
-              return $.connectors.providerConnect.teams.unavailable;
-            })}
-          </p>
-        )}
+      {!page.success && data.isAdmin && !canAuthorize && !data.installUrl && (
+        <p role="status" className="text-center text-sm text-muted-foreground">
+          {t(($) => {
+            return $.connectors.providerConnect.teams.unavailable;
+          })}
+        </p>
+      )}
     </>
   );
 }

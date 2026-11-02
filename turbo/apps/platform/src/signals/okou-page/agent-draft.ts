@@ -1,6 +1,9 @@
+import { projectChatContract } from "@okouai/api-contracts/client/project-chat";
+import { projectsEnabled$ } from "../projects/projects.ts";
+import { projectComposerDraftSchema } from "@okouai/api-contracts/validators/project-message";
+import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed, state, type Command } from "ccstate";
 import { agentDraftContract } from "@okouai/api-contracts/client/agent-draft";
-import { agentDraftResponseSchema } from "@okouai/api-contracts/validators/agent-draft";
 import type {
   PersistedAttachment,
   UserMessageDocument,
@@ -67,17 +70,33 @@ function createAgentDraftSync(agentId: string, draft: DraftSignals) {
   const patchDraft$ = command(
     async ({ get }, payload: DraftPersistencePayload, signal: AbortSignal) => {
       const client = get(apiClient$)(agentDraftContract);
-      await accept(
-        client.patch({
-          params: { id: agentId },
-          body: {
-            draftUserMessage: payload.userMessage,
-            draftAttachments: payload.attachments,
-          },
-          fetchOptions: { signal },
-        }),
-        [200, 204],
-      );
+      if (get(projectsEnabled$)) {
+        await accept(
+          get(apiClient$)(projectChatContract).saveAgentDraft({
+            params: { id: agentId },
+            body: {
+              draftUserMessage: payload.userMessage,
+              draftAttachments: payload.attachments,
+            },
+            fetchOptions: { signal },
+          }),
+          [204],
+          signal,
+        );
+      } else {
+        await accept(
+          client.patch({
+            params: { id: agentId },
+            body: composerDraftSchema.parse({
+              draftUserMessage: payload.userMessage,
+              draftAttachments: payload.attachments,
+            }),
+            fetchOptions: { signal },
+          }),
+          [204],
+          signal,
+        );
+      }
     },
   );
 
@@ -217,12 +236,19 @@ function createAgentDraftLoad(
   const revision$ = state(0);
   const serverDraft$ = computed(async (get) => {
     get(revision$);
-    const result = await accept(
-      get(apiClient$)(agentDraftContract).get({ params: { id: agentId } }),
-      [200],
-    );
+    const result = get(projectsEnabled$)
+      ? await accept(
+          get(apiClient$)(projectChatContract).agentDraft({
+            params: { id: agentId },
+          }),
+          [200],
+        )
+      : await accept(
+          get(apiClient$)(agentDraftContract).get({ params: { id: agentId } }),
+          [200],
+        );
     return userMessageAgentDraftState(
-      agentDraftResponseSchema.parse(result.body),
+      projectComposerDraftSchema.parse(result.body),
     );
   });
   const load$ = command(async ({ get, set }, signal: AbortSignal) => {

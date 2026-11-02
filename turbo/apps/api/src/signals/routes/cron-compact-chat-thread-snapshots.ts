@@ -1,4 +1,5 @@
 import { cronCompactChatThreadSnapshotsContract } from "@okouai/api-contracts/contracts/cron";
+import { compactProjectSnapshots$ } from "../services/project-snapshot.service";
 import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
@@ -12,6 +13,7 @@ const compactChatThreadSnapshotsRoute$ = command(
     }
 
     const result = await set(compactChatThreadSnapshots$, signal);
+    await set(compactProjectSnapshots$, signal);
     signal.throwIfAborted();
     return {
       status: 200 as const,

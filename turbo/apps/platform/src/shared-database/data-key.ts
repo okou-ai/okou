@@ -1,5 +1,6 @@
+import { projectEventQueryResultSchema } from "@okouai/api-contracts/validators/projects";
+import { projectAwareChatThreadEventSchema as chatThreadEventSchema } from "@okouai/api-contracts/contracts/project-readers";
 import {
-  chatThreadEventSchema,
   chatThreadSnapshotProjectionSchema,
   indicatorsSchema,
 } from "@okouai/api-contracts/validators/chat-threads";
@@ -39,12 +40,14 @@ export const chatThreadEventDataKeySchema = object({
 export const sharedDatabaseDataKeySchema = discriminatedUnion("kind", [
   chatEventDataKeySchema,
   chatThreadEventDataKeySchema,
+  object({ kind: literal("project-event") }).strict(),
 ]);
 
 export type ChatEventDataKey = zInfer<typeof chatEventDataKeySchema>;
 export type ChatThreadEventDataKey = zInfer<
   typeof chatThreadEventDataKeySchema
 >;
+export type ProjectEventDataKey = { readonly kind: "project-event" };
 export type SharedDatabaseDataKey = zInfer<typeof sharedDatabaseDataKeySchema>;
 
 export type ScopedChatEventDataKey = ChatEventDataKey &
@@ -52,7 +55,9 @@ export type ScopedChatEventDataKey = ChatEventDataKey &
 export type ScopedChatThreadEventDataKey = ChatThreadEventDataKey &
   Pick<SharedDatabaseIdentity, "userId" | "orgId">;
 export type ScopedSharedDatabaseDataKey =
-  ScopedChatEventDataKey | ScopedChatThreadEventDataKey;
+  | ScopedChatEventDataKey
+  | ScopedChatThreadEventDataKey
+  | (ProjectEventDataKey & SharedDatabaseIdentity);
 
 const sharedDatabaseConsistencySchema = zEnum(["cache-only", "catch-up"]);
 
@@ -94,6 +99,10 @@ export type ChatThreadEventQueryResult = zInfer<
 >;
 
 interface SharedDatabaseDatasetMap {
+  readonly "project-event": {
+    readonly dataKey: ProjectEventDataKey;
+    readonly result: zInfer<typeof projectEventQueryResultSchema>;
+  };
   readonly "chat-event": {
     readonly dataKey: ChatEventDataKey;
     readonly result: ChatEventRow[];
@@ -110,6 +119,11 @@ export type SharedDatabaseQueryResult<TKey extends SharedDatabaseDataKey> =
 export function parseSharedDatabaseQueryResult<
   TKey extends SharedDatabaseDataKey,
 >(dataKey: TKey, value: unknown): SharedDatabaseQueryResult<TKey> {
+  if (dataKey.kind === "project-event") {
+    return projectEventQueryResultSchema.parse(
+      value,
+    ) as SharedDatabaseQueryResult<TKey>;
+  }
   if (dataKey.kind === "chat-event") {
     // The same-build Worker decodes cached, snapshot, and row-page rows before
     // returning them; the port only clones them.

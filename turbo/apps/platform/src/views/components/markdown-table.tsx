@@ -21,6 +21,8 @@ import {
   DropdownMenuTrigger,
 } from "@okouai/ui";
 import type { Element } from "hast";
+import { formatAppNumber } from "../../i18n/format.ts";
+import { getMarkdownTableDimensions } from "../../lib/markdown-table-dimensions.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
@@ -63,6 +65,8 @@ function ExportableTable({
   const connection = useGet(markdownTableConnection$);
   const [operation, exportTable] = useLoadableSet(exportMarkdownTable$);
   const pending = operation.state === "loading";
+  const { rows: rowCount, columns: columnCount } =
+    getMarkdownTableDimensions(node);
   const run = (mode: "excel" | "original" | "google") => {
     detach(
       exportTable(node, mode, signal),
@@ -72,7 +76,15 @@ function ExportableTable({
   };
   return (
     <Card className="my-3 min-w-0 rounded-3xl p-2">
-      <div data-markdown-ui className="mb-1 flex justify-end">
+      <div className="overflow-x-auto rounded-2xl">
+        <table {...props} className={cn("m-0! min-w-max border-0!", className)}>
+          {children}
+        </table>
+      </div>
+      <div
+        data-markdown-ui
+        className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-0.5"
+      >
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -81,6 +93,7 @@ function ExportableTable({
                 size="sm"
                 disabled={pending || connection?.params.table === node}
                 aria-busy={pending}
+                className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:h-11"
               />
             }
           >
@@ -94,8 +107,9 @@ function ExportableTable({
                 })}
             <ChevronDown />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="start">
             <DropdownMenuItem
+              className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:min-h-11"
               onClick={() => {
                 return run("excel");
               }}
@@ -106,6 +120,7 @@ function ExportableTable({
               })}
             </DropdownMenuItem>
             <DropdownMenuItem
+              className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:min-h-11"
               disabled={!threadId}
               onClick={() => {
                 return run("original");
@@ -117,6 +132,7 @@ function ExportableTable({
               })}
             </DropdownMenuItem>
             <DropdownMenuItem
+              className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:min-h-11"
               disabled={!threadId}
               onClick={() => {
                 return run("google");
@@ -129,11 +145,24 @@ function ExportableTable({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-      <div className="overflow-x-auto rounded-2xl">
-        <table {...props} className={cn("m-0! min-w-max border-0!", className)}>
-          {children}
-        </table>
+        <p className="m-0 ml-auto text-right text-xs text-muted-foreground">
+          {t(
+            ($) => {
+              return $.markdown.tableExport.rows;
+            },
+            { count: rowCount, formattedCount: formatAppNumber(rowCount) },
+          )}
+          {" · "}
+          {t(
+            ($) => {
+              return $.markdown.tableExport.columns;
+            },
+            {
+              count: columnCount,
+              formattedCount: formatAppNumber(columnCount),
+            },
+          )}
+        </p>
       </div>
       <TableGoogleConnectionDialog node={node} />
     </Card>

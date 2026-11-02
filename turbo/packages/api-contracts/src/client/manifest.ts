@@ -577,6 +577,14 @@ export const clientDescriptorManifest = [
     contracts: ["proactiveSuggestionsContract"],
   },
   {
+    module: "project-chat",
+    contracts: ["projectChatContract"],
+  },
+  {
+    module: "projects",
+    contracts: ["projectsContract"],
+  },
+  {
     module: "push-subscriptions",
     contracts: ["pushSubscriptionsContract"],
   },

@@ -41,6 +41,7 @@ const cursorChatThreadEvent = alias(
 const pageChatThreadEvent = alias(chatThreadEvents, "page_chat_thread_event");
 
 interface ChatThreadEventAppend {
+  readonly projectId?: string | null;
   readonly kind: ChatThreadEventKind;
   readonly userId: string;
   readonly orgId?: string | null;
@@ -141,7 +142,7 @@ export function chatThreadEventInsertPlan(
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + ${eventCount}
       RETURNING last_seq_id`;
   const insertion = sql`INSERT INTO ${chatThreadEvents} (
-      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id, project_id,
       reassigned_agent_id, title,
       pin_order, muted, hidden, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
@@ -149,7 +150,7 @@ export function chatThreadEventInsertPlan(
       ${event.id},
       ${args.userId}, ${orgId}, ${event.sequence},
       ${chatThreadId}::uuid, ${event.kind},
-      ${agentId}::uuid, ${args.reassignedAgentId ?? null}::uuid,
+      ${agentId}::uuid, ${args.projectId ?? null}::uuid, ${args.reassignedAgentId ?? null}::uuid,
       ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null}, ${args.hidden ?? null},
       ${args.selectedModel ?? null},
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
@@ -249,6 +250,7 @@ type ChatThreadEventRow = {
   readonly id: string;
   readonly seqId: number;
   readonly kind: ChatThreadEventKind;
+  readonly projectId: string | null;
   readonly chatThreadId: string;
   readonly agentId: string | null;
   readonly reassignedAgentId: string | null;
@@ -269,6 +271,7 @@ const chatThreadEventSelection = Object.freeze({
   id: chatThreadEvents.id,
   seqId: chatThreadEvents.seqId,
   kind: chatThreadEvents.kind,
+  projectId: chatThreadEvents.projectId,
   chatThreadId: chatThreadEvents.chatThreadId,
   agentId: chatThreadEvents.agentId,
   reassignedAgentId: chatThreadEvents.reassignedAgentId,
@@ -289,6 +292,7 @@ const pageChatThreadEventSelection = Object.freeze({
   id: pageChatThreadEvent.id,
   seqId: pageChatThreadEvent.seqId,
   kind: pageChatThreadEvent.kind,
+  projectId: pageChatThreadEvent.projectId,
   chatThreadId: pageChatThreadEvent.chatThreadId,
   agentId: pageChatThreadEvent.agentId,
   reassignedAgentId: pageChatThreadEvent.reassignedAgentId,
@@ -323,7 +327,14 @@ function toApiChatThreadEvent(
   return {
     id: row.id,
     seqId: row.seqId,
-    kind: row.kind,
+    // Release-1 response enum stays compatible with installed native readers.
+    // Remove this bridge in #44591 after prepared-reader floors and API drain.
+    kind: row.kind === "project_updated" ? "sort_touched" : row.kind,
+    ...(row.kind === "project_updated"
+      ? { projectMembershipUpdated: true, projectId: row.projectId }
+      : row.kind === "created"
+        ? { projectId: row.projectId }
+        : {}),
     chatThreadId: row.chatThreadId,
     agentId: row.agentId,
     ...(row.reassignedAgentId === null
