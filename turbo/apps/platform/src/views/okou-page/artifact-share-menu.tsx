@@ -1,6 +1,4 @@
 import { useLoadableSet } from "ccstate-react/experimental";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 // The shared `Radio` is the 16px circle meant to sit beside a label. Here the
@@ -359,8 +357,6 @@ function ShareSessionMenu({
   const details = useLastResolved(session.details$);
   const [audienceOperation, change] = useLoadableSet(session.change$);
   const requestedOpen = useGet(session.open$);
-  const quickActions =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions];
   const signal = useGet(session.signal$);
   const open = useSet(session.show$);
   const close = useSet(session.close$);
@@ -378,21 +374,15 @@ function ShareSessionMenu({
   return (
     <Popover
       open={requestedOpen && !recipient}
-      onOpenChange={(next, details) => {
+      onOpenChange={(next) => {
         if (next) {
-          detach(
-            open(details.reason !== "trigger-hover", signal),
-            Reason.DomCallback,
-          );
+          detach(open(signal), Reason.DomCallback);
         } else {
           close();
         }
       }}
     >
       <PopoverTrigger
-        openOnHover={quickActions && !recipient}
-        delay={100}
-        closeDelay={150}
         aria-label={ariaLabel ?? title}
         render={<Button variant="quiet" size="icon-sm" className={className} />}
       >
