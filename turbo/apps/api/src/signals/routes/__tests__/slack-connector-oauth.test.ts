@@ -1281,6 +1281,10 @@ test.each(callbackAuthenticationModes)(
 );
 
 test("reconnecting an awarded workspace and replaying the reward worker preserve its single permanent award", async () => {
+  // The operator scans pending claims across tenants, so select isolation first.
+  const operator = (
+    await setupApp({ context, routes: getStartedRoutes, isolatePg: true })
+  )(cronGetStartedContract);
   const current = actor();
   await complete(await startInstall(), current);
   const before = await readGetStartedStatus(context, current);
@@ -1298,9 +1302,6 @@ test("reconnecting an awarded workspace and replaying the reward worker preserve
     throw new Error("Expected a reconnect link");
   }
   await complete(await start(reconnect.connectUrl), current);
-  const operator = setupApp({ context, routes: getStartedRoutes })(
-    cronGetStartedContract,
-  );
   await accept(
     operator.process({ headers: { authorization: "Bearer test-cron-secret" } }),
     [200],
