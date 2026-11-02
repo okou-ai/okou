@@ -330,6 +330,40 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
 
 const createAgentBody$ = bodyResultOf(agentsMainContract.create);
 
+function createdAgentSelection() {
+  return {
+    agentId: agents.id,
+    defaultAgentId: orgMetadata.defaultAgentId,
+    owner: agents.owner,
+    displayName: agents.displayName,
+    description: agents.description,
+    sound: agents.sound,
+    avatarUrl: agents.avatarUrl,
+    visibility: agents.visibility,
+  };
+}
+
+const committedClientAgent$ = computed(async (get) => {
+  const body = await get(createAgentBody$);
+  if (!body.ok || body.data.clientAgentId === undefined) {
+    return undefined;
+  }
+  const auth = get(organizationAuthContext$);
+  const [agent] = await get(db$)
+    .select(createdAgentSelection())
+    .from(agents)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .where(
+      and(
+        eq(agents.id, body.data.clientAgentId),
+        eq(agents.orgId, auth.orgId),
+        eq(agents.owner, auth.userId),
+      ),
+    )
+    .limit(1);
+  return agent ? agentResponse(agent) : undefined;
+});
+
 const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const body = await get(createAgentBody$);
@@ -338,10 +372,18 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
+  const committed = await get(committedClientAgent$);
+  signal.throwIfAborted();
+  if (committed) {
+    return { status: 201 as const, body: committed };
+  }
+
   const writeDb = set(writeDb$);
   const visibility = body.data.visibility ?? "private";
 
-  if (visibility === "public") {
+  // A client-identified replay may commit after the read above. Let its
+  // conditional insert and final read resolve that race, even at the limit.
+  if (visibility === "public" && body.data.clientAgentId === undefined) {
     const countPlan = publicAgentCountReadPlan(auth.orgId);
     const [publicAgentCount] = await writeDb
       .select(countPlan.selection)
@@ -353,7 +395,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
   }
 
-  const agentId = randomUUID();
+  const agentId = body.data.clientAgentId ?? randomUUID();
   const avatarUrl =
     body.data.avatarUrl === undefined ? randomAvatarUrl() : body.data.avatarUrl;
 
@@ -398,36 +440,42 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           .from(publicAgentCount)
           .where(lt(publicAgentCount.value, PUBLIC_AGENT_LIMIT)),
       )
+      .onConflictDoNothing({ target: agents.id })
       .returning({ id: agents.id });
     signal.throwIfAborted();
     blocked = inserted.length === 0;
   } else {
-    await writeDb.insert(agents).values(values);
+    await writeDb
+      .insert(agents)
+      .values(values)
+      .onConflictDoNothing({ target: agents.id });
   }
   signal.throwIfAborted();
 
-  if (blocked) {
-    return publicAgentCreateLimitError();
-  }
-
   const [agent] = await writeDb
-    .select({
-      agentId: agents.id,
-      defaultAgentId: orgMetadata.defaultAgentId,
-      owner: agents.owner,
-      displayName: agents.displayName,
-      description: agents.description,
-      sound: agents.sound,
-      avatarUrl: agents.avatarUrl,
-      visibility: agents.visibility,
-    })
+    .select(createdAgentSelection())
     .from(agents)
     .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-    .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, agentId)))
+    .where(
+      and(
+        eq(agents.orgId, auth.orgId),
+        eq(agents.owner, auth.userId),
+        eq(agents.id, agentId),
+      ),
+    )
     .limit(1);
   signal.throwIfAborted();
 
   if (!agent) {
+    if (body.data.clientAgentId !== undefined) {
+      // A conflicting identity must not disclose another owner's Agent.
+      return conflict(
+        "Cannot create an agent with this identity or visibility",
+      );
+    }
+    if (blocked) {
+      return publicAgentCreateLimitError();
+    }
     throw new Error(`Created Agent not found: ${agentId}`);
   }
 

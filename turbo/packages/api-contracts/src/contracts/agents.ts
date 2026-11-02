@@ -79,7 +79,11 @@ export const agentsMainContract = c.router({
     method: "POST",
     path: "/api/agents",
     headers: authHeadersSchema,
-    body: agentRequestSchema,
+    body: agentRequestSchema.extend({
+      // Reusing a client identity returns the owner's current Agent without
+      // applying the repeated request's metadata.
+      clientAgentId: uuid().optional(),
+    }),
     responses: {
       201: agentResponseSchema,
       400: apiErrorSchema,
