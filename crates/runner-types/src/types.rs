@@ -66,9 +66,10 @@ impl Job {
 
 /// Normalized inputs consumed by API-claimed and locally submitted jobs.
 ///
-/// API claim responses deserialize directly into this type. It intentionally models only the
-/// runner-owned subset of the response, and unknown top-level fields are ignored for forward
-/// compatibility. The canonical producer schema is
+/// The API provider normalizes claim publication inputs into this type before execution.
+/// Deserialization handles shared scalar fields and ignores unknown fields for forward
+/// compatibility; Runner-only application metadata is never decoded from API JSON.
+/// The canonical producer schema is
 /// `runnersJobClaimContract.claim.responses[200]` in
 /// `turbo/packages/api-contracts/src/contracts/runners.ts`.
 #[derive(Debug, Deserialize)]
@@ -80,8 +81,9 @@ pub struct ExecutionContext {
     pub prompt: String,
     #[serde(default)]
     pub append_system_prompt: Option<String>,
-    /// Immutable packages selected by the API, empty for agentless/local jobs.
-    pub content_bundles: crate::content_bundle::ClaimedContentBundles,
+    /// Managed-file application metadata supplied by the claim adapter.
+    #[serde(skip)]
+    pub instruction_file: Option<crate::storage_manifest::InstructionFile>,
     // Vars are passed to the proxy registry for auth header template resolution.
     #[serde(default)]
     pub vars: Option<HashMap<String, String>>,
@@ -1679,6 +1681,14 @@ pub struct ConnectorRuntimeSyncBatchResponse {
 }
 
 impl ExecutionContext {
+    /// Snapshot normalized Storage inputs for sandbox and Home reconciliation.
+    pub fn storage_fingerprints(&self) -> crate::storage_fingerprints::StorageFingerprints {
+        self.storage_manifest
+            .as_ref()
+            .map(crate::storage_fingerprints::StorageFingerprints::from_manifest)
+            .unwrap_or_default()
+    }
+
     pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
     }

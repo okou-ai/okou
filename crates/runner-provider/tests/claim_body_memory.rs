@@ -6,6 +6,7 @@ use runner_provider::{
     ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, HttpClient, HttpClientConfig,
     JobCandidate, JobProvider, RunCancellationRegistry,
 };
+use runner_types::storage_manifest::{InstructionFile, StorageEntry};
 use runner_types::types::ExecutionContext;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io;
@@ -92,12 +93,46 @@ fn claim_body(value_bytes: usize) -> TestResult<(Vec<u8>, ExecutionContext)> {
         );
     }
     let bytes = serde_json::to_vec(&context)?;
-    let expected = serde_json::from_slice(&bytes)?;
+    let mut expected: ExecutionContext = serde_json::from_slice(&bytes)?;
+    // The public provider now returns normalized Storage inputs. Keep an
+    // independent oracle for this canonical fixture outside the measured IO;
+    // preserve the aggregate/fragmented allocation bounds below unchanged.
+    let manifest = expected
+        .storage_manifest
+        .as_mut()
+        .ok_or_else(|| io::Error::other("canonical Storage manifest missing"))?;
+    for (name, mount, hash, size) in [
+        (
+            "workflow",
+            "/home/user/.codex/skills/fixture-skill",
+            "b".repeat(64),
+            256,
+        ),
+        (
+            "instruction",
+            "/home/user/.vm0/agent-instructions/codex",
+            "a".repeat(64),
+            128,
+        ),
+    ] {
+        manifest.storages.push(StorageEntry {
+            name: name.into(),
+            mount_path: mount.into(),
+            vas_storage_name: name.into(),
+            archive_url: format!("https://storage.fixture.invalid/bundles/v1/{hash}.tar.gz"),
+            vas_version_id: hash,
+            archive_size: Some(size),
+        });
+    }
+    expected.instruction_file = Some(InstructionFile {
+        storage_mount: "/home/user/.vm0/agent-instructions/codex".into(),
+    });
     Ok((bytes, expected))
 }
 
 fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContext) -> TestResult {
     assert_eq!(actual.storage_manifest, expected.storage_manifest);
+    assert_eq!(actual.instruction_file, expected.instruction_file);
     macro_rules! same_fields {
         ($($field:ident),+ $(,)?) => {
             $(assert_eq!(

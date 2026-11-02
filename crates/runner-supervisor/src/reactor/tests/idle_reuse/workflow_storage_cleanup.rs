@@ -6,7 +6,7 @@ use super::super::support::{
 use sha2::{Digest, Sha256};
 
 #[tokio::test]
-async fn content_bundle_paths_are_cleaned_after_finalization_and_exact_reuse() {
+async fn workflow_storage_paths_are_cleaned_after_finalization_and_exact_reuse() {
     let api = httpmock::MockServer::start_async().await;
     let first_run = RunId::new_v4();
     let next_run = RunId::new_v4();
@@ -46,15 +46,19 @@ async fn content_bundle_paths_are_cleaned_after_finalization_and_exact_reuse() {
     std::fs::write(cache.join("archive.tar.gz"), &archive).unwrap();
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let runner = tokio::spawn(run(config));
-    let reuse_key = "content-bundle-cleanup";
+    let reuse_key = "workflow-storage-cleanup";
     let mut first = context_with_session(first_run, reuse_key);
-    first.content_bundles = serde_json::from_value(serde_json::json!({
-        "format": "tar-gzip-v1", "skills": [{
-            "sha256": hash, "archiveBytes": archive.len(),
-            "downloadUrl": "https://unreachable.invalid/already-cached", "mountPath": mount,
+    first.storage_manifest = Some(runner_types::storage_manifest::StorageManifest {
+        storages: vec![runner_types::storage_manifest::StorageEntry {
+            name: "workflow".into(),
+            mount_path: mount.into(),
+            vas_storage_name: "workflow".into(),
+            vas_version_id: hash,
+            archive_size: Some(archive.len() as u64),
+            archive_url: "https://unreachable.invalid/already-cached".into(),
         }],
-    }))
-    .unwrap();
+        artifacts: Vec::new(),
+    });
     push_job(&env, first_run, "vm0/default", Some(first));
     let completed = env
         .handle

@@ -295,4 +295,4 @@ fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {
 mod tests;
 
 mod agent_instructions;
-pub use agent_instructions::apply_agent_instructions;
+pub use agent_instructions::{apply_agent_instructions, check_agent_instructions};

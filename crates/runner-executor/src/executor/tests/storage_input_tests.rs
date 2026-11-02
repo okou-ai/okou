@@ -5,13 +5,13 @@ use std::{
 };
 
 use guest_contracts::{
-    agent_instructions::{SOURCE_FILENAME, STORAGE_DIR},
+    agent_instructions::{InstructionApplication, SOURCE_FILENAME, instruction_paths},
     storage_files,
     storage_manifest::Manifest,
 };
 use runner_types::{
-    content_bundle::{INSTRUCTION_BUNDLE_STORAGE_NAME, WORKFLOW_BUNDLE_STORAGE_NAME},
-    types::{ExecutionContext, SandboxReuseResult},
+    storage_manifest::{INSTRUCTION_STORAGE_NAME, WORKFLOW_STORAGE_NAME},
+    types::SandboxReuseResult,
 };
 use sandbox::SandboxId;
 use sandbox_mock::{MockSandboxFactory, MockSandboxOverrides};
@@ -20,8 +20,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::super::{NewSandboxDispatch, execute_job, execute_job_reuse};
 use super::support::{
-    api_artifact, default_params, make_reusable_idle_sandbox_with_fingerprints, minimal_context,
-    seed_home_image_cache_with_fingerprints, test_executor_config_with_startup_api,
+    default_params, instruction_context, make_reusable_idle_sandbox_with_fingerprints,
+    minimal_context, seed_home_image_cache_with_fingerprints,
+    test_executor_config_with_startup_api, workflow_context as context,
 };
 
 fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
@@ -35,19 +36,6 @@ fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
         tar.append_data(&mut header, path, *content).unwrap();
     }
     tar.into_inner().unwrap().finish().unwrap()
-}
-
-fn context(hash: &str, bytes: u64, mount: &str, suffix: &str) -> ExecutionContext {
-    let mut context = minimal_context();
-    context.content_bundles = serde_json::from_value(serde_json::json!({
-        "format": "tar-gzip-v1", "skills": [{
-            "sha256": hash, "archiveBytes": bytes,
-            "downloadUrl": format!("https://unreachable.invalid/{suffix}"),
-            "mountPath": mount,
-        }],
-    }))
-    .unwrap();
-    context
 }
 
 fn guest_path(root: &Path, path: &str) -> PathBuf {
@@ -90,6 +78,12 @@ fn apply_guest_storage(
         for path in &mut manifest.cleanup_paths {
             *path = guest_path(root, path).to_str().unwrap().into();
         }
+        for cleanup in &mut manifest.instruction_cleanups {
+            cleanup.mount_path = guest_path(root, &cleanup.mount_path)
+                .to_str()
+                .unwrap()
+                .into();
+        }
         for group in &mut files {
             group.mount_path = guest_path(root, &group.mount_path).to_str().unwrap().into();
         }
@@ -112,152 +106,182 @@ fn apply_guest_storage(
     }
 }
 
-fn apply_guest_instructions(
-    overrides: &MockSandboxOverrides,
-    root: &Path,
-    runtime: &str,
-    first_exec: usize,
-) {
+fn apply_guest_instructions(overrides: &MockSandboxOverrides, root: &Path, first_exec: usize) {
     for call in overrides.exec_calls().iter().skip(first_exec) {
         if call.cmd.ends_with(" --instructions-stdin") {
             assert!(guest_storage_apply::apply_agent_instructions(
                 &guest_path(root, "/home/user"),
-                &guest_path(root, runtime),
                 call.stdin_bytes.as_deref().unwrap(),
             ));
         }
     }
 }
 
+fn instruction_check(overrides: &MockSandboxOverrides, root: &Path, framework: &str) {
+    let metadata = serde_json::to_vec(&InstructionApplication {
+        framework: framework.into(),
+    })
+    .unwrap();
+    let checked =
+        guest_storage_apply::check_agent_instructions(&guest_path(root, "/home/user"), &metadata);
+    let result = match checked {
+        Ok(present) => {
+            sandbox::ExecResult::new(0, serde_json::to_vec(&present).unwrap(), Vec::new())
+        }
+        Err(_) => sandbox::ExecResult::new(1, Vec::new(), Vec::new()),
+    };
+    overrides.add_exec_result_matcher(" --instructions-check-stdin", result);
+}
+
 #[tokio::test]
-async fn instruction_storage_reapplies_exact_cached_bytes_on_every_run() {
-    for decoded in [false, true] {
-        let directory = tempfile::tempdir().unwrap();
-        let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
-        let guest = tempfile::tempdir().unwrap();
-        let published: [&[u8]; 3] = [
-            "\u{feff} exact\r\n目录 🦉\n".as_bytes(),
-            "changed instructions\n".as_bytes(),
-            b"",
-        ];
-        let archives = published
-            .iter()
-            .map(|content| archive(&[(SOURCE_FILENAME, *content)]))
-            .collect::<Vec<_>>();
-        let hashes = archives
-            .iter()
-            .map(|bytes| hex::encode(Sha256::digest(bytes)))
-            .collect::<Vec<_>>();
-        for (bytes, hash) in archives.iter().zip(&hashes) {
-            let cache = config
-                .home
-                .storage_cache_dir(INSTRUCTION_BUNDLE_STORAGE_NAME, hash);
-            fs::create_dir_all(&cache).unwrap();
-            fs::write(cache.join("archive.tar.gz"), bytes).unwrap();
-            drop(
-                runner_host::lock::open_lock_file(
-                    &config
-                        .home
-                        .storage_lock(INSTRUCTION_BUNDLE_STORAGE_NAME, hash),
-                )
-                .unwrap(),
-            );
-            if decoded {
-                config
-                    .decoded_cache
-                    .warm_from_archive(INSTRUCTION_BUNDLE_STORAGE_NAME, hash)
-                    .await
-                    .unwrap();
-                assert!(
+async fn instruction_storage_reuses_applied_files_and_refreshes_changed_versions() {
+    for (framework, target_file) in [
+        ("claude-code", ".claude/CLAUDE.md"),
+        ("codex", ".codex/AGENTS.md"),
+        ("pi", ".pi/agent/AGENTS.md"),
+    ] {
+        for decoded in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+            let guest = tempfile::tempdir().unwrap();
+            let published: [&[u8]; 3] = [
+                "\u{feff} exact\r\n目录 🦉\n".as_bytes(),
+                "changed instructions\n".as_bytes(),
+                b"",
+            ];
+            let archives = published
+                .iter()
+                .map(|content| archive(&[(SOURCE_FILENAME, *content)]))
+                .collect::<Vec<_>>();
+            let hashes = archives
+                .iter()
+                .map(|bytes| hex::encode(Sha256::digest(bytes)))
+                .collect::<Vec<_>>();
+            for (bytes, hash) in archives.iter().zip(&hashes) {
+                let cache = config
+                    .home
+                    .storage_cache_dir(INSTRUCTION_STORAGE_NAME, hash);
+                fs::create_dir_all(&cache).unwrap();
+                fs::write(cache.join("archive.tar.gz"), bytes).unwrap();
+                drop(
+                    runner_host::lock::open_lock_file(
+                        &config.home.storage_lock(INSTRUCTION_STORAGE_NAME, hash),
+                    )
+                    .unwrap(),
+                );
+                if decoded {
                     config
                         .decoded_cache
-                        .get_ready(INSTRUCTION_BUNDLE_STORAGE_NAME, hash)
+                        .warm_from_archive(INSTRUCTION_STORAGE_NAME, hash)
                         .await
-                        .unwrap()
-                        .is_some()
+                        .unwrap();
+                    assert!(
+                        config
+                            .decoded_cache
+                            .get_ready(INSTRUCTION_STORAGE_NAME, hash)
+                            .await
+                            .unwrap()
+                            .is_some()
+                    );
+                    fs::remove_file(cache.join("archive.tar.gz")).unwrap();
+                }
+            }
+            let target = guest_path(guest.path(), &format!("/home/user/{target_file}"));
+            let history = target.parent().unwrap().join("native-history");
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::write(&history, b"preserved").unwrap();
+            let overrides = Arc::new(MockSandboxOverrides::new());
+            let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+            let mut idle = None;
+            let mut leases = Vec::new();
+            for (step, version) in [0, 0, 0, 1, 2].into_iter().enumerate() {
+                fs::write(&target, b"Agent local edit").unwrap();
+                if step == 2 {
+                    fs::remove_file(&target).unwrap();
+                }
+                let mut current = instruction_context(
+                    &hashes[version],
+                    archives[version].len() as u64,
+                    framework,
+                    "instructions",
                 );
-                fs::remove_file(cache.join("archive.tar.gz")).unwrap();
-            }
-        }
-        let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
-        let history = target.parent().unwrap().join("native-history");
-        fs::create_dir_all(target.parent().unwrap()).unwrap();
-        fs::write(&history, b"preserved").unwrap();
-        let overrides = Arc::new(MockSandboxOverrides::new());
-        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
-        let mut idle = None;
-        let mut leases = Vec::new();
-        for version in [0, 0, 1, 2] {
-            fs::write(&target, b"Agent local edit").unwrap();
-            let mut current = minimal_context();
-            current.run_id = runner_types::ids::RunId::new_v4();
-            current.cli_agent_type = "codex".into();
-            current.content_bundles = serde_json::from_value(serde_json::json!({
-                "format": "tar-gzip-v1",
-                "instructions": {
-                    "sha256": hashes[version],
-                    "archiveBytes": archives[version].len(),
-                    "downloadUrl": format!("https://unreachable.invalid/instructions/{}", current.run_id),
-                },
-                "skills": [],
-            })).unwrap();
-            let runtime = super::super::guest_runtime_dir(current.run_id).unwrap();
-            let first_storage = overrides.storage_manifest_calls().len();
-            let first_exec = overrides.exec_calls().len();
-            let (mut outcome, _) = if let Some(sandbox) = idle.take() {
-                execute_job_reuse(
-                    sandbox,
-                    current,
-                    &config,
-                    &default_params(),
-                    CancellationToken::new(),
+                current.run_id = runner_types::ids::RunId::new_v4();
+                if matches!(step, 1 | 2) {
+                    instruction_check(&overrides, guest.path(), framework);
+                }
+                let first_storage = overrides.storage_manifest_calls().len();
+                let first_exec = overrides.exec_calls().len();
+                let (mut outcome, _) = if let Some(sandbox) = idle.take() {
+                    execute_job_reuse(
+                        sandbox,
+                        current,
+                        &config,
+                        &default_params(),
+                        CancellationToken::new(),
+                    )
+                    .await
+                } else {
+                    execute_job(
+                        &factory,
+                        current,
+                        NewSandboxDispatch {
+                            id: SandboxId::new_v4(),
+                            reuse_result: SandboxReuseResult::NoReuseKey,
+                        },
+                        &config,
+                        &default_params(),
+                        CancellationToken::new(),
+                    )
+                    .await
+                };
+                assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+                if let Some(report) = outcome.startup_report.take() {
+                    report.finish().await;
+                }
+                apply_guest_storage(&overrides, guest.path(), first_storage, None);
+                apply_guest_instructions(&overrides, guest.path(), first_exec);
+                let expected = if step == 1 {
+                    b"Agent local edit".as_slice()
+                } else {
+                    published[version]
+                };
+                assert_eq!(fs::read(&target).unwrap(), expected);
+                if step == 1 {
+                    assert_eq!(overrides.storage_manifest_calls().len(), first_storage);
+                    assert!(
+                        !overrides
+                            .exec_calls()
+                            .iter()
+                            .skip(first_exec)
+                            .any(|call| call.cmd.ends_with(" --instructions-stdin"))
+                    );
+                }
+                assert_eq!(fs::read(&history).unwrap(), b"preserved");
+                assert!(
+                    !instruction_paths(&guest_path(guest.path(), "/home/user"), framework)
+                        .unwrap()
+                        .staging
+                        .exists()
+                );
+                let fingerprints = outcome.storage_fingerprints.clone();
+                let (sandbox, lease) = make_reusable_idle_sandbox_with_fingerprints(
+                    outcome.sandbox.take().unwrap(),
+                    outcome.source_ip,
+                    "instruction-session",
+                    fingerprints,
                 )
-                .await
-            } else {
-                execute_job(
-                    &factory,
-                    current,
-                    NewSandboxDispatch {
-                        id: SandboxId::new_v4(),
-                        reuse_result: SandboxReuseResult::NoReuseKey,
-                    },
-                    &config,
-                    &default_params(),
-                    CancellationToken::new(),
-                )
-                .await
-            };
-            assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
-            if let Some(report) = outcome.startup_report.take() {
-                report.finish().await;
+                .await;
+                idle = Some(sandbox);
+                leases.push(lease);
             }
-            apply_guest_storage(&overrides, guest.path(), first_storage, None);
-            apply_guest_instructions(&overrides, guest.path(), &runtime, first_exec);
-            assert_eq!(fs::read(&target).unwrap(), published[version]);
-            assert_eq!(fs::read(&history).unwrap(), b"preserved");
-            assert!(
-                !guest_path(guest.path(), &runtime)
-                    .join(STORAGE_DIR)
-                    .exists()
-            );
-            let fingerprints = outcome.storage_fingerprints.clone();
-            let (sandbox, lease) = make_reusable_idle_sandbox_with_fingerprints(
-                outcome.sandbox.take().unwrap(),
-                outcome.source_ip,
-                "instruction-session",
-                fingerprints,
-            )
-            .await;
-            idle = Some(sandbox);
-            leases.push(lease);
+            config.background_fill.shutdown().await;
+            config.decoded_cache.shutdown().await;
         }
-        config.background_fill.shutdown().await;
-        config.decoded_cache.shutdown().await;
     }
 }
 
 #[tokio::test]
-async fn content_package_preparation_preserves_pre_start_cancellation() {
+async fn storage_preparation_preserves_pre_start_cancellation() {
     for reused in [false, true] {
         let directory = tempfile::tempdir().unwrap();
         let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
@@ -293,14 +317,8 @@ async fn content_package_preparation_preserves_pre_start_cancellation() {
         };
         let started = overrides.start_agent_process_calls().len();
         let created = overrides.create_configs().len();
-        let mut current = minimal_context();
+        let mut current = instruction_context(&"a".repeat(64), 10, "claude-code", "cancelled");
         current.run_id = runner_types::ids::RunId::new_v4();
-        current.content_bundles.instructions =
-            Some(runner_types::content_bundle::BundleReference {
-                sha256: "a".repeat(64),
-                archive_bytes: 10,
-                download_url: "https://unreachable.invalid/cancelled".into(),
-            });
         let cancel = CancellationToken::new();
         cancel.cancel();
         let (outcome, _) = if let Some(idle) = idle {
@@ -335,15 +353,10 @@ async fn required_instruction_storage_or_application_failure_prevents_agent_spaw
         let hash = hex::encode(Sha256::digest(&bytes));
         let cache = config
             .home
-            .storage_cache_dir(INSTRUCTION_BUNDLE_STORAGE_NAME, &hash);
+            .storage_cache_dir(INSTRUCTION_STORAGE_NAME, &hash);
         fs::create_dir_all(&cache).unwrap();
         fs::write(cache.join("archive.tar.gz"), &bytes).unwrap();
-        let mut current = minimal_context();
-        current.content_bundles = serde_json::from_value(serde_json::json!({
-            "format": "tar-gzip-v1",
-            "instructions": {"sha256": hash, "archiveBytes": bytes.len(), "downloadUrl": "https://unreachable.invalid/required"},
-            "skills": [],
-        })).unwrap();
+        let current = instruction_context(&hash, bytes.len() as u64, "claude-code", "required");
         let overrides = Arc::new(MockSandboxOverrides::new());
         if stage == "storage" {
             overrides.push_storage_manifest_result(Ok(sandbox::ExecResult::new(
@@ -396,14 +409,7 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
             .path("/instructions.tar.gz");
         then.status(200).body(bytes.clone());
     });
-    let mut current = minimal_context();
-    current.cli_agent_type = "codex".into();
-    current.content_bundles = serde_json::from_value(serde_json::json!({
-        "format": "tar-gzip-v1",
-        "instructions": {"sha256": hash, "archiveBytes": bytes.len(), "downloadUrl": "https://unreachable.invalid/large-instructions"},
-        "skills": [],
-    })).unwrap();
-    let runtime = super::super::guest_runtime_dir(current.run_id).unwrap();
+    let current = instruction_context(&hash, bytes.len() as u64, "codex", "large-instructions");
     let overrides = Arc::new(MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let (mut outcome, _) = execute_job(
@@ -428,10 +434,53 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
         0,
         Some(&server.url("/instructions.tar.gz")),
     );
-    apply_guest_instructions(&overrides, guest.path(), &runtime, 0);
+    apply_guest_instructions(&overrides, guest.path(), 0);
     download.assert_calls(1);
     let actual = fs::read(guest_path(guest.path(), "/home/user/.codex/AGENTS.md")).unwrap();
     assert_eq!(Sha256::digest(actual), Sha256::digest(content.as_bytes()));
+    let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
+    fs::remove_file(&target).unwrap();
+    let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
+        outcome.sandbox.take().unwrap(),
+        outcome.source_ip,
+        "large-instruction-repair",
+        outcome.storage_fingerprints,
+    )
+    .await;
+    instruction_check(&overrides, guest.path(), "codex");
+    let mut next_context = instruction_context(
+        &hash,
+        bytes.len() as u64,
+        "codex",
+        "large-instructions-next-signature",
+    );
+    next_context.run_id = runner_types::ids::RunId::new_v4();
+    let first_storage = overrides.storage_manifest_calls().len();
+    let first_exec = overrides.exec_calls().len();
+    let (mut repaired, _) = execute_job_reuse(
+        idle,
+        next_context,
+        &config,
+        &default_params(),
+        CancellationToken::new(),
+    )
+    .await;
+    assert_eq!(repaired.exit_code(), 0, "{:?}", repaired.error());
+    if let Some(report) = repaired.startup_report.take() {
+        report.finish().await;
+    }
+    apply_guest_storage(
+        &overrides,
+        guest.path(),
+        first_storage,
+        Some(&server.url("/instructions.tar.gz")),
+    );
+    apply_guest_instructions(&overrides, guest.path(), first_exec);
+    download.assert_calls(2);
+    assert_eq!(
+        Sha256::digest(fs::read(target).unwrap()),
+        Sha256::digest(content.as_bytes())
+    );
     config.background_fill.shutdown().await;
 }
 
@@ -456,27 +505,25 @@ async fn workflow_storage_reuses_local_changes_and_reconciles_versions_names_and
                 hex::encode(Sha256::digest(&next)),
             ];
             for (bytes, hash) in [(&first, &hashes[0]), (&next, &hashes[1])] {
-                let cache = config
-                    .home
-                    .storage_cache_dir(WORKFLOW_BUNDLE_STORAGE_NAME, hash);
+                let cache = config.home.storage_cache_dir(WORKFLOW_STORAGE_NAME, hash);
                 fs::create_dir_all(&cache).unwrap();
                 fs::write(cache.join("archive.tar.gz"), bytes).unwrap();
                 drop(
                     runner_host::lock::open_lock_file(
-                        &config.home.storage_lock(WORKFLOW_BUNDLE_STORAGE_NAME, hash),
+                        &config.home.storage_lock(WORKFLOW_STORAGE_NAME, hash),
                     )
                     .unwrap(),
                 );
                 if decoded {
                     config
                         .decoded_cache
-                        .warm_from_archive(WORKFLOW_BUNDLE_STORAGE_NAME, hash)
+                        .warm_from_archive(WORKFLOW_STORAGE_NAME, hash)
                         .await
                         .unwrap();
                     assert!(
                         config
                             .decoded_cache
-                            .get_ready(WORKFLOW_BUNDLE_STORAGE_NAME, hash)
+                            .get_ready(WORKFLOW_STORAGE_NAME, hash)
                             .await
                             .unwrap()
                             .is_some()
@@ -668,6 +715,254 @@ async fn large_workflow_archive_downloads_through_ordinary_guest_passthrough() {
 }
 
 #[tokio::test]
+async fn home_restored_instruction_reuse_checks_target_and_repairs_missing_or_tainted_files() {
+    use crate::home_image_cache::HomeImageCache;
+    use runner_host::paths::RunnerPaths;
+    use runner_types::storage_fingerprints::StorageFingerprint;
+
+    for state in [
+        "present",
+        "missing",
+        "tainted",
+        "other-framework",
+        "unsafe",
+        "invalid-probe",
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+        let paths = RunnerPaths::new(directory.path().join("runner"));
+        let home = HomeImageCache::new(paths.clone());
+        config.home_cache = Some(home.clone());
+        let bytes = archive(&[(SOURCE_FILENAME, b"published instructions")]);
+        let hash = hex::encode(Sha256::digest(&bytes));
+        let mut current =
+            instruction_context(&hash, bytes.len() as u64, "codex", "home-instructions");
+        current.run_id = runner_types::ids::RunId::new_v4();
+        let session = "22222222-2222-4222-8222-222222222222";
+        current.reuse_key = Some(format!("thread:home-cache-{session}"));
+        current.native_continuation = Some(guest_contracts::env::NativeContinuation {
+            session_id: Some(session.into()),
+            generation_run_id: Some(current.run_id.to_string()),
+            recovery_prompt: None,
+        });
+        let mut fingerprints = current.storage_fingerprints();
+        if state == "other-framework" {
+            fingerprints =
+                instruction_context(&hash, bytes.len() as u64, "claude-code", "old-framework")
+                    .storage_fingerprints();
+        }
+        if state == "tainted" {
+            fingerprints.storages.insert(
+                current
+                    .instruction_file
+                    .as_ref()
+                    .unwrap()
+                    .storage_mount
+                    .clone(),
+                StorageFingerprint::tainted(),
+            );
+        }
+        seed_home_image_cache_with_fingerprints(&home, &paths, session, 16, &fingerprints).await;
+        let guest = tempfile::tempdir().unwrap();
+        let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(
+            target.parent().unwrap().join("native-history"),
+            b"preserved",
+        )
+        .unwrap();
+        if state == "unsafe" {
+            let outside = guest.path().join("external.md");
+            fs::write(&outside, b"outside").unwrap();
+            std::os::unix::fs::symlink(outside, &target).unwrap();
+        } else if state != "missing" {
+            fs::write(&target, b"local Home edit").unwrap();
+        }
+        if matches!(state, "missing" | "tainted" | "other-framework") {
+            let cache = config
+                .home
+                .storage_cache_dir(INSTRUCTION_STORAGE_NAME, &hash);
+            fs::create_dir_all(&cache).unwrap();
+            fs::write(cache.join("archive.tar.gz"), &bytes).unwrap();
+        }
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        if state == "invalid-probe" {
+            overrides.add_exec_result_matcher(
+                " --instructions-check-stdin",
+                sandbox::ExecResult::new(0, b"invalid".to_vec(), Vec::new()),
+            );
+        } else if !matches!(state, "tainted" | "other-framework") {
+            instruction_check(&overrides, guest.path(), "codex");
+        }
+        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let params = super::super::JobParams {
+            home_disk_mb: 16,
+            ..default_params()
+        };
+        let (mut outcome, _) = execute_job(
+            &factory,
+            current,
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::PoolMiss,
+            },
+            &config,
+            &params,
+            CancellationToken::new(),
+        )
+        .await;
+        if let Some(report) = outcome.startup_report.take() {
+            report.finish().await;
+        }
+        if matches!(state, "unsafe" | "invalid-probe") {
+            assert_ne!(outcome.exit_code(), 0);
+            assert!(overrides.start_agent_process_calls().is_empty());
+            assert!(overrides.storage_manifest_calls().is_empty());
+            if state == "unsafe" {
+                assert_eq!(
+                    fs::read(guest.path().join("external.md")).unwrap(),
+                    b"outside"
+                );
+            }
+        } else {
+            assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+            assert_eq!(
+                outcome.home_reuse_result,
+                Some(runner_types::types::HomeReuseResult::Reused)
+            );
+            apply_guest_storage(&overrides, guest.path(), 0, None);
+            apply_guest_instructions(&overrides, guest.path(), 0);
+            if state == "present" {
+                assert_eq!(fs::read(&target).unwrap(), b"local Home edit");
+                assert!(overrides.storage_manifest_calls().is_empty());
+                assert!(
+                    !overrides
+                        .exec_calls()
+                        .iter()
+                        .any(|call| call.cmd.ends_with(" --instructions-stdin"))
+                );
+                assert!(
+                    !config
+                        .home
+                        .storage_cache_dir(INSTRUCTION_STORAGE_NAME, &hash)
+                        .join("archive.tar.gz")
+                        .exists()
+                );
+            } else {
+                assert_eq!(fs::read(&target).unwrap(), b"published instructions");
+            }
+        }
+        assert_eq!(
+            fs::read(target.parent().unwrap().join("native-history")).unwrap(),
+            b"preserved"
+        );
+        config.background_fill.shutdown().await;
+        config.decoded_cache.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn instruction_reuse_reapplies_after_storage_reconciles_its_parent() {
+    use runner_types::storage_fingerprints::StorageFingerprint;
+
+    for changed_parent in [true, false] {
+        let directory = tempfile::tempdir().unwrap();
+        let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+        let guest = tempfile::tempdir().unwrap();
+        let instructions = archive(&[(SOURCE_FILENAME, b"published instructions")]);
+        let hash = hex::encode(Sha256::digest(&instructions));
+        let settings = archive(&[
+            ("config.toml", b"settings"),
+            ("native-history", b"preserved"),
+        ]);
+        for (name, version, bytes) in [
+            (INSTRUCTION_STORAGE_NAME, hash.as_str(), &instructions),
+            ("framework-settings", "v1", &settings),
+            ("framework-settings", "v2", &settings),
+        ] {
+            let cache = config.home.storage_cache_dir(name, version);
+            fs::create_dir_all(&cache).unwrap();
+            fs::write(cache.join("archive.tar.gz"), bytes).unwrap();
+        }
+        let make_context = |version: Option<&str>| {
+            let mut current =
+                instruction_context(&hash, instructions.len() as u64, "codex", "instructions");
+            current.run_id = runner_types::ids::RunId::new_v4();
+            if let Some(version) = version {
+                current.storage_manifest.as_mut().unwrap().storages.push(
+                    super::support::api_storage(
+                        "framework-settings",
+                        "/home/user/.codex",
+                        version,
+                        "https://unreachable.invalid/settings",
+                    ),
+                );
+            }
+            current
+        };
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let (mut first, _) = execute_job(
+            &factory,
+            make_context(Some("v1")),
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::NoReuseKey,
+            },
+            &config,
+            &default_params(),
+            CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(first.exit_code(), 0, "{:?}", first.error());
+        if let Some(report) = first.startup_report.take() {
+            report.finish().await;
+        }
+        apply_guest_storage(&overrides, guest.path(), 0, None);
+        apply_guest_instructions(&overrides, guest.path(), 0);
+        let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
+        assert_eq!(fs::read(&target).unwrap(), b"published instructions");
+        let mut previous = first.storage_fingerprints;
+        if !changed_parent {
+            previous
+                .storages
+                .insert("/home/user/.codex".into(), StorageFingerprint::tainted());
+        }
+        let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
+            first.sandbox.take().unwrap(),
+            first.source_ip,
+            "instruction-parent-reconciliation",
+            previous,
+        )
+        .await;
+        instruction_check(&overrides, guest.path(), "codex");
+        let first_storage = overrides.storage_manifest_calls().len();
+        let first_exec = overrides.exec_calls().len();
+        let (mut next, _) = execute_job_reuse(
+            idle,
+            make_context(changed_parent.then_some("v2")),
+            &config,
+            &default_params(),
+            CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(next.exit_code(), 0, "{:?}", next.error());
+        if let Some(report) = next.startup_report.take() {
+            report.finish().await;
+        }
+        apply_guest_storage(&overrides, guest.path(), first_storage, None);
+        apply_guest_instructions(&overrides, guest.path(), first_exec);
+        assert_eq!(fs::read(&target).unwrap(), b"published instructions");
+        assert_eq!(
+            fs::read(target.parent().unwrap().join("native-history")).unwrap(),
+            b"preserved"
+        );
+        config.background_fill.shutdown().await;
+        config.decoded_cache.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn home_restored_workflow_storage_preserves_matching_local_content() {
     use crate::home_image_cache::HomeImageCache;
     use runner_host::paths::RunnerPaths;
@@ -691,7 +986,7 @@ async fn home_restored_workflow_storage_preserves_matching_local_content() {
     let mut fingerprints = StorageFingerprints::default();
     fingerprints.storages.insert(
         mount.into(),
-        StorageFingerprint::new(WORKFLOW_BUNDLE_STORAGE_NAME, &hash),
+        StorageFingerprint::new(WORKFLOW_STORAGE_NAME, &hash),
     );
     seed_home_image_cache_with_fingerprints(&home, &paths, session, 16, &fingerprints).await;
     let guest = tempfile::tempdir().unwrap();
@@ -732,71 +1027,12 @@ async fn home_restored_workflow_storage_preserves_matching_local_content() {
 }
 
 #[tokio::test]
-async fn invalid_or_conflicting_content_input_prevents_sandbox_creation() {
-    for kind in ["reference", "workflow", "artifact", "instruction"] {
-        let directory = tempfile::tempdir().unwrap();
-        let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
-        let mut current = context(
-            &"a".repeat(64),
-            10,
-            "/home/user/.codex/skills/example",
-            "invalid",
-        );
-        if kind == "workflow" {
-            current.content_bundles.skills.push(serde_json::from_value(serde_json::json!({"sha256": "b".repeat(64), "archiveBytes": 10, "downloadUrl": "https://unreachable.invalid/duplicate", "mountPath": "/home/user/.codex/skills/example"})).unwrap());
-        } else if kind == "artifact" {
-            current.storage_manifest = Some(runner_types::storage_manifest::StorageManifest {
-                storages: Vec::new(),
-                artifacts: vec![api_artifact(
-                    "artifact",
-                    "/home/user/.codex/skills/example",
-                    "id",
-                    "v1",
-                    "https://unreachable.invalid/artifact",
-                )],
-            });
-        } else if kind == "instruction" {
-            current.content_bundles.instructions =
-                Some(runner_types::content_bundle::BundleReference {
-                    sha256: "invalid".into(),
-                    archive_bytes: 10,
-                    download_url: "https://unreachable.invalid/invalid-instruction".into(),
-                });
-        } else {
-            current.content_bundles.skills[0].sha256 = "invalid".into();
-        }
-        let overrides = Arc::new(MockSandboxOverrides::new());
-        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
-        let (mut outcome, _) = execute_job(
-            &factory,
-            current,
-            NewSandboxDispatch {
-                id: SandboxId::new_v4(),
-                reuse_result: SandboxReuseResult::NoReuseKey,
-            },
-            &config,
-            &default_params(),
-            CancellationToken::new(),
-        )
-        .await;
-        assert_ne!(outcome.exit_code(), 0);
-        assert!(overrides.create_configs().is_empty());
-        assert!(overrides.start_agent_process_calls().is_empty());
-        if let Some(report) = outcome.startup_report.take() {
-            report.finish().await;
-        }
-    }
-}
-
-#[tokio::test]
 async fn failed_workflow_storage_application_prevents_agent_spawn() {
     let directory = tempfile::tempdir().unwrap();
     let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
     let bytes = archive(&[("SKILL.md", b"current")]);
     let hash = hex::encode(Sha256::digest(&bytes));
-    let cache = config
-        .home
-        .storage_cache_dir(WORKFLOW_BUNDLE_STORAGE_NAME, &hash);
+    let cache = config.home.storage_cache_dir(WORKFLOW_STORAGE_NAME, &hash);
     fs::create_dir_all(&cache).unwrap();
     fs::write(cache.join("archive.tar.gz"), &bytes).unwrap();
     let overrides = Arc::new(MockSandboxOverrides::new());

@@ -32,7 +32,7 @@
 //! the resolved plan is finally converted to the guest manifest for execution.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use api_contracts::generated::{
@@ -364,6 +364,31 @@ pub fn build_storage_plan(
 }
 
 impl StoragePlan {
+    /// Whether reconciliation can replace or remove an already existing file.
+    ///
+    /// A safely present descendant proves an unchanged artifact root exists,
+    /// so its missing-root repair cannot replace that file.
+    pub fn replaces_existing_file(&self, path: &Path) -> bool {
+        let contains = |mount: &str| path.starts_with(Path::new(mount));
+        self.cleanup_paths.iter().any(|mount| contains(mount))
+            || self
+                .instruction_cleanups
+                .iter()
+                .any(|cleanup| contains(&cleanup.mount_path))
+            || self.storages.iter().any(|entry| {
+                contains(&entry.mount_path)
+                    && matches!(&entry.action, StorageAction::Download { .. })
+            })
+            || self.artifacts.iter().any(|entry| {
+                contains(&entry.mount_path)
+                    && matches!(
+                        &entry.action,
+                        ArtifactAction::Download { .. }
+                            | ArtifactAction::PrepareEmpty { cached: false }
+                    )
+            })
+    }
+
     pub(crate) fn decoded_prepared(&self) -> bool {
         self.decoded_prepared
     }

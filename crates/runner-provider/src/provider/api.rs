@@ -1,5 +1,7 @@
 //! [`JobProvider`] backed by an Ably control plane + HTTP polling + REST API.
 
+mod claim_inputs;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1720,7 +1722,7 @@ impl ApiClient {
             body_read_elapsed = Some(body_read_started_at.elapsed());
             let (body, response_first_body_chunk_wait_elapsed, response_body_read_elapsed) = body?;
             let response_decode_started_at = Instant::now();
-            let context = decode_api_json_bytes(&body).map_err(ClaimApiError::ResponseDecode);
+            let context = claim_inputs::decode_claim(&body).map_err(ClaimApiError::ResponseDecode);
             let response_decode_elapsed = response_decode_started_at.elapsed();
             decode_elapsed = Some(response_decode_elapsed);
             let context = context?;

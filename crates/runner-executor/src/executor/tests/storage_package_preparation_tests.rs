@@ -1,7 +1,7 @@
 use super::super::{NewSandboxDispatch, execute_job, execute_job_reuse};
 use super::support::{
-    default_params, make_reusable_idle_sandbox, minimal_context,
-    test_executor_config_with_startup_api,
+    default_params, instruction_context, make_reusable_idle_sandbox,
+    test_executor_config_with_startup_api, workflow_context,
 };
 use runner_types::types::SandboxReuseResult;
 use sandbox::SandboxId;
@@ -31,13 +31,28 @@ async fn cached_packages_install_on_fresh_and_reused_sandboxes() {
     tokio::fs::write(instruction_cache.join("archive.tar.gz"), instructions)
         .await
         .unwrap();
-    let mut context = minimal_context();
-    let package = serde_json::json!({
-        "format": "tar-gzip-v1",
-        "instructions": {"sha256":instructions_hash,"archiveBytes":instructions.len(),"downloadUrl":"https://unreachable.invalid/already-cached-instructions"},
-        "skills": [{"sha256":hash,"archiveBytes":archive.len(),"downloadUrl":"https://unreachable.invalid/already-cached", "mountPath":"/home/user/.codex/skills/example"}],
-    });
-    context.content_bundles = serde_json::from_value(package.clone()).unwrap();
+    let make_context = || {
+        let mut context = instruction_context(
+            instructions_hash,
+            instructions.len() as u64,
+            "codex",
+            "cached-instructions",
+        );
+        let workflow = workflow_context(
+            hash,
+            archive.len() as u64,
+            "/home/user/.codex/skills/example",
+            "cached",
+        );
+        context
+            .storage_manifest
+            .as_mut()
+            .unwrap()
+            .storages
+            .extend(workflow.storage_manifest.unwrap().storages);
+        context
+    };
+    let context = make_context();
     let overrides = Arc::new(MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let (mut outcome, _) = execute_job(
@@ -82,9 +97,8 @@ async fn cached_packages_install_on_fresh_and_reused_sandboxes() {
     let sandbox = outcome.sandbox.take().unwrap();
     let (idle, _lease) =
         make_reusable_idle_sandbox(sandbox, outcome.source_ip, "test-session").await;
-    let mut next_context = minimal_context();
+    let mut next_context = make_context();
     next_context.run_id = runner_types::ids::RunId::new_v4();
-    next_context.content_bundles = serde_json::from_value(package).unwrap();
     let (mut next, _) = execute_job_reuse(
         idle,
         next_context,

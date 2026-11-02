@@ -452,9 +452,8 @@ pub(super) async fn prepare_storage(
     cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<Option<PreparedStorage>> {
-    let Some(manifest) = &context.storage_manifest else {
-        return Ok(None);
-    };
+    let empty_manifest = runner_types::storage_manifest::StorageManifest::default();
+    let manifest = context.storage_manifest.as_ref().unwrap_or(&empty_manifest);
     let apply_started = Instant::now();
     let result: RunnerResult<Option<PreparedStorage>> = async {
         let mut plan = build_storage_plan(manifest, previous_storage)?;
@@ -1854,7 +1853,7 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
             None
         };
 
-    let current_inputs = runner_types::content_bundle::fingerprints(context);
+    let current_inputs = context.storage_fingerprints();
     let storage_fingerprints = if lifecycle.storage_preparation_complete {
         current_inputs
     } else {
