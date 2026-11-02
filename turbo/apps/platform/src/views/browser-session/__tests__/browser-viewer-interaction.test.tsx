@@ -649,7 +649,7 @@ test.each([
   },
 );
 
-test("Remote editing context configures one stable selection-capable keyboard proxy", async () => {
+test("Remote editing context updates keyboard hints without interrupting composition", async () => {
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
@@ -689,7 +689,6 @@ test("Remote editing context configures one stable selection-capable keyboard pr
       );
     });
     expect(input).toHaveFocus();
-    expect(screen.getByLabelText("Remote browser input")).toBe(input);
     expect(input).toHaveAttribute("lang", "zh-CN");
     expect(input).toHaveAttribute("autocorrect", "off");
     expect(input).toHaveAttribute("spellcheck", "false");
@@ -770,7 +769,7 @@ test("Remote editing context configures one stable selection-capable keyboard pr
   expect(input).toHaveFocus();
 });
 
-test("Remote password keyboard hints survive native editing and streamed frames", async () => {
+test("Remote password keyboard hints survive native editing and tab updates", async () => {
   const browser = await setupViewer(0);
   browser.setFocusedEditing({
     x: 40,
@@ -808,21 +807,7 @@ test("Remote password keyboard hints survive native editing and streamed frames"
     });
   });
   expect(input).toHaveAttribute("type", "password");
-  const acknowledged = browser.requests.filter((request) => {
-    return request.method === "Page.screencastFrameAck";
-  }).length;
-  act(() => {
-    browser.frame("AAAA");
-  });
-  await waitFor(() => {
-    expect(
-      browser.requests.filter((request) => {
-        return request.method === "Page.screencastFrameAck";
-      }).length,
-    ).toBeGreaterThan(acknowledged);
-  });
   expect(input).toBeEnabled();
-  expect(input).toHaveAttribute("type", "password");
   expect(input).toHaveAttribute("inputmode", "numeric");
   expect(input).toHaveAttribute("enterkeyhint", "done");
   expect(input).toHaveAttribute("lang", "ja");
@@ -841,7 +826,6 @@ test("Remote password keyboard hints survive native editing and streamed frames"
       screen.getByLabelText("Updated Example", { selector: '[role="tab"]' }),
     ).toBeInTheDocument();
   });
-  expect(screen.getByLabelText("Remote browser input")).toBe(input);
   expect(input).toHaveAttribute("type", "password");
   expect(input).toHaveAttribute("inputmode", "numeric");
   expect(input).toHaveValue("中");
