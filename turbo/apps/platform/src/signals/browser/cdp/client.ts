@@ -370,7 +370,6 @@ function listen(
     addBreadcrumb({
       category: "browser.connection",
       level: "info",
-      message: "Browser WebSocket closed",
       data: {
         source: "native-close",
         ...(role ? { role } : {}),
