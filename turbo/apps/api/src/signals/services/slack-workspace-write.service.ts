@@ -2,9 +2,10 @@ import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { and, eq, exists, sql } from "drizzle-orm";
+import { and, eq, exists, isNotNull, sql } from "drizzle-orm";
+import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
@@ -132,9 +133,15 @@ const commitSlackWorkspaceConnection$ = command(
         },
         connectionId: connection.id,
         replacedSlackUserId: replaced.slackUserId,
+        // A lost account-ownership race must not publish a first workspace bind
+        // without its successful connection and durable completion receipt.
+        complete:
+          sql`1 / CASE WHEN ${isNotNull(connection.id)} THEN 1 ELSE 0 END`.mapWith(
+            pgIntegerDecoder,
+          ),
       })
       .from(installation)
-      .crossJoin(connection)
+      .leftJoin(connection, sql`true`)
       .leftJoin(replaced, sql`true`);
     signal.throwIfAborted();
     const published = rows[0];
@@ -144,6 +151,9 @@ const commitSlackWorkspaceConnection$ = command(
         message:
           "The Slack workspace or account changed. Please connect again.",
       };
+    }
+    if (published.connectionId === null) {
+      throw new Error("Completed Slack connection returned no account");
     }
     return connectedSlackWorkspace(
       args,
@@ -171,6 +181,13 @@ export const connectSlackWorkspace$ = command(
     );
     signal.throwIfAborted();
     if (!result.ok) {
+      if (safeSqlStateCode(result.error) === "22012") {
+        return {
+          kind: "forbidden",
+          message:
+            "The Slack workspace or account changed. Please connect again.",
+        };
+      }
       if (isDeletedInstallationReference(result.error)) {
         return {
           kind: "not_found",

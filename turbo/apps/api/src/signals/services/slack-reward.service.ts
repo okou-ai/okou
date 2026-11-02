@@ -52,6 +52,7 @@ const commitSlackReward$ = command(
           ),
         )
         .returning({ id: getStartedClaims.id });
+      signal.throwIfAborted();
       if (!claimed) {
         return;
       }
@@ -64,6 +65,7 @@ const commitSlackReward$ = command(
         expiresAt,
         createdAt: at,
       });
+      signal.throwIfAborted();
       const [wallet] = await tx
         .update(orgMetadata)
         .set({
@@ -72,14 +74,15 @@ const commitSlackReward$ = command(
         })
         .where(eq(orgMetadata.orgId, claim.orgId))
         .returning({ orgId: orgMetadata.orgId });
+      signal.throwIfAborted();
       if (!wallet) {
         throw new Error("Slack reward wallet disappeared before publication");
       }
       const [pending] = await tx
         .select()
         .from(pendingOrgCreditExpirationQuery(claim.orgId, at));
-      requireNoPendingOrgCreditExpiration(claim.orgId, pending);
       signal.throwIfAborted();
+      requireNoPendingOrgCreditExpiration(claim.orgId, pending);
     });
     signal.throwIfAborted();
   },

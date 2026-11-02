@@ -113,7 +113,7 @@ export function unsettledSlackClaim(id: string) {
   );
 }
 
-/** Only the two financial uniqueness constraints represent a lost reward race. */
+/** Only the financial uniqueness constraints represent a lost reward race. */
 export function slackRewardGrantFailureReason(
   result:
     { readonly ok: true } | { readonly ok: false; readonly error: unknown },
