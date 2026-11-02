@@ -278,6 +278,7 @@ function createBrowserSessionKeepAliveSignals(
             descriptor.threadId,
             signal,
           );
+          signal.throwIfAborted();
           if (!response || response.status === 502 || response.status === 503) {
             // Only this idempotent renewal can continue at the normal interval.
             // An outage must not replay input or invalidate the mounted viewer.
