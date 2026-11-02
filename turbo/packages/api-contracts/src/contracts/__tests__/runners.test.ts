@@ -207,6 +207,57 @@ describe("runner claim response contract", () => {
   });
 });
 
+describe("stored Seed Skill bundle contract", () => {
+  const context = {
+    storageMounts: [],
+    connectorRuntimeTargets: [],
+    environment: null,
+    platformEnvironment: {},
+    secretValueEnvironmentKeys: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
+    encryptedSecrets: null,
+    cliAgentType: "claude-code",
+  };
+
+  it("preserves captured Seed references for all supported skill roots", () => {
+    for (const root of [".claude", ".codex", ".pi/agent"]) {
+      const bundle = {
+        sha256: "a".repeat(64),
+        archiveBytes: 200,
+        mountPath: `/home/user/${root}/skills/workflow-setup`,
+      };
+      const captured = { ...context, seedSkillBundles: [bundle] };
+      for (const schema of [
+        storedExecutionContextSchema,
+        claimCompatibleStoredExecutionContextSchema,
+      ]) {
+        expect(schema.parse(captured).seedSkillBundles).toStrictEqual([bundle]);
+        expect(schema.parse(context).storageMounts).toStrictEqual([]);
+      }
+    }
+  });
+
+  it("requires immutable references within a supported skill directory", () => {
+    for (const mountPath of [
+      "/etc/workflow-setup",
+      "/home/user/.codex/skills/../workflow-setup",
+    ]) {
+      expect(
+        storedExecutionContextSchema.safeParse({
+          ...context,
+          seedSkillBundles: [
+            { sha256: "a".repeat(64), archiveBytes: 200, mountPath },
+          ],
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe("stored Workflow selection contract", () => {
   it("preserves legacy selection and current claim-time invocation intent", () => {
     const context = {

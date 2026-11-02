@@ -1074,6 +1074,7 @@ const withClaimedContentBundles$ = command(
       readonly claim: ClaimedTransitionResult;
       readonly workflowInput: WorkflowClaimInput;
       readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
+      readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
     },
     signal: AbortSignal,
   ): Promise<ExecutionContext> => {
@@ -1093,25 +1094,28 @@ const withClaimedContentBundles$ = command(
             mountPath: `${args.workflowInput.skillRoot}/${workflow.name}`,
           };
         }),
-        ...(args.officialWorkflowBundles ?? []).map((bundle) => {
+        ...[
+          ...(args.officialWorkflowBundles ?? []),
+          ...(args.seedSkillBundles ?? []),
+        ].map((bundle) => {
           return {
             contentBundle: bundle,
             mountPath: bundle.mountPath,
           };
         }),
-      ].map(async (workflow) => {
+      ].map(async (bundle) => {
         return {
           ...(await set(
             signClaimedContentBundle$,
-            workflow.contentBundle,
+            bundle.contentBundle,
             signal,
           )),
-          mountPath: workflow.mountPath,
+          mountPath: bundle.mountPath,
         };
       }),
     );
     signal.throwIfAborted();
-    const workflowMountPaths = new Set(
+    const bundledMountPaths = new Set(
       skills.map((skill) => {
         return skill.mountPath;
       }),
@@ -1125,7 +1129,7 @@ const withClaimedContentBundles$ = command(
         ).filter((mount) => {
           return (
             !mount.name.startsWith("custom-skill@") &&
-            !workflowMountPaths.has(mount.mountPath)
+            !bundledMountPaths.has(mount.mountPath)
           );
         }),
       },
@@ -1414,6 +1418,7 @@ function claimResponseBody(args: {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
     officialWorkflowBundles: _officialWorkflowBundles,
+    seedSkillBundles: _seedSkillBundles,
     storageMounts: _storedStorageMounts,
     ...runnerStoredContext
   } = args.storedContext;
@@ -2051,6 +2056,7 @@ const claimAuthorizedJob$ = command(
         claim: claimResult,
         workflowInput,
         officialWorkflowBundles: storedContext.officialWorkflowBundles,
+        seedSkillBundles: storedContext.seedSkillBundles,
       },
       signal,
     );
