@@ -1,7 +1,5 @@
 import { db$ } from "../../external/db";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { projects } from "@okouai/db/schema/project";
-import { agents } from "@okouai/db/schema/agent";
 import { and, eq, inArray } from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -34,29 +32,18 @@ export function createWebThreadPrompt(
       return "";
     }
     const db = get(db$);
-    const [current] = await db
-      .select({ id: projects.id, name: projects.name })
-      .from(chatThreads)
-      .innerJoin(agents, eq(chatThreads.agentId, agents.id))
-      .leftJoin(
-        projects,
-        and(
-          eq(chatThreads.projectId, projects.id),
-          eq(projects.userId, owner.userId),
-          eq(projects.orgId, owner.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(chatThreads.id, picked.chatThreadId),
-          eq(chatThreads.userId, owner.userId),
-          eq(agents.orgId, owner.orgId),
-        ),
-      );
     const refs = picked.userMessage
       ? userMessageReferences(picked.userMessage).projects
       : [];
-    const rows = refs.length
+    const ids = [
+      ...new Set([
+        ...refs.map((ref) => {
+          return ref.projectId;
+        }),
+        ...(picked.thread.projectId ? [picked.thread.projectId] : []),
+      ]),
+    ];
+    const rows = ids.length
       ? await db
           .select({ id: projects.id, name: projects.name })
           .from(projects)
@@ -64,15 +51,13 @@ export function createWebThreadPrompt(
             and(
               eq(projects.userId, owner.userId),
               eq(projects.orgId, owner.orgId),
-              inArray(
-                projects.id,
-                refs.map((r) => {
-                  return r.projectId;
-                }),
-              ),
+              inArray(projects.id, ids),
             ),
           )
       : [];
+    const current = rows.find((project) => {
+      return project.id === picked.thread.projectId;
+    });
     const lines = [
       "# Current Run Project context",
       "This block replaces Project context from earlier rounds. Membership is resolved for this Run; later changes apply to the next Run.",

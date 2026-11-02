@@ -839,7 +839,10 @@ function normalSendRequestFacts(
   previousBinding:
     | Pick<
         ChatThreadRequestFacts["thread"],
-        "framework" | "frameworkSessionId" | "frameworkSessionRunId"
+        | "framework"
+        | "frameworkSessionId"
+        | "frameworkSessionRunId"
+        | "projectId"
       >
     | undefined,
   event: Pick<
@@ -851,6 +854,7 @@ function normalSendRequestFacts(
     orgId: args.orgId,
     thread: {
       id: thread.threadId,
+      projectId: previousBinding?.projectId ?? null,
       userId: args.userId,
       agentId: args.body.agentId,
       ...thread.runSettings,

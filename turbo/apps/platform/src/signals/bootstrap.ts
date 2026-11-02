@@ -168,7 +168,9 @@ function setupSettingsParamAfterStableRoute(
     if (get(pathname$) !== initialPathname) {
       return;
     }
-    await set(hydrateProjects$, signal);
+    if (get(activeRoute$) !== "project") {
+      await set(hydrateProjects$, signal);
+    }
     await set(checkUnifiedSettingsParam$, signal);
   });
 }
