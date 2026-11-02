@@ -465,16 +465,15 @@ def _single_content_encoding(values: tuple[str, ...]) -> str | None:
 
 
 def _request_accepts_encoded_response(headers: http.Headers) -> bool:
-    remaining_bytes = _MAX_ACCEPT_ENCODING_VALUE_BYTES
-    has_header = False
-    for raw_name, raw_value in headers.fields:
-        if raw_name.lower() != _RAW_ACCEPT_ENCODING:
-            continue
-        has_header = True
-        if len(raw_value) > remaining_bytes:
-            return True
-        remaining_bytes -= len(raw_value)
-    if not has_header:
+    value_budget = http_header_syntax.header_value_budget_status(
+        headers.fields,
+        _RAW_ACCEPT_ENCODING,
+        max_value_bytes=_MAX_ACCEPT_ENCODING_VALUE_BYTES,
+        separator_bytes=0,
+    )
+    if value_budget == "exceeded":
+        return True
+    if value_budget == "missing":
         return False
 
     has_identity = False

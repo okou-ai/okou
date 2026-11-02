@@ -8,6 +8,7 @@ from typing import Final, Literal
 from mitmproxy import http
 
 import body_decoding
+import http_header_syntax
 
 _ACCEPT_ENCODING = "Accept-Encoding"
 _RAW_ACCEPT_ENCODING: Final = b"accept-encoding"
@@ -49,7 +50,15 @@ def normalize_accept_encoding_for_body_inspection(
     body inspection is available. The return value records whether the request
     was already safe, rewritten, or preserved and why.
     """
-    if not _accept_encoding_values_within_budget(headers):
+    if (
+        http_header_syntax.header_value_budget_status(
+            headers.fields,
+            _RAW_ACCEPT_ENCODING,
+            max_value_bytes=_MAX_ACCEPT_ENCODING_VALUE_BYTES,
+            separator_bytes=0,
+        )
+        == "exceeded"
+    ):
         return "preserved_work_budget"
 
     values = headers.get_all(_ACCEPT_ENCODING)
@@ -125,18 +134,6 @@ def normalize_accept_encoding_for_body_inspection(
     if _set_if_changed(headers, values, _IDENTITY):
         return "rewritten_stream_decodable"
     return "already_stream_decodable"
-
-
-def _accept_encoding_values_within_budget(headers: http.Headers) -> bool:
-    """Bound matching raw values before mitmproxy decodes them."""
-    remaining_bytes = _MAX_ACCEPT_ENCODING_VALUE_BYTES
-    for raw_name, raw_value in headers.fields:
-        if raw_name.lower() != _RAW_ACCEPT_ENCODING:
-            continue
-        if len(raw_value) > remaining_bytes:
-            return False
-        remaining_bytes -= len(raw_value)
-    return True
 
 
 def _iter_delimited(value: str, delimiter: str, *, start: int = 0) -> Iterator[str]:

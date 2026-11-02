@@ -8,6 +8,7 @@ from mitmproxy import connection, ctx, http, tls
 
 import connection_endpoints
 import flow_metadata
+import http_header_syntax
 import matching
 import path_security
 import platform_api_url
@@ -138,20 +139,16 @@ def _request_has_platform_test_endpoint_bypass(flow: http.HTTPFlow) -> bool:
         return False
     # Bound the complete folded value before Headers.get decodes any field.
     max_value_bytes = len(expected_bypass.encode("utf-8", "surrogateescape"))
-    value_bytes = 0
-    has_value = False
-    for name, value in flow.request.headers.fields:
-        if (
-            len(name) != len(_TEST_ENDPOINT_BYPASS_HEADER)
-            or name.lower() != _TEST_ENDPOINT_BYPASS_HEADER
-        ):
-            continue
-        value_bytes += len(value)
-        if has_value:
-            value_bytes += len(", ")
-        if value_bytes > max_value_bytes:
-            return False
-        has_value = True
+    if (
+        http_header_syntax.header_value_budget_status(
+            flow.request.headers.fields,
+            _TEST_ENDPOINT_BYPASS_HEADER,
+            max_value_bytes=max_value_bytes,
+            separator_bytes=len(b", "),
+        )
+        == "exceeded"
+    ):
+        return False
     return flow.request.headers.get(_TEST_ENDPOINT_BYPASS_HEADER) == expected_bypass
 
 
