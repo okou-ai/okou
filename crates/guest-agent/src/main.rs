@@ -34,6 +34,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 
 const LOG_TAG: &str = "sandbox:guest-agent";
 
@@ -1028,9 +1029,9 @@ fn spawn_heartbeat(
     status_tx: tokio::sync::oneshot::Sender<cli::HeartbeatStatus>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let heartbeat_task =
-            tokio::spawn(heartbeat::heartbeat_loop_for_run(run_id, http, shutdown));
-        let _abort_on_drop = AbortTaskOnDrop(heartbeat_task.abort_handle());
+        let heartbeat_task = AbortOnDropHandle::new(tokio::spawn(
+            heartbeat::heartbeat_loop_for_run(run_id, http, shutdown),
+        ));
         let status = match heartbeat_task.await {
             Ok(Ok(())) => cli::HeartbeatStatus::Stopped,
             Ok(Err(error)) => cli::HeartbeatStatus::Failed(error),
@@ -1038,14 +1039,6 @@ fn spawn_heartbeat(
         };
         let _ = status_tx.send(status);
     })
-}
-
-struct AbortTaskOnDrop(tokio::task::AbortHandle);
-
-impl Drop for AbortTaskOnDrop {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
 }
 
 async fn stop_heartbeat(handle: tokio::task::JoinHandle<()>) {
