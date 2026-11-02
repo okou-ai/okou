@@ -282,7 +282,7 @@ async function openManagedBrowserChat(
   const cdpUrl = "wss://cdp.browser-use.com/research";
   mockBrowserCdp(context, cdpUrl);
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    return respond(200, { browser, cdpUrl, extension: TEST_BROWSER_EXTENSION });
   });
   let browser = managedBrowserSession({
     status: "active",

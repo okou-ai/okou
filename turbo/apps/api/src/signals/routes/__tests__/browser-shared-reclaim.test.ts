@@ -130,6 +130,7 @@ describe("shared Browser expiry through public reopen", () => {
         [200],
       );
       expect(retainedViewer.body.extension.id).toBe(TEST_BROWSER_EXTENSION.id);
+      expect(retainedViewer.body.browser.window).toStrictEqual(sibling.window);
       navigate(
         f,
         first.window.primaryWindowId,
@@ -188,6 +189,10 @@ describe("shared Browser expiry through public reopen", () => {
         [200],
       );
       expect(replacementViewer.body.extension.id).toBe(replacementExtensionId);
+      expect(replacementViewer.body.browser.window).toStrictEqual(
+        reopenedB.window,
+      );
+      expect(replacementViewer.body.cdpUrl).toBe(f.provider.native.url);
     });
   });
 

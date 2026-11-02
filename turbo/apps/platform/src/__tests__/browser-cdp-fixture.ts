@@ -1,4 +1,5 @@
 import { array, number, object, string, unknown } from "zod";
+import { vi } from "vitest";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 
 export const TEST_BROWSER_EXTENSION = Object.freeze({
@@ -6,6 +7,27 @@ export const TEST_BROWSER_EXTENSION = Object.freeze({
   runtimeId: "abcdefghijklmnopabcdefghijklmnop",
   version: "0.3.0",
 });
+
+/** Retain expected startup reports while keeping the unexpected-error guard. */
+export function recordBrowserStartupErrors(): Error[] {
+  const errors: Error[] = [];
+  const consoleError = vi.spyOn(console, "error");
+  const unexpected = consoleError.getMockImplementation();
+  if (!unexpected) {
+    throw new Error("Expected the shared console error guard");
+  }
+  consoleError.mockImplementation((...args: unknown[]) => {
+    if (
+      args[1] === "Browser viewer startup failed" &&
+      args[2] instanceof Error
+    ) {
+      errors.push(args[2]);
+      return;
+    }
+    unexpected(...args);
+  });
+  return errors;
+}
 
 interface BrowserTarget {
   readonly targetId: string;

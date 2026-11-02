@@ -153,8 +153,42 @@ describe("shared Browser public consumers", () => {
         [200],
       );
       expect(viewer.body).toStrictEqual({
+        browser: session.body.browser,
         cdpUrl: f.provider.native.url,
         extension: TEST_BROWSER_EXTENSION,
+      });
+    });
+  });
+
+  it("rejects a viewer binding whose chat window expires during acquisition", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const a = await f.start();
+      await use(a);
+      const [providerSessionId] = f.provider.sessionIds;
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      server.use(
+        http.get(
+          `${PROVIDER_URL}/browsers/${providerSessionId}`,
+          async () => {
+            entered.resolve();
+            await release.promise;
+            // Continue to the fixture's active provider response after the lease expires.
+          },
+          { once: true },
+        ),
+      );
+      const connection = client().viewerConnection({
+        headers,
+        params: { threadId: a.threadId },
+      });
+      await entered.promise;
+      mockNow(START + 11 * MINUTE);
+      release.resolve();
+      await expect(connection).resolves.toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_RECLAIMING" } },
       });
     });
   });

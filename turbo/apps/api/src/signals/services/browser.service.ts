@@ -3250,6 +3250,11 @@ export const getBrowserViewerConnection$ = command(
       : {
           kind: "ok",
           value: {
+            browser: publicBrowser(browser, {
+              liveUrl: provider.value.liveUrl,
+              screenshotUrl: null,
+              idleExpiresAt: instance.idleExpiresAt,
+            }),
             cdpUrl: connection.value,
             extension: browserUseNativeConnection(provider.value).extension,
           },
