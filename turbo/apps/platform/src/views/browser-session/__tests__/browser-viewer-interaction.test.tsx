@@ -336,6 +336,108 @@ test.each(["sequence gap", "worker replacement"])(
   },
 );
 
+test.each([
+  { code: 1000, wasClean: true },
+  { code: 1006, wasClean: false },
+])(
+  "A native close ($code) preserves the uncertain new-tab result until manual recovery",
+  async ({ code, wasClean }) => {
+    const sentry = context.mocks.sentry();
+    const browser = await setupViewer(0);
+    const created = browser.holdNextNative("createTab");
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await created.received;
+    await screen.findByLabelText("New tab", { selector: '[role="tab"]' });
+
+    act(() => {
+      browser.disconnect({ code, wasClean, reason: "private-close-reason" });
+    });
+    await screen.findByText("Browser disconnected");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      sentry.breadcrumbs.filter((entry) => {
+        return entry.category === "browser.connection";
+      }),
+    ).toStrictEqual([
+      {
+        category: "browser.connection",
+        level: "info",
+        message: "Browser WebSocket closed",
+        data: {
+          source: "native-close",
+          role: "control",
+          phase: "open",
+          code,
+          was_clean: wasClean,
+          pending_requests: 1,
+          cancelled_awaiting_response: 0,
+        },
+      },
+    ]);
+
+    await act(async () => {
+      await created.release();
+    });
+    expect(screen.getByText("Browser disconnected")).toBeInTheDocument();
+    const reconnect = queryAllByRoleFast("button").find((button) => {
+      return button.textContent?.trim() === "Reconnect";
+    });
+    if (!reconnect) {
+      throw new Error("Missing reconnect control");
+    }
+    click(reconnect);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    // The original remote effect survived; recovery discovers that one tab.
+    const tab = await screen.findByLabelText("New tab", {
+      selector: '[role="tab"]',
+    });
+    click(tab);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+  },
+);
+
+test("A native close distinguishes cancelled late attachments from unfinished requests", async () => {
+  const sentry = context.mocks.sentry();
+  const browser = await setupViewer(0);
+  act(() => {
+    browser.move("other-page", 0);
+  });
+  await screen.findByLabelText("Other", { selector: '[role="tab"]' });
+  const attachment = browser.holdNext("Target.attachToTarget");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await attachment.received;
+  act(() => {
+    browser.move("other-page", 1);
+  });
+  await screen.findByText("Browser view unavailable");
+
+  act(() => {
+    browser.disconnect({ code: 1001, wasClean: true });
+  });
+  await screen.findByText("Browser disconnected");
+  expect(
+    sentry.breadcrumbs.find((entry) => {
+      return entry.category === "browser.connection";
+    }),
+  ).toMatchObject({
+    data: {
+      role: "control",
+      phase: "open",
+      pending_requests: 0,
+      cancelled_awaiting_response: 1,
+    },
+  });
+  await act(async () => {
+    await attachment.release();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+});
+
 test("An empty assigned window can create a native tab without a source document", async () => {
   const browser = mockViewer(0);
   browser.targets.splice(0, 1);

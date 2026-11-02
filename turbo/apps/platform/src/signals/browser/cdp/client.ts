@@ -6,6 +6,7 @@ import {
   type DeferredPromise,
 } from "../../utils.ts";
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
+import { addBreadcrumb } from "@sentry/browser";
 import { CdpFault, isRecord } from "./errors.ts";
 
 type Method = keyof ProtocolMapping.Commands;
@@ -125,6 +126,7 @@ function createWire(connection: Connection) {
   return { close, send };
 }
 type Wire = ReturnType<typeof createWire>;
+type ConnectionRole = "control" | "frames";
 
 function createRequests(
   connection: Connection,
@@ -332,7 +334,12 @@ function receiveMessage(
   }
 }
 
-function listen(connection: Connection, wire: Wire, signal: AbortSignal): void {
+function listen(
+  connection: Connection,
+  wire: Wire,
+  signal: AbortSignal,
+  role: ConnectionRole | undefined,
+): void {
   let phase: "before-open" | "after-open" = "before-open";
   const opened = () => {
     phase = "after-open";
@@ -352,6 +359,28 @@ function listen(connection: Connection, wire: Wire, signal: AbortSignal): void {
     );
   };
   const closed = (event: CloseEvent) => {
+    let cancelled = 0;
+    for (const entry of connection.pending.values()) {
+      if (entry.settled) {
+        cancelled++;
+      }
+    }
+    // Snapshot written requests before teardown clears them. Missing responses
+    // do not establish whether the remote effects occurred or are safe to retry.
+    addBreadcrumb({
+      category: "browser.connection",
+      level: "info",
+      message: "Browser WebSocket closed",
+      data: {
+        source: "native-close",
+        ...(role ? { role } : {}),
+        phase: phase === "after-open" ? "open" : "opening",
+        code: event.code,
+        was_clean: event.wasClean,
+        pending_requests: connection.pending.size - cancelled,
+        cancelled_awaiting_response: cancelled,
+      },
+    });
     wire.close(
       new CdpFault(
         "connection",
@@ -379,7 +408,10 @@ function listen(connection: Connection, wire: Wire, signal: AbortSignal): void {
 /** One mounted surface owns this native socket adapter and its protocol receipts. */
 export function createCdpClient(
   url: string,
-  options: { readonly factory?: SocketFactory },
+  options: {
+    readonly factory?: SocketFactory;
+    readonly role?: ConnectionRole;
+  },
   signal: AbortSignal,
 ): CdpClient {
   signal.throwIfAborted();
@@ -411,7 +443,7 @@ export function createCdpClient(
       return connection.closeListeners.delete(listener);
     };
   };
-  listen(connection, wire, signal);
+  listen(connection, wire, signal, options.role);
   if (signal.aborted) {
     wire.close();
   }
