@@ -7,6 +7,8 @@
 
 use unicode_normalization::UnicodeNormalization;
 
+use crate::percent_decode::{decode_utf8 as percent_decode, hex_value};
+
 const IDNA_DOT_EQUIVALENTS: [char; 3] = ['\u{3002}', '\u{ff0e}', '\u{ff61}'];
 const IPV4_OCTET_COUNT: usize = 4;
 const IPV4_MAX_OCTET: u16 = 255;
@@ -306,33 +308,6 @@ fn translate_idna_dots(host: &str) -> String {
             }
         })
         .collect()
-}
-
-fn percent_decode(value: &str) -> Option<String> {
-    let bytes = value.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while let Some(&byte) = bytes.get(index) {
-        if byte != b'%' {
-            decoded.push(byte);
-            index += 1;
-            continue;
-        }
-        let high = hex_value(*bytes.get(index + 1)?)?;
-        let low = hex_value(*bytes.get(index + 2)?)?;
-        decoded.push((high << 4) | low);
-        index += 3;
-    }
-    String::from_utf8(decoded).ok()
-}
-
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
 }
 
 pub fn is_public_ip_address(address: std::net::IpAddr) -> bool {
