@@ -29,7 +29,9 @@ final class ChatThreadReplayTests: XCTestCase {
     XCTAssertEqual(
       ChatThreadReplay.replay(snapshot: [member], events: []).first?.projectId, project)
     XCTAssertEqual(
-      ChatThreadReplay.replay(snapshot: [], events: [moved, event(.created, at: 1)]).first?.projectId,
+      ChatThreadReplay.replay(
+        snapshot: [], events: [moved, event(.created, at: 1)]
+      ).first?.projectId,
       project)
   }
 

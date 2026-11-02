@@ -1141,7 +1141,8 @@ const registerUserMessageRenderDocument$ = command(
     const readableDocument =
       projectAwareUserMessageDocumentSchema.parse(document);
     return {
-      document: readableDocument,
+      // Registration uses the raw document identity across window updates.
+      document,
       parts: readableDocument.parts.flatMap((part, index) => {
         if (part.type === "additional_info") {
           return [];

@@ -155,7 +155,7 @@ export async function listChatThreadEvents(options: {
 
 export async function getChatIndicators(): Promise<Indicators> {
   const config = await getClientConfig();
-  const client = initClient(projectAwareChatThreadsReadContract, config);
+  const client = initClient(chatThreadsContract, config);
   const result = await client.indicators();
   if (result.status === 200) {
     return result.body;
@@ -172,7 +172,7 @@ export async function createChatThread(options: {
   reasoningEffort?: ReasoningEffort;
 }): Promise<ChatThreadCreateResult> {
   const config = await getClientConfig();
-  const client = initClient(projectAwareChatThreadsReadContract, config);
+  const client = initClient(chatThreadsContract, config);
   const result = await client.create({
     body: {
       agentId: options.agentId,
