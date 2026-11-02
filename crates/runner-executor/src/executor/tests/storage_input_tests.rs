@@ -592,7 +592,7 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     let download = server.mock(|when, then| {
         when.method(httpmock::Method::GET)
             .path("/instructions.tar.gz");
-        then.status(200).body(bytes.clone());
+        then.status(200).body(&bytes);
     });
     let current = instruction_context(&hash, bytes.len() as u64, "codex", "large-instructions");
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -861,7 +861,7 @@ async fn large_workflow_archive_downloads_through_ordinary_guest_passthrough() {
     let server = httpmock::MockServer::start();
     let download = server.mock(|when, then| {
         when.method(httpmock::Method::GET).path("/complete.tar.gz");
-        then.status(200).body(bytes.clone());
+        then.status(200).body(&bytes);
     });
     let overrides = Arc::new(MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
