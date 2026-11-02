@@ -5028,6 +5028,34 @@
       }
     }
   },
+  "projects": {
+    "archived": "Archived conversations",
+    "create": "Create Project",
+    "createChatError": "Could not create chat",
+    "delete": "Delete",
+    "deleteDescription": "Your conversations and their histories will be kept. They return to their original Agent lists.",
+    "deleteError": "Could not delete Project",
+    "deleteProject": "Delete Project",
+    "deleteTitle": "Delete Project?",
+    "description": "Keep related conversations together across Agents",
+    "empty": "No conversations here yet",
+    "fromChat": "Create a Project from this chat",
+    "move": "Move to Project",
+    "moveDescription": "The Agent and conversation history stay with this chat",
+    "moveError": "Could not move conversation",
+    "moveTitle": "Move conversation",
+    "name": "Project name",
+    "newChat": "New chat",
+    "projects": "Projects",
+    "remove": "Remove from Project",
+    "rename": "Rename",
+    "renameProject": "Rename Project",
+    "save": "Save",
+    "saveError": "Could not save Project",
+    "saving": "Saving…",
+    "unavailable": "Project unavailable",
+    "unavailableDescription": "This Project was deleted or is not available in this workspace"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} exécution(s) simultanée(s)",
     "concurrentRuns_many": "{{count}} exécutions simultanées",
@@ -7406,33 +7434,5 @@
       "successDescription": "{{phone}} est connecté. Envoyez un message WhatsApp pour commencer à discuter.",
       "unavailable": "WhatsApp n’est pas encore configuré"
     }
-  },
-  "projects": {
-    "projects": "Projects",
-    "rename": "Rename",
-    "create": "Create Project",
-    "renameProject": "Rename Project",
-    "description": "Keep related conversations together across Agents",
-    "name": "Project name",
-    "saving": "Saving…",
-    "save": "Save",
-    "move": "Move to Project",
-    "moveTitle": "Move conversation",
-    "moveDescription": "The Agent and conversation history stay with this chat",
-    "remove": "Remove from Project",
-    "fromChat": "Create a Project from this chat",
-    "unavailable": "Project unavailable",
-    "unavailableDescription": "This Project was deleted or is not available in this workspace",
-    "delete": "Delete",
-    "newChat": "New chat",
-    "archived": "Archived conversations",
-    "empty": "No conversations here yet",
-    "deleteTitle": "Delete Project?",
-    "deleteDescription": "Your conversations and their histories will be kept. They return to their original Agent lists.",
-    "deleteProject": "Delete Project",
-    "saveError": "Could not save Project",
-    "moveError": "Could not move conversation",
-    "createChatError": "Could not create chat",
-    "deleteError": "Could not delete Project"
   }
 }

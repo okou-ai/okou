@@ -1,3 +1,4 @@
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
   chatThreadsContract,
@@ -805,4 +806,54 @@ test("Continue online when local chat storage becomes unavailable", async () => 
     }),
   ).resolves.toStrictEqual([]);
   expect(context.mocks.sentry().reports).toStrictEqual([]);
+});
+
+test("Project metadata recovers an expired cursor, reopens offline and stays owner scoped", async () => {
+  const project = {
+    id: "30000000-0000-4000-8000-000000000071",
+    name: "Launch",
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+  };
+  let refresh = false;
+  context.mocks.api(projectsContract.snapshot, ({ respond }) =>
+    {return respond(200, {
+      projects: [{ ...project, name: refresh ? "New name" : project.name }],
+      latestEventId: null,
+      latestSeqId: refresh ? 5 : 1,
+    })},
+  );
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    if (refresh && query.sinceSeqId === 1) {
+      return respond(410, {
+        error: { code: "PROJECT_EVENTS_EXPIRED", message: "Refresh snapshot" },
+      });
+    }
+    return respond(200, { events: [], hasMore: false });
+  });
+  const owner = identity();
+  const first = startRuntime(owner).runtime;
+  const query = {
+    dataKey: { kind: "project-event" as const },
+    afterSeqId: null,
+    consistency: "catch-up" as const,
+  };
+  expect((await queryRuntime(first, query)).snapshot?.projects).toEqual([
+    project,
+  ]);
+  refresh = true;
+  expect((await queryRuntime(first, query)).snapshot?.projects[0]?.name).toBe(
+    "New name",
+  );
+  const reopened = startRuntime(owner).runtime;
+  expect(
+    (await queryRuntime(reopened, { ...query, consistency: "cache-only" }))
+      .snapshot?.latestSeqId,
+  ).toBe(5);
+  const peer = startRuntime(
+    identity({ userId: owner.userId + "-peer" }),
+  ).runtime;
+  expect(
+    await queryRuntime(peer, { ...query, consistency: "cache-only" }),
+  ).toEqual({ snapshot: null, events: [] });
 });

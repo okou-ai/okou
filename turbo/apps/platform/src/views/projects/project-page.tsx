@@ -469,3 +469,27 @@ export function ProjectPage() {
     </main>
   );
 }
+
+export function ProjectReference({
+  part,
+  className,
+}: {
+  part: { readonly projectId: string; readonly nameSnapshot: string };
+  className?: string;
+}) {
+  const agent = useLastResolved(currentChatAgentRecordId$);
+  return (
+    <Link
+      pathname="/projects/:projectId"
+      options={{
+        pathParams: { projectId: part.projectId },
+        searchParams: agent
+          ? new URLSearchParams({ projectAgent: agent })
+          : undefined,
+      }}
+      className={className}
+    >
+      {part.nameSnapshot}
+    </Link>
+  );
+}

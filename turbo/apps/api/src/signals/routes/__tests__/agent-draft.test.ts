@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
-import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import type { infer as zInfer } from "zod";
+import type { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
+type UserMessageInputDocument = zInfer<typeof userMessageInputDocumentSchema>;
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";

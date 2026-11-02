@@ -168,7 +168,9 @@ Notes:
           JSON.stringify({
             ...(agentId === undefined ? { allAgents: true } : { agentId }),
             total: matchingThreads.length,
-            complete: threads.length === matchingThreads.length,
+            ...(options.projectId !== undefined || options.limit === "all"
+              ? { complete: threads.length === matchingThreads.length }
+              : {}),
             threads,
           }),
         );

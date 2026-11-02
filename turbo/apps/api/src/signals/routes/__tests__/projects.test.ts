@@ -286,3 +286,85 @@ describe("private cross-Agent Projects", () => {
     ).toEqual([]);
   });
 });
+
+it("serializes concurrent moves, duplicate creates and deletion against new memberships", async () => {
+  const actor = await owner();
+  const a = await agent(actor);
+  const first = await thread(actor, a.agentId);
+  const p = await create(actor, "Launch");
+  const q = await create(actor, "Review");
+  const same = operation();
+  const [one, two] = await Promise.all([
+    client().create({
+      headers: headers(actor),
+      body: {
+        id: same,
+        eventId: same,
+        name: "Concurrent",
+        fromThreadId: first.id,
+      },
+    }),
+    client().create({
+      headers: headers(actor),
+      body: {
+        id: same,
+        eventId: same,
+        name: "Concurrent",
+        fromThreadId: first.id,
+      },
+    }),
+  ]);
+  expect([one.status, two.status]).toEqual([201, 201]);
+  const moves = await Promise.all([
+    move(actor, first.id, p.id),
+    move(actor, first.id, q.id),
+  ]);
+  expect(moves.map((r) => {return r.status})).toEqual([200, 200]);
+  const events = (
+    await accept(
+      threads().events({ headers: headers(actor), query: {} }),
+      [200],
+    )
+  ).body.events.filter(
+    (e) => {return e.chatThreadId === first.id && e.projectMembershipUpdated},
+  );
+  const last = events.at(-1);
+  if (!last?.projectId) {
+    throw new Error("Missing committed membership");
+  }
+  const members = await accept(
+    client().threads({
+      headers: headers(actor),
+      params: { id: last.projectId },
+      query: { limit: 100, archived: "all" },
+    }),
+    [200],
+  );
+  expect(members.body.threads.map((t) => {return t.id})).toEqual([first.id]);
+  const [deletion, joining] = await Promise.all([
+    client().delete({
+      headers: headers(actor),
+      params: { id: p.id },
+      body: { eventId: operation() },
+    }),
+    move(actor, first.id, p.id),
+  ]);
+  expect([204, 409]).toContain(deletion.status);
+  expect([200, 404]).toContain(joining.status);
+  if (deletion.status === 204) {
+    expect(
+      (await client().get({ headers: headers(actor), params: { id: p.id } }))
+        .status,
+    ).toBe(404);
+    const all = (
+      await accept(
+        threads().events({ headers: headers(actor), query: {} }),
+        [200],
+      )
+    ).body.events;
+    const tail = all
+      .filter((e) => {return e.chatThreadId === first.id && e.projectMembershipUpdated})
+      .at(-1);
+    expect(tail?.projectId).not.toBe(p.id);
+  }
+});

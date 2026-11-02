@@ -1,5 +1,8 @@
 import type { infer as zInfer } from "zod";
-import type { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  composerDraftSchema,
+  userMessageInputDocumentSchema,
+} from "@okouai/api-contracts/validators/chat-threads";
 type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 import {
   chatEventRowSchema,
@@ -150,7 +153,10 @@ export function continuityDraft(
   return {
     draftUserMessage:
       inputParts.length > 0
-        ? { version: 1, parts: inputParts as UserMessageInputDocument["parts"] }
+        ? userMessageInputDocumentSchema.parse({
+            version: 1,
+            parts: inputParts,
+          })
         : null,
     draftAttachments: attachments.length > 0 ? [...attachments] : null,
   };
@@ -173,7 +179,10 @@ export function textContinuityDraft(
     });
   }
   return {
-    draftUserMessage: parts.length > 0 ? { version: 1, parts } : null,
+    draftUserMessage:
+      parts.length > 0
+        ? userMessageInputDocumentSchema.parse({ version: 1, parts })
+        : null,
     draftAttachments: attachments.length > 0 ? [...attachments] : null,
   };
 }
@@ -331,7 +340,10 @@ export function installContinuityWorkspace(
       };
       draftPatches.push(patch);
       drafts.set(params.id, {
-        draftUserMessage: patch.draftUserMessage,
+        draftUserMessage:
+          patch.draftUserMessage === null
+            ? null
+            : userMessageInputDocumentSchema.parse(patch.draftUserMessage),
         draftAttachments: patch.draftAttachments,
       });
       return respond(204);

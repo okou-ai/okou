@@ -1,4 +1,7 @@
-import { ProjectMembership } from "../projects/project-page.tsx";
+import {
+  ProjectMembership,
+  ProjectReference,
+} from "../projects/project-page.tsx";
 import {
   MessageShareMenu,
   SharedThreadAudiencePicker,
@@ -7421,14 +7424,11 @@ function UserMessageFeedbackNote({
         }
         if (renderPart.type === "project") {
           return (
-            <Link
+            <ProjectReference
               key={key}
-              pathname="/projects/:projectId"
-              options={{ pathParams: { projectId: renderPart.part.projectId } }}
+              part={renderPart.part}
               className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-            >
-              {renderPart.part.nameSnapshot}
-            </Link>
+            />
           );
         }
         if (renderPart.type === "agent") {
@@ -7617,13 +7617,10 @@ function UserMessagePartView({
   }
   if (renderPart.type === "project") {
     return (
-      <Link
-        pathname="/projects/:projectId"
-        options={{ pathParams: { projectId: renderPart.part.projectId } }}
+      <ProjectReference
+        part={renderPart.part}
         className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      >
-        {renderPart.part.nameSnapshot}
-      </Link>
+      />
     );
   }
   if (renderPart.type === "agent") {

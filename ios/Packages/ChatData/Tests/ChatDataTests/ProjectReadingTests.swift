@@ -26,7 +26,7 @@ final class ProjectReadingTests: XCTestCase {
         let membership = leaving ? "null" : "\"\(project)\""
         return ChatHTTPResponse(
           body: """
-            {"events":[{"id":"30000000-0000-4000-8000-00000000001\(sequence)","seqId":\(sequence),"kind":"project_updated","chatThreadId":"\(thread)","agentId":"\(agent)","projectId":\(membership),"createdAt":"2026-11-02T01:00:00Z"}],"hasMore":false}
+            {"events":[{"id":"30000000-0000-4000-8000-00000000001\(sequence)","seqId":\(sequence),"kind":"sort_touched","projectMembershipUpdated":true,"chatThreadId":"\(thread)","agentId":"\(agent)","projectId":\(membership),"createdAt":"2026-11-02T01:00:00Z"}],"hasMore":false}
             """)
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
