@@ -5,6 +5,8 @@ use sandbox_mock::{MockSandboxControl, RemoteExecCall};
 
 use super::*;
 
+mod output_delivery;
+
 fn make_args(sandbox_id: &str, command: &str) -> ExecArgs {
     ExecArgs {
         run: None,
@@ -380,7 +382,7 @@ fn terminal_diagnostic_starts_on_new_line_after_stderr() {
     };
     let mut stderr = Vec::new();
 
-    write_remote_exec_stderr(&mut stderr, &result, false);
+    write_remote_exec_stderr(&mut stderr, &result, false, &mut false).unwrap();
 
     assert_eq!(stderr, b"stderr clue\nwait failed\n");
 }
@@ -397,7 +399,7 @@ fn terminal_fallback_is_not_added_when_stderr_has_content() {
     };
     let mut stderr = Vec::new();
 
-    write_remote_exec_stderr(&mut stderr, &result, false);
+    write_remote_exec_stderr(&mut stderr, &result, false, &mut false).unwrap();
 
     assert_eq!(stderr, b"stderr clue");
 }
@@ -414,7 +416,7 @@ fn terminal_fallback_is_added_when_stderr_is_empty() {
     };
     let mut stderr = Vec::new();
 
-    write_remote_exec_stderr(&mut stderr, &result, false);
+    write_remote_exec_stderr(&mut stderr, &result, false, &mut false).unwrap();
 
     assert_eq!(stderr, b"Cancelled\n");
 }
@@ -431,7 +433,7 @@ fn terminal_diagnostic_keeps_fallback_when_stderr_is_empty() {
     };
     let mut stderr = Vec::new();
 
-    write_remote_exec_stderr(&mut stderr, &result, false);
+    write_remote_exec_stderr(&mut stderr, &result, false, &mut false).unwrap();
 
     assert_eq!(stderr, b"Cancelled\ncancel diagnostic\n");
 }
@@ -448,7 +450,7 @@ fn terminal_timeout_diagnostic_preserves_legacy_timeout_display() {
     };
     let mut stderr = Vec::new();
 
-    write_remote_exec_stderr(&mut stderr, &result, false);
+    write_remote_exec_stderr(&mut stderr, &result, false, &mut false).unwrap();
 
     assert_eq!(stderr, b"Timeout\n");
 }
@@ -466,8 +468,8 @@ fn successful_terminal_diagnostic_is_opt_in() {
     let mut default_stderr = Vec::new();
     let mut diagnostic_stderr = Vec::new();
 
-    write_remote_exec_stderr(&mut default_stderr, &result, false);
-    write_remote_exec_stderr(&mut diagnostic_stderr, &result, true);
+    write_remote_exec_stderr(&mut default_stderr, &result, false, &mut false).unwrap();
+    write_remote_exec_stderr(&mut diagnostic_stderr, &result, true, &mut false).unwrap();
 
     assert!(default_stderr.is_empty());
     assert_eq!(diagnostic_stderr, b"containment evidence\n");
@@ -485,7 +487,7 @@ fn terminal_warning_starts_on_new_line_after_stderr() {
     };
     let mut stderr = Vec::new();
 
-    write_remote_exec_stderr(&mut stderr, &result, false);
+    write_remote_exec_stderr(&mut stderr, &result, false, &mut false).unwrap();
 
     assert_eq!(
         stderr,
@@ -505,7 +507,7 @@ fn terminal_warning_follows_diagnostic_without_extra_blank_line() {
     };
     let mut stderr = Vec::new();
 
-    write_remote_exec_stderr(&mut stderr, &result, false);
+    write_remote_exec_stderr(&mut stderr, &result, false, &mut false).unwrap();
 
     assert_eq!(
         stderr,
