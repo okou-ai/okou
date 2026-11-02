@@ -114,14 +114,6 @@ const missing = (): BrowserServiceError => {
     message: "Managed browser not found",
   };
 };
-const off = (): BrowserServiceError => {
-  return {
-    kind: "error",
-    status: 403,
-    code: "BROWSER_SHARED_OWNER_DISABLED",
-    message: "Shared Browser admission is not enabled",
-  };
-};
 function errorResult(error: unknown): BrowserServiceError {
   if (!(error instanceof BrowserUseProviderError)) {
     throw error;
@@ -537,38 +529,27 @@ function sharedBrowserMode(input$: SharedBrowserInputNode) {
       return null;
     }
     const db = get(db$);
-    const [rows, owner] = await Promise.all([
-      db
-        .select({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(
-          and(
-            eq(userFeatureSwitches.orgId, input.orgId),
-            inArray(userFeatureSwitches.userId, [
-              input.userId,
-              ORG_SENTINEL_USER_ID,
-            ]),
-          ),
+    const rows = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(
+        and(
+          eq(userFeatureSwitches.orgId, input.orgId),
+          inArray(userFeatureSwitches.userId, [
+            input.userId,
+            ORG_SENTINEL_USER_ID,
+          ]),
         ),
-      db
-        .select()
-        .from(profiles)
-        .where(
-          and(
-            eq(profiles.orgId, input.orgId),
-            eq(profiles.userId, input.userId),
-          ),
-        ),
-    ]);
+      );
     const enabled = isFeatureEnabled(FeatureSwitchKey.BrowserSharedOwner, {
       orgId: input.orgId,
       userId: input.userId,
       overrides: userFeatureSwitchOverridesFromRows(rows, input.userId),
     });
-    return enabled || owner.length > 0 ? { input, enabled } : null;
+    return enabled ? { input } : null;
   });
 }
 
@@ -813,9 +794,6 @@ function sharedBrowserOpen(
       if (!ctx || ctx.kind === "error") {
         return ctx;
       }
-      if (!ctx.mode.enabled) {
-        return off();
-      }
       // Reclaim expired lifetimes before the graph captures its current rows.
       await set(reconcileSharedBrowsers$, ctx.owner, signal);
       signal.throwIfAborted();
@@ -916,9 +894,6 @@ function sharedBrowserLease(
       if (!ctx || ctx.kind === "error") {
         return ctx;
       }
-      if (!ctx.mode.enabled) {
-        return off();
-      }
       const view = await get(view$);
       signal.throwIfAborted();
       if (!view?.window || !view.browser) {
@@ -995,9 +970,6 @@ function sharedBrowserResize(
       signal.throwIfAborted();
       if (!ctx || ctx.kind === "error") {
         return ctx;
-      }
-      if (!ctx.mode.enabled) {
-        return off();
       }
       const view = await get(view$);
       signal.throwIfAborted();

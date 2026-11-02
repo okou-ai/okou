@@ -46,7 +46,6 @@ import {
   isNull,
   lt,
   lte,
-  notExists,
   not,
   or,
   sql,
@@ -93,23 +92,6 @@ const TERMINAL_STATES: readonly BrowserUserActionState[] = [
 ];
 
 type RequestRow = typeof browserUserActionRequests.$inferSelect;
-
-function noSharedInputOwner(owner: {
-  readonly orgId: string;
-  readonly userId: string;
-}) {
-  return notExists(
-    new QueryBuilder()
-      .select({ id: browserOwnerProfiles.id })
-      .from(browserOwnerProfiles)
-      .where(
-        and(
-          eq(browserOwnerProfiles.orgId, owner.orgId),
-          eq(browserOwnerProfiles.userId, owner.userId),
-        ),
-      ),
-  );
-}
 
 function sharedInputWindowCondition(
   owner: {
@@ -174,20 +156,6 @@ function storedSharedInputIsLive(at: Date) {
           gt(browserChatSessions.expiresAt, at),
           eq(browserOwnerProfiles.status, "active"),
           gt(browserOwnerProfiles.timeoutAt, at),
-        ),
-      ),
-  );
-}
-
-function storedInputHasSharedOwner() {
-  return exists(
-    new QueryBuilder()
-      .select({ id: browserOwnerProfiles.id })
-      .from(browserOwnerProfiles)
-      .where(
-        and(
-          eq(browserOwnerProfiles.orgId, browserUserActionRequests.orgId),
-          eq(browserOwnerProfiles.userId, browserUserActionRequests.userId),
         ),
       ),
   );
@@ -520,7 +488,6 @@ const requestHasLiveBrowser$ = command(
           eq(browserSessionInstances.status, "active"),
           gt(browserSessionInstances.timeoutAt, now),
           gt(browserSessionInstances.idleExpiresAt, now),
-          noSharedInputOwner(row),
         ),
       )
       .limit(1);
@@ -575,7 +542,6 @@ const touchExactProvider$ = command(
           eq(browserSessionInstances.status, "active"),
           gt(browserSessionInstances.timeoutAt, now),
           gt(browserSessionInstances.idleExpiresAt, now),
-          noSharedInputOwner(row),
         ),
       )
       .returning({
@@ -691,13 +657,8 @@ const convertClosedBrowserUserActions$ = command(
             ),
             and(
               isNull(storedInputWindow),
-              or(
-                and(
-                  eq(browserSessionInstances.status, "stopped"),
-                  isNotNull(browserSessionInstances.finishedAt),
-                ),
-                storedInputHasSharedOwner(),
-              ),
+              eq(browserSessionInstances.status, "stopped"),
+              isNotNull(browserSessionInstances.finishedAt),
             ),
           ),
         ),
@@ -1074,9 +1035,8 @@ const resolveBrowserUserActionLifetime$ = command(
       FeatureSwitchKey.BrowserSharedOwner,
       features,
     );
-    if (shared || sharedEnabled) {
+    if (sharedEnabled) {
       if (
-        !sharedEnabled ||
         !shared ||
         shared.status !== "active" ||
         !shared.providerSessionId ||
@@ -1396,7 +1356,6 @@ function browserUserActionCreationPlan(args: {
               eq(browserSessions.status, "active"),
               eq(browserSessionInstances.status, "active"),
               gt(browserSessionInstances.idleExpiresAt, liveClock.at),
-              noSharedInputOwner(args),
             ),
           )
           .limit(1)
@@ -1546,7 +1505,6 @@ const persistBrowserUserAction = command(
                 eq(browserSessionInstances.status, "active"),
                 gt(browserSessionInstances.timeoutAt, plan.leaseClock.at),
                 gt(browserSessionInstances.idleExpiresAt, plan.leaseClock.at),
-                noSharedInputOwner(args),
               ),
             )
             .returning({

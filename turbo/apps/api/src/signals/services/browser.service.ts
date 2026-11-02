@@ -575,22 +575,6 @@ interface ActiveBrowserInstance {
   readonly userId: string;
 }
 
-// Shared ownership persists across instance stops; legacy writers and
-// retention must not reclaim that owner's chat snapshots after cutover.
-function uncutBrowserOwner() {
-  return notExists(
-    new QueryBuilder()
-      .select({ id: browserOwnerProfiles.id })
-      .from(browserOwnerProfiles)
-      .where(
-        and(
-          eq(browserOwnerProfiles.orgId, browserSessions.orgId),
-          eq(browserOwnerProfiles.userId, browserSessions.userId),
-        ),
-      ),
-  );
-}
-
 const saveBrowserTabSnapshot$ = command(
   async (
     { set },
@@ -646,7 +630,6 @@ const saveBrowserTabSnapshot$ = command(
               eq(browserSessions.orgId, target.orgId),
               eq(browserSessions.userId, target.userId),
               eq(browserSessions.status, "active"),
-              uncutBrowserOwner(),
             ),
           );
         const source = new QueryBuilder()
@@ -3584,7 +3567,6 @@ function expiredInactiveBrowserClaim(
     eq(browserSessions.status, target.status),
     eq(browserSessions.updatedAt, target.updatedAt),
     lte(browserSessions.updatedAt, cutoff),
-    uncutBrowserOwner(),
     target.providerProfileId === null
       ? notExists(
           new QueryBuilder()
@@ -3628,9 +3610,16 @@ function expiredInactiveBrowserClaim(
           requestTokenHash: browserUserActionRequests.requestTokenHash,
         })
         .from(browserUserActionRequests)
+        .innerJoin(
+          browserSessionInstances,
+          eq(
+            browserSessionInstances.providerSessionId,
+            browserUserActionRequests.providerSessionId,
+          ),
+        )
         .where(
           eq(
-            browserUserActionRequests.chatThreadId,
+            browserSessionInstances.chatThreadId,
             browserSessions.chatThreadId,
           ),
         ),
@@ -3958,7 +3947,6 @@ const reconcileExpiredInactiveBrowsers$ = command(
         and(
           inArray(browserSessions.status, [...INACTIVE_BROWSER_STATUSES]),
           lte(browserSessions.updatedAt, cutoff),
-          uncutBrowserOwner(),
           notExists(
             db
               .select({
@@ -3984,9 +3972,16 @@ const reconcileExpiredInactiveBrowsers$ = command(
                 requestTokenHash: browserUserActionRequests.requestTokenHash,
               })
               .from(browserUserActionRequests)
+              .innerJoin(
+                browserSessionInstances,
+                eq(
+                  browserSessionInstances.providerSessionId,
+                  browserUserActionRequests.providerSessionId,
+                ),
+              )
               .where(
                 eq(
-                  browserUserActionRequests.chatThreadId,
+                  browserSessionInstances.chatThreadId,
                   browserSessions.chatThreadId,
                 ),
               ),

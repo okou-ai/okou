@@ -519,11 +519,6 @@ describe("shared Browser teardown through chat deletion", () => {
           bPage,
         );
         expect(f.provider.sessionIds.size).toBe(1);
-        const active = await accept(
-          client().get({ headers, params: { threadId: b.threadId } }),
-          [200],
-        );
-        expect(active.body.browser.window).toStrictEqual(sibling.window);
         await chat.deleteThread(f.owned.actor, b.threadId);
         expect(f.provider.native.targets.size).toBe(0);
         expect(f.provider.sessionIds.size).toBe(0);
