@@ -22,6 +22,7 @@ import {
   createAgentPhoneBddApi,
   AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
+  uniqueConversationId,
   uniquePhoneHandle,
 } from "./helpers/api-bdd-agentphone";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -57,6 +58,7 @@ async function configure(enabled = true, echoRouting = true) {
   integrations.configureAgentPhoneWebhook();
   const actor = integrations.user();
   const sends: Record<string, unknown>[] = [];
+  const typing: string[] = [];
   server.use(
     http.get(`${providerUrl}/v1/numbers`, () => {
       return HttpResponse.json({
@@ -80,6 +82,10 @@ async function configure(enabled = true, echoRouting = true) {
         to_number: body.to_number,
       });
     }),
+    http.post(`${providerUrl}/v1/conversations/:id/typing`, ({ params }) => {
+      typing.push(String(params.id));
+      return HttpResponse.json({ status: "typing indicator sent" });
+    }),
   );
   if (enabled) {
     await accept(
@@ -97,7 +103,13 @@ async function configure(enabled = true, echoRouting = true) {
       [200],
     );
   }
-  return { actor, integrations, ap: createAgentPhoneBddApi(context), sends };
+  return {
+    actor,
+    integrations,
+    ap: createAgentPhoneBddApi(context),
+    sends,
+    typing,
+  };
 }
 function sender(): string {
   return `+49${randomInt(10_000_000_000, 100_000_000_000)}`;
@@ -656,9 +668,11 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     },
   );
 
-  it.each(["connected", "unlink", "switch"] as const)(
-    "routes WhatsApp run replies and respects connection changes (state before completion: %s)",
-    async (connectionState) => {
+  it.each(["connected", "typing-recovery", "unlink", "switch"] as const)(
+    "maintains WhatsApp typing and routes run replies through completion (%s)",
+    async (scenario) => {
+      const connectionState =
+        scenario === "typing-recovery" ? "connected" : scenario;
       const setup = await configure(true, connectionState !== "connected");
       const fileEnabled = connectionState !== "switch";
       if (!fileEnabled) {
@@ -690,11 +704,30 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         body: "/help",
       });
       setup.sends.length = 0;
+      const conversationId = uniqueConversationId();
+      if (scenario === "typing-recovery") {
+        let rejectTyping = true;
+        server.use(
+          http.post(
+            `${providerUrl}/v1/conversations/${conversationId}/typing`,
+            () => {
+              if (!rejectTyping) {
+                return undefined;
+              }
+              rejectTyping = false;
+              return HttpResponse.json(
+                { detail: "temporary failure" },
+                { status: 503 },
+              );
+            },
+          ),
+        );
+      }
       const inputMessageId = await setup.ap.postAgentPhoneInboundMessage({
         channel: "whatsapp",
         from: phone,
         body: "Help me plan a meeting",
-        conversationId: "whatsapp-conversation",
+        conversationId,
         recentHistory: [
           {
             content: "Private SMS history",
@@ -709,6 +742,9 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         ],
       });
       await flushWaitUntilForTest();
+      expect(setup.typing).toStrictEqual(
+        scenario === "typing-recovery" ? [] : [conversationId],
+      );
       await runs.heartbeatRunner(runnerGroup);
       const polled = await runs.pollRunner(runnerGroup);
       const runId = polled.body.job?.runId;
@@ -742,18 +778,26 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       expect(run.appendSystemPrompt).toContain("private `/artifacts/...");
       expect(run.appendSystemPrompt).toContain("/help");
       expect(run.appendSystemPrompt).not.toContain("Private SMS history");
-      if (connectionState === "unlink") {
-        await accept(client().unlink({ headers: headers(setup.actor) }), [204]);
-      } else if (connectionState === "switch") {
-        await setup.ap.postAgentPhoneInboundMessage({
-          channel: "whatsapp",
-          from: phone,
-          body: "/switch",
-        });
-        setup.sends.length = 0;
-      }
       const webhooks = createWebhookCallbackApi(context);
       const sandboxHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+      const expectedTyping = [...setup.typing];
+      // Heartbeats keep typing alive even when the agent emits no events.
+      for (let refresh = 0; refresh < 8; refresh += 1) {
+        mockNow(now() + 4000);
+        const heartbeat = await webhooks.requestAgentHeartbeat(
+          { runId },
+          sandboxHeaders,
+          [200],
+        );
+        expect(heartbeat.body).toStrictEqual({
+          ok: true,
+          typingRefreshIntervalSeconds: 4,
+        });
+        await flushWaitUntilForTest();
+        expectedTyping.push(conversationId);
+        expect(setup.typing).toStrictEqual(expectedTyping);
+      }
+      mockNow(now() + 4000);
       await webhooks.requestAgentEvents(
         {
           runId,
@@ -768,6 +812,19 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         sandboxHeaders,
         [200],
       );
+      await flushWaitUntilForTest();
+      expectedTyping.push(conversationId);
+      expect(setup.typing).toStrictEqual(expectedTyping);
+      if (connectionState === "unlink") {
+        await accept(client().unlink({ headers: headers(setup.actor) }), [204]);
+      } else if (connectionState === "switch") {
+        await setup.ap.postAgentPhoneInboundMessage({
+          channel: "whatsapp",
+          from: phone,
+          body: "/switch",
+        });
+        setup.sends.length = 0;
+      }
       await webhooks.requestAgentComplete(
         {
           runId,
@@ -783,6 +840,10 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         [200],
       );
       await flushWaitUntilForTest();
+      mockNow(now() + 4000);
+      await webhooks.requestAgentHeartbeat({ runId }, sandboxHeaders, [404]);
+      await flushWaitUntilForTest();
+      expect(setup.typing).toStrictEqual(expectedTyping);
       if (connectionState !== "connected") {
         expect(setup.sends).toHaveLength(0);
       } else {
