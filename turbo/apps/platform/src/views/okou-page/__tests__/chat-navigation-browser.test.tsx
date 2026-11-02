@@ -1029,6 +1029,115 @@ test.each([true, false])(
   },
 );
 
+test("A delayed handback cannot clear a newer run's page-input takeover", async () => {
+  mockWideScreen();
+  mockLivePageGeometry();
+  mockBrowserApi(liveBrowserSession());
+  const runId = "d0000000-0000-4000-a000-000000000906";
+  const newerRunId = "d0000000-0000-4000-a000-000000000907";
+  const chatEvents: MockChatEventInput[] = [
+    {
+      id: "delayed-handback-user",
+      role: "user",
+      content: "Compare these pages",
+      runId,
+      seqId: 1,
+      createdAt: "2026-09-01T12:00:00.000Z",
+    },
+  ];
+  const handBackStarted = createDeferredPromise<void>(context.signal);
+  const handBackAccepted = createDeferredPromise<void>(context.signal);
+  const lifecycle = {
+    threadId: THREAD_ID,
+    threadTitle: "Browser navigation",
+    chatEvents,
+    activeRunIds: [runId],
+    appendGate: Promise.resolve(),
+    onQueuedEventAppend: ({ content }: { content?: string }) => {
+      if (content === HAND_BACK_MESSAGE && !handBackStarted.settled()) {
+        handBackStarted.resolve();
+      }
+    },
+  };
+  mockChatLifecycle(context, lifecycle);
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByDisplayValue("https://example.com");
+  const viewer = within(sidebar).getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  const page = await livePage(viewer);
+  click(buttonByName("Take over", viewer));
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
+
+  lifecycle.appendGate = handBackAccepted.promise;
+  click(buttonByName("Hand back", viewer));
+  await handBackStarted.promise;
+  expect(buttonByName("Hand back", viewer)).toBeDisabled();
+
+  // Realtime can expose a newer Run before the earlier HTTP send settles.
+  act(() => {
+    chatEvents.push(
+      {
+        id: "delayed-handback-complete",
+        role: "assistant",
+        content: null,
+        runId,
+        runLifecycleEvent: "completed",
+        seqId: 100,
+        createdAt: "2026-09-01T12:01:40.000Z",
+      },
+      {
+        id: "delayed-handback-new-run",
+        role: "user",
+        content: "Continue the comparison",
+        runId: newerRunId,
+        seqId: 101,
+        createdAt: "2026-09-01T12:01:41.000Z",
+      },
+    );
+    lifecycle.activeRunIds.push(newerRunId);
+    createChatEvent(THREAD_ID);
+  });
+  await within(viewer).findByText(/is working$/u);
+
+  // A new takeover is independent of the old handback still in flight.
+  lifecycle.appendGate = Promise.resolve();
+  await userEvent.pointer({
+    target: page.view,
+    keys: "[MouseLeft]",
+    coords: { clientX: 720, clientY: 450 },
+  });
+  await within(viewer).findByText("You're in control");
+  await waitFor(() => {
+    expect(screen.getAllByText(TAKE_OVER_MESSAGE)).toHaveLength(2);
+  });
+  handBackAccepted.resolve();
+  await waitFor(() => {
+    expect(buttonByName("Hand back", viewer)).toBeEnabled();
+  });
+  expect(within(viewer).getByText("You're in control")).toBeInTheDocument();
+
+  click(buttonByName("Hand back", viewer));
+  await waitFor(() => {
+    expect(screen.getAllByText(HAND_BACK_MESSAGE)).toHaveLength(2);
+  });
+  await waitFor(() => {
+    expect(within(viewer).getByRole("status")).toHaveTextContent(
+      /is working$/u,
+    );
+  });
+});
+
 test("Hand back after using the cloud browser between runs continues in one step", async () => {
   mockWideScreen();
   mockLivePageGeometry();

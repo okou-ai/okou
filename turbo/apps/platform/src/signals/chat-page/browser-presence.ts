@@ -105,9 +105,13 @@ export function createBrowserPresenceSignals({
   );
 
   const handBack$ = command(
-    async ({ set }, message: string, signal: AbortSignal) => {
+    async ({ get, set }, message: string, signal: AbortSignal) => {
+      const memberRun = get(memberRun$);
       await set(sendMessage$, message, signal);
-      set(memberRun$, null);
+      // A newer Run may have been taken over while this send was in flight.
+      if (get(memberRun$) === memberRun) {
+        set(memberRun$, null);
+      }
     },
   );
 
