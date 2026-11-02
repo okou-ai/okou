@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1083.0](https://github.com/okou-ai/okou/compare/app-v0.1082.5...app-v0.1083.0) (2026-11-02)
+
+
+### Features
+
+* **browser:** mirror remote keyboard hints and native enter ([#44505](https://github.com/okou-ai/okou/issues/44505)) ([1b12658](https://github.com/okou-ai/okou/commit/1b12658c367894d6d68909c241503db69519a05f))
+
+
+### Bug Fixes
+
+* align app connector introductions with 4,000+ catalog ([#44375](https://github.com/okou-ai/okou/issues/44375)) ([9b974cf](https://github.com/okou-ai/okou/commit/9b974cf48403e6daf872459231ad0d6a4e3ed8df))
+* **app:** retain cdp response diagnostics in sentry ([#44557](https://github.com/okou-ai/okou/issues/44557)) ([01b26ea](https://github.com/okou-ai/okou/commit/01b26eab2624f3d8bb6fe74fff09ada3b7c1778f))
+* **platform:** retain native browser websocket failure observations ([#44560](https://github.com/okou-ai/okou/issues/44560)) ([d05fd2a](https://github.com/okou-ai/okou/commit/d05fd2a3c85421ae7fd958ffe7ceca6317bf01c5))
+* **platform:** retain original browser input cleanup failures ([#44562](https://github.com/okou-ai/okou/issues/44562)) ([c95f580](https://github.com/okou-ai/okou/commit/c95f580b90493922b787aca3ce1a70926017fbbd))
+
 ## [0.1082.5](https://github.com/okou-ai/okou/compare/app-v0.1082.4...app-v0.1082.5) (2026-11-01)
 
 

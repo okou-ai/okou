@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.37.1](https://github.com/okou-ai/okou/compare/api-v2.37.0...api-v2.37.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* align app connector introductions with 4,000+ catalog ([#44375](https://github.com/okou-ai/okou/issues/44375)) ([9b974cf](https://github.com/okou-ai/okou/commit/9b974cf48403e6daf872459231ad0d6a4e3ed8df))
+
 ## [2.37.0](https://github.com/okou-ai/okou/compare/api-v2.36.1...api-v2.37.0) (2026-11-01)
 
 
