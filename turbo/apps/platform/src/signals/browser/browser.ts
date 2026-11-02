@@ -126,7 +126,8 @@ export interface BrowserSignals {
 /** Each surface uses the existing App Store, with its own private native owners. */
 export function createBrowserSignals(
   connection$: Computed<Promise<BrowserConnection | null>>,
+  reloadConnection$: Command<void, []>,
   onPageInput$?: Command<void, []>,
 ): BrowserSignals {
-  return createBrowserRuntime(connection$, onPageInput$);
+  return createBrowserRuntime(connection$, reloadConnection$, onPageInput$);
 }

@@ -96,7 +96,11 @@ async function setupInteractiveViewer(): Promise<void> {
   mockBrowserSession(activeSession);
   mockBrowserCdp(context, cdpUrl);
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    return respond(200, {
+      browser: activeSession,
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: activeSession });
@@ -173,7 +177,11 @@ test("The Okou viewer shows its host blank page only while the blank tab is sele
     ],
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    return respond(200, {
+      browser: activeSession,
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: activeSession });
@@ -293,7 +301,11 @@ test.each(["url", "instance", "window"] as const)(
     });
     context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
       if (!replacing) {
-        return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+        return respond(200, {
+          browser: currentSession,
+          cdpUrl,
+          extension: TEST_BROWSER_EXTENSION,
+        });
       }
       connectionStarted.resolve();
       await releaseConnection.promise;
@@ -373,7 +385,11 @@ test("Revealing a replacement viewer synchronizes the display measured while it 
       connectionStarted.resolve();
       await releaseConnection.promise;
     }
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    return respond(200, {
+      browser: currentSession,
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
   });
   await setupPage({ context, path: `/browsers/${THREAD_ID}` });
   await waitFor(() => {
@@ -418,6 +434,7 @@ test.each(["cdp", "runtime"] as const)(
       window: { instanceId: INSTANCE_ID, primaryWindowId: 0 },
     });
     let connection: BrowserViewerConnection = {
+      browser: session,
       cdpUrl: "wss://cdp.browser-use.com/original-native",
       extension: { ...TEST_BROWSER_EXTENSION },
     };
@@ -441,6 +458,7 @@ test.each(["cdp", "runtime"] as const)(
     await pendingInput.received;
 
     connection = {
+      browser: session,
       cdpUrl:
         identity === "cdp"
           ? "wss://cdp.browser-use.com/replacement-native"
@@ -528,7 +546,11 @@ test.each([
         }
         await releaseConnection.promise;
       }
-      return respond(200, { cdpUrl, extension: { ...TEST_BROWSER_EXTENSION } });
+      return respond(200, {
+        browser: session,
+        cdpUrl,
+        extension: { ...TEST_BROWSER_EXTENSION },
+      });
     });
     await setupPage({ context, path: `/browsers/${THREAD_ID}` });
     await expectStreamingViewer();
@@ -619,7 +641,11 @@ test.each([
     const cdpUrl = "wss://cdp.browser-use.com/restarted";
     mockBrowserCdp(context, cdpUrl);
     context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-      return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+      return respond(200, {
+        browser: activeSession,
+        cdpUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      });
     });
     let startCount = 0;
     mockBrowserSession(
@@ -689,7 +715,11 @@ function mockSharedViewer(liveUrl: string | null = null) {
     ],
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+    return respond(200, {
+      browser: session,
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
   });
   return { session, cdpUrl };
 }
@@ -743,9 +773,16 @@ test.each(["https://viewer.example/live", null])(
 );
 
 test("Legacy viewers retain unscoped viewing and their mounted heartbeat", async () => {
-  mockSharedViewer();
+  const { cdpUrl } = mockSharedViewer();
   const session = browserSession();
   mockBrowserSession(session);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, {
+      browser: session,
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
   const entered = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   context.mocks.api(
@@ -777,6 +814,7 @@ test("A mounted heartbeat keeps address editing usable after renewal", async () 
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return connectionAvailable
       ? respond(200, {
+          browser: session,
           cdpUrl: "wss://cdp.browser-use.com/shared-viewer",
           extension: TEST_BROWSER_EXTENSION,
         })
@@ -816,10 +854,17 @@ test("A mounted heartbeat keeps address editing usable after renewal", async () 
 test.each([200, 404, 409] as const)(
   "A heartbeat response %s after reopening reloads its window and keeps renewing",
   async (status) => {
-    const { session } = mockSharedViewer();
+    const { session, cdpUrl } = mockSharedViewer();
     let currentSession = session;
     context.mocks.api(browserContract.get, ({ respond }) => {
       return respond(200, { browser: currentSession });
+    });
+    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      return respond(200, {
+        browser: currentSession,
+        cdpUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      });
     });
     const entered = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
@@ -882,7 +927,11 @@ test.each(["legacy", "instance", "window"] as const)(
         connectionStarted.resolve();
         await releaseConnection.promise;
       }
-      return respond(200, { cdpUrl, extension: TEST_BROWSER_EXTENSION });
+      return respond(200, {
+        browser: currentSession,
+        cdpUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      });
     });
     const entered = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
@@ -957,18 +1006,26 @@ test.each(["legacy", "instance", "window"] as const)(
 );
 
 test("Navigating to another chat cancels the old heartbeat and renews only the new chat", async () => {
-  const { session } = mockSharedViewer();
+  const { session, cdpUrl } = mockSharedViewer();
   const nextThreadId = "44444444-4444-4444-8444-444444444444";
-  context.mocks.api(browserContract.get, ({ params, respond }) => {
-    return respond(200, {
-      browser: {
-        ...session,
-        threadId: params.threadId,
-        window: {
-          instanceId: INSTANCE_ID,
-          primaryWindowId: params.threadId === THREAD_ID ? 0 : 1,
-        },
+  function sessionForThread(threadId: string): BrowserSession {
+    return {
+      ...session,
+      threadId,
+      window: {
+        instanceId: INSTANCE_ID,
+        primaryWindowId: threadId === THREAD_ID ? 0 : 1,
       },
+    };
+  }
+  context.mocks.api(browserContract.get, ({ params, respond }) => {
+    return respond(200, { browser: sessionForThread(params.threadId) });
+  });
+  context.mocks.api(browserContract.viewerConnection, ({ params, respond }) => {
+    return respond(200, {
+      browser: sessionForThread(params.threadId),
+      cdpUrl,
+      extension: TEST_BROWSER_EXTENSION,
     });
   });
   const first = context.mocks.deferred<void>();

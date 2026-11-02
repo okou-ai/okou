@@ -178,9 +178,9 @@ function BrowserCdpViewer({
   const connecting =
     connection.state === "hasData" &&
     connection.data !== null &&
-    (connection.data.liveUrl !== liveUrl ||
-      connection.data.instanceId !== (instanceId ?? null) ||
-      connection.data.windowId !== (windowId ?? null));
+    (connection.data.requestedSession.liveUrl !== liveUrl ||
+      connection.data.requestedSession.window?.instanceId !== instanceId ||
+      connection.data.requestedSession.window?.primaryWindowId !== windowId);
   if (connection.state === "loading") {
     return (
       <>
