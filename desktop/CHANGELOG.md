@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.2](https://github.com/okou-ai/okou/compare/desktop-v0.55.1...desktop-v0.55.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* preserve desktop http status for non-json error responses ([#44601](https://github.com/okou-ai/okou/issues/44601)) ([8821d9d](https://github.com/okou-ai/okou/commit/8821d9dbdb02c80daf21211ef15d41c560e6e05a))
+
 ## [0.55.1](https://github.com/okou-ai/okou/compare/desktop-v0.55.0...desktop-v0.55.1) (2026-11-02)
 
 
