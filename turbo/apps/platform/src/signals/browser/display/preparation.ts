@@ -268,32 +268,42 @@ function createSnapshotAcquisition(
     client,
     windowId,
   } = context;
+  const observeCalibration$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+      if (signal.aborted || !set(current$)) {
+        return false;
+      }
+      const calibration = get(calibration$);
+      if (calibration.kind === "verified") {
+        return true;
+      }
+      const window = await client.request("Browser.getWindowForTarget", {
+        targetId: target.targetId,
+      });
+      signal.throwIfAborted();
+      if (!set(current$)) {
+        return false;
+      }
+      // An unfinished calibration may outlive a native state change. Re-read
+      // before capture so a minimized window cannot strand a later attempt.
+      const observed = observeWindow(window, windowId);
+      if (calibration.kind === "unbound") {
+        await set(target.geometry.waitForNativeFrame$, signal);
+        if (signal.aborted || !set(current$)) {
+          return false;
+        }
+      }
+      set(calibration$, { kind: "observed", window: observed });
+      return true;
+    },
+  );
   const acquireSnapshot$ = command(
     async (
       { get, set },
       signal: AbortSignal,
     ): Promise<DisplaySnapshot | null> => {
-      if (signal.aborted || !set(current$)) {
+      if (!(await set(observeCalibration$, signal))) {
         return null;
-      }
-      if (get(calibration$).kind === "unbound") {
-        const window = await client.request("Browser.getWindowForTarget", {
-          targetId: target.targetId,
-        });
-        signal.throwIfAborted();
-        if (!set(current$)) {
-          return null;
-        }
-        // A minimized window may not emit a frame until its state is restored.
-        const observed = observeWindow(window, windowId);
-        await set(target.geometry.waitForNativeFrame$, signal);
-        if (signal.aborted || !set(current$)) {
-          return null;
-        }
-        set(calibration$, {
-          kind: "observed",
-          window: observed,
-        });
       }
       const observed = get(calibration$);
       if (observed.kind === "observed") {

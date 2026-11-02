@@ -166,6 +166,69 @@ test("Restoring an already calibrated window waits for a fresh native frame", as
   expect(within(viewer).queryByRole("alert")).not.toBeInTheDocument();
 });
 
+test("A minimized window can be synchronized again after native capture preparation fails", async () => {
+  const browser = mockViewer();
+  browser.setWindowState("maximized");
+  const restoring = browser.holdNext("Browser.setWindowBounds");
+  const viewer = await openViewer();
+  await restoring.received;
+  browser.failNext("Page.stopScreencast", "The capture could not be stopped");
+  await act(async () => {
+    await restoring.release();
+  });
+  await expect(within(viewer).findByRole("alert")).resolves.toHaveTextContent(
+    operationError,
+  );
+  browser.setWindowState("minimized");
+  const sizing = await openWindowSizeMenu(viewer);
+
+  click(sizeOption(sizing, "Fit window to panel"));
+
+  await waitFor(() => {
+    expect(browser.windowState()).toBe("normal");
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(within(viewer).queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("A minimized window is restored after its pending calibration frame is invalidated", async () => {
+  const browser = mockViewer();
+  const viewer = await openViewer();
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  act(() => {
+    browser.frame("AAAA");
+  });
+  browser.setWindowState("maximized", 0, { width: 1280, height: 720 });
+  const frames = browser.holdFrames("example-page-session");
+  const sizing = await openWindowSizeMenu(viewer);
+  click(sizeOption(sizing, "Fit window to panel"));
+  await frames.received;
+  const observation = browser.holdNext("Browser.getWindowForTarget");
+  act(() => {
+    frames.release();
+  });
+  await observation.received;
+
+  act(() => {
+    browser.event("Page.frameResized", {}, "example-page-session");
+    browser.setWindowState("minimized");
+  });
+  await act(async () => {
+    await observation.release();
+  });
+
+  await waitFor(() => {
+    expect(browser.windowState()).toBe("normal");
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(within(viewer).queryByRole("alert")).not.toBeInTheDocument();
+});
+
 test("A target moved during restoration cannot authorize further display writes", async () => {
   const browser = mockViewer();
   browser.targets.push({
