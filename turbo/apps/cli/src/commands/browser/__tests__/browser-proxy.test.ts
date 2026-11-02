@@ -268,19 +268,41 @@ describe("chat-window CDP proxy protocol", () => {
     });
   });
 
-  it("uses native per-owned-root selectors and admits only their related iframe sessions", async () => {
-    const attached = connection.event((message) => {
-      return (
-        message.method === "Target.attachedToTarget" &&
-        (message.params?.targetInfo as { targetId?: string })?.targetId ===
-          "IFRAME-A"
-      );
-    });
+  it("keeps browser attachment non-recursive and admits page-level iframe sessions", async () => {
+    const roots: unknown[] = [];
+    const observe = (message: Message) => {
+      if (message.method === "Target.attachedToTarget" && !message.sessionId)
+        roots.push(
+          (message.params?.targetInfo as { targetId?: string })?.targetId,
+        );
+    };
+    connection.listeners.add(observe);
     await connection.request("Target.setAutoAttach", {
       autoAttach: true,
       waitForDebuggerOnStart: true,
       flatten: true,
     });
+    await connection.request("Target.getTargets");
+    connection.listeners.delete(observe);
+    expect(roots).toStrictEqual(expect.arrayContaining(["A", "SHARED"]));
+    expect(roots).not.toContain("IFRAME-A");
+    const parent = await connection.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: true,
+    });
+    const attached = connection.event((message) => {
+      return (
+        message.method === "Target.attachedToTarget" &&
+        message.sessionId === parent.sessionId &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId ===
+          "IFRAME-A"
+      );
+    });
+    await connection.request(
+      "Target.setAutoAttach",
+      { autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
+      String(parent.sessionId),
+    );
     const event = await attached;
     await connection.request(
       "Runtime.enable",
@@ -308,6 +330,77 @@ describe("chat-window CDP proxy protocol", () => {
     const inventory = await connection.request("Target.getTargets");
     expect(JSON.stringify(inventory)).not.toContain("IFRAME-B");
   });
+
+  it.each([
+    { filter: [{ type: "page" }, { exclude: true }], roots: ["A"] },
+    { filter: [{ type: "iframe" }, { exclude: true }], roots: [] },
+    { filter: [], roots: [] },
+  ])(
+    "supports native browser filters without recursive attachment: %j",
+    async ({ filter, roots }) => {
+      await connection.request("Target.setAutoAttach", {
+        autoAttach: true,
+        waitForDebuggerOnStart: false,
+        flatten: true,
+        filter,
+      });
+      await connection.request("Target.getTargets");
+      expect(
+        provider.commands
+          .filter((command) => {
+            return command.method === "Target.autoAttachRelated";
+          })
+          .map((command) => {
+            return command.params.targetId;
+          }),
+      ).toStrictEqual(roots);
+    },
+  );
+
+  it.each([
+    {
+      autoAttach: true,
+      filter: [{}],
+      error: "Native incompatible tab/page filter",
+    },
+    {
+      autoAttach: false,
+      filter: [{ type: "page" }],
+      error: "Native filter when disabling auto-attach",
+    },
+  ])(
+    "preserves native filter errors and existing sessions: %j",
+    async ({ autoAttach, filter, error }) => {
+      const attached = connection.event((message) => {
+        return (
+          message.method === "Target.attachedToTarget" &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "A"
+        );
+      });
+      await connection.request("Target.setAutoAttach", {
+        autoAttach: true,
+        waitForDebuggerOnStart: false,
+        flatten: true,
+      });
+      const original = await attached;
+      await expect(
+        connection.request("Target.setAutoAttach", {
+          autoAttach,
+          filter,
+          waitForDebuggerOnStart: false,
+          flatten: true,
+        }),
+      ).rejects.toStrictEqual({ code: -32602, message: error });
+      expect(
+        await connection.request(
+          "Runtime.enable",
+          {},
+          String(original.params?.sessionId),
+        ),
+      ).toStrictEqual({});
+    },
+  );
 
   it("retains legacy envelope mode for child auto-attachments arriving before their response", async () => {
     const parent = await connection.request("Target.attachToTarget", {
@@ -595,6 +688,50 @@ describe("chat-window CDP proxy protocol", () => {
         { text: "blocked" },
         String(sessionId),
       ),
+    ).rejects.toMatchObject({ code: -32000 });
+  });
+
+  it("retains owned iframe ancestry after an unrelated move and revokes it when its parent leaves", async () => {
+    const parent = await connection.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: true,
+    });
+    const attached = connection.event((message) => {
+      return (
+        message.method === "Target.attachedToTarget" &&
+        message.sessionId === parent.sessionId &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId ===
+          "IFRAME-A"
+      );
+    });
+    await connection.request(
+      "Target.setAutoAttach",
+      { autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
+      String(parent.sessionId),
+    );
+    const frame = (await attached).params?.sessionId;
+    await connection.request("Target.setDiscoverTargets", { discover: true });
+    const entered = connection.event((message) => {
+      return (
+        message.method === "Target.targetCreated" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId === "B"
+      );
+    });
+    provider.move("B", 0);
+    await entered;
+    expect(
+      await connection.request("Runtime.enable", {}, String(frame)),
+    ).toStrictEqual({});
+    const detached = connection.event((message) => {
+      return (
+        message.method === "Target.detachedFromTarget" &&
+        message.params?.sessionId === parent.sessionId
+      );
+    });
+    provider.move("A", 1);
+    await detached;
+    await expect(
+      connection.request("Runtime.enable", {}, String(frame)),
     ).rejects.toMatchObject({ code: -32000 });
   });
 

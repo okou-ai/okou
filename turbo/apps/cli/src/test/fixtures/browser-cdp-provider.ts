@@ -16,13 +16,34 @@ const commandSchema = object({
   params: record(string(), zUnknown()).default({}),
   sessionId: string().optional(),
 });
+const filterSchema = array(
+  object({ type: string().optional(), exclude: boolean().optional() }),
+);
 const relatedSchema = object({
   targetId: string(),
   waitForDebuggerOnStart: boolean(),
-  filter: array(
-    object({ type: string().optional(), exclude: boolean().optional() }),
-  ).optional(),
+  filter: filterSchema.optional(),
 });
+const automaticSchema = object({
+  autoAttach: boolean(),
+  waitForDebuggerOnStart: boolean(),
+  flatten: boolean().optional(),
+  filter: filterSchema.optional(),
+});
+
+function selectedType(type: string, filter: unknown): boolean {
+  const entries = filterSchema.parse(
+    filter ?? [
+      { type: "browser", exclude: true },
+      { type: "tab", exclude: true },
+      {},
+    ],
+  );
+  const selected = entries.find((entry) => {
+    return entry.type === undefined || entry.type === type;
+  });
+  return selected !== undefined && selected.exclude !== true;
+}
 export const EXTENSION_RUNTIME = "abcdefghijklmnopabcdefghijklmnop";
 interface Target {
   id: string;
@@ -307,13 +328,21 @@ export async function browserCdpProvider() {
           reply({});
         },
         "Target.setAutoAttach": () => {
-          if (
-            typeof params.autoAttach !== "boolean" ||
-            typeof params.waitForDebuggerOnStart !== "boolean" ||
-            (params.flatten !== undefined &&
-              typeof params.flatten !== "boolean")
-          ) {
+          const valid = automaticSchema.safeParse(params);
+          if (!valid.success) {
             fail(-32602, "Native invalid auto-attach parameters");
+            return;
+          }
+          if (!params.autoAttach && valid.data.filter?.length) {
+            fail(-32602, "Native filter when disabling auto-attach");
+            return;
+          }
+          if (
+            selected === "BROWSER" &&
+            selectedType("tab", params.filter) &&
+            selectedType("page", params.filter)
+          ) {
+            fail(-32602, "Native incompatible tab/page filter");
             return;
           }
           if (params.autoAttach === false) {
@@ -325,7 +354,8 @@ export async function browserCdpProvider() {
             fail(-32000, "Global auto-attach would pause sibling pages");
           else {
             const child = targets.get("IFRAME-" + selected);
-            if (child) attach(connection, child.id, sessionId, true);
+            if (child && selectedType(child.type, params.filter))
+              attach(connection, child.id, sessionId, true);
             reply({});
           }
         },
@@ -342,9 +372,12 @@ export async function browserCdpProvider() {
             return;
           }
           const target = String(params.targetId);
-          attach(connection, target, sessionId, true);
+          const root = targets.get(target);
+          if (root && selectedType(root.type, params.filter))
+            attach(connection, target, sessionId, true);
           const child = targets.get("IFRAME-" + target);
-          if (child) attach(connection, child.id, sessionId, true);
+          if (child && selectedType(child.type, params.filter))
+            attach(connection, child.id, sessionId, true);
           reply({});
         },
         "ServiceWorker.enable": () => {

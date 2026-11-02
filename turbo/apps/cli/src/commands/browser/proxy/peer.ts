@@ -291,9 +291,12 @@ export class ProxyPeer {
     params: Message,
     channel?: string,
   ): Promise<void> {
+    // A native disable operation cannot carry a nonempty filter. The caller's
+    // filter controls root selection below, not this cancellation command.
+    const { filter: _filter, ...reset } = params;
     await this.inject(
       "Target.setAutoAttach",
-      { ...params, autoAttach: false, flatten: true },
+      { ...reset, autoAttach: false, flatten: true },
       channel,
     );
     this.autoAttach.delete(channel);
@@ -410,7 +413,8 @@ export class ProxyPeer {
       method === "Target.setAutoAttach" &&
       browser &&
       typeof params.autoAttach === "boolean" &&
-      (params.flatten === undefined || typeof params.flatten === "boolean")
+      (params.flatten === undefined || typeof params.flatten === "boolean") &&
+      this.automaticParameters(params)
     ) {
       const operation = this.control.then(() => {
         return this.configureAutomatic(params, channel);
@@ -640,17 +644,19 @@ export class ProxyPeer {
       pending && record(pending.command.params)
         ? pending.command.params
         : undefined;
-    const related = [...this.requests.values()].some((request) => {
-      return (
-        request.command.method === "Target.autoAttachRelated" &&
+    const related = [...this.requests.values()].flatMap((request) => {
+      return request.command.method === "Target.autoAttachRelated" &&
         request.channel === channel &&
         record(request.command.params) &&
         typeof request.command.params.targetId === "string" &&
         this.scope.admits(request.command.params.targetId)
-      );
+        ? [request.command.params.targetId]
+        : [];
     });
-    if (parent || auto?.roots.size || related)
-      this.scope.inherit(info, parent ?? undefined);
+    const roots = parent
+      ? [parent]
+      : [...(auto?.roots.keys() ?? []), ...related];
+    if (roots.length) this.scope.inherit(info, roots);
 
     return {
       flatten: requested ? requested.flatten === true : (auto?.flatten ?? true),
@@ -665,6 +671,7 @@ export class ProxyPeer {
   ): Promise<void> {
     const info = targetInfo(params.targetInfo);
     if (!info || typeof params.sessionId !== "string") return;
+    await this.scope.stable();
     const { flatten } = this.provenance(info, channel);
     if (!(await this.scope.contains(info))) {
       if (params.waitingForDebugger === true)
@@ -787,7 +794,23 @@ export class ProxyPeer {
     return promise;
   }
 
-  private matches(info: TargetInfo, params: Message): boolean {
+  private automaticParameters(params: Message): boolean {
+    if (!relatedParameters(params)) return false;
+    if (
+      params.autoAttach === false &&
+      Array.isArray(params.filter) &&
+      params.filter.length > 0
+    )
+      return false;
+    // Let native validation reject the root protocol's incompatible page/tab
+    // combination without changing any already-active scoped subscriptions.
+    return !(
+      this.matches({ type: "tab" }, params) &&
+      this.matches({ type: "page" }, params)
+    );
+  }
+
+  private matches(info: Pick<TargetInfo, "type">, params: Message): boolean {
     const filter = Array.isArray(params.filter)
       ? params.filter
       : [
@@ -821,9 +844,9 @@ export class ProxyPeer {
           roots.set(info.targetId, {
             targetId: info.targetId,
             waitForDebuggerOnStart: auto.params.waitForDebuggerOnStart,
-            ...(auto.params.filter !== undefined
-              ? { filter: auto.params.filter }
-              : {}),
+            // Related selectors are recursive. Browser-level auto-attach is
+            // not: descendants are attached by their own parent sessions.
+            filter: [{ type: info.type }, { exclude: true }],
           });
     } else {
       for (const [id, params] of auto.roots)
@@ -881,7 +904,18 @@ export class ProxyPeer {
           }
         }
     }
+    await this.retireSessions();
+    for (const [channel, auto] of this.autoAttach) {
+      if (!channel || this.sessions.get(channel)?.target === null)
+        await this.relate(channel, auto);
+    }
+  }
+
+  private async retireSessions(): Promise<void> {
     for (const [id, session] of this.sessions) {
+      // Detaching a native parent also detaches its descendants. Sending a
+      // second command through that retired parent races its detach events.
+      if (session.parent && !this.liveSession(session.parent)) continue;
       if (
         session.target !== null &&
         !(await this.scope.allows(session.target))
@@ -892,10 +926,6 @@ export class ProxyPeer {
           session.parent,
         );
       }
-    }
-    for (const [channel, auto] of this.autoAttach) {
-      if (!channel || this.sessions.get(channel)?.target === null)
-        await this.relate(channel, auto);
     }
   }
 

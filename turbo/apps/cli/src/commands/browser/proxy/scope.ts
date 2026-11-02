@@ -33,7 +33,7 @@ export class WindowScope {
   private readonly admitted = new Set<string>();
   private readonly descendants = new Map<
     string,
-    { parent?: string; generation: number }
+    { readonly parents: readonly string[] }
   >();
   private readonly creating = new Set<string>();
   private readonly created = new Map<string, string>();
@@ -84,7 +84,6 @@ export class WindowScope {
           this.generation++;
           this.membership.clear();
           this.admitted.clear();
-          this.descendants.clear();
           this.scheduleRefresh();
         }
       }),
@@ -201,8 +200,10 @@ export class WindowScope {
     if (this.admitted.has(id)) return true;
     const relation = this.descendants.get(id);
     return (
-      relation?.generation === this.generation &&
-      (relation.parent === undefined || this.admits(relation.parent))
+      relation !== undefined &&
+      relation.parents.every((parent) => {
+        return this.admits(parent);
+      })
     );
   }
 
@@ -216,15 +217,52 @@ export class WindowScope {
   }
 
   /** Provenance comes from an admitted native parent or a scoped native selector. */
-  inherit(info: TargetInfo, parent?: string): void {
+  inherit(info: TargetInfo, parents: readonly string[]): void {
     this.targets.set(info.targetId, info);
     if (info.type === "page" || info.type === "tab" || this.internal(info))
       return;
-    if (parent !== undefined && !this.admits(parent)) return;
-    this.descendants.set(info.targetId, {
-      parent,
-      generation: this.generation,
-    });
+    const roots = [...new Set(parents)];
+    if (
+      !roots.length ||
+      roots.some((parent) => {
+        return !this.admits(parent);
+      })
+    )
+      return;
+    const prior = this.descendants.get(info.targetId);
+    // Keep a still-valid, more precise provenance proof instead of replacing it
+    // with the wider candidate set of another native selector.
+    if (
+      prior &&
+      this.admits(info.targetId) &&
+      prior.parents.every((parent) => {
+        return roots.includes(parent);
+      })
+    )
+      return;
+    const visited = new Set<string>();
+    if (
+      roots.some((parent) => {
+        return this.dependsOn(parent, info.targetId, visited);
+      })
+    )
+      return;
+    this.descendants.set(info.targetId, { parents: roots });
+  }
+
+  private dependsOn(
+    id: string,
+    ancestor: string,
+    visited: Set<string>,
+  ): boolean {
+    if (id === ancestor) return true;
+    if (visited.has(id)) return false;
+    visited.add(id);
+    return (
+      this.descendants.get(id)?.parents.some((parent) => {
+        return this.dependsOn(parent, ancestor, visited);
+      }) ?? false
+    );
   }
 
   contains(info: TargetInfo): Promise<boolean> {
@@ -239,7 +277,7 @@ export class WindowScope {
     if (info.type !== "page" && info.type !== "tab") {
       const opener =
         typeof info.openerId === "string" ? info.openerId : undefined;
-      if (opener && this.admits(opener)) this.inherit(info, opener);
+      if (opener && this.admits(opener)) this.inherit(info, [opener]);
       return Promise.resolve(this.admits(info.targetId));
     }
     let pending = this.membership.get(info.targetId);

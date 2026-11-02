@@ -11,7 +11,10 @@ import console from "node:console";
 import { performance } from "node:perf_hooks";
 import { setTimeout, clearTimeout } from "node:timers";
 import { parseArgs, promisify } from "node:util";
-import { openWire } from "../../browser-extension/tests/cdp.mjs";
+import {
+  openWire,
+  tabTargetForPage,
+} from "../../browser-extension/tests/cdp.mjs";
 
 const run = promisify(execFile);
 const { values: options } = parseArgs({
@@ -163,6 +166,9 @@ try {
       "--disable-dev-shm-usage",
       "--enable-unsafe-extension-debugging",
       "--disable-popup-blocking",
+      "--site-per-process",
+      "--host-resolver-rules=MAP frame.test 127.0.0.1",
+      "--no-proxy-server",
       "--remote-debugging-port=0",
       `--user-data-dir=${profile}`,
       `--disable-extensions-except=${extension}`,
@@ -257,6 +263,90 @@ try {
     await value(scopedB, sb, "localStorage.getItem('proxy-fixture')"),
     "shared",
   );
+  const frameUrl = origin.replace("127.0.0.1", "frame.test") + "/frame";
+  await value(
+    scopedA,
+    sa,
+    `new Promise(resolve => { const frame = document.createElement("iframe"); frame.onload = () => resolve(true); frame.src = ${JSON.stringify(frameUrl)}; document.body.append(frame); })`,
+  );
+  const frame = (
+    await direct.request("Target.getTargets", { filter: [{}] })
+  ).targetInfos.find((info) => {
+    return info.type === "iframe" && info.url === frameUrl;
+  });
+  assert.ok(frame, "Fixture must create a native cross-site iframe target");
+  const owned = new Set([a, frame.targetId, await tabTargetForPage(direct, a)]);
+  for (const filter of [
+    undefined,
+    [{ type: "page" }],
+    [{ type: "iframe" }],
+    [{ type: "tab" }],
+    [],
+  ]) {
+    const inventories = [];
+    for (const address of [endpoint, proxyA.endpoint]) {
+      const connection = await wire(address);
+      const attached = new Map();
+      const off = connection.onEvent((event) => {
+        if (event.sessionId !== undefined) return;
+        if (event.method === "Target.attachedToTarget")
+          attached.set(event.params.sessionId, event.params.targetInfo);
+        if (event.method === "Target.detachedFromTarget")
+          attached.delete(event.params.sessionId);
+      });
+      try {
+        await connection.request("Target.setAutoAttach", {
+          autoAttach: true,
+          waitForDebuggerOnStart: false,
+          flatten: true,
+          ...(filter === undefined ? {} : { filter }),
+        });
+        await connection.request("Target.getTargets");
+        inventories.push(
+          new Set(
+            [...attached.values()]
+              .filter((info) => {
+                return owned.has(info.targetId);
+              })
+              .map((info) => {
+                return info.targetId;
+              }),
+          ),
+        );
+        if (address === proxyA.endpoint)
+          assert.ok(
+            [...attached.values()].every((info) => {
+              return (
+                !["page", "tab", "iframe"].includes(info.type) ||
+                owned.has(info.targetId)
+              );
+            }),
+          );
+      } finally {
+        off();
+        connection.close();
+      }
+    }
+    assert.deepEqual(inventories[1], inventories[0]);
+  }
+  const frameAttached = await observe(
+    scopedA,
+    (event) => {
+      return (
+        event.method === "Target.attachedToTarget" &&
+        event.sessionId === sa &&
+        event.params.targetInfo.targetId === frame.targetId
+      );
+    },
+    () => {
+      return scopedA.request(
+        "Target.setAutoAttach",
+        { autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
+        sa,
+      );
+    },
+  );
+  const frameSession = frameAttached.params.sessionId;
   await scopedA.request("Target.setAutoAttach", {
     autoAttach: true,
     waitForDebuggerOnStart: true,
@@ -595,10 +685,55 @@ try {
     },
   );
   await assert.rejects(scopedA.request("Runtime.enable", {}, movedSession));
+  // Moving a different native tab must not invalidate this iframe's ancestry.
+  await scopedA.request("Runtime.enable", {}, frameSession);
   assert.ok(
     (await pages(scopedB)).some((page) => {
       return page.targetId === created.targetId;
     }),
+  );
+
+  const parentTabs = nativeWindow.tabs.filter((tab) => {
+    return tab.url === origin + "/a";
+  });
+  assert.equal(parentTabs.length, 1);
+  await observe(
+    scopedA,
+    (event) => {
+      return (
+        event.method === "Target.detachedFromTarget" &&
+        event.params.sessionId === sa
+      );
+    },
+    () => {
+      return invoke({
+        method: "moveTabs",
+        tabIds: [parentTabs[0].id],
+        windowId: winB,
+        index: -1,
+      });
+    },
+  );
+  await assert.rejects(
+    scopedA.request("Runtime.enable", {}, frameSession),
+    /\(-32000\)/u,
+  );
+  await observe(
+    scopedA,
+    (event) => {
+      return (
+        event.method === "Target.targetCreated" &&
+        event.params.targetInfo.targetId === a
+      );
+    },
+    () => {
+      return invoke({
+        method: "moveTabs",
+        tabIds: [parentTabs[0].id],
+        windowId: winA,
+        index: -1,
+      });
+    },
   );
 
   const status = await readFile(`/proc/${proxyA.child.pid}/status`, "utf8");
@@ -631,11 +766,15 @@ try {
         forTab: true,
         nestedSessions: true,
         explicitRelatedSelectors: true,
+        nativeAutoAttachFilters: true,
+        oopifParentage: true,
         agentBrowser: true,
         guestTaskAdmission: options["guest-task"],
         getCdpUrlAndIndependentClient: true,
         popup: true,
         nativeMoveRetiresSession: true,
+        unrelatedMovePreservesIframe: true,
+        parentMoveRetiresIframe: true,
         reconnect: true,
         logicalClosePreservesSibling: true,
         setupMs: [proxyA.setupMs, proxyB.setupMs],
