@@ -34,10 +34,36 @@ export const projectSearch$ = computed((get) => {
 export const setProjectSearch$ = command(({ set }, value: string) => {
   return set(internalSearch$, value);
 });
+const activeThreadMenu$ = state<{
+  readonly threadId: string;
+  readonly anchor: HTMLElement;
+} | null>(null);
+export const projectThreadMenuOpenChanged$ = command(
+  (
+    { get, set },
+    threadId: string,
+    open: boolean,
+    trigger: Element | undefined,
+  ) => {
+    if (open && trigger instanceof HTMLElement) {
+      set(activeThreadMenu$, { threadId, anchor: trigger });
+    } else if (
+      !open &&
+      get(activeThreadMenu$)?.threadId === threadId &&
+      !get(internalDialog$)
+    ) {
+      set(activeThreadMenu$, null);
+    }
+  },
+);
 export const openProjectMembership$ = command(
-  ({ set }, threadId: string, anchor: HTMLElement) => {
+  ({ get, set }, threadId: string) => {
+    const menu = get(activeThreadMenu$);
+    if (!menu || menu.threadId !== threadId) {
+      throw new Error("Project membership requires its active Thread menu");
+    }
     set(internalSearch$, "");
-    set(internalDialog$, { kind: "membership", threadId, anchor });
+    set(internalDialog$, { kind: "membership", threadId, anchor: menu.anchor });
   },
 );
 export const openProjectEditor$ = command(
@@ -57,10 +83,12 @@ export const closeProjectDialog$ = command(
   ({ get, set }, expected: ProjectDialog) => {
     if (get(projectDialog$) === expected) {
       set(internalDialog$, null);
+      set(activeThreadMenu$, null);
     }
   },
 );
 export const resetProjectUi$ = command(({ set }) => {
+  set(activeThreadMenu$, null);
   set(internalDialog$, null);
   set(internalName$, "");
   set(internalSearch$, "");

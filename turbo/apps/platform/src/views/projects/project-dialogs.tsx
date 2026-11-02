@@ -40,12 +40,35 @@ import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-eve
 import { mobileChatViewport$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+// A rename keeps its folder trigger; deleting a folder returns to the section's
+// create control. Creating from a chat returns to that chat's surviving row.
+function projectDialogFocusTarget(dialog: ProjectDialog) {
+  const threadId =
+    dialog.kind === "membership"
+      ? dialog.threadId
+      : dialog.kind === "editor"
+        ? dialog.fromThreadId
+        : undefined;
+  const projectId = "projectId" in dialog ? dialog.projectId : undefined;
+  const target = threadId
+    ? document.querySelector<HTMLElement>(
+        `[data-sidebar-chat-thread-id="${threadId}"]`,
+      )
+    : projectId
+      ? document.querySelector<HTMLElement>(
+          `[data-project-menu-id="${projectId}"]`,
+        )
+      : null;
+  return target ?? document.querySelector<HTMLElement>("[data-project-create]");
+}
+
 type EditorDialog = Extract<ProjectDialog, { kind: "editor" }>;
 function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const { t } = useTranslation();
   const name = useGet(projectEditorName$);
   const setName = useSet(setProjectEditorName$);
   const close = useSet(closeProjectDialog$);
+  const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [creation, create] = useLoadableSet(createProject$);
   const [renaming, rename] = useLoadableSet(renameProject$);
   const signal = useGet(pageSignal$);
@@ -69,7 +92,13 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
         }
       }}
     >
-      <DialogContent>
+      <DialogContent
+        finalFocus={() => {
+          return hasSuccessor(dialog)
+            ? false
+            : projectDialogFocusTarget(dialog);
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {dialog.projectId
@@ -364,6 +393,7 @@ function DeleteProjectDialog({
 }) {
   const { t } = useTranslation();
   const close = useSet(closeProjectDialog$);
+  const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [deletion, remove] = useLoadableSet(deleteProject$);
   const signal = useGet(pageSignal$);
   async function submit() {
@@ -380,7 +410,13 @@ function DeleteProjectDialog({
         }
       }}
     >
-      <DialogContent>
+      <DialogContent
+        finalFocus={() => {
+          return hasSuccessor(dialog)
+            ? false
+            : projectDialogFocusTarget(dialog);
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {t(($) => {

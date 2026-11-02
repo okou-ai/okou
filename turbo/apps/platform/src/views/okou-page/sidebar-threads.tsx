@@ -2,6 +2,7 @@ import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 import {
   openProjectMembership$,
   projectDialog$,
+  projectThreadMenuOpenChanged$,
 } from "../../signals/projects/project-ui.ts";
 import type { ComponentProps, ReactNode } from "react";
 import {
@@ -490,11 +491,9 @@ function ChatThreadMenuTrigger({
   touch = false,
 }: ChatThreadMenuProps) {
   const { t } = useTranslation();
-  const menuRef = useSet(signals.menuTriggerRef$);
 
   return (
     <DropdownMenuTrigger
-      ref={menuRef}
       render={<ChatThreadMenuButton signals={signals} touch={touch} />}
     >
       <Tooltip>
@@ -519,7 +518,6 @@ function ChatThreadMenuItems({
   const { t } = useTranslation();
   const requestDelete = useSet(signals.requestDelete$);
   const projectsEnabled = useGet(projectsEnabled$);
-  const anchor = useGet(signals.menuTrigger$);
   const move = useSet(openProjectMembership$);
 
   return (
@@ -532,9 +530,7 @@ function ChatThreadMenuItems({
       {projectsEnabled && (
         <DropdownMenuItem
           onClick={() => {
-            if (anchor) {
-              move(signals.threadId, anchor);
-            }
+            move(signals.threadId);
           }}
         >
           <FolderInput size={16} className="mr-2" />
@@ -564,9 +560,17 @@ function ChatThreadMenu({
   touch = false,
 }: ChatThreadMenuProps) {
   const projectDialog = useGet(projectDialog$);
+  const projectsEnabled = useGet(projectsEnabled$);
+  const menuOpenChanged = useSet(projectThreadMenuOpenChanged$);
   return (
     <TooltipProvider delay={200}>
-      <DropdownMenu>
+      <DropdownMenu
+        onOpenChange={(open, details) => {
+          if (projectsEnabled) {
+            menuOpenChanged(signals.threadId, open, details.trigger);
+          }
+        }}
+      >
         <ChatThreadMenuTrigger
           signals={signals}
           rowIndex={rowIndex}

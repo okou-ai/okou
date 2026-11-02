@@ -31,6 +31,7 @@ import {
 import {
   openProjectEditor$,
   setProjectDialog$,
+  projectDialog$,
 } from "../../signals/projects/project-ui.ts";
 import {
   archivedProjectIds$,
@@ -58,9 +59,11 @@ function ProjectFolderMenu({
   const editor = useSet(openProjectEditor$);
   const open = useSet(setProjectDialog$);
   const toggleArchive = useSet(toggleProjectArchive$);
+  const dialog = useGet(projectDialog$);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        data-project-menu-id={project.id}
         render={
           <Button
             variant="quiet"
@@ -79,7 +82,7 @@ function ProjectFolderMenu({
       >
         <Ellipsis size={16} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" finalFocus={dialog ? false : undefined}>
         <DropdownMenuItem
           onClick={() => {
             return editor({ projectId: project.id }, project.name);
@@ -132,7 +135,7 @@ function ProjectFolderEmpty({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="px-2 py-2 text-xs text-muted-foreground">
+    <div className="px-2 py-2 text-xs text-nav-copy-muted">
       <p>
         {archived
           ? t(($) => {
@@ -194,7 +197,7 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
             return toggle(project.id);
           }}
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-sm text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             touch ? "min-h-12" : "h-8",
           )}
         >
@@ -240,7 +243,7 @@ function ProjectFolder({ project, touch }: ProjectFolderProps) {
           aria-label={project.name}
         >
           {archived && (
-            <p className="px-2 py-1 text-xs text-muted-foreground">
+            <p className="px-2 py-1 text-xs text-nav-copy-muted">
               {t(($) => {
                 return $.projects.archived;
               })}
@@ -299,13 +302,14 @@ export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
   }
   return (
     <section
+      data-project-sidebar=""
       aria-label={t(($) => {
         return $.projects.projects;
       })}
       className="min-h-0 shrink-0 px-2 pb-2"
     >
       <div className="flex h-8 items-center justify-between px-2">
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-nav-copy-muted">
           {t(($) => {
             return $.projects.projects;
           })}
@@ -314,6 +318,7 @@ export function ProjectSidebar({ touch = false }: { touch?: boolean }) {
           variant="quiet"
           size="icon-2xs"
           className="rounded-md"
+          data-project-create=""
           aria-label={t(($) => {
             return $.projects.create;
           })}

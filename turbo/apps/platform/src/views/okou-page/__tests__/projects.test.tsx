@@ -20,6 +20,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   installContinuityWorkspace,
   continuityThread,
+  continuityEventRow,
 } from "./chat-continuity-test-helpers.ts";
 
 const context = testContext();
@@ -274,10 +275,16 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   await user.click(button("Options for Campaign"));
   await user.click(await findMenuItem("Rename"));
   const input = await screen.findByRole("textbox", { name: "Project name" });
+  await waitFor(() => {
+    expect(input).toHaveFocus();
+  });
   await fill(input, "Campaign two");
   await user.click(button("Save"));
   await waitFor(() => {
     return expect(button("Campaign two")).toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(button("Options for Campaign two")).toHaveFocus();
   });
   await user.click(button("Options for Campaign two"));
   await user.click(await findMenuItem("Delete"));
@@ -291,6 +298,9 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
     ).toBeFalsy();
   });
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  await waitFor(() => {
+    expect(button("Create Project")).toHaveFocus();
+  });
 });
 
 test("Thread menu searches and changes Project membership while preserving the open chat", async () => {
@@ -607,4 +617,65 @@ test("PWA uses the same folders and a bottom sheet for Thread membership", async
   await expect(
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
+});
+
+test("A Project mention reveals a folded chat sidebar and keeps the current conversation", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 48rem)";
+  });
+  const ordinary = continuityThread(97, 1, "Current conversation");
+  const member = {
+    ...continuityThread(97, 2, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 97,
+    threads: [ordinary, member],
+    chatEventRows: [
+      continuityEventRow(97, 1, ordinary.id, "input.prompt", {
+        payload: {
+          userMessage: {
+            version: 1,
+            parts: [{ type: "project", projectId: id, nameSnapshot: "Launch" }],
+          },
+        },
+      }),
+    ],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: {
+      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.UnifiedChatWorkspace]: true,
+    },
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(button("Hide chat list"));
+  await waitFor(() => {
+    expect(screen.queryByTestId("chat-list-column")).not.toBeInTheDocument();
+  });
+  const mention = await waitFor(() => {
+    const message = document.querySelector<HTMLElement>(
+      "[data-structured-user-message]",
+    );
+    if (!message) {
+      throw new Error("Message missing");
+    }
+    const link = namedLink(message, "Launch");
+    if (!link) {
+      throw new Error("Project mention missing");
+    }
+    return link;
+  });
+  expect(mention.getAttribute("href")).toContain(`/projects/${id}`);
+  await user.click(mention);
+  await waitFor(() => {
+    expect(screen.getByTestId("chat-list-column")).toBeInTheDocument();
+    expect(button("Launch", folder())).toHaveAttribute("aria-expanded", "true");
+  });
+  expect(namedLink(folder(), "Launch planning")).toBeInTheDocument();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
 });

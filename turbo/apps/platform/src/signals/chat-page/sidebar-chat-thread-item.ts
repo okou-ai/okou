@@ -38,11 +38,6 @@ export interface SidebarProjectContext {
 
 export interface SidebarChatThreadItemSignals {
   readonly threadId: string;
-  readonly menuTrigger$: Computed<HTMLElement | null>;
-  readonly menuTriggerRef$: Command<
-    (() => void) | undefined,
-    [HTMLElement | null]
-  >;
   readonly title$: Computed<string | null>;
   readonly archived$: Computed<boolean>;
   readonly muted$: Computed<boolean>;
@@ -192,7 +187,6 @@ function createSidebarChatThreadItemSignals(
   threadId: string,
 ): SidebarChatThreadItemSignals {
   const meta$ = threadMeta(threadId);
-  const menuTrigger$ = state<HTMLElement | null>(null);
   const title$ = computed((get): string | null => {
     return get(meta$)?.title ?? null;
   });
@@ -223,23 +217,6 @@ function createSidebarChatThreadItemSignals(
 
   return {
     threadId,
-    menuTrigger$: computed((get) => {
-      return get(menuTrigger$);
-    }),
-    menuTriggerRef$: onRef(
-      command(({ set }, element: HTMLElement, signal: AbortSignal) => {
-        set(menuTrigger$, element);
-        signal.addEventListener(
-          "abort",
-          () => {
-            return set(menuTrigger$, null);
-          },
-          {
-            once: true,
-          },
-        );
-      }),
-    ),
     title$,
     archived$,
     muted$,
