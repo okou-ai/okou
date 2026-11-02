@@ -1,13 +1,14 @@
 use std::io;
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use guest_control_client::{
     ConnectionClosedAtAdmission, FrameWriteObserver, GuestControlClient,
     NormalOperationFenceRejection,
 };
 use guest_control_proto::{
     MSG_PING, MSG_PONG, MSG_READY, MSG_SHUTDOWN, MSG_SHUTDOWN_ACK, MSG_WRITE_FILE,
-    MSG_WRITE_FILE_RESULT, MSG_WRITE_PRIVATE_FILES,
+    MSG_WRITE_FILE_RESULT, MSG_WRITE_FILES_RESULT, MSG_WRITE_PRIVATE_FILES,
 };
 use nix::sys::socket::{setsockopt, sockopt};
 use sandbox::OperationCancellationContext;
@@ -15,7 +16,7 @@ use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
 use tokio_util::sync::CancellationToken;
 
-use super::super::run_pre_spawn_phase;
+use super::super::{PreparationCancellation, run_pre_spawn_phase};
 use crate::test_fixtures::guest_control::{read_frame, send_frame};
 
 const BOUND: Duration = Duration::from_secs(5);
@@ -23,7 +24,7 @@ const CONTENT: &[u8] = &[b'h'; 1024 * 1024];
 const SANDBOX: &str = "preparation-sandbox";
 
 #[tokio::test]
-async fn cancelled_private_bootstrap_batch_fences_reuse_and_never_replays() {
+async fn hard_cancelled_private_bootstrap_batch_fences_reuse_and_never_replays() {
     let (client, mut guest) = connection().await;
     let cancel = CancellationToken::new();
     let owner =
@@ -47,7 +48,7 @@ async fn cancelled_private_bootstrap_batch_fences_reuse_and_never_replays() {
         },
     ];
     let mut phase = Box::pin(run_pre_spawn_phase(
-        &cancel,
+        PreparationCancellation::new(&cancel, &cancel),
         &owner,
         client.write_private_files(&files),
     ));
@@ -70,6 +71,59 @@ async fn cancelled_private_bootstrap_batch_fences_reuse_and_never_replays() {
         .await
         .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
+    acknowledge_shutdown(&client, &mut guest).await;
+}
+
+#[tokio::test]
+async fn cooperative_cancel_settles_bootstrap_and_keeps_the_reused_transport_healthy() {
+    let (client, mut guest) = connection().await;
+    let hard_cancel = CancellationToken::new();
+    for run in ["first-run", "later-run"] {
+        let cancel = CancellationToken::new();
+        let owner = OperationCancellationContext::new(run, SANDBOX, "guest_agent_bootstrap_files");
+        let files = [
+            guest_control_client::WriteFileEntry {
+                path: "/tmp/context",
+                content: b"context",
+            },
+            guest_control_client::WriteFileEntry {
+                path: "/tmp/payload",
+                content: b"payload",
+            },
+        ];
+        let mut phase = Box::pin(run_pre_spawn_phase(
+            PreparationCancellation::new(&cancel, &hard_cancel),
+            &owner,
+            client.write_private_files(&files),
+        ));
+        let request = tokio::select! {
+            _ = &mut phase => panic!("batch completed without its terminal acknowledgement"),
+            request = read_frame(&mut guest) => request,
+        };
+        assert_eq!(request.msg_type, MSG_WRITE_PRIVATE_FILES);
+        cancel.cancel();
+        assert!(
+            phase.as_mut().now_or_never().is_none(),
+            "cooperative cancellation must retain the accepted request"
+        );
+        send_frame(
+            &mut guest,
+            MSG_WRITE_FILES_RESULT,
+            request.seq,
+            &guest_control_proto::encode_write_files_result(true, ""),
+        )
+        .await;
+        tokio::time::timeout(BOUND, phase)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(owner.cancelled_owner().is_none());
+        let fence = client
+            .try_fence_normal_operations()
+            .expect("settled Guest must be fenceable for reuse");
+        drop(fence);
+    }
     acknowledge_shutdown(&client, &mut guest).await;
 }
 
@@ -108,7 +162,7 @@ async fn selected_pre_spawn_cancellation_marks_owner_before_frame_drop() {
         OperationCancellationContext::new("cancelled-run", SANDBOX, "guest_agent_preparation");
     let mut prefix = [0u8; guest_control_proto::HEADER_SIZE + guest_control_proto::MIN_BODY_SIZE];
     let mut phase = Box::pin(run_pre_spawn_phase(
-        &cancel,
+        PreparationCancellation::new(&cancel, &cancel),
         &owner,
         client.write_file("/tmp/history", CONTENT, false),
     ));
@@ -151,7 +205,7 @@ async fn a_ready_preparation_error_wins_over_concurrent_cancellation() {
         }
     });
     let result = run_pre_spawn_phase(
-        &cancel,
+        PreparationCancellation::new(&cancel, &cancel),
         &owner,
         client.write_file_with_write_observer("/tmp/history", b"history", false, observer),
     )
@@ -174,7 +228,7 @@ async fn already_cancelled_preparation_keeps_the_unused_transport_healthy() {
         OperationCancellationContext::new("cancelled-run", SANDBOX, "guest_agent_preparation");
     assert!(
         run_pre_spawn_phase(
-            &cancel,
+            PreparationCancellation::new(&cancel, &cancel),
             &owner,
             client.write_file("/tmp/history", b"history", false)
         )
@@ -192,7 +246,7 @@ async fn a_reused_transport_records_the_owner_of_the_cancelled_assignment() {
     let first_cancel = CancellationToken::new();
     let (result, ()) = tokio::join!(
         run_pre_spawn_phase(
-            &first_cancel,
+            PreparationCancellation::new(&first_cancel, &first_cancel),
             &first,
             client.write_file("/tmp/first", b"first", false)
         ),
@@ -214,7 +268,7 @@ async fn a_reused_transport_records_the_owner_of_the_cancelled_assignment() {
     let cancel = CancellationToken::new();
     let mut prefix = [0u8; guest_control_proto::HEADER_SIZE + guest_control_proto::MIN_BODY_SIZE];
     let mut phase = Box::pin(run_pre_spawn_phase(
-        &cancel,
+        PreparationCancellation::new(&cancel, &cancel),
         &second,
         client.write_file("/tmp/second", CONTENT, false),
     ));
