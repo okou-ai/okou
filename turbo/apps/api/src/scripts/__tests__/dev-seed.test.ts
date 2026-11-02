@@ -100,6 +100,12 @@ describe("usage pricing", () => {
             ...categories.map((category) => {
               return `${category}.long_context`;
             }),
+            ...categories.map((category) => {
+              return `${category}.fast`;
+            }),
+            ...categories.map((category) => {
+              return `${category}.long_context.fast`;
+            }),
           ].map((category) => {
             return {
               kind: "model",
