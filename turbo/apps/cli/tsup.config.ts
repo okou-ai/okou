@@ -57,7 +57,10 @@ async function buildImageResizeWorker(): Promise<void> {
 }
 
 export default defineConfig({
-  entry: ["src/okou.ts"],
+  entry: {
+    okou: "src/okou.ts",
+    "browser-proxy-worker": "src/commands/browser/proxy/worker.ts",
+  },
   format: ["esm"],
   // This executable ships no declarations; check-types owns type validation.
   dts: false,

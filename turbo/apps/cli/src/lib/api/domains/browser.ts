@@ -4,6 +4,7 @@ import {
   type BrowserAuthorizationRequestCreateResponse,
   type BrowserCreateRequest,
   type BrowserSession,
+  type BrowserExtension,
 } from "@okouai/api-contracts/contracts/browser";
 import {
   browserUserActionsContract,
@@ -47,9 +48,11 @@ export async function createBrowserAuthorizationRequest(): Promise<BrowserAuthor
   handleError(result, "Failed to create cloud browser authorization request");
 }
 
-export async function createBrowser(
-  body: BrowserCreateRequest,
-): Promise<{ browser: BrowserSession; cdpUrl: string }> {
+export async function createBrowser(body: BrowserCreateRequest): Promise<{
+  browser: BrowserSession;
+  cdpUrl: string;
+  extension?: BrowserExtension;
+}> {
   const result = await (await client()).create({ headers: {}, body });
   if (result.status === 201) {
     return result.body;
@@ -60,6 +63,7 @@ export async function createBrowser(
 export async function useBrowser(): Promise<{
   browser: BrowserSession;
   cdpUrl: string;
+  extension?: BrowserExtension;
 }> {
   const result = await (
     await client()
