@@ -339,6 +339,7 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
 
 async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl });
+  const rewardOrgId = `slack-reward-${crypto.randomUUID()}`;
   await client.connect();
 
   try {
@@ -348,8 +349,36 @@ async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
         AND conname = 'billing_run_attribution_source_check'
     `);
     assert.deepEqual(sourceConstraint.rows, [{ validated: true }]);
+    const insertCredit = (source: string) => {
+      return client.query(
+        `INSERT INTO credit_expires_record (org_id, source, amount, remaining, expires_at)
+         VALUES ($1, $2, 2000, 2000, now() + interval '7 days')`,
+        [rewardOrgId, source],
+      );
+    };
+    await insertCredit("get_started_reward");
+    await assert.rejects(insertCredit("get_started_reward"), {
+      code: "23505",
+      constraint: "uq_credit_expires_slack_reward_org",
+    });
+    await client.query(
+      "UPDATE credit_expires_record SET remaining = 0, expires_at = now() - interval '1 day' WHERE org_id = $1",
+      [rewardOrgId],
+    );
+    await assert.rejects(insertCredit("get_started_reward"), {
+      code: "23505",
+      constraint: "uq_credit_expires_slack_reward_org",
+    });
+    await insertCredit("credit_purchase");
+    await insertCredit("credit_purchase");
+    console.log(
+      "   ✅ Slack rewards remain unique after consumption and expiry; purchases remain repeatable\n",
+    );
     console.log("   ✅ Billing attribution source constraint is validated\n");
   } finally {
+    await client.query("DELETE FROM credit_expires_record WHERE org_id = $1", [
+      rewardOrgId,
+    ]);
     await client.end();
   }
 }
@@ -3193,6 +3222,7 @@ async function main(): Promise<void> {
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
+    await validateCanonicalBillingSources(dbUrl2);
     await validatePermanentNativeVncStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validateChatRelations(dbUrl2);

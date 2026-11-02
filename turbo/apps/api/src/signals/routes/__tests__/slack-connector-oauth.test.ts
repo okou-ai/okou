@@ -4,6 +4,8 @@ import {
   callbackNeedsSignIn,
 } from "./helpers/oauth-callback-auth";
 import { randomUUID } from "node:crypto";
+import { cronGetStartedContract } from "@okouai/api-contracts/contracts/get-started";
+import { getStartedRoutes } from "../get-started";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -1277,3 +1279,47 @@ test.each(callbackAuthenticationModes)(
     }
   },
 );
+
+test("reconnecting an awarded workspace and replaying the reward worker preserve its single permanent award", async () => {
+  const current = actor();
+  await complete(await startInstall(), current);
+  const before = await readGetStartedStatus(context, current);
+  const award = before.recentGrants.find((grant) => {
+    return grant.questKey === "slack";
+  });
+  expect(award).toMatchObject({
+    status: "granted",
+    rewardAmount: 2000,
+    rewardTarget: "org",
+  });
+  await disconnectChat();
+  const reconnect = await integrationStatus();
+  if (!reconnect.connectUrl) throw new Error("Expected a reconnect link");
+  await complete(await start(reconnect.connectUrl), current);
+  const operator = setupApp({ context, routes: getStartedRoutes })(
+    cronGetStartedContract,
+  );
+  await accept(
+    operator.process({ headers: { authorization: "Bearer test-cron-secret" } }),
+    [200],
+  );
+  await accept(
+    operator.process({ headers: { authorization: "Bearer test-cron-secret" } }),
+    [200],
+  );
+  const after = await readGetStartedStatus(context, current);
+  expect(
+    after.quests.find((quest) => {
+      return quest.key === "slack";
+    }),
+  ).toMatchObject({ claimedCount: 1, earnedCredits: 2000, pendingCount: 0 });
+  expect(
+    after.recentGrants.find((grant) => {
+      return grant.questKey === "slack";
+    }),
+  ).toStrictEqual(award);
+  await expect(integrationStatus()).resolves.toMatchObject({
+    isInstalled: true,
+    isConnected: true,
+  });
+});
