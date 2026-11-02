@@ -94,7 +94,7 @@ _runner_api_curl() {
 
     # Retry eligible timeouts, not served HTTP errors (curl status 22).
     # Buffer each attempt so a partial body is replaced, not concatenated.
-    local no_response_status=28
+    local timeout_status=28
     local connect_timeout=10 attempt_timeout=30
     if ((max_attempts > 1)); then
         connect_timeout=5
@@ -129,11 +129,11 @@ _runner_api_curl() {
         curl_status="${body##*"$exit_marker"}"
         body="${body%"$exit_marker"*}"
 
-        if ((curl_status != no_response_status)) ||
+        if ((curl_status != timeout_status)) ||
             ((attempt == max_attempts)); then
             break
         fi
-        printf 'runner_api_curl retrying %s after no response (attempt %d of %d)\n' \
+        printf 'runner_api_curl retrying %s after timeout (attempt %d of %d)\n' \
             "$diagnostic_url" "$attempt" "$max_attempts" >>"$diagnostics_file"
     done
 
@@ -143,11 +143,10 @@ _runner_api_curl() {
         cat "$diagnostics_file" >&2
         printf 'runner_api_curl failed: url=%s curl_status=%d\n' \
             "$diagnostic_url" "$curl_status" >&2
-        if ((curl_status == no_response_status)); then
-            # A stalled request carries no status, so the status-filtered
-            # search above finds nothing even when the API completed the
-            # request late.
-            printf 'runner_api_curl received no response from %s within %ss across %d attempt(s); the API may have answered after the client gave up: %s&timeline=past12Hours\n' \
+        if ((curl_status == timeout_status)); then
+            # A timeout can occur before headers or during a partial response.
+            # Search without status so late server completions remain visible.
+            printf 'runner_api_curl timed out waiting for a complete response from %s with a %ss per-attempt deadline across %d attempt(s); the API may have answered after the client gave up: %s&timeline=past12Hours\n' \
                 "$diagnostic_url" "$attempt_timeout" \
                 "$attempt" "$vercel_logs_url_prefix" >&2
         fi

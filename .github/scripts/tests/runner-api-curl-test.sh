@@ -296,7 +296,7 @@ MOCK_CURL_EXPECTED_URL="https://pr-27981-api.vm6.ai/api/runs/run-1/context"
 MOCK_CURL_EXPECTED_VERCEL_URL="${context_vercel_logs_search}+status%3A000&timeline=past12Hours"
 MOCK_CURL_EXPECTED_VERCEL_WRITE_OUT='%{onerror}%{stderr}Vercel logs: https://vercel.com/okou/vm0-api/logs?search=requestHost%%3Apr-27981-api.vm6.ai+requestPath%%3A%%2Fapi%%2Fruns%%2Frun-1%%2Fcontext+status%%3A%{http_code}&timeline=past12Hours\n'
 stall_stderr=$'curl: (28) Operation timed out with 0 bytes received\nVercel logs: '"$MOCK_CURL_EXPECTED_VERCEL_URL"$'\n'
-retry_stderr=$'runner_api_curl retrying https://pr-27981-api.vm6.ai/api/runs/run-1/context after no response (attempt 1 of 2)\n'
+retry_stderr=$'runner_api_curl retrying https://pr-27981-api.vm6.ai/api/runs/run-1/context after timeout (attempt 1 of 2)\n'
 
 MOCK_CURL_MODE=no-response-then-success
 reset_curl_attempts
@@ -333,7 +333,7 @@ assert_status 28
 assert_curl_attempts 2
 assert_file_equals '' "$stdout_file"
 assert_file_equals \
-    "${stall_stderr}${retry_stderr}${stall_stderr}"$'runner_api_curl failed: url=https://pr-27981-api.vm6.ai/api/runs/run-1/context curl_status=28\nrunner_api_curl received no response from https://pr-27981-api.vm6.ai/api/runs/run-1/context within 5s across 2 attempt(s); the API may have answered after the client gave up: '"${context_vercel_logs_search}"$'&timeline=past12Hours\n' \
+    "${stall_stderr}${retry_stderr}${stall_stderr}"$'runner_api_curl failed: url=https://pr-27981-api.vm6.ai/api/runs/run-1/context curl_status=28\nrunner_api_curl timed out waiting for a complete response from https://pr-27981-api.vm6.ai/api/runs/run-1/context with a 5s per-attempt deadline across 2 attempt(s); the API may have answered after the client gave up: '"${context_vercel_logs_search}"$'&timeline=past12Hours\n' \
     "$stderr_file"
 assert_file_excludes "$stderr_file" "$E2E_API_TOKEN"
 assert_file_excludes "$stderr_file" "$VERCEL_AUTOMATION_BYPASS_SECRET"
