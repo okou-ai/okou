@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.17](https://github.com/okou-ai/okou/compare/runner-host-v0.10.16...runner-host-v0.10.17) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
 ## [0.10.16](https://github.com/okou-ai/okou/compare/runner-host-v0.10.15...runner-host-v0.10.16) (2026-11-02)
 
 ## [0.10.15](https://github.com/okou-ai/okou/compare/runner-host-v0.10.14...runner-host-v0.10.15) (2026-11-02)

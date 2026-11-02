@@ -1,5 +1,31 @@
 # Changelog
 
+## [8.808.0](https://github.com/okou-ai/okou/compare/core-v8.807.4...core-v8.808.0) (2026-11-02)
+
+
+### Features
+
+* enable whatsapp integration for staff ([#44644](https://github.com/okou-ai/okou/issues/44644)) ([f01a2de](https://github.com/okou-ai/okou/commit/f01a2de52dda08018e693df3277ceeef3c14f59c))
+
+
+### Bug Fixes
+
+* disable shared browser staff rollout ([#44623](https://github.com/okou-ai/okou/issues/44623)) ([2c29f2e](https://github.com/okou-ai/okou/commit/2c29f2eb01d5b60b3a601b36e9e5aee0bfa7f453))
+* require explicit requests for presentation pptx conversion ([#44614](https://github.com/okou-ai/okou/issues/44614)) ([3961310](https://github.com/okou-ai/okou/commit/3961310dfb81580fa11bc96ed60030faa220e64e))
+
+
+### Refactoring
+
+* **app:** remove artifact quick actions ([#44615](https://github.com/okou-ai/okou/issues/44615)) ([17a4d1e](https://github.com/okou-ai/okou/commit/17a4d1e2b224595281cbeb98ab45a97c0a2fc701))
+* remove released first task halloween and onboarding switches ([#44575](https://github.com/okou-ai/okou/issues/44575)) ([4571899](https://github.com/okou-ai/okou/commit/4571899bd04a73a9e13591326ad0f9b21f9612fd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.31.1
+
 ## [8.807.4](https://github.com/okou-ai/okou/compare/core-v8.807.3...core-v8.807.4) (2026-11-02)
 
 

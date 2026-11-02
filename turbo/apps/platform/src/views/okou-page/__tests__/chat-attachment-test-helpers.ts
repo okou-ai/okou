@@ -1,6 +1,5 @@
 import type { infer as zInfer } from "zod";
 import type { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
-type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   chatThreadArtifactsContract,
@@ -26,6 +25,8 @@ import {
   normalizeMockChatEvents,
 } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle, threadListSnapshot } from "./chat-test-helpers.ts";
+
+type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 
 type MockChatLifecycleOptions = NonNullable<
   Parameters<typeof mockChatLifecycle>[1]

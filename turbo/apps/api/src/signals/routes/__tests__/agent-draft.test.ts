@@ -4,7 +4,6 @@ import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-he
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { infer as zInfer } from "zod";
 import type { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
-type UserMessageInputDocument = zInfer<typeof userMessageInputDocumentSchema>;
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,6 +11,8 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 import { agentDraftRoutes } from "../agent-draft";
+
+type UserMessageInputDocument = zInfer<typeof userMessageInputDocumentSchema>;
 
 const context = testContext();
 const mocks = createRouteMocks(context);

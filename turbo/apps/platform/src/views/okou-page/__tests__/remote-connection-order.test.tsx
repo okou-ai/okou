@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -44,7 +43,6 @@ test("Remote host names follow the active Chinese locale", async () => {
     context,
     path: "/connectors?scope=remote-control",
     locale: "zh-Hans",
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: true },
   });
   const list = await screen.findByRole("list", { name: "Remote connections" });
   await within(list).findByRole("listitem", { name: "北京" });
@@ -58,45 +56,27 @@ test("Remote host names follow the active Chinese locale", async () => {
   ).toStrictEqual(["北京", "广州-2", "上海-11"]);
 });
 
-test.each([false, true])(
-  "Remote connections use natural name order with guided setup %s",
-  async (guided) => {
-    mockConnectors(context, []);
-    mockPublicConnectorStatus(context, []);
-    mockHostInventories(context);
-    mockRemoteChoices(context);
-    await setupPage({
-      context,
-      path: "/connectors?scope=remote-control",
-      featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: guided },
+test("Remote connections use natural name order", async () => {
+  mockConnectors(context, []);
+  mockPublicConnectorStatus(context, []);
+  mockHostInventories(context);
+  mockRemoteChoices(context);
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control",
+  });
+  const list = await screen.findByRole("list", {
+    name: "Remote connections",
+  });
+  await within(list).findByRole("listitem", { name: "android" });
+  await within(list).findByRole("listitem", { name: "desktop-android" });
+  const renderedNames = within(list)
+    .getAllByRole("listitem")
+    .map((item) => {
+      return item.getAttribute("aria-label");
     });
-    let renderedNames: (string | null)[];
-    if (guided) {
-      const list = await screen.findByRole("list", {
-        name: "Remote connections",
-      });
-      await within(list).findByRole("listitem", { name: "android" });
-      await within(list).findByRole("listitem", { name: "desktop-android" });
-      renderedNames = within(list)
-        .getAllByRole("listitem")
-        .map((item) => {
-          return item.getAttribute("aria-label");
-        });
-    } else {
-      await screen.findByRole("heading", { name: "android" });
-      await screen.findByRole("heading", { name: "desktop-android" });
-      renderedNames = ["SSH", "VNC"].flatMap((protocol) => {
-        const group = screen.getByRole("region", { name: protocol });
-        return within(group)
-          .getAllByRole("article")
-          .map((card) => {
-            return within(card).getByRole("heading").textContent;
-          });
-      });
-    }
-    expect(renderedNames).toStrictEqual([...orderedNames, ...orderedVncNames]);
-  },
-);
+  expect(renderedNames).toStrictEqual([...orderedNames, ...orderedVncNames]);
+});
 
 test.each([false, true])(
   "A chat orders remote and desktop choices by name with existing thread %s",

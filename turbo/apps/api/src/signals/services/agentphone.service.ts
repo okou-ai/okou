@@ -1637,7 +1637,11 @@ export const handleAgentPhoneMessage$ = command(
     }
 
     signal.throwIfAborted();
-    if (params.event.channel === "imessage" && params.event.conversationId) {
+    if (
+      (params.event.channel === "imessage" ||
+        params.event.channel === "whatsapp") &&
+      params.event.conversationId
+    ) {
       // Ingress has verified the sender and persisted/deduplicated the message.
       // Start typing before agent/context reads, without delaying run dispatch.
       waitUntil(

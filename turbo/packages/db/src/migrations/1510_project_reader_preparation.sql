@@ -1,4 +1,5 @@
 CREATE TYPE "public"."project_event_kind" AS ENUM('created', 'renamed', 'deleted');--> statement-breakpoint
+ALTER TYPE "public"."chat_thread_event_kind" ADD VALUE 'project_updated';--> statement-breakpoint
 CREATE TABLE "project_event_sequences" (
 	"user_id" text NOT NULL,
 	"org_id" text NOT NULL,
@@ -14,6 +15,7 @@ CREATE TABLE "project_events" (
 	"project_id" uuid NOT NULL,
 	"kind" "project_event_kind" NOT NULL,
 	"name" text,
+	"from_thread_id" uuid,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

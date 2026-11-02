@@ -1,6 +1,5 @@
 import { useGet } from "ccstate-react";
 import { currentChatThreadId$ } from "../../../../signals/agent-chat.ts";
-import { remoteControlGuidedEnabled$ } from "../../../../signals/remote-control-setup.ts";
 import { Plus, Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../../../signals/route-paths.ts";
@@ -11,7 +10,6 @@ import { ConnectorEntryCard } from "./connector-entry-card.tsx";
 export function VncConnectorCard() {
   const { t } = useTranslation();
   const threadId = useGet(currentChatThreadId$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   return (
     <ConnectorEntryCard
       icon={<Monitor size={20} aria-hidden="true" />}
@@ -29,7 +27,7 @@ export function VncConnectorCard() {
           options={{
             searchParams: new URLSearchParams({
               scope: "remote-control",
-              ...(guided && threadId ? { returnThread: threadId } : {}),
+              ...(threadId ? { returnThread: threadId } : {}),
               type: "vnc",
             }),
           }}

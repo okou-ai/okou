@@ -31,58 +31,6 @@ function useSshObservations():
     : { kind: "available", observations: retained.data.observations };
 }
 
-export function SshAttention({
-  connections,
-}: {
-  readonly connections: readonly {
-    readonly id: string;
-    readonly generation: number;
-    readonly createdAt: string;
-  }[];
-}) {
-  const { t } = useTranslation();
-  const status = useSshObservations();
-  const count =
-    status.kind === "available"
-      ? connections.filter((connection) => {
-          return status.observations.some((observation) => {
-            return (
-              observation.connectionId === connection.id &&
-              observation.generation === connection.generation &&
-              observation.connectionCreatedAt === connection.createdAt &&
-              observation.failureReason !== null
-            );
-          });
-        }).length
-      : 0;
-  const label =
-    status.kind === "unavailable"
-      ? t(($) => {
-          return $.ssh.connectionStatus.unavailable;
-        })
-      : count > 0
-        ? t(
-            ($) => {
-              return $.ssh.connectionStatus.attention;
-            },
-            { count },
-          )
-        : null;
-  if (!label) {
-    return null;
-  }
-  return (
-    <span
-      role="status"
-      aria-label={label}
-      className="inline-flex min-w-0 items-center gap-1 text-amber-600 dark:text-amber-400"
-    >
-      <AlertTriangle size={12} className="shrink-0" aria-hidden="true" />
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
-
 function failureDescription(
   reason: NonNullable<SshConnectionObservation["failureReason"]>,
   tailscaleSsh: boolean,

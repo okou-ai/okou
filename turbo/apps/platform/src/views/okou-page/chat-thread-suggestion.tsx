@@ -1,4 +1,4 @@
-import { Fragment, type ComponentProps, type Ref } from "react";
+import type { ComponentProps, Ref } from "react";
 import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
@@ -99,7 +99,7 @@ export function ComposerMentionSuggestionMenu({
       {chatThreads.map((chatThread, index) => {
         const selected = agents.length + index === selectedIndex;
         return (
-          <Fragment key={chatThread.id}>
+          <div key={chatThread.id}>
             {(index === 0 ||
               chatThread.project !== chatThreads[index - 1]?.project) && (
               <div className="px-1 pt-2 pb-1 text-xs font-medium text-muted-foreground">
@@ -120,7 +120,7 @@ export function ComposerMentionSuggestionMenu({
                 onSelectChatThread(chatThread);
               }}
             />
-          </Fragment>
+          </div>
         );
       })}
     </div>

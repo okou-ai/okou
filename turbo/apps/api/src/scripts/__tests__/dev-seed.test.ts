@@ -5,7 +5,6 @@ import rawDevSeedSkillVolumes from "../dev-seed-skill-volumes.json";
 import {
   buildBuiltInModelKeys,
   devSeedUsagePricing,
-  getMetadataOnlySeedSkillNames,
   USAGE_PRICING,
 } from "../dev-seed";
 
@@ -40,15 +39,6 @@ describe("official skill volume seeds", () => {
       expect(volume.storageName).toContain("agent-skills@vm0-ai/vm0-skills/");
       expect(volume.message).toMatch(/^Synced from vm0-ai\/vm0-skills@/);
     }
-  });
-
-  it("keeps published historical Storage bindings out of metadata fallback", () => {
-    expect(
-      getMetadataOnlySeedSkillNames(
-        ["computer-use", "gen", "office", "ppt-avatar-video", "workflow-setup"],
-        rawDevSeedSkillVolumes,
-      ),
-    ).toStrictEqual(["office", "ppt-avatar-video", "workflow-setup"]);
   });
 });
 
@@ -99,6 +89,12 @@ describe("usage pricing", () => {
             ...categories,
             ...categories.map((category) => {
               return `${category}.long_context`;
+            }),
+            ...categories.map((category) => {
+              return `${category}.fast`;
+            }),
+            ...categories.map((category) => {
+              return `${category}.long_context.fast`;
             }),
           ].map((category) => {
             return {

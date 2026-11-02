@@ -538,6 +538,7 @@ export const chatThreadsContract = c.router({
     responses: {
       201: object({
         id: string(),
+        projectId: uuid().nullable().optional(),
         title: string().nullable(),
         createdAt: string(),
         /** The model the thread was pinned to; null is Auto. */

@@ -97,7 +97,6 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
       host: "app.okou.ai",
       featureSwitches: {
-        [FeatureSwitchKey.ArtifactDeletion]: true,
         [FeatureSwitchKey.ArtifactSidebarPreview]: surface === "sidebar",
       },
     });
@@ -171,7 +170,6 @@ test("a missing or foreign catalog identity does not expose deletion in a thread
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
   });
   click(await screen.findByLabelText(`Open text preview for ${report.title}`));
   const preview = await screen.findByTestId("attachment-lightbox");

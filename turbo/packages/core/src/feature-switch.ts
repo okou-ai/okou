@@ -89,34 +89,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.RemoteControlGuidedSetup]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Remote control guided setup",
-    description:
-      "Set up and manage remote connections and private networks step by step.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",
     description:
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ArtifactDeletion]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Artifact deletion",
-    description: "Delete owned artifacts and withdraw their Okou links.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ArtifactQuickActions]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Artifact quick actions",
-    description:
-      "Open Share and Download on hover and copy links after saving sharing changes.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
@@ -230,7 +208,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Share website logins across chats with a separate window for each chat",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
@@ -344,12 +321,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.LinkWalletApprovalContinuation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
-    enabled: false,
-  },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -435,17 +406,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: [...STAFF_ORG_ID_HASHES, "3043664c"],
   },
-  [FeatureSwitchKey.WhatsappFileUpload]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Send private uploaded files to independently verified WhatsApp accounts. Enable after the matching Runner CLI is deployed.",
-    enabled: false,
-  },
   [FeatureSwitchKey.WhatsappIntegration]: {
     maintainer: "yuma@okou.ai",
     description:
       "Connect WhatsApp to Okou through the shared AgentPhone number.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",

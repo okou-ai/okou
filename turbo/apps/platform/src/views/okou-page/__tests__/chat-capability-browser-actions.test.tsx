@@ -414,36 +414,55 @@ test("Browser cards show status and thumbnail changes on events and continuity g
   );
 });
 
-test("A browser card uses a private screenshot thumbnail while its panel keeps the original", async () => {
-  const screenshotUrl =
-    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/browser-screenshot.webp` +
-    "?X-Amz-Signature=browser-screenshot-signature";
-  const browser = managedBrowserSession({
-    status: "suspended",
-    screenshotUrl,
-    liveUrl: null,
-  });
-  installCapabilityChat({
-    events: completedConversation(
-      `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
-    ),
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser });
-  });
+test.each([false, true])(
+  "A stopped browser keeps its card thumbnail and offers a start action with cloud browser panel=%s",
+  async (cloudBrowserPanel) => {
+    const screenshotUrl =
+      `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/browser-screenshot.webp` +
+      "?X-Amz-Signature=browser-screenshot-signature";
+    const browser = managedBrowserSession({
+      status: "suspended",
+      screenshotUrl,
+      liveUrl: null,
+    });
+    installCapabilityChat({
+      events: completedConversation(
+        `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
+      ),
+    });
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return respond(200, { browser });
+    });
 
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  const card = await findButton("Open Research browser");
-  expect(within(card).getByTestId("browser-session-thumbnail")).toHaveAttribute(
-    "src",
-    `https://a.okou.io/cdn-cgi/image/width=800,fit=scale-down,format=auto,quality=85,metadata=none/${screenshotUrl}`,
-  );
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      host: "app.okou.ai",
+      featureSwitches: {
+        [FeatureSwitchKey.CloudBrowserPanel]: cloudBrowserPanel,
+      },
+    });
+    const card = await findButton("Open Research browser");
+    expect(
+      within(card).getByTestId("browser-session-thumbnail"),
+    ).toHaveAttribute(
+      "src",
+      `https://a.okou.io/cdn-cgi/image/width=800,fit=scale-down,format=auto,quality=85,metadata=none/${screenshotUrl}`,
+    );
 
-  click(card);
-  await expect(
-    screen.findByTestId("browser-session-panel-screenshot"),
-  ).resolves.toHaveAttribute("src", screenshotUrl);
-});
+    click(card);
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Cloud browser",
+    });
+    await expect(
+      within(sidebar).findByText("Browser not live"),
+    ).resolves.toBeInTheDocument();
+    expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeDisabled();
+  },
+);
 
 test("Follow suspension and resumption in the live browser panel", async () => {
   const { updateBrowser } = await openManagedBrowserChat();
@@ -477,11 +496,11 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       "Stopped",
     );
   });
-  expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
   await expect(
-    screen.findByTestId("browser-session-panel-screenshot"),
-  ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);
-  expect(within(sidebar).getByText("Browser not live")).toBeVisible();
+    within(sidebar).findByText("Browser not live"),
+  ).resolves.toBeInTheDocument();
+  expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
+  expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
 
   updateBrowser(
     managedBrowserSession({
@@ -499,7 +518,6 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       within(sidebar).getByDisplayValue("https://example.com"),
     ).toBeEnabled();
   });
-  expect(screen.queryByTestId("browser-session-panel-screenshot")).toBeNull();
 });
 
 test("Keep foreign and untrusted browser URLs as ordinary links", async () => {

@@ -57,6 +57,7 @@ const committedClientThread$ = computed(async (get) => {
   const [thread] = await db
     .select({
       id: chatThreads.id,
+      projectId: chatThreads.projectId,
       title: chatThreads.title,
       selectedModel: chatThreads.selectedModel,
       codexServiceTier: chatThreads.codexServiceTier,
@@ -89,13 +90,18 @@ interface ChatThreadCreateSettings {
 }
 
 function chatThreadCreatedResponse(
-  thread: { readonly id: string; readonly createdAt: Date },
+  thread: {
+    readonly id: string;
+    readonly createdAt: Date;
+    readonly projectId?: string | null;
+  },
   settings: ChatThreadCreateSettings,
 ) {
   return {
     status: 201 as const,
     body: {
       id: thread.id,
+      ...(thread.projectId ? { projectId: thread.projectId } : {}),
       title: settings.title,
       createdAt: thread.createdAt.toISOString(),
       selectedModel: settings.selectedModel,

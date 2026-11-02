@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   vncConnectionsContract,
   type VncConnectionResponse,
@@ -8,6 +7,8 @@ import {
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -45,6 +46,12 @@ function mockSettings(
   credentials: VncCredentialResponse[] = [credential],
 ) {
   const data = { connections, credentials };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [] });
+  });
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [] });
+  });
   context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: data.connections.length });
   });
@@ -66,11 +73,12 @@ function mockSettings(
   return data;
 }
 
-async function page() {
+async function page(credentials = false) {
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=vnc",
+    path: credentials
+      ? "/connectors?scope=remote-control&remoteView=credentials&type=vnc"
+      : `/connectors?scope=remote-control&remoteResource=vnc:${host.id}`,
     auth: {
       user: { id: "vnc-delete-owner", fullName: "VNC Owner" },
       organization: {
@@ -108,11 +116,13 @@ test("A stale VNC host generation blocks deletion", async () => {
   );
   await page();
   await screen.findByText(host.displayName);
-  click(getAction("button", "Delete host"));
-  const dialog = await screen.findByRole("dialog", { name: "Delete host" });
-  click(getAction("button", "Delete host", dialog));
+  click(getAction("button", "Delete connection"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete connection",
+  });
+  click(getAction("button", "Delete connection", dialog));
   await within(dialog).findByRole("alert");
-  expect(getAction("button", "Delete host", dialog)).toBeDisabled();
+  expect(getAction("button", "Delete connection", dialog)).toBeDisabled();
   expect(requests).toStrictEqual([
     { id: host.id, body: { expectedGeneration: 4 } },
   ]);
@@ -153,8 +163,7 @@ test.each([
         return respond(204);
       },
     );
-    await page();
-    click(getAction("radio", "Credentials"));
+    await page(true);
     await screen.findByText(credential.name);
     click(getAction("button", "Delete credential"));
     const dialog = await screen.findByRole("dialog", {

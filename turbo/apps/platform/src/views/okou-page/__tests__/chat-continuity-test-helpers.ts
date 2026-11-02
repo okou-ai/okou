@@ -3,7 +3,6 @@ import {
   composerDraftSchema,
   userMessageInputDocumentSchema,
 } from "@okouai/api-contracts/validators/chat-threads";
-type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 import {
   chatEventRowSchema,
   type ChatEventRow,
@@ -34,6 +33,8 @@ import {
   installChatListStream,
   sidebarThreadLinks,
 } from "./chat-list-test-helpers.ts";
+
+type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 
 interface ContinuityDraftPatch {
   readonly threadId: string;

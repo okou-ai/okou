@@ -3,16 +3,14 @@ import { RemoteCredentialCard } from "./remote-credential-card.tsx";
 import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { RemoteConnectionEditButton } from "./remote-connection-edit-button.tsx";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
-import { Button, surfaceVariants } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { VncCredentialResponse } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
   openVncDialog$,
-  vncConnections$,
   vncCredentials$,
   vncAuthMethodForProfile,
   vncSshConnectionId,
@@ -36,7 +34,7 @@ import {
   VncX509NoneWarning,
 } from "./vnc-fields.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
-import { VncAttention, VncHostWarning } from "./vnc-connection-status.tsx";
+import { VncHostWarning } from "./vnc-connection-status.tsx";
 import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 import { VncNativeRoute } from "./vnc-native-route.tsx";
 
@@ -265,22 +263,19 @@ function VncHostIdentity({
   );
 }
 
-export function VncHostProfileDetails({
+function VncHostProfileDetails({
   connection,
-  detail = false,
 }: {
   readonly connection: VncConnectionResponse;
-  readonly detail?: boolean;
 }) {
   const { t } = useTranslation();
   const certificateMethod =
     "clientCertificateAuthentication" in connection
       ? connection.clientCertificateAuthentication
       : undefined;
-  const profile = vncProfileForConnection(connection);
   return (
     <>
-      {detail && <VncHostIdentity connection={connection} />}
+      <VncHostIdentity connection={connection} />
       {certificateMethod ? (
         <VncClientCertificateWarning />
       ) : connection.security.type === "x509_none" ? (
@@ -288,14 +283,6 @@ export function VncHostProfileDetails({
       ) : null}
       {"serverKeySha256" in connection.security && (
         <>
-          {!detail && (
-            <p className="break-all font-mono text-xs">
-              {t(($) => {
-                return $.vnc.rsaAes.pin;
-              })}
-              : {connection.security.serverKeySha256}
-            </p>
-          )}
           <p className="text-sm text-muted-foreground">
             {t(($) => {
               return isVncRsaAesAuthenticationOnly(connection.security.type)
@@ -306,28 +293,6 @@ export function VncHostProfileDetails({
             })}
           </p>
         </>
-      )}
-      {!detail && (
-        <p className="text-sm text-muted-foreground">
-          <VncProfileLabel profile={profile} />
-          {" · "}
-          <VncAuthenticationLabel
-            method={certificateMethod ?? vncAuthMethodForProfile(profile)}
-          />
-          {isX509Security(connection.security) ? (
-            <>
-              {" "}
-              {" · "}{" "}
-              {connection.security.trust.mode === "system"
-                ? t(($) => {
-                    return $.vnc.security.system;
-                  })
-                : t(($) => {
-                    return $.vnc.security.custom;
-                  })}
-            </>
-          ) : null}
-        </p>
       )}
     </>
   );
@@ -385,59 +350,19 @@ function VncHostRouteDetails({
 
 function VncHostSecurity({
   connection,
-  sshConnection,
-  detail,
 }: {
   readonly connection: VncConnectionResponse;
-  readonly sshConnection: SshConnectionResponse | null | undefined;
-  readonly detail: boolean;
 }) {
   const { t } = useTranslation();
-  const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
-    <details
-      open={!detail}
-      className={detail ? "border-t border-divider pt-4" : undefined}
-    >
-      <summary
-        hidden={!detail}
-        className="cursor-pointer rounded-md text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
+    <details className="border-t border-divider pt-4">
+      <summary className="cursor-pointer rounded-md text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {t(($) => {
           return $.remoteControlSetup.securityAndPermissions;
         })}
       </summary>
-      <div className={detail ? "grid gap-5 pt-5" : "grid gap-3"}>
-        {!detail && (
-          <>
-            <VncHostRouteDetails
-              connection={connection}
-              sshConnection={sshConnection}
-            />
-            <p className="break-all text-sm">
-              {t(($) => {
-                return $.vnc.transport.destination;
-              })}
-              {": "}
-              {destination}
-            </p>
-            {isX509Security(connection.security) ? (
-              <p className="break-all text-sm">
-                {t(($) => {
-                  return $.vnc.security.serverName;
-                })}
-                {": "}
-                {connection.security.serverName ?? connection.host}
-              </p>
-            ) : null}
-            {"credentialName" in connection && (
-              <p className="break-all text-sm text-muted-foreground">
-                {connection.credentialName}
-              </p>
-            )}
-          </>
-        )}
-        <VncHostProfileDetails connection={connection} detail={detail} />
+      <div className="grid gap-5 pt-5">
+        <VncHostProfileDetails connection={connection} />
         <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       </div>
     </details>
@@ -446,10 +371,8 @@ function VncHostSecurity({
 
 export function VncHostCard({
   connection,
-  detail = false,
 }: {
   readonly connection: VncConnectionResponse;
-  readonly detail?: boolean;
 }) {
   const { t } = useTranslation();
   const open = useSet(openVncDialog$);
@@ -472,143 +395,40 @@ export function VncHostCard({
     "needsRebind" in sshTransport;
   const tailscale = usesTailscaleNetwork(sshConnection);
   return (
-    <article
-      className={
-        detail ? "grid gap-4" : surfaceVariants({ className: "grid gap-3 p-5" })
-      }
-    >
-      {detail ? (
-        <RemoteConnectionSummary
-          connection={connection}
-          protocol="vnc"
-          route={
-            <VncHostRouteDetails
-              connection={connection}
-              sshConnection={sshConnection}
-            />
-          }
-        />
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="break-all font-semibold">
-              {connection.displayName}
-            </h2>
-            <span className="text-sm text-muted-foreground">
-              {t(($) => {
-                return needsSshRebind
-                  ? $.vnc.transport.sshNeedsRebindStatus
-                  : $.vnc.configured;
-              })}
-            </span>
-          </div>
-        </>
-      )}
+    <article className="grid gap-4">
+      <RemoteConnectionSummary
+        connection={connection}
+        protocol="vnc"
+        route={
+          <VncHostRouteDetails
+            connection={connection}
+            sshConnection={sshConnection}
+          />
+        }
+      />
       {needsSshRebind && (
         <VncRebindWarning tailscale={tailscale} sshConnection={sshConnection} />
       )}
-      <VncHostSecurity
-        connection={connection}
-        sshConnection={sshConnection}
-        detail={detail}
-      />
+      <VncHostSecurity connection={connection} />
       <VncHostWarning
         connectionId={connection.id}
         generation={connection.generation}
         createdAt={connection.createdAt}
       />
       <div className="flex flex-wrap gap-2">
-        {detail ? (
-          <RemoteConnectionEditButton resource={{ kind: "vnc", connection }} />
-        ) : (
-          <Button
-            variant={detail ? "quiet" : "outline"}
-            onClick={() => {
-              detach(open("edit", connection, signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return detail ? $.remoteControlSetup.editConnection : $.vnc.edit;
-            })}
-          </Button>
-        )}
+        <RemoteConnectionEditButton resource={{ kind: "vnc", connection }} />
         <Button
-          variant={detail ? "quiet" : "outline"}
+          variant="quiet"
           onClick={() => {
             detach(open("delete", connection, signal), Reason.DomCallback);
           }}
         >
           {t(($) => {
-            return detail
-              ? $.remoteControlSetup.deleteConnection
-              : $.vnc.delete;
+            return $.remoteControlSetup.deleteConnection;
           })}
         </Button>
       </div>
     </article>
-  );
-}
-
-export function VncHosts() {
-  const { t } = useTranslation();
-  const hosts = useLoadable(vncConnections$);
-  const open = useSet(openVncDialog$);
-  const signal = useGet(pageSignal$);
-  if (hosts.state === "loading") {
-    return (
-      <p role="status">
-        {t(($) => {
-          return $.vnc.loading;
-        })}
-      </p>
-    );
-  }
-  if (hosts.state === "hasError") {
-    return <VncLoadError />;
-  }
-  if (!hosts.data) {
-    return (
-      <p>
-        {t(($) => {
-          return $.vnc.unavailable;
-        })}
-      </p>
-    );
-  }
-  return (
-    <div className="grid gap-5">
-      {hosts.data.length > 0 ? <VncAttention connections={hosts.data} /> : null}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {t(
-            ($) => {
-              return $.vnc.summary;
-            },
-            { count: hosts.data.length },
-          )}
-        </p>
-        <Button
-          onClick={() => {
-            detach(open("create", null, signal), Reason.DomCallback);
-          }}
-        >
-          <Plus size={16} aria-hidden="true" />
-          {t(($) => {
-            return $.vnc.add;
-          })}
-        </Button>
-      </div>
-      {hosts.data.length === 0 && (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          {t(($) => {
-            return $.vnc.empty;
-          })}
-        </p>
-      )}
-      {hosts.data.map((connection) => {
-        return <VncHostCard key={connection.id} connection={connection} />;
-      })}
-    </div>
   );
 }
 
@@ -639,20 +459,13 @@ function VncCredentialCard({
 }
 
 export function VncCredentials() {
-  const guided = useGet(remoteControlGuidedEnabled$);
   const sessionKey = useGet(authenticatedSessionKey$);
-  if (!guided) {
-    return <OwnerVncCredentials />;
-  }
   return sessionKey ? <OwnerVncCredentials key={sessionKey} /> : null;
 }
 
 function OwnerVncCredentials() {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
-  const current = useLoadable(vncCredentials$);
-  const retained = useLastLoadable(vncCredentials$);
-  const credentials = guided ? retained : current;
+  const credentials = useLastLoadable(vncCredentials$);
   const open = useSet(openVncDialog$);
   const signal = useGet(pageSignal$);
   if (credentials.state === "loading") {

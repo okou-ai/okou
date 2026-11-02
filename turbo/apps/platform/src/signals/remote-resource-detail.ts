@@ -5,7 +5,6 @@ import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-
 import { command, computed } from "ccstate";
 import { searchParams$, updateSearchParams$ } from "./route.ts";
 import {
-  remoteControlGuidedEnabled$,
   setRemoteNetworkPicker$,
   startComputerSetup$,
   clearRemoteSetupParams,
@@ -25,13 +24,9 @@ import {
   saveCloudflareAccess$,
   cloudflareAccessDialog$,
   cloudflareAccessConfigs$,
-  cloudflareAccessSummary$,
 } from "./cloudflare-access.ts";
 
 export const privateNetworkDirectorySummary$ = computed(async (get) => {
-  if (!get(remoteControlGuidedEnabled$)) {
-    return await get(cloudflareAccessSummary$);
-  }
   const [tailscale, cloudflare] = await Promise.all([
     get(tailscaleConfigs$),
     get(cloudflareAccessConfigs$),
@@ -75,10 +70,7 @@ export function remoteResourceSearchParams(
 }
 export const remoteNetworkConnections$ = computed((get) => {
   const params = get(searchParams$);
-  if (
-    !get(remoteControlGuidedEnabled$) ||
-    params.get("scope") !== "private-network"
-  ) {
+  if (params.get("scope") !== "private-network") {
     return null;
   }
   const [kind, id] = (params.get("networkConnections") ?? "").split(":");
@@ -92,9 +84,6 @@ export const closeRemoteNetworkConnections$ = command(({ get, set }) => {
   set(updateSearchParams$, params);
 });
 export const remoteResource$ = computed((get) => {
-  if (!get(remoteControlGuidedEnabled$)) {
-    return null;
-  }
   const params = get(searchParams$);
   const [kind, id] = (params.get("remoteResource") ?? "").split(":");
   if (

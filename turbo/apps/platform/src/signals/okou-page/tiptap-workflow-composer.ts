@@ -2,7 +2,6 @@ import {
   createProjectMentionNode,
   projectMentionText,
 } from "./composer-project-mention-node.ts";
-import { PROJECT_MENTION_NODE_NAME } from "./user-message-document-codec.ts";
 import {
   suggestionContextSchema,
   type SuggestionContext,
@@ -89,6 +88,7 @@ import {
   type SlashWorkflowRange,
 } from "./workflow-composer-domain.ts";
 import {
+  PROJECT_MENTION_NODE_NAME,
   AGENT_MENTION_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,

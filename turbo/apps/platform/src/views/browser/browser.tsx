@@ -1067,6 +1067,7 @@ export function Browser({
         <div
           ref={surfaceRef}
           data-browser-surface
+          tabIndex={-1}
           className="relative h-full w-full touch-none overflow-hidden"
         >
           <canvas

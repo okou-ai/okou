@@ -137,6 +137,9 @@ function createNativeState(
   const canvas$ = computed((get) => {
     return get(elements$)?.canvas ?? null;
   });
+  const surface$ = computed((get) => {
+    return get(elements$)?.surface ?? null;
+  });
   const proxy$ = computed((get) => {
     return get(elements$)?.proxy ?? null;
   });
@@ -152,7 +155,7 @@ function createNativeState(
   const composition = createNativeComposition();
   const ingress = createInputIngress(input$, canvas$, onPageInput$);
   const clipboard = createNativeClipboard(
-    proxy$,
+    surface$,
     input$,
     ingress,
     composition.composing$,
@@ -253,16 +256,24 @@ function createNativeReset(graph: NativeBase) {
       ) {
         elements.surface.releasePointerCapture(pointer);
       }
-      // Same-tab cleanup invalidates old input without ending local focus.
+      // Navigation ends the old native editing lifetime (including autofill),
+      // while the non-editable surface keeps remote keyboard/clipboard focus.
       if (
         elements &&
-        reason !== "navigation-started" &&
-        reason !== "same-document" &&
-        reason !== "document-lost" &&
+        (reason === "navigation-started" ||
+          reason === "same-document" ||
+          reason === "document-lost")
+      ) {
+        if (document.activeElement === elements.proxy) {
+          elements.surface.focus({ preventScroll: true });
+        }
+      } else if (
+        elements &&
         reason !== "failed" &&
         reason !== "pointer-restarted"
       ) {
         elements.proxy.blur();
+        elements.surface.blur();
       }
     },
   );
@@ -319,15 +330,20 @@ function createNativeCoordination(
         set(resetLocal$, "blur");
       }
     }
-    // Admission gating is not a focus transition. In particular, reopening a
-    // navigation gate must not synthesize blur or discard local proxy focus.
+    // Admission gating is not a focus transition. Only a fresh editable
+    // observation may return focus from the surface to the native proxy.
     const current = get(input$);
     const elements = get(elements$);
     if (elements && !get(composition.composing$)) {
-      set(
-        proxyType$,
-        configureProxy(elements.proxy, current ? get(current.editing$) : null),
-      );
+      const editing = current ? get(current.editing$) : null;
+      set(proxyType$, configureProxy(elements.proxy, editing));
+      if (
+        editing &&
+        !get(resetting$) &&
+        document.activeElement === elements.surface
+      ) {
+        elements.proxy.focus({ preventScroll: true });
+      }
     }
     const caret = current ? get(current.caret$) : null;
     if (caret) {
@@ -634,7 +650,7 @@ function createNativeRelease(graph: NativeGraph) {
 }
 
 function createNativeFocus(graph: NativeGraph) {
-  const { ingress, pointerId$, synchronize$ } = graph;
+  const { ingress, pointerId$, resetting$, synchronize$ } = graph;
   const clipboardBoundary$ = command(({ set }, event: Event) => {
     set(synchronize$);
     if (set(ingress.boundary$, event)) {
@@ -644,6 +660,9 @@ function createNativeFocus(graph: NativeGraph) {
     event.stopImmediatePropagation();
   });
   const focus$ = command(({ get, set }) => {
+    if (get(resetting$)) {
+      return;
+    }
     set(synchronize$);
     // Pointer release establishes remote focus; don't query the previous control.
     if (get(pointerId$) === null) {
@@ -988,10 +1007,10 @@ function createNativeClipboardBindings(graph: NativeHandlers) {
   const { clipboard, clipboardBoundary$ } = graph;
   const bindClipboardDom$ = command(
     ({ set }, elements: NativeElements, owner: AbortSignal) => {
-      const { proxy } = elements;
+      const { surface } = elements;
       // Capture-phase admission fixes the clipboard Event to its original owner.
       for (const type of ["copy", "paste", "cut"] as const) {
-        proxy.addEventListener(
+        surface.addEventListener(
           type,
           (event) => {
             set(clipboardBoundary$, event);
@@ -999,21 +1018,21 @@ function createNativeClipboardBindings(graph: NativeHandlers) {
           { signal: owner, capture: true },
         );
       }
-      proxy.addEventListener(
+      surface.addEventListener(
         "copy",
         (event) => {
           set(clipboard.copy$, event, owner);
         },
         { signal: owner },
       );
-      proxy.addEventListener(
+      surface.addEventListener(
         "paste",
         (event) => {
           set(clipboard.paste$, event);
         },
         { signal: owner },
       );
-      proxy.addEventListener(
+      surface.addEventListener(
         "cut",
         (event) => {
           event.preventDefault();
@@ -1131,7 +1150,7 @@ function createNativeTextBindings(graph: NativeHandlers) {
   } = graph;
   const bindTextDom$ = command(
     ({ set }, elements: NativeElements, owner: AbortSignal) => {
-      const { proxy } = elements;
+      const { proxy, surface } = elements;
       const form = proxy.form;
       if (!form) {
         throw new Error("The browser input proxy requires its native form.");
@@ -1143,28 +1162,34 @@ function createNativeTextBindings(graph: NativeHandlers) {
         },
         { signal: owner },
       );
-      proxy.addEventListener(
-        "focus",
+      surface.addEventListener(
+        "focusin",
         () => {
           set(focus$);
         },
         { signal: owner },
       );
-      proxy.addEventListener(
-        "blur",
-        () => {
-          set(cancel$);
+      surface.addEventListener(
+        "focusout",
+        (event) => {
+          // A proxy/surface handoff keeps the same remote focus owner.
+          if (
+            !(event.relatedTarget instanceof Node) ||
+            !surface.contains(event.relatedTarget)
+          ) {
+            set(cancel$);
+          }
         },
         { signal: owner },
       );
-      proxy.addEventListener(
+      surface.addEventListener(
         "keydown",
         (event) => {
           set(keyDown$, event);
         },
         { signal: owner },
       );
-      proxy.addEventListener(
+      surface.addEventListener(
         "keyup",
         (event) => {
           set(keyUp$, event);

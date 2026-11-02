@@ -1,6 +1,6 @@
 {
-  "id": "3f516b90-c721-46a7-b5a7-4fe8b5a1d3c0",
-  "prevId": "62e4b28f-1490-4ce3-b0e7-5b41d040b555",
+  "id": "eb2087fa-8b36-4307-b013-fb45e99b4fe4",
+  "prevId": "c085a95d-d092-4510-8990-dc738c475a8a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -23721,6 +23721,13 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "auto_recharge_failure_count": {
+          "name": "auto_recharge_failure_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

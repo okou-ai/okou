@@ -1673,6 +1673,7 @@ export const autoRechargeConfig$ = computed(async (get) => {
     enabled: ar.enabled,
     threshold: ar.threshold !== null ? String(ar.threshold) : "",
     amount: ar.amount !== null ? String(ar.amount) : "",
+    disabledReason: ar.disabledReason,
   };
 });
 

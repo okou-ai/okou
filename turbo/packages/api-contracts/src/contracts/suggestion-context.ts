@@ -24,7 +24,7 @@ const PREFIX = "Okou suggestion context v1:\n";
 
 export function suggestionContextPart(
   context: SuggestionContext,
-): UserMessagePart {
+): Extract<UserMessagePart, { type: "additional_info" }> {
   return { type: "additional_info", text: PREFIX + JSON.stringify(context) };
 }
 

@@ -477,10 +477,13 @@ const collectChatThreadSnapshotGarbage$ = command(
       AbortSignal.timeout(SNAPSHOT_GC_WORK_BUDGET_MS),
     ]);
     for (const prefix of chatThreadSnapshotGcPrefixes(now).flatMap((prefix) => {
-      return [
-        prefix,
-        prefix.replace("chat-thread-snapshots/v1/", "project-snapshots/v1/"),
-      ];
+      const project = prefix.replace(
+        "chat-thread-snapshots/v1/",
+        "project-snapshots/v1/",
+      );
+      return Math.floor(now.getTime() / (10 * 60 * 1000)) % 2 === 0
+        ? [prefix, project]
+        : [project, prefix];
     })) {
       signal.throwIfAborted();
       const remaining = SNAPSHOT_GC_DELETE_QUOTA - stats.deleteAttempts;

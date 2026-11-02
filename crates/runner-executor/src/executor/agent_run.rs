@@ -1122,7 +1122,7 @@ impl AgentBootstrapInputs {
                     let files = prepared?;
                     super::storage::publish_bootstrap_files(sandbox, &files.entries(), telemetry)
                         .await?;
-                    super::storage::apply_content_bundles(sandbox, context, telemetry).await?;
+                    super::storage::apply_agent_instructions(sandbox, context, telemetry).await?;
                     RunnerResult::Ok(files.into_paths())
                 }))
                 .await;

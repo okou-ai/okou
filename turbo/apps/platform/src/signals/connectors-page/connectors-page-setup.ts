@@ -15,7 +15,6 @@ import { resetConnectorAccountDialogs$ } from "../okou-page/settings/connector-a
 import { refreshSsh$ } from "../ssh.ts";
 import { closeVncDialog$, invalidateVnc$ } from "../vnc.ts";
 import { setupRemoteNetworkEditor$ } from "../remote-network-page-setup.ts";
-import { setRemoteControlView$ } from "../okou-page/settings/remote-control-directory.ts";
 import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 import { searchParams$ } from "../route.ts";
 
@@ -27,7 +26,6 @@ export const setupConnectorsPage$ = command(
     set(refreshSsh$);
     set(closeVncDialog$);
     set(invalidateVnc$);
-    set(setRemoteControlView$, "connections");
     const params = get(searchParams$);
     if (
       params.get("setup") === "computer" &&

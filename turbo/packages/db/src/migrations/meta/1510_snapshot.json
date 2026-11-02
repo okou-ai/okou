@@ -1,6 +1,6 @@
 {
-  "id": "62e4b28f-1490-4ce3-b0e7-5b41d040b555",
-  "prevId": "fb647bbe-7f28-43ec-9012-cce93b202347",
+  "id": "c085a95d-d092-4510-8990-dc738c475a8a",
+  "prevId": "26746a2c-c999-4e27-bb21-f3a07f1ed884",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9790,40 +9790,6 @@
         }
       },
       "indexes": {
-        "chat_threads_user_project_activity_idx": {
-          "name": "chat_threads_user_project_activity_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "last_message_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"chat_threads\".\"project_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_chat_threads_user_agent_pinned": {
           "name": "idx_chat_threads_user_agent_pinned",
           "columns": [
@@ -23722,6 +23688,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "auto_recharge_failure_count": {
+          "name": "auto_recharge_failure_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -24569,6 +24542,12 @@
         "name": {
           "name": "name",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "from_thread_id": {
+          "name": "from_thread_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -37272,7 +37251,8 @@
         "computer_use_host_updated",
         "sort_touched",
         "archived",
-        "unarchived"
+        "unarchived",
+        "project_updated"
       ]
     },
     "public.connector_external_code_session_status": {

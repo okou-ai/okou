@@ -1,3 +1,4 @@
+import { resetProjectUi$ } from "./projects/project-ui.ts";
 import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
@@ -160,6 +161,7 @@ function setupSettingsParamAfterStableRoute(
   setupPage: Command<Promise<void> | void, [AbortSignal]>,
 ) {
   return command(async ({ get, set }, signal: AbortSignal) => {
+    set(resetProjectUi$);
     const initialPathname = get(pathname$);
     await set(setupPage, signal);
     signal.throwIfAborted();

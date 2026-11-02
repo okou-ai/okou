@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { HttpResponse } from "msw";
@@ -57,7 +56,6 @@ async function findControl(role: "button" | "link", name: string) {
 async function openChat(
   content: string,
   sharedWorkerTestTransport: "direct" | "message-port" = "direct",
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
 ) {
   const chat = createMarkdownChatFixture(context);
   chat.install({
@@ -73,7 +71,6 @@ async function openChat(
     path: chat.path,
     host: "app.okou.ai",
     sharedWorkerTestTransport,
-    featureSwitches,
   });
 }
 
@@ -497,9 +494,7 @@ test("purchase approval cards show approval and continuation after notifications
     });
     return respond(200, { status });
   });
-  await openChat(APPROVAL_URL, "message-port", {
-    [FeatureSwitchKey.LinkWalletApprovalContinuation]: true,
-  });
+  await openChat(APPROVAL_URL, "message-port");
   await screen.findByText("Waiting for purchase approval");
   const link = await findControl("link", "Review purchase");
   expect(link).toHaveAttribute("href", APPROVAL_URL);
@@ -532,9 +527,7 @@ test("a stopped approval watch shows its terminal status", async () => {
   context.mocks.api(walletUserContract.spendStatus, ({ respond }) => {
     return respond(200, { status });
   });
-  await openChat(APPROVAL_URL, "direct", {
-    [FeatureSwitchKey.LinkWalletApprovalContinuation]: true,
-  });
+  await openChat(APPROVAL_URL);
   await screen.findByText("Approved; waiting to continue");
   await expect(
     findControl("button", "Status recorded"),
