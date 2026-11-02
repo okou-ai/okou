@@ -7,6 +7,7 @@ import json
 import os
 import select
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -61,11 +62,14 @@ class GatewayHttpTest(unittest.TestCase):
 
     @staticmethod
     def stop_server(server, worker):
-        server.shutdown()
-        server.server_close()
-        worker.join(timeout=2)
-        if worker.is_alive():
-            raise AssertionError("owned HTTP server did not join")
+        try:
+            server.socket.shutdown(socket.SHUT_RDWR)
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=2)
+            if worker.is_alive():
+                raise AssertionError("owned HTTP server did not join")
 
     def test_fixed_upstream_owns_auth_and_ignores_caller_routing_headers(self):
         peer = http.client.HTTPConnection(*self.gateway.server_address, timeout=2)
@@ -633,9 +637,12 @@ class ModelPeerTest(unittest.TestCase):
                         self.assertEqual(body, b'{"data":[]}')
             finally:
                 connection.close()
-                server.shutdown()
-                thread.join(timeout=5)
-                self.assertFalse(thread.is_alive())
+                try:
+                    server.socket.shutdown(socket.SHUT_RDWR)
+                finally:
+                    server.shutdown()
+                    thread.join(timeout=5)
+                    self.assertFalse(thread.is_alive())
 
     def test_parallel_response_ids_and_request_budget(self):
         with (
@@ -696,9 +703,12 @@ class ModelPeerTest(unittest.TestCase):
                     self.assertEqual(request(index)[0], 200)
                 self.assertEqual(request(32)[0], 400)
             finally:
-                server.shutdown()
-                thread.join(timeout=5)
-                self.assertFalse(thread.is_alive())
+                try:
+                    server.socket.shutdown(socket.SHUT_RDWR)
+                finally:
+                    server.shutdown()
+                    thread.join(timeout=5)
+                    self.assertFalse(thread.is_alive())
 
 
 class OwnerTest(unittest.TestCase):
