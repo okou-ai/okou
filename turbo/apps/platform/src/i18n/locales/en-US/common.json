@@ -4180,11 +4180,15 @@
   },
   "markdown": {
     "tableExport": {
+      "columns_one": "{{formattedCount}} column",
+      "columns_other": "{{formattedCount}} columns",
       "drive": "Save to Google Drive",
       "excel": "Export Excel",
       "export": "Export",
       "filename": "Table",
       "googleUnavailable": "Open this table in your chat to save it to Google, or check your Google Drive connection.",
+      "rows_one": "{{formattedCount}} row",
+      "rows_other": "{{formattedCount}} rows",
       "savedDrive": "Saved to Google Drive",
       "savedSheets": "Saved to Google Sheets",
       "saving": "Saving…",

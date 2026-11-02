@@ -4235,11 +4235,17 @@
   },
   "markdown": {
     "tableExport": {
+      "columns_one": "{{formattedCount}} colonna",
+      "columns_many": "{{formattedCount}} colonne",
+      "columns_other": "{{formattedCount}} colonne",
       "drive": "Salva su Google Drive",
       "excel": "Esporta in Excel",
       "export": "Esporta",
       "filename": "Tabella",
       "googleUnavailable": "Apri questa tabella nella tua chat o controlla la connessione a Google Drive.",
+      "rows_one": "{{formattedCount}} riga",
+      "rows_many": "{{formattedCount}} righe",
+      "rows_other": "{{formattedCount}} righe",
       "savedDrive": "Salvato su Google Drive",
       "savedSheets": "Salvato in Google Sheets",
       "saving": "Salvataggio…",

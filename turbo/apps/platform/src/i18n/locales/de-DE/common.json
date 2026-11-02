@@ -4182,11 +4182,15 @@
   },
   "markdown": {
     "tableExport": {
+      "columns_one": "{{formattedCount}} Spalte",
+      "columns_other": "{{formattedCount}} Spalten",
       "drive": "In Google Drive speichern",
       "excel": "Als Excel exportieren",
       "export": "Exportieren",
       "filename": "Tabelle",
       "googleUnavailable": "Öffne diese Tabelle in deinem Chat oder überprüfe deine Google-Drive-Verbindung.",
+      "rows_one": "{{formattedCount}} Zeile",
+      "rows_other": "{{formattedCount}} Zeilen",
       "savedDrive": "In Google Drive gespeichert",
       "savedSheets": "In Google Sheets gespeichert",
       "saving": "Wird gespeichert…",
