@@ -368,7 +368,7 @@ final class DesktopModel: ObservableObject {
   }
   func refreshPermissions() async throws {
     guard !runtime.busy else { return }
-    var value = try await executor.permissions()
+    guard var value = try await executor.permissions() else { return }
     // macOS cannot inspect browser Automation without probing it. Retain the
     // latest explicit probe for the same UI and heartbeat permission state.
     value["automation"] = .object(browserPermissions)

@@ -55,10 +55,15 @@ public enum DesktopTelemetry {
     pendingRequests: Int, stderrBytes: Int,
     responseBytes: Int? = nil, termination: NativeHelperTermination? = nil,
     request: NativeHelperRequestDiagnostics? = nil,
-    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil
+    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil,
+    interruption: DesktopFailure.Interruption? = nil
   ) {
-    let event = Event(level: .error)
-    event.message = SentryMessage(formatted: "Native helper failure: \(reason.rawValue)")
+    let suspendedRefresh = interruption == .suspendedPermissionRefresh
+    let event = Event(level: suspendedRefresh ? .info : .error)
+    event.message = SentryMessage(
+      formatted: suspendedRefresh
+        ? "Native permission refresh expired during system suspension"
+        : "Native helper failure: \(reason.rawValue)")
     event.fingerprint = ["desktop-native-helper", reason.rawValue]
     event.tags = ["nativeHelperFailure": reason.rawValue]
     var diagnostics: [String: Any] = [
@@ -73,6 +78,8 @@ public enum DesktopTelemetry {
     }
     if let request {
       diagnostics["operation"] = request.operation.rawValue
+      diagnostics["requestIntent"] = request.intent.rawValue
+      if suspendedRefresh { diagnostics["outcome"] = "expired_during_system_suspension" }
       diagnostics["timeoutMs"] = request.timeout * 1000
       let observed = timeout?.observedAt ?? .now
       diagnostics["elapsedMs"] = request.started.duration(to: observed).seconds * 1000
