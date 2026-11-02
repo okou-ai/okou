@@ -1,10 +1,4 @@
-/**
- * Helpers shared by the presentation commands. Both screenshot and convert open
- * the same decks in the same browser and settle them the same way; the settle
- * contract in particular must not drift between them, because a deck captured
- * before its fonts load and a deck converted before its fonts load fail in
- * different, hard-to-attribute ways.
- */
+/** Helpers for rendering presentations to page images. */
 import { execFileSync } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { basename, extname, isAbsolute, normalize, sep } from "path";

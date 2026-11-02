@@ -62,42 +62,6 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("enables presentation conversion for Bingjie across workspaces", () => {
-    for (const orgId of [
-      undefined,
-      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      "org_nonexistent",
-    ]) {
-      const context = { email: "BINGJIE@OKOU.AI", orgId };
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.PresentationConvert, context),
-      ).toBe(true);
-      expect(
-        getAllFeatureStates(context)[FeatureSwitchKey.PresentationConvert],
-      ).toBe(true);
-    }
-  });
-
-  it("defaults presentation conversion off for everyone else, including staff", () => {
-    for (const context of [
-      {},
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      {
-        userId: "staff-colleague",
-        email: "ethan@okou.ai",
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      },
-      { userId: "external-user", orgId: "org_nonexistent" },
-    ]) {
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.PresentationConvert, context),
-      ).toBe(false);
-      expect(
-        getAllFeatureStates(context)[FeatureSwitchKey.PresentationConvert],
-      ).toBe(false);
-    }
-  });
-
   it("enables Browser native input for staff and honors overrides", () => {
     const external = { orgId: "org_nonexistent" };
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
@@ -262,7 +226,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
@@ -271,7 +234,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {
@@ -361,9 +323,6 @@ describe("getFeatureSwitchMetadata", () => {
     const metadata = getFeatureSwitchMetadata();
 
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
-    expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
-      "alpha",
-    );
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
     ).toBe("beta");

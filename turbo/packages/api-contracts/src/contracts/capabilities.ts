@@ -59,7 +59,6 @@ export const CAPABILITIES = [
   "vnc:read",
   "vnc:write",
   "presentation-template:write",
-  "presentation-convert:write",
   "user-template:write",
 ] as const;
 

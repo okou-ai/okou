@@ -55,7 +55,6 @@ export interface AgentToolsPromptInputs {
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly wechatEnabled: boolean;
-  readonly presentationConvertEnabled: boolean;
   readonly browserNativeInputEnabled: boolean;
   readonly browserSharedOwnerEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
@@ -76,10 +75,6 @@ export function buildAgentToolsPromptInputs(args: {
     ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
     larkEnabled: isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context),
-    presentationConvertEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PresentationConvert,
-      context,
-    ),
     browserNativeInputEnabled: isFeatureEnabled(
       FeatureSwitchKey.BrowserNativeInput,
       context,
@@ -209,11 +204,6 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
     PRESENTATION_DELIVERY_INSTRUCTION,
-    ...(args.presentationConvertEnabled
-      ? [
-          "- Only after the agent selects PPTX as the delivery format, convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
-        ]
-      : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
     "- Connector accounts: inspect the current account with `okou connector status <slug> --json` and list alternatives with `okou connector account list <slug> --json`. Use only an exact `connectionId` returned by these commands; never invent an ID or reuse one from another connector.",
     "- Disconnect a saved connector account with `okou connector account disconnect <selector> --connection-id <uuid>` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account across all Agents, not just this Agent's access. Read `okou connector account disconnect --help` for reconnection risks. Use `okou connector account impact` to inspect affected references first. To remove only this Agent's access while keeping the account connected, use `okou connector unauthorize <selector>` instead.",

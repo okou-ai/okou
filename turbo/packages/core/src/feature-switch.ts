@@ -196,16 +196,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.PresentationConvert]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Convert an HTML presentation into an editable pptx from the CLI.",
-    enabled: false,
-    // Limit the rollout to the maintainer across workspaces while conversion
-    // fidelity is being evaluated.
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
   [FeatureSwitchKey.MarkdownTableExport]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Markdown table export",
