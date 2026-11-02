@@ -2,7 +2,13 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -82,6 +88,17 @@ async function expectInputReady() {
   });
 }
 
+async function useSplitTransport() {
+  click(screen.getByLabelText("Browser settings"));
+  const settings = await screen.findByRole("menu", {
+    name: "Browser settings",
+  });
+  click(within(settings).getByText("Connection mode"));
+  const menu = await screen.findByRole("menu", { name: "Connection mode" });
+  click(within(menu).getByText("Separate image connection"));
+  await expectInputReady();
+}
+
 test("An opening failure preserves observations and supports explicit reconnect", async () => {
   const startupErrors = recordBrowserStartupErrors();
   const { browser, sentry } = await setupViewer(false);
@@ -155,11 +172,14 @@ test("Revalidating an opening viewer retains its native startup and keeps cancel
   expect(sentry.reports).toStrictEqual([]);
 });
 
-test.each(["error", "close"] as const)(
-  "A native %s during navigation preserves the established connection's failure",
+test.each(["error", "close", "frames-close"] as const)(
+  "A native %s during navigation reports the established failure once",
   async (event) => {
     const { browser, sentry } = await setupViewer(true);
     await expectInputReady();
+    if (event === "frames-close") {
+      await useSplitTransport();
+    }
     const navigation = browser.holdNext("Page.navigate");
     await fill(screen.getByLabelText("Address"), "next.example");
     await userEvent.keyboard("{Enter}");
@@ -168,7 +188,10 @@ test.each(["error", "close"] as const)(
       if (event === "error") {
         browser.failConnection();
       } else {
-        browser.disconnect({ code: 1001, wasClean: true, reason: endpoint });
+        browser.disconnect(
+          { code: 1001, wasClean: true, reason: endpoint },
+          event === "frames-close" ? 1 : undefined,
+        );
       }
     });
     await screen.findByText("Browser disconnected");
@@ -297,13 +320,7 @@ test("An unhandled navigation request failure still reports without disconnectin
 test("Changing transport retires intentionally, then frames loss reports once", async () => {
   const { browser, sentry } = await setupViewer(true);
   await expectInputReady();
-  click(screen.getByLabelText("Browser settings"));
-  const settings = await screen.findByRole("menu", {
-    name: "Browser settings",
-  });
-  click(within(settings).getByText("Connection mode"));
-  const menu = await screen.findByRole("menu", { name: "Connection mode" });
-  click(within(menu).getByText("Separate image connection"));
+  await useSplitTransport();
   await waitFor(() => {
     expect(browser.connections()).toBe(3);
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
@@ -330,4 +347,31 @@ test("Changing transport retires intentionally, then frames loss reports once", 
       },
     },
   });
+});
+
+test("Control loss during a split capture change does not report the retired frames request again", async () => {
+  const { browser, sentry } = await setupViewer(true);
+  await expectInputReady();
+  await useSplitTransport();
+  const capture = browser.holdNext("Page.stopScreencast");
+  click(screen.getByLabelText("Browser settings"));
+  const quality = await screen.findByRole("spinbutton", {
+    name: "Image quality",
+  });
+  fireEvent.change(quality, { target: { value: "60" } });
+  await capture.received;
+  act(() => {
+    browser.disconnect({ code: 1006, wasClean: false }, 0);
+  });
+  await screen.findByText("Browser disconnected");
+  await capture.release();
+  const reconnect = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Expected explicit reconnect");
+  }
+  click(reconnect);
+  await expectInputReady();
+  expect(sentry.reports).toHaveLength(1);
 });

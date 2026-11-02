@@ -2242,7 +2242,7 @@ function createDisconnectionHandling(
       fault.kind !== "extension" &&
       fault.kind !== "scope"
     ) {
-      get(framesState$)?.close();
+      get(framesState$)?.close(fault);
     }
     set(get(links$).beginClosing$);
   });
@@ -3196,6 +3196,8 @@ function createDisposalGraph(
     framesState$,
     connectedState$,
     disposedState$,
+    disconnectingState$,
+    readinessFailure$,
     closingState$,
     closedState$,
     bootstrapping$,
@@ -3227,8 +3229,13 @@ function createDisposalGraph(
       signal.throwIfAborted();
       // This signal is the independent original closure owner, never a finite observer.
       // Native close precedes both CDP closure and the final wire-owner cancellation.
-      get(framesState$)?.close();
-      get(clientState$)?.close();
+      const failure = get(readinessFailure$);
+      const fault =
+        get(disconnectingState$) && failure instanceof CdpFault
+          ? failure
+          : undefined;
+      get(framesState$)?.close(fault);
+      get(clientState$)?.close(fault);
       set(resetOwner$, AbortSignal.abort());
       set(closedState$, result);
       set(wake$);
