@@ -123,7 +123,7 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     assert!(!stderr.contains("protected-tail-"));
 
     // The process has exited after delivery drained; requests precede responses.
-    let requests = server.requests()?;
+    let requests = server.into_requests()?;
     let mut delivered = Vec::new();
     let mut completions = Vec::new();
     for request in requests {
@@ -194,10 +194,7 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
         .join(format!("{SESSION_ID}.jsonl"));
     assert_eq!(std::fs::read_to_string(native)?, source);
     let log = std::fs::read_to_string(paths.agent_log_file())?;
-    assert!(
-        source
-            .lines()
-            .all(|line| log.lines().any(|actual| actual == line))
-    );
+    let logged_lines = log.lines().collect::<Vec<_>>();
+    assert!(source.lines().all(|line| logged_lines.contains(&line)));
     Ok(())
 }
