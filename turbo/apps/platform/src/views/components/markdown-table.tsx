@@ -2,7 +2,7 @@ import type { ComponentPropsWithoutRef } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Download, Loader2 } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   BrandGoogleDrive,
@@ -71,16 +71,34 @@ function ExportableTable({
     );
   };
   return (
-    <Card className="my-3 min-w-0 rounded-3xl p-2">
-      <div data-markdown-ui className="mb-1 flex justify-end">
+    <Card className="group/markdown-table relative my-3 min-w-0 rounded-3xl p-2">
+      <div data-markdown-ui>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <Button
                 variant="quiet"
-                size="sm"
+                size="xs"
                 disabled={pending || connection?.params.table === node}
                 aria-busy={pending}
+                className={cn(
+                  "absolute top-1.5 right-1.5 h-11 bg-gray-200 duration-300 ease-[ease]",
+                  "[&:hover:not(:active)]:bg-gray-300 [&:active:enabled]:bg-gray-400 [&:active:enabled]:text-foreground",
+                  // Only mouse-only devices hide the control. Touch-capable
+                  // hybrids keep the same visible, 44px-high target as phones.
+                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:h-7",
+                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:gap-1.5",
+                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:rounded-md",
+                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:text-[12px]",
+                  // Opacity keeps Export in the tab order. These state
+                  // selectors outrank the idle media rule, including while
+                  // the portalled menu owns focus or an export is pending.
+                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:pointer-events-none",
+                  "[@media(hover:hover)_and_(pointer:fine)_and_(not_(any-pointer:coarse))]:opacity-0",
+                  "group-hover/markdown-table:pointer-events-auto group-hover/markdown-table:opacity-100",
+                  "group-focus-within/markdown-table:pointer-events-auto group-focus-within/markdown-table:opacity-100",
+                  "data-popup-open:pointer-events-auto data-popup-open:opacity-100 aria-busy:opacity-100",
+                )}
               />
             }
           >
@@ -92,10 +110,10 @@ function ExportableTable({
               : t(($) => {
                   return $.markdown.tableExport.export;
                 })}
-            <ChevronDown />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem
+              className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:min-h-11"
               onClick={() => {
                 return run("excel");
               }}
@@ -106,6 +124,7 @@ function ExportableTable({
               })}
             </DropdownMenuItem>
             <DropdownMenuItem
+              className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:min-h-11"
               disabled={!threadId}
               onClick={() => {
                 return run("original");
@@ -117,6 +136,7 @@ function ExportableTable({
               })}
             </DropdownMenuItem>
             <DropdownMenuItem
+              className="[@media(hover:none),(pointer:coarse),(any-pointer:coarse)]:min-h-11"
               disabled={!threadId}
               onClick={() => {
                 return run("google");

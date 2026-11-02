@@ -260,6 +260,35 @@ function mockTableCloudFiles(
   });
 }
 
+test("Keyboard activation of Export preserves the menu and dismissal focus", async () => {
+  await openTables();
+  const user = userEvent.setup();
+  const trigger = tableExportButton();
+  trigger.focus();
+  expect(trigger).toHaveFocus();
+  expect(trigger).toHaveTextContent("Export");
+
+  await user.keyboard("{ArrowDown}");
+  const menu = await screen.findByRole("menu");
+  const excel = await findNamedMenuItem("Export Excel", menu);
+  await waitFor(() => {
+    expect(excel).toHaveFocus();
+  });
+  await expect(
+    findNamedMenuItem("Save to Google Drive", menu),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    findNamedMenuItem("Save to Google Sheets", menu),
+  ).resolves.toBeInTheDocument();
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+});
+
 test("Each table exports its own real workbook with literal values and source URLs", async () => {
   const browser = context.mocks.browser.blobDownload({ deferRead: true });
   await openTables();
