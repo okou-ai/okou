@@ -1,3 +1,4 @@
+import { projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/contracts/project-readers";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
@@ -1137,14 +1138,18 @@ const registerUserMessageRenderDocument$ = command(
     document: UserMessageDocument,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderDocument => {
+    const readableDocument =
+      projectAwareUserMessageDocumentSchema.parse(document);
     return {
-      document,
-      parts: document.parts.flatMap((part, index) => {
+      document: readableDocument,
+      parts: readableDocument.parts.flatMap((part, index) => {
         if (part.type === "additional_info") {
           return [];
         }
         const rendered = set(registerUserMessageRenderPart$, part, registries);
-        const context = readSuggestionContext(document.parts[index - 1]);
+        const context = readSuggestionContext(
+          readableDocument.parts[index - 1],
+        );
         return [
           rendered.type === "feedback" && context
             ? { ...rendered, suggestionContext: context }

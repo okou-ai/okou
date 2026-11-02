@@ -1,5 +1,7 @@
 #!/usr/bin/env tsx
 
+import { validatePermanentProjectStorage } from "./test-project-storage-permanent";
+
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
 import { validateRunOutputMemoryCitationRetirement } from "./test-run-output-memory-citation-retirement";
@@ -3136,6 +3138,7 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentChatThreadStorage(dbUrl1);
+    await validatePermanentProjectStorage(dbUrl1);
     await validatePermanentStorageLineage(dbUrl1);
     await validatePermanentAgentInstructions(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
@@ -3181,6 +3184,7 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentChatThreadStorage(dbUrl2);
+    await validatePermanentProjectStorage(dbUrl2);
     await validatePermanentStorageLineage(dbUrl2);
     await validatePermanentAgentInstructions(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);

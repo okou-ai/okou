@@ -307,3 +307,51 @@ describe("hidden thread replay", () => {
     ).toEqual([]);
   });
 });
+
+describe("project membership event replay", () => {
+  const projectA = "00000000-0000-4000-8000-000000000071";
+  const projectB = "00000000-0000-4000-8000-000000000072";
+  const membership = (projectId: string | null, seqId: number) => {
+    return {
+      ...created,
+      id: `00000000-0000-4000-8000-${String(seqId).padStart(12, "0")}`,
+      kind: "project_updated" as const,
+      projectId,
+      seqId,
+      createdAt: "2026-09-09T02:00:00.000Z",
+    };
+  };
+
+  it("replays join, move, and leave across snapshots without changing Agent or activity", () => {
+    const original = replayChatThreadEvents([], [created]);
+    const joined = replayChatThreadEvents(original, [membership(projectA, 10)]);
+    const moved = replayChatThreadEvents(joined, [membership(projectB, 11)]);
+    expect(moved[0]).toMatchObject({
+      projectId: projectB,
+      agentId: created.agentId,
+      sortAt: created.createdAt,
+      title: created.title,
+      selectedModel: created.selectedModel,
+    });
+    expect(replayChatThreadEvents(moved, [])[0]).toEqual(moved[0]);
+    expect(
+      replayChatThreadEvents(moved, [membership(null, 12)])[0],
+    ).toMatchObject({
+      projectId: null,
+      agentId: created.agentId,
+      sortAt: created.createdAt,
+    });
+  });
+
+  it("preserves created membership and a deferred membership update", () => {
+    expect(
+      replayChatThreadEvents([], [{ ...created, projectId: projectA }])[0]
+        ?.projectId,
+    ).toBe(projectA);
+    expect(
+      replayChatThreadEvents([], [membership(projectB, 10), created])[0]
+        ?.projectId,
+    ).toBe(projectB);
+    expect(replayChatThreadEvents([], [created])[0]?.projectId).toBeNull();
+  });
+});

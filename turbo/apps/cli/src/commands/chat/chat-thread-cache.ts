@@ -1,12 +1,10 @@
+import { projectAwareChatThreadEventSchema as chatThreadEventSchema } from "@okouai/api-contracts/contracts/project-readers";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import {
-  chatThreadEventSchema,
-  chatThreadSnapshotProjectionSchema,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   replayChatThreadEvents,
   type EventDrivenChatThread,

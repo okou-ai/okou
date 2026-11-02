@@ -462,6 +462,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledUserHashes: ["032a75d8"],
   },
+  [FeatureSwitchKey.Projects]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Private cross-agent Projects. Disabled during reader preparation.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",
     description:

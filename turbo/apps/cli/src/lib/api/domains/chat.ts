@@ -1,3 +1,8 @@
+import { array } from "zod";
+import {
+  projectAwareChatThreadEventSchema,
+  type ProjectAwareChatThreadEvent,
+} from "@okouai/api-contracts/contracts/project-readers";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   type ChatEventSendBody,
@@ -6,7 +11,6 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
-  type ChatThreadEvent as ApiChatThreadEvent,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
   chatThreadRenameContract,
@@ -22,13 +26,26 @@ import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-ro
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { getClientConfig, handleError } from "../core/client-factory";
 
+// Client preparation must not widen the server's published response enum.
+const projectAwareChatThreadsReadContract = {
+  events: {
+    ...chatThreadsContract.events,
+    responses: {
+      ...chatThreadsContract.events.responses,
+      200: chatThreadsContract.events.responses[200].extend({
+        events: array(projectAwareChatThreadEventSchema),
+      }),
+    },
+  },
+};
+
 export interface ChatThreadSnapshot {
   readonly chatThreads: readonly ChatThreadSnapshotProjection[];
   readonly latestEventId: string | null;
   readonly latestSeqId: number | null;
 }
 
-export type ChatThreadEvent = ApiChatThreadEvent;
+export type ChatThreadEvent = ProjectAwareChatThreadEvent;
 
 type ChatEventSnapshotResult =
   | {
@@ -116,7 +133,7 @@ export async function listChatThreadEvents(options: {
   sinceSeqId?: number;
 }): Promise<ChatThreadEventsResult> {
   const config = await getClientConfig();
-  const client = initClient(chatThreadsContract, config);
+  const client = initClient(projectAwareChatThreadsReadContract, config);
   const result = await client.events({
     query:
       options.sinceSeqId === undefined
@@ -138,7 +155,7 @@ export async function listChatThreadEvents(options: {
 
 export async function getChatIndicators(): Promise<Indicators> {
   const config = await getClientConfig();
-  const client = initClient(chatThreadsContract, config);
+  const client = initClient(projectAwareChatThreadsReadContract, config);
   const result = await client.indicators();
   if (result.status === 200) {
     return result.body;
@@ -155,7 +172,7 @@ export async function createChatThread(options: {
   reasoningEffort?: ReasoningEffort;
 }): Promise<ChatThreadCreateResult> {
   const config = await getClientConfig();
-  const client = initClient(chatThreadsContract, config);
+  const client = initClient(projectAwareChatThreadsReadContract, config);
   const result = await client.create({
     body: {
       agentId: options.agentId,

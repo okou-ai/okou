@@ -132,6 +132,62 @@ describe("okou chat list command", () => {
     vi.stubEnv("XDG_CACHE_HOME", cacheDirectory);
   });
 
+  it("preserves future membership events through HTTP validation and a reopened cache", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000071";
+    const threads = [
+      snapshotThread({
+        id: THREAD_ID,
+        agentId: AGENT_ID,
+        title: "Project planning",
+        sortAt: "2026-11-02T00:00:00.000Z",
+      }),
+    ];
+    server.use(
+      http.get(SNAPSHOT_URL, () => {
+        return HttpResponse.json(
+          mockR2Snapshot({
+            chatThreads: threads,
+            latestEventId: INITIAL_EVENT_ID,
+            latestSeqId: 1,
+          }),
+        );
+      }),
+      http.get(EVENTS_URL, ({ request }) => {
+        return HttpResponse.json({
+          events:
+            new URL(request.url).searchParams.get("sinceSeqId") === "1"
+              ? [
+                  {
+                    id: RENAME_EVENT_ID,
+                    seqId: 2,
+                    kind: "project_updated",
+                    projectId,
+                    chatThreadId: THREAD_ID,
+                    agentId: AGENT_ID,
+                    title: null,
+                    createdAt: "2026-11-02T01:00:00.000Z",
+                  },
+                ]
+              : [],
+          hasMore: false,
+        });
+      }),
+    );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      mockConsoleLog.mockClear();
+      await chatCommand.parseAsync(["node", "okou", "list", "--json"]);
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(output).threads).toEqual([
+        expect.objectContaining({
+          id: THREAD_ID,
+          projectId,
+          agentId: AGENT_ID,
+          sortAt: "2026-11-02T00:00:00.000Z",
+        }),
+      ]);
+    }
+  });
+
   afterEach(async () => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();

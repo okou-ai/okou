@@ -22,6 +22,7 @@ export function chatThreadColumns() {
       },
       { onDelete: "cascade" },
     ),
+    projectId: uuid("project_id"),
     title: text("title"),
     /**
      * ID of the scheduled agent run this thread was started from, if any.

@@ -1,3 +1,4 @@
+import type { ProjectAwareChatThreadEvent } from "@okouai/api-contracts/contracts/project-readers";
 import type { ChatThreadEvent } from "@okouai/api-contracts/contracts/chat-threads";
 
 type WithoutSeqId<T> = T extends unknown
@@ -16,6 +17,6 @@ export type OptimisticChatThreadEventInput = Pick<
   Partial<OptimisticChatThreadEvent>;
 
 export type CompatibleChatThreadEvent =
-  ChatThreadEvent | UnsequencedChatThreadEvent;
+  ProjectAwareChatThreadEvent | UnsequencedChatThreadEvent;
 
 export type ChatThreadEventView = CompatibleChatThreadEvent;

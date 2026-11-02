@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { check, index, pgTable, unique } from "drizzle-orm/pg-core";
+import { check, foreignKey, index, pgTable, unique } from "drizzle-orm/pg-core";
+import { projects } from "./project";
 import { chatThreadColumns } from "../columns/chat-thread";
 
 /**
@@ -13,6 +14,19 @@ export const chatThreads = pgTable(
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),
+      foreignKey({
+        columns: [table.projectId, table.userId],
+        foreignColumns: [projects.id, projects.userId],
+        name: "chat_threads_project_owner_fk",
+      }).onDelete("no action"),
+      index("chat_threads_user_project_activity_idx")
+        .on(
+          table.userId,
+          table.projectId,
+          table.lastMessageAt.desc(),
+          table.id.desc(),
+        )
+        .where(sql`${table.projectId} IS NOT NULL`),
       check(
         "chat_threads_canonical_selection_check",
         sql`${table.selectedModel} NOT IN ('okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND ${table.selectedModel} NOT LIKE '@preset/%'`,

@@ -3011,6 +3011,20 @@
       "when": 1793593407839,
       "tag": "1508_seed_skill_bundle_preparation",
       "breakpoints": true
+    },
+    {
+      "idx": 1509,
+      "version": "7",
+      "when": 1793599163372,
+      "tag": "1509_project_reader_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1510,
+      "version": "7",
+      "when": 1793599336667,
+      "tag": "1510_project_thread_activity_index",
+      "breakpoints": true
     }
   ]
 }

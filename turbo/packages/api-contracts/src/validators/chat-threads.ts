@@ -207,6 +207,8 @@ const persistedChatThreadServiceTierSchema = zEnum(["priority", "ultrafast"])
 
 export const chatThreadSnapshotProjectionSchema = object({
   id: uuid(),
+  /** Historical R2 snapshots predate Project membership. */
+  projectId: uuid().nullable().optional(),
   agentId: uuid(),
   title: string().nullable(),
   sortAt: string(),
@@ -250,6 +252,7 @@ export const chatThreadEventSchema = object({
     "unarchived",
   ]),
   chatThreadId: uuid(),
+  projectId: uuid().nullable().optional(),
   agentId: uuid(),
   /** On sort_touched, an explicit canonical agent reassignment. */
   reassignedAgentId: uuid().optional(),

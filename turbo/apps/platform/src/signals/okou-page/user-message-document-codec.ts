@@ -1,3 +1,4 @@
+import { projectAwareUserMessageDocumentSchema as userMessageDocumentSchema } from "@okouai/api-contracts/contracts/project-readers";
 import {
   readSuggestionContext,
   suggestionContextPart,
@@ -8,7 +9,6 @@ import type { JSONContent } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import {
   generationTemplateRequestSchema,
-  userMessageDocumentSchema,
   userMessageInputDocumentSchema,
 } from "@okouai/api-contracts/validators/chat-threads";
 import type {
