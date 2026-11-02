@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.269](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.268...guest-write-file-v0.1.269) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** retire orphaned guest file compression transport ([#44713](https://github.com/okou-ai/okou/issues/44713)) ([5dc1d17](https://github.com/okou-ai/okou/commit/5dc1d17b797535c5e154a6cf5960534363966fe0))
+
 ## [0.1.268](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.267...guest-write-file-v0.1.268) (2026-11-02)
 
 ## [0.1.267](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.266...guest-write-file-v0.1.267) (2026-11-02)

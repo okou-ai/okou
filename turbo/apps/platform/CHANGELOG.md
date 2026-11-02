@@ -13,6 +13,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1084.1](https://github.com/okou-ai/okou/compare/app-v0.1084.0...app-v0.1084.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* use high-resolution okou sharing artwork ([#44721](https://github.com/okou-ai/okou/issues/44721)) ([4ebff22](https://github.com/okou-ai/okou/commit/4ebff22651c042d5de49e298c4a255cdd121e350))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.809.1
+
 ## [0.1084.0](https://github.com/okou-ai/okou/compare/app-v0.1083.6...app-v0.1084.0) (2026-11-02)
 
 
