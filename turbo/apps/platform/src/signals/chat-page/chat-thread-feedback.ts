@@ -9,6 +9,9 @@ import {
 } from "ccstate";
 import { animationFrame } from "signal-timers";
 import { isEditableTarget, matchShortcut } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { emailQuoteAddress } from "../../lib/markdown/email-quote.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import type {
@@ -24,6 +27,10 @@ import type {
   ChatForwardContext,
   ChatForwardSelection,
 } from "./chat-forward.ts";
+import {
+  currentLeftThread$,
+  currentRightThread$,
+} from "./chat-thread-pane-state.ts";
 
 // Assistant messages and other agent-produced content, such as linked email
 // drafts, opt into the shared Copy / Quote interaction.
@@ -100,6 +107,7 @@ function isSameFeedbackSelection(
 }
 
 export interface ChatThreadFeedbackSignals {
+  readonly quoteEmail$: Command<void, [HTMLAnchorElement, string]>;
   readonly selection$: Computed<ChatThreadFeedbackSelection | null>;
   readonly start$: Command<void, []>;
   readonly close$: Command<void, []>;
@@ -448,6 +456,55 @@ function createSelectionState(threadId: string) {
   };
 }
 
+function createEmailQuote(
+  threadId: string,
+  feedback: ComposerFeedbackSignals,
+  close$: Command<void, []>,
+): ChatThreadFeedbackSignals["quoteEmail$"] {
+  return command(({ get, set }, link: HTMLAnchorElement, eventId: string) => {
+    if (get(featureSwitch$)[FeatureSwitchKey.ChatEmailQuote] !== true) {
+      return;
+    }
+    const event = closestChatEvent(link);
+    const address = emailQuoteAddress(link.getAttribute("href") ?? undefined);
+    if (
+      address === null ||
+      event?.dataset.chatScrollAnchorEventId !== eventId ||
+      resolveSelectionThreadId(event) !== threadId ||
+      !event.closest(ASSISTANT_GROUP_SELECTOR) ||
+      link.closest("pre, code, blockquote")
+    ) {
+      return;
+    }
+    // Keep the contact's local record, without borrowing another message or
+    // treating an address as a provider-owned draft/sent-mail identity.
+    const localRecord =
+      link.closest("tr") ?? link.closest("li") ?? link.closest("p") ?? link;
+    const source = event.contains(localRecord) ? localRecord : link;
+    const range = link.ownerDocument.createRange();
+    range.selectNodeContents(source);
+    const sourceText = range.toString().trim();
+    const recordText =
+      source instanceof HTMLTableRowElement
+        ? Array.from(source.cells)
+            .map((cell) => {
+              return cell.textContent?.trim() ?? "";
+            })
+            .join(" · ")
+        : sourceText;
+    // Only the link's complete label proves its destination is already present.
+    const quote =
+      link.textContent?.trim() === address
+        ? recordText
+        : `${recordText}\n${address}`;
+    // Synthetic labels/addresses have no exact rendered-text range.
+    const location =
+      quote === sourceText ? resolveFeedbackLocation(range) : undefined;
+    set(feedback.add$, { quote, ...location });
+    set(close$);
+  });
+}
+
 function createStartFeedback(
   selection$: State<CapturedFeedbackSelection | null>,
   close$: Command<void, []>,
@@ -786,6 +843,40 @@ function createListenersRef({
   );
 }
 
+export const quoteChatEmail$ = command(
+  async ({ get, set }, link: HTMLAnchorElement, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const eventId = closestChatEvent(link)?.dataset.chatScrollAnchorEventId;
+    const thread = [get(currentLeftThread$), get(currentRightThread$)].find(
+      (candidate) => {
+        return (
+          candidate !== null && get(candidate.containerEl$)?.contains(link)
+        );
+      },
+    );
+    if (
+      !thread ||
+      !eventId ||
+      get(thread.sharing.phase$) !== "idle" ||
+      get(featureSwitch$)[FeatureSwitchKey.ChatEmailQuote] !== true
+    ) {
+      return;
+    }
+    // Load the saved draft before this insertion becomes a local edit.
+    await set(thread.composer.draft.load$, signal);
+    signal.throwIfAborted();
+    if (
+      !link.isConnected ||
+      !get(thread.containerEl$)?.contains(link) ||
+      ![get(currentLeftThread$), get(currentRightThread$)].includes(thread) ||
+      get(thread.sharing.phase$) !== "idle"
+    ) {
+      return;
+    }
+    set(thread.feedback.quoteEmail$, link, eventId);
+  },
+);
+
 export function createChatThreadFeedbackSignals(
   threadId: string,
   feedback: ComposerFeedbackSignals,
@@ -818,6 +909,7 @@ export function createChatThreadFeedbackSignals(
     isProgrammaticScrollEvent$,
   });
   return {
+    quoteEmail$: createEmailQuote(threadId, feedback, selection.close$),
     selection$: selection.selection$,
     start$,
     close$: selection.close$,

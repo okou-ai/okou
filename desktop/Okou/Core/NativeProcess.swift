@@ -25,9 +25,9 @@ public actor NativeProcess {
   }
 
   public enum RequestIntent: String, Sendable {
+    case unspecified
     case permissionRefresh = "permission_refresh"
     case commandPreflight = "command_preflight"
-    case unspecified
   }
 
   private struct PendingRequest {
@@ -155,7 +155,7 @@ public actor NativeProcess {
               Task { await self.expire(id, generation: current) }
             }) == true
         else {
-          stop(error: Self.timeoutFailure)
+          stop(error: Self.timeoutFailure())
           return
         }
         // Dispatch uses an awake clock. Keep ContinuousClock's timer for system sleep/wake.
@@ -179,7 +179,7 @@ public actor NativeProcess {
   private func receive(_ data: Data, sequence: Int, generation current: Int) {
     guard current == generation else { return }
     if lifetime?.expired == true {
-      stop(error: Self.timeoutFailure)
+      stop(error: Self.timeoutFailure())
       return
     }
     // Tasks created by readability callbacks can reach the actor out of read order.
@@ -238,7 +238,7 @@ public actor NativeProcess {
       }
       // A ready response must not bypass the deadline when the client resumes late.
       if lifetime?.complete(responseId) != nil {
-        stop(error: Self.timeoutFailure)
+        stop(error: Self.timeoutFailure())
         return
       }
       if response["status"].string == "failed",
@@ -286,15 +286,20 @@ public actor NativeProcess {
         "\(message) Reconnect Computer Use; do not replay the failed action automatically."),
       failure: failure, responseBytes: response.count, attachments: attachments)
   }
-  private static var timeoutFailure: DesktopFailure {
+  private static func timeoutFailure(
+    interruption: DesktopFailure.Interruption? = nil
+  ) -> DesktopFailure {
     DesktopFailure(
       "command_timeout",
-      "Native command deadline expired. An action may have been delivered; do not replay automatically."
+      interruption == nil
+        ? "Native command deadline expired. An action may have been delivered; do not replay automatically."
+        : "Permission check deadline expired while this Mac was asleep.",
+      interruption: interruption
     )
   }
   private func expire(_ id: Int, generation current: Int) {
     guard current == generation, lifetime?.expire(id, detectedBy: .timer) != nil else { return }
-    stop(error: Self.timeoutFailure)
+    stop(error: Self.timeoutFailure())
   }
   private func cancel(_ id: Int) { if pending[id] != nil { stop(error: CancellationError()) } }
   private func exited(generation current: Int, termination: NativeHelperTermination) {
@@ -310,13 +315,13 @@ public actor NativeProcess {
     _ reason: NativeHelperFailure, responseBytes: Int? = nil,
     termination: NativeHelperTermination? = nil, request: NativeHelperRequestDiagnostics? = nil,
     attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil,
-    cause: DesktopFailure.Cause? = nil
+    interruption: DesktopFailure.Interruption? = nil
   ) {
     DesktopTelemetry.captureHelperFailure(
       reason, purpose: purpose, generation: generation,
       pendingRequests: pending.count, stderrBytes: standardError.count,
       responseBytes: responseBytes, termination: termination, request: request,
-      attachments: attachments, timeout: timeout, cause: cause)
+      attachments: attachments, timeout: timeout, interruption: interruption)
   }
   public func stop() { stop(error: CancellationError()) }
   private func stop(
@@ -327,30 +332,16 @@ public actor NativeProcess {
     let expiration = lifetime?.retire()
     var error = error
     if let expiration, let request = pending[expiration.requestID] {
-      let diagnostics = request.diagnostics
       let timeout = NativeHelperTimeoutDiagnostics(
         trigger: expiration.trigger, output: outputReader.snapshot, processedBytes: receivedBytes,
         processedAt: outputProcessedAt, observedAt: now(), awakeObservedAt: awakeNow(),
         detectedAt: expiration.detectedAt, retiredAt: expiration.retiredAt)
-      let elapsed = diagnostics.started.duration(to: timeout.observedAt).seconds
-      let awakeElapsed = diagnostics.awakeStarted.duration(to: timeout.awakeObservedAt).seconds
-      // Only an identified, isolated permissions read can be treated as an expected sleep expiry.
-      let suspendedPermissionRead =
-        purpose == .computerUse && pending.count == 1 && diagnostics.operation == .permissionsState
-        && (diagnostics.intent == .permissionRefresh || diagnostics.intent == .commandPreflight)
-        && diagnostics.writtenAt != nil
-        && elapsed.isFinite && awakeElapsed.isFinite && diagnostics.timeout.isFinite
-        && diagnostics.timeout > 0 && elapsed >= diagnostics.timeout
-        && awakeElapsed >= 0 && awakeElapsed < diagnostics.timeout
-      let failure =
-        suspendedPermissionRead
-        ? DesktopFailure(
-          "command_timeout", "Permission check deadline expired while this Mac was asleep.",
-          cause: .systemSuspension)
-        : Self.timeoutFailure
-      error = failure
+      let interruption = timeout.interruption(
+        request: request.diagnostics, purpose: purpose, pendingRequests: pending.count)
+      error = Self.timeoutFailure(interruption: interruption)
       reportFailure(
-        .timeout, request: diagnostics, timeout: timeout, cause: failure.cause)
+        .timeout, request: request.diagnostics,
+        timeout: timeout, interruption: interruption)
     } else if let failure {
       reportFailure(
         failure, responseBytes: responseBytes, termination: termination, attachments: attachments)

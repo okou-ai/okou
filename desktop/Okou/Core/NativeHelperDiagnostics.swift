@@ -105,6 +105,23 @@ struct NativeHelperTimeoutDiagnostics: Sendable {
   let awakeObservedAt: SuspendingClock.Instant
   let detectedAt: ContinuousClock.Instant
   let retiredAt: ContinuousClock.Instant
+
+  func interruption(
+    request: NativeHelperRequestDiagnostics, purpose: NativeProcess.Purpose, pendingRequests: Int
+  ) -> DesktopFailure.Interruption? {
+    let elapsed = request.started.duration(to: observedAt).seconds
+    let awake = request.awakeStarted.duration(to: awakeObservedAt).seconds
+    guard purpose == .computerUse, request.operation == .permissionsState,
+      request.intent == .permissionRefresh || request.intent == .commandPreflight,
+      pendingRequests == 1, request.writtenAt != nil,
+      request.timeout > 0, request.timeout.isFinite,
+      detectedAt >= request.deadline, retiredAt >= detectedAt, observedAt >= retiredAt,
+      elapsed.isFinite, awake.isFinite,
+      awake >= 0, awake < request.timeout, elapsed >= request.timeout, elapsed > awake
+    else { return nil }
+    return request.intent == .permissionRefresh
+      ? .suspendedPermissionRefresh : .suspendedCommandPreflight
+  }
 }
 
 struct NativeHelperDiagnostics: Sendable {

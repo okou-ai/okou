@@ -37,9 +37,16 @@ public actor CommandExecutor {
     self.helper = helper
     self.shells = shells
   }
-  public func permissions() async throws -> JSONValue {
-    try await call(
-      .object(["kind": .string("permissions.state")]), remaining: 10, intent: .permissionRefresh)
+  // An interrupted refresh has no new permission state; a later refresh owns recovery.
+  public func permissions() async throws -> JSONValue? {
+    do {
+      return try await call(
+        .object(["kind": .string("permissions.state")]), remaining: 10, intent: .permissionRefresh)
+    } catch let failure as DesktopFailure
+      where failure.interruption == .suspendedPermissionRefresh
+    {
+      return nil
+    }
   }
   public func requestPermission(screenRecording: Bool) async throws -> JSONValue {
     try await call(
