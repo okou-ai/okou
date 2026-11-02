@@ -89,17 +89,17 @@ interface FaviconDocument {
   readonly waiting: boolean;
   readonly ready: boolean;
 }
-type Retirement = {
+interface RetirementReceipts {
+  readonly input: PromiseSettledResult<void>;
+  readonly capture: PromiseSettledResult<void>;
+  readonly display?: PromiseSettledResult<void>;
+}
+interface Retirement {
   readonly owner: object;
   readonly session: SelectedSession;
-} & (
-  | { readonly phase: "pending" }
-  | {
-      readonly phase: "blocked";
-      readonly error: unknown;
-      readonly captureOnly: boolean;
-    }
-);
+  /** Original evidence; native capture closure is reconciled when consumed. */
+  readonly receipts: RetirementReceipts | null;
+}
 interface CaptureChange {
   readonly settings: CaptureSettings;
   readonly first: number;
@@ -432,6 +432,10 @@ interface ControllerLinks {
   readonly configureCapture$: Command<Promise<void>, [AbortSignal]>;
   readonly scheduleCapture$: Command<void, []>;
   readonly waitRetirement$: Command<Promise<void>, [string, AbortSignal]>;
+  readonly reconcileRetirement$: Command<
+    PromiseSettledResult<void> | null,
+    [Retirement, RetirementReceipts?]
+  >;
   readonly detachAttached$: Command<void, [AttachedSelection]>;
   readonly finishRetirement$: Command<
     Promise<void>,
@@ -796,15 +800,8 @@ function createCaptureRecoveryGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ): Pick<ControllerLinks, "captureFailed$"> {
-  const {
-    model,
-    sink,
-    disposedState$,
-    retirements$,
-    readinessFailure$,
-    wake$,
-    nativeHost,
-  } = context;
+  const { model, sink, retirements$, readinessFailure$, wake$, nativeHost } =
+    context;
   const captureFailed$ = command(
     async (
       { get, set },
@@ -850,7 +847,7 @@ function createCaptureRecoveryGraph(
       const retirement: Retirement = {
         owner: recoveryOwner,
         session: selected,
-        phase: "pending",
+        receipts: null,
       };
       set(
         retirements$,
@@ -874,7 +871,7 @@ function createCaptureRecoveryGraph(
       });
       set(nativeHost.synchronize$);
       set(wake$);
-      const cleanups = await Promise.allSettled([
+      const [input, capture, displayReceipt] = await Promise.allSettled([
         set(selected.input.suspend$, selected.attached.client.signal),
         set(selected.stream.quiesce$, selected.attached.frames.signal),
         ...(display
@@ -882,36 +879,11 @@ function createCaptureRecoveryGraph(
           : []),
       ]);
       signal.throwIfAborted();
-      const cleanup = cleanups.find(
-        (receipt): receipt is PromiseRejectedResult => {
-          return receipt.status === "rejected";
-        },
-      );
-      // Cleanup receipts are published before the finite resource operation ends.
-      if (get(retirements$).get(owner.targetId) === retirement) {
-        const next = new Map(get(retirements$));
-        if (!cleanup) {
-          next.delete(owner.targetId);
-        } else {
-          next.set(owner.targetId, {
-            ...retirement,
-            phase: "blocked",
-            error: cleanup.reason,
-            captureOnly: cleanups.every((receipt, index) => {
-              return index === 1 || receipt.status === "fulfilled";
-            }),
-          });
-        }
-        set(retirements$, next);
-      }
-      if (!get(disposedState$)) {
-        set(model.transition$, {
-          type: "image-settled",
-          owner: recoveryOwner,
-          ready: !cleanup,
-        });
-      }
-      set(wake$);
+      set(get(links$).reconcileRetirement$, retirement, {
+        input,
+        capture,
+        display: displayReceipt,
+      });
       signal.throwIfAborted();
     },
   );
@@ -1198,6 +1170,53 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
     wake$,
     waitEvent$,
   } = context;
+  const reconcileRetirement$ = command(
+    (
+      { get, set },
+      retirement: Retirement,
+      receipts?: RetirementReceipts,
+    ): PromiseSettledResult<void> | null => {
+      const targetId = retirement.session.attached.owner.targetId;
+      if (get(retirements$).get(targetId) !== retirement) {
+        return null;
+      }
+      const evidence = receipts ?? retirement.receipts;
+      if (!evidence) {
+        return null;
+      }
+      const { input, capture, display } = evidence;
+      // A native end supersedes only this capture's error, never other effects.
+      const result: PromiseSettledResult<void> =
+        input.status === "rejected"
+          ? input
+          : capture.status === "rejected" &&
+              !get(retirement.session.stream.stopped$)
+            ? capture
+            : display?.status === "rejected"
+              ? display
+              : { status: "fulfilled", value: undefined };
+      if (result.status === "rejected" && !receipts) {
+        return result;
+      }
+      const remaining = new Map(get(retirements$));
+      if (result.status === "fulfilled") {
+        remaining.delete(targetId);
+      } else if (receipts) {
+        remaining.set(targetId, { ...retirement, receipts });
+      }
+      set(retirements$, remaining);
+      const image = get(model.imageRecovery$);
+      if (!get(disposedState$) && image?.owner === retirement.owner) {
+        set(model.transition$, {
+          type: "image-settled",
+          owner: image.owner,
+          ready: result.status === "fulfilled",
+        });
+      }
+      set(wake$);
+      return result;
+    },
+  );
   const waitRetirement$ = command(
     async (
       { get, set },
@@ -1210,14 +1229,12 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
         if (!fence) {
           return;
         }
-        if (fence.phase === "blocked") {
-          throw (
-            fence.error ??
-            new CdpFault(
-              "input",
-              "The previous input or capture cleanup could not be confirmed.",
-            )
-          );
+        const result = set(reconcileRetirement$, fence);
+        if (result?.status === "rejected") {
+          throw result.reason;
+        }
+        if (result?.status === "fulfilled") {
+          return;
         }
         await set(waitEvent$, signal);
       }
@@ -1241,8 +1258,7 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
       reason: InputStop,
       signal: AbortSignal,
     ): Promise<void> => {
-      const targetId = selected.attached.owner.targetId;
-      const receipts = await Promise.allSettled([
+      const [input, capture] = await Promise.allSettled([
         set(
           selected.input.retire$,
           reason === "disconnected" ? "disposed" : reason,
@@ -1251,52 +1267,25 @@ function createRetirementReceiptsGraph(context: ControllerContext) {
         set(selected.stream.dispose$, selected.attached.frames.signal),
       ]);
       signal.throwIfAborted();
-      // Native capture closure can precede the other original cleanup receipts.
-      const result = receipts.find(
-        (receipt, index): receipt is PromiseRejectedResult => {
-          return (
-            receipt.status === "rejected" &&
-            (index !== 1 || !get(selected.stream.stopped$))
-          );
-        },
-      );
       // Once closing begins, the transport close owns session detachment.
       if (!get(closingState$)) {
         set(detachAttached$, selected.attached);
       }
-      if (get(retirements$).get(targetId) === retirement) {
-        const fences = new Map(get(retirements$));
-        if (!result) {
-          fences.delete(targetId);
-        } else {
-          fences.set(targetId, {
-            ...retirement,
-            phase: "blocked",
-            error: result.reason,
-            captureOnly: receipts[0].status === "fulfilled",
-          });
-        }
-        set(retirements$, fences);
-      }
-      const image = get(model.imageRecovery$);
-      if (!get(disposedState$) && image?.owner === retirement.owner) {
-        set(model.transition$, {
-          type: "image-settled",
-          owner: image.owner,
-          ready: !result,
-        });
-      }
-      set(wake$);
+      set(reconcileRetirement$, retirement, { input, capture });
       signal.throwIfAborted();
       // The fence retains uncertainty; the existing detached owner reports the
       // original input failure only after detachment and waiter publication.
-      const input = receipts[0];
       if (input.status === "rejected") {
         throw input.reason;
       }
     },
   );
-  return { waitRetirement$, detachAttached$, finishRetirement$ };
+  return {
+    reconcileRetirement$,
+    waitRetirement$,
+    detachAttached$,
+    finishRetirement$,
+  };
 }
 
 function createRetirementsGraph(
@@ -1304,7 +1293,11 @@ function createRetirementsGraph(
   links$: Computed<ControllerLinks>,
 ): Pick<
   ControllerLinks,
-  "waitRetirement$" | "detachAttached$" | "finishRetirement$" | "retireCurrent$"
+  | "reconcileRetirement$"
+  | "waitRetirement$"
+  | "detachAttached$"
+  | "finishRetirement$"
+  | "retireCurrent$"
 > {
   const {
     model,
@@ -1333,12 +1326,12 @@ function createRetirementsGraph(
         const fence: Retirement = {
           owner: image?.owner ?? {},
           session: selected,
-          phase: "pending",
+          receipts: null,
         };
         const previous = get(retirements$).get(
           selected.attached.owner.targetId,
         );
-        if (previous?.phase !== "blocked") {
+        if (!previous?.receipts) {
           set(
             retirements$,
             new Map(get(retirements$)).set(
@@ -2274,7 +2267,7 @@ function createRetiredSessionEvents(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const { model, retirements$, wake$, connected$ } = context;
+  const { model, retirements$, connected$ } = context;
   return command(
     (
       { get, set },
@@ -2299,14 +2292,11 @@ function createRetiredSessionEvents(
           continue;
         }
         set(original.stream.detached$);
-        if (retirement.phase !== "blocked" || !retirement.captureOnly) {
+        const result = set(get(links$).reconcileRetirement$, retirement);
+        if (result?.status !== "fulfilled") {
           continue;
         }
         const targetId = original.attached.owner.targetId;
-        const remaining = new Map(get(retirements$));
-        remaining.delete(targetId);
-        set(retirements$, remaining);
-        set(wake$);
         if (
           selected ||
           !get(connected$) ||
@@ -3547,7 +3537,7 @@ function createDisposalGraph(
           // now follows them on the wire. The peer can vanish at any moment, so
           // closing never waits for their acknowledgement.
           for (const retirement of get(retirements$).values()) {
-            if (retirement.phase === "pending") {
+            if (!retirement.receipts) {
               set(get(links$).detachAttached$, retirement.session.attached);
             }
           }

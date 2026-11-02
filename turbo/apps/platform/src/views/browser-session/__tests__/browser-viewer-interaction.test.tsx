@@ -2749,9 +2749,17 @@ test("A late capture-detachment proof leaves the newer selection live and allows
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
 });
 
-test.each([true, false])(
-  "A frame-session end before input cleanup settles preserves its confirmation (input confirmed=%s)",
-  async (confirmed) => {
+test.each(
+  ["capture-end-input", "capture-input-end", "input-capture-end"].flatMap(
+    (order) => {
+      return [true, false].map((confirmed) => {
+        return { order, confirmed };
+      });
+    },
+  ),
+)(
+  "Original cleanup remains independent for $order (input confirmed=$confirmed)",
+  async ({ order, confirmed }) => {
     const browser = await setupScopedPair();
     click(screen.getByLabelText("Browser settings"));
     click(await screen.findByText("Connection mode"));
@@ -2766,6 +2774,7 @@ test.each([true, false])(
     if (!frameSession) {
       throw new Error("Missing original frame session");
     }
+    const proof = browser.holdNextDetach(frameSession);
     const input = screen.getByLabelText("Remote browser input");
     await userEvent.click(input);
     fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
@@ -2786,6 +2795,11 @@ test.each([true, false])(
     click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
     await release.received;
     await stop.received;
+    if (order === "input-capture-end") {
+      await act(async () => {
+        await release.release();
+      });
+    }
     await act(async () => {
       await stop.release();
     });
@@ -2795,15 +2809,29 @@ test.each([true, false])(
         "https://other.example.com",
       );
     });
-    act(() => {
-      browser.event("Target.detachedFromTarget", {
-        sessionId: frameSession,
-        targetId: "example-page",
+    if (order === "capture-end-input") {
+      act(() => {
+        browser.event("Target.detachedFromTarget", {
+          sessionId: frameSession,
+          targetId: "example-page",
+        });
       });
-    });
+    } else {
+      if (order === "capture-input-end") {
+        await act(async () => {
+          await release.release();
+        });
+      }
+      await proof.received;
+    }
     await act(async () => {
-      await release.release();
+      await proof.release();
     });
+    if (order === "capture-end-input") {
+      await act(async () => {
+        await release.release();
+      });
+    }
     click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
     if (!confirmed) {
       await screen.findByText("Browser view unavailable");
