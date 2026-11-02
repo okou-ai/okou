@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { expect } from "vitest";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { readContentBundle } from "@okouai/core/content-bundle";
+import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
 
-/** Inspect bytes published to the external S3 boundary using the claimed reference. */
+/** Inspect new or baseline external S3 fixture bytes using the claimed reference. */
 export function readClaimedContentBundle(
   objects: ReadonlyMap<string, Buffer>,
   reference: ContentBundle & { readonly downloadUrl: string },
@@ -12,7 +13,7 @@ export function readClaimedContentBundle(
   const url = new URL(reference.downloadUrl);
   expect(url.protocol).toBe("https:");
   expect(url.searchParams.get("object")?.endsWith(`/${key}`)).toBeTruthy();
-  const archive = objects.get(key);
+  const archive = objects.get(key) ?? seededSkillBundleArchive(key);
   if (!archive) {
     throw new Error("Claimed content bundle was not published to S3");
   }

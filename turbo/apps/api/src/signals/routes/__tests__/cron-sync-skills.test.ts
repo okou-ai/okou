@@ -239,6 +239,7 @@ describe("Seed Skill bundle preparation through sync-skills", () => {
       const run = await owned.sendChatRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "Inspect system skills",
+        model: framework === "claude-code" ? "claude-fable-5-1" : "gpt-6-luna",
       });
       const changed = await sourceArchive("updated gen instructions");
       await owned.run(async () => {
@@ -301,6 +302,7 @@ describe("Seed Skill bundle preparation through sync-skills", () => {
       const next = await owned.sendChatRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "Use the later Seed publication",
+        model: framework === "claude-code" ? "claude-fable-5-1" : "gpt-6-luna",
       });
       const later = await owned.claimChatRun(owned.runnerGroup, next.runId);
       const selected = later.claim.contentBundles.skills.find((bundle) => {

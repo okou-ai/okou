@@ -34,11 +34,8 @@ export function createSystemSkillsContext(
     );
     const skillVolumes = skills.flatMap((skillName): readonly SkillVolume[] => {
       const skill = byUrl.get(resolveSkillRef(skillName));
-      // An absent global cache entry has no registered skill to install.
-      if (!skill) {
-        return [];
-      }
       if (
+        !skill ||
         skill.versionHash === null ||
         skill.contentBundle === null ||
         skill.contentBundleSourceVersionHash !== skill.versionHash
