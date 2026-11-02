@@ -1453,6 +1453,7 @@
     "reload": "Actualiser",
     "remoteInput": "Saisie du navigateur distant",
     "resolution": "Résolution",
+    "restoreWindow": "Rétablissez la fenêtre du navigateur distant dans son état normal, puis choisissez à nouveau Adapter la fenêtre au panneau.",
     "retryImage": "Réessayer l’image en direct",
     "settings": "Paramètres du navigateur",
     "sharedTransport": "Connexion partagée",

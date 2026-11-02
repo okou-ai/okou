@@ -53,6 +53,7 @@ import { createDisplayViewport } from "../display/viewport.ts";
 import {
   createDisplaySync,
   type DisplayModeResult,
+  type DisplaySyncResult,
   type DisplayState,
 } from "../display/sync.ts";
 import { captureBoundary } from "../display/capture-boundary.ts";
@@ -473,7 +474,7 @@ interface ControllerLinks {
     [WindowSizeSync, AbortSignal]
   >;
   readonly measure$: Command<void, [DisplaySize | null]>;
-  readonly syncDisplay$: Command<Promise<void>, [AbortSignal]>;
+  readonly syncDisplay$: Command<Promise<DisplaySyncResult>, [AbortSignal]>;
   readonly restoreSelection$: Command<Promise<void>, [AbortSignal]>;
   readonly pause$: Command<Promise<void>, [boolean, AbortSignal]>;
   readonly revokeAuthority$: Command<void, []>;
@@ -2996,14 +2997,15 @@ function createDisplaySettingsGraph(
     }
   });
   const syncDisplay$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async ({ get, set }, signal: AbortSignal): Promise<DisplaySyncResult> => {
       set(assertAvailable$, signal);
       const display = get(get(links$).displayGraph$);
       if (!display) {
         throw cancelled();
       }
-      await set(display.syncDisplay$, signal);
+      const result = await set(display.syncDisplay$, signal);
       set(assertAvailable$, signal);
+      return result;
     },
   );
   return { changeCapture$, changeWindowSizeSync$, measure$, syncDisplay$ };

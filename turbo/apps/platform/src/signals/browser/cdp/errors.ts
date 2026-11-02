@@ -1,4 +1,4 @@
-import type { ViewerError } from "../viewer/types.ts";
+import type { ViewerError, WindowRestoreRequired } from "../viewer/types.ts";
 import { i18n } from "../../../i18n/index.ts";
 
 export class CdpFault extends Error {
@@ -13,6 +13,15 @@ export class CdpFault extends Error {
   }
 }
 
+export class RestoreWindowFault extends CdpFault {
+  constructor(readonly windowState: WindowRestoreRequired["windowState"]) {
+    super(
+      "restore-required",
+      "Restore the browser window before synchronizing its display.",
+    );
+  }
+}
+
 export function diagnostic(error: unknown): ViewerError {
   if (error instanceof CdpFault) {
     return Object.freeze({
@@ -22,7 +31,11 @@ export function diagnostic(error: unknown): ViewerError {
           ? i18n.t(($) => {
               return $.browserViewer.unsupportedCapability;
             })
-          : error.message,
+          : error instanceof RestoreWindowFault
+            ? i18n.t(($) => {
+                return $.browserViewer.restoreWindow;
+              })
+            : error.message,
       ...(error.request ? { request: error.request } : {}),
     });
   }

@@ -1013,7 +1013,7 @@ function createConfigurationActions(
   );
   const syncDisplay$ = command(async ({ set }, signal: AbortSignal) => {
     const lease = set(requireController$, signal);
-    await set(lease.controller.syncDisplay$, signal);
+    return await set(lease.controller.syncDisplay$, signal);
   });
   const copyClipboard$ = command(({ set }, signal: AbortSignal) => {
     set(requireController$, signal);

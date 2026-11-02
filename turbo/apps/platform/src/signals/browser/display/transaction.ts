@@ -2,7 +2,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { Protocol } from "devtools-protocol";
 import { createDeferredPromise, type DeferredPromise } from "../../utils.ts";
 import type { CdpClient } from "../cdp/client.ts";
-import { CdpFault, requestDetails } from "../cdp/errors.ts";
+import { CdpFault, requestDetails, RestoreWindowFault } from "../cdp/errors.ts";
 import {
   constrainDisplay,
   nativePresentation,
@@ -662,7 +662,8 @@ function createTransactionRecovery(
               requestDetails(error),
             )
           : error instanceof CdpFault &&
-              ["scope", "display"].includes(error.kind)
+              (error instanceof RestoreWindowFault ||
+                ["scope", "display"].includes(error.kind))
             ? error
             : new CdpFault(
                 error instanceof CdpFault && error.code === -32_601

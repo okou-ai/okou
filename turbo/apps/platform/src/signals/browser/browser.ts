@@ -2,7 +2,11 @@ import type { Command, Computed } from "ccstate";
 import { createBrowserRuntime } from "./runtime.ts";
 import type { ClipboardRecovery } from "./input/clipboard.ts";
 import type { BrowserNavigationAction } from "./navigation/action.ts";
-import type { DisplayModeResult, DisplayState } from "./display/sync.ts";
+import type {
+  DisplayModeResult,
+  DisplayState,
+  DisplaySyncResult,
+} from "./display/sync.ts";
 import type { DisplaySize } from "./display/geometry.ts";
 import type { ImageRecovery } from "./viewer/image-recovery.ts";
 import type { layoutTabs } from "./viewer/tab-layout.ts";
@@ -102,7 +106,7 @@ export interface BrowserSignals {
     Promise<DisplayModeResult>,
     [WindowSizeSync, AbortSignal]
   >;
-  readonly syncDisplay$: Command<Promise<void>, [AbortSignal]>;
+  readonly syncDisplay$: Command<Promise<DisplaySyncResult>, [AbortSignal]>;
   readonly copyClipboard$: Command<Promise<void>, [AbortSignal]>;
   readonly dismissClipboardRecovery$: Command<void, []>;
   /** Notify after the owner invalidates/publishes connection$; not for lease-only updates. */

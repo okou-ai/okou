@@ -9,8 +9,8 @@ import {
   type DeferredPromise,
 } from "../../utils.ts";
 import type { CdpClient } from "../cdp/client.ts";
-import { CdpFault, requestDetails } from "../cdp/errors.ts";
-import type { WindowSizeSync } from "../viewer/types.ts";
+import { CdpFault, requestDetails, RestoreWindowFault } from "../cdp/errors.ts";
+import type { WindowRestoreRequired, WindowSizeSync } from "../viewer/types.ts";
 import type { DisplaySize } from "./geometry.ts";
 import {
   activeDisplayIntent,
@@ -46,11 +46,15 @@ export interface DisplaySyncHost extends DisplayEffects {
 
 export type DisplayModeResult =
   | { readonly kind: "policy-updated"; readonly mode: WindowSizeSync }
+  | (WindowRestoreRequired & { readonly mode: WindowSizeSync })
   | {
       readonly kind: "synchronized";
       readonly mode: WindowSizeSync;
       readonly completion: DisplayCompletion;
     };
+
+export type DisplaySyncResult =
+  { readonly kind: "synchronized" } | WindowRestoreRequired;
 
 export interface DisplayExecutionOutcome {
   readonly target: DisplayTarget;
@@ -76,7 +80,7 @@ export interface DisplaySync {
   readonly measure$: Command<void, [DisplaySize | null]>;
   readonly setSuspended$: Command<void, [boolean]>;
   readonly close$: Command<void, []>;
-  readonly syncDisplay$: Command<Promise<void>, [AbortSignal]>;
+  readonly syncDisplay$: Command<Promise<DisplaySyncResult>, [AbortSignal]>;
   readonly waitForIdle$: Command<Promise<void>, [AbortSignal]>;
 }
 
@@ -89,14 +93,14 @@ interface ManualRequest {
   readonly selection: Selection;
   readonly size: DisplaySize;
   readonly revision: number;
-  readonly done: DeferredPromise<void>;
+  readonly done: DeferredPromise<DisplaySyncResult>;
 }
 
 interface ModeRequest {
   readonly selection: Selection;
   readonly revision: number;
   readonly mode: WindowSizeSync;
-  readonly done: DeferredPromise<DisplayCompletion>;
+  readonly done: DeferredPromise<DisplayModeResult>;
 }
 
 /** The native write currently in flight, kept so cleanup can await its end. */
@@ -203,10 +207,11 @@ function createSyncSelectors(context: SyncContext) {
       receipt.selection === selection &&
       !!selection?.target.current() &&
       receipt.intent.revision === policy.revision &&
-      receipt.intent.source === "automatic" &&
       !policy.suspended &&
       policy.execution.kind !== "closed" &&
-      receipt.result.kind === "failed"
+      receipt.result.kind === "failed" &&
+      (receipt.intent.source === "automatic" ||
+        receipt.result.error instanceof RestoreWindowFault)
       ? { ...receipt, result: receipt.result }
       : null;
   });
@@ -375,14 +380,22 @@ function createRequestSettlement(context: SyncCommands & PresentationProof) {
       receipt.intent.revision === manual.revision
     ) {
       if (receipt.result.kind === "failed") {
-        manual.done.reject(receipt.result.error);
+        const error = receipt.result.error;
+        if (error instanceof RestoreWindowFault) {
+          manual.done.resolve({
+            kind: "restore-required",
+            windowState: error.windowState,
+          });
+        } else {
+          manual.done.reject(error);
+        }
       } else {
         const completion = set(matchPresentation$, receipt);
         if (
           completion?.decision.kind === "fit" &&
           sameSize(completion.decision.size, manual.size)
         ) {
-          manual.done.resolve();
+          manual.done.resolve({ kind: "synchronized" });
         } else {
           manual.done.reject(cancelled());
         }
@@ -398,11 +411,24 @@ function createRequestSettlement(context: SyncCommands & PresentationProof) {
       receipt.intent.mode === mode.mode
     ) {
       if (receipt.result.kind === "failed") {
-        mode.done.reject(receipt.result.error);
+        const error = receipt.result.error;
+        if (error instanceof RestoreWindowFault) {
+          mode.done.resolve({
+            kind: "restore-required",
+            windowState: error.windowState,
+            mode: mode.mode,
+          });
+        } else {
+          mode.done.reject(error);
+        }
       } else {
         const completion = set(matchPresentation$, receipt);
         if (completion) {
-          mode.done.resolve(completion);
+          mode.done.resolve({
+            kind: "synchronized",
+            mode: mode.mode,
+            completion,
+          });
         } else {
           mode.done.reject(cancelled());
         }
@@ -699,7 +725,7 @@ function createManualSync(context: SyncScheduling) {
     schedule$,
   } = context;
   const syncDisplay$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async ({ get, set }, signal: AbortSignal): Promise<DisplaySyncResult> => {
       signal.throwIfAborted();
       const selection = get(selection$);
       const policy = get(policy$);
@@ -719,7 +745,7 @@ function createManualSync(context: SyncScheduling) {
         selection,
         size: { ...policy.local },
         revision: get(policy$).revision,
-        done: createDeferredPromise<void>(lifetime),
+        done: createDeferredPromise<DisplaySyncResult>(lifetime),
       };
       set(manual$, request);
       set(schedule$);
@@ -747,6 +773,7 @@ function createManualSync(context: SyncScheduling) {
       if (result.status === "rejected") {
         throw result.reason;
       }
+      return result.value;
     },
   );
   return { syncDisplay$ };
@@ -786,7 +813,7 @@ function createModeChange(
         selection,
         mode,
         revision: get(policy$).revision,
-        done: createDeferredPromise<DisplayCompletion>(signal),
+        done: createDeferredPromise<DisplayModeResult>(signal),
       };
       set(modeRequest$, request);
       set(schedule$);
@@ -803,7 +830,7 @@ function createModeChange(
       if (result.status === "rejected") {
         throw result.reason;
       }
-      return { kind: "synchronized", mode, completion: result.value };
+      return result.value;
     },
   );
   return { changeMode$ };

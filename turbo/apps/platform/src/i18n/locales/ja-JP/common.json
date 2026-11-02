@@ -1428,6 +1428,7 @@
     "reload": "再読み込み",
     "remoteInput": "リモートブラウザー入力",
     "resolution": "解像度",
+    "restoreWindow": "リモートブラウザーのウィンドウを通常の状態に戻してから、もう一度「ウィンドウをパネルに合わせる」を選択してください。",
     "retryImage": "ライブ画像を再試行",
     "settings": "ブラウザー設定",
     "sharedTransport": "共有接続",

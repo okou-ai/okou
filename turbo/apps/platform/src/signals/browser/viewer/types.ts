@@ -16,6 +16,7 @@ export interface ViewerError {
     | "target-unavailable"
     | "input"
     | "display"
+    | "restore-required"
     | "extension"
     | "tab"
     | "frame";
@@ -26,6 +27,12 @@ export interface ViewerError {
     readonly method: string;
     readonly code?: number;
   };
+}
+
+/** Observed native prerequisite; this is not a display completion receipt. */
+export interface WindowRestoreRequired {
+  readonly kind: "restore-required";
+  readonly windowState: "minimized" | "maximized" | "fullscreen";
 }
 
 export interface ViewerTarget {

@@ -1430,6 +1430,7 @@
     "reload": "Reload",
     "remoteInput": "Remote browser input",
     "resolution": "Resolution",
+    "restoreWindow": "Restore the remote browser window to its normal state, then choose Fit window to panel again.",
     "retryImage": "Retry live image",
     "settings": "Browser settings",
     "sharedTransport": "Shared connection",

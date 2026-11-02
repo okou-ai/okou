@@ -1428,6 +1428,7 @@
     "reload": "刷新",
     "remoteInput": "远程浏览器输入",
     "resolution": "分辨率",
+    "restoreWindow": "请将远程浏览器窗口恢复为普通窗口状态，然后再次选择“窗口适应面板”。",
     "retryImage": "重试实时画面",
     "settings": "浏览器设置",
     "sharedTransport": "共用连接",

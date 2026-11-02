@@ -1453,6 +1453,7 @@
     "reload": "Recargar",
     "remoteInput": "Entrada del navegador remoto",
     "resolution": "Resolución",
+    "restoreWindow": "Restaura la ventana del navegador remoto a su estado normal y vuelve a elegir Ajustar ventana al panel.",
     "retryImage": "Reintentar imagen en directo",
     "settings": "Ajustes del navegador",
     "sharedTransport": "Conexión compartida",

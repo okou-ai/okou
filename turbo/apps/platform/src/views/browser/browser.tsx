@@ -37,10 +37,14 @@ import {
 import type { BrowserSignals } from "../../signals/browser/browser.ts";
 import { CdpFault } from "../../signals/browser/cdp/errors.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
-import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
+import type {
+  DisplayModeResult,
+  DisplaySyncResult,
+} from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
 import type {
   ViewerCaptureOptions,
+  ViewerError,
   ViewerTransport,
   WindowSizeSync,
 } from "../../signals/browser/viewer/types.ts";
@@ -71,9 +75,11 @@ function isBrowserOperationFailure(
 
 function BrowserOperationError({
   failed,
+  error,
   className = "border-b border-divider px-3 py-2 text-sm text-muted-foreground",
 }: {
   readonly failed: boolean;
+  readonly error?: ViewerError | null;
   readonly className?: string;
 }) {
   const { t } = useTranslation();
@@ -82,9 +88,11 @@ function BrowserOperationError({
   }
   return (
     <p role="alert" className={className}>
-      {t(($) => {
-        return $.browserViewer.operationFailed;
-      })}
+      {error?.kind === "restore-required"
+        ? error.message
+        : t(($) => {
+            return $.browserViewer.operationFailed;
+          })}
     </p>
   );
 }
@@ -333,7 +341,7 @@ function WindowSettingsMenu({
   readonly pending: boolean;
   readonly syncing: boolean;
   readonly onChange: (value: WindowSizeSync) => Promise<DisplayModeResult>;
-  readonly onSync: () => Promise<void>;
+  readonly onSync: () => Promise<DisplaySyncResult>;
 }) {
   const { t } = useTranslation();
   const mode = useGet(signals.windowSizeSync$);
@@ -804,6 +812,7 @@ function BrowserStatus({
       <BrowserOperationError
         failed={failed}
         className="absolute inset-x-3 top-3 z-10 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+        error={displayRecovery}
       />
     );
   }
@@ -881,7 +890,11 @@ function BrowserStatus({
           })}
         </Button>
       )}
-      <BrowserOperationError failed={failed} className="text-sm" />
+      <BrowserOperationError
+        failed={failed}
+        className="text-sm"
+        error={displayRecovery}
+      />
     </div>
   );
 }

@@ -59,6 +59,7 @@ export function mockBrowserCdp(
   let created = 0;
   let corruptPageAttachment = false;
   let updateBeforeTabRead = false;
+  let windowState = "normal";
   let sessionSequence = 0;
   let nativeSequence = 0;
   let nativeEpoch = "fixture-worker";
@@ -324,7 +325,7 @@ export function mockBrowserCdp(
       return {
         result: {
           windowId: target.windowId ?? 0,
-          bounds: { ...viewport, windowState: "normal" },
+          bounds: { ...viewport, windowState },
         },
       };
     }
@@ -556,6 +557,9 @@ export function mockBrowserCdp(
     detached,
     captures,
     viewport,
+    setWindowState(value: string) {
+      windowState = value;
+    },
     connections: socket.connections,
     failNext(method: string, message: string, code = -32_000) {
       nextResponses.set(method, () => {

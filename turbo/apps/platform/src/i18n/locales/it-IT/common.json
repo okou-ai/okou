@@ -1453,6 +1453,7 @@
     "reload": "Ricarica",
     "remoteInput": "Input del browser remoto",
     "resolution": "Risoluzione",
+    "restoreWindow": "Ripristina lo stato normale della finestra del browser remoto, quindi scegli di nuovo Adatta finestra al pannello.",
     "retryImage": "Riprova l’immagine in diretta",
     "settings": "Impostazioni del browser",
     "sharedTransport": "Connessione condivisa",

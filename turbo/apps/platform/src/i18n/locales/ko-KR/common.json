@@ -1428,6 +1428,7 @@
     "reload": "새로고침",
     "remoteInput": "원격 브라우저 입력",
     "resolution": "해상도",
+    "restoreWindow": "원격 브라우저 창을 일반 상태로 복원한 다음 창을 패널에 맞추기를 다시 선택하세요.",
     "retryImage": "실시간 이미지 다시 시도",
     "settings": "브라우저 설정",
     "sharedTransport": "공유 연결",

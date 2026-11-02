@@ -1,7 +1,7 @@
 import { command, state, type Command, type Computed } from "ccstate";
 import type { Protocol } from "devtools-protocol";
 import type { CdpClient } from "../cdp/client.ts";
-import { CdpFault, isRecord } from "../cdp/errors.ts";
+import { CdpFault, isRecord, RestoreWindowFault } from "../cdp/errors.ts";
 import { releaseRuntimeObjects } from "../cdp/runtime-objects.ts";
 import {
   nativeWindowGeometry,
@@ -80,10 +80,18 @@ function observeWindow(
   ) {
     throw new CdpFault("scope", "The page is outside this viewer's window.");
   }
-  if (window.bounds.windowState && window.bounds.windowState !== "normal") {
+  const windowState: unknown = window.bounds.windowState;
+  if (
+    windowState === "minimized" ||
+    windowState === "maximized" ||
+    windowState === "fullscreen"
+  ) {
+    throw new RestoreWindowFault(windowState);
+  }
+  if (windowState !== undefined && windowState !== "normal") {
     throw new CdpFault(
       "display",
-      "Restore the browser window before synchronizing its display.",
+      "The browser window state is unavailable for display synchronization.",
     );
   }
   const { width, height } = window.bounds;
