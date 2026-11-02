@@ -1,9 +1,14 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import * as tar from "tar";
 
+import {
+  assertDirectory,
+  hasExternalTemplateContract,
+  validateComposedDirectory,
+} from "./composition.mjs";
 import { listFiles } from "./shared.mjs";
 
 export async function createArchive(sourceDir, slug, archivePath) {
@@ -22,7 +27,29 @@ export async function createArchive(sourceDir, slug, archivePath) {
 export async function withExtractedArchive(archivePath, prefix, operation) {
   const root = await mkdtemp(path.join(tmpdir(), prefix));
   try {
-    await tar.extract({ file: archivePath, cwd: root, gzip: true });
+    let unsupportedEntry;
+    await tar.extract({
+      file: archivePath,
+      cwd: root,
+      gzip: true,
+      strict: true,
+      filter: (entryPath, entry) => {
+        if (!["File", "Directory", "Link"].includes(entry.type)) {
+          unsupportedEntry ??= entryPath;
+          return false;
+        }
+        return true;
+      },
+    });
+    if (unsupportedEntry !== undefined) {
+      throw new Error(
+        `Unsupported template archive entry: ${unsupportedEntry}`,
+      );
+    }
+    const entries = await readdir(root, { withFileTypes: true });
+    if (entries.length !== 1 || !entries[0].isDirectory()) {
+      throw new Error("Archive must contain exactly one template directory");
+    }
     return await operation(root);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -80,7 +107,19 @@ async function danglingColorReferences(templateDir, relativePaths) {
 }
 
 export async function inspectTemplateDirectory(templateDir, release, label) {
-  await assertRequiredFiles(templateDir, release, label);
+  await assertDirectory(templateDir);
+  const packageFiles = await listFiles(templateDir);
+  const entries = await readdir(templateDir);
+  let visualDir = templateDir;
+  if (entries.includes("presentation-package.json")) {
+    await validateComposedDirectory(templateDir, packageFiles);
+    visualDir = path.join(templateDir, "template");
+  } else if (await hasExternalTemplateContract(templateDir)) {
+    throw new Error(
+      `${release.slug} ${label}: external template must be composed with its runtime`,
+    );
+  }
+  await assertRequiredFiles(visualDir, release, label);
   const skill = await readFile(path.join(templateDir, "SKILL.md"), "utf8");
   if (skill.length < 1024) {
     throw new Error(
@@ -88,8 +127,9 @@ export async function inspectTemplateDirectory(templateDir, release, label) {
     );
   }
 
-  const relativePaths = await listFiles(templateDir);
-  const dangling = await danglingColorReferences(templateDir, relativePaths);
+  const relativePaths =
+    visualDir === templateDir ? packageFiles : await listFiles(visualDir);
+  const dangling = await danglingColorReferences(visualDir, relativePaths);
   if (dangling.length > 0) {
     throw new Error(
       `${release.slug} ${label}: colour-system references do not resolve inside the package (${dangling.join(", ")})`,

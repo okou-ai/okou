@@ -3592,7 +3592,7 @@ export function buildPresentationRunbookInstructionLines(args: {
     "To produce the presentation:",
     `- Pull the selected package once: okou resource pull ${pkg.resourceId} --dir ./generated/resources`,
     `- Before preparing sources, planning slides, or authoring, read ${packageDir}/SKILL.md fully and follow its template, authoring, and verification instructions.`,
-    "- Read any workflow SKILL.md it references before starting that workflow. Use the documented entry command and bundled parallel workflow when specified, reusing the local package and saved task state.",
+    "- Resolve template and runtime directories from presentation-package.json when present, otherwise use the legacy embedded runtime specified by the package root SKILL.md. Follow its bindings and referenced guides, reusing the local package and saved task state.",
     ...presentationImageInstructions(args.imageGenerationEnabled),
     "- Use the requested slide count; default to 8.",
     PRESENTATION_STATIC_HTML_INSTRUCTION,

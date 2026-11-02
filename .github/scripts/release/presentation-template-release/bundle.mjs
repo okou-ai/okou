@@ -7,6 +7,7 @@ import {
   inspectTemplateDirectory,
   withExtractedArchive,
 } from "./archive.mjs";
+import { assertDirectory, withPackageSource } from "./composition.mjs";
 import {
   assertSameSet,
   assertSha256,
@@ -64,6 +65,7 @@ export async function buildBundle({ sourceDir, outputDir, sourceCommit }) {
   }
 
   const config = await loadConfig();
+  await assertDirectory(sourceDir);
   assertSameSet(
     await sourceSlugs(sourceDir),
     config.templates.map((release) => release.slug),
@@ -73,7 +75,15 @@ export async function buildBundle({ sourceDir, outputDir, sourceCommit }) {
 
   const packages = [];
   for (const release of config.templates) {
-    packages.push(await buildPackage(sourceDir, outputDir, release));
+    packages.push(
+      await withPackageSource(
+        sourceDir,
+        release.slug,
+        async (packageSource) => {
+          return await buildPackage(packageSource, outputDir, release);
+        },
+      ),
+    );
   }
 
   const publication = {
