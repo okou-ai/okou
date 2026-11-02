@@ -2236,7 +2236,7 @@ function createDisconnectionHandling(
       error: diagnostic(fault),
     });
     set(wake$);
-    // A dead control cannot drain. Native/scope/video loss keeps live control until releases finish.
+    // A dead control cannot drain. Other losses retain control long enough to write releases.
     if (
       source === get(clientState$) &&
       fault.kind !== "extension" &&
@@ -2329,7 +2329,7 @@ function createConnectionBootstrap(
       model.configure$,
       connection.windowId !== null && connection.windowId !== undefined,
     );
-    // The wire must survive admission/DOM cancellation until original releases drain.
+    // Keep the wire independent of admission/DOM cancellation until releases are written.
     const lifetime = set(resetOwner$);
     const client = createCdpClient(
       connection.cdpUrl,
