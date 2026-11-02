@@ -104,8 +104,8 @@ Output:
 Notes:
   - Authenticates via OKOU_TOKEN
   - Without --template, the agent reads the source and selects a built-in template by tone, audience fit, and visual preferences
-  - The agent authors HTML first, then chooses delivery from the request, remembered preferences, and intended use
-  - Use okou host for HTML; follow the platform's conversion instructions only when the agent selects PPTX
+  - The agent authors and checks HTML first and delivers HTML by default
+  - Use okou host for HTML; follow the platform's conversion instructions only when the user explicitly requests PowerPoint/PPTX
   - Deliver one format unless the user requests multiple formats
 
 Templates (presentation):

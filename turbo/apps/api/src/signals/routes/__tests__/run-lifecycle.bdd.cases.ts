@@ -11789,7 +11789,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it.each([false, true])(
-        "selects one presentation format and gates PPTX conversion guidance and capability (%s)",
+        "defaults presentation delivery to HTML and gates explicitly requested PPTX conversion (%s)",
         async (enabled) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
@@ -11816,7 +11816,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(prompt).toContain("Presentation delivery:");
           expect(prompt).toContain("first author and check the deck as HTML");
           expect(prompt).toContain(
-            "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
+            "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
           );
           expect(prompt).toContain(
             "Deliver one format unless the user requests multiple formats",
@@ -11827,7 +11827,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
             );
             expect(prompt).toContain(
-              "Only after the agent selects PPTX as the delivery format",
+              "Only when the user explicitly requests PowerPoint/PPTX",
             );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");
