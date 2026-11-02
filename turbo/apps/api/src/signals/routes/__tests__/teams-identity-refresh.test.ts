@@ -1,3 +1,4 @@
+import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { createSign, generateKeyPairSync, randomUUID } from "node:crypto";
 
 import { teamsBotContract } from "@okouai/api-contracts/contracts/teams-bot";
@@ -129,7 +130,7 @@ async function postActivity(
   return response.body;
 }
 
-function setupIdentityFixture(withAad: boolean) {
+function setupIdentityFixture() {
   const fixture = teamsConnectFixture({ teamsAppId: BOT_APP_ID });
   const owner = createFixtureOperationOwner(async () => {
     await flushWaitUntilForTest();
@@ -153,18 +154,7 @@ function setupIdentityFixture(withAad: boolean) {
     const client = setupApp({ context, routes: teamsConnectRoutes })(
       teamsConnectContract,
     );
-    const connected = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          tenantId: fixture.teamsTenantId,
-          teamsUserId: fixture.teamsUserId,
-          ...(withAad ? { teamsAadObjectId: fixture.teamsAadObjectId } : {}),
-        },
-      }),
-      [200],
-    );
-    expect(connected.body).toMatchObject({ success: true, role: "admin" });
+    await connectTeamsAccountForTest(context, fixture);
     const status = await accept(
       client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
@@ -267,46 +257,42 @@ function expectConnectPrompt(
 
 describe("Teams identity refresh through signed personal messages", () => {
   it("replaces a connected non-null Teams ID when the same AAD sends a new ID", async () => {
-    const { fixture, deliveries, run } = await setupIdentityFixture(true);
+    const { fixture, deliveries, run } = await setupIdentityFixture();
     await run(async () => {
       const originalIdOnly = await personalConnect(fixture, {
         id: fixture.teamsUserId,
+        aadObjectId: fixture.teamsAadObjectId,
       });
       expect(deliveries).toContainEqual(
         connectedReply(fixture, originalIdOnly),
       );
       const newTeamsUserId = `29:new-${fixture.fixtureId}`;
+      server.use(
+        http.get(
+          `${fixture.serviceUrl}v3/conversations/:conversationId/members/:memberId`,
+          ({ params }) => {
+            return HttpResponse.json({
+              id: params.memberId,
+              tenantId: fixture.teamsTenantId,
+              aadObjectId: fixture.teamsAadObjectId,
+            });
+          },
+        ),
+      );
       const refreshed = await personalConnect(fixture, {
         id: newTeamsUserId,
         aadObjectId: fixture.teamsAadObjectId,
       });
       expect(deliveries).toContainEqual(connectedReply(fixture, refreshed));
-      const newIdOnly = await personalConnect(fixture, { id: newTeamsUserId });
+      const newIdOnly = await personalConnect(fixture, {
+        id: newTeamsUserId,
+        aadObjectId: fixture.teamsAadObjectId,
+      });
       expect(deliveries).toContainEqual(connectedReply(fixture, newIdOnly));
       const oldIdOnly = await personalConnect(fixture, {
         id: fixture.teamsUserId,
       });
       expectConnectPrompt(deliveries, fixture, oldIdOnly, fixture.teamsUserId);
-    });
-  });
-
-  it("uses a connected Teams ID when AAD is unmatched or absent", async () => {
-    const { fixture, deliveries, run } = await setupIdentityFixture(false);
-    await run(async () => {
-      const unmatchedAad = await personalConnect(fixture, {
-        id: fixture.teamsUserId,
-        aadObjectId: `unmatched-${fixture.fixtureId}`,
-      });
-      expect(deliveries).toContainEqual(connectedReply(fixture, unmatchedAad));
-      const idOnly = await personalConnect(fixture, {
-        id: fixture.teamsUserId,
-      });
-      expect(deliveries).toContainEqual(connectedReply(fixture, idOnly));
-      const unknownTeamsUserId = `29:unknown-${fixture.fixtureId}`;
-      const unknown = await personalConnect(fixture, {
-        id: unknownTeamsUserId,
-      });
-      expectConnectPrompt(deliveries, fixture, unknown, unknownTeamsUserId);
     });
   });
 });

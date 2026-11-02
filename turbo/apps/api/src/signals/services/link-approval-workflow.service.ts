@@ -20,7 +20,6 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { now, nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
-import { env } from "../../lib/env";
 import { setAuthContext$ } from "../auth/auth-context";
 import { db$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
@@ -30,7 +29,7 @@ import { sendNormalEvent$ } from "./chat-events.command";
 import { getWalletSpend$ } from "./link-wallet.service";
 import { LinkWalletError } from "./link-wallet-provider.service";
 import {
-  linkApprovalEnabled$,
+  isLinkApprovalConfigured,
   startLinkApprovalWorkflow,
 } from "./link-approval-config.service";
 import { walletApprovalPrompt } from "./link-wallet-continuation.service";
@@ -39,7 +38,7 @@ const L = logger("LinkApproval");
 const FINAL_CHECK_GRACE_MS = 120_000;
 
 const approvalToObserve$ = command(
-  async ({ get, set }, spendId: string, signal: AbortSignal) => {
+  async ({ get }, spendId: string, signal: AbortSignal) => {
     const database = get(db$);
     const [row] = await database
       .select()
@@ -51,7 +50,7 @@ const approvalToObserve$ = command(
       !row?.approvalThreadId ||
       !row.approvalRunId ||
       now() > row.expiresAt.getTime() + FINAL_CHECK_GRACE_MS ||
-      !(await set(linkApprovalEnabled$, row, signal))
+      !isLinkApprovalConfigured()
     ) {
       return undefined;
     }
@@ -251,8 +250,8 @@ export const pollLinkApproval$ = command(
 
 /** The spend row is the durable start intent; Cron does no provider polling. */
 export const recoverLinkApprovalWorkflows$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!env("LINK_APPROVAL_WORKER_URL")) {
+  async ({ get }, signal: AbortSignal) => {
+    if (!isLinkApprovalConfigured()) {
       return 0;
     }
     let after: string | undefined;
@@ -297,9 +296,6 @@ export const recoverLinkApprovalWorkflows$ = command(
         .limit(100);
       signal.throwIfAborted();
       for (const row of rows) {
-        if (!(await set(linkApprovalEnabled$, row, signal))) {
-          continue;
-        }
         await tapError(
           startLinkApprovalWorkflow(
             { spendId: row.id, deadline: row.expiresAt.toISOString() },

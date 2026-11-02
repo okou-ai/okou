@@ -5,8 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { createHash, randomUUID } from "node:crypto";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Readable } from "node:stream";
 import {
   GetObjectCommand,
@@ -35,7 +33,6 @@ import { artifactShareRoutes } from "../artifact-shares";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { artifactCatalogRoutes } from "../artifact-catalog";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
 import { createDeferredPromise } from "../../utils";
@@ -67,7 +64,6 @@ const api = () => {
       ...uploadsCompleteRoutes,
       ...webFileUrlRoutes,
       ...artifactCatalogRoutes,
-      ...featureSwitchesRoutes,
     ],
   });
 };
@@ -226,16 +222,6 @@ function fixture() {
   return { owner, org, organization, members, objects, session };
 }
 
-async function enableArtifactDeletion(enabled = true) {
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: enabled } },
-    }),
-    [200],
-  );
-}
-
 async function onlyCatalogArtifactId() {
   const listed = await accept(
     api()(artifactCatalogContract).list({ headers }),
@@ -262,7 +248,6 @@ describe("artifact deletion", () => {
         }),
         [200],
       );
-      await enableArtifactDeletion();
       await accept(
         api()(artifactCatalogContract).delete({
           headers,
@@ -314,25 +299,15 @@ describe("artifact deletion", () => {
     },
   );
 
-  it("requires the switch, original organization, and owner", async () => {
+  it("requires the original organization and owner", async () => {
     const f = fixture();
     await file();
     const artifactId = await onlyCatalogArtifactId();
-    await enableArtifactDeletion(false);
-    await accept(
-      api()(artifactCatalogContract).delete({
-        headers,
-        params: { artifactId },
-      }),
-      [403],
-    );
-    await enableArtifactDeletion();
     for (const [userId, orgId] of [
       [`user_${randomUUID()}`, f.org],
       [f.owner, `org_${randomUUID()}`],
     ]) {
       f.session(userId, orgId);
-      await enableArtifactDeletion();
       await accept(
         api()(artifactCatalogContract).delete({
           headers,
@@ -365,7 +340,6 @@ describe("artifact deletion", () => {
       }),
       [200],
     );
-    await enableArtifactDeletion();
     const copying = createDeferredPromise<void>(context.signal);
     const releaseCopy = createDeferredPromise<void>(context.signal);
     const storage = context.mocks.s3.send.getMockImplementation()!;
@@ -414,7 +388,6 @@ describe("artifact deletion", () => {
       }),
       [200],
     );
-    await enableArtifactDeletion();
     const storage = context.mocks.s3.send.getMockImplementation()!;
     let failRevocation = true;
     context.mocks.s3.send.mockImplementation(async (cmd) => {
@@ -2432,12 +2405,6 @@ test.each(["private", "organization", "public"] as const)(
       headers,
       params: { reference: artifactReferenceFromUrl(share.body.ownerUrl) },
     };
-    await enableArtifactDeletion(false);
-    await accept(
-      api()(artifactReferencesContract).ownerArtifact(request),
-      [403],
-    );
-    await enableArtifactDeletion();
     const managed = await accept(
       api()(artifactReferencesContract).ownerArtifact(request),
       [200],
@@ -2458,7 +2425,6 @@ test.each(["private", "organization", "public"] as const)(
     const recipient = `user_${randomUUID()}`;
     members.add(recipient);
     session(recipient);
-    await enableArtifactDeletion();
     await accept(
       api()(artifactReferencesContract).ownerArtifact(request),
       [404],
@@ -2483,55 +2449,3 @@ test.each(["private", "organization", "public"] as const)(
     );
   },
 );
-
-test("table exports resolve owned files without enabling artifact deletion", async () => {
-  const { members, session } = fixture();
-  const target = await file(
-    "Table.xlsx",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  );
-  const artifactId = await onlyCatalogArtifactId();
-  const params = {
-    reference: artifactReferencePath(target.id, "Table.xlsx").slice(
-      "/artifacts/".length,
-    ),
-  };
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: {
-        switches: {
-          [FeatureSwitchKey.ArtifactDeletion]: false,
-          [FeatureSwitchKey.MarkdownTableExport]: true,
-        },
-      },
-    }),
-    [200],
-  );
-  const resolved = await accept(
-    api()(artifactReferencesContract).ownerArtifact({ headers, params }),
-    [200],
-  );
-  expect(resolved.body).toStrictEqual({ artifactId });
-  await accept(
-    api()(artifactCatalogContract).delete({
-      headers,
-      params: { artifactId },
-    }),
-    [403],
-  );
-  const recipient = `user_${randomUUID()}`;
-  members.add(recipient);
-  session(recipient);
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { [FeatureSwitchKey.MarkdownTableExport]: true } },
-    }),
-    [200],
-  );
-  await accept(
-    api()(artifactReferencesContract).ownerArtifact({ headers, params }),
-    [404],
-  );
-});

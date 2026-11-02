@@ -1,5 +1,42 @@
 # Changelog
 
+## [10.12.0](https://github.com/okou-ai/okou/compare/cli-v10.11.16...cli-v10.12.0) (2026-11-02)
+
+
+### Features
+
+* **browser:** return installed extension metadata with shared connections ([#44659](https://github.com/okou-ai/okou/issues/44659)) ([a4a4cb1](https://github.com/okou-ai/okou/commit/a4a4cb122c222e55bdca57f54f63964dcf4296f1))
+
+
+### Refactoring
+
+* **teams:** remove workspace identity feature switch ([#44660](https://github.com/okou-ai/okou/issues/44660)) ([e77bc14](https://github.com/okou-ai/okou/commit/e77bc14635c0b1f8b8420aa1f8b5fb4fc9f01db5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.32.0
+    * @okouai/core bumped to 8.808.1
+    * @okouai/pi-agent-runtime bumped to 1.51.49
+
+## [10.11.16](https://github.com/okou-ai/okou/compare/cli-v10.11.15...cli-v10.11.16) (2026-11-02)
+
+
+### Bug Fixes
+
+* require explicit requests for presentation pptx conversion ([#44614](https://github.com/okou-ai/okou/issues/44614)) ([3961310](https://github.com/okou-ai/okou/commit/3961310dfb81580fa11bc96ed60030faa220e64e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.31.1
+    * @okouai/core bumped to 8.808.0
+    * @okouai/pi-agent-runtime bumped to 1.51.48
+
 ## [10.11.15](https://github.com/okou-ai/okou/compare/cli-v10.11.14...cli-v10.11.15) (2026-11-02)
 
 

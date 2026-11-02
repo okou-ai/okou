@@ -12,7 +12,6 @@ import {
 import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -192,14 +191,23 @@ function isStackedOnPrevious(text: string): boolean {
 async function setupMessageSharing(
   chatEvents: MockChatEventInput[] = standardConversation(),
   featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
+  createStatus: 201 | 404 = 201,
 ) {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const createRequests: string[][] = [];
   mockConversation(chatEvents);
-  context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
-    createRequests.push([...body.eventIds]);
-    return respond(201, { id: SHARED_THREAD_ID });
-  });
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      createRequests.push([...body.eventIds]);
+      if (createStatus === 404) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Not found" },
+        });
+      }
+      return respond(201, { id: SHARED_THREAD_ID });
+    },
+  );
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
@@ -215,9 +223,7 @@ async function setupMessageSharing(
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(
-        featureSwitches?.[FeatureSwitchKey.SharedThreadVisibility]
-          ? "Choose who can view this conversation. Only you can change access."
-          : "Selected messages and their attachments will be public.",
+        "Choose who can view this conversation. Only you can change access.",
       ).length,
     ).toBeGreaterThan(0);
   });
@@ -348,10 +354,13 @@ test("A growing selected message group becomes partial and can select its new me
   const chatEvents: MockChatEventInput[] = standardConversation().slice(0, 1);
   const createRequests: string[][] = [];
   mockConversation(chatEvents);
-  context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
-    createRequests.push([...body.eventIds]);
-    return respond(201, { id: SHARED_THREAD_ID });
-  });
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      createRequests.push([...body.eventIds]);
+      return respond(201, { id: SHARED_THREAD_ID });
+    },
+  );
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
@@ -441,7 +450,7 @@ test("Share selected message groups as a public conversation snapshot", async ()
 test("Hide passage actions throughout sharing and restore them afterward", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   mockConversation();
-  context.mocks.api(sharedThreadsContract.create, ({ respond }) => {
+  context.mocks.api(sharedThreadVisibilityContract.create, ({ respond }) => {
     return respond(201, { id: SHARED_THREAD_ID });
   });
   await setupPage({
@@ -581,10 +590,13 @@ test("Replacing a selected live answer clears it before the next answer is share
       },
     });
   });
-  context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
-    createRequests.push([...body.eventIds]);
-    return respond(201, { id: SHARED_THREAD_ID });
-  });
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      createRequests.push([...body.eventIds]);
+      return respond(201, { id: SHARED_THREAD_ID });
+    },
+  );
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
@@ -664,10 +676,13 @@ test("A selected answer remains shareable after later turns move it outside the 
       },
     });
   });
-  context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
-    createRequests.push([...body.eventIds]);
-    return respond(201, { id: SHARED_THREAD_ID });
-  });
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      createRequests.push([...body.eventIds]);
+      return respond(201, { id: SHARED_THREAD_ID });
+    },
+  );
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
@@ -777,10 +792,13 @@ test.each(["running", "failed"] as const)(
       ],
       activeRunIds: runStatus === "running" ? [GROUPED_RUN_ID] : [],
     });
-    context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
-      createRequests.push([...body.eventIds]);
-      return respond(201, { id: SHARED_THREAD_ID });
-    });
+    context.mocks.api(
+      sharedThreadVisibilityContract.create,
+      ({ body, respond }) => {
+        createRequests.push([...body.eventIds]);
+        return respond(201, { id: SHARED_THREAD_ID });
+      },
+    );
 
     await setupPage({
       context,
@@ -925,68 +943,6 @@ test("An oversized message group cannot be added to a shared snapshot", async ()
   expect(screen.getByText("A normal message remains available")).toBeVisible();
 });
 
-async function setupSingleMessageShare(conflict = false) {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const response = context.mocks.deferred<void>();
-  const createRequests: { eventIds: string[]; id: string | undefined }[] = [];
-  mockConversation();
-  context.mocks.api(sharedThreadsContract.create, async ({ body, respond }) => {
-    createRequests.push({ eventIds: [...body.eventIds], id: body.id });
-    await response.promise;
-    if (conflict) {
-      return respond(409, {
-        error: {
-          message: "A shared conversation with this ID already exists",
-          code: "CONFLICT",
-        },
-      });
-    }
-    return respond(201, { id: body.id ?? SHARED_THREAD_ID });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByText(ANSWER);
-  await waitFor(() => {
-    expect(buttonsNamed("Share message")).toHaveLength(1);
-  });
-  const share = requiredButtonNamed("Share message");
-  return { clipboard, createRequests, response, share };
-}
-
-test("Share one answer with its prompt by copying the link before creating the share", async () => {
-  const { clipboard, createRequests, response, share } =
-    await setupSingleMessageShare();
-  click(share);
-  // The button confirms in the click; it waits for neither the share nor a toast.
-  expect(clipboard.writes).toHaveLength(1);
-  expect(buttonsNamed("Share link copied")).toHaveLength(1);
-  await waitFor(() => {
-    expect(createRequests).toHaveLength(1);
-  });
-  const [request] = createRequests;
-  expect(request?.eventIds).toStrictEqual([PROMPT_EVENT_ID, ANSWER_EVENT_ID]);
-  expect(clipboard.writes).toStrictEqual([
-    `https://app.okou.ai/share/threads/${request?.id}`,
-  ]);
-  response.resolve();
-});
-
-test("Revert the button and report a dead copied link when creation fails", async () => {
-  const { response, share } = await setupSingleMessageShare(true);
-  click(share);
-  expect(buttonsNamed("Share link copied")).toHaveLength(1);
-  response.resolve();
-  await expect(
-    screen.findByText("The shared link could not be created."),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(buttonsNamed("Share message")).toHaveLength(1);
-  });
-});
-
 test("Select an audience before creating a share and change it after creation", async () => {
   let audience: SharedThreadAudience = "organization";
   let revision = "b0000000-0000-4000-a000-000000000901";
@@ -1015,9 +971,7 @@ test("Select an audience before creating a share and change it after creation", 
       });
     },
   );
-  const { answerGroup } = await setupMessageSharing(standardConversation(), {
-    [FeatureSwitchKey.SharedThreadVisibility]: true,
-  });
+  const { answerGroup } = await setupMessageSharing(standardConversation());
   context.mocks.api(
     sharedThreadVisibilityContract.create,
     ({ body, respond }) => {
@@ -1054,7 +1008,7 @@ test("Select an audience before creating a share and change it after creation", 
 });
 
 async function setupAudienceMessageShare(
-  failure: 404 | 409 | null = null,
+  failure: 403 | 404 | 409 | 503 | null = null,
   clipboardFails = false,
 ) {
   mockConversation();
@@ -1079,6 +1033,11 @@ async function setupAudienceMessageShare(
         audience: body.audience,
       });
       await response.promise;
+      if (failure === 403) {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Access denied" },
+        });
+      }
       if (failure === 404) {
         return respond(404, {
           error: { code: "NOT_FOUND", message: "Not found" },
@@ -1089,6 +1048,14 @@ async function setupAudienceMessageShare(
           error: { code: "CONFLICT", message: "Share already exists" },
         });
       }
+      if (failure === 503) {
+        return respond(503, {
+          error: {
+            code: "SERVICE_UNAVAILABLE",
+            message: "The shared link could not be created.",
+          },
+        });
+      }
       return respond(201, { id: body.id ?? SHARED_THREAD_ID });
     },
   );
@@ -1096,7 +1063,6 @@ async function setupAudienceMessageShare(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
@@ -1136,6 +1102,7 @@ test.each([
     click(messageShareItem(menu, label));
     // The option click owns the browser gesture, before the HTTP response.
     expect(clipboard.writes).toHaveLength(1);
+    expect(buttonsNamed("Copied")).toHaveLength(1);
     const request = await requestReceived.promise;
     expect(request).toMatchObject({
       eventIds: [PROMPT_EVENT_ID, ANSWER_EVENT_ID],
@@ -1181,6 +1148,7 @@ test("Choose a message audience from the keyboard and return focus to Share", as
   await userEvent.keyboard("{Enter}");
   await screen.findByRole("menu", { name: "Share message" });
   await userEvent.keyboard("{ArrowDown}{Enter}");
+  expect(buttonsNamed("Copied")).toHaveLength(1);
   const request = await requestReceived.promise;
   await waitFor(() => {
     expect(share).toHaveFocus();
@@ -1192,13 +1160,14 @@ test("Choose a message audience from the keyboard and return focus to Share", as
   });
 });
 
-test.each([404, 409] as const)(
-  "A failed message share (%s) keeps the composer and does not confirm a copy",
+test.each([403, 404, 409, 503] as const)(
+  "A failed message share (%s) reverts the optimistic copy and keeps the composer",
   async (failure) => {
     const { response, share } = await setupAudienceMessageShare(failure);
     click(share);
     const menu = await screen.findByRole("menu", { name: "Share message" });
     click(messageShareItem(menu, "Everyone"));
+    expect(buttonsNamed("Copied")).toHaveLength(1);
     response.resolve();
     await expect(
       screen.findByText("The shared link could not be created."),
@@ -1214,11 +1183,12 @@ test.each([404, 409] as const)(
   },
 );
 
-test("A denied clipboard write does not confirm a message share", async () => {
+test("A denied clipboard write reverts the optimistic message share confirmation", async () => {
   const { response, share } = await setupAudienceMessageShare(null, true);
   click(share);
   const menu = await screen.findByRole("menu", { name: "Share message" });
   click(messageShareItem(menu, "Organization"));
+  expect(buttonsNamed("Copied")).toHaveLength(1);
   response.resolve();
   await expect(
     screen.findByText("Could not copy the link"),
@@ -1231,13 +1201,58 @@ test("A denied clipboard write does not confirm a message share", async () => {
   ).not.toBeInTheDocument();
 });
 
+test("A previous share failure does not revert a newer copy confirmation", async () => {
+  mockConversation();
+  context.mocks.browser.clipboardWriteText();
+  const failedResponse = context.mocks.deferred<void>();
+  const successfulResponse = context.mocks.deferred<void>();
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    async ({ body, respond }) => {
+      if (body.audience === "organization") {
+        await failedResponse.promise;
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Access denied" },
+        });
+      }
+      await successfulResponse.promise;
+      return respond(201, { id: body.id ?? SHARED_THREAD_ID });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await screen.findByText(ANSWER);
+  await waitFor(() => {
+    expect(buttonsNamed("Share message")).toHaveLength(1);
+  });
+  click(requiredButtonNamed("Share message"));
+  const firstMenu = await screen.findByRole("menu", { name: "Share message" });
+  click(messageShareItem(firstMenu, "Organization"));
+  expect(buttonsNamed("Copied")).toHaveLength(1);
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+  await userEvent.click(requiredButtonNamed("Copied"));
+  const secondMenu = await screen.findByRole("menu");
+  click(messageShareItem(secondMenu, "Everyone"));
+  expect(buttonsNamed("Copied")).toHaveLength(1);
+  failedResponse.resolve();
+  await expect(
+    screen.findByText("The shared link could not be created."),
+  ).resolves.toBeInTheDocument();
+  expect(buttonsNamed("Copied")).toHaveLength(1);
+  successfulResponse.resolve();
+});
+
 test("A visibility share fails without publishing when its API is unavailable", async () => {
-  context.mocks.api(sharedThreadVisibilityContract.create, ({ respond }) => {
-    return respond(404, { error: { code: "NOT_FOUND", message: "Not found" } });
-  });
-  const { answerGroup } = await setupMessageSharing(standardConversation(), {
-    [FeatureSwitchKey.SharedThreadVisibility]: true,
-  });
+  const { answerGroup } = await setupMessageSharing(
+    standardConversation(),
+    undefined,
+    404,
+  );
   click(within(answerGroup).getByText("Select message group"));
   click(requiredButtonNamed("Share"));
   await screen.findByText("Could not create the shared conversation.");

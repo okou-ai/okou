@@ -1,3 +1,4 @@
+import { connectTeamsAccountForTest } from "./teams-account";
 import { randomUUID } from "node:crypto";
 
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
@@ -222,22 +223,9 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         });
       }
       await installTeamsForTest(context.signal, installation);
-      await accept(
-        connectClient(fixture).connect({
-          headers: { authorization: "Bearer clerk-session" },
-          body: {
-            tenantId: installation.teamsTenantId,
-            teamsUserId: installation.teamsUserId,
-            teamsAadObjectId: installation.teamsAadObjectId,
-            teamsUserDisplayName: "Teams User",
-            teamsUserPrincipalName: installation.teamsUserPrincipalName,
-            teamId: installation.teamsTeamId,
-            teamName: installation.teamsTeamName,
-            serviceUrl: installation.serviceUrl,
-          },
-        }),
-        [200],
-      );
+      await connectTeamsAccountForTest(context, installation, {
+        displayName: "Teams User",
+      });
       await flushWaitUntilForTest();
       return fixture;
     },

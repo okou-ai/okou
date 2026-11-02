@@ -1,3 +1,4 @@
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
@@ -176,7 +177,11 @@ describe("shared context statement projections through normal sends", () => {
               ?.toString(),
           ).toContain("Preserve this selected workflow.");
         } else {
-          expect(skills).toStrictEqual([]);
+          expect(
+            skills.map((skill) => {
+              return skill.mountPath.split("/").at(-1);
+            }),
+          ).toStrictEqual(SEED_SKILLS);
         }
         await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
       }

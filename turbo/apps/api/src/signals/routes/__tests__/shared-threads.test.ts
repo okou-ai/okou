@@ -1,5 +1,3 @@
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sharedThreadVisibilityContract } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { array, string, object } from "zod";
@@ -29,7 +27,6 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const device = createAuthDeviceSupportApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const routeMocks = createRouteMocks(context);
@@ -540,9 +537,6 @@ describe("conversation share visibility", () => {
     const f = await prepareShare();
     installSharedThreadStorage(context);
     conversationMembers(f.actor);
-    await device.updateFeatureSwitches(f.actor, {
-      [FeatureSwitchKey.SharedThreadVisibility]: true,
-    });
     const created = await accept(
       visibilityClient().create({
         ...requestBody(f),
@@ -585,9 +579,6 @@ describe("conversation share visibility", () => {
     const members = conversationMembers(f.actor);
     const created = await accept(client().create(requestBody(f)), [201]);
     const id = created.body.id;
-    await device.updateFeatureSwitches(f.actor, {
-      [FeatureSwitchKey.SharedThreadVisibility]: true,
-    });
     const status = await accept(
       visibilityClient().get({
         params: { id },
@@ -653,13 +644,10 @@ describe("conversation share visibility", () => {
     expect(publicView.body.messages).toStrictEqual(received.body.messages);
   });
 
-  it("rejects stale edits and keeps restrictions when visibility management is disabled", async () => {
+  it("rejects stale edits and unauthorized changes while preserving private access", async () => {
     const f = await prepareShare();
     installSharedThreadStorage(context);
     conversationMembers(f.actor);
-    await device.updateFeatureSwitches(f.actor, {
-      [FeatureSwitchKey.SharedThreadVisibility]: true,
-    });
     const created = await accept(
       visibilityClient().create({
         ...requestBody(f),
@@ -692,9 +680,6 @@ describe("conversation share visibility", () => {
       [409],
     );
     const other = bdd.user();
-    await device.updateFeatureSwitches(other, {
-      [FeatureSwitchKey.SharedThreadVisibility]: true,
-    });
     await accept(
       visibilityClient().update({
         params: { id },
@@ -711,24 +696,6 @@ describe("conversation share visibility", () => {
         body: { audience: "public", expectedRevision: next.body.revision },
       }),
       [403, 404],
-    );
-    await device.updateFeatureSwitches(f.actor, {
-      [FeatureSwitchKey.SharedThreadVisibility]: false,
-    });
-    await accept(
-      visibilityClient().update({
-        params: { id },
-        headers: authenticate(f.actor),
-        body: { audience: "public", expectedRevision: next.body.revision },
-      }),
-      [403],
-    );
-    await accept(
-      visibilityClient().create({
-        ...requestBody(f),
-        body: { eventIds: [f.eventId], audience: "private" },
-      }),
-      [403],
     );
     await accept(client().get({ params: { id } }), [404]);
     const ownerView = await accept(

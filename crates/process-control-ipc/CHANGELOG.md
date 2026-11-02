@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.51](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.50...process-control-ipc-v0.5.51) (2026-11-02)
+
+
+### Refactoring
+
+* **rust:** use owned unix socket conversions ([#44612](https://github.com/okou-ai/okou/issues/44612)) ([dd36385](https://github.com/okou-ai/okou/commit/dd363859e034973698d1567bab3b676b61c54f8d))
+
+## [0.5.50](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.49...process-control-ipc-v0.5.50) (2026-11-02)
+
 ## [0.5.49](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.48...process-control-ipc-v0.5.49) (2026-11-02)
 
 ## [0.5.48](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.47...process-control-ipc-v0.5.48) (2026-11-01)

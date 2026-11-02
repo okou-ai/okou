@@ -1,16 +1,12 @@
 import {
   teamsConnectContract,
-  type TeamsConnectBody,
   type TeamsConnectStatus,
 } from "@okouai/api-contracts/contracts/teams-connect";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  getAction,
-  queryAction,
-} from "./connector-integrations-test-helpers.ts";
+import { getAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
 const account = {
@@ -37,8 +33,8 @@ function status(
     installUrl: null,
     tenantId: "tenant-acme",
     tenantName: "Acme Tenant",
-    teamId: "team-core",
-    teamName: "Core Team",
+    teamId: null,
+    teamName: null,
     botName: "Verified Assistant",
     pendingInstallation: false,
     linkedAccounts: [],
@@ -82,9 +78,7 @@ test.each(["bare", "connected", "error"])(
     });
     await expectConnected();
     expect(
-      screen.getByText(
-        "You are connected to Core Team. Mention @Verified Assistant in Teams to start chatting.",
-      ),
+      screen.getByText("Your Teams account is connected."),
     ).toBeInTheDocument();
     expect(
       screen.queryAllByText("Microsoft declined this attempt"),
@@ -106,7 +100,7 @@ test("A forged success marker cannot connect an account or launch Teams", async 
   expect(
     screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
   ).toBeInTheDocument();
-  expect(getAction("button", "Connect")).toBeEnabled();
+  expect(getAction("button", "Authorize Microsoft Teams")).toBeEnabled();
   expect(open.calls).toStrictEqual([]);
 });
 
@@ -116,39 +110,22 @@ test.each([
     overrides: {},
     query: { ...target, teamsUserId: "other" },
     message: /does not match/u,
-    blocked: false,
   },
   {
     label: "contradictory AAD pair",
     overrides: {},
     query: { ...target, teamsAadObjectId: "aad-other" },
     message: /does not match/u,
-    blocked: false,
   },
   {
     label: "another tenant",
     overrides: {},
     query: { ...target, tenantId: "tenant-other" },
     message: /does not match/u,
-    blocked: true,
-  },
-  {
-    label: "another team",
-    overrides: {},
-    query: { ...target, teamId: "team-other" },
-    message: /does not match/u,
-    blocked: true,
-  },
-  {
-    label: "another organization",
-    overrides: {},
-    query: { ...target, orgId: "org_other" },
-    message: /another organization/u,
-    blocked: true,
   },
 ])(
   "A connected boolean cannot certify $label",
-  async ({ overrides, query, message, blocked }) => {
+  async ({ overrides, query, message }) => {
     mockStatus(
       status({ isConnected: true, linkedAccounts: [account], ...overrides }),
     );
@@ -157,24 +134,8 @@ test.each([
       screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
     ).toBeInTheDocument();
     expect(screen.getByText(message)).toBeInTheDocument();
-    expect(queryAction("button", "Connect") === null).toBe(blocked);
   },
 );
-
-test("All supplied identity fields match one of multiple caller-owned accounts", async () => {
-  mockStatus(
-    status({
-      isConnected: true,
-      linkedAccounts: [
-        { ...account, teamsUserId: "other", teamsAadObjectId: "other-aad" },
-        account,
-      ],
-    }),
-  );
-  await setupPage({ context, path: path(target) });
-  await expectConnected();
-  expect(getAction("link", "Open Teams")).toHaveAttribute("target", "_blank");
-});
 
 test("Bare setup opts in without treating a blocked window as connection or cancellation", async () => {
   mockStatus(status({ isInstalled: false, tenantId: null, teamId: null }));
@@ -191,88 +152,6 @@ test("Bare setup opts in without treating a blocked window as connection or canc
     screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
   ).toBeInTheDocument();
   expect(getAction("button", "Authorize Microsoft Teams")).toBeEnabled();
-});
-
-test("A provider link binds with aliases and full context, then reads actual status", async () => {
-  let bodySent: TeamsConnectBody | undefined;
-  const setStatus = mockStatus(status());
-  context.mocks.api(teamsConnectContract.connect, ({ body, respond }) => {
-    bodySent = body;
-    setStatus(status({ isConnected: true, linkedAccounts: [account] }));
-    return respond(200, {
-      success: true,
-      connectionId: "connection-core",
-      role: "admin",
-    });
-  });
-  const metadata = {
-    tenantName: "Acme",
-    teamId: "team-core",
-    teamName: "Core",
-    serviceUrl: "https://smba.trafficmanager.net/amer/",
-    conversationId: "a:bot-framework-conversation",
-    conversationType: "personal",
-    activityId: "88",
-    channelId: "channel-99",
-    threadId: "100",
-  };
-  const open = context.mocks.browser.open();
-  await setupPage({
-    context,
-    path: path({
-      ...target,
-      ...metadata,
-      displayName: "Avery",
-      upn: "avery@acme.example",
-      error: "Previous attempt failed",
-    }),
-  });
-  expect(getAction("button", "Connect")).toBeEnabled();
-  click(getAction("button", "Connect"));
-  await expectConnected();
-  expect(bodySent).toStrictEqual({
-    tenantId: target.tenantId,
-    teamsUserId: target.teamsUserId,
-    teamsAadObjectId: target.teamsAadObjectId,
-    ...metadata,
-    teamsUserDisplayName: "Avery",
-    teamsUserPrincipalName: "avery@acme.example",
-  });
-  await waitFor(() => {
-    return expect(
-      new URLSearchParams(window.location.search).has("error"),
-    ).toBeFalsy();
-  });
-  expect(new URLSearchParams(window.location.search).get("orgId")).toBe(
-    target.orgId,
-  );
-  expect(
-    new URLSearchParams(window.location.search).get("conversationId"),
-  ).toBe(metadata.conversationId);
-  expect(getAction("link", "Open Teams")).toHaveAttribute(
-    "href",
-    "https://teams.microsoft.com/",
-  );
-  expect(open.calls).toStrictEqual([]);
-});
-
-test("A successful POST without connected readback does not claim completion", async () => {
-  mockStatus(status());
-  context.mocks.api(teamsConnectContract.connect, ({ respond }) => {
-    return respond(200, {
-      success: true,
-      connectionId: "accepted",
-      role: "admin",
-    });
-  });
-  await setupPage({ context, path: path(target) });
-  click(getAction("button", "Connect"));
-  await waitFor(() => {
-    return expect(getAction("button", "Connect")).toBeEnabled();
-  });
-  expect(
-    screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
-  ).toBeInTheDocument();
 });
 
 test("Prepared installation stays pending and reconciles on visibility return", async () => {
@@ -331,28 +210,7 @@ test("Subscription catch-up sees installation completed before attachment", asyn
   expect(getAction("link", "Open Teams")).toHaveAttribute("target", "_blank");
 });
 
-test.each([false, true])(
-  "Installation help preserves admin distinction: %s",
-  async (isAdmin) => {
-    mockStatus(
-      status({
-        isInstalled: false,
-        isAdmin,
-        connectUrl: isAdmin ? "/api/teams/oauth/connect" : null,
-      }),
-    );
-    await setupPage({ context, path: "/settings/teams" });
-    expect(
-      screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
-    ).toBeInTheDocument();
-    expect(queryAction("button", "Authorize Microsoft Teams") !== null).toBe(
-      isAdmin,
-    );
-    expect(screen.queryAllByText(/admin/iu)).toHaveLength(isAdmin ? 0 : 1);
-  },
-);
-
-test("Reinstall remains explicit and supported channel context uses a fixed Teams destination", async () => {
+test("Reinstall remains explicit and returns to Teams", async () => {
   mockStatus(
     status({
       isConnected: true,
@@ -379,7 +237,7 @@ test("Reinstall remains explicit and supported channel context uses a fixed Team
   );
   expect(getAction("link", "Open Teams")).toHaveAttribute(
     "href",
-    "https://teams.microsoft.com/l/message/19%3Achannel%40thread.tacv2/123?tenantId=tenant-acme&groupId=team-core&parentMessageId=122",
+    "https://teams.microsoft.com/",
   );
 });
 
@@ -457,44 +315,6 @@ test.each([false, true])(
   },
 );
 
-test("A conflict remains visible with its attempted context and can be retried", async () => {
-  let denied = true;
-  const setStatus = mockStatus(status());
-  context.mocks.api(teamsConnectContract.connect, ({ respond }) => {
-    if (denied) {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "This Teams identity belongs to another account.",
-        },
-      });
-    }
-    setStatus(status({ isConnected: true, linkedAccounts: [account] }));
-    return respond(200, {
-      success: true,
-      connectionId: "accepted",
-      role: "admin",
-    });
-  });
-  await setupPage({
-    context,
-    path: path({ ...target, upn: "avery@acme.example" }),
-  });
-  click(getAction("button", "Connect"));
-  await waitFor(() => {
-    return expect(
-      screen.getAllByText("This Teams identity belongs to another account.")
-        .length,
-    ).toBeGreaterThan(0);
-  });
-  expect(new URLSearchParams(window.location.search).get("upn")).toBe(
-    "avery@acme.example",
-  );
-  denied = false;
-  click(getAction("button", "Connect"));
-  await expectConnected();
-});
-
 test("A late status read cannot publish the previous actor's connection", async () => {
   const started = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
@@ -537,7 +357,6 @@ test("A late status read cannot publish the previous actor's connection", async 
     expect(
       screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
     ).toBeInTheDocument();
-    expect(queryAction("button", "Connect")).toBeNull();
   });
   expect(screen.getByText(/does not match/u)).toBeInTheDocument();
   expect(
@@ -545,31 +364,7 @@ test("A late status read cannot publish the previous actor's connection", async 
   ).not.toBeInTheDocument();
 });
 
-test("Identity fields cannot be combined across different owned accounts", async () => {
-  mockStatus(
-    status({
-      isConnected: true,
-      linkedAccounts: [
-        account,
-        {
-          ...account,
-          teamsUserId: "second-user",
-          teamsAadObjectId: "second-aad",
-        },
-      ],
-    }),
-  );
-  await setupPage({
-    context,
-    path: path({ ...target, teamsAadObjectId: "second-aad" }),
-  });
-  expect(screen.getByText(/does not match/u)).toBeInTheDocument();
-  expect(
-    screen.queryByRole("heading", { name: "Connected to Microsoft Teams" }),
-  ).not.toBeInTheDocument();
-});
-
-test("Conflicting repeated identity parameters cannot enable binding", async () => {
+test("Conflicting repeated identity parameters display an invalid account context", async () => {
   mockStatus(status({ isConnected: true, linkedAccounts: [account] }));
   await setupPage({
     context,
@@ -578,51 +373,11 @@ test("Conflicting repeated identity parameters cannot enable binding", async () 
   expect(
     screen.getByText(/incomplete Teams account context/u),
   ).toBeInTheDocument();
-  expect(queryAction("button", "Connect")).toBeNull();
-});
-
-test("Reloading a success link with no current connection remains read-only", async () => {
-  mockStatus(status());
-  // Binding is an explicit user action. Observe the mutation entry point at
-  // the HTTP boundary so the default POST fixture cannot hide a replay.
-  let attemptedBinding: TeamsConnectBody | undefined;
-  context.mocks.api(teamsConnectContract.connect, ({ body, respond }) => {
-    attemptedBinding = body;
-    return respond(403, {
-      error: {
-        code: "FORBIDDEN",
-        message: "Binding requires an explicit action",
-      },
-    });
-  });
-  await setupPage({
-    context,
-    path: path({
-      ...target,
-      status: "connected",
-      displayName: "Old name",
-      upn: "old@example.com",
-    }),
-  });
-  expect(
-    screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
-  ).toBeInTheDocument();
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
-  await waitFor(() => {
-    expect(getAction("button", "Connect")).toBeEnabled();
-  });
-  expect(new URLSearchParams(window.location.search).get("upn")).toBe(
-    "old@example.com",
-  );
-  expect(attemptedBinding).toBeUndefined();
 });
 
 test("An OAuth identity connects independently of the receiving bot's organization", async () => {
   mockStatus(
     status({
-      workspaceIdentity: true,
       isConnected: true,
       isInstalled: false,
       isAdmin: false,

@@ -3,7 +3,7 @@ use crate::cow::CowLayer;
 use crate::cow_io::CowIo;
 use crate::protocol_impl::{Command, NbdReply, NbdRequest, REPLY_MAGIC, serialize_request};
 use std::io::Write as _;
-use std::os::unix::io::{FromRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::io::{FromRawFd, OwnedFd};
 use std::time::Duration;
 use tempfile::NamedTempFile;
 
@@ -90,8 +90,7 @@ fn setup_dispatch_socket() -> (
         unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) }
     };
 
-    let client_std =
-        unsafe { std::os::unix::net::UnixStream::from_raw_fd(client_fd.into_raw_fd()) };
+    let client_std = std::os::unix::net::UnixStream::from(client_fd);
     must(
         client_std.set_nonblocking(true),
         "set client stream nonblocking",

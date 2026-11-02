@@ -1,4 +1,4 @@
-"""Shared captured stream-body metadata access and validation."""
+"""Shared captured stream-body writes, metadata access and validation."""
 
 from typing import NamedTuple
 
@@ -10,6 +10,20 @@ import flow_metadata_keys as metadata_keys
 class CapturedStreamBody(NamedTuple):
     buffer: bytearray
     truncated: bool
+
+
+def append_captured_chunk(buffer: bytearray, chunk: bytes, *, limit: int) -> bool:
+    """Append the fitting raw prefix and return whether this chunk overflowed.
+
+    Callers own capture admission and skip writes once their buffer is truncated.
+    Filling the buffer exactly, including an empty chunk at capacity, is complete.
+    """
+    remaining = limit - len(buffer)
+    if len(chunk) <= remaining:
+        buffer.extend(chunk)
+        return False
+    buffer.extend(chunk[:remaining])
+    return True
 
 
 def captured_stream_body(

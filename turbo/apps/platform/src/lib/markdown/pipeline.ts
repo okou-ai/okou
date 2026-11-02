@@ -18,6 +18,7 @@ import {
 } from "../rehype-mermaid.ts";
 import { findHexRgbColors } from "./hex-rgb-color.ts";
 import { createCjkEmphasisExtension } from "./cjk-emphasis.ts";
+import { markEmailQuoteAddresses } from "./email-quote.ts";
 import { createMarkdownMathContext } from "./math.ts";
 import { rehypeRewriteHandle } from "./uiw-nodes.ts";
 
@@ -456,6 +457,18 @@ function postProcess(tree: Root): Root {
     if (node.type === "element" && node.tagName !== "iframe") {
       delete node.properties.title;
     }
+    if (node.type === "element") {
+      // Raw HTML and attribute comments cannot impersonate transcript wrappers.
+      for (const property of Object.keys(node.properties)) {
+        const normalized = property.replaceAll("-", "").toLowerCase();
+        if (
+          normalized === "datachatthreadcontainerid" ||
+          normalized === "datachatscrollanchoreventid"
+        ) {
+          delete node.properties[property];
+        }
+      }
+    }
     if (node.type === "raw" && parent && typeof index === "number") {
       parent.children[index] = { type: "text", value: node.value };
       return index;
@@ -499,5 +512,7 @@ export function parseMarkdownTree(
   const processor = unified().use(rehypeRaw).use(rehypePlugins(options));
   const parsed = processor.runSync(tree, source);
   math?.embed(parsed);
-  return postProcess(parsed);
+  postProcess(parsed);
+  markEmailQuoteAddresses(parsed);
+  return parsed;
 }

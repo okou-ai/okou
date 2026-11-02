@@ -39,9 +39,7 @@ import { TailscaleSection, TailscaleDialog } from "./tailscale-management.tsx";
 import {
   CloudflareAccessSection,
   CloudflareAccessDialog,
-  CloudflareAccessConversionDialog,
   CloudflareAccessDeletionDialog,
-  CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
 import { NetworkProviderPicker } from "./remote-network-picker.tsx";
 import {
@@ -155,18 +153,17 @@ function RemoteResourceDetails() {
     <>
       {sshHost && !sshEdit && (
         <Card surface="composer" className="grid gap-5 p-5 sm:p-6">
-          <SshHostCard connection={sshHost} detail />
+          <SshHostCard connection={sshHost} />
         </Card>
       )}
       {vncHost && !vncEdit && (
         <Card surface="composer" className="grid gap-5 p-5 sm:p-6">
-          <VncHostCard connection={vncHost} detail />
+          <VncHostCard connection={vncHost} />
         </Card>
       )}
       {ts && (
         <Card surface="composer" className="p-5 sm:p-6">
           <TailscaleSection
-            compact
             scope={ts.scope}
             configs={[ts]}
             admin={canManageOrg}
@@ -176,11 +173,9 @@ function RemoteResourceDetails() {
       {cf && (
         <Card surface="composer" className="p-5 sm:p-6">
           <CloudflareAccessSection
-            compact
             scope={cf.scope}
             configs={[cf]}
             canManage={cf.scope === "personal" || canManageOrg}
-            canPromote={canManageOrg}
           />
         </Card>
       )}
@@ -204,9 +199,7 @@ function RemoteResourceContent() {
       <VncDialog inline={vncEdit} />
       <TailscaleDialog />
       <CloudflareAccessDialog />
-      <CloudflareAccessConversionDialog />
       <CloudflareAccessDeletionDialog />
-      <CloudflareAccessPromotionDialog />
     </>
   );
 }

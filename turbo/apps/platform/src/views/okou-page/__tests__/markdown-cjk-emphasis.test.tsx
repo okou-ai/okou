@@ -249,6 +249,74 @@ test("Closed emphasis does not use formula, code, or bare-link asterisks as its 
   expect(frame.querySelectorAll("strong")).toHaveLength(3);
 });
 
+test.each(["code", "kbd"])(
+  "Quoted angle brackets do not expose raw %s asterisks as emphasis closers",
+  async (tag) => {
+    const chat = createMarkdownChatFixture(context);
+    const source = [
+      "前文**（验收）**后文",
+      `**外 <${tag} title="<">未闭合代码：**原文</${tag}>`,
+      `**完整 <${tag} title="<">闭合代码：**原文</${tag}> 尾：**续`,
+    ].join("\n\n");
+    const rows = completedMessageRows(chat, source);
+    chat.install({
+      rows: () => {
+        return rows;
+      },
+    });
+
+    await setupPage({
+      context,
+      path: chat.path,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
+    });
+
+    const repaired = await screen.findByText("（验收）", {
+      selector: "strong",
+    });
+    const frame = markdownFrameFor(repaired);
+    const unclosed = screen.getByText("未闭合代码：**原文", { selector: tag });
+    expect(unclosed.closest("strong, em")).toBeNull();
+    const closed = screen.getByText("闭合代码：**原文", { selector: tag });
+    expect(closed.closest("strong")?.textContent).toBe(
+      "完整 闭合代码：**原文 尾：",
+    );
+    expect(frame.querySelectorAll(tag)).toHaveLength(2);
+    expect(frame.querySelectorAll("strong, em")).toHaveLength(2);
+    expect(frame.textContent).toContain("**外 未闭合代码：**原文");
+  },
+);
+
+test("Long literal-star paragraphs preserve text alongside repairable CJK emphasis", async () => {
+  const chat = createMarkdownChatFixture(context);
+  const literal = "file*.txt ".repeat(4000) + "中文末尾";
+  const source = [literal, "前文**（修复）**后文", "中*~内容：*后文"].join(
+    "\n\n",
+  );
+  const rows = completedMessageRows(chat, source);
+  chat.install({
+    rows: () => {
+      return rows;
+    },
+  });
+
+  await setupPage({
+    context,
+    path: chat.path,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
+  });
+
+  const repaired = await screen.findByText("（修复）", { selector: "strong" });
+  const frame = markdownFrameFor(repaired);
+  const paragraph = frame.querySelector("p");
+  expect(paragraph?.textContent).toBe(literal);
+  expect(paragraph?.querySelector("strong, b, em, i")).toBeNull();
+  expect(screen.getByText("~内容：", { selector: "em" })).toBeInTheDocument();
+  expect(frame.querySelectorAll("strong, em")).toHaveLength(2);
+});
+
 test("Rendered text preserves authored zero-width spaces and Copy message keeps the exact raw source", async () => {
   const chat = createMarkdownChatFixture(context);
   const source = [

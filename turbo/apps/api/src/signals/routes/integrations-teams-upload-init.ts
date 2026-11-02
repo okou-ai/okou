@@ -1,6 +1,3 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { command } from "ccstate";
 import {
   integrationsTeamsUploadInitContract,
@@ -127,19 +124,7 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const body = bodyResult.data;
   const runId = "runId" in auth ? auth.runId : undefined;
-  const identityEnabled =
-    auth.orgId && body.canonical && runId
-      ? isFeatureEnabled(
-          FeatureSwitchKey.TeamsWorkspaceIdentity,
-          await set(
-            loadUserFeatureSwitchContext$,
-            auth.orgId,
-            auth.userId,
-            signal,
-          ),
-        )
-      : false;
-  if (identityEnabled && body.canonical && runId && auth.orgId) {
+  if (body.canonical && runId && auth.orgId) {
     return await set(
       prepareCanonicalTeamsUpload$,
       {

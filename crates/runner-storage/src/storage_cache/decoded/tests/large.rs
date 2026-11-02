@@ -29,7 +29,7 @@ pub(super) fn fixture_files(count: usize, bytes: usize, long_paths: bool) -> Vec
 
 pub(super) fn archive_files(files: &[StorageFile]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    let mut builder = tar::Builder::new(encoder);
+    let mut builder = tar::Builder::new(std::io::BufWriter::new(encoder));
     for file in files {
         let mut header = tar::Header::new_gnu();
         header.set_size(file.content.len() as u64);
@@ -40,7 +40,14 @@ pub(super) fn archive_files(files: &[StorageFile]) -> Vec<u8> {
             .append_data(&mut header, &file.path, &file.content[..])
             .unwrap();
     }
-    builder.into_inner().unwrap().finish().unwrap()
+    // Flush all tar bytes before finishing the gzip stream.
+    builder
+        .into_inner()
+        .unwrap()
+        .into_inner()
+        .unwrap()
+        .finish()
+        .unwrap()
 }
 
 #[tokio::test]

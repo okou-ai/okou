@@ -16,7 +16,7 @@ import { Button, Card, CardContent, cn, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type { Root } from "hast";
-import { Copy, Share2 } from "lucide-react";
+import { Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   ASSISTANT_NAME,
@@ -80,7 +80,7 @@ export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
 
 export type SharedDisplayThread = Omit<SharedThreadResponse, "messages"> & {
   readonly messages: readonly SharedDisplayMessage[];
-  readonly visibility?: SharedThreadVisibilitySignals;
+  readonly visibility: SharedThreadVisibilitySignals;
   readonly richContent?: SharedThreadRichContentSignals;
   readonly artifactPreview?: PublicArtifactPreviewSignals;
 };
@@ -449,7 +449,6 @@ function SharedThreadHandoff({
 function SharedThreadHeader({
   brandName,
   homeUrl,
-  shareUrl,
   signInUrl,
   signUpUrl,
   title,
@@ -460,7 +459,6 @@ function SharedThreadHeader({
   readonly visibility?: SharedThreadVisibilitySignals;
   readonly brandName: BrandName;
   readonly homeUrl: string;
-  readonly shareUrl: string | null;
   /** Both null once the viewer is known to be signed in; they have an account. */
   readonly signInUrl: string | null;
   readonly signUpUrl: string | null;
@@ -484,45 +482,7 @@ function SharedThreadHeader({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {visibility ? (
-          <SharedThreadShareMenu session={visibility} />
-        ) : shareUrl !== null ? (
-          <Button
-            showTooltip
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0 duration-150"
-            aria-label={t(($) => {
-              return $.sharedThread.share;
-            })}
-            onClick={() => {
-              detach(
-                (async () => {
-                  const copied = await writeToClipboard(shareUrl);
-                  if (copied) {
-                    toast.success(
-                      t(($) => {
-                        return $.chat.sharing.linkCopied;
-                      }),
-                    );
-                    return;
-                  }
-                  toast.error(
-                    t(($) => {
-                      return $.chat.sharing.copyFailed;
-                    }),
-                  );
-                })(),
-                Reason.DomCallback,
-                "copy shared thread link",
-              );
-            }}
-          >
-            <Share2 size={18} />
-          </Button>
-        ) : null}
+        {visibility && <SharedThreadShareMenu session={visibility} />}
         {sharedThreadId && (
           <ArtifactPageDeleteButton
             artifactId={sharedThreadId}
@@ -722,7 +682,6 @@ export function SharedThreadPage({
         <SharedThreadHeader
           brandName={BRAND_NAME}
           homeUrl={homeUrl}
-          shareUrl={shareUrl}
           signInUrl={signInHref}
           signUpUrl={signUpHref}
           title={sharedThread?.title ?? null}

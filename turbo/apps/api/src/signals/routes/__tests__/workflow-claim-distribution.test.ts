@@ -1,3 +1,4 @@
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -258,7 +259,7 @@ test("re-evaluates private/public precedence without exposing another member's p
     claim.contentBundles.skills.map((entry) => {
       return entry.mountPath.split("/").at(-1);
     }),
-  ).toStrictEqual([privateWorkflow.name]);
+  ).toStrictEqual([privateWorkflow.name, ...SEED_SKILLS]);
   expect(
     readClaimedContentBundle(s3.objects, claim.contentBundles.skills[0]!)
       .get("SKILL.md")
@@ -343,12 +344,10 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
   });
   await runs.heartbeatRunner(group);
   const claim = await runs.claimRunnerJob(run.runId);
-  expect(
-    Buffer.byteLength(JSON.stringify(claim.contentBundles.skills)),
-  ).toBeLessThan(2048);
   const skill = claim.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${workflow.name}`);
   })!;
+  expect(Buffer.byteLength(JSON.stringify(skill))).toBeLessThan(2048);
   const skillMd = readClaimedContentBundle(s3.objects, skill)
     .get("SKILL.md")!
     .toString();

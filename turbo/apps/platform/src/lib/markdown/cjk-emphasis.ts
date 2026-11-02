@@ -10,6 +10,27 @@ const OPENING_RUN = /^\*+/u;
 const CLOSING_RUN = /\*+$/u;
 const ZERO_WIDTH_SPACE = "\u200b";
 
+function canOpenEmphasis(
+  source: string,
+  previous: string,
+  tokenizer: Tokenizer,
+): boolean {
+  const opening = tokenizer.rules.inline.emStrongLDelim.exec(source);
+  const punctuation = opening?.[1];
+  if (!punctuation && !opening?.[2]) {
+    return false;
+  }
+  // Keep native early rejection unless this opener has a CJK boundary
+  // to repair. Literal file*.txt must not scan every remaining tail.
+  return (
+    !punctuation ||
+    !previous ||
+    tokenizer.rules.inline.punctuation.test(previous) ||
+    CJK_PUNCTUATION.test(punctuation) ||
+    CJK_END.test(previous)
+  );
+}
+
 function maskRawBlocks(
   source: string,
   upstreamMask: string,
@@ -20,7 +41,11 @@ function maskRawBlocks(
   let from = 0;
   for (const match of source.matchAll(/</gu)) {
     const start = match.index;
-    if (start < from || upstreamMask[start] !== "[") {
+    // Quoted angles can leave a valid tag outside Marked's generic HTML mask.
+    if (
+      start < from ||
+      (upstreamMask[start] !== "[" && upstreamMask[start] !== "<")
+    ) {
       continue;
     }
     const tag = tokenizer.rules.inline.tag.exec(source.slice(start))?.[0];
@@ -111,7 +136,12 @@ export function createCjkEmphasisExtension(options: {
     tokenizer: {
       emStrong(source, maskedSource, previous = "") {
         const openingRun = OPENING_RUN.exec(source);
-        if (!openingRun || previous === "*" || this.lexer.state.inRawBlock) {
+        if (
+          !openingRun ||
+          previous === "*" ||
+          this.lexer.state.inRawBlock ||
+          !canOpenEmphasis(source, previous, this)
+        ) {
           return false;
         }
         // Only Marked's same-width lexical view gets zero-width boundary

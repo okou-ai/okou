@@ -1411,6 +1411,9 @@ interface RunArtifacts {
 interface PreparedAdditionalVolumes {
   readonly volumes: readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly sources: AdditionalVolumeSources;
+  readonly seedSkillBundles: NonNullable<
+    StoredExecutionContext["seedSkillBundles"]
+  >;
 }
 
 function autoMemoryMountPath(framework: SupportedFramework): string {
@@ -1453,14 +1456,43 @@ function preparedRunAdditionalVolumes(args: {
   const additionalVolumes =
     bodyAdditionalVolumes ??
     (hasTemplateVolumes ? [] : (args.resolved.additionalVolumes ?? []));
+  // Select the winning mount before separating Storage and bundle delivery.
+  const candidates = [
+    ...rendered,
+    ...additionalVolumes.map((volume) => {
+      return {
+        ...volume,
+        source: bodyAdditionalVolumes
+          ? ("request_additional_volume" as const)
+          : ("unknown" as const),
+      };
+    }),
+  ];
+  const seedSkillBundles = normalizeMountOverlay(candidates).flatMap(
+    (volume) => {
+      return "contentBundle" in volume
+        ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
+        : [];
+    },
+  );
+  const bundledPaths = new Set(
+    seedSkillBundles.map((bundle) => {
+      return bundle.mountPath;
+    }),
+  );
+  const storage = candidates.flatMap((volume) => {
+    return "contentBundle" in volume || bundledPaths.has(volume.mountPath)
+      ? []
+      : [volume];
+  });
   return {
-    volumes: [...rendered.skillVolumes, ...additionalVolumes],
-    sources: [
-      ...rendered.skillVolumeSources,
-      ...additionalVolumes.map((): StorageManifestSource => {
-        return bodyAdditionalVolumes ? "request_additional_volume" : "unknown";
-      }),
-    ],
+    volumes: storage.map(({ source: _source, ...volume }) => {
+      return volume;
+    }),
+    sources: storage.map((volume) => {
+      return volume.source;
+    }),
+    seedSkillBundles,
   };
 }
 
@@ -1479,6 +1511,9 @@ export function prepareRunOutputMetadata(args: {
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
+  readonly seedSkillBundles: NonNullable<
+    StoredExecutionContext["seedSkillBundles"]
+  >;
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
   const additionalVolumes = preparedRunAdditionalVolumes({
@@ -1494,6 +1529,7 @@ export function prepareRunOutputMetadata(args: {
   return {
     additionalVolumes: additionalVolumes.volumes,
     additionalVolumeSources: additionalVolumes.sources,
+    seedSkillBundles: additionalVolumes.seedSkillBundles,
     artifacts,
     officialWorkflowRun: args.officialWorkflow && {
       ...args.officialWorkflow,

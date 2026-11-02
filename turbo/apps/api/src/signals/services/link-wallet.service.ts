@@ -38,7 +38,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { onRejection } from "../utils";
-import { linkApprovalEnabled$ } from "./link-approval-config.service";
+import { isLinkApprovalConfigured } from "./link-approval-config.service";
 import {
   requireApprovalThread,
   takeOverWalletApproval$,
@@ -1040,9 +1040,7 @@ export const createWalletSpend$ = command(
     const access = await set(walletAccess$, owner, "payments", signal);
     signal.throwIfAborted();
     const autoContinue =
-      Boolean(owner.runId && owner.chatThreadId) &&
-      (await set(linkApprovalEnabled$, owner, signal));
-    signal.throwIfAborted();
+      Boolean(owner.runId && owner.chatThreadId) && isLinkApprovalConfigured();
     const db = set(writeDb$);
     const [created] = await db
       .insert(linkWalletSpends)
@@ -1223,8 +1221,7 @@ export const getWalletSpend$ = command(
         result.autoContinue &&
         result.status !== "approved" &&
         row.approvalThreadId === owner.chatThreadId,
-      ) && (await set(linkApprovalEnabled$, owner, signal));
-    signal.throwIfAborted();
+      ) && isLinkApprovalConfigured();
     return { ...result, autoContinue };
   },
 );

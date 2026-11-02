@@ -155,23 +155,6 @@ test("Bingjie can turn automatic busy recovery off in Lab", async () => {
   });
 });
 
-test("The maintainer can manage the remote UI switch in Lab", async () => {
-  await setupPage({
-    context,
-    path: "/_/lab",
-    auth: {
-      user: { id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV", fullName: "Bingjie" },
-    },
-    featureSwitches: { [FeatureSwitchKey.Lab]: true },
-  });
-  await screen.findByText("Remote control guided setup");
-  expect(
-    within(
-      featureSwitchRow(FeatureSwitchKey.RemoteControlGuidedSetup),
-    ).getByRole("switch"),
-  ).toBeEnabled();
-});
-
 test("Maintainer filters narrow the feature list", async () => {
   const user = userEvent.setup({ delay: null });
 
@@ -190,7 +173,7 @@ test("Maintainer filters narrow the feature list", async () => {
   await user.click(bingjie);
 
   expect(
-    featureSwitchRow(FeatureSwitchKey.RemoteControlGuidedSetup),
+    featureSwitchRow(FeatureSwitchKey.PresentationConvert),
   ).toBeInTheDocument();
   expect(
     screen.queryByText(FeatureSwitchKey.AhrefsConnector),
@@ -213,7 +196,8 @@ test("Maintainer filters narrow the feature list", async () => {
 
 test.each([
   [FeatureSwitchKey.TestOauthConnector, false],
-  [FeatureSwitchKey.RemoteControlGuidedSetup, true],
+  [FeatureSwitchKey.Dummy, true],
+  [FeatureSwitchKey.ChatEmailQuote, false],
   [FeatureSwitchKey.MarkdownCjkEmphasis, false],
 ] as const)(
   "Toggle and reset a Lab override: %s",

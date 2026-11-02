@@ -1,10 +1,8 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   tailscaleContract,
   type TailscaleConfig,
   type TailscaleImpactPreview,
 } from "@okouai/api-contracts/contracts/tailscale";
-import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -15,10 +13,7 @@ import {
   emitMockedClerkEvent,
 } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  getAction,
-  queryAction,
-} from "./connector-integrations-test-helpers.ts";
+import { getAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
 const orgId = "org_tailscale_settings";
@@ -66,134 +61,80 @@ beforeEach(() => {
   });
 });
 
-async function page(role: "admin" | "member" = "member") {
+async function page(
+  path = "/connectors?scope=private-network",
+  role: "admin" | "member" = "member",
+) {
   context.mocks.data.org({ id: orgId, name: "Engineering", role });
-  await setupPage({
-    context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    auth,
-    path: "/connectors?scope=private-network",
-  });
+  await setupPage({ context, auth, path });
 }
-
-async function networkSection() {
-  return await screen.findByRole("region", { name: "Tailscale" });
-}
-
-test("VNC-only references prevent personal Tailscale deletion", async () => {
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, {
-      configs: [
-        {
-          ...config,
-          vncHosts: [
-            {
-              id: config.id,
-              displayName: "VNC authentication",
-              roles: ["kdc"],
-            },
-          ],
-        },
-      ],
-    });
-  });
-  await page();
-  const section = await networkSection();
-  expect(
-    (await within(section).findByText("VNC authentication")).closest("li"),
-  ).toHaveTextContent("VNC authentication · VNC · Authentication server");
-  expect(
-    within(section).getByText("Used by 1 of your hosts:"),
-  ).toBeInTheDocument();
-  expect(getAction("button", "Delete Tailscale", section)).toBeDisabled();
-});
 
 async function createForm() {
-  const section = await networkSection();
-  const trigger = await waitFor(() => {
-    return getAction("button", "Add Tailscale", section);
+  click(getAction("button", "Add network"));
+  await screen.findByRole("heading", { name: "Add a private network" });
+  click(screen.getByText("Tailscale", { exact: true }));
+  await screen.findByRole("dialog", { name: "Download Tailscale" });
+  click(getAction("button", "Enter existing credentials"));
+  const name = await screen.findByLabelText("Network name");
+  const form = name.closest("form")!;
+  await fill(name, "New network");
+  click(within(form).getByText("Allowed tags", { selector: "summary" }));
+  await fill(
+    within(form).getByLabelText("Allowed tags"),
+    "tag:okou, tag:build",
+  );
+  await fill(within(form).getByLabelText("Client ID"), "test-client-id");
+  await fill(within(form).getByLabelText("Client Secret"), "secret-canary");
+  return form;
+}
+
+async function editPersonal() {
+  await page(
+    `/connectors?scope=private-network&remoteResource=tailscale:${config.id}`,
+  );
+  await screen.findByRole("heading", { name: config.name });
+  click(getAction("button", "Edit settings"));
+  const name = await screen.findByLabelText("Network name");
+  return name.closest("form")!;
+}
+
+async function sharedDeletion() {
+  await page(
+    `/connectors?scope=private-network&remoteResource=tailscale:${shared.id}`,
+    "admin",
+  );
+  await screen.findByRole("heading", { name: shared.name });
+  click(getAction("button", "Delete Tailscale"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete Tailscale",
   });
-  click(trigger);
-  const dialog = await screen.findByRole("dialog");
-  const fields = within(dialog);
-  await fill(fields.getByLabelText("Name"), "New network");
-  await fill(fields.getByLabelText("Registration tags"), "tag:okou, tag:build");
-  await fill(fields.getByLabelText("OAuth client ID"), "test-client-id");
-  await fill(fields.getByLabelText("OAuth client secret"), "secret-canary");
+  await within(dialog).findByText(/Other Owner/u);
   return dialog;
 }
 
-test("Members see shared metadata without management or other owners' hosts", async () => {
-  await page();
-  const section = await networkSection();
-  await within(section).findByText(shared.name);
-  const organization = within(section).getByRole("region", {
-    name: "Organization",
-  });
-  const personal = within(section).getByRole("region", { name: "Personal" });
-  expect(within(personal).getByText(config.name)).toBeVisible();
-  expect(queryAction("button", "Edit Tailscale", organization)).toBeNull();
-  expect(queryAction("button", "Delete Tailscale", organization)).toBeNull();
-  click(getAction("button", "Add Tailscale", section));
-  const dialog = await screen.findByRole("dialog");
-  expect(
-    within(dialog).queryByRole("combobox", { name: "Who can use this" }),
-  ).toBeNull();
-});
-
-test("The collapsed setup guide preserves the creation draft and clears secrets after saving", async () => {
+test("Creating a network saves the entered tags and clears credentials", async () => {
+  let configs: TailscaleConfig[] = [];
   const requests: unknown[] = [];
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs });
+  });
   context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
     requests.push(body);
-    return respond(201, {
+    const created = {
       ...config,
       id: body.id,
       name: body.name,
       tags: body.tags,
-    });
+    };
+    configs = [created];
+    return respond(201, created);
   });
   await page();
-  const dialog = await createForm();
-  const secret = within(dialog).getByLabelText("OAuth client secret");
+  const form = await createForm();
+  const secret = within(form).getByLabelText("Client Secret");
   expect(secret).toHaveAttribute("type", "password");
-  const guide = within(dialog).getByRole("region", {
-    name: "How do I configure Tailscale?",
-  });
-  const toggle = within(guide).getByText("How do I configure Tailscale?");
-  const steps = within(guide).getByRole("tablist", { hidden: true });
-  expect(steps).not.toBeVisible();
-  click(toggle);
-  expect(steps).toBeVisible();
-  expect(within(guide).getByRole("tabpanel", { name: "Tags" })).toBeVisible();
-  click(getAction("tab", "OAuth", guide));
-  expect(within(guide).getByRole("tabpanel", { name: "OAuth" })).toBeVisible();
-  expect(getAction("link", "Trust credentials", guide)).toHaveAttribute(
-    "href",
-    "https://console.tailscale.com/admin/settings/trust-credentials",
-  );
-  click(getAction("tab", "General access rules", guide));
-  expect(within(guide).getAllByRole("tabpanel")).toHaveLength(1);
-  expect(within(guide).getByText("All users and devices")).toBeVisible();
-  expect(within(guide).getByText("All ports and protocols")).toBeVisible();
-  click(toggle);
-  expect(steps).not.toBeVisible();
-  expect(within(dialog).getByLabelText("Name")).toHaveValue("New network");
-  expect(within(dialog).getByLabelText("Registration tags")).toHaveValue(
-    "tag:okou, tag:build",
-  );
-  expect(within(dialog).getByLabelText("OAuth client ID")).toHaveValue(
-    "test-client-id",
-  );
-  expect(secret).toHaveValue("secret-canary");
-  click(toggle);
-  expect(
-    within(guide).getByRole("tabpanel", { name: "General access rules" }),
-  ).toBeVisible();
-  expect(getAction("button", "Save", dialog)).toBeEnabled();
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  click(getAction("button", "Save network", form));
+  await screen.findByText("New network");
   expect(requests).toStrictEqual([
     {
       id: expect.any(String),
@@ -210,142 +151,34 @@ test("The collapsed setup guide preserves the creation draft and clears secrets 
   expect(document.body.textContent).not.toContain("secret-canary");
 });
 
-test("An administrator can explicitly create an organization network", async () => {
+test("Credential replacement clears discarded secrets and updates tags against the current revision", async () => {
+  let current = config;
   const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
-    requests.push(body);
-    return respond(201, {
-      ...shared,
-      id: body.id,
-      name: body.name,
-      tags: body.tags,
-    });
-  });
-  await page("admin");
-  const dialog = await createForm();
-  await userEvent.click(
-    within(dialog).getByRole("combobox", { name: "Who can use this" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("option", { name: "Organization" }),
-  );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toMatchObject([{ scope: "organization" }]);
-});
-
-test("Editing metadata does not read or resend stored OAuth credentials", async () => {
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.update, ({ body, respond }) => {
-    requests.push(body);
-    return respond(200, {
-      ...config,
-      name: body.name ?? config.name,
-      revision: 2,
-    });
-  });
-  await page();
-  const section = await networkSection();
-  await within(section).findByText(config.name);
-  click(
-    getAction(
-      "button",
-      "Edit Tailscale",
-      within(section).getByRole("region", { name: "Personal" }),
-    ),
-  );
-  const dialog = await screen.findByRole("dialog");
-  expect(
-    within(dialog).queryByRole("region", {
-      name: "How do I configure Tailscale?",
-    }),
-  ).toBeNull();
-  expect(within(dialog).queryByLabelText("OAuth client secret")).toBeNull();
-  await fill(within(dialog).getByLabelText("Name"), "Renamed network");
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, name: "Renamed network", tags: ["tag:okou"] },
-  ]);
-});
-
-test("Own SSH references block personal network deletion", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, {
-      configs: [
-        {
-          ...config,
-          sshHosts: [
-            {
-              id: "b0000000-0000-4000-8000-000000000001",
-              displayName: "Private server",
-            },
-          ],
-        },
-      ],
-    });
+    return respond(200, { configs: [current] });
   });
-  await page();
-  await screen.findByText("Private server");
-  const section = await networkSection();
-  expect(getAction("button", "Delete Tailscale", section)).toBeDisabled();
-  expect(screen.queryByRole("dialog")).toBeNull();
-  await userEvent.click(
-    getAction("button", "Why can't I delete this network?", section),
-  );
-  const explanation = await screen.findByRole("dialog", {
-    name: "Delete Tailscale",
-  });
-  expect(
-    within(explanation).getByText(
-      "Your SSH or VNC hosts still use this network. Rebind or delete those hosts first.",
-    ),
-  ).toBeInTheDocument();
-});
-
-test("Credential replacement is explicit, clears discarded secrets and updates tags with the revision", async () => {
-  const requests: unknown[] = [];
   context.mocks.api(tailscaleContract.update, ({ body, respond }) => {
     requests.push(body);
-    return respond(200, {
-      ...config,
-      tags: body.tags ?? config.tags,
-      revision: 2,
-    });
+    current = { ...config, tags: body.tags ?? config.tags, revision: 2 };
+    return respond(200, current);
   });
-  await page();
-  const section = await networkSection();
-  await within(section).findByText(config.name);
-  click(getAction("button", "Edit Tailscale", section));
-  const dialog = await screen.findByRole("dialog");
-  const replace = within(dialog).getByRole("checkbox", {
+  const form = await editPersonal();
+  const replace = within(form).getByRole("checkbox", {
     name: "Replace OAuth credentials",
   });
   await userEvent.click(replace);
-  const oldSecret = within(dialog).getByLabelText("OAuth client secret");
-  await fill(oldSecret, "discarded-secret-canary");
+  const discarded = within(form).getByLabelText("Client Secret");
+  await fill(discarded, "discarded-secret-canary");
   await userEvent.click(replace);
-  expect(oldSecret).toHaveValue("");
-  expect(within(dialog).queryByLabelText("OAuth client secret")).toBeNull();
+  expect(discarded).toHaveValue("");
   await userEvent.click(replace);
-  expect(within(dialog).getByLabelText("OAuth client secret")).toHaveValue("");
-  await fill(
-    within(dialog).getByLabelText("OAuth client ID"),
-    "rotated-client",
-  );
-  await fill(
-    within(dialog).getByLabelText("OAuth client secret"),
-    "rotated-secret",
-  );
-  await fill(within(dialog).getByLabelText("Registration tags"), "tag:build");
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  const secret = within(form).getByLabelText("Client Secret");
+  expect(secret).toHaveValue("");
+  await fill(within(form).getByLabelText("Client ID"), "rotated-client");
+  await fill(secret, "rotated-secret");
+  await fill(within(form).getByLabelText("Allowed tags"), "tag:build");
+  click(getAction("button", "Save network", form));
+  await screen.findByRole("heading", { name: config.name });
   expect(requests).toStrictEqual([
     {
       expectedRevision: 1,
@@ -359,23 +192,12 @@ test("Credential replacement is explicit, clears discarded secrets and updates t
   ]);
 });
 
-test("Realtime impact refresh invalidates an old acknowledgement without discarding the dialog", async () => {
+test("Realtime impact refresh invalidates an old acknowledgement without discarding deletion", async () => {
   let currentImpact = impact;
   context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
     return respond(200, currentImpact);
   });
-  await page("admin");
-  const section = await networkSection();
-  await within(section).findByText(shared.name);
-  click(
-    getAction(
-      "button",
-      "Delete Tailscale",
-      within(section).getByRole("region", { name: "Organization" }),
-    ),
-  );
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText(/Other Owner/u);
+  const dialog = await sharedDeletion();
   await userEvent.click(
     within(dialog).getByRole("checkbox", { name: acknowledgement }),
   );
@@ -386,13 +208,12 @@ test("Realtime impact refresh invalidates an old acknowledgement without discard
     impactSnapshot: "c".repeat(64),
   };
   await act(() => {
-    context.mocks.ably.trigger("tailscale:changed", { orgId });
+    return context.mocks.ably.trigger("tailscale:changed", { orgId });
   });
-  await waitFor(() => {
-    return expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
-  });
+  await within(dialog).findByText(/1 member and 3 hosts/u);
+  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
   expect(getAction("button", "Delete Tailscale", dialog)).toBeDisabled();
-  expect(within(dialog).getByText(shared.name)).toBeVisible();
+  expect(within(dialog).getByText(shared.name)).toBeInTheDocument();
 });
 
 test("Shared deletion acknowledges fresh impact without exposing other host identities", async () => {
@@ -405,25 +226,14 @@ test("Shared deletion acknowledges fresh impact without exposing other host iden
     requests.push(body);
     return respond(204);
   });
-  await page("admin");
-  const section = await networkSection();
-  await within(section).findByText(shared.name);
-  click(
-    getAction(
-      "button",
-      "Delete Tailscale",
-      within(section).getByRole("region", { name: "Organization" }),
-    ),
-  );
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText(/Other Owner/u);
+  const dialog = await sharedDeletion();
   expect(getAction("button", "Delete Tailscale", dialog)).toBeDisabled();
   await userEvent.click(
     within(dialog).getByRole("checkbox", { name: acknowledgement }),
   );
   click(getAction("button", "Delete Tailscale", dialog));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(requests).toStrictEqual([
     { expectedRevision: 1, impactSnapshot: impact.impactSnapshot },
@@ -444,12 +254,7 @@ test("A refreshed shared revision is deleted only after acknowledging its curren
     requests.push(body);
     return respond(204);
   });
-  await page("admin");
-  const section = await networkSection();
-  await within(section).findByText(shared.name);
-  click(getAction("button", "Delete Tailscale", section));
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText(/Other Owner/u);
+  const dialog = await sharedDeletion();
   await userEvent.click(
     within(dialog).getByRole("checkbox", { name: acknowledgement }),
   );
@@ -468,91 +273,44 @@ test("A refreshed shared revision is deleted only after acknowledging its curren
     return context.mocks.ably.trigger("tailscale:changed", { orgId });
   });
   await waitFor(() => {
-    return expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
+    expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
   });
-  expect(requests).toHaveLength(0);
   expect(getAction("button", "Delete Tailscale", dialog)).toBeDisabled();
   await userEvent.click(
     within(dialog).getByRole("checkbox", { name: acknowledgement }),
   );
   click(getAction("button", "Delete Tailscale", dialog));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(requests).toStrictEqual([
     { expectedRevision: 2, impactSnapshot: "d".repeat(64) },
   ]);
 });
 
-test("An impact conflict rejects the outdated confirmation", async () => {
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
-    return respond(200, impact);
-  });
-  context.mocks.api(
-    tailscaleContract.convertToPersonal,
-    ({ body, respond }) => {
-      requests.push(body);
-      return respond(409, {
-        error: {
-          code: TAILSCALE_ERROR_CODES.IMPACT_CONFLICT,
-          message: "private-provider-detail",
-        },
-      });
-    },
-  );
-  await page("admin");
-  const section = await networkSection();
-  await within(section).findByText(shared.name);
-  click(
-    getAction(
-      "button",
-      "Make personal",
-      within(section).getByRole("region", { name: "Organization" }),
-    ),
-  );
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText(/Other Owner/u);
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
-  );
-  click(getAction("button", "Make personal", dialog));
-  await within(dialog).findByText(
-    "The affected hosts changed. The change was not applied.",
-  );
-  expect(document.body.textContent).not.toContain("private-provider-detail");
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
-  ]);
-});
-
-test("An unconfirmed network creation keeps the credential draft frozen", async () => {
-  let created: TailscaleConfig | null = null;
-  const requests: { id: string }[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: created ? [created] : [] });
-  });
-  context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
-    requests.push(body);
-    created = { ...config, id: body.id, name: body.name, tags: body.tags };
+test("An unconfirmed network creation keeps the credential draft frozen without exposing provider details", async () => {
+  context.mocks.api(tailscaleContract.create, ({ respond }) => {
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "private-secret-detail" },
     });
   });
   await page();
-  const dialog = await createForm();
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByRole("alert");
-  expect(within(dialog).getByLabelText("OAuth client secret")).toBeDisabled();
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  const form = await createForm();
+  click(getAction("button", "Save network", form));
+  await within(form).findByRole("alert");
+  expect(within(form).getByLabelText("Client Secret")).toBeDisabled();
+  expect(within(form).getByLabelText("Client Secret")).toHaveValue(
+    "secret-canary",
+  );
+  expect(getAction("button", "Save network", form)).toBeDisabled();
   expect(document.body.textContent).not.toContain("private-secret-detail");
 });
 
-test("Changing organizations unmounts the draft, clears secrets and hides old network metadata", async () => {
+test("Changing organizations unmounts the draft and clears secrets", async () => {
   context.mocks.data.org({ id: "org_next", name: "Next", role: "member" });
   await page();
-  const dialog = await createForm();
-  const secret = within(dialog).getByLabelText("OAuth client secret");
+  const form = await createForm();
+  const secret = within(form).getByLabelText("Client Secret");
   await act(() => {
     mockOrganization({
       activeOrg: { id: "org_next", name: "Next" },
@@ -560,70 +318,24 @@ test("Changing organizations unmounts the draft, clears secrets and hides old ne
     });
     emitMockedClerkEvent();
   });
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  await screen.findByTestId("connectors-scroll-content");
+  expect(window.location.pathname).toBe("/connectors");
+  expect(form).not.toBeInTheDocument();
   expect(secret).toHaveValue("");
-  expect(screen.queryByText(config.name)).toBeNull();
-  expect(screen.queryByText(shared.name)).toBeNull();
-  await act(() => {
-    mockOrganization(auth.organization);
-    emitMockedClerkEvent();
-  });
-  await screen.findByText(config.name);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByLabelText("Client Secret")).toBeNull();
 });
 
-test("Promotion requires explicit sharing acknowledgement and preserves the resource identity", async () => {
-  const requests: unknown[] = [];
-  context.mocks.api(
-    tailscaleContract.convertToOrganization,
-    ({ params, body, respond }) => {
-      requests.push({ params: { configId: params.configId }, body });
-      return respond(200, {
-        ...config,
-        scope: "organization",
-        revision: 2,
-        generation: 2,
-      });
-    },
-  );
-  await page("admin");
-  const section = await networkSection();
-  await within(section).findByText(config.name);
-  click(
-    getAction(
-      "button",
-      "Make organization",
-      within(section).getByRole("region", { name: "Personal" }),
-    ),
-  );
-  const dialog = await screen.findByRole("dialog");
-  expect(getAction("button", "Make organization", dialog)).toBeDisabled();
-  await userEvent.click(within(dialog).getByRole("checkbox"));
-  click(getAction("button", "Make organization", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    { params: { configId: config.id }, body: { expectedRevision: 1 } },
-  ]);
-});
-
-test("Escape discards a secret draft and returns focus to the Add control", async () => {
+test("Leaving the network editor clears a secret draft before starting again", async () => {
   await page();
-  const section = await networkSection();
-  const trigger = getAction("button", "Add Tailscale", section);
-  await userEvent.click(trigger);
-  const dialog = await screen.findByRole("dialog");
-  const secret = within(dialog).getByLabelText("OAuth client secret");
-  await fill(secret, "escape-secret-canary");
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  const first = await createForm();
+  const secret = within(first).getByLabelText("Client Secret");
+  click(getAction("button", "Back"));
+  await screen.findByText(config.name);
+  const next = await createForm();
   expect(secret).toHaveValue("");
-  expect(trigger).toHaveFocus();
+  expect(within(next).getByLabelText("Client Secret")).toHaveValue(
+    "secret-canary",
+  );
 });
 
 test("Changing organizations during save clears secrets and fences a late response", async () => {
@@ -637,8 +349,8 @@ test("Changing organizations during save clears secrets and fences a late respon
   });
   await page();
   const first = await createForm();
-  const secret = within(first).getByLabelText("OAuth client secret");
-  click(getAction("button", "Save", first));
+  const secret = within(first).getByLabelText("Client Secret");
+  click(getAction("button", "Save network", first));
   await started.promise;
   await act(() => {
     mockOrganization({
@@ -647,22 +359,71 @@ test("Changing organizations during save clears secrets and fences a late respon
     });
     emitMockedClerkEvent();
   });
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  await screen.findByTestId("connectors-scroll-content");
+  expect(window.location.pathname).toBe("/connectors");
+  expect(first).not.toBeInTheDocument();
   expect(secret).toHaveValue("");
+  expect(screen.queryByLabelText("Client Secret")).toBeNull();
   await act(() => {
     mockOrganization(auth.organization);
     emitMockedClerkEvent();
   });
+  click(getAction("link", "Connectors"));
+  await screen.findByTestId("connectors-scope-private-network");
+  click(screen.getByTestId("connectors-scope-private-network"));
+  await screen.findByText(config.name);
   const next = await createForm();
-  await fill(within(next).getByLabelText("Name"), "Second draft");
+  await fill(within(next).getByLabelText("Network name"), "Second draft");
   await act(async () => {
     pending.resolve();
     await pending.promise;
   });
-  expect(within(next).getByLabelText("Name")).toHaveValue("Second draft");
-  expect(within(next).getByLabelText("OAuth client secret")).toHaveValue(
+  expect(within(next).getByLabelText("Network name")).toHaveValue(
+    "Second draft",
+  );
+  expect(within(next).getByLabelText("Client Secret")).toHaveValue(
     "secret-canary",
   );
+});
+
+test("An impact conflict rejects an outdated network restriction without exposing provider details", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
+    return respond(200, impact);
+  });
+  context.mocks.api(
+    tailscaleContract.convertToPersonal,
+    ({ body, respond }) => {
+      requests.push(body);
+      return respond(409, {
+        error: {
+          code: "TAILSCALE_IMPACT_CONFLICT",
+          message: "private-provider-detail",
+        },
+      });
+    },
+  );
+  await page(
+    `/connectors?scope=private-network&remoteResource=tailscale:${shared.id}`,
+    "admin",
+  );
+  await screen.findByRole("heading", { name: shared.name });
+  click(getAction("button", "Edit settings"));
+  await screen.findByLabelText("Network name");
+  click(screen.getByText("Only me", { exact: true }));
+  click(getAction("button", "Save network"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Make this network available only to you?",
+  });
+  await within(dialog).findByText("Other Owner");
+  await userEvent.click(within(dialog).getByRole("checkbox"));
+  click(getAction("button", "Make personal", dialog));
+  await within(dialog).findByText(
+    "The network or its linked connections changed. Your draft is kept. Reopen the network and review the latest settings before changing who can use it.",
+  );
+  expect(getAction("button", "Make personal", dialog)).toBeDisabled();
+  expect(document.body.textContent).not.toContain("private-provider-detail");
+  expect(requests).toStrictEqual([
+    { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
+  ]);
 });

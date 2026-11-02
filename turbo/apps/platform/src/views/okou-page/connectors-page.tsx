@@ -11,7 +11,6 @@ import {
 import {
   remoteSetup$,
   leaveRemoteSetup$,
-  remoteControlGuidedEnabled$,
   type RemoteSetup,
 } from "../../signals/remote-control-setup.ts";
 import { RemoteDetailPage } from "./remote-detail-page.tsx";
@@ -1185,10 +1184,9 @@ function ConnectorCatalogHeader() {
   const { t } = useTranslation();
   const count = useLastLoadable(connectorDirectoryPageSignals.catalogCount$);
   const connectorCatalogCount = count.state === "hasData" ? count.data : null;
-  const guided = useGet(remoteControlGuidedEnabled$);
   const scope = useGet(connectorsScope$);
   const description =
-    guided && (scope === "remote-control" || scope === "private-network")
+    scope === "remote-control" || scope === "private-network"
       ? t(($) => {
           return $.remoteControlSetup.catalogDescription;
         })

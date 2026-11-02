@@ -676,13 +676,13 @@ def configure_response_stream(
 
     def stream_and_observe(chunk: bytes) -> bytes:
         metrics["total_bytes"] += len(chunk)
-        if buf is not None and buffer_state is not None and not buffer_state["truncated"]:
-            remaining = STREAM_BUFFER_LIMIT - len(buf)
-            if len(chunk) <= remaining:
-                buf.extend(chunk)
-            else:
-                buf.extend(chunk[:remaining])
-                buffer_state["truncated"] = True
+        if (
+            buf is not None
+            and buffer_state is not None
+            and not buffer_state["truncated"]
+            and stream_capture.append_captured_chunk(buf, chunk, limit=STREAM_BUFFER_LIMIT)
+        ):
+            buffer_state["truncated"] = True
         if response_parser is not None:
             response_parser(chunk)
             run_usage.observe(flow, flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE))
