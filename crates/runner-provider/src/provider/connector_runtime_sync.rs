@@ -181,7 +181,7 @@ impl ActiveRunConnectorRuntimeState {
                 base_url_vars,
                 ..
             } => {
-                *source_id = Some(binding.source_id.clone());
+                *source_id = Some(binding.connection_id.clone());
                 *base_url_vars = Some(binding.base_url_vars.clone());
             }
             ConnectorRuntimeTargetRegistration::Custom {
@@ -189,7 +189,7 @@ impl ActiveRunConnectorRuntimeState {
                 base_url_vars,
                 ..
             } => {
-                *source_id = Some(binding.source_id.clone());
+                *source_id = Some(binding.connection_id.clone());
                 *base_url_vars = binding.base_url_vars.clone();
             }
         }
@@ -1017,7 +1017,7 @@ impl ConnectorRuntimeSyncCore {
             let account_binding = result.account_binding.clone();
             if let Some(binding) = &account_binding
                 && (!matches!(result.state, ConnectorRuntimeSyncState::Available { .. })
-                    || uuid::Uuid::parse_str(&binding.source_id).is_err())
+                    || uuid::Uuid::parse_str(&binding.connection_id).is_err())
             {
                 warn!(run_id = %run_id, target = %target.target.log_identity(),
                     "invalid connector account binding; retaining last-known-good state");
@@ -1171,7 +1171,7 @@ impl ConnectorRuntimeSyncCore {
                         HashMap::new()
                     };
                     let expected_source_id = match &account_binding {
-                        Some(binding) => Some(Some(binding.source_id.clone())),
+                        Some(binding) => Some(Some(binding.connection_id.clone())),
                         None => {
                             self.source_id_for_publication(run_id, target, registration_cancel)
                                 .await

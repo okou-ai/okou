@@ -366,7 +366,7 @@ const connectorRuntimeResultBaseSchema = object({
 
 // Explicit account replacement; ordinary policy refreshes omit this binding.
 export const connectorRuntimeAccountBindingSchema = object({
-  sourceId: uuid(),
+  connectionId: uuid(),
   baseUrlVars: record(string(), string()),
 });
 

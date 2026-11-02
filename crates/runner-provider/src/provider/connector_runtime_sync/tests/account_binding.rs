@@ -21,7 +21,7 @@ async fn mismatched_custom_account_binding_keeps_the_published_account() {
         then.status(200).json_body(json!({"results": [{
             "target": registration.target(), "state": "available", "firewall": firewall,
             "networkPolicy": {"allow": [], "deny": [], "ask": [], "unknownPolicy": "ask"},
-            "baseUrlVars": {}, "accountBinding": {"sourceId": ACCOUNT_B, "baseUrlVars": {}}
+            "baseUrlVars": {}, "accountBinding": {"connectionId": ACCOUNT_B, "baseUrlVars": {}}
         }]}));
     });
     let (_dir, registry, path) = registered_runtime_registry_with_targets(
@@ -131,7 +131,7 @@ async fn assert_account_replacement(custom: bool) {
             result["baseUrlVars"] = json!(vars);
         }
         if binding {
-            result["accountBinding"] = json!({ "sourceId": ACCOUNT_B, "baseUrlVars": vars });
+            result["accountBinding"] = json!({ "connectionId": ACCOUNT_B, "baseUrlVars": vars });
         }
         json!({ "results": [result] })
     };

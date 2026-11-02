@@ -36,7 +36,7 @@ async fn builtin_account_binding_cannot_replace_a_custom_owned_firewall() {
                     connector_slug: "slack".into(),
                     network_policy: policy(&[], &[], &[], "ask"),
                     account_binding: Some(ConnectorRuntimeAccountBinding {
-                        source_id: "550e8400-e29b-41d4-a716-446655440002".into(),
+                        connection_id: "550e8400-e29b-41d4-a716-446655440002".into(),
                         base_url_vars: HashMap::new(),
                     }),
                 }]
@@ -117,7 +117,7 @@ async fn account_binding_replaces_credential_alias_sources_for_its_connector() {
                     connector_slug: "slack".into(),
                     network_policy: shared_policy.clone(),
                     account_binding: Some(ConnectorRuntimeAccountBinding {
-                        source_id: source_b.into(),
+                        connection_id: source_b.into(),
                         base_url_vars: HashMap::new(),
                     }),
                 }]

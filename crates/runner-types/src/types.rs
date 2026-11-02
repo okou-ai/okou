@@ -1632,7 +1632,7 @@ pub struct ConnectorRuntimeSyncResult {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectorRuntimeAccountBinding {
-    pub source_id: String,
+    pub connection_id: String,
     pub base_url_vars: HashMap<String, String>,
 }
 

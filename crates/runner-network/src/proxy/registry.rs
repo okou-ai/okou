@@ -484,7 +484,7 @@ fn apply_connector_runtime_update(
                     FirewallEntry::Builtin {
                         name: connector_slug.clone(),
                         base_url_vars: Some(binding.base_url_vars.clone()),
-                        source_id: Some(binding.source_id.clone()),
+                        source_id: Some(binding.connection_id.clone()),
                     },
                     |entry| {
                         firewall_entry_matches(entry, connector_slug)
@@ -512,7 +512,7 @@ fn apply_connector_runtime_update(
                             }
                         });
                         if source.source_type == "connector" {
-                            source.source_id = Some(binding.source_id.clone());
+                            source.source_id = Some(binding.connection_id.clone());
                         }
                     }
                 }

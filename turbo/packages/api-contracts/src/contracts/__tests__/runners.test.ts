@@ -773,7 +773,7 @@ describe("connector runtime synchronization contract", () => {
   it.each(["builtin", "custom"] as const)(
     "preserves an optional exact account binding on available %s results",
     (kind) => {
-      const sourceId = "10000000-0000-4000-8000-000000000001";
+      const connectionId = "10000000-0000-4000-8000-000000000001";
       const baseUrlVars = { workspace: "account-b" };
       const result = {
         target:
@@ -787,13 +787,13 @@ describe("connector runtime synchronization contract", () => {
               firewall: {
                 kind: "inline",
                 customConnectorId,
-                sourceId,
+                sourceId: connectionId,
                 firewall: { name: "custom-connector", apis: [] },
               },
               baseUrlVars,
             }
           : {}),
-        accountBinding: { sourceId, baseUrlVars },
+        accountBinding: { connectionId, baseUrlVars },
       };
 
       expect(connectorRuntimeSyncResultSchema.parse(result)).toStrictEqual(
@@ -802,7 +802,7 @@ describe("connector runtime synchronization contract", () => {
       expect(
         connectorRuntimeSyncResultSchema.safeParse({
           ...result,
-          accountBinding: { sourceId },
+          accountBinding: { connectionId },
         }).success,
       ).toBe(false);
     },

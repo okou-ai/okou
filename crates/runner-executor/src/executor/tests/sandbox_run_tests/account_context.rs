@@ -65,7 +65,7 @@ async fn runtime_account_binding_updates_the_private_guest_context() {
             "target": target,
             "state": "available",
             "networkPolicy": policy,
-            "accountBinding": {"sourceId": source_b, "baseUrlVars": {}}
+            "accountBinding": {"connectionId": source_b, "baseUrlVars": {}}
         }]}));
     });
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());

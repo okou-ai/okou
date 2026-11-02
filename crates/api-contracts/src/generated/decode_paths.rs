@@ -552,7 +552,7 @@ pub mod runners {
 
                     const FIELDS: &[crate::decode_path::DecodePathField] = &[
                         crate::decode_path::DecodePathField::new("baseUrlVars", 4),
-                        crate::decode_path::DecodePathField::new("sourceId", 6),
+                        crate::decode_path::DecodePathField::new("connectionId", 6),
                         crate::decode_path::DecodePathField::new("accessKeyId", 16),
                         crate::decode_path::DecodePathField::new("secretAccessKey", 17),
                         crate::decode_path::DecodePathField::new("sessionToken", 18),
