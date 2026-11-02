@@ -35,6 +35,8 @@ export interface ViewerError {
 export interface ViewerTarget {
   readonly id: string;
   readonly title: string;
+  /** Target metadata for presentation; never input or membership authority. */
+  readonly blank: boolean;
 }
 
 export interface ViewerSnapshot {

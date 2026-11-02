@@ -1070,11 +1070,13 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   });
   const controls$ = computed((get) => {
     const controls = get(model.controls$);
-    const authorized = get(authority$) && get(installed$) !== null;
+    const lease = get(installed$);
+    const authorized = get(authority$) && lease !== null;
+    const creating = lease !== null && get(lease.controller.creatingTab$);
     const inputReady = get(graph.selectedInput$) !== null;
     return {
       ...controls,
-      streaming: authorized && inputReady && controls.streaming,
+      streaming: authorized && !creating && inputReady && controls.streaming,
       recovery: !get(pending$) && controls.recovery,
       showRecovery: !get(pending$) && controls.showRecovery,
       showEmptyCreate: authorized && controls.showEmptyCreate,
@@ -1088,9 +1090,26 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
     };
   });
   const presentation$ = computed((get) => {
-    return get(pending$)
-      ? { status: "connecting" as const, error: null, loadingPreview: false }
-      : get(model.presentation$);
+    if (get(pending$)) {
+      return {
+        status: "connecting" as const,
+        error: null,
+        loadingPreview: false,
+        blank: false,
+      };
+    }
+    const presentation = get(model.presentation$);
+    const lease = get(installed$);
+    return {
+      ...presentation,
+      blank:
+        get(authority$) &&
+        lease !== null &&
+        !get(model.imageRecovery$) &&
+        !get(model.controls$).recovery &&
+        presentation.status !== "paused" &&
+        (presentation.blank || get(lease.controller.creatingTab$)),
+    };
   });
   const navigation$ = computed((get) => {
     const lease = get(installed$);

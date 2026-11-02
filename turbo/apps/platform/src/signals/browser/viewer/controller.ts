@@ -453,6 +453,7 @@ interface ControllerLinks {
   readonly start$: Command<Promise<void>, [AbortSignal]>;
   readonly cancelCreation$: Command<void, [object]>;
   readonly createTab$: Command<Promise<string>, [AbortSignal]>;
+  readonly creatingTab$: Computed<boolean>;
   readonly closeTab$: Command<Promise<void>, [string, AbortSignal]>;
   readonly navigate$: Command<
     Promise<NavigationReceipt>,
@@ -2621,6 +2622,9 @@ function createTabCreationGraph(
   } = context;
   const publish$ = createTabPublication(context, links$);
   const resume$ = createCreationResumption(context, links$);
+  const creatingTab$ = computed((get) => {
+    return get(creationOwner$) !== null;
+  });
   const cancelCreation$ = command(({ get, set }, owner: object) => {
     if (get(creationOwner$) === owner) {
       set(resetCreate$);
@@ -2697,7 +2701,7 @@ function createTabCreationGraph(
       throw result.reason;
     },
   );
-  return { cancelCreation$, createTab$ };
+  return { cancelCreation$, createTab$, creatingTab$ };
 }
 
 function createTabClosingGraph(
@@ -2805,7 +2809,10 @@ function createTabClosingGraph(
 function createTabsGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
-): Pick<ControllerLinks, "cancelCreation$" | "createTab$" | "closeTab$"> {
+): Pick<
+  ControllerLinks,
+  "cancelCreation$" | "createTab$" | "creatingTab$" | "closeTab$"
+> {
   return {
     ...createTabCreationGraph(context, links$),
     ...createTabClosingGraph(context, links$),
@@ -3352,6 +3359,7 @@ export function createBrowserController(
     waitForClosed$: graph.waitForClosed$,
     selectTab$: graph.selectTab$,
     createTab$: graph.createTab$,
+    creatingTab$: graph.creatingTab$,
     closeTab$: graph.closeTab$,
     navigate$: graph.navigate$,
     retryImage$: graph.retryImage$,

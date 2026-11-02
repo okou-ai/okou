@@ -38,6 +38,8 @@ export interface BrowserPresentation {
   readonly status: ViewerStatus;
   readonly error: ViewerError | null;
   readonly loadingPreview: boolean;
+  /** Empty content can be shown before the selected tab accepts remote input. */
+  readonly blank: boolean;
 }
 
 export interface BrowserControls {
