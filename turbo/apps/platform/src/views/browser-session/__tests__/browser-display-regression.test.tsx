@@ -81,7 +81,10 @@ async function openWindowSizeMenu(viewer: HTMLElement) {
 }
 
 function sizeOption(menu: HTMLElement, name: string) {
-  const option = queryAllByRoleFast("menuitemradio", menu).find((candidate) => {
+  const option = [
+    ...queryAllByRoleFast("menuitemradio", menu),
+    ...queryAllByRoleFast("menuitem", menu),
+  ].find((candidate) => {
     return candidate.textContent?.trim() === name;
   });
   if (!option) {
@@ -89,6 +92,160 @@ function sizeOption(menu: HTMLElement, name: string) {
   }
   return option;
 }
+
+test.each(["minimized", "maximized", "fullscreen"])(
+  "A %s remote window is restored and fitted without user action",
+  async (state) => {
+    const browser = mockViewer();
+    browser.targets.push({
+      targetId: "foreign-page",
+      title: "Foreign",
+      url: "https://foreign.example.com",
+      windowId: 1,
+    });
+    browser.setWindowState(state);
+    browser.setWindowState("fullscreen", 1);
+
+    const viewer = await openViewer();
+
+    await waitFor(() => {
+      expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+      expect(
+        within(viewer).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+    expect(browser.windowState()).toBe("normal");
+    expect(browser.windowState(1)).toBe("fullscreen");
+    expect(within(viewer).queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      browser.requests
+        .filter((request) => {
+          return request.method === "Browser.setWindowBounds";
+        })
+        .map((request) => {
+          return request.params;
+        }),
+    ).toStrictEqual([{ windowId: 0, bounds: { windowState: "normal" } }]);
+  },
+);
+
+test("Restoring an already calibrated window waits for a fresh native frame", async () => {
+  const browser = mockViewer();
+  const viewer = await openViewer();
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  act(() => {
+    browser.frame("AAAA");
+  });
+  browser.setWindowState("maximized", 0, { width: 1280, height: 720 });
+  const frames = browser.holdFrames("example-page-session");
+  const sizing = await openWindowSizeMenu(viewer);
+
+  click(sizeOption(sizing, "Fit window to panel"));
+  await frames.received;
+
+  expect(browser.windowState()).toBe("normal");
+  expect(browser.viewport).toStrictEqual({ width: 1280, height: 720 });
+  await waitFor(() => {
+    expect(sizing).not.toBeInTheDocument();
+  });
+  const pendingSizing = await openWindowSizeMenu(viewer);
+  expect(sizeOption(pendingSizing, "Fit window to panel")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  act(() => {
+    frames.release();
+  });
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(within(viewer).queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("A target moved during restoration cannot authorize further display writes", async () => {
+  const browser = mockViewer();
+  browser.targets.push({
+    targetId: "foreign-page",
+    title: "Foreign",
+    url: "https://foreign.example.com",
+    windowId: 1,
+  });
+  const viewer = await openViewer();
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  act(() => {
+    browser.frame("AAAA");
+  });
+  browser.setWindowState("maximized");
+  browser.setWindowState("fullscreen", 1);
+  const restoring = browser.holdNext("Browser.setWindowBounds");
+  const sizing = await openWindowSizeMenu(viewer);
+  click(sizeOption(sizing, "Fit window to panel"));
+  await restoring.received;
+
+  act(() => {
+    browser.move("example-page", 1);
+  });
+  await waitFor(() => {
+    expect(
+      within(viewer).getByLabelText("Remote browser input"),
+    ).toBeDisabled();
+  });
+  await act(async () => {
+    await restoring.release();
+  });
+
+  await expect(
+    within(viewer).findByText("No tabs open"),
+  ).resolves.toBeInTheDocument();
+  expect(browser.windowState(1)).toBe("fullscreen");
+  expect(
+    browser.requests.filter((request) => {
+      return request.method === "Emulation.clearDeviceMetricsOverride";
+    }),
+  ).toStrictEqual([]);
+});
+
+test.each(["rejected", "ineffective"])(
+  "A %s native restoration remains a failure after one attempt",
+  async (failure) => {
+    const browser = mockViewer();
+    browser.setWindowState("maximized");
+    if (failure === "rejected") {
+      browser.failNext("Browser.setWindowBounds", "Native restoration failed");
+    } else {
+      browser.ignoreNextWindowRestore();
+    }
+
+    const viewer = await openViewer();
+
+    const alert = await within(viewer).findByRole("alert");
+    expect(alert).toHaveTextContent(operationError);
+    expect(browser.windowState()).toBe("maximized");
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Browser.setWindowBounds";
+      }),
+    ).toHaveLength(1);
+  },
+);
+
+test("An unknown native state fails without being normalized", async () => {
+  const browser = mockViewer();
+  browser.setWindowState("unknown");
+
+  const viewer = await openViewer();
+
+  const alert = await within(viewer).findByRole("alert");
+  expect(alert).toHaveTextContent(operationError);
+  expect(browser.windowState()).toBe("unknown");
+});
 
 test("A size-mode synchronization failure is reported rather than treated as success", async () => {
   const browser = mockViewer();
@@ -180,4 +337,9 @@ test("A window resize synchronizes the remote display to the new panel size", as
   await waitFor(() => {
     expect(browser.viewport).toStrictEqual({ width: 720, height: 480 });
   });
+  expect(
+    browser.requests.filter((request) => {
+      return request.method === "Browser.setWindowBounds";
+    }),
+  ).toStrictEqual([]);
 });
