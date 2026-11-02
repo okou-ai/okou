@@ -11,7 +11,7 @@ setup() {
 }
 
 teardown() {
-    runner_e2e_teardown_test algolia
+    runner_e2e_teardown_test meilisearch
 }
 
 @test "runner refreshes connector permissions during an active run" {
@@ -22,10 +22,10 @@ teardown() {
 
     local values
     values=$(jq -nc \
-        --arg applicationId "OKOUE2E0001" \
+        --arg instanceUrl "https://firewall-placeholder.vm3.ai/meilisearch" \
         --arg apiKey "00000000000000000000000000000000" \
-        '{applicationId: $applicationId, apiKey: $apiKey}')
-    run runner_e2e_connect_manual_connector algolia api-key "$AGENT_ID" "$values"
+        '{instanceUrl: $instanceUrl, apiKey: $apiKey}')
+    run runner_e2e_connect_manual_connector meilisearch api-key "$AGENT_ID" "$values"
     echo "$output"
     assert_success
     CONNECTOR_ACCOUNT_ID=$(jq -er \
@@ -34,7 +34,7 @@ teardown() {
 
     # Raw DNS has dedicated runner coverage. Pin the synthetic placeholder's
     # public sink so this test owns only firewall permission transitions.
-    local request_url="https://firewall-placeholder.vm3.ai/algolia/write/1/indexes/vm0-e2e-${TEST_ID}"
+    local request_url="https://firewall-placeholder.vm3.ai/meilisearch/indexes/vm0-e2e-${TEST_ID}/documents"
     local checkpoint_script
     checkpoint_script=$(cat <<'EOF'
 set -euo pipefail
@@ -46,11 +46,11 @@ status=$(curl --silent --show-error --max-time 5 \
     --write-out '%{http_code}' \
     --request POST \
     --header 'content-type: application/json' \
-    --data '{"objectID":"vm0-e2e"}' \
+    --data '[{"id":"vm0-e2e"}]' \
     '__REQUEST_URL__')
 test "$status" = 403
 grep -Eq '"error"[[:space:]]*:[[:space:]]*"permission_denied"' "$response_file"
-printf 'ALGOLIA_PERMISSION_DENIED\n'
+printf 'MEILISEARCH_PERMISSION_DENIED\n'
 EOF
 )
     checkpoint_script=${checkpoint_script//__REQUEST_URL__/$request_url}
@@ -70,16 +70,16 @@ while ((SECONDS < deadline)); do
         --output "$response_file" \
         --request POST \
         --header 'content-type: application/json' \
-        --data '{"objectID":"vm0-e2e"}' \
+        --data '[{"id":"vm0-e2e"}]' \
         '__REQUEST_URL__' &&
         ! grep -Eq '"error"[[:space:]]*:[[:space:]]*"permission_denied"' "$response_file"; then
-        printf 'ALGOLIA_PERMISSION_ALLOWED\n'
+        printf 'MEILISEARCH_PERMISSION_ALLOWED\n'
         exit 0
     fi
     sleep 1
 done
 cat "$response_file" >&2
-echo 'Timed out waiting for the Algolia permission refresh' >&2
+echo 'Timed out waiting for the Meilisearch permission refresh' >&2
 exit 1
 EOF
 )
@@ -97,7 +97,7 @@ EOF
     run runner_e2e_wait_for_active_chat_text \
         "$THREAD_ID" \
         "$RUN_ID" \
-        ALGOLIA_PERMISSION_DENIED
+        MEILISEARCH_PERMISSION_DENIED
     echo "$output"
     assert_success
 
@@ -113,10 +113,10 @@ EOF
         --arg agentId "$AGENT_ID" \
         '{
             agentId: $agentId,
-            connectorSlug: "algolia",
+            connectorSlug: "meilisearch",
             mode: "patch",
             grants: [{
-                permission: "index-content.write",
+                permission: "documents.write",
                 action: "allow",
                 expiresIn: "1h"
             }]
@@ -131,17 +131,17 @@ EOF
     echo "$output"
     assert_success
 
-    run runner_e2e_wait_for_chat_text "$THREAD_ID" "$RUN_ID" ALGOLIA_PERMISSION_ALLOWED
+    run runner_e2e_wait_for_chat_text "$THREAD_ID" "$RUN_ID" MEILISEARCH_PERMISSION_ALLOWED
     echo "$output"
     assert_success
 
     run runner_e2e_wait_for_firewall_transition \
         "$RUN_ID" \
-        algolia \
+        meilisearch \
         firewall-placeholder.vm3.ai \
         POST \
         "$request_url" \
-        index-content.write
+        documents.write
     echo "$output"
     assert_success
 }
