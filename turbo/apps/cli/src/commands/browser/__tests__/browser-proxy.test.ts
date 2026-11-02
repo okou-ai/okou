@@ -538,6 +538,162 @@ describe("chat-window CDP proxy protocol", () => {
     },
   );
 
+  it.each([
+    { filter: undefined, page: true, tab: false },
+    { filter: [{}], page: true, tab: true },
+    { filter: [{ type: "page" }], page: true, tab: false },
+    { filter: [{ type: "iframe" }], page: false, tab: false },
+    { filter: [{ type: "tab" }], page: false, tab: true },
+  ])(
+    "scopes explicit browser-root related selection without a global subscription: %j",
+    async ({ filter, page, tab }) => {
+      const seen = new Map<string, string>();
+      const listener = (message: Message) => {
+        if (message.method === "Target.attachedToTarget") {
+          const target = message.params?.targetInfo as { targetId: string };
+          seen.set(target.targetId, String(message.params?.sessionId));
+        }
+      };
+      connection.listeners.add(listener);
+      await connection.request("Target.autoAttachRelated", {
+        targetId: "BROWSER",
+        waitForDebuggerOnStart: true,
+        ...(filter === undefined ? {} : { filter }),
+      });
+      await connection.request("Target.getTargets");
+      connection.listeners.delete(listener);
+      expect(seen.has("A")).toBe(page);
+      expect(seen.has("TAB-A")).toBe(tab);
+      expect(seen.has("B")).toBe(false);
+      expect(seen.has("TAB-B")).toBe(false);
+      expect(seen.has("IFRAME-A")).toBe(false);
+    },
+  );
+
+  it.each([false, true])(
+    "keeps browser-root and explicit page/tab selectors active together (browser session=%s)",
+    async (browserSession) => {
+      const channel = browserSession
+        ? String(
+            (await connection.request("Target.attachToBrowserTarget"))
+              .sessionId,
+          )
+        : undefined;
+      const attached = connection.event((message) => {
+        return (
+          message.method === "Target.attachedToTarget" &&
+          message.sessionId === channel &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "A"
+        );
+      });
+      await connection.request(
+        "Target.autoAttachRelated",
+        {
+          targetId: "BROWSER",
+          waitForDebuggerOnStart: false,
+        },
+        channel,
+      );
+      const page = await attached;
+      await connection.request(
+        "Target.autoAttachRelated",
+        {
+          targetId: "A",
+          waitForDebuggerOnStart: false,
+          filter: [{ type: "iframe" }],
+        },
+        channel,
+      );
+      await connection.request(
+        "Target.autoAttachRelated",
+        {
+          targetId: "TAB-A",
+          waitForDebuggerOnStart: false,
+          filter: [{ type: "iframe" }],
+        },
+        channel,
+      );
+      await connection.request("Target.getTargets", {}, channel);
+      expect(
+        await connection.request(
+          "Runtime.enable",
+          {},
+          String(page.params?.sessionId),
+        ),
+      ).toStrictEqual({});
+      const entered = connection.event((message) => {
+        return (
+          message.method === "Target.attachedToTarget" &&
+          message.sessionId === channel &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "B"
+        );
+      });
+      provider.move("B", 0);
+      const incoming = await entered;
+      expect(
+        await connection.request(
+          "Runtime.enable",
+          {},
+          String(incoming.params?.sessionId),
+        ),
+      ).toStrictEqual({});
+    },
+  );
+
+  it("restores explicit subscriptions after browser-root selection fails", async () => {
+    await connection.request("Target.autoAttachRelated", {
+      targetId: "A",
+      waitForDebuggerOnStart: false,
+      filter: [{ type: "page" }],
+    });
+    const recovered = connection.event((message) => {
+      return (
+        message.method === "Target.attachedToTarget" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId === "A"
+      );
+    });
+    provider.rejectNextRelated();
+    await expect(
+      connection.request("Target.autoAttachRelated", {
+        targetId: "BROWSER",
+        waitForDebuggerOnStart: false,
+      }),
+    ).rejects.toStrictEqual({
+      code: -32000,
+      message: "Native related selection unavailable",
+      data: { original: true },
+    });
+    expect(
+      await connection.request(
+        "Runtime.enable",
+        {},
+        String((await recovered).params?.sessionId),
+      ),
+    ).toStrictEqual({});
+    await connection.request("Target.setDiscoverTargets", { discover: true });
+    const entered = connection.event((message) => {
+      return (
+        message.method === "Target.targetCreated" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId === "B"
+      );
+    });
+    const start = provider.commands.length;
+    provider.move("B", 0);
+    await entered;
+    await connection.request("Target.setAutoAttach", {
+      autoAttach: false,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    });
+    expect(
+      provider.commands.slice(start).filter((command) => {
+        return command.method === "Target.autoAttachRelated";
+      }),
+    ).toStrictEqual([]);
+  });
+
   it("retains each explicit selector's parameters when another selected root leaves", async () => {
     await connection.request("Target.setDiscoverTargets", { discover: true });
     const discovered = connection.event((message) => {

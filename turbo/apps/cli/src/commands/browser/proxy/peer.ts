@@ -32,6 +32,7 @@ type AutoAttachment =
     }
   | {
       readonly kind: "related";
+      readonly selectors: Map<string, Message>;
       readonly roots: Map<string, Message>;
       readonly flatten: true;
     };
@@ -340,27 +341,36 @@ export class ProxyPeer {
       );
       previous.roots.clear();
     }
-    const roots =
-      previous?.kind === "related"
-        ? previous.roots
-        : new Map<string, Message>();
-    const prior = roots.get(targetId);
-    const auto: AutoAttachment = { kind: "related", roots, flatten: true };
-    roots.set(targetId, params);
+    const selectors = new Map(
+      previous?.kind === "related" ? previous.selectors : [],
+    );
+    selectors.set(targetId, params);
+    const auto: AutoAttachment = {
+      kind: "related",
+      selectors,
+      roots: new Map(previous?.kind === "related" ? previous.roots : []),
+      flatten: true,
+    };
     this.autoAttach.set(channel, auto);
     try {
-      return await this.inject("Target.autoAttachRelated", params, channel);
+      const result = await this.relate(channel, auto, targetId);
+      if (!auto.selectors.has(targetId)) throw outsideWindow();
+      return result;
     } catch (error) {
-      if (prior) roots.set(targetId, prior);
-      else roots.delete(targetId);
-      if (previous?.kind === "automatic") {
-        this.autoAttach.set(channel, previous);
-        try {
+      try {
+        await this.inject(
+          "Target.setAutoAttach",
+          { autoAttach: false, waitForDebuggerOnStart: false, flatten: true },
+          channel,
+        );
+        if (previous) {
+          previous.roots.clear();
+          this.autoAttach.set(channel, previous);
           await this.relate(channel, previous);
-        } catch {
-          this.close();
-        }
-      } else if (!roots.size) this.autoAttach.delete(channel);
+        } else this.autoAttach.delete(channel);
+      } catch {
+        this.close();
+      }
       throw error;
     }
   }
@@ -588,10 +598,16 @@ export class ProxyPeer {
     ) {
       let auto = this.autoAttach.get(channel);
       if (auto?.kind !== "related") {
-        auto = { kind: "related", roots: new Map(), flatten: true };
+        auto = {
+          kind: "related",
+          selectors: new Map(),
+          roots: new Map(),
+          flatten: true,
+        };
         this.autoAttach.set(channel, auto);
       }
       auto.roots.set(requested.targetId, requested);
+      auto.selectors.set(requested.targetId, requested);
     }
   }
 
@@ -810,15 +826,18 @@ export class ProxyPeer {
     );
   }
 
-  private matches(info: Pick<TargetInfo, "type">, params: Message): boolean {
-    const filter = Array.isArray(params.filter)
+  private filter(params: Message): unknown[] {
+    return Array.isArray(params.filter)
       ? params.filter
       : [
           { type: "browser", exclude: true },
           { type: "tab", exclude: true },
           {},
         ];
-    for (const entry of filter)
+  }
+
+  private matches(info: Pick<TargetInfo, "type">, params: Message): boolean {
+    for (const entry of this.filter(params))
       if (
         record(entry) &&
         (entry.type === undefined || entry.type === info.type)
@@ -830,7 +849,8 @@ export class ProxyPeer {
   private async relate(
     channel: string | undefined,
     auto: AutoAttachment,
-  ): Promise<void> {
+    refresh?: string,
+  ): Promise<unknown> {
     const roots = new Map<string, Message>();
     if (auto.kind === "automatic") {
       for (const info of this.scope.targets.values())
@@ -848,10 +868,7 @@ export class ProxyPeer {
             // not: descendants are attached by their own parent sessions.
             filter: [{ type: info.type }, { exclude: true }],
           });
-    } else {
-      for (const [id, params] of auto.roots)
-        if (await this.scope.allows(id)) roots.set(id, params);
-    }
+    } else await this.relatedRoots(auto.selectors, roots);
     if (
       [...auto.roots.keys()].some((id) => {
         return !roots.has(id);
@@ -864,16 +881,124 @@ export class ProxyPeer {
       );
       auto.roots.clear();
     }
+    let response: unknown = {};
     for (const [targetId, params] of roots) {
-      if (auto.roots.has(targetId)) continue;
+      if (
+        !this.refreshedRoot(targetId, refresh) &&
+        JSON.stringify(auto.roots.get(targetId)) === JSON.stringify(params)
+      )
+        continue;
       auto.roots.set(targetId, params);
       try {
-        await this.inject("Target.autoAttachRelated", params, channel);
+        const result = await this.inject(
+          "Target.autoAttachRelated",
+          params,
+          channel,
+        );
+        if (targetId === refresh) response = result;
       } catch (error) {
         auto.roots.delete(targetId);
         throw error;
       }
     }
+    return response;
+  }
+
+  private refreshedRoot(id: string, selector?: string): boolean {
+    if (id === selector) return true;
+    const info = this.scope.targets.get(id);
+    return (
+      selector !== undefined &&
+      this.scope.targets.get(selector)?.type === "browser" &&
+      info !== undefined &&
+      ["tab", "browser", "service_worker", "shared_worker"].includes(info.type)
+    );
+  }
+
+  private async relatedRoots(
+    selectors: Map<string, Message>,
+    roots: Map<string, Message>,
+  ): Promise<void> {
+    for (const [id, params] of selectors) {
+      if (!(await this.scope.allows(id))) {
+        selectors.delete(id);
+        continue;
+      }
+      if (this.scope.targets.get(id)?.type !== "browser") {
+        this.mergeRelatedRoot(roots, id, params);
+        continue;
+      }
+      // A native browser selector is global. Tab roots preserve its page/tab
+      // attachment level while keeping debugger waits inside this window.
+      for (const info of this.scope.targets.values()) {
+        if (info.type === "browser" && info.targetId !== id) continue;
+        if (!(await this.scope.contains(info))) continue;
+        if (info.type === "tab") {
+          this.mergeRelatedRoot(roots, info.targetId, {
+            ...params,
+            targetId: info.targetId,
+          });
+        } else if (
+          ["browser", "service_worker", "shared_worker"].includes(info.type) &&
+          this.matches(info, params)
+        ) {
+          this.mergeRelatedRoot(roots, info.targetId, {
+            ...params,
+            targetId: info.targetId,
+            filter: [{ type: info.type }, { exclude: true }],
+          });
+        }
+      }
+    }
+  }
+
+  private mergeRelatedRoot(
+    roots: Map<string, Message>,
+    id: string,
+    params: Message,
+  ): void {
+    const previous = roots.get(id);
+    if (!previous) {
+      roots.set(id, params);
+      return;
+    }
+    // Multiple logical selectors may use the same native tab. Retain their
+    // union, including the default decision for future target types.
+    const selectors = [previous, params];
+    const entries = selectors.flatMap((selector) => {
+      return this.filter(selector);
+    });
+    const types = new Set(
+      entries.flatMap((entry) => {
+        return record(entry) && typeof entry.type === "string"
+          ? [entry.type]
+          : [];
+      }),
+    );
+    const filter: Message[] = [...types].map((type) => {
+      return {
+        type,
+        exclude: !selectors.some((selector) => {
+          return this.matches({ type }, selector);
+        }),
+      };
+    });
+    filter.push({
+      exclude: !selectors.some((selector) => {
+        const wildcard = this.filter(selector).find((entry) => {
+          return record(entry) && entry.type === undefined;
+        });
+        return record(wildcard) && wildcard.exclude !== true;
+      }),
+    });
+    roots.set(id, {
+      ...previous,
+      ...params,
+      filter,
+      waitForDebuggerOnStart:
+        previous.waitForDebuggerOnStart === true ||
+        params.waitForDebuggerOnStart === true,
+    });
   }
 
   private async reconcile(): Promise<void> {

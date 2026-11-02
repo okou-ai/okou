@@ -280,59 +280,147 @@ try {
     return info.type === "iframe" && info.url === frameUrl;
   });
   assert.ok(frame, "Fixture must create a native cross-site iframe target");
-  const owned = new Set([a, frame.targetId, await tabTargetForPage(direct, a)]);
-  for (const filter of [
-    undefined,
-    [{ type: "page" }],
-    [{ type: "iframe" }],
-    [{ type: "tab" }],
-    [],
-  ]) {
-    const inventories = [];
-    for (const address of [endpoint, proxyA.endpoint]) {
+  const tabA = await tabTargetForPage(direct, a);
+  const owned = new Set([a, frame.targetId, tabA]);
+  for (const method of ["Target.setAutoAttach", "Target.autoAttachRelated"]) {
+    for (const filter of [
+      undefined,
+      [{ type: "page" }],
+      [{ type: "iframe" }],
+      [{ type: "tab" }],
+      [],
+      ...(method === "Target.autoAttachRelated" ? [[{}]] : []),
+    ]) {
+      const inventories = [];
+      for (const address of [endpoint, proxyA.endpoint]) {
+        const connection = await wire(address);
+        const attached = new Map();
+        const off = connection.onEvent((event) => {
+          if (event.sessionId !== undefined) return;
+          if (event.method === "Target.attachedToTarget")
+            attached.set(event.params.sessionId, event.params.targetInfo);
+          if (event.method === "Target.detachedFromTarget")
+            attached.delete(event.params.sessionId);
+        });
+        try {
+          const browser = await connection.request("Target.getTargetInfo");
+          await connection.request(method, {
+            ...(method === "Target.setAutoAttach"
+              ? { autoAttach: true, flatten: true }
+              : { targetId: browser.targetInfo.targetId }),
+            waitForDebuggerOnStart: false,
+            ...(filter === undefined ? {} : { filter }),
+          });
+          await connection.request("Target.getTargets");
+          inventories.push(
+            new Set(
+              [...attached.values()]
+                .filter((info) => {
+                  return owned.has(info.targetId);
+                })
+                .map((info) => {
+                  return info.targetId;
+                }),
+            ),
+          );
+          if (address === proxyA.endpoint)
+            assert.ok(
+              [...attached.values()].every((info) => {
+                return (
+                  !["page", "tab", "iframe"].includes(info.type) ||
+                  owned.has(info.targetId)
+                );
+              }),
+            );
+        } finally {
+          off();
+          connection.close();
+        }
+      }
+      assert.deepEqual(inventories[1], inventories[0]);
+    }
+  }
+  for (const address of [endpoint, proxyA.endpoint]) {
+    for (const browserSession of [false, true]) {
       const connection = await wire(address);
+      const channel = browserSession
+        ? (await connection.request("Target.attachToBrowserTarget")).sessionId
+        : undefined;
       const attached = new Map();
       const off = connection.onEvent((event) => {
-        if (event.sessionId !== undefined) return;
+        if (event.sessionId !== channel) return;
         if (event.method === "Target.attachedToTarget")
           attached.set(event.params.sessionId, event.params.targetInfo);
         if (event.method === "Target.detachedFromTarget")
           attached.delete(event.params.sessionId);
       });
       try {
-        await connection.request("Target.setAutoAttach", {
-          autoAttach: true,
-          waitForDebuggerOnStart: false,
-          flatten: true,
-          ...(filter === undefined ? {} : { filter }),
-        });
-        await connection.request("Target.getTargets");
-        inventories.push(
-          new Set(
-            [...attached.values()]
-              .filter((info) => {
-                return owned.has(info.targetId);
-              })
-              .map((info) => {
-                return info.targetId;
-              }),
-          ),
+        const browser = await connection.request(
+          "Target.getTargetInfo",
+          {},
+          channel,
         );
-        if (address === proxyA.endpoint)
-          assert.ok(
-            [...attached.values()].every((info) => {
-              return (
-                !["page", "tab", "iframe"].includes(info.type) ||
-                owned.has(info.targetId)
-              );
-            }),
+        await connection.request(
+          "Target.autoAttachRelated",
+          {
+            targetId: browser.targetInfo.targetId,
+            waitForDebuggerOnStart: false,
+          },
+          channel,
+        );
+        await connection.request("Target.getTargets", {}, channel);
+        const original = [...attached].find(([, info]) => {
+          return info.targetId === a;
+        });
+        assert.ok(original);
+        for (const targetId of [a, tabA]) {
+          await connection.request(
+            "Target.autoAttachRelated",
+            {
+              targetId,
+              waitForDebuggerOnStart: false,
+              filter: [{ type: "iframe" }],
+            },
+            channel,
           );
+          await connection.request("Target.getTargets", {}, channel);
+          await connection.request("Runtime.enable", {}, original[0]);
+        }
+        assert.ok(
+          [...attached.values()].some((info) => {
+            return info.targetId === frame.targetId;
+          }),
+        );
+        if (address === proxyA.endpoint) {
+          const relatedUrl =
+            origin + (browserSession ? "/related-browser" : "/related-root");
+          let created;
+          const event = await observe(
+            connection,
+            (event) => {
+              return (
+                event.method === "Target.attachedToTarget" &&
+                event.sessionId === channel &&
+                event.params.targetInfo.url === relatedUrl
+              );
+            },
+            async () => {
+              created = await connection.request(
+                "Target.createTarget",
+                {
+                  url: relatedUrl,
+                },
+                channel,
+              );
+            },
+          );
+          assert.equal(event.params.targetInfo.targetId, created.targetId);
+        }
       } finally {
         off();
         connection.close();
       }
     }
-    assert.deepEqual(inventories[1], inventories[0]);
   }
   const frameAttached = await observe(
     scopedA,
@@ -614,6 +702,11 @@ try {
     );
     await run(
       "agent-browser",
+      ["--session", session, "--pin-tab", "tab", suffix === "a" ? a : b],
+      { timeout: 15000 },
+    );
+    await run(
+      "agent-browser",
       [
         "--session",
         session,
@@ -772,6 +865,8 @@ try {
         nestedSessions: true,
         explicitRelatedSelectors: true,
         nativeAutoAttachFilters: true,
+        browserRootRelatedSelection: true,
+        overlappingRelatedSelectors: true,
         oopifParentage: true,
         agentBrowser: true,
         guestTaskAdmission: options["guest-task"],

@@ -69,6 +69,18 @@ export async function browserCdpProvider() {
     throw new Error("Missing fixture listener");
   const targets = new Map<string, Target>([
     [
+      "BROWSER",
+      { id: "BROWSER", type: "browser", url: "", window: -1, tab: -1 },
+    ],
+    [
+      "TAB-A",
+      { id: "TAB-A", type: "tab", url: "", window: 0, tab: 1, page: "A" },
+    ],
+    [
+      "TAB-B",
+      { id: "TAB-B", type: "tab", url: "", window: 1, tab: 2, page: "B" },
+    ],
+    [
       "A",
       {
         id: "A",
@@ -290,24 +302,30 @@ export async function browserCdpProvider() {
         },
         "Target.getTargets": () => {
           reply({
-            targetInfos: [...targets.values()].map(info),
+            targetInfos: [...targets.values()]
+              .filter((target) => {
+                return selectedType(target.type, params.filter);
+              })
+              .map(info),
             extra: "native-result-field",
           });
         },
         "Target.getTargetInfo": () => {
-          const target = targets.get(String(params.targetId));
+          const target = targets.get(String(params.targetId ?? selected));
           if (target) reply({ targetInfo: info(target) });
           else fail(-32000, "No target with given id");
         },
         "Target.setDiscoverTargets": () => {
           if (params.discover) {
             connection.discovery.add(sessionId);
-            for (const target of targets.values())
+            for (const target of targets.values()) {
+              if (!selectedType(target.type, params.filter)) continue;
               send(connection, {
                 sessionId,
                 method: "Target.targetCreated",
                 params: { targetInfo: info(target) },
               });
+            }
           } else connection.discovery.delete(sessionId);
           reply({});
         },
@@ -373,9 +391,18 @@ export async function browserCdpProvider() {
           }
           const target = String(params.targetId);
           const root = targets.get(target);
+          if (
+            root?.type === "browser" &&
+            ["page", "tab", "iframe", "browser_ui"].some((type) => {
+              return selectedType(type, params.filter);
+            })
+          ) {
+            fail(-32000, "Global related selection would pause sibling pages");
+            return;
+          }
           if (root && selectedType(root.type, params.filter))
             attach(connection, target, sessionId, true);
-          const child = targets.get("IFRAME-" + target);
+          const child = targets.get(root?.page ?? "IFRAME-" + target);
           if (child && selectedType(child.type, params.filter))
             attach(connection, child.id, sessionId, true);
           reply({});
