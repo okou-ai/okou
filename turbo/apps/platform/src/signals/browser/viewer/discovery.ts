@@ -193,28 +193,21 @@ function createMembershipReader(
             return;
           }
           // A scope fault alone cannot distinguish target loss from request failure.
-          const [targets, windowResult] = await Promise.allSettled([
-            set(directory.read$, signal),
-            set(directory.assertWindow$, signal),
-          ]);
+          const resolution = await set(directory.resolve$, id, signal);
           signal.throwIfAborted();
           if (!set(accepts$, observation, round)) {
             return;
           }
-          if (windowResult.status === "rejected") {
-            throw windowResult.reason;
+          if (resolution.kind === "window-error") {
+            throw resolution.error;
           }
           if (get(model.intent$).selection !== selection) {
             return;
           }
-          if (targets.status === "rejected") {
-            throw targets.reason;
+          if (resolution.kind === "inventory-error") {
+            throw resolution.error;
           }
-          if (
-            targets.value.some((target) => {
-              return target.id === id;
-            })
-          ) {
+          if (resolution.kind === "present") {
             throw result.reason;
           }
         }

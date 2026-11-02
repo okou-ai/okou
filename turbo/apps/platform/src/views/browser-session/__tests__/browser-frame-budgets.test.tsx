@@ -90,7 +90,7 @@ test.each(["shared", "split"] as const)(
         firstImage.release();
       });
       await expectReady();
-      image = remote.holdFrames("example-page-session");
+      image = remote.holdTargetFrames("example-page");
       click(button("Browser settings"));
       click(await screen.findByText("Connection mode"));
       const menu = await screen.findByRole("menu", { name: "Connection mode" });

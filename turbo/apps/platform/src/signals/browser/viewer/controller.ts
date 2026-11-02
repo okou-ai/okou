@@ -78,25 +78,12 @@ import {
 import { createScreencast } from "./screencast.ts";
 import { createTargetDiscovery } from "./discovery.ts";
 import { readFavicon } from "./favicon.ts";
-
-interface SelectionOwner {
-  readonly targetId: string;
-}
-interface AttachedSelection {
-  readonly owner: SelectionOwner;
-  readonly client: CdpClient;
-  readonly frames: CdpClient;
-  readonly sessionId: string;
-  readonly frameSessionId: string;
-  readonly settings: CaptureSettings;
-}
-interface AttachingSelection {
-  readonly owner: SelectionOwner;
-  readonly sessions: readonly {
-    readonly client: CdpClient;
-    readonly sessionId: string;
-  }[];
-}
+import {
+  createSelectionLifecycle,
+  type AttachedSelection,
+  type SelectionOwner,
+  type SelectionOutcome,
+} from "./selection.ts";
 interface FaviconDocument {
   readonly wanted: boolean;
   readonly waiting: boolean;
@@ -453,8 +440,14 @@ interface ControllerLinks {
   readonly retireCurrent$: Command<void, [InputStop, boolean, boolean?]>;
   readonly streaming$: Command<void, [SelectedSession]>;
   readonly waitReady$: Command<Promise<void>, [SelectionOwner, AbortSignal]>;
+  readonly waitSelection$: Command<
+    Promise<SelectionOutcome>,
+    [SelectionOwner, AbortSignal]
+  >;
   readonly attach$: Command<Promise<void>, [SelectionOwner, AbortSignal]>;
   readonly selectTab$: Command<Promise<void>, [string, AbortSignal]>;
+  readonly select$: Command<Promise<SelectionOutcome>, [string, AbortSignal]>;
+  readonly revalidateSelection$: Command<void, [SelectionOwner]>;
   readonly refreshFavicon$: Command<
     Promise<void>,
     [SelectedSession, AbortSignal]
@@ -488,6 +481,10 @@ interface ControllerLinks {
   readonly measure$: Command<void, [DisplaySize | null]>;
   readonly syncDisplay$: Command<Promise<void>, [AbortSignal]>;
   readonly restoreSelection$: Command<Promise<void>, [AbortSignal]>;
+  readonly reconcileSelection$: Command<
+    Promise<SelectionOutcome>,
+    [AbortSignal]
+  >;
   readonly pause$: Command<Promise<void>, [boolean, AbortSignal]>;
   readonly revokeAuthority$: Command<void, []>;
   readonly refreshAuthority$: Command<Promise<void>, [AbortSignal]>;
@@ -511,9 +508,7 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
   const startedState$ = state(false);
   const bootstrapping$ = state(true);
   const chosenOnce$ = state(false);
-  const selectedOwner$ = state<SelectionOwner | null>(null);
-  const attachingState$ = state<AttachingSelection | null>(null);
-  const attachedState$ = state<AttachedSelection | null>(null);
+  const selection = createSelectionLifecycle();
   const retirements$ = state<ReadonlyMap<string, Retirement>>(new Map());
   const wakeListeners$ = state<ReadonlySet<() => void>>(new Set());
   const displaySize$ = state<DisplaySize | null>(null);
@@ -546,9 +541,9 @@ function createControllerAtoms(canvas: HTMLCanvasElement) {
     startedState$,
     bootstrapping$,
     chosenOnce$,
-    selectedOwner$,
-    attachingState$,
-    attachedState$,
+    selection,
+    selectedOwner$: selection.owner$,
+    attachedState$: selection.attachment$,
     retirements$,
     wakeListeners$,
     displaySize$,
@@ -1313,9 +1308,7 @@ function createRetirementsGraph(
     resetCreate$,
     sink,
     disposedState$,
-    selectedOwner$,
-    attachingState$,
-    attachedState$,
+    selection,
     retirements$,
     captureStartedState$,
     creationOwner$,
@@ -1379,9 +1372,7 @@ function createRetirementsGraph(
         set(resetCreate$);
         set(creationOwner$, null);
       }
-      set(selectedOwner$, null);
-      set(attachingState$, null);
-      set(attachedState$, null);
+      set(selection.clear$);
       set(captureStartedState$, null);
       set(get(links$).cancelCapture$);
       const display = get(get(links$).displayGraph$);
@@ -1405,7 +1396,7 @@ function createRetirementsGraph(
 function createReadinessGraph(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
-): Pick<ControllerLinks, "streaming$" | "waitReady$"> {
+): Pick<ControllerLinks, "streaming$" | "waitReady$" | "waitSelection$"> {
   const {
     model,
     selectedOwner$,
@@ -1487,7 +1478,26 @@ function createReadinessGraph(
       }
     },
   );
-  return { streaming$, waitReady$ };
+  const waitSelection$: ControllerLinks["waitSelection$"] = command(
+    async (
+      { get, set },
+      owner: SelectionOwner,
+      signal: AbortSignal,
+    ): Promise<SelectionOutcome> => {
+      while (true) {
+        signal.throwIfAborted();
+        const result = get(owner.completion$);
+        if (result?.status === "fulfilled") {
+          return result.value;
+        }
+        if (result?.status === "rejected") {
+          throw result.reason;
+        }
+        await set(context.waitEvent$, signal);
+      }
+    },
+  );
+  return { streaming$, waitReady$, waitSelection$ };
 }
 
 function detachLateAttachment(source: CdpClient, value: unknown) {
@@ -1607,8 +1617,7 @@ function createAttachmentGraph(
   const {
     clientState$,
     framesState$,
-    attachingState$,
-    attachedState$,
+    selection,
     settings$,
     directory$,
     nativeHost,
@@ -1637,9 +1646,7 @@ function createAttachmentGraph(
       let published = false;
       using _unpublished = {
         [Symbol.dispose]: () => {
-          if (get(attachingState$)?.owner === owner) {
-            set(attachingState$, null);
-          }
+          set(selection.release$, owner);
           if (published) {
             return;
           }
@@ -1668,10 +1675,9 @@ function createAttachmentGraph(
         "The browser returned an invalid target session.",
       );
       set(assertCurrent$, owner, signal);
-      set(attachingState$, {
-        owner,
-        sessions: [{ client, sessionId }],
-      });
+      if (!set(selection.receive$, owner, { client, sessionId })) {
+        throw cancelled();
+      }
       if (frames === client) {
         frameSessionId = sessionId;
       } else {
@@ -1692,13 +1698,14 @@ function createAttachmentGraph(
           "The browser returned an invalid frame session.",
         );
         set(assertCurrent$, owner, signal);
-        set(attachingState$, {
-          owner,
-          sessions: [
-            { client, sessionId },
-            { client: frames, sessionId: frameSessionId },
-          ],
-        });
+        if (
+          !set(selection.receive$, owner, {
+            client: frames,
+            sessionId: frameSessionId,
+          })
+        ) {
+          throw cancelled();
+        }
       }
       await set(directory.assertMember$, owner.targetId, signal);
       signal.throwIfAborted();
@@ -1711,7 +1718,7 @@ function createAttachmentGraph(
         signal,
       );
       set(assertCurrent$, owner, signal);
-      const selection: AttachedSelection = {
+      const attachment: AttachedSelection = {
         owner,
         client,
         frames,
@@ -1719,38 +1726,231 @@ function createAttachmentGraph(
         frameSessionId,
         settings: get(settings$),
       };
-      set(attachedState$, selection);
-      set(attachingState$, null);
+      if (!set(selection.publish$, attachment)) {
+        throw cancelled();
+      }
       set(nativeHost.synchronize$);
       published = true;
-      return set(initialize$, selection, signal);
+      return set(initialize$, attachment, signal);
     },
   );
   return { attach$ };
 }
 
-function createSelectionGraph(
+function createSelectionRevalidation(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
-): Pick<ControllerLinks, "selectTab$"> {
+) {
+  const {
+    model,
+    selectedOwner$,
+    available$,
+    directory$,
+    closingTargets$,
+    clientState$,
+  } = context;
+  const revalidateSelection$ = command(
+    ({ get, set }, owner: SelectionOwner) => {
+      if (
+        get(selectedOwner$) !== owner ||
+        get(closingTargets$).has(owner.targetId)
+      ) {
+        return;
+      }
+      set(get(links$).retireCurrent$, "target-replaced", false, true);
+      const discovery = get(get(links$).discovery$);
+      if (discovery) {
+        detach(
+          set(discovery.refresh$, get(clientState$)!.signal),
+          Reason.DomCallback,
+          "browser selected target revalidation",
+        );
+      }
+    },
+  );
+  const confirmLostSelection$ = command(
+    async (
+      { get, set },
+      owner: SelectionOwner,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const directory = get(directory$)!;
+      const [resolution] = await Promise.allSettled([
+        set(directory.resolve$, owner.targetId, signal),
+      ]);
+      signal.throwIfAborted();
+      if (
+        get(selectedOwner$) !== owner ||
+        !get(available$) ||
+        resolution.status === "rejected"
+      ) {
+        return false;
+      }
+      if (resolution.value.kind === "absent") {
+        return true;
+      }
+      if (resolution.value.kind !== "present") {
+        return false;
+      }
+      const [membership] = await Promise.allSettled([
+        set(directory.contains$, owner.targetId, signal),
+      ]);
+      signal.throwIfAborted();
+      return (
+        get(selectedOwner$) === owner &&
+        get(available$) &&
+        membership.status === "fulfilled" &&
+        !membership.value
+      );
+    },
+  );
+
+  const confirmFailedSelection$ = command(
+    async (
+      { get, set },
+      owner: SelectionOwner,
+      error: unknown,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      if (
+        get(selectedOwner$) !== owner ||
+        !get(available$) ||
+        get(model.imageRecovery$) ||
+        (error instanceof CdpFault && error.kind === "unsupported-capability")
+      ) {
+        return;
+      }
+      if (await set(confirmLostSelection$, owner, signal)) {
+        set(revalidateSelection$, owner);
+      }
+    },
+  );
+  return { revalidateSelection$, confirmFailedSelection$ };
+}
+
+function createSelectionAttempt(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+  confirmFailedSelection$: Command<
+    Promise<void>,
+    [SelectionOwner, unknown, AbortSignal]
+  >,
+) {
   const {
     model,
     resetSelection$,
     clientState$,
     disposedState$,
-    chosenOnce$,
     selectedOwner$,
-    extensionRevision$,
     readinessFailure$,
     wake$,
+  } = context;
+  return command(
+    async (
+      { get, set },
+      owner: SelectionOwner,
+      signal: AbortSignal,
+    ): Promise<SelectionOutcome> => {
+      const client = get(clientState$)!;
+      const operation = set(resetSelection$, client.signal, signal);
+      const abort = () => {
+        if (get(selectedOwner$) === owner) {
+          set(get(links$).retireCurrent$, "target-replaced", false);
+        }
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) {
+        abort();
+      }
+      using _abort = {
+        [Symbol.dispose]: () => {
+          signal.removeEventListener("abort", abort);
+        },
+      };
+      const [result] = await Promise.allSettled([
+        (async () => {
+          await set(get(links$).attach$, owner, operation);
+          await set(get(links$).waitReady$, owner, operation);
+        })(),
+      ]);
+      if (signal.aborted) {
+        set(owner.finish$, { status: "rejected", reason: signal.reason });
+        set(wake$);
+      }
+      signal.throwIfAborted();
+      if (result.status === "rejected" && !operation.aborted) {
+        // Failed or cancelled confirmation never replaces the primary error.
+        await Promise.allSettled([
+          set(confirmFailedSelection$, owner, result.reason, operation),
+        ]);
+      }
+      // Publish the attempt's result before cleanup can cancel or replace its owner.
+      let completion: PromiseSettledResult<SelectionOutcome>;
+      if (signal.aborted) {
+        completion = { status: "rejected", reason: signal.reason };
+      } else if (client.signal.aborted) {
+        completion = { status: "rejected", reason: client.signal.reason };
+      } else if (operation.aborted || get(selectedOwner$) !== owner) {
+        completion = { status: "fulfilled", value: "superseded" };
+      } else {
+        completion =
+          result.status === "fulfilled"
+            ? { status: "fulfilled", value: "ready" }
+            : result;
+      }
+      set(owner.finish$, completion);
+      set(wake$);
+      signal.throwIfAborted();
+      client.signal.throwIfAborted();
+      if (completion.status === "fulfilled") {
+        return completion.value;
+      }
+      if (get(selectedOwner$) === owner && !get(disposedState$)) {
+        const selected = get(get(links$).selectedSession$);
+        if (selected && get(model.imageRecovery$)) {
+          set(selected.failure$, completion.reason);
+          set(wake$);
+        } else {
+          set(readinessFailure$, completion.reason);
+          set(get(links$).retireCurrent$, "target-replaced", false);
+          set(model.transition$, {
+            type: "failed",
+            error: diagnostic(completion.reason),
+          });
+        }
+      }
+      signal.throwIfAborted();
+      throw completion.reason;
+    },
+  );
+}
+
+function createSelectionGraph(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+): Pick<ControllerLinks, "selectTab$" | "select$" | "revalidateSelection$"> {
+  const {
+    model,
+    chosenOnce$,
+    selection,
+    extensionRevision$,
+    readinessFailure$,
     assertAvailable$,
   } = context;
-  const selectTab$: Command<Promise<void>, [string, AbortSignal]> = command(
+  const { revalidateSelection$, confirmFailedSelection$ } =
+    createSelectionRevalidation(context, links$);
+  const attempt$ = createSelectionAttempt(
+    context,
+    links$,
+    confirmFailedSelection$,
+  );
+  const select$: ControllerLinks["select$"] = command(
     async (
       { get, set },
       targetId: string,
       signal: AbortSignal,
-    ): Promise<void> => {
+    ): Promise<SelectionOutcome> => {
       set(assertAvailable$, signal);
       const target = get(model.snapshot$).targets.find((target) => {
         return target.id === targetId;
@@ -1769,7 +1969,7 @@ function createSelectionGraph(
         get(previous.inputReady$) &&
         !get(model.imageRecovery$)
       ) {
-        return;
+        return "ready";
       }
       set(chosenOnce$, true);
       set(extensionRevision$, (value) => {
@@ -1787,56 +1987,20 @@ function createSelectionGraph(
         paused: false,
         preview,
       });
-      const owner: SelectionOwner = { targetId };
-      set(selectedOwner$, owner);
-      const client = get(clientState$)!;
-      const operation = set(resetSelection$, client.signal, signal);
-      const abort = () => {
-        if (get(selectedOwner$) === owner) {
-          set(get(links$).retireCurrent$, "target-replaced", false);
-        }
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      using _abort = {
-        [Symbol.dispose]: () => {
-          signal.removeEventListener("abort", abort);
-        },
-      };
-      const [result] = await Promise.allSettled([
-        (async () => {
-          await set(get(links$).attach$, owner, operation);
-          await set(get(links$).waitReady$, owner, operation);
-        })(),
-      ]);
-      signal.throwIfAborted();
-      if (result.status === "fulfilled") {
-        signal.throwIfAborted();
-        return;
-      }
-      // Classify cancellation before local retirement aborts this operation.
-      if (operation.aborted) {
-        throw cancelled();
-      }
-      if (get(selectedOwner$) === owner && !get(disposedState$)) {
-        const selected = get(get(links$).selectedSession$);
-        if (selected && get(model.imageRecovery$)) {
-          set(selected.failure$, result.reason);
-          set(wake$);
-        } else {
-          set(get(links$).retireCurrent$, "target-replaced", false);
-          if (!isAbortError(result.reason)) {
-            set(model.transition$, {
-              type: "failed",
-              error: diagnostic(result.reason),
-            });
-          }
-        }
-      }
-      signal.throwIfAborted();
-      throw result.reason;
+      const owner = set(selection.begin$, targetId);
+      return await set(attempt$, owner, signal);
     },
   );
-  return { selectTab$ };
+  const selectTab$: ControllerLinks["selectTab$"] = command(
+    async ({ set }, targetId: string, signal: AbortSignal): Promise<void> => {
+      const outcome = await set(select$, targetId, signal);
+      signal.throwIfAborted();
+      if (outcome === "superseded") {
+        throw cancelled();
+      }
+    },
+  );
+  return { select$, selectTab$, revalidateSelection$ };
 }
 
 function createFaviconGraph(
@@ -2073,8 +2237,7 @@ function createDetachedEvent(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const { closingTargets$, selectedOwner$, attachingState$, clientState$ } =
-    context;
+  const { closingTargets$, selection } = context;
   return command(
     (
       { get, set },
@@ -2082,40 +2245,22 @@ function createDetachedEvent(
       source: CdpClient,
       selected: SelectedSession | null,
     ) => {
-      const attaching = get(attachingState$);
-      const owner = selected?.attached.owner ?? attaching?.owner;
-      if (
-        !owner ||
-        get(selectedOwner$) !== owner ||
-        get(closingTargets$).has(owner.targetId)
-      ) {
+      const owner = get(selection.owner$);
+      if (!owner || get(closingTargets$).has(owner.targetId)) {
         return;
       }
-      const matches = selected
-        ? event.params.sessionId ===
-          (source === selected.attached.client
-            ? selected.attached.sessionId
-            : selected.attached.frameSessionId)
-        : attaching?.sessions.some((session) => {
-            return (
-              session.client === source &&
-              session.sessionId === event.params.sessionId
-            );
-          });
+      const matches = get(selection.sessions$).some((session) => {
+        return (
+          session.client === source &&
+          session.sessionId === event.params.sessionId
+        );
+      });
       if (matches) {
         if (selected && source === selected.attached.frames) {
           set(selected.stream.detached$);
         }
         // Received sessions belong to this selection even before input starts.
-        set(get(links$).retireCurrent$, "target-replaced", false, true);
-        const discovery = get(get(links$).discovery$);
-        if (discovery) {
-          detach(
-            set(discovery.refresh$, get(clientState$)!.signal),
-            Reason.DomCallback,
-            "browser detached target validation",
-          );
-        }
+        set(get(links$).revalidateSelection$, owner);
       }
     },
   );
@@ -2443,7 +2588,7 @@ function createEventsGraph(
 function createConnectionBootstrap(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
-) {
+): Command<Promise<SelectionOutcome>, [AbortSignal]> {
   const {
     model,
     connection,
@@ -2459,7 +2604,7 @@ function createConnectionBootstrap(
     readinessFailure$,
     assertAvailable$,
   } = context;
-  return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
+  return command(async ({ get, set }, signal: AbortSignal) => {
     validateConfiguration(connection.cdpUrl, connection.windowId ?? undefined);
     const transport = get(model.transport$);
     if (transport !== "shared" && transport !== "split") {
@@ -2557,10 +2702,10 @@ function createConnectionBootstrap(
     set(assertAvailable$, signal);
     const first = get(model.snapshot$).targets[0];
     if (first) {
-      await set(get(links$).selectTab$, first.id, signal);
-    } else {
-      set(model.transition$, { type: "target-lost", error: null });
+      return set(get(links$).select$, first.id, signal);
     }
+    set(model.transition$, { type: "target-lost", error: null });
+    return "ready" as const;
   });
 }
 
@@ -2608,16 +2753,20 @@ function createConnectionGraph(
       let [result] = await Promise.allSettled([set(bootstrap$, signal)]);
       signal.throwIfAborted();
       while (
-        result.status === "rejected" &&
-        isAbortError(result.reason) &&
+        result.status === "fulfilled" &&
+        result.value === "superseded" &&
         !get(disposedState$) &&
         get(connected$)
       ) {
         // Selection ownership can change while the connection is opening.
         [result] = await Promise.allSettled([
-          set(get(links$).restoreSelection$, signal),
+          set(get(links$).reconcileSelection$, signal),
         ]);
         signal.throwIfAborted();
+      }
+      if (result.status === "fulfilled" && result.value === "superseded") {
+        set(get(links$).dispose$);
+        throw get(readinessFailure$) ?? cancelled();
       }
       if (result.status === "rejected") {
         if (!get(disposedState$) && !isAbortError(result.reason)) {
@@ -3210,11 +3359,12 @@ function createSelectionSettingsGraph(
     chosenOnce$,
     selectedOwner$,
     available$,
+    readinessFailure$,
   } = context;
-  const restoreSelection$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+  const restore$: ControllerLinks["reconcileSelection$"] = command(
+    async ({ get, set }, signal: AbortSignal): Promise<SelectionOutcome> => {
       if (!get(available$)) {
-        return;
+        return "ready";
       }
       const targetId = get(model.selectedTabId$);
       if (
@@ -3223,8 +3373,7 @@ function createSelectionSettingsGraph(
           return target.id === targetId;
         })
       ) {
-        await set(get(links$).selectTab$, targetId, signal);
-        return;
+        return set(get(links$).select$, targetId, signal);
       }
       const discovery = get(get(links$).discovery$);
       if (discovery) {
@@ -3233,12 +3382,34 @@ function createSelectionSettingsGraph(
       }
       const owner = get(selectedOwner$);
       if (owner) {
-        await set(get(links$).waitReady$, owner, signal);
-        return;
+        return set(get(links$).waitSelection$, owner, signal);
       }
       const first = get(model.snapshot$).targets[0];
       if (first && !get(chosenOnce$)) {
-        await set(get(links$).selectTab$, first.id, signal);
+        return set(get(links$).select$, first.id, signal);
+      }
+      return "ready";
+    },
+  );
+  const reconcileSelection$: ControllerLinks["reconcileSelection$"] = command(
+    async ({ get, set }, signal: AbortSignal): Promise<SelectionOutcome> => {
+      signal.throwIfAborted();
+      const failure = get(readinessFailure$);
+      if (failure) {
+        throw failure;
+      }
+      const owner = get(selectedOwner$);
+      return await (owner
+        ? set(get(links$).waitSelection$, owner, signal)
+        : set(restore$, signal));
+    },
+  );
+  const restoreSelection$: ControllerLinks["restoreSelection$"] = command(
+    async ({ set }, signal: AbortSignal): Promise<void> => {
+      const outcome = await set(restore$, signal);
+      signal.throwIfAborted();
+      if (outcome === "superseded") {
+        throw cancelled();
       }
     },
   );
@@ -3267,7 +3438,7 @@ function createSelectionSettingsGraph(
       signal.throwIfAborted();
     },
   );
-  return { restoreSelection$, pause$ };
+  return { reconcileSelection$, restoreSelection$, pause$ };
 }
 
 function createAuthoritySettingsGraph(
@@ -3324,6 +3495,7 @@ function createSettingsGraph(
   | "measure$"
   | "syncDisplay$"
   | "restoreSelection$"
+  | "reconcileSelection$"
   | "pause$"
   | "revokeAuthority$"
   | "refreshAuthority$"

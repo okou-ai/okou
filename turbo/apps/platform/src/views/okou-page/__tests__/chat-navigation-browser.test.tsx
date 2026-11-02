@@ -567,14 +567,15 @@ test("Start and close a browser from the thread sidebar", async () => {
     expect(browser.native.input).toContainEqual({
       method: "Input.insertText",
       params: { text: "reopened surface" },
-      sessionId: "example-page-session",
+      sessionId: browser.native.pageSession("example-page"),
     });
   });
-  expect(browser.native.input).not.toContainEqual({
-    method: "Input.insertText",
-    params: { text: "retired surface" },
-    sessionId: "example-page-session",
-  });
+  expect(browser.native.input).not.toContainEqual(
+    expect.objectContaining({
+      method: "Input.insertText",
+      params: { text: "retired surface" },
+    }),
+  );
   await waitFor(() => {
     expect(
       browser.native.input.filter((request) => {
@@ -583,7 +584,7 @@ test("Start and close a browser from the thread sidebar", async () => {
     ).toStrictEqual([
       {
         method: "Input.dispatchKeyEvent",
-        sessionId: "example-page-session",
+        sessionId: browser.native.pageSession("example-page"),
         params: expect.objectContaining({
           type: "rawKeyDown",
           key: "Backspace",
@@ -591,12 +592,12 @@ test("Start and close a browser from the thread sidebar", async () => {
       },
       {
         method: "Input.dispatchKeyEvent",
-        sessionId: "example-page-session",
+        sessionId: browser.native.pageSession("example-page"),
         params: expect.objectContaining({ type: "keyUp", key: "Backspace" }),
       },
       {
         method: "Input.dispatchKeyEvent",
-        sessionId: "example-page-session",
+        sessionId: browser.native.pageSession("example-page"),
         params: expect.objectContaining({
           type: "keyDown",
           key: "Enter",
@@ -605,7 +606,7 @@ test("Start and close a browser from the thread sidebar", async () => {
       },
       {
         method: "Input.dispatchKeyEvent",
-        sessionId: "example-page-session",
+        sessionId: browser.native.pageSession("example-page"),
         params: expect.objectContaining({ type: "keyUp", key: "Enter" }),
       },
     ]);
