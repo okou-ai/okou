@@ -5371,9 +5371,12 @@
       "settings": "Einstellungen",
       "signOut": "Abmelden",
       "subscriptions": {
+        "credits": "Credits",
+        "fiveHourLimit": "5-Stunden-Limit",
         "resetTimeUnavailable": "Rücksetzzeit nicht verfügbar",
         "usage": "{{provider}} Nutzung",
-        "usageRemaining": "{{provider}} {{window}} übrig"
+        "usageRemaining": "{{provider}} {{window}} übrig",
+        "weeklyLimit": "Wochenlimit"
       },
       "switchAccount": "Konto wechseln",
       "userFallback": "Benutzer"

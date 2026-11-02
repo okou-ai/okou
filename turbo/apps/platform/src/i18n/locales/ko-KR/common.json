@@ -5354,9 +5354,12 @@
       "settings": "설정",
       "signOut": "로그아웃",
       "subscriptions": {
+        "credits": "크레딧",
+        "fiveHourLimit": "5시간 한도",
         "resetTimeUnavailable": "재설정 시간 사용 불가",
         "usage": "{{provider}} 사용량",
-        "usageRemaining": "{{provider}} {{window}} 남음"
+        "usageRemaining": "{{provider}} {{window}} 남음",
+        "weeklyLimit": "주간 한도"
       },
       "switchAccount": "계정 전환",
       "userFallback": "사용자"

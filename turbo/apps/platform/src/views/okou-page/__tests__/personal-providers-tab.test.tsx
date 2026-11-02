@@ -230,6 +230,15 @@ async function setupPersonalSubscriptionIdentityReview() {
       isActive: false,
       createdAt: "2026-03-02T00:00:00Z",
     }),
+    subscriptionUsage: {
+      fiveHour: null,
+      weekly: {
+        usedPercent: 100,
+        remainingPercent: 0,
+        resetAt: "2030-01-07T00:00:00.000Z",
+        windowSeconds: 604_800,
+      },
+    },
     subscriptionResetCredits: 0,
     subscriptionCredits: { balance: 0, unlimited: false },
   };
@@ -553,7 +562,8 @@ test("Review personal subscriptions through account switching", async () => {
   click(activationButton("Test User"));
   const menu = await screen.findByRole("menu");
   const panel = await within(menu).findByTestId("account-menu-subscriptions");
-  expect(within(panel).getByText("ChatGPT credits")).toBeInTheDocument();
+  expect(within(panel).getByText("0% left")).toBeInTheDocument();
+  expect(within(panel).getByText("Credits")).toBeInTheDocument();
   expect(within(panel).getByText("0")).toBeInTheDocument();
 });
 

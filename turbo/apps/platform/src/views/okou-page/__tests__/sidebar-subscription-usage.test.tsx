@@ -1,5 +1,4 @@
 import {
-  fireEvent,
   screen,
   waitFor,
   waitForElementToBeRemoved,
@@ -94,69 +93,62 @@ test("Review personal subscription usage in the account menu", async () => {
   const menu = await openAccountMenu();
   const panel = await within(menu).findByTestId("account-menu-subscriptions");
 
+  const codex = within(panel).getByRole("region", { name: "ChatGPT usage" });
+  const claude = within(panel).getByRole("region", { name: "Claude usage" });
   expect(
-    within(panel).getByRole("heading", { name: "Your ChatGPT plan" }),
+    within(codex).getByRole("heading", { name: "ChatGPT" }),
   ).toBeInTheDocument();
   expect(
-    within(panel).getByRole("heading", { name: "Your Claude plan" }),
+    within(claude).getByRole("heading", { name: "Claude" }),
   ).toBeInTheDocument();
-  // Each plan shows both windows, 5h and Week.
-  expect(within(panel).getAllByText("5h")).toHaveLength(2);
-  expect(within(panel).getAllByText("Week")).toHaveLength(2);
-  expect(within(panel).getByText("82%")).toBeInTheDocument();
-  expect(within(panel).getByText("55%")).toBeInTheDocument();
-  expect(within(panel).getByText("88%")).toBeInTheDocument();
-  expect(within(panel).getByText("76%")).toBeInTheDocument();
-  expect(within(panel).getByText("ChatGPT credits")).toBeInTheDocument();
-  expect(within(panel).getByText("1,250.5")).toBeInTheDocument();
-  const resetCredits = within(panel).getByLabelText("2 resets left");
-  expect(within(resetCredits).getByText("2 resets left")).toBeInTheDocument();
+  expect(within(codex).getAllByRole("meter")).toHaveLength(1);
+  expect(within(claude).getAllByRole("meter")).toHaveLength(2);
+  expect(within(codex).getByText("55% left")).toBeInTheDocument();
+  expect(within(claude).getByText("88% left")).toBeInTheDocument();
+  expect(within(claude).getByText("76% left")).toBeInTheDocument();
+  expect(within(panel).queryByText("Credits")).not.toBeInTheDocument();
+  expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
   expect(within(panel).queryByText(/Resets in /)).not.toBeInTheDocument();
-  expect(
-    within(panel).queryByText(/codex\.user@example\.com/),
-  ).not.toBeInTheDocument();
 
-  const codexFiveHour = within(panel).getByRole("meter", {
-    name: "Your ChatGPT plan 5h remaining",
-  });
-  expect(codexFiveHour).toHaveAttribute("aria-valuenow", "82");
-  const codexWeek = within(panel).getByRole("meter", {
-    name: "Your ChatGPT plan Week remaining",
-  });
-  expect(codexWeek).toHaveAttribute("aria-valuenow", "55");
-  fireEvent.focus(codexWeek);
-
+  // Keyboard focus exposes details for the entire information block.
+  const codexInformation = within(codex).getByLabelText("ChatGPT usage");
+  await user.keyboard("ChatGPT");
+  expect(codexInformation).toHaveFocus();
   await waitFor(() => {
     expectVisibleText("Resets in 5d 23h");
     expectVisibleText(
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );
   });
-  fireEvent.blur(codexWeek);
-  await user.hover(resetCredits);
+  await user.keyboard("{ArrowDown}");
+  expect(within(claude).getByLabelText("Claude usage")).toHaveFocus();
+  // The heading is part of the hover target, alongside both Claude meters.
+  await user.hover(within(claude).getByRole("heading", { name: "Claude" }));
   await waitFor(() => {
-    expectVisibleText("2 resets left · expires in 3d");
+    expectVisibleText(
+      formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),
+    );
+    expectVisibleText(
+      formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
+    );
   });
-
-  const credits = within(menu).getByText("12,500 credits");
-  const codex = within(panel).getByRole("heading", {
-    name: "Your ChatGPT plan",
+  click(within(claude).getByLabelText("Claude usage"));
+  expect(menu).toBeInTheDocument();
+  await user.keyboard("{ArrowDown}");
+  await waitFor(() => {
+    expect(screen.queryByText("Resets in 4h 12m")).not.toBeInTheDocument();
   });
-  expect(
-    codex.compareDocumentPosition(resetCredits) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  expect(
-    resetCredits.compareDocumentPosition(codexFiveHour) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  expect(
-    codexFiveHour.compareDocumentPosition(codexWeek) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  expect(
-    credits.compareDocumentPosition(codex) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  await user.keyboard("{Escape}");
+  const accountTrigger = queryAllByRoleFast("button").find((button) => {
+    return (
+      (button.getAttribute("aria-label") ?? button.textContent)?.trim() ===
+      "Alex Rivera"
+    );
+  });
+  await waitFor(() => {
+    expect(accountTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(accountTrigger).toHaveFocus();
+  });
 });
 
 test.each<{
@@ -177,13 +169,21 @@ test.each<{
     expected: "< 0.01",
   },
 ])(
-  "Show $name provider credits without quota windows",
+  "Show $name provider credits when weekly usage is exhausted",
   async ({ credits, expected }) => {
     mockAdminAccountSidebar();
     context.mocks.browser.languages(["zh-CN"]);
     context.mocks.data.personalModelProviders([
       connectedPersonalCodexProvider({
-        subscriptionUsage: null,
+        subscriptionUsage: {
+          fiveHour: null,
+          weekly: {
+            usedPercent: 100,
+            remainingPercent: 0,
+            resetAt: "2030-01-07T00:00:00.000Z",
+            windowSeconds: 604_800,
+          },
+        },
         subscriptionNextResetAt: null,
         subscriptionResetPeriod: null,
         subscriptionResetCredits: 0,
@@ -201,13 +201,13 @@ test.each<{
     const panel = await within(menu).findByTestId("account-menu-subscriptions");
     // Page tests use en-US copy through the shared locale-resource fixture.
     expect(document.documentElement).toHaveAttribute("lang", "zh-Hans");
-    expect(within(panel).getByText("ChatGPT credits")).toBeInTheDocument();
+    expect(within(panel).getByText("Credits")).toBeInTheDocument();
     expect(within(panel).getByText(expected)).toBeInTheDocument();
     expect(within(menu).getByText("12,500 credits")).toBeInTheDocument();
   },
 );
 
-test("Show the reset time of a plan that is running low", async () => {
+test("Keep ChatGPT summary and actions tied to its weekly limit", async () => {
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
   mockAdminAccountSidebar();
   context.mocks.data.personalModelProviders([
@@ -245,20 +245,17 @@ test("Show the reset time of a plan that is running low", async () => {
   const menu = await openAccountMenu();
   const panel = await within(menu).findByTestId("account-menu-subscriptions");
   const codex = within(panel).getByRole("region", {
-    name: "Your ChatGPT plan usage",
+    name: "ChatGPT usage",
   });
+  expect(within(codex).getAllByRole("meter")).toHaveLength(1);
   expect(
     within(codex).getByRole("meter", {
-      name: "Your ChatGPT plan 5h remaining",
+      name: "ChatGPT Weekly limit remaining",
     }),
-  ).toHaveAttribute("aria-valuenow", "12");
-  expect(within(codex).getByText("12%")).toBeInTheDocument();
-  expect(within(codex).getByText("47%")).toBeInTheDocument();
-  expect(within(codex).getByText("5h · Resets in 4h 12m")).toBeInTheDocument();
-  const claude = within(panel).getByRole("region", {
-    name: "Your Claude plan usage",
-  });
-  expect(within(claude).queryByText(/Resets in /)).not.toBeInTheDocument();
+  ).toHaveAttribute("aria-valuenow", "47");
+  expect(within(codex).getByText("47% left")).toBeInTheDocument();
+  expect(within(codex).queryByText("Reset usage")).not.toBeInTheDocument();
+  expect(within(codex).queryByText(/Resets in /)).not.toBeInTheDocument();
 });
 
 test("Show an exhausted week with its own reset time", async () => {
@@ -267,6 +264,7 @@ test("Show an exhausted week with its own reset time", async () => {
   mockAdminAccountSidebar();
   context.mocks.data.personalModelProviders([
     connectedPersonalCodexProvider({
+      subscriptionResetCredits: 0,
       subscriptionUsage: {
         fiveHour: {
           usedPercent: 0,
@@ -299,19 +297,13 @@ test("Show an exhausted week with its own reset time", async () => {
   const menu = await openAccountMenu();
   const panel = await within(menu).findByTestId("account-menu-subscriptions");
   const week = within(panel).getByRole("meter", {
-    name: "Your ChatGPT plan Week remaining",
+    name: "ChatGPT Weekly limit remaining",
   });
   expect(week).toHaveAttribute("aria-valuenow", "0");
-  // An exhausted week also stops the 5h window, and the reset line names the week.
-  expect(
-    within(panel).getByRole("meter", {
-      name: "Your ChatGPT plan 5h remaining",
-    }),
-  ).toHaveAttribute("aria-valuenow", "0");
-  expect(within(panel).getAllByText("0%")).toHaveLength(2);
-  expect(
-    within(panel).getByText("Week · Resets in 5d 23h"),
-  ).toBeInTheDocument();
+  expect(within(panel).getAllByRole("meter")).toHaveLength(1);
+  expect(within(panel).getByText("0% left")).toBeInTheDocument();
+  expect(within(panel).getByText("Resets in 5d 23h")).toBeInTheDocument();
+  expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
   await userEvent.setup().hover(week);
   await waitFor(() => {
     expectVisibleText(
@@ -336,6 +328,16 @@ test("Keep Codex reset pending until refreshed account-menu usage is ready", asy
         subscriptions: [
           connectedPersonalCodexProvider({
             subscriptionResetCredits: resetCompleted ? 1 : 2,
+            subscriptionCredits: { balance: 1250.5, unlimited: false },
+            subscriptionUsage: {
+              fiveHour: null,
+              weekly: {
+                usedPercent: resetCompleted ? 0 : 100,
+                remainingPercent: resetCompleted ? 100 : 0,
+                resetAt: "2030-01-07T00:00:00.000Z",
+                windowSeconds: 604_800,
+              },
+            },
           }),
         ],
       });
@@ -364,7 +366,8 @@ test("Keep Codex reset pending until refreshed account-menu usage is ready", asy
 
   let menu = await openAccountMenu();
   let panel = await within(menu).findByTestId("account-menu-subscriptions");
-  const resetCredits = within(panel).getByLabelText("2 resets left");
+  const resetCredits = within(panel).getByText("Reset usage");
+  expect(within(panel).getByText("Credits")).toBeInTheDocument();
   expect(resetCredits).toBeInTheDocument();
   click(resetCredits);
 
@@ -402,40 +405,41 @@ test("Keep Codex reset pending until refreshed account-menu usage is ready", asy
 
   menu = await openAccountMenu();
   panel = await within(menu).findByTestId("account-menu-subscriptions");
-  expect(within(panel).getByLabelText("1 reset left")).toBeInTheDocument();
+  expect(within(panel).getByText("100% left")).toBeInTheDocument();
+  expect(within(panel).queryByText("Credits")).not.toBeInTheDocument();
+  expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
 });
 
-test("Keep exhausted Codex resets disabled in the account menu", async () => {
-  mockAdminAccountSidebar();
-  context.mocks.data.personalModelProviders([
-    connectedPersonalCodexProvider({ subscriptionResetCredits: 0 }),
-  ]);
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-      },
-    },
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
-  });
-
-  const menu = await openAccountMenu();
-  const panel = await within(menu).findByTestId("account-menu-subscriptions");
-  const resetCredits = within(panel).getByLabelText("0 resets left");
-  expect(resetCredits).toHaveAttribute("aria-disabled", "true");
-
-  click(resetCredits);
-
-  expect(menu).toBeInTheDocument();
-  expect(
-    screen.queryByRole("dialog", { name: "Reset Codex usage?" }),
-  ).not.toBeInTheDocument();
-});
+test.each([0, null, undefined])(
+  "Keep reset unavailable when the reset balance is %s",
+  async (resetCredits) => {
+    mockAdminAccountSidebar();
+    context.mocks.data.personalModelProviders([
+      connectedPersonalCodexProvider({
+        subscriptionResetCredits: resetCredits,
+        subscriptionUsage: {
+          fiveHour: null,
+          weekly: {
+            usedPercent: 100,
+            remainingPercent: 0,
+            resetAt: "2030-01-07T00:00:00.000Z",
+            windowSeconds: 604_800,
+          },
+        },
+      }),
+    ]);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+    const menu = await openAccountMenu();
+    const panel = await within(menu).findByTestId("account-menu-subscriptions");
+    expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
+    expect(within(panel).getByText(/Resets in /)).toBeInTheDocument();
+  },
+);
 
 test.each([null] as const)(
   "Keep an active session open when provider loading remains unauthorized (saved locale: %s)",
