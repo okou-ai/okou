@@ -228,6 +228,16 @@ test.each(["error", "close", "frames-close"] as const)(
     click(reconnect);
     await expectInputReady();
     expect(sentry.reports).toHaveLength(1);
+    // The original navigation took effect before its reply was lost. Recovery
+    // observes that document without replaying the uncertain navigation.
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "http://next.example/",
+    );
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Page.navigate";
+      }),
+    ).toHaveLength(1);
   },
 );
 

@@ -5,6 +5,7 @@ import {
 } from "../../__tests__/test-helpers.ts";
 import { createCdpClient } from "../cdp/client.ts";
 import { isRecord } from "../cdp/errors.ts";
+import { connectNative } from "../cdp/native.ts";
 import { releaseRuntimeObjects } from "../cdp/runtime-objects.ts";
 import { createCanvasRenderer, type DecodedFrame } from "../render/canvas.ts";
 
@@ -93,6 +94,50 @@ test("raw native attachment cancellation preserves its original parent session",
     sessionId: "original-parent",
     params: { sessionId: "late-browser-session" },
   });
+  client.close();
+});
+
+test("cancelling native bridge startup releases its late original attachment", async () => {
+  const operation = createTestRuntime(context);
+  const sent = context.mocks.deferred<number>();
+  const released = context.mocks.deferred<unknown>();
+  const socket = context.mocks.browser.webSocket((data) => {
+    const request: unknown = JSON.parse(data);
+    if (!isRecord(request) || typeof request.id !== "number") {
+      throw new Error("Invalid fixture request");
+    }
+    if (request.method === "Target.attachToBrowserTarget") {
+      sent.resolve(request.id);
+      return null;
+    }
+    if (request.method === "Target.detachFromTarget") {
+      released.resolve({
+        sessionId: request.sessionId,
+        params: request.params,
+      });
+    }
+    return JSON.stringify({
+      id: request.id,
+      result: { product: "original-browser" },
+    });
+  });
+  const client = createCdpClient(endpoint, {}, context.signal);
+  await client.opened;
+  const pending = connectNative(client, "a".repeat(32), operation.signal);
+  const id = await sent.promise;
+  operation.dispose();
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  socket.receive(
+    endpoint,
+    JSON.stringify({ id, result: { sessionId: "late-native-session" } }),
+  );
+  await expect(released.promise).resolves.toStrictEqual({
+    sessionId: undefined,
+    params: { sessionId: "late-native-session" },
+  });
+  await expect(
+    client.request("Browser.getVersion", undefined),
+  ).resolves.toMatchObject({ product: "original-browser" });
   client.close();
 });
 

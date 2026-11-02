@@ -3,7 +3,7 @@ import {
   type BrowserSession,
   type BrowserViewerConnection,
 } from "@okouai/api-contracts/contracts/browser";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
@@ -165,4 +165,118 @@ test("Explicit reconnect waits for a fresh binding before admitting a replacemen
   await expectReplacement(browser);
   expect(requests).toBe(2);
   expect(startupErrors).toHaveLength(1);
+});
+
+test.each(["socket opening", "native attachment"] as const)(
+  "Changing connection mode cancels pending %s before reusing the same descriptor",
+  async (phase) => {
+    const startupErrors = recordBrowserStartupErrors();
+    mockSessionReads();
+    const browser = mockBrowserCdp(context, endpoint, {
+      autoOpen: phase !== "socket opening",
+      targets: [
+        {
+          targetId: "example-page",
+          title: "Example",
+          url: "https://example.com",
+          windowId: 101,
+        },
+      ],
+    });
+    const attachment =
+      phase === "native attachment"
+        ? browser.holdNext("Target.attachToBrowserTarget")
+        : null;
+    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      return respond(200, {
+        browser: oldSession,
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      });
+    });
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await screen.findByText("Connecting to browser…");
+    await waitFor(() => {
+      expect(browser.connections()).toBe(1);
+    });
+    if (attachment) {
+      await attachment.received;
+    }
+    click(screen.getByLabelText("Browser settings"));
+    const settings = await screen.findByRole("menu");
+    click(within(settings).getByText("Connection mode"));
+    const modes = await screen.findByRole("menu", {
+      name: "Connection mode",
+    });
+    const split = queryAllByRoleFast("menuitemradio", modes).find((item) => {
+      return item.textContent?.trim() === "Separate image connection";
+    });
+    if (!split) {
+      throw new Error("Expected separate image connection option");
+    }
+    click(split);
+    await waitFor(() => {
+      expect(browser.connections()).toBe(3);
+    });
+    if (phase === "socket opening") {
+      act(() => {
+        browser.openConnection();
+      });
+    }
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+    expect(browser.targets).toHaveLength(1);
+    expect(startupErrors).toHaveLength(0);
+  },
+);
+
+test("A distinct confirmed replacement streams while old bridge cleanup is unacknowledged", async () => {
+  const startupErrors = recordBrowserStartupErrors();
+  mockSessionReads();
+  const oldEndpoint = "wss://browser.example/retired";
+  const retired = mockBrowserCdp(context, oldEndpoint, {
+    targets: [
+      {
+        targetId: "old-page",
+        title: "Old",
+        url: "https://old.example.com",
+        windowId: 101,
+      },
+    ],
+  });
+  let connection: BrowserViewerConnection = {
+    browser: oldSession,
+    cdpUrl: oldEndpoint,
+    extension: TEST_BROWSER_EXTENSION,
+  };
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, connection);
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  retired.holdNext("Runtime.removeBinding");
+  act(() => {
+    retired.resetWorker();
+  });
+  await screen.findByText("Browser disconnected");
+  const browser = mockReplacement();
+  connection = {
+    browser: replacementSession,
+    cdpUrl: endpoint,
+    extension: TEST_BROWSER_EXTENSION,
+  };
+  const reconnect = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Expected explicit reconnect");
+  }
+  click(reconnect);
+  await expectReplacement(browser);
+  expect(retired.targets).toHaveLength(1);
+  expect(startupErrors).toHaveLength(0);
 });
