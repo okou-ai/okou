@@ -1299,16 +1299,19 @@ test.each([
         },
       });
     });
-    const diagnostic = JSON.stringify(reportedCleanupError(sentry), [
-      "name",
-      "message",
-      "stack",
-      "kind",
-      "code",
-      "request",
-      "method",
-      "cause",
-    ]);
+    const diagnostic = JSON.stringify(
+      reportedCleanupError(sentry),
+      (_key, value: unknown) => {
+        return value instanceof Error
+          ? {
+              ...value,
+              message: value.message,
+              stack: value.stack,
+              cause: value.cause,
+            }
+          : value;
+      },
+    );
     expect(diagnostic).not.toMatch(
       /private-|fresh-successor-text|ShiftLeft|example-page|other-page/,
     );
