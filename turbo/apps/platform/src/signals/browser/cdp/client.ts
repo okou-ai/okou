@@ -333,7 +333,9 @@ function receiveMessage(
 }
 
 function listen(connection: Connection, wire: Wire, signal: AbortSignal): void {
+  let phase: "before-open" | "after-open" = "before-open";
   const opened = () => {
+    phase = "after-open";
     if (!connection.opening.settled()) {
       connection.opening.resolve();
     }
@@ -345,12 +347,17 @@ function listen(connection: Connection, wire: Wire, signal: AbortSignal): void {
     wire.close(
       new CdpFault(
         "connection",
-        "WebSocket connection failed. Check endpoint access, Origin and TLS policy.",
+        `WebSocket error (phase=${phase}, readyState=${connection.socket.readyState}; close details unavailable).`,
       ),
     );
   };
-  const closed = () => {
-    wire.close(new CdpFault("connection", "The browser disconnected."));
+  const closed = (event: CloseEvent) => {
+    wire.close(
+      new CdpFault(
+        "connection",
+        `WebSocket closed (phase=${phase}, readyState=${connection.socket.readyState}, code=${event.code}, wasClean=${event.wasClean}).`,
+      ),
+    );
   };
   const abort = () => {
     wire.close();
