@@ -45,13 +45,12 @@ def configure_request_stream(
 
     def stream_and_buffer(chunk: bytes) -> bytes:
         state["total_bytes"] += len(chunk)
-        if retain_body and not state["truncated"]:
-            remaining = buf_limit - len(buf)
-            if len(chunk) <= remaining:
-                buf.extend(chunk)
-            else:
-                buf.extend(chunk[:remaining])
-                state["truncated"] = True
+        if (
+            retain_body
+            and not state["truncated"]
+            and stream_capture.append_captured_chunk(buf, chunk, limit=buf_limit)
+        ):
+            state["truncated"] = True
         return chunk
 
     flow.request.stream = stream_and_buffer
