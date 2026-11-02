@@ -11,7 +11,7 @@ setup() {
 }
 
 teardown() {
-    runner_e2e_teardown_test meilisearch
+    runner_e2e_teardown_test postmark
 }
 
 @test "runner refreshes connector permissions during an active run" {
@@ -22,38 +22,38 @@ teardown() {
 
     local values
     values=$(jq -nc \
-        --arg instanceUrl "https://firewall-placeholder.vm3.ai/meilisearch" \
-        --arg apiKey "00000000000000000000000000000000" \
-        '{instanceUrl: $instanceUrl, apiKey: $apiKey}')
-    run runner_e2e_connect_manual_connector meilisearch api-key "$AGENT_ID" "$values"
+        --arg serverToken "00000000-0000-4000-8000-000000000000" \
+        '{serverToken: $serverToken}')
+    run runner_e2e_connect_manual_connector postmark server-token "$AGENT_ID" "$values"
     echo "$output"
     assert_success
     CONNECTOR_ACCOUNT_ID=$(jq -er \
         '.connectionId | select(type == "string" and length > 0)' \
         <<<"$output")
 
-    # Raw DNS has dedicated runner coverage. Pin the synthetic placeholder's
-    # public sink so this test owns only firewall permission transitions.
-    local request_url="https://firewall-placeholder.vm3.ai/meilisearch/indexes/vm0-e2e-${TEST_ID}/documents"
+    # Raw DNS has dedicated runner coverage. Pin the provider's public sink so
+    # this test owns only firewall permission transitions, using a synthetic token.
+    local request_url="https://api.postmarkapp.com/templates"
     local checkpoint_script
     checkpoint_script=$(cat <<'EOF'
 set -euo pipefail
 response_file=$(mktemp)
 trap 'rm -f "$response_file"' EXIT
 status=$(curl --silent --show-error --max-time 5 \
-    --resolve 'firewall-placeholder.vm3.ai:443:8.8.8.8' \
+    --resolve 'api.postmarkapp.com:443:8.8.8.8' \
     --output "$response_file" \
     --write-out '%{http_code}' \
     --request POST \
     --header 'content-type: application/json' \
-    --data '[{"id":"vm0-e2e"}]' \
+    --data '{"Name":"vm0-e2e-__TEST_ID__","Subject":"E2E","TextBody":"E2E"}' \
     '__REQUEST_URL__')
 test "$status" = 403
 grep -Eq '"error"[[:space:]]*:[[:space:]]*"permission_denied"' "$response_file"
-printf 'MEILISEARCH_PERMISSION_DENIED\n'
+printf 'POSTMARK_PERMISSION_DENIED\n'
 EOF
 )
     checkpoint_script=${checkpoint_script//__REQUEST_URL__/$request_url}
+    checkpoint_script=${checkpoint_script//__TEST_ID__/$TEST_ID}
 
     local continuation_script
     continuation_script=$(cat <<'EOF'
@@ -66,24 +66,25 @@ while ((SECONDS < deadline)); do
     # The allowed request can spend up to 10 seconds resolving auth. A transport
     # failure or partial response must not end the run before policy is observed.
     if curl --silent --show-error --max-time 15 \
-        --resolve 'firewall-placeholder.vm3.ai:443:8.8.8.8' \
+        --resolve 'api.postmarkapp.com:443:8.8.8.8' \
         --output "$response_file" \
         --request POST \
         --header 'content-type: application/json' \
-        --data '[{"id":"vm0-e2e"}]' \
+        --data '{"Name":"vm0-e2e-__TEST_ID__","Subject":"E2E","TextBody":"E2E"}' \
         '__REQUEST_URL__' &&
         ! grep -Eq '"error"[[:space:]]*:[[:space:]]*"permission_denied"' "$response_file"; then
-        printf 'MEILISEARCH_PERMISSION_ALLOWED\n'
+        printf 'POSTMARK_PERMISSION_ALLOWED\n'
         exit 0
     fi
     sleep 1
 done
 cat "$response_file" >&2
-echo 'Timed out waiting for the Meilisearch permission refresh' >&2
+echo 'Timed out waiting for the Postmark permission refresh' >&2
 exit 1
 EOF
 )
     continuation_script=${continuation_script//__REQUEST_URL__/$request_url}
+    continuation_script=${continuation_script//__TEST_ID__/$TEST_ID}
 
     run runner_e2e_start_mock_checkpointed_chat_run \
         "$AGENT_ID" \
@@ -97,7 +98,7 @@ EOF
     run runner_e2e_wait_for_active_chat_text \
         "$THREAD_ID" \
         "$RUN_ID" \
-        MEILISEARCH_PERMISSION_DENIED
+        POSTMARK_PERMISSION_DENIED
     echo "$output"
     assert_success
 
@@ -113,10 +114,10 @@ EOF
         --arg agentId "$AGENT_ID" \
         '{
             agentId: $agentId,
-            connectorSlug: "meilisearch",
+            connectorSlug: "postmark",
             mode: "patch",
             grants: [{
-                permission: "documents.write",
+                permission: "templates.manage",
                 action: "allow",
                 expiresIn: "1h"
             }]
@@ -131,17 +132,17 @@ EOF
     echo "$output"
     assert_success
 
-    run runner_e2e_wait_for_chat_text "$THREAD_ID" "$RUN_ID" MEILISEARCH_PERMISSION_ALLOWED
+    run runner_e2e_wait_for_chat_text "$THREAD_ID" "$RUN_ID" POSTMARK_PERMISSION_ALLOWED
     echo "$output"
     assert_success
 
     run runner_e2e_wait_for_firewall_transition \
         "$RUN_ID" \
-        meilisearch \
-        firewall-placeholder.vm3.ai \
+        postmark \
+        api.postmarkapp.com \
         POST \
         "$request_url" \
-        documents.write
+        templates.manage
     echo "$output"
     assert_success
 }
