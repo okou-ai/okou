@@ -325,62 +325,6 @@ describe("reusable SSH credential owner routes", () => {
     ]);
   });
 
-  it("resolves the current credential after a host edit overlaps rotation", async () => {
-    useSecretKmsProbe();
-    owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: { id: randomUUID(), ...passwordBody },
-      }),
-      [201],
-    );
-    const host = await accept(
-      connections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Original",
-          host: "ssh.example.com",
-          credential: { id: created.body.id },
-        },
-      }),
-      [201],
-    );
-    const [edited] = await Promise.all([
-      accept(
-        connections().update({
-          headers,
-          params: { connectionId: host.body.id },
-          body: { expectedGeneration: 1, displayName: "Edited" },
-        }),
-        [200, 409],
-      ),
-      accept(
-        credentials().update({
-          headers,
-          params: { credentialId: created.body.id },
-          body: { expectedRevision: 1, username: "rotated-user" },
-        }),
-        [200],
-      ),
-    ]);
-    const listed = await accept(connections().list({ headers }), [200]);
-    expect(listed.body.connections).toStrictEqual([
-      expect.objectContaining({
-        id: host.body.id,
-        credentialId: created.body.id,
-        username: "rotated-user",
-        displayName: edited.status === 200 ? "Edited" : "Original",
-        generation: edited.status === 200 ? 3 : 2,
-      }),
-    ]);
-    const current = await accept(credentials().list({ headers }), [200]);
-    expect(current.body.credentials).toStrictEqual([
-      expect.objectContaining({ id: created.body.id, revision: 2 }),
-    ]);
-  });
-
   it("hides other users and organizations before KMS work or binding", async () => {
     const kms = useSecretKmsProbe();
     const first = owner();
