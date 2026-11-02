@@ -134,6 +134,43 @@ async function connect(
   return phone;
 }
 
+async function startWhatsappTask(setup: Awaited<ReturnType<typeof configure>>) {
+  const runs = createRunsApi(context);
+  setup.ap.acceptAgentPhoneObjectStorage();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  const runnerGroup = runs.configureRunnerGroup();
+  await runs.grantProEntitlement(setup.actor);
+  await runs.ensurePersonalSubscriptionModel(setup.actor);
+  await runs.updateUserModelPreference(setup.actor, "claude-fable-5-1");
+  const phone = await connect(setup);
+  await setup.ap.postAgentPhoneInboundMessage({
+    channel: "whatsapp",
+    from: phone,
+    body: "Prepare my meeting plan",
+    conversationId: uniqueConversationId(),
+  });
+  await flushWaitUntilForTest();
+  await runs.heartbeatRunner(runnerGroup);
+  const polled = await runs.pollRunner(runnerGroup);
+  const runId = polled.body.job?.runId;
+  if (!runId) {
+    throw new Error("Expected a queued WhatsApp run");
+  }
+  const run = await runs.claimRunnerJob(runId);
+  const threadId = run.platformEnvironment.OKOU_CHAT_THREAD_ID;
+  if (!threadId) {
+    throw new Error("Expected the run's chat thread");
+  }
+  await createChatFilesBddApi(context).renameThread(
+    setup.actor,
+    threadId,
+    "Meeting plan",
+  );
+  return { phone, run, runId, threadId };
+}
+
 async function uploadedWhatsappFile(
   setup: Awaited<ReturnType<typeof configure>>,
   contentType = "application/pdf",
@@ -643,11 +680,19 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     },
   );
 
-  it.each(["connected", "typing-recovery", "unlink", "switch"] as const)(
+  it.each([
+    "connected",
+    "typing-recovery",
+    "unlink",
+    "switch",
+    "window-closed",
+  ] as const)(
     "maintains WhatsApp typing and routes run replies through completion (%s)",
     async (scenario) => {
       const connectionState =
-        scenario === "typing-recovery" ? "connected" : scenario;
+        scenario === "typing-recovery" || scenario === "window-closed"
+          ? "connected"
+          : scenario;
       const setup = await configure(true, connectionState !== "connected");
       const runs = createRunsApi(context);
       setup.ap.acceptAgentPhoneObjectStorage();
@@ -714,6 +759,13 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         throw new Error("Expected a queued WhatsApp run");
       }
       const run = await runs.claimRunnerJob(runId);
+      if (scenario === "window-closed") {
+        await createChatFilesBddApi(context).renameThread(
+          setup.actor,
+          run.platformEnvironment.OKOU_CHAT_THREAD_ID!,
+          "Meeting plan",
+        );
+      }
       expect(run.appendSystemPrompt).toContain("WhatsApp commands");
       expect(run.appendSystemPrompt).toContain("# WhatsApp Message Context");
       expect(run.appendSystemPrompt).toContain(
@@ -767,6 +819,27 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       await flushWaitUntilForTest();
       expectedTyping.push(conversationId);
       expect(setup.typing).toStrictEqual(expectedTyping);
+      if (scenario === "window-closed") {
+        server.use(
+          http.post(`${providerUrl}/v1/messages`, async ({ request }) => {
+            const body = (await request.json()) as Record<string, unknown>;
+            setup.sends.push(body);
+            return body.template
+              ? HttpResponse.json({
+                  id: "completed-task-template",
+                  channel: "whatsapp",
+                  to_number: phone,
+                })
+              : HttpResponse.json(
+                  {
+                    detail:
+                      "WhatsApp send failed: (#131047) Re-engagement message",
+                  },
+                  { status: 422 },
+                );
+          }),
+        );
+      }
       if (connectionState === "unlink") {
         await accept(client().unlink({ headers: headers(setup.actor) }), [204]);
       } else if (connectionState === "switch") {
@@ -798,6 +871,37 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       expect(setup.typing).toStrictEqual(expectedTyping);
       if (connectionState !== "connected") {
         expect(setup.sends).toHaveLength(0);
+      } else if (scenario === "window-closed") {
+        const resultUrl = `http://localhost:3001/chats/${run.platformEnvironment.OKOU_CHAT_THREAD_ID}`;
+        expect(setup.sends).toHaveLength(2);
+        expect(setup.sends[1]).toStrictEqual({
+          agent_id: AGENTPHONE_BDD_AGENT_ID,
+          channel: "whatsapp",
+          from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+          to_number: phone,
+          body: `Your requested Okou task "Meeting plan" is complete. Open ${resultUrl} to view the result.`,
+          template: {
+            name: "okou_task_completed",
+            language: "en_US",
+            variables: ["Meeting plan", resultUrl],
+          },
+        });
+        await webhooks.requestAgentComplete(
+          {
+            runId,
+            exitCode: 0,
+            lastEventSequence: 0,
+            completion: {
+              cliAgentType: "claude-code",
+              cliAgentSessionId: `whatsapp-session-${runId}`,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+          },
+          sandboxHeaders,
+          [200],
+        );
+        await flushWaitUntilForTest();
+        expect(setup.sends).toHaveLength(2);
       } else {
         expect(setup.sends.at(-1)).toMatchObject({
           channel: "whatsapp",
@@ -855,6 +959,186 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       [404],
     );
     expect(setup.sends).toHaveLength(2);
+  });
+
+  it.each([
+    "open",
+    "closed",
+    "other-rejection",
+    "lost",
+    "unconfirmed",
+    "template-lost",
+    "template-rejected",
+    "partial-closed",
+  ] as const)(
+    "handles task-completion sends without duplicating uncertain or accepted messages (%s)",
+    async (scenario) => {
+      const setup = await configure();
+      const task = await startWhatsappTask(setup);
+      const requests: Record<string, unknown>[] = [];
+      server.use(
+        http.post(`${providerUrl}/v1/messages`, async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          requests.push(body);
+          if (scenario === "open") {
+            return HttpResponse.json({
+              id: `normal-part-${requests.length}`,
+              channel: "whatsapp",
+              to_number: task.phone,
+            });
+          }
+          if (
+            scenario === "lost" ||
+            (scenario === "template-lost" && body.template)
+          ) {
+            return HttpResponse.error();
+          }
+          if (scenario === "unconfirmed") {
+            return HttpResponse.json(
+              {
+                error: {
+                  code: "DELIVERY_UNCONFIRMED",
+                  message: "Delivery may have occurred",
+                },
+              },
+              { status: 409 },
+            );
+          }
+          if (scenario === "partial-closed" && requests.length === 1) {
+            return HttpResponse.json({
+              id: "accepted-part",
+              channel: "whatsapp",
+              to_number: task.phone,
+            });
+          }
+          if (
+            scenario === "other-rejection" ||
+            (scenario === "template-rejected" && body.template)
+          ) {
+            return HttpResponse.json(
+              {
+                detail:
+                  "WhatsApp send failed: (#131042) Payment method required",
+              },
+              { status: 422 },
+            );
+          }
+          if (!body.template) {
+            return HttpResponse.json(
+              scenario === "closed"
+                ? { error: { code: 131_047, message: "Re-engagement message" } }
+                : {
+                    detail:
+                      "WhatsApp send failed: (#131047) Re-engagement message",
+                  },
+              { status: 422 },
+            );
+          }
+          return HttpResponse.json(
+            { id: "task-template", channel: "whatsapp", to_number: task.phone },
+            { status: 201 },
+          );
+        }),
+      );
+      const response = await accept(
+        client().sendMessage({
+          headers: {
+            authorization: `Bearer ${task.run.platformEnvironment.OKOU_TOKEN}`,
+          },
+          body: {
+            text: "Your completed report. ".repeat(300),
+            taskCompleted: true,
+          },
+        }),
+        [200, 400, 502],
+      );
+      if (scenario === "open") {
+        expect(response.status).toBe(200);
+        expect(response.body).toStrictEqual({
+          channel: "whatsapp",
+          toNumber: task.phone,
+          messages: [{ id: "normal-part-1" }, { id: "normal-part-2" }],
+        });
+        expect(requests).toHaveLength(2);
+        expect(
+          requests
+            .map((request) => {
+              return request.body;
+            })
+            .join(""),
+        ).toBe("Your completed report. ".repeat(300));
+      } else if (scenario === "closed") {
+        expect(response.status).toBe(200);
+        expect(response.body).toStrictEqual({
+          channel: "whatsapp",
+          toNumber: task.phone,
+          messages: [{ id: "task-template" }],
+          template: "okou_task_completed",
+        });
+        const resultUrl = `http://localhost:3001/chats/${task.threadId}`;
+        expect(requests).toHaveLength(2);
+        expect(requests[1]).toStrictEqual({
+          agent_id: AGENTPHONE_BDD_AGENT_ID,
+          channel: "whatsapp",
+          from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+          to_number: task.phone,
+          body: `Your requested Okou task "Meeting plan" is complete. Open ${resultUrl} to view the result.`,
+          template: {
+            name: "okou_task_completed",
+            language: "en_US",
+            variables: ["Meeting plan", resultUrl],
+          },
+        });
+      } else {
+        const unknown = ["lost", "unconfirmed", "template-lost"].includes(
+          scenario,
+        );
+        expect(response.status).toBe(unknown ? 502 : 400);
+        expect(response.body).toMatchObject({
+          acceptedMessages:
+            scenario === "partial-closed" ? [{ id: "accepted-part" }] : [],
+          delivery: unknown ? "unknown" : "failed",
+        });
+        expect(requests).toHaveLength(
+          ["template-lost", "template-rejected", "partial-closed"].includes(
+            scenario,
+          )
+            ? 2
+            : 1,
+        );
+      }
+    },
+  );
+
+  it("does not describe a failed run as a completed task when the window is closed", async () => {
+    const setup = await configure();
+    const task = await startWhatsappTask(setup);
+    const requests: Record<string, unknown>[] = [];
+    server.use(
+      http.post(`${providerUrl}/v1/messages`, async ({ request }) => {
+        requests.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(
+          { detail: "WhatsApp send failed: (#131047) Re-engagement message" },
+          { status: 422 },
+        );
+      }),
+    );
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      {
+        runId: task.runId,
+        exitCode: 1,
+        error: "Could not prepare the meeting plan",
+      },
+      { authorization: `Bearer ${task.run.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      channel: "whatsapp",
+      to_number: task.phone,
+    });
+    expect(requests[0]).not.toHaveProperty("template");
   });
 
   it("rejects expired and replaced codes while leaving the new code usable", async () => {
@@ -1220,5 +1504,14 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     expect(result.body.error.message).toContain("24-hour service window");
     expect(rejected).toHaveLength(1);
     expect(rejected[0]).toMatchObject({ channel: "whatsapp" });
+    const noRun = await accept(
+      client().sendMessage({
+        headers: headers(setup.actor),
+        body: { text: "Done", taskCompleted: true },
+      }),
+      [400],
+    );
+    expect(noRun.body.error.message).toContain("current run");
+    expect(rejected).toHaveLength(1);
   });
 });
