@@ -178,13 +178,37 @@ function createMembershipReader(
       if (!set(accepts$, observation, round)) {
         return;
       }
-      if (
-        result.status === "rejected" &&
-        (!(result.reason instanceof CdpFault) ||
-          result.reason.kind !== "scope" ||
-          get(model.snapshot$).selectedTargetId === id)
-      ) {
-        throw result.reason;
+      if (result.status === "rejected") {
+        if (
+          !(result.reason instanceof CdpFault) ||
+          result.reason.kind !== "scope"
+        ) {
+          throw result.reason;
+        }
+        if (get(model.snapshot$).selectedTargetId === id) {
+          // A scope fault alone cannot distinguish target loss from request failure.
+          const [targets, windowResult] = await Promise.allSettled([
+            set(directory.read$, signal),
+            set(directory.assertWindow$, signal),
+          ]);
+          signal.throwIfAborted();
+          if (!set(accepts$, observation, round)) {
+            return;
+          }
+          if (targets.status === "rejected") {
+            throw targets.reason;
+          }
+          if (windowResult.status === "rejected") {
+            throw windowResult.reason;
+          }
+          if (
+            targets.value.some((target) => {
+              return target.id === id;
+            })
+          ) {
+            throw result.reason;
+          }
+        }
       }
       // Preserve main's background scope-fault classification as negative membership.
       // Native bridge/window validation remains fail-closed in assertWindow$/contains$.

@@ -458,7 +458,7 @@ test("Moving another page into the window preserves the selected page and input"
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
 });
 
-test("A selected page moved away loses input while remaining pages stay selectable", async () => {
+test("A selected page moved away automatically continues on a scoped survivor", async () => {
   const browser = await setupViewer(0);
   act(() => {
     browser.move("other-page", 0);
@@ -470,17 +470,15 @@ test("A selected page moved away loses input while remaining pages stay selectab
   act(() => {
     browser.move("example-page", 1);
   });
-  await screen.findByText("Browser view unavailable");
-  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(
-    screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
-  ).toBeNull();
-  await userEvent.click(
-    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
-  );
   await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
+  expect(
+    screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
+  ).not.toBeInTheDocument();
   expect(screen.getByLabelText("Address")).toHaveValue(
     "https://other.example.com",
   );
@@ -564,7 +562,12 @@ test("A native close distinguishes cancelled late attachments from unfinished re
   act(() => {
     browser.move("other-page", 1);
   });
-  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
 
   act(() => {
     browser.disconnect({ code: 1001, wasClean: true });
@@ -2255,6 +2258,61 @@ test("Mixed IME support retains the safe unsupported receipt and same-tab fence"
   });
 });
 
+test.each(["before", "after"])(
+  "Selected target destruction %s its failed membership response automatically recovers a scoped survivor",
+  async (destruction) => {
+    const browser = mockViewer(0);
+    browser.targets[1]!.windowId = 0;
+    browser.targets.push({
+      targetId: "foreign-page",
+      title: "Foreign",
+      url: "https://foreign.example.com",
+      windowId: 1,
+    });
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+    });
+    await membership.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      browser.targets.splice(0, 1);
+      if (destruction === "before") {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      }
+    });
+    await membership.releaseFailure();
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    if (destruction === "after") {
+      act(() => {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      });
+    }
+    expect(
+      queryAllByRoleFast("tab").map((tab) => {
+        return tab.getAttribute("aria-label");
+      }),
+    ).toStrictEqual(["Other"]);
+    const address = screen.getByLabelText("Address");
+    await fill(address, "survivor.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://survivor.example/ready");
+    });
+    expect(browser.targets[0]?.url).toBe("http://survivor.example/ready");
+    expect(browser.targets[1]?.url).toBe("https://foreign.example.com");
+  },
+);
+
 test("A background window lookup failure leaves a valid scoped tab usable", async () => {
   mockViewer(0, ["other-page"]);
   await setupPage({ context, path: `/browsers/${threadId}` });
@@ -2268,6 +2326,135 @@ test("A background window lookup failure leaves a valid scoped tab usable", asyn
   ).toStrictEqual(["Example"]);
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
 });
+
+test("Losing the last scoped target keeps foreign tabs excluded and permits a native new tab", async () => {
+  const browser = await setupViewer(0);
+  const membership = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+  });
+  await membership.received;
+  browser.targets.splice(0, 1);
+  await membership.releaseFailure();
+  await screen.findByText("No tabs open");
+  expect(queryAllByRoleFast("tab")).toHaveLength(0);
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(
+    screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("Address")).toHaveValue("");
+  expect(browser.targets[0]?.url).toBe("https://other.example.com");
+});
+
+test.each(["present target", "failed inventory", "unsupported membership"])(
+  "A selected membership failure with %s retains the connection-wide failure boundary",
+  async (failure) => {
+    const browser = await setupViewer(0);
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+    });
+    await membership.received;
+    if (failure === "failed inventory") {
+      browser.targets.splice(0, 1);
+      browser.failNext("Target.getTargets", "Inventory unavailable");
+    }
+    await membership.releaseFailure(
+      "Membership unavailable",
+      failure === "unsupported membership" ? -32_601 : -32_000,
+    );
+    await screen.findByText("Browser view unavailable");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+  },
+);
+
+test.each(["successful", "failed"])(
+  "A late %s target-loss confirmation cannot revoke a newer selection",
+  async (confirmationResult) => {
+    const browser = mockViewer(0);
+    browser.targets[1]!.windowId = 0;
+    browser.targets.push({
+      targetId: "last-page",
+      title: "Last",
+      url: "https://last.example.com",
+      windowId: 0,
+    });
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+    });
+    await membership.received;
+    browser.targets.splice(0, 1);
+    if (confirmationResult === "failed") {
+      browser.failNext("Target.getTargets", "Late inventory failure");
+    }
+    const confirmation = browser.holdNext("Target.getTargets");
+    await membership.releaseFailure();
+    await confirmation.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      browser.event("Target.targetDestroyed", { targetId: "example-page" });
+    });
+    click(screen.getByLabelText("Last", { selector: '[role="tab"]' }));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Last", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+    });
+    await confirmation.release();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://last.example.com",
+      );
+    });
+    expect(
+      screen.getByLabelText("Last", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.queryByLabelText("Example", { selector: '[role="tab"]' }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test.each(["window removal", "connection loss"])(
+  "A pending target-loss confirmation cannot hide %s",
+  async (failure) => {
+    const browser = await setupViewer(0);
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      browser.nativeEvent("tab-removed", undefined, { tabId: 1, windowId: 0 });
+    });
+    await membership.received;
+    browser.targets.splice(0, 1);
+    const confirmation = browser.holdNext("Target.getTargets");
+    await membership.releaseFailure();
+    await confirmation.received;
+    act(() => {
+      if (failure === "window removal") {
+        browser.nativeEvent("window-removed", undefined, { windowId: 0 });
+      } else {
+        browser.disconnect({ code: 1006, wasClean: false });
+      }
+    });
+    await screen.findByText("Browser disconnected");
+    await confirmation.release();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+  },
+);
 
 test("A retired background membership failure cannot revoke the usable selected page", async () => {
   const browser = await setupViewer(0);

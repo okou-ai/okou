@@ -697,7 +697,7 @@ function createDiscoveryGraph(
         return;
       }
       const snapshot = get(model.snapshot$);
-      const selected = snapshot.selectedTargetId;
+      let selected = snapshot.selectedTargetId;
       if (
         selected &&
         !snapshot.targets.some((target) => {
@@ -715,7 +715,11 @@ function createDiscoveryGraph(
             ),
           ),
         });
-      } else if (
+        // Resume the existing initial-selection path after losing this selection.
+        set(chosenOnce$, false);
+        selected = null;
+      }
+      if (
         selected &&
         !get(get(links$).selectedSession$) &&
         !get(context.creationOwner$) &&
@@ -1482,14 +1486,30 @@ function attachmentSessionId(value: unknown, message: string): string {
   return value.sessionId;
 }
 
-function createAttachmentAdmission(context: ControllerContext) {
-  const { selectedOwner$, available$ } = context;
-  return command(({ get }, owner: SelectionOwner, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    if (!get(available$) || get(selectedOwner$) !== owner) {
-      throw cancelled();
-    }
-  });
+function createAttachmentAdmission(
+  context: ControllerContext,
+  links$: Computed<ControllerLinks>,
+) {
+  const { selectedOwner$, available$, waitEvent$ } = context;
+  const assertCurrent$ = command(
+    ({ get }, owner: SelectionOwner, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (!get(available$) || get(selectedOwner$) !== owner) {
+        throw cancelled();
+      }
+    },
+  );
+  const waitForDiscovery$ = command(
+    async ({ get, set }, owner: SelectionOwner, signal: AbortSignal) => {
+      const discovery = get(get(links$).discovery$)!;
+      while (!get(discovery.ready$)) {
+        set(assertCurrent$, owner, signal);
+        await set(waitEvent$, signal);
+      }
+      set(assertCurrent$, owner, signal);
+    },
+  );
+  return { assertCurrent$, waitForDiscovery$ };
 }
 
 function createAttachmentInitialization(
@@ -1547,7 +1567,10 @@ function createAttachmentGraph(
     directory$,
     nativeHost,
   } = context;
-  const assertCurrent$ = createAttachmentAdmission(context);
+  const { assertCurrent$, waitForDiscovery$ } = createAttachmentAdmission(
+    context,
+    links$,
+  );
   const initialize$ = createAttachmentInitialization(
     context,
     links$,
@@ -1562,6 +1585,7 @@ function createAttachmentGraph(
       const client = get(clientState$)!;
       const frames = get(framesState$)!;
       const directory = get(directory$)!;
+      await set(waitForDiscovery$, owner, signal);
       await set(get(links$).waitRetirement$, owner.targetId, signal);
       set(assertCurrent$, owner, signal);
       await set(directory.assertMember$, owner.targetId, signal);
