@@ -36,6 +36,7 @@ enum NativeHelperOperation: String, Sendable {
 
 struct NativeHelperRequestDiagnostics: Sendable {
   let operation: NativeHelperOperation
+  let intent: NativeProcess.RequestIntent
   let timeout: TimeInterval
   let started: ContinuousClock.Instant
   let awakeStarted: SuspendingClock.Instant
@@ -44,10 +45,12 @@ struct NativeHelperRequestDiagnostics: Sendable {
   var deadline: ContinuousClock.Instant { started.advanced(by: .seconds(timeout)) }
 
   init(
-    _ request: JSONValue, timeout: TimeInterval, started: ContinuousClock.Instant,
+    _ request: JSONValue, intent: NativeProcess.RequestIntent, timeout: TimeInterval,
+    started: ContinuousClock.Instant,
     awakeStarted: SuspendingClock.Instant
   ) {
     operation = NativeHelperOperation(rawValue: request["kind"].string ?? "") ?? .unknown
+    self.intent = intent
     self.timeout = timeout
     self.started = started
     self.awakeStarted = awakeStarted

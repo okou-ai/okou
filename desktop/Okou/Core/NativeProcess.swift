@@ -24,6 +24,12 @@ public actor NativeProcess {
     case browserAutomationProbe = "browser_automation_probe"
   }
 
+  public enum RequestIntent: String, Sendable {
+    case permissionRefresh = "permission_refresh"
+    case commandPreflight = "command_preflight"
+    case unspecified
+  }
+
   private struct PendingRequest {
     let continuation: CheckedContinuation<JSONValue, Error>
     var diagnostics: NativeHelperRequestDiagnostics
@@ -124,7 +130,9 @@ public actor NativeProcess {
     self.standardError = standardError
     outputReader = reader
   }
-  public func request(_ values: JSONValue, timeout: TimeInterval = 30) async throws -> JSONValue {
+  public func request(
+    _ values: JSONValue, timeout: TimeInterval = 30, intent: RequestIntent = .unspecified
+  ) async throws -> JSONValue {
     try Task.checkCancellation()
     try start()
     sequence += 1
@@ -136,7 +144,7 @@ public actor NativeProcess {
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
         let diagnostics = NativeHelperRequestDiagnostics(
-          values, timeout: timeout, started: now(), awakeStarted: awakeNow())
+          values, intent: intent, timeout: timeout, started: now(), awakeStarted: awakeNow())
         pending[id] = PendingRequest(
           continuation: continuation, diagnostics: diagnostics)
         let current = generation
@@ -301,13 +309,14 @@ public actor NativeProcess {
   private func reportFailure(
     _ reason: NativeHelperFailure, responseBytes: Int? = nil,
     termination: NativeHelperTermination? = nil, request: NativeHelperRequestDiagnostics? = nil,
-    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil
+    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil,
+    cause: DesktopFailure.Cause? = nil
   ) {
     DesktopTelemetry.captureHelperFailure(
       reason, purpose: purpose, generation: generation,
       pendingRequests: pending.count, stderrBytes: standardError.count,
       responseBytes: responseBytes, termination: termination, request: request,
-      attachments: attachments, timeout: timeout)
+      attachments: attachments, timeout: timeout, cause: cause)
   }
   public func stop() { stop(error: CancellationError()) }
   private func stop(
@@ -318,13 +327,30 @@ public actor NativeProcess {
     let expiration = lifetime?.retire()
     var error = error
     if let expiration, let request = pending[expiration.requestID] {
-      error = Self.timeoutFailure
+      let diagnostics = request.diagnostics
+      let timeout = NativeHelperTimeoutDiagnostics(
+        trigger: expiration.trigger, output: outputReader.snapshot, processedBytes: receivedBytes,
+        processedAt: outputProcessedAt, observedAt: now(), awakeObservedAt: awakeNow(),
+        detectedAt: expiration.detectedAt, retiredAt: expiration.retiredAt)
+      let elapsed = diagnostics.started.duration(to: timeout.observedAt).seconds
+      let awakeElapsed = diagnostics.awakeStarted.duration(to: timeout.awakeObservedAt).seconds
+      // Only an identified, isolated permissions read can be treated as an expected sleep expiry.
+      let suspendedPermissionRead =
+        purpose == .computerUse && pending.count == 1 && diagnostics.operation == .permissionsState
+        && (diagnostics.intent == .permissionRefresh || diagnostics.intent == .commandPreflight)
+        && diagnostics.writtenAt != nil
+        && elapsed.isFinite && awakeElapsed.isFinite && diagnostics.timeout.isFinite
+        && diagnostics.timeout > 0 && elapsed >= diagnostics.timeout
+        && awakeElapsed >= 0 && awakeElapsed < diagnostics.timeout
+      let failure =
+        suspendedPermissionRead
+        ? DesktopFailure(
+          "command_timeout", "Permission check deadline expired while this Mac was asleep.",
+          cause: .systemSuspension)
+        : Self.timeoutFailure
+      error = failure
       reportFailure(
-        .timeout, request: request.diagnostics,
-        timeout: NativeHelperTimeoutDiagnostics(
-          trigger: expiration.trigger, output: outputReader.snapshot, processedBytes: receivedBytes,
-          processedAt: outputProcessedAt, observedAt: now(), awakeObservedAt: awakeNow(),
-          detectedAt: expiration.detectedAt, retiredAt: expiration.retiredAt))
+        .timeout, request: diagnostics, timeout: timeout, cause: failure.cause)
     } else if let failure {
       reportFailure(
         failure, responseBytes: responseBytes, termination: termination, attachments: attachments)

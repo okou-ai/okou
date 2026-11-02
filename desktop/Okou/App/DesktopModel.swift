@@ -368,7 +368,13 @@ final class DesktopModel: ObservableObject {
   }
   func refreshPermissions() async throws {
     guard !runtime.busy else { return }
-    var value = try await executor.permissions()
+    var value: JSONValue
+    do {
+      value = try await executor.permissions()
+    } catch let failure as DesktopFailure where failure.cause == .systemSuspension {
+      // Retain the last known state; the next regular refresh owns a new request.
+      return
+    }
     // macOS cannot inspect browser Automation without probing it. Retain the
     // latest explicit probe for the same UI and heartbeat permission state.
     value["automation"] = .object(browserPermissions)

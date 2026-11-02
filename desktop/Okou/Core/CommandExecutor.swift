@@ -38,7 +38,8 @@ public actor CommandExecutor {
     self.shells = shells
   }
   public func permissions() async throws -> JSONValue {
-    try await call(.object(["kind": .string("permissions.state")]), remaining: 10)
+    try await call(
+      .object(["kind": .string("permissions.state")]), remaining: 10, intent: .permissionRefresh)
   }
   public func requestPermission(screenRecording: Bool) async throws -> JSONValue {
     try await call(
@@ -48,12 +49,15 @@ public actor CommandExecutor {
             ? "permissions.request_screen_recording" : "permissions.request_accessibility")
       ]), remaining: 30)
   }
-  private func call(_ request: JSONValue, remaining: TimeInterval) async throws -> JSONValue {
+  private func call(
+    _ request: JSONValue, remaining: TimeInterval,
+    intent: NativeProcess.RequestIntent = .unspecified
+  ) async throws -> JSONValue {
     guard remaining > 0 else {
       throw DesktopFailure(
         "command_timeout", "Command expired before native dispatch; no action was started")
     }
-    let response = try await helper.request(request, timeout: remaining)
+    let response = try await helper.request(request, timeout: remaining, intent: intent)
     guard response["status"].string == "succeeded" else {
       throw DesktopFailure(
         response["error"]["code"].string ?? "accessibility_unavailable",
@@ -85,7 +89,8 @@ public actor CommandExecutor {
       }
       let budget = try CommandBudget(command: command, claimStarted: claimStarted)
       let permissions = try await call(
-        .object(["kind": .string("permissions.state")]), remaining: budget.remaining)
+        .object(["kind": .string("permissions.state")]), remaining: budget.remaining,
+        intent: .commandPreflight)
       guard permissions["accessibility"].bool == true else {
         throw DesktopFailure("permission_denied", "Accessibility permission is required")
       }
