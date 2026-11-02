@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
@@ -847,5 +848,8 @@ with tempfile.TemporaryDirectory(prefix="codex-compact-smoke-") as temp_root:
         )
         probe_legacy_resume(root / "legacy", port)
 
-        server.shutdown()
-        server_thread.join()
+        try:
+            server.socket.shutdown(socket.SHUT_RDWR)
+        finally:
+            server.shutdown()
+            server_thread.join()

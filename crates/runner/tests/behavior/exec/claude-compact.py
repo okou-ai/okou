@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import subprocess
 import tempfile
 import threading
@@ -163,5 +164,8 @@ with tempfile.TemporaryDirectory(prefix="claude-compact-smoke-") as root:
             for record in retained
         ), "Claude changed the session ID while appending"
 
-        server.shutdown()
-        server_thread.join()
+        try:
+            server.socket.shutdown(socket.SHUT_RDWR)
+        finally:
+            server.shutdown()
+            server_thread.join()
