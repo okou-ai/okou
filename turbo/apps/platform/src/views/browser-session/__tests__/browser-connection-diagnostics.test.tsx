@@ -2,7 +2,13 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { act, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -23,10 +29,19 @@ const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 const endpoint = "wss://browser.example/private-session?token=private-token";
 
-async function setupViewer(autoOpen: boolean) {
+async function setupViewer(
+  autoOpen: boolean,
+  options: {
+    readonly empty?: boolean;
+    readonly scoped?: boolean;
+  } = {},
+) {
   const sentry = context.mocks.sentry();
   initSentry();
-  const browser = mockBrowserCdp(context, endpoint, { autoOpen });
+  const browser = mockBrowserCdp(context, endpoint, {
+    autoOpen,
+    ...(options.empty ? { targets: [] } : {}),
+  });
   const session: BrowserSession = {
     threadId,
     name: "booking",
@@ -41,6 +56,14 @@ async function setupViewer(autoOpen: boolean) {
     suspensionReason: null,
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",
+    ...(options.scoped
+      ? {
+          window: {
+            instanceId: "22222222-2222-4222-8222-222222222222",
+            primaryWindowId: 0,
+          },
+        }
+      : {}),
   };
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser: session });
@@ -57,6 +80,23 @@ async function setupViewer(autoOpen: boolean) {
   });
   await setupPage({ context, path: `/browsers/${threadId}` });
   return { browser, sentry, session };
+}
+
+async function expectInputReady() {
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+}
+
+async function useSplitTransport() {
+  click(screen.getByLabelText("Browser settings"));
+  const settings = await screen.findByRole("menu", {
+    name: "Browser settings",
+  });
+  click(within(settings).getByText("Connection mode"));
+  const menu = await screen.findByRole("menu", { name: "Connection mode" });
+  click(within(menu).getByText("Separate image connection"));
+  await expectInputReady();
 }
 
 test("An opening failure preserves observations and supports explicit reconnect", async () => {
@@ -80,6 +120,7 @@ test("An opening failure preserves observations and supports explicit reconnect"
       }),
     );
     expect(startupErrors).toHaveLength(1);
+    expect(sentry.reports).toHaveLength(1);
     expect(startupErrors[0]?.message).toBe(message);
   });
 
@@ -96,9 +137,7 @@ test("An opening failure preserves observations and supports explicit reconnect"
   act(() => {
     browser.openConnection();
   });
-  await waitFor(() => {
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-  });
+  await expectInputReady();
 });
 
 test("Revalidating an opening viewer retains its native startup and keeps cancellation quiet", async () => {
@@ -127,21 +166,20 @@ test("Revalidating an opening viewer retains its native startup and keeps cancel
     browser.openConnection();
   });
   release.resolve();
-  await waitFor(() => {
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-  });
+  await expectInputReady();
   expect(browser.connections()).toBe(1);
   expect(startupErrors).toHaveLength(0);
   expect(sentry.reports).toStrictEqual([]);
 });
 
-test.each(["error", "close"] as const)(
-  "A native %s during navigation preserves the established connection's failure",
+test.each(["error", "close", "frames-close"] as const)(
+  "A native %s during navigation reports the established failure once",
   async (event) => {
     const { browser, sentry } = await setupViewer(true);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-    });
+    await expectInputReady();
+    if (event === "frames-close") {
+      await useSplitTransport();
+    }
     const navigation = browser.holdNext("Page.navigate");
     await fill(screen.getByLabelText("Address"), "next.example");
     await userEvent.keyboard("{Enter}");
@@ -150,7 +188,10 @@ test.each(["error", "close"] as const)(
       if (event === "error") {
         browser.failConnection();
       } else {
-        browser.disconnect({ code: 1001, wasClean: true, reason: endpoint });
+        browser.disconnect(
+          { code: 1001, wasClean: true, reason: endpoint },
+          event === "frames-close" ? 1 : undefined,
+        );
       }
     });
     await screen.findByText("Browser disconnected");
@@ -163,12 +204,174 @@ test.each(["error", "close"] as const)(
         expect.objectContaining({
           type: "exception",
           error: expect.objectContaining({
-            name: "NavigationFault",
-            cause: expect.objectContaining({ name: "CdpFault", message }),
+            name: "CdpFault",
+            message,
+          }),
+          context: expect.objectContaining({
+            tags: {
+              browser_event: "established-disconnect",
+              logger: "Browser",
+            },
           }),
         }),
       );
     });
     await navigation.release();
+    // Re-enable navigation on an explicit replacement: the old operation and
+    // its causal wrapper have settled before counting the incident reports.
+    const reconnect = queryAllByRoleFast("button").find((button) => {
+      return button.textContent?.trim() === "Reconnect";
+    });
+    if (!reconnect) {
+      throw new Error("Expected explicit reconnect");
+    }
+    click(reconnect);
+    await expectInputReady();
+    expect(sentry.reports).toHaveLength(1);
   },
 );
+
+test.each([true, false])(
+  "An idle viewer (empty=%s) reports one safe established disconnection",
+  async (empty) => {
+    const { browser, sentry } = await setupViewer(true, { empty });
+    if (empty) {
+      await screen.findByText("No tabs open");
+    } else {
+      await expectInputReady();
+    }
+    act(() => {
+      browser.disconnect({ code: 1006, wasClean: false, reason: endpoint });
+    });
+    await screen.findByText("Browser disconnected");
+    expect(sentry.reports).toHaveLength(1);
+    expect(sentry.reports[0]).toMatchObject({
+      type: "exception",
+      error: { name: "CdpFault", kind: "connection" },
+      context: {
+        tags: { browser_event: "established-disconnect", logger: "Browser" },
+        contexts: {
+          browser_viewer: { kind: "connection", role: "control" },
+          browser_connection: {
+            source: "native-close",
+            role: "control",
+            phase: "open",
+            ready_state: 3,
+            code: 1006,
+            was_clean: false,
+            pending_requests: 0,
+            cancelled_awaiting_response: 0,
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(sentry.reports)).not.toContain("private-");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  },
+);
+
+test("A handled background lookup stays quiet while the selected page remains usable", async () => {
+  const { browser, sentry } = await setupViewer(true, { scoped: true });
+  await expectInputReady();
+  const lookup = browser.holdNextMembership("created-1");
+  act(() => {
+    browser.duplicate("example-page");
+  });
+  await lookup.received;
+  await act(async () => {
+    await lookup.releaseFailure("private-provider-message");
+  });
+  await fill(screen.getByLabelText("Address"), "next.example");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "http://next.example/",
+    );
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  expect(sentry.reports).toHaveLength(0);
+});
+
+test("An unhandled navigation request failure still reports without disconnecting", async () => {
+  const { browser, sentry } = await setupViewer(true);
+  await expectInputReady();
+  browser.failNext("Page.navigate", "private-provider-message");
+  await fill(screen.getByLabelText("Address"), "private-page.example");
+  await userEvent.keyboard("{Enter}");
+  await screen.findByRole("alert");
+  await waitFor(() => {
+    expect(sentry.reports).toHaveLength(1);
+  });
+  expect(sentry.reports[0]).toMatchObject({
+    type: "exception",
+    error: {
+      name: "NavigationFault",
+      cause: {
+        name: "CdpFault",
+        request: { method: "Page.navigate", code: -32_000 },
+      },
+    },
+    context: { tags: { logger: "Promise" } },
+  });
+  expect(JSON.stringify(sentry.reports)).not.toContain("private-");
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+});
+
+test("Changing transport retires intentionally, then frames loss reports once", async () => {
+  const { browser, sentry } = await setupViewer(true);
+  await expectInputReady();
+  await useSplitTransport();
+  await waitFor(() => {
+    expect(browser.connections()).toBe(3);
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(sentry.reports).toHaveLength(0);
+  act(() => {
+    browser.disconnect({ code: 1001, wasClean: true }, 1);
+  });
+  await screen.findByText("Browser disconnected");
+  // A concurrent control close belongs to the same viewer incident.
+  act(() => {
+    browser.disconnect({ code: 1006, wasClean: false });
+  });
+  expect(sentry.reports).toHaveLength(1);
+  expect(sentry.reports[0]).toMatchObject({
+    context: {
+      contexts: {
+        browser_viewer: { kind: "connection", role: "frames" },
+        browser_connection: {
+          source: "native-close",
+          role: "frames",
+          code: 1001,
+        },
+      },
+    },
+  });
+});
+
+test("Control loss during a split capture change does not report the retired frames request again", async () => {
+  const { browser, sentry } = await setupViewer(true);
+  await expectInputReady();
+  await useSplitTransport();
+  const capture = browser.holdNext("Page.stopScreencast");
+  click(screen.getByLabelText("Browser settings"));
+  const quality = await screen.findByRole("spinbutton", {
+    name: "Image quality",
+  });
+  fireEvent.change(quality, { target: { value: "60" } });
+  await capture.received;
+  act(() => {
+    browser.disconnect({ code: 1006, wasClean: false }, 0);
+  });
+  await screen.findByText("Browser disconnected");
+  await capture.release();
+  const reconnect = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Expected explicit reconnect");
+  }
+  click(reconnect);
+  await expectInputReady();
+  expect(sentry.reports).toHaveLength(1);
+});

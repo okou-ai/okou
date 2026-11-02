@@ -7,7 +7,7 @@ import {
 } from "../../utils.ts";
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 import { addBreadcrumb } from "@sentry/browser";
-import { CdpFault, isRecord } from "./errors.ts";
+import { CdpFault, isRecord, type CdpConnectionObservation } from "./errors.ts";
 
 type Method = keyof ProtocolMapping.Commands;
 type Params<M extends Method> =
@@ -73,7 +73,7 @@ interface Connection {
   readonly listeners: Set<(event: CdpEvent) => void>;
   readonly closeListeners: Set<(fault: CdpFault) => void>;
   nextId: number;
-  ended: boolean;
+  failure: CdpFault | null;
 }
 interface Message {
   id: number;
@@ -86,10 +86,10 @@ function createWire(connection: Connection) {
   function close(
     fault = new CdpFault("connection", "The connection is closed."),
   ): void {
-    if (connection.ended) {
+    if (connection.failure) {
       return;
     }
-    connection.ended = true;
+    connection.failure = fault;
     if (!connection.opening.settled()) {
       connection.opening.reject(fault);
     }
@@ -111,7 +111,7 @@ function createWire(connection: Connection) {
     connection.socket.close();
   }
   function send(message: Message): boolean {
-    if (connection.ended || connection.socket.readyState !== 1) {
+    if (connection.failure || connection.socket.readyState !== 1) {
       return false;
     }
     if (connection.socket.bufferedAmount > 4 * 1024 * 1024) {
@@ -141,12 +141,13 @@ function createRequests(
     operation?: AbortSignal,
   ): Promise<unknown> {
     operation?.throwIfAborted();
-    if (connection.ended || connection.socket.readyState !== 1) {
+    if (connection.failure || connection.socket.readyState !== 1) {
       throw new CdpFault(
         "connection",
         "The connection is closed.",
         undefined,
         Object.freeze({ method }),
+        connection.failure ? { cause: connection.failure } : undefined,
       );
     }
     if (connection.pending.size >= 256) {
@@ -161,9 +162,20 @@ function createRequests(
     // Responses arrive in a later task, so a request is pending only once its
     // message was written; a failed write rejects without leaving an entry.
     if (!wire.send({ id, method, params, sessionId })) {
-      throw new CdpFault("connection", "The connection is closed.");
+      throw new CdpFault(
+        "connection",
+        "The connection is closed.",
+        undefined,
+        Object.freeze({ method }),
+        connection.failure ? { cause: connection.failure } : undefined,
+      );
     }
-    const deferred = createDeferredPromise<unknown>(signal);
+    // The returned operation owns handling/reporting. This wire receipt must
+    // not independently report a failure that its caller may handle normally.
+    const deferred = createDeferredPromise<unknown>(
+      { rejection: "owner" },
+      signal,
+    );
     const entry: Pending = {
       method,
       resolve: (result) => {
@@ -355,35 +367,38 @@ function listen(
       new CdpFault(
         "connection",
         `WebSocket error (phase=${phase}, readyState=${connection.socket.readyState}; close details unavailable).`,
+        undefined,
+        undefined,
+        {
+          connection: {
+            source: "native-error",
+            ...observeConnection(connection, role, phase),
+          },
+        },
       ),
     );
   };
   const closed = (event: CloseEvent) => {
-    let cancelled = 0;
-    for (const entry of connection.pending.values()) {
-      if (entry.settled) {
-        cancelled++;
-      }
-    }
     // Snapshot written requests before teardown clears them. Missing responses
     // do not establish whether the remote effects occurred or are safe to retry.
+    const observation: CdpConnectionObservation = {
+      source: "native-close",
+      ...observeConnection(connection, role, phase),
+      code: event.code,
+      was_clean: event.wasClean,
+    };
     addBreadcrumb({
       category: "browser.connection",
       level: "info",
-      data: {
-        source: "native-close",
-        ...(role ? { role } : {}),
-        phase: phase === "after-open" ? "open" : "opening",
-        code: event.code,
-        was_clean: event.wasClean,
-        pending_requests: connection.pending.size - cancelled,
-        cancelled_awaiting_response: cancelled,
-      },
+      data: { ...observation },
     });
     wire.close(
       new CdpFault(
         "connection",
         `WebSocket closed (phase=${phase}, readyState=${connection.socket.readyState}, code=${event.code}, wasClean=${event.wasClean}).`,
+        undefined,
+        undefined,
+        { connection: observation },
       ),
     );
   };
@@ -404,6 +419,26 @@ function listen(
   });
 }
 
+function observeConnection(
+  connection: Connection,
+  role: ConnectionRole | undefined,
+  phase: "before-open" | "after-open",
+) {
+  let cancelled = 0;
+  for (const entry of connection.pending.values()) {
+    if (entry.settled) {
+      cancelled++;
+    }
+  }
+  return {
+    ...(role ? { role } : {}),
+    phase: phase === "after-open" ? ("open" as const) : ("opening" as const),
+    ready_state: connection.socket.readyState,
+    pending_requests: connection.pending.size - cancelled,
+    cancelled_awaiting_response: cancelled,
+  };
+}
+
 /** One mounted surface owns this native socket adapter and its protocol receipts. */
 export function createCdpClient(
   url: string,
@@ -421,12 +456,12 @@ export function createCdpClient(
     });
   const connection: Connection = {
     socket: factory(url),
-    opening: createDeferredPromise<void>(signal),
+    opening: createDeferredPromise<void>({ rejection: "owner" }, signal),
     pending: new Map(),
     listeners: new Set(),
     closeListeners: new Set(),
     nextId: 1,
-    ended: false,
+    failure: null,
   };
   const wire = createWire(connection);
   const requests = createRequests(connection, wire, signal);

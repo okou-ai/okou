@@ -388,6 +388,7 @@ test.each([
           source: "native-close",
           role: "control",
           phase: "open",
+          ready_state: 3,
           code,
           was_clean: wasClean,
           pending_requests: 1,

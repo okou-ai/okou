@@ -1590,11 +1590,14 @@ function mockBrowserWebSocket(
         }
       }
     },
-    disconnect(url: string, event: CloseEventInit): void {
-      for (const socket of sockets) {
-        if (socket.url === url) {
-          socket.terminate(event);
-        }
+    disconnect(url: string, event: CloseEventInit, index?: number): void {
+      const matching = [...sockets].filter((socket) => {
+        return socket.url === url;
+      });
+      for (const socket of index === undefined
+        ? matching
+        : matching.slice(index, index + 1)) {
+        socket.terminate(event);
       }
     },
     receive(url: string, data: string): void {
