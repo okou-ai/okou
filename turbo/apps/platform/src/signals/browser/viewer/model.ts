@@ -248,13 +248,24 @@ function createModelPresentation(
   creationReadySource$: Computed<boolean>,
 ) {
   const { loadingPreviewState$, scopedState$ } = atoms;
-  const { snapshot$, imageRecovery$, connected$, intent$ } = values;
+  const { snapshot$, imageRecovery$, connected$, intent$, navigation$ } =
+    values;
   const presentation$ = computed((get) => {
     const snapshot = get(snapshot$);
+    const document = get(navigation$);
     return {
       status: snapshot.status,
       error: snapshot.error,
-      loadingPreview: get(loadingPreviewState$),
+      loadingPreview:
+        snapshot.status === "connecting" && get(loadingPreviewState$),
+      blank:
+        !get(imageRecovery$) &&
+        (snapshot.status === "connecting" || snapshot.status === "streaming") &&
+        (document
+          ? document.url === "about:blank"
+          : snapshot.targets.some((target) => {
+              return target.id === snapshot.selectedTargetId && target.blank;
+            })),
     };
   });
   const controls$ = computed((get) => {
@@ -324,7 +335,7 @@ function createImageTransitions(
   atoms: ModelAtoms,
   publication: ModelPublication,
 ) {
-  const { imageState$, intentState$ } = atoms;
+  const { imageState$, intentState$, loadingPreviewState$ } = atoms;
   const { update$ } = publication;
   return command(({ get, set }, event: ImageEvent) => {
     const image = get(imageState$);
@@ -349,6 +360,9 @@ function createImageTransitions(
       return decision;
     }
     set(imageState$, decision.state);
+    if (event.type === "image-failed" || event.type === "image-retrying") {
+      set(loadingPreviewState$, false);
+    }
     if (event.type === "image-failed") {
       set(update$, { status: "error", error: event.error });
     } else if (event.type === "image-retrying") {
@@ -414,6 +428,12 @@ function createSnapshotTransitions(
         set(update$, { status: "streaming", error: null });
         break;
       }
+      case "stopped": {
+        if (event.retainFrame && get(snapshotState$).status === "streaming") {
+          set(update$, { status: "connecting" });
+        }
+        break;
+      }
       case "pause": {
         if (get(snapshotState$).selectedTargetId) {
           set(update$, {
@@ -451,7 +471,8 @@ function createModelTransitions(
   atoms: ModelAtoms,
   publication: ModelPublication,
 ) {
-  const { intentState$, imageState$, loadingPreviewState$ } = atoms;
+  const { intentState$, imageState$, loadingPreviewState$, snapshotState$ } =
+    atoms;
   const imageTransition$ = createImageTransitions(atoms, publication);
   const snapshotTransition$ = createSnapshotTransitions(atoms, publication);
   const transition$ = command(({ get, set }, event: ViewerTransition) => {
@@ -476,7 +497,11 @@ function createModelTransitions(
     }
     set(
       loadingPreviewState$,
-      event.type === "select" && !!event.preview && !event.paused,
+      event.type === "stopped"
+        ? !!event.retainFrame &&
+            (get(snapshotState$).status === "streaming" ||
+              get(loadingPreviewState$))
+        : event.type === "select" && !!event.preview && !event.paused,
     );
     set(snapshotTransition$, event);
     return undefined;

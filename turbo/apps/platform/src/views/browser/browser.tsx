@@ -773,10 +773,12 @@ function BrowserTabs({
 function BrowserStatus({
   signals,
   creating,
+  contentVisible,
   onCreate,
 }: {
   readonly signals: BrowserSignals;
   readonly creating: boolean;
+  readonly contentVisible: boolean;
   readonly onCreate: () => Promise<string>;
 }) {
   const { t } = useTranslation();
@@ -799,7 +801,7 @@ function BrowserStatus({
         reconnectOperation.error,
         imageRecovery !== null || controls.streaming,
       ));
-  if (controls.streaming || presentation.loadingPreview) {
+  if (contentVisible) {
     return (
       <BrowserOperationError
         failed={failed}
@@ -1004,7 +1006,7 @@ export function Browser({
 }) {
   const { t } = useTranslation();
   const selectedTabId = useGet(signals.selectedTabId$);
-  const navigation = useGet(signals.navigation$);
+  const presentation = useGet(signals.presentation$);
   const controls = useGet(signals.controls$);
   const pageSignal = useGet(pageSignal$);
   const imageRecovery = useGet(signals.imageRecovery$);
@@ -1086,12 +1088,17 @@ export function Browser({
           <BrowserStatus
             signals={signals}
             creating={createOperation.state === "loading"}
+            contentVisible={
+              controls.streaming ||
+              presentation.loadingPreview ||
+              presentation.blank
+            }
             onCreate={() => {
               return createTab(pageSignal);
             }}
           />
         )}
-        {controls.streaming && navigation?.url === "about:blank" && (
+        {presentation.blank && (
           <div className="absolute inset-0 bg-background">
             <BrowserBlankPage />
           </div>

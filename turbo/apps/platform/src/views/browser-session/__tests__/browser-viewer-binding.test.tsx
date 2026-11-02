@@ -280,3 +280,70 @@ test("A distinct confirmed replacement streams while old bridge cleanup is unack
   expect(retired.targets).toHaveLength(1);
   expect(startupErrors).toHaveLength(0);
 });
+
+test("A replacement clears a delayed old creation's blank presentation", async () => {
+  const startupErrors = recordBrowserStartupErrors();
+  mockSessionReads();
+  const oldEndpoint = "wss://browser.example/retired";
+  const retired = mockBrowserCdp(context, oldEndpoint, {
+    targets: [
+      {
+        targetId: "old-page",
+        title: "Old",
+        url: "https://old.example.com",
+        windowId: 101,
+      },
+    ],
+  });
+  let connection: BrowserViewerConnection = {
+    browser: oldSession,
+    cdpUrl: oldEndpoint,
+    extension: TEST_BROWSER_EXTENSION,
+  };
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, connection);
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const created = retired.holdNextNative("createTab");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await act(async () => {
+    await created.received;
+  });
+  expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
+  act(() => {
+    retired.resetWorker();
+  });
+  await screen.findByText("Browser disconnected");
+  expect(screen.queryByText("Nothing open yet")).toBeNull();
+  mockReplacement();
+  connection = {
+    browser: replacementSession,
+    cdpUrl: endpoint,
+    extension: TEST_BROWSER_EXTENSION,
+  };
+  const reconnect = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Expected explicit reconnect");
+  }
+  click(reconnect);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://replacement.example.com",
+    );
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.queryByText("Nothing open yet")).toBeNull();
+  await act(async () => {
+    await created.release();
+  });
+  expect(
+    screen.getByLabelText("Replacement", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(screen.queryByText("Nothing open yet")).toBeNull();
+  expect(startupErrors).toHaveLength(0);
+});

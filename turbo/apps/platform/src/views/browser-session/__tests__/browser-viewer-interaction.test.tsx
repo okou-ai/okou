@@ -111,18 +111,37 @@ function reportedCleanupError(
 }
 
 test.each([undefined, 0])(
-  "New tabs can be created and closed in window %s",
+  "New tabs stay blank through creation and can be closed in window %s",
   async (windowId) => {
     const browser = await setupViewer(windowId);
-    await userEvent.click(
-      screen.getByLabelText("New tab", { selector: "button" }),
-    );
+    const created = browser.holdNextNative("createTab");
+    const image = browser.holdFrames("created-1-session");
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
+    await act(async () => {
+      await created.received;
+    });
+    await screen.findByText("Nothing open yet");
+    expect(screen.queryByText("Browser view unavailable")).toBeNull();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeDisabled();
+    await act(async () => {
+      await created.release();
+      await image.received;
+    });
     await waitFor(() => {
       expect(
         screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
       ).toHaveAttribute("aria-selected", "true");
     });
     expect(screen.getByLabelText("Address")).toHaveValue("");
+    expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
+    expect(screen.queryByText("Browser view unavailable")).toBeNull();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
     await waitFor(() => {
       expect(screen.getByLabelText("Address")).toHaveFocus();
     });
@@ -148,6 +167,133 @@ test.each([undefined, 0])(
         return target.targetId;
       }),
     ).toStrictEqual(["example-page", "other-page"]);
+  },
+);
+
+test("Selecting a blank tab covers the previous page before its first image", async () => {
+  const browser = mockViewer(0);
+  browser.targets.push({
+    targetId: "blank-page",
+    title: "about:blank",
+    url: "about:blank",
+    windowId: 0,
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const image = browser.holdFrames("blank-page-session");
+  click(screen.getByLabelText("New tab", { selector: '[role="tab"]' }));
+  expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
+  expect(screen.queryByText("Browser view unavailable")).toBeNull();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await fill(screen.getByLabelText("Address"), "https://new.example.com/page");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://new.example.com/page",
+    );
+  });
+  expect(screen.queryByText("Nothing open yet")).toBeNull();
+});
+
+test("Selecting another tab clears a delayed creation's blank presentation", async () => {
+  const browser = await setupViewer();
+  const created = browser.holdNextNative("createTab");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await act(async () => {
+    await created.received;
+  });
+  await screen.findByText("Nothing open yet");
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "https://other.example.com",
+  );
+  expect(screen.queryByText("Nothing open yet")).toBeNull();
+  await act(async () => {
+    await created.release();
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeEnabled();
+  });
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(screen.queryByText("Nothing open yet")).toBeNull();
+  expect(screen.queryByText("Browser view unavailable")).toBeNull();
+});
+
+test.each(["created", "existing"] as const)(
+  "A blank tab (%s) navigated before its first image does not expose the previous page",
+  async (origin) => {
+    const browser = mockViewer(0);
+    if (origin === "existing") {
+      browser.targets.push({
+        targetId: "blank-page",
+        title: "about:blank",
+        url: "about:blank",
+        windowId: 0,
+      });
+    }
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const targetId = origin === "created" ? "created-1" : "blank-page";
+    const image = browser.holdFrames(`${targetId}-session`);
+    click(
+      screen.getByLabelText("New tab", {
+        selector: origin === "created" ? "button" : '[role="tab"]',
+      }),
+    );
+    await act(async () => {
+      await image.received;
+    });
+    await screen.findByText("Nothing open yet");
+    act(() => {
+      // The attached document can change before target metadata catches up.
+      browser.event(
+        "Page.frameNavigated",
+        {
+          frame: {
+            id: "example-frame",
+            loaderId: "external-navigation",
+            url: "https://destination.example.com/page",
+          },
+        },
+        `${targetId}-session`,
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://destination.example.com/page",
+      );
+    });
+    expect(screen.queryByText("Nothing open yet")).toBeNull();
+    expect(screen.getByText("Connecting to browser…")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(screen.queryByText("Connecting to browser…")).toBeNull();
   },
 );
 
@@ -222,6 +368,7 @@ test("A created tab with a failed first image retries the image without creating
     image.release("!");
   });
   await screen.findByText("Browser view unavailable");
+  expect(screen.queryByText("Nothing open yet")).toBeNull();
   const retry = queryAllByRoleFast("button").find((button) => {
     return button.textContent?.trim() === "Retry live image";
   });
@@ -246,6 +393,7 @@ test("A created tab with a failed first image retries the image without creating
     }),
   ).toStrictEqual(["Example", "New tab"]);
   expect(screen.getByLabelText("Address")).toHaveValue("");
+  expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
 });
 
 test("Submitting an address navigates the selected remote page", async () => {

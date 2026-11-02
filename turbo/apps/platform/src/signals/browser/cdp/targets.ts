@@ -17,6 +17,7 @@ export function pageTarget(info: unknown): ViewerTarget | null {
   }
   return Object.freeze({
     id: info.targetId,
+    blank: info.url === "about:blank",
     title:
       typeof info.title === "string" && info.title.trim()
         ? info.title.slice(0, 512)
