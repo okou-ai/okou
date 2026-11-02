@@ -153,9 +153,9 @@ test.each([
   { failure: "sequence gap", reason: "sequence-gap" },
   { failure: "worker crash", reason: "worker-crashed" },
 ])(
-  "A bridge $failure revokes the real viewer without changing recovery policy",
+  "A bridge $failure revokes the scoped viewer without changing recovery policy",
   async ({ failure, reason }) => {
-    const { browser, sentry } = await setupViewer(true);
+    const { browser, sentry } = await setupViewer(true, { scoped: true });
     await waitFor(() => {
       expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
     });
