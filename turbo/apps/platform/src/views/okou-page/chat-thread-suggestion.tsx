@@ -1,4 +1,4 @@
-import type { ComponentProps, Ref } from "react";
+import { Fragment, type ComponentProps, type Ref } from "react";
 import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
@@ -96,23 +96,31 @@ export function ComposerMentionSuggestionMenu({
   );
   const threadSection = chatThreads.length > 0 && (
     <div key="threads">
-      <div className="px-1 pt-2 pb-1 text-xs font-medium text-muted-foreground">
-        {t(($) => {
-          return $.chat.composer.threadSuggestions;
-        })}
-      </div>
       {chatThreads.map((chatThread, index) => {
         const selected = agents.length + index === selectedIndex;
         return (
-          <ComposerMentionSuggestionItem
-            key={chatThread.id}
-            name={chatThread.title}
-            avatarUrl={chatThread.avatarUrl}
-            selected={selected}
-            onSelect={() => {
-              onSelectChatThread(chatThread);
-            }}
-          />
+          <Fragment key={chatThread.id}>
+            {(index === 0 ||
+              chatThread.project !== chatThreads[index - 1]?.project) && (
+              <div className="px-1 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                {chatThread.project
+                  ? t(($) => {
+                      return $.projects.projects;
+                    })
+                  : t(($) => {
+                      return $.chat.composer.threadSuggestions;
+                    })}
+              </div>
+            )}
+            <ComposerMentionSuggestionItem
+              name={chatThread.title}
+              avatarUrl={chatThread.avatarUrl}
+              selected={selected}
+              onSelect={() => {
+                onSelectChatThread(chatThread);
+              }}
+            />
+          </Fragment>
         );
       })}
     </div>

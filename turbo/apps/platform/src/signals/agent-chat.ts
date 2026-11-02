@@ -1,3 +1,4 @@
+import { selectedProjectId$ } from "./projects/project-navigation.ts";
 import { command, computed, state, type Computed } from "ccstate";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
@@ -128,9 +129,14 @@ function createChatThreadListSignals(
     if (!agentId) {
       return [];
     }
+    const enabled = get(featureSwitch$)[FeatureSwitchKey.Projects] === true;
+    const projectId = enabled ? get(selectedProjectId$) : null;
     return sortChatThreads(
       get(eventDrivenChatThreads$).filter((thread) => {
-        return thread.agentId === agentId;
+        return projectId
+          ? thread.projectId === projectId
+          : thread.agentId === agentId &&
+              (!enabled || thread.projectId === null);
       }),
     );
   });

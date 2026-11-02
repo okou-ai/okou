@@ -1,3 +1,4 @@
+import { listProjectThreads } from "../../lib/api/domains/projects";
 import chalk from "chalk";
 import { Command } from "commander";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
@@ -14,6 +15,8 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
 interface ListOptions {
+  readonly projectId?: string;
+  readonly project?: boolean;
   readonly agent?: string;
   readonly allAgents?: boolean;
   readonly archived?: boolean;
@@ -63,16 +66,48 @@ function compareUnreadThreads(
   );
 }
 
+function listScope(options: ListOptions) {
+  if (options.allAgents && options.agent !== undefined) {
+    printUsageError(
+      "--all-agents and --agent are mutually exclusive",
+      "Choose one agent with --agent, or omit it to list all agents.",
+    );
+  }
+  if (
+    options.projectId &&
+    (options.project === false || !isUuid(options.projectId))
+  ) {
+    throw new Error("Use a valid --project-id without --no-project");
+  }
+  const agentId =
+    options.allAgents ||
+    (options.projectId !== undefined && options.agent === undefined)
+      ? undefined
+      : resolveAgentId(options.agent);
+  const limit =
+    options.limit === "all"
+      ? Infinity
+      : options.limit === undefined
+        ? DEFAULT_LIMIT
+        : parseBoundedLogCount(options.limit, "--limit", 1, MAX_LIMIT);
+  return { agentId, limit };
+}
+
 export const listCommand = new Command()
   .name("list")
   .alias("ls")
   .description("List web chat threads")
   .option("--agent <id>", "Filter by agent ID (defaults to OKOU_AGENT_ID)")
   .option("--all-agents", "List threads across all agents in the current org")
+  .option(
+    "--project-id <id>",
+    "List Project chats across agents; --agent intersects",
+  )
+  .option("--no-project", "List only chats without a Project")
   .option("--unread", "List the latest 50 unread threads from the past 7 days")
   .option("--archived", "List only archived threads")
   .option(
-    "--limit <n>",
+    "--limit <n|all>",
     `Maximum number of threads to print (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT})`,
   )
   .option("--json", "Print machine-readable JSON")
@@ -98,23 +133,14 @@ Notes:
   )
   .action(
     withErrorHandler(async (options: ListOptions) => {
-      if (options.allAgents && options.agent !== undefined) {
-        printUsageError(
-          "--all-agents and --agent are mutually exclusive",
-          "Choose one agent with --agent, or omit it to list all agents.",
-        );
-      }
-      const agentId = options.allAgents
-        ? undefined
-        : resolveAgentId(options.agent);
-      const limit =
-        options.limit === undefined
-          ? DEFAULT_LIMIT
-          : parseBoundedLogCount(options.limit, "--limit", 1, MAX_LIMIT);
-      const allThreads = await syncCachedChatThreads();
+      const { agentId, limit } = listScope(options);
+      const allThreads = options.projectId
+        ? await listProjectThreads(options.projectId)
+        : await syncCachedChatThreads();
       const agentThreads = allThreads.filter((thread) => {
         return (
           (agentId === undefined || thread.agentId === agentId) &&
+          (options.project !== false || thread.projectId === null) &&
           (!options.archived || thread.archived)
         );
       });
@@ -142,6 +168,7 @@ Notes:
           JSON.stringify({
             ...(agentId === undefined ? { allAgents: true } : { agentId }),
             total: matchingThreads.length,
+            complete: threads.length === matchingThreads.length,
             threads,
           }),
         );

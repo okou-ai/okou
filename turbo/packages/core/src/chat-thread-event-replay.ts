@@ -55,8 +55,11 @@ function updatedThreadFields(
   event: ReplayChatThreadEvent,
   thread: EventDrivenChatThread,
 ): Partial<EventDrivenChatThread> | null {
-  if (event.kind === "project_updated") {
-    return { projectId: event.projectId };
+  if (
+    event.kind === "project_updated" ||
+    (event.kind === "sort_touched" && event.projectMembershipUpdated)
+  ) {
+    return { projectId: event.projectId ?? null };
   }
   if (event.kind === "renamed") {
     return { title: event.title, renamedAt: event.createdAt };
@@ -162,7 +165,7 @@ function applyEvent(
 
   const thread = threads.get(event.chatThreadId);
   if (!thread) {
-    if (isDeferrableUpdate(event.kind)) {
+    if (isDeferrableUpdate(event.kind) || event.projectMembershipUpdated) {
       const pendingUpdates = pendingThreadUpdates.get(event.chatThreadId) ?? [];
       pendingThreadUpdates.set(event.chatThreadId, [...pendingUpdates, event]);
     }

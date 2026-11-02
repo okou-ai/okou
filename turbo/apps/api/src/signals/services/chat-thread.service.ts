@@ -824,6 +824,7 @@ function existingClientThreadCondition(args: {
 }
 
 interface CreateChatThreadArgs {
+  readonly projectId?: string;
   /** Only supplied from the authenticated agent token. */
   readonly sourceRunId?: string;
   readonly userId: string;
@@ -856,6 +857,7 @@ function ordinaryChatThreadInsertPlan(args: CreateChatThreadArgs) {
     userId: args.userId,
     agentId: args.agentId,
     title: args.title ?? null,
+    projectId: args.projectId,
     // Positive classification belongs to the INSERT itself. A conflicting
     // replay below returns the existing row without writing this value, so a
     // client id that already names an unknown or excluded thread keeps it.
@@ -901,6 +903,7 @@ function preparedOrdinaryThread(
   const thread = createdChatThreadFromRow(
     {
       id: args.clientThreadId ?? read.id,
+      projectId: args.projectId,
       userId: args.userId,
       title: args.title ?? null,
       selectedModel: plan.values.selectedModel,

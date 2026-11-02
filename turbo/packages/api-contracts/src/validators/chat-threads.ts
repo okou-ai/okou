@@ -259,6 +259,8 @@ export const chatThreadEventSchema = object({
   agentId: uuid(),
   /** On sort_touched, an explicit canonical agent reassignment. */
   reassignedAgentId: uuid().optional(),
+  /** Release-1 membership bridge; remove with the #44591 wire activation. */
+  projectMembershipUpdated: boolean().optional(),
   title: string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: string().nullable().optional(),

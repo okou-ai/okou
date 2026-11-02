@@ -57,6 +57,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   model: null,
   subscription: ["subscription:read", "subscription:switch"],
   search: null,
+  project: ["project:read", "project:write"],
   chat: [
     "chat-event:read",
     "chat-event:write",
@@ -336,6 +337,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Search chat or locate sources for direct analysis",
     load: async () => {
       return (await import("./commands/search")).searchCommand;
+    },
+  },
+  {
+    name: "project",
+    description: "Manage private cross-agent Projects",
+    load: async () => {
+      return (await import("./commands/project")).projectCommand;
     },
   },
   {

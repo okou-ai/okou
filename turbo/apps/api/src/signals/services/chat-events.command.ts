@@ -171,7 +171,8 @@ import {
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import { webChatContextId } from "./web-chat-queue-context.service";
 /** Canonical ChatEvent write commands. */
-type SendBody = zInfer<typeof chatEventsContract.send.body>;
+type SendBody =
+  import("@okouai/api-contracts/contracts/chat-event-send").ChatEventSendBody;
 interface NormalSendBody {
   readonly agentId: string;
   readonly prompt: string;
@@ -246,7 +247,7 @@ type NormalSendFailure =
  * The run, or an `input.rejected` explaining why none started, appears in the
  * thread's event stream.
  */
-interface CreatedChatEventResponse {
+export interface CreatedChatEventResponse {
   /** Server-side only: whether an earlier send already stored this input. */
   readonly replayed?: boolean;
   readonly status: 201;

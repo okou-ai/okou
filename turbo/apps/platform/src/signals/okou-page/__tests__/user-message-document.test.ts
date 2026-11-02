@@ -37,6 +37,12 @@ function createEditorSchema(): Schema {
         group: "inline",
         inline: true,
       },
+      projectMention: {
+        atom: true,
+        attrs: { projectId: { default: null }, name: { default: null } },
+        group: "inline",
+        inline: true,
+      },
       chatThreadMention: {
         atom: true,
         attrs: {
@@ -706,4 +712,43 @@ test("Suggestion quote and typed direction round-trip through the saved editor d
     "Review this partnership",
   );
   expect(messageDocumentToDisplayText(restored)).not.toContain("MAIL-42");
+});
+
+test("Project mentions preserve captured identity through drafts, feedback, text and display", () => {
+  const project = {
+    type: "project" as const,
+    projectId: "30000000-0000-4000-8000-000000000071",
+    nameSnapshot: "Launch [One]",
+  };
+  const document = {
+    version: 1 as const,
+    parts: [
+      project,
+      { type: "feedback" as const, quote: "A question", note: [project] },
+    ],
+  };
+  const editor = createEditorSchema().nodeFromJSON(draftToEditorDoc(document));
+  const restored = editorDocToMessageDocument(editor, {
+    selectedTemplate: undefined,
+    attachments: [],
+  });
+  if (!restored) {
+    throw new Error("Project draft could not be serialized");
+  }
+  expect(
+    restored.parts.filter((part) => {
+      return part.type === "project";
+    }),
+  ).toEqual([project]);
+  expect(
+    restored.parts.find((part) => {
+      return part.type === "feedback";
+    }),
+  ).toMatchObject({ note: [project] });
+  expect(messageDocumentToPrompt(document)).toContain(
+    "/projects/" + project.projectId,
+  );
+  expect(messageDocumentToDisplayText(document)).toContain(
+    project.nameSnapshot,
+  );
 });

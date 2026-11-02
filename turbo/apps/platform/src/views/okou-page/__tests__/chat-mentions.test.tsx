@@ -1,3 +1,4 @@
+import { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import {
   agentDraftContract,
   type AgentDraftRequest,
@@ -66,7 +67,7 @@ function configureAgentDraft(
   });
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, {
-      draftUserMessage: draft,
+      draftUserMessage: userMessageInputDocumentSchema.parse(draft),
       draftAttachments: null,
     });
   });

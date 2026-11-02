@@ -1,3 +1,4 @@
+import { ProjectMembership } from "../projects/project-page.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
@@ -256,6 +257,7 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
       <MobileShareButtonInner thread={thread} largeTarget />
       <ThreadMailButton thread={thread} />
       <ChatResourcesButton thread={thread} largeTarget />
+      <ProjectMembership threadId={thread.threadId} />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>
   );

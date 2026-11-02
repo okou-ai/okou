@@ -54,6 +54,8 @@ import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
 import { setupAgentChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
+import { setupProjectPage$ } from "./projects/project-page-setup.ts";
+import { hydrateProjects$ } from "./projects/projects.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
@@ -164,6 +166,7 @@ function setupSettingsParamAfterStableRoute(
     if (get(pathname$) !== initialPathname) {
       return;
     }
+    await set(hydrateProjects$, signal);
     await set(checkUnifiedSettingsParam$, signal);
   });
 }
@@ -247,6 +250,10 @@ const ROUTE_CONFIG = [
     analytics: false,
   },
 
+  {
+    path: ROUTES.project,
+    setup: setupAuthSidebarPageWrapper(setupProjectPage$),
+  },
   // --- New routes ---
   {
     path: ROUTES.chat,

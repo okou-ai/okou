@@ -1,4 +1,4 @@
-import { projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/contracts/project-readers";
+import { projectMessageDocumentSchema as projectAwareUserMessageDocumentSchema } from "@okouai/api-contracts/validators/project-message";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
@@ -1024,6 +1024,9 @@ const registerFeedbackNoteRenderPart$ = command(
       case "text": {
         return { type: "text", part };
       }
+      case "project": {
+        return { type: "project", part };
+      }
       case "chat_thread": {
         return { type: "chat_thread", part };
       }
@@ -1056,6 +1059,9 @@ const registerUserMessageRenderPart$ = command(
     switch (part.type) {
       case "text": {
         return { type: "text", part };
+      }
+      case "project": {
+        return { type: "project", part };
       }
       case "chat_thread": {
         return { type: "chat_thread", part };

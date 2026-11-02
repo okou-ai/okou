@@ -20,6 +20,7 @@ export const ROUTES = {
   activityInspect: "/activities/inspect",
   activityDetail: "/activities/:activityRunId",
   chat: "/chats/:threadId",
+  project: "/projects/:projectId",
   prompt: "/prompt",
   works: "/works",
   artifacts: "/artifacts",
@@ -87,7 +88,7 @@ export const ROUTES = {
 } as const;
 
 export type RouteKey = keyof typeof ROUTES;
-export type RoutePath = (typeof ROUTES)[RouteKey] | `/projects/${string}`;
+export type RoutePath = (typeof ROUTES)[RouteKey];
 
 type WorkflowDetailRouteKey =
   | "workflowDetail"

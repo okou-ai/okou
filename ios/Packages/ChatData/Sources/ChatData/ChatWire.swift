@@ -77,6 +77,7 @@ struct ThreadEvent: Codable, Sendable {
   let kind: ChatThreadChange.Kind
   let chatThreadId: String
   let agentId: String
+  let projectMembershipUpdated: Bool?
   let reassignedAgentId: String?
   let projectId: String?
   let title: String?
@@ -92,7 +93,8 @@ struct ThreadEvent: Codable, Sendable {
   let createdAt: Date
   var change: ChatThreadChange {
     ChatThreadChange(
-      kind: kind, chatThreadId: chatThreadId, agentId: agentId,
+      kind: projectMembershipUpdated == true ? .projectUpdated : kind,
+      chatThreadId: chatThreadId, agentId: agentId,
       reassignedAgentId: reassignedAgentId, projectId: projectId, title: title,
       selectedModel: selectedModel,
       pinOrder: pinOrder, hidden: hidden, muted: muted, modelSettings: modelSettings,

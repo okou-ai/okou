@@ -39,6 +39,9 @@ import { buildInfoRoutes } from "./routes/build-info";
 import { builtInGenerationRoutes } from "./routes/built-in-generation";
 import { chatEventsRoutes } from "./routes/chat-events";
 import { chatRemoteAccessRoutes } from "./routes/chat-remote-access";
+import { projectAgentDraftRoutes } from "./routes/agent-draft";
+import { projectChatRoutes } from "./routes/project-chat";
+import { projectRoutes } from "./routes/projects";
 import { chatThreadRoutes } from "./routes/chat-threads";
 import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { cliAuthRoutes } from "./routes/cli-auth";
@@ -329,6 +332,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingStatusRoutes,
   ...billingUsagePackCreditsRoutes,
   ...bankingRoutes,
+  ...projectRoutes,
+  ...projectChatRoutes,
+  ...projectAgentDraftRoutes,
   ...chatThreadRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,

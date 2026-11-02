@@ -1,3 +1,4 @@
+import { ProjectMembership } from "../projects/project-page.tsx";
 import {
   MessageShareMenu,
   SharedThreadAudiencePicker,
@@ -824,6 +825,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          <ProjectMembership threadId={thread.threadId} />
           <AutomationMenuButton thread={thread} />
           <ThreadMailButton thread={thread} />
           <BrowserMenuButton thread={thread} />
@@ -7417,6 +7419,18 @@ function UserMessageFeedbackNote({
             />
           );
         }
+        if (renderPart.type === "project") {
+          return (
+            <Link
+              key={key}
+              pathname="/projects/:projectId"
+              options={{ pathParams: { projectId: renderPart.part.projectId } }}
+              className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
+            >
+              {renderPart.part.nameSnapshot}
+            </Link>
+          );
+        }
         if (renderPart.type === "agent") {
           return (
             <UserMessageAgentReference
@@ -7599,6 +7613,17 @@ function UserMessagePartView({
         threadId={renderPart.part.threadId}
         title={renderPart.part.titleSnapshot}
       />
+    );
+  }
+  if (renderPart.type === "project") {
+    return (
+      <Link
+        pathname="/projects/:projectId"
+        options={{ pathParams: { projectId: renderPart.part.projectId } }}
+        className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
+      >
+        {renderPart.part.nameSnapshot}
+      </Link>
     );
   }
   if (renderPart.type === "agent") {

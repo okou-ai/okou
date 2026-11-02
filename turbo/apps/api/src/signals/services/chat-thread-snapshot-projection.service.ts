@@ -54,6 +54,7 @@ export const loadChatThreadSnapshotProjection$ = command(
       const page = await db
         .select({
           id: chatThreads.id,
+          projectId: chatThreads.projectId,
           agentId: chatThreads.agentId,
           title: chatThreads.title,
           lastMessageAt: chatThreads.lastMessageAt,
@@ -96,6 +97,7 @@ export const loadChatThreadSnapshotProjection$ = command(
         threads.push(
           chatThreadSnapshotProjectionSchema.parse({
             id: thread.id,
+            projectId: thread.projectId,
             agentId: thread.agentId,
             title: thread.title,
             sortAt: thread.sortAt,

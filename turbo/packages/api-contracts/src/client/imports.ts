@@ -1321,6 +1321,37 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "project-chat",
+    contracts: ["projectChatContract"],
+    bindings: [],
+  },
+  {
+    module: "projects",
+    contracts: ["projectsContract"],
+    bindings: [
+      {
+        name: "projectEventQueryResultSchema",
+        source: "validators/projects",
+        imported: "projectEventQueryResultSchema",
+      },
+      {
+        name: "projectEventSchema",
+        source: "validators/projects",
+        imported: "projectEventSchema",
+      },
+      {
+        name: "projectSchema",
+        source: "validators/projects",
+        imported: "projectSchema",
+      },
+      {
+        name: "projectSnapshotArchiveSchema",
+        source: "validators/projects",
+        imported: "projectSnapshotArchiveSchema",
+      },
+    ],
+  },
+  {
     module: "push-subscriptions",
     contracts: ["pushSubscriptionsContract"],
     bindings: [],

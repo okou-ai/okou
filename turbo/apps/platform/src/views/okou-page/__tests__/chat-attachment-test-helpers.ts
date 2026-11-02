@@ -1,3 +1,6 @@
+import type { infer as zInfer } from "zod";
+import type { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
+type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   chatThreadArtifactsContract,
@@ -5,7 +8,6 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
   type ChatThreadArtifactFile,
-  type ChatThreadDraft,
   type ImageAnnotation,
   type PersistedAttachment,
   type UserMessageDocument,

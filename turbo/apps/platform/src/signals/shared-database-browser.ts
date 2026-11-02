@@ -1,4 +1,5 @@
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
+import { syncProjects$ } from "./projects/projects.ts";
 import { command, state } from "ccstate";
 import sharedDatabaseWorkerAssetUrl from "virtual:shared-database-worker";
 
@@ -169,6 +170,10 @@ const syncSharedDatabaseInvalidation$ = command(
     dataKey: SharedDatabaseDataKey,
     signal: AbortSignal,
   ): Promise<void> => {
+    if (dataKey.kind === "project-event") {
+      await set(syncProjects$, signal);
+      return;
+    }
     if (dataKey.kind === "chat-event") {
       // Message-created is also the only realtime signal emitted by a native
       // runless delivery. Invalidate the canonical unread resource before the

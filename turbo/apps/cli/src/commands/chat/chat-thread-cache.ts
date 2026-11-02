@@ -19,7 +19,7 @@ import {
 import { decodeSandboxTokenPayload, getApiUrl } from "../../lib/api/config";
 
 const CACHE_VERSION = 2;
-const MAX_EVENT_PAGES_PER_SYNC = 20;
+const MAX_EVENT_PAGES_PER_SYNC = 1000;
 
 interface ChatThreadCache {
   readonly version: typeof CACHE_VERSION;
@@ -209,6 +209,11 @@ export async function syncCachedChatThreads(): Promise<
       }
     }
 
+    if (page === MAX_EVENT_PAGES_PER_SYNC - 1 && result.hasMore) {
+      throw new Error(
+        "Chat synchronization is incomplete; no partial list was returned",
+      );
+    }
     if (!result.hasMore || result.events.length === 0) {
       break;
     }

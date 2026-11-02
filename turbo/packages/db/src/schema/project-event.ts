@@ -40,6 +40,7 @@ export const projectEvents = pgTable(
     projectId: uuid("project_id").notNull(),
     kind: projectEventKind("kind").notNull(),
     name: text("name"),
+    fromThreadId: uuid("from_thread_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

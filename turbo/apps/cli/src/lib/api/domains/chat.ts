@@ -1,3 +1,4 @@
+import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import { array } from "zod";
 import {
   projectAwareChatThreadEventSchema,
@@ -164,6 +165,7 @@ export async function getChatIndicators(): Promise<Indicators> {
 }
 
 export async function createChatThread(options: {
+  projectId?: string;
   agentId: string;
   title: string;
   /** Null selects Auto; omit to use the member default. */
@@ -176,6 +178,7 @@ export async function createChatThread(options: {
   const result = await client.create({
     body: {
       agentId: options.agentId,
+      projectId: options.projectId,
       title: options.title,
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.serviceTier === undefined
@@ -260,7 +263,19 @@ export async function sendChatEvent(
 ): Promise<ChatEventSendResult> {
   const config = await getClientConfig();
   const client = initClient(chatEventsContract, config);
-  const result = await client.send({ body });
+  const result = body.userMessage?.parts.some((p) => {
+    return (
+      p.type === "project" ||
+      (p.type === "feedback" &&
+        p.note.some((n) => {
+          return n.type === "project";
+        }))
+    );
+  })
+    ? await initClient(projectChatContract, config).send({
+        body: projectChatContract.send.body.parse(body),
+      })
+    : await client.send({ body: chatEventsContract.send.body.parse(body) });
   if (result.status === 201) {
     return result.body;
   }

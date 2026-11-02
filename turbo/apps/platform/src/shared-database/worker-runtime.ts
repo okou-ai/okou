@@ -1,3 +1,4 @@
+import { queryProjectEventStore } from "../signals/external/idb-project-event-store.ts";
 import { fetchResource } from "../lib/resource-fetch.ts";
 import {
   chatThreadsContract,
@@ -583,6 +584,14 @@ export class SharedDatabaseWorkerRuntime {
         signal,
       );
       return result as SharedDatabaseQueryResult<TKey>;
+    }
+    if (dataKey.kind === "project-event") {
+      return (await queryProjectEventStore(
+        dataKey,
+        query.consistency,
+        this.createContractClient,
+        signal,
+      )) as SharedDatabaseQueryResult<TKey>;
     }
     if (dataKey.kind !== "chat-thread-event") {
       throw new Error("Shared database query data key is invalid");

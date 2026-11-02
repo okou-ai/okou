@@ -1,3 +1,5 @@
+import { projectAccess$ } from "./projects";
+import { projectById } from "../services/project.service";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -200,6 +202,14 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
+  if (
+    body.data.projectId !== undefined &&
+    (!(await get(projectAccess$)) ||
+      !(await get(projectById(auth, body.data.projectId))))
+  ) {
+    return notFound("Project not found");
+  }
+
   const initialRemoteAccessOverrides =
     body.data.initialRemoteAccessOverrides ?? [];
   const remoteAccessError = await set(
@@ -290,6 +300,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       agentId: body.data.agentId,
       title: body.data.title,
+      projectId: body.data.projectId,
       clientThreadId: body.data.clientThreadId,
       eventId: body.data.eventId,
       selectedModel: pin.selectedModel,

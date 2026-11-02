@@ -53,6 +53,10 @@ type UserMessageExternalSourcePart = Exclude<
 
 export type UserMessageFeedbackNoteRenderPart =
   | {
+      readonly type: "project";
+      readonly part: FeedbackNotePartOfType<"project">;
+    }
+  | {
       readonly type: "text";
       readonly part: FeedbackNotePartOfType<"text">;
     }
@@ -71,6 +75,10 @@ export type UserMessageFeedbackNoteRenderPart =
     };
 
 export type UserMessageRenderPart =
+  | {
+      readonly type: "project";
+      readonly part: UserMessagePartOfType<"project">;
+    }
   | {
       readonly type: "text";
       readonly part: UserMessagePartOfType<"text">;

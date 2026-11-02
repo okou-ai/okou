@@ -7303,5 +7303,33 @@
       "successDescription": "{{phone}} 已連接。傳送 WhatsApp 訊息即可開始聊天。",
       "unavailable": "WhatsApp 尚未設定"
     }
+  },
+  "projects": {
+    "projects": "Projects",
+    "rename": "重命名",
+    "create": "创建 Project",
+    "renameProject": "重命名 Project",
+    "description": "将不同 Agent 的相关聊天归到一起",
+    "name": "Project 名称",
+    "saving": "正在保存…",
+    "save": "保存",
+    "move": "移至 Project",
+    "moveTitle": "移动聊天",
+    "moveDescription": "聊天将保留原来的 Agent 和历史记录",
+    "remove": "移出 Project",
+    "fromChat": "从此聊天创建 Project",
+    "unavailable": "Project 不可用",
+    "unavailableDescription": "此 Project 已删除，或在当前工作区中不可用",
+    "delete": "删除",
+    "newChat": "新建聊天",
+    "archived": "已归档的聊天",
+    "empty": "暂无聊天",
+    "deleteTitle": "删除 Project？",
+    "deleteDescription": "聊天及其历史记录会保留，并返回原来 Agent 的列表。",
+    "deleteProject": "删除 Project",
+    "saveError": "无法保存 Project",
+    "moveError": "无法移动聊天",
+    "createChatError": "无法创建聊天",
+    "deleteError": "无法删除 Project"
   }
 }
