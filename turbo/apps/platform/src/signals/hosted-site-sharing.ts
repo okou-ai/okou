@@ -5,8 +5,6 @@ import { hostedSiteUrlSlugSchema } from "@okouai/api-contracts/validators/host";
 import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilitySchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
@@ -100,7 +98,6 @@ function createSiteVisibilitySignals(sourceUrl: string) {
           }),
         );
       }
-      return updated;
     },
   );
   return {
@@ -220,7 +217,6 @@ function createSiteUrlEditorSignals(
         return $.artifacts.siteUrl.updated;
       }),
     );
-    return true;
   });
   return {
     draft$,
@@ -304,54 +300,34 @@ function createHostedSiteShareSession(sourceUrl: string) {
       set(linkCopy.clear$);
     }
   });
-  const show$ = command(
-    async (
-      { get, set },
-      copyIfReadOnly: boolean,
-      parentSignal: AbortSignal,
-    ) => {
-      const signal = set(resetOpenSignal$, parentSignal);
-      set(open$, true);
-      const hasSettings = await get(hasSettings$);
+  const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
+    const signal = set(resetOpenSignal$, parentSignal);
+    set(open$, true);
+    const hasSettings = await get(hasSettings$);
+    signal.throwIfAborted();
+    if (!hasSettings) {
+      set(open$, false);
+      const url = await get(copyUrl$);
       signal.throwIfAborted();
-      if (!hasSettings) {
-        set(open$, false);
-        if (copyIfReadOnly) {
-          const url = await get(copyUrl$);
-          signal.throwIfAborted();
-          await copyAttachmentLinkToClipboard(url, undefined, signal);
-        }
-      }
-    },
-  );
+      await copyAttachmentLinkToClipboard(url, undefined, signal);
+    }
+  });
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const url = await get(copyUrl$);
     signal.throwIfAborted();
     await set(linkCopy.copy$, url, signal);
   });
   const changeVisibility$ = throttleCommand(
-    command(async ({ get, set }, choice: Visibility, signal: AbortSignal) => {
+    command(({ set }, choice: Visibility, signal: AbortSignal) => {
       set(linkCopy.clear$);
-      const updated = await set(visibility.changeVisibility$, choice, signal);
-      if (
-        updated &&
-        get(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions]
-      ) {
-        await set(copy$, signal);
-      }
+      return set(visibility.changeVisibility$, choice, signal);
     }),
     0,
   );
   const save$ = throttleCommand(
-    command(async ({ get, set }, signal: AbortSignal) => {
+    command(({ set }, signal: AbortSignal) => {
       set(linkCopy.clear$);
-      const updated = await set(editor.save$, signal);
-      if (
-        updated &&
-        get(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions]
-      ) {
-        await set(copy$, signal);
-      }
+      return set(editor.save$, signal);
     }),
     0,
   );

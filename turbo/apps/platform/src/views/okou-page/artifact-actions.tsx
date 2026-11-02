@@ -147,12 +147,10 @@ export function ArtifactActionSeparator() {
 
 export function ArtifactActionTooltip({
   children,
-  disabled = false,
   label,
   side = "bottom",
 }: {
   children: ReactElement;
-  disabled?: boolean;
   label: string;
   side?: "top" | "right" | "bottom" | "left";
 }) {
@@ -163,7 +161,7 @@ export function ArtifactActionTooltip({
   );
   return (
     <TooltipProvider delay={200}>
-      <Tooltip disabled={disabled}>
+      <Tooltip>
         <TooltipTrigger render={trigger} />
         <TooltipContent side={side}>
           <p className="text-xs">{label}</p>
@@ -763,15 +761,10 @@ export function ArtifactDownloadMenu({
   const originalDriveAction = useGoogleDriveMenuAction(syncTarget, surface);
   const downloadPending = downloadLoadable.state === "loading";
   const downloadName = artifactDownloadFilename(artifactKind, filename, url);
-  const quickActions =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactQuickActions];
   return (
-    <DropdownMenu modal={!quickActions}>
-      <ArtifactActionTooltip label={label} disabled={quickActions}>
+    <DropdownMenu>
+      <ArtifactActionTooltip label={label}>
         <DropdownMenuTrigger
-          openOnHover={quickActions}
-          delay={100}
-          closeDelay={150}
           aria-label={label}
           aria-busy={downloadPending ? "true" : undefined}
           disabled={downloadPending}
