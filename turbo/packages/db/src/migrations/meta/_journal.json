@@ -3004,6 +3004,13 @@
       "when": 1793494852919,
       "tag": "1507_official_workflow_bundle_preparation",
       "breakpoints": true
+    },
+    {
+      "idx": 1508,
+      "version": "7",
+      "when": 1793591113714,
+      "tag": "1508_auto_recharge_failure_limit",
+      "breakpoints": true
     }
   ]
 }

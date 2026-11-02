@@ -19,6 +19,7 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { canRestorePlanSubscription } from "./billing-restore.service";
+import { autoRechargeConfigFromOrg } from "./credit-recharge-policy";
 
 const TIER_MONTHLY_CREDITS = Object.freeze<Record<PlanCreditTier, number>>({
   pro: 20_000,
@@ -67,6 +68,7 @@ interface BillingOrgRow {
   autoRechargeEnabled: boolean;
   autoRechargeThreshold: number | null;
   autoRechargeAmount: number | null;
+  autoRechargeFailureCount: number;
 }
 
 interface BillingStatusResponse {
@@ -91,6 +93,7 @@ interface BillingStatusResponse {
     enabled: boolean;
     threshold: number | null;
     amount: number | null;
+    disabledReason?: "consecutive_failures";
   };
   creditExpiry: {
     expiringNextCycle: number;
@@ -133,6 +136,7 @@ const DEFAULT_BILLING_ORG = Object.freeze<BillingOrgRow>({
   autoRechargeEnabled: false,
   autoRechargeThreshold: null,
   autoRechargeAmount: null,
+  autoRechargeFailureCount: 0,
 });
 
 function planTierFromAmount(amount: number): PlanCreditTier | null {
@@ -415,11 +419,7 @@ function billingStatusResponse(args: {
     hasSubscription:
       hasManageablePlanSubscription(org) ||
       args.concurrencySubscriptions.length > 0,
-    autoRecharge: {
-      enabled: org.autoRechargeEnabled,
-      threshold: org.autoRechargeThreshold,
-      amount: org.autoRechargeAmount,
-    },
+    autoRecharge: autoRechargeConfigFromOrg(org),
     creditExpiry: creditExpiry(args.activeRecords),
     creditBreakdown: buildCreditBreakdown({
       orgId: args.orgId,
@@ -548,6 +548,7 @@ export function orgBillingStatus(
           autoRechargeEnabled: orgMetadata.autoRechargeEnabled,
           autoRechargeThreshold: orgMetadata.autoRechargeThreshold,
           autoRechargeAmount: orgMetadata.autoRechargeAmount,
+          autoRechargeFailureCount: orgMetadata.autoRechargeFailureCount,
         })
         .from(orgMetadata)
         .where(eq(orgMetadata.orgId, orgId))
@@ -597,7 +598,7 @@ export function orgBillingStatus(
         return concurrencySubscriptionsFromRows(rows);
       })(),
       (async () => {
-        const query = db
+        const [capabilityRow] = await db
           .select({
             planKey: orgPlanEntitlements.planKey,
             status: orgPlanEntitlements.status,
@@ -618,14 +619,12 @@ export function orgBillingStatus(
           .from(orgPlanEntitlements)
           .where(eq(orgPlanEntitlements.orgId, orgId))
           .limit(1);
-        const [capabilityRow] = await query;
         if (!capabilityRow) {
-          const orgQuery = db
+          const [existingOrg] = await db
             .select({ orgId: orgMetadata.orgId })
             .from(orgMetadata)
             .where(eq(orgMetadata.orgId, orgId))
             .limit(1);
-          const [existingOrg] = await orgQuery;
           if (!existingOrg) {
             return null;
           }

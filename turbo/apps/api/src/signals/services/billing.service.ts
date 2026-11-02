@@ -1,7 +1,7 @@
 import { command, computed, type Computed } from "ccstate";
 import type { AutoRechargeConfig } from "@okouai/api-contracts/contracts/billing";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -11,6 +11,7 @@ import {
 } from "../external/stripe-client";
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
+import { autoRechargeConfigFromOrg } from "./credit-recharge-policy";
 
 export function autoRechargeConfig(
   orgId: string,
@@ -22,16 +23,19 @@ export function autoRechargeConfig(
         autoRechargeEnabled: orgMetadata.autoRechargeEnabled,
         autoRechargeThreshold: orgMetadata.autoRechargeThreshold,
         autoRechargeAmount: orgMetadata.autoRechargeAmount,
+        autoRechargeFailureCount: orgMetadata.autoRechargeFailureCount,
       })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, orgId))
       .limit(1);
 
-    return {
-      enabled: row?.autoRechargeEnabled ?? false,
-      threshold: row?.autoRechargeThreshold ?? null,
-      amount: row?.autoRechargeAmount ?? null,
-    };
+    return row
+      ? autoRechargeConfigFromOrg(row)
+      : {
+          enabled: false,
+          threshold: null,
+          amount: null,
+        };
   });
 }
 
@@ -134,6 +138,11 @@ export const updateAutoRechargeConfig$ = command(
         autoRechargeEnabled: enabled,
         autoRechargeThreshold: enabled ? threshold : null,
         autoRechargeAmount: enabled ? amount : null,
+        ...(enabled
+          ? {
+              autoRechargeFailureCount: sql`CASE WHEN ${orgMetadata.autoRechargeEnabled} THEN ${orgMetadata.autoRechargeFailureCount} ELSE 0 END`,
+            }
+          : {}),
         ...(!enabled ? { autoRechargePendingAt: null } : {}),
         updatedAt: nowDate(),
       })

@@ -1063,6 +1063,7 @@
       "amountTitle": "充值数量",
       "automaticTopUps": "自动充值",
       "description": "当余额低于设定值时自动购买积分。",
+      "disabledAfterFailures": "自动充值因连续支付失败已关闭。请检查支付方式后重新开启。",
       "enableAria": "启用自动充值",
       "thresholdAria": "自动充值的积分阈值",
       "thresholdDescription": "当积分余额低于这个数值时触发购买。",

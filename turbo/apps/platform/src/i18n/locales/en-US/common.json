@@ -1065,6 +1065,7 @@
       "amountTitle": "Recharge amount",
       "automaticTopUps": "Automatic top-ups",
       "description": "Purchase credits when your balance falls below a threshold.",
+      "disabledAfterFailures": "Auto-recharge was turned off after repeated payment failures. Check your payment method before turning it on again.",
       "enableAria": "Enable auto-recharge",
       "thresholdAria": "Credit threshold for auto-recharge",
       "thresholdDescription": "Trigger a purchase when your credit balance goes under this number.",

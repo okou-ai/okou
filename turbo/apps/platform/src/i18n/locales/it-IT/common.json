@@ -1085,6 +1085,7 @@
       "amountTitle": "Importo della ricarica",
       "automaticTopUps": "Ricariche automatiche",
       "description": "Acquista crediti quando il tuo saldo scende al di sotto di una soglia.",
+      "disabledAfterFailures": "La ricarica automatica è stata disattivata dopo ripetuti pagamenti non riusciti. Controlla il metodo di pagamento prima di riattivarla.",
       "enableAria": "Abilita la ricarica automatica",
       "thresholdAria": "Soglia di credito per la ricarica automatica",
       "thresholdDescription": "Attiva un acquisto quando il saldo del tuo credito scende sotto questo numero.",

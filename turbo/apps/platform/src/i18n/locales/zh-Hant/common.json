@@ -1063,6 +1063,7 @@
       "amountTitle": "充值數量",
       "automaticTopUps": "自動充值",
       "description": "當餘額低於設定值時自動購買積分。",
+      "disabledAfterFailures": "自動儲值因連續付款失敗已關閉。請檢查付款方式後重新開啟。",
       "enableAria": "啟用自動充值",
       "thresholdAria": "自動充值的積分閾值",
       "thresholdDescription": "當積分餘額低於這個數值時觸發購買。",

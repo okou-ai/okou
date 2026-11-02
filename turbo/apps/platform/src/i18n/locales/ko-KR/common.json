@@ -1063,6 +1063,7 @@
       "amountTitle": "충전 금액",
       "automaticTopUps": "자동 충전",
       "description": "잔액이 임계값 아래로 떨어지면 크레딧을 구매합니다.",
+      "disabledAfterFailures": "결제가 연속으로 실패하여 자동 충전이 꺼졌습니다. 결제 수단을 확인한 후 다시 켜세요.",
       "enableAria": "자동 충전 활성화",
       "thresholdAria": "자동 충전 크레딧 임계값",
       "thresholdDescription": "크레딧 잔액이 이 숫자 아래로 떨어지면 구매가 시작됩니다.",
