@@ -1747,6 +1747,7 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
         .and_then(|runtime| runtime.install(sandbox.as_ref(), context, &cleanup_cancel));
     let reuse_result = start.reuse_result;
     let home_reuse_result = start.home_reuse_result;
+    let previous_storage = start.prev_storage;
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
@@ -1853,12 +1854,21 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
             None
         };
 
+    let current_inputs = runner_types::content_bundle::fingerprints(context);
+    let storage_fingerprints = if lifecycle.storage_preparation_complete {
+        current_inputs
+    } else {
+        // Cancellation may precede reconciliation, or interrupt a partial apply.
+        // Retain both generations' paths without claiming the requested versions
+        // were installed. A later physical reuse must reconcile them again.
+        current_inputs.tainted_paths_including(previous_storage)
+    };
     PreparedSandboxAttempt {
         retry_inputs,
         outcome: ExecuteOutcome {
             failure: agent_result.failure,
             sandbox_reuse_disposition: agent_result.sandbox_reuse_disposition,
-            storage_fingerprints: runner_types::content_bundle::fingerprints(context),
+            storage_fingerprints,
             sandbox: Some(sandbox),
             source_ip,
             network_log_session: Some(network_log_session),

@@ -283,6 +283,9 @@ mounting and ownership publication before finalization. Hard cancellation may
 interrupt the accepted Agent preparation phase. A settled
 pre-Agent cancellation may enter reuse preparation, but operation quiescence,
 descendant cleanup and transport health must still be proved before parking.
+Unfinished storage reconciliation retains tainted current and previous managed
+paths, so the next Run reconciles them instead of treating requested versions as
+already installed.
 
 Output drains retain their 64 KiB read capacity but allocate the read buffer
 uninitialized on the heap. This avoids faulting every page of a large stack

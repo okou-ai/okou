@@ -530,7 +530,12 @@ impl ExecuteOutcome {
     }
 
     fn with_content_context(mut self, context: &ExecutionContext) -> Self {
-        self.storage_fingerprints = runner_types::content_bundle::fingerprints(context);
+        let mut inputs = runner_types::content_bundle::fingerprints(context);
+        // Observed reconciliation state takes precedence over requested inputs,
+        // including tainted paths retained from the previous filesystem state.
+        inputs.storages.extend(self.storage_fingerprints.storages);
+        inputs.artifacts.extend(self.storage_fingerprints.artifacts);
+        self.storage_fingerprints = inputs;
         self
     }
 }

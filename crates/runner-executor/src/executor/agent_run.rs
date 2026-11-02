@@ -1100,7 +1100,7 @@ impl AgentBootstrapInputs {
             sandbox.id(),
             "guest_agent_bootstrap_files",
         );
-        let mut recovery_attempted = false;
+        let mut recovery_error = None;
         let mut resource_diagnostics = None;
         loop {
             let started = Instant::now();
@@ -1140,7 +1140,11 @@ impl AgentBootstrapInputs {
                 Some(Err(error)) => error,
                 None => {
                     return Err(BootstrapFileFailure {
-                        error: RunnerError::Cancelled,
+                        error: if cancellation.hard.is_cancelled() {
+                            RunnerError::Cancelled
+                        } else {
+                            recovery_error.take().unwrap_or(RunnerError::Cancelled)
+                        },
                         replace: false,
                         resource_diagnostics,
                     });
@@ -1154,17 +1158,16 @@ impl AgentBootstrapInputs {
                 private_write_timeout_stage(&error),
             );
             if cancel.is_cancelled()
-                || recovery_attempted
+                || recovery_error.is_some()
                 || !super::disk_cleanup::is_disk_write_error(&error)
             {
                 return Err(BootstrapFileFailure {
-                    replace: recovery_attempted && super::disk_cleanup::is_disk_write_error(&error),
+                    replace: recovery_error.is_some()
+                        && super::disk_cleanup::is_disk_write_error(&error),
                     error,
                     resource_diagnostics,
                 });
             }
-            recovery_attempted = true;
-
             // Cleanup must be the sole supervised workload. Finish ownership of
             // optional prefetch before asking the guest to prove containment.
             let old_prefetch = std::mem::replace(
@@ -1180,9 +1183,16 @@ impl AgentBootstrapInputs {
             .await;
             let recovered = match recovered {
                 Some(recovered) if !cancel.is_cancelled() => recovered,
-                _ => {
+                settled => {
+                    if let Some(settled) = settled {
+                        resource_diagnostics = settled.diagnostics.map(Box::new);
+                    }
                     return Err(BootstrapFileFailure {
-                        error: RunnerError::Cancelled,
+                        error: if cancellation.hard.is_cancelled() {
+                            RunnerError::Cancelled
+                        } else {
+                            error
+                        },
                         replace: false,
                         resource_diagnostics,
                     });
@@ -1199,6 +1209,9 @@ impl AgentBootstrapInputs {
                     resource_diagnostics,
                 });
             }
+            // Keep the failure until the replacement write actually succeeds,
+            // including cancellation before the retry's admission boundary.
+            recovery_error = Some(error);
         }
     }
 }
@@ -1532,8 +1545,9 @@ pub(super) async fn run_in_sandbox(
     .await
 }
 
-/// Owned startup delivery and cancellation policy for one Agent attempt.
+/// Preparation progress, owned startup delivery and cancellation policy for one Agent attempt.
 pub(super) struct AgentRunLifecycle {
+    pub(super) storage_preparation_complete: bool,
     pub(super) startup_report: Option<super::StartupReport>,
     process_cancel_timeouts: ProcessCancelTimeouts,
 }
@@ -1569,6 +1583,7 @@ fn pre_agent_preparation_failure(
 impl AgentRunLifecycle {
     pub(super) fn new(process_cancel_timeouts: ProcessCancelTimeouts) -> Self {
         Self {
+            storage_preparation_complete: false,
             startup_report: None,
             process_cancel_timeouts,
         }
@@ -1719,6 +1734,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             }
         }
     };
+    lifecycle.storage_preparation_complete = true;
     let RunControls {
         sandbox_recovery,
         disk_recovery,
