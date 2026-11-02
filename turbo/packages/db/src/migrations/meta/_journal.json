@@ -3039,6 +3039,13 @@
       "when": 1793611801134,
       "tag": "1512_marketing_content_handoff",
       "breakpoints": true
+    },
+    {
+      "idx": 1513,
+      "version": "7",
+      "when": 1793614197167,
+      "tag": "1513_slack_reward_financial_identity",
+      "breakpoints": true
     }
   ]
 }
