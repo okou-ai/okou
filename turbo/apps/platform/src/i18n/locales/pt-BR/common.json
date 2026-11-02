@@ -2119,6 +2119,7 @@
       "partsHeading_other": "{{count}} partes citadas da sua resposta",
       "placeholder": "Pergunte ou comente sobre esta citação",
       "quote": "Citar",
+      "quoteEmail": "Citar {{email}}",
       "remove": "Remover feedback",
       "sentEmailDescription": "um e-mail enviado",
       "sourcePartHeading": "Citado de {{description}}",
