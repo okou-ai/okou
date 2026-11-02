@@ -17,7 +17,6 @@ tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", 
 tracing = { workspace = true, features = ["attributes", "std"] }
 uuid = { workspace = true, features = ["std", "v4"] }
 guest-control-proto.workspace = true
-zstd.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -2105,7 +2105,6 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test-support",
  "uuid",
- "zstd",
 ]
 
 [[package]]
@@ -2137,20 +2136,16 @@ dependencies = [
 name = "guest-control-tests"
 version = "0.12.131"
 dependencies = [
- "crc32fast",
  "guest-contracts",
  "guest-control-client",
  "guest-control-proto",
  "guest-control-server",
  "guest-write-file",
- "hex",
  "libc",
  "nix",
- "sha2 0.11.1",
  "shell-quote",
  "tempfile",
  "tokio",
- "zstd",
 ]
 
 [[package]]
@@ -2242,12 +2237,10 @@ dependencies = [
 name = "guest-write-file"
 version = "0.1.268"
 dependencies = [
- "crc32fast",
  "guest-contracts",
  "guest-control-proto",
  "libc",
  "tempfile",
- "zstd",
 ]
 
 [[package]]
@@ -4804,14 +4797,12 @@ name = "sandbox-mock"
 version = "0.17.37"
 dependencies = [
  "async-trait",
- "crc32fast",
  "guest-contracts",
  "sandbox",
  "tempfile",
  "tokio",
  "tokio-util",
  "uuid",
- "zstd",
 ]
 
 [[package]]

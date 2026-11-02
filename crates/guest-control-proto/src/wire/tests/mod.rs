@@ -66,22 +66,6 @@ fn message_type_wire_values_are_stable() {
             MSG_FILE_WRITE_STATUS_RESULT,
             0x21,
         ),
-        (
-            "MSG_WRITE_FILE_STREAM_BEGIN",
-            MSG_WRITE_FILE_STREAM_BEGIN,
-            0x22,
-        ),
-        (
-            "MSG_WRITE_FILE_STREAM_DATA",
-            MSG_WRITE_FILE_STREAM_DATA,
-            0x23,
-        ),
-        ("MSG_WRITE_FILE_STREAM_END", MSG_WRITE_FILE_STREAM_END, 0x24),
-        (
-            "MSG_WRITE_FILE_STREAM_CREDIT",
-            MSG_WRITE_FILE_STREAM_CREDIT,
-            0x25,
-        ),
     ];
 
     for (name, actual, expected) in message_types {

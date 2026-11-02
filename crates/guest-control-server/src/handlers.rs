@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 #[cfg(any(debug_assertions, feature = "test-support"))]
 use std::sync::Mutex;
@@ -139,36 +139,13 @@ where
     )
 }
 
-fn wait_write_file_child_with_timeout<S>(
-    child: Child,
+fn wait_write_file_child_with_timeout<S: ThreadSpawner>(
+    mut child: Child,
     content: &[u8],
     timeout_ms: u32,
     connection_cancel: &AtomicBool,
     progress: &FileWriteRequestProgress,
     spawner: S,
-) -> (bool, String)
-where
-    S: ThreadSpawner,
-{
-    wait_write_input(
-        child,
-        move |mut stdin| stdin.write_all(content),
-        timeout_ms,
-        connection_cancel,
-        progress,
-        spawner,
-        None,
-    )
-}
-
-fn wait_write_input<S: ThreadSpawner>(
-    mut child: Child,
-    copy_input: impl FnOnce(ChildStdin) -> io::Result<()> + Send,
-    timeout_ms: u32,
-    connection_cancel: &AtomicBool,
-    progress: &FileWriteRequestProgress,
-    spawner: S,
-    input_cancel: Option<Arc<AtomicBool>>,
 ) -> (bool, String) {
     progress.mark(FileWriteStage::WaitingForHelper);
     let cancel = match DrainCancellation::new() {
@@ -228,7 +205,8 @@ fn wait_write_input<S: ThreadSpawner>(
     std::thread::scope(|scope| {
         let (stdin_done_tx, stdin_done_rx) = std::sync::mpsc::channel::<()>();
         let stdin_handle = match spawn_scoped_named(scope, THREAD_WRITE_STDIN, move || {
-            let result = copy_input(stdin_pipe);
+            let mut stdin_pipe = stdin_pipe;
+            let result = stdin_pipe.write_all(content);
             let _ = stdin_done_tx.send(());
             result
         }) {
@@ -254,9 +232,6 @@ fn wait_write_input<S: ThreadSpawner>(
             },
         );
         progress.mark(FileWriteStage::JoiningStdin);
-        if let Some(stop) = input_cancel {
-            stop.store(true, std::sync::atomic::Ordering::Release);
-        }
         let stdin_result = match stdin_handle.join() {
             Ok(result) => result,
             Err(panic) => std::panic::resume_unwind(panic),
@@ -341,55 +316,6 @@ fn spawn_write_files_command(private: bool) -> io::Result<Child> {
         .stderr(Stdio::piped());
     apply_command_identity(&mut command, false)?;
     spawn_in_own_process_group(&mut command)
-}
-
-pub(crate) fn handle_file_stream(
-    seq: u32,
-    payload: &[u8],
-    mut input: crate::file_stream::Input,
-    connection_cancel: &AtomicBool,
-    progress: &FileWriteRequestProgress,
-) -> io::Result<Vec<u8>> {
-    let begin = crate::file_stream::decode_begin(payload).map_err(to_io_error)?;
-    progress.mark(FileWriteStage::StartingHelper);
-    let mut command = Command::new(guest_write_file_path());
-    match begin.codec {
-        crate::file_stream::StreamCodec::Zstd => {
-            command.args(["--zstd", &begin.raw_size.to_string()]);
-        }
-        crate::file_stream::StreamCodec::ZstdSource { crc32, .. } => {
-            command.args([
-                "--zstd-source",
-                &begin.raw_size.to_string(),
-                &crc32.to_string(),
-            ]);
-        }
-    }
-    command.args(write_file_command_args(begin.sudo, begin.append, false)?);
-    command
-        .arg("--")
-        .arg(begin.path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
-    apply_command_identity(&mut command, begin.sudo)?;
-    let child = spawn_in_own_process_group(&mut command)?;
-    if let Err(error) = input.grant_initial() {
-        kill_and_reap_child(child);
-        return Err(error);
-    }
-    let stop = Arc::clone(&input.stop);
-    let (success, error) = wait_write_input(
-        child,
-        move |mut stdin| io::copy(&mut input, &mut stdin).map(|_| ()),
-        WRITE_FILE_HELPER_TIMEOUT_MS,
-        connection_cancel,
-        progress,
-        SystemThreadSpawner,
-        Some(stop),
-    );
-    let payload = guest_control_proto::encode_write_file_result(success, &error);
-    guest_control_proto::encode(MSG_WRITE_FILE_RESULT, seq, &payload).map_err(to_io_error)
 }
 
 fn guest_write_file_path() -> PathBuf {

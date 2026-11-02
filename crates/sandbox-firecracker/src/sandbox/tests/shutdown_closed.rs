@@ -1,23 +1,20 @@
 use super::*;
-use guest_control_proto::{MSG_WRITE_FILE, MSG_WRITE_FILE_STREAM_BEGIN};
-use sandbox::{FileCompression, OperationCancellationContext};
+use guest_control_proto::{HEADER_SIZE, MIN_BODY_SIZE, MSG_WRITE_FILE};
+use sandbox::OperationCancellationContext;
 
 #[tokio::test]
-async fn stop_after_owned_transfer_cancellation_is_quiet_and_confirms_process_exit() {
+async fn stop_after_owned_frame_cancellation_is_quiet_and_confirms_process_exit() {
     let mut sandbox = test_sandbox_with_state(SandboxState::Running);
     let mut peer = attach_mock_shutdown_guest(&sandbox).await;
     let guest = sandbox.guest.lock().await.as_ref().cloned().unwrap();
     let connection_id = guest.connection_id().to_string();
     let owner = OperationCancellationContext::new("cancelled-run", sandbox.id(), "history_restore");
-    let mut write = Box::pin(owner.scope(guest.write_file_with_compression(
-        "/tmp/history",
-        b"history",
-        false,
-        FileCompression::Zstd,
-    )));
+    let content = vec![b'h'; 4 * 1024 * 1024];
+    let mut prefix = [0u8; HEADER_SIZE + MIN_BODY_SIZE];
+    let mut write = Box::pin(owner.scope(guest.write_file("/tmp/history", &content, false)));
     tokio::select! {
-        result = &mut write => panic!("write completed before transfer admission: {result:?}"),
-        begin = read_vsock_message(&mut peer) => assert_eq!(begin.msg_type, MSG_WRITE_FILE_STREAM_BEGIN),
+        result = &mut write => panic!("write completed before partial frame admission: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(5), peer.read_exact(&mut prefix)) => { result.unwrap().unwrap(); assert_eq!(prefix[HEADER_SIZE], MSG_WRITE_FILE); },
     }
     let mut child = tokio::process::Command::new("cat")
         .process_group(0)
@@ -43,13 +40,14 @@ async fn stop_after_owned_transfer_cancellation_is_quiet_and_confirms_process_ex
     let (result, events) = capture_async_log_events(async {
         owner.mark_cancelled();
         drop(write);
-        let mut byte = [0u8; 1];
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(5), peer.read(&mut byte))
-                .await
-                .unwrap()
-                .unwrap(),
-            0
+        let mut tail = Vec::new();
+        tokio::time::timeout(Duration::from_secs(5), peer.read_to_end(&mut tail))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            tail.len() < content.len(),
+            "the frame must remain incomplete"
         );
         assert!(
             pid_is_running(pid),
@@ -92,7 +90,7 @@ async fn stop_after_owned_transfer_cancellation_is_quiet_and_confirms_process_ex
     for event in [closed, skipped] {
         assert_event_field(event, "connection_id", &connection_id);
         assert_event_field(event, "run_id", "cancelled-run");
-        assert_event_field(event, "close_origin", "file_transfer_abandoned");
+        assert_event_field(event, "close_origin", "frame_write_abandoned");
     }
 }
 

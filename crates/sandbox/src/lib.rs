@@ -62,8 +62,7 @@ pub use home_drive_pressure::{
 pub use operation_cancellation::{CancelledOperationOwner, OperationCancellationContext};
 pub use runtime::{RuntimeProvider, SandboxRuntime};
 pub use sandbox::{
-    FileCompression, FileWriteMeasurements, GuestMemorySnapshot, Sandbox,
-    SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffOutcome,
+    GuestMemorySnapshot, Sandbox, SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffOutcome,
     SandboxFinalExecParkHandoffPoint, SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome,
     SandboxFinalExecParkStage, SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
     SandboxGuestConnectionPhase, SandboxParkNonReusableReason, SandboxParkOutcome,

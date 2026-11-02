@@ -82,7 +82,6 @@
 mod connection;
 mod exec_operation;
 mod file;
-mod file_stream;
 mod guest_dns_readiness;
 mod guest_state_restore;
 mod guest_storage_manifest;
@@ -128,7 +127,6 @@ pub use guest_state_restore::GuestStateRestoreResult;
 pub use guest_storage_manifest::GuestStorageManifestResult;
 pub use home_drive_mount::HomeDriveMountResult;
 pub use operation_tracker::NormalOperationRejection;
-pub use sandbox::FileCompression;
 
 /// Host-observed stage at which a request deadline expired.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

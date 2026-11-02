@@ -15,45 +15,6 @@ use crate::types::{
     StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest, WriteFileEntry,
 };
 
-/// File-transfer encoding, explicitly selected by the business caller.
-#[derive(Clone, Copy, Default, Eq, PartialEq)]
-pub enum FileCompression {
-    #[default]
-    /// Use the ordinary uncompressed transfer.
-    None,
-    /// Stream a checksummed zstd frame at the transport's fast compression level.
-    Zstd,
-    /// Transfer a source already authenticated by the Host's decoded SHA check.
-    /// The Guest checks encoded CRC and decoded size before publication.
-    ZstdSource { raw_size: u32, crc32: u32 },
-}
-
-impl std::fmt::Debug for FileCompression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::None => f.write_str("None"),
-            Self::Zstd => f.write_str("Zstd"),
-            Self::ZstdSource { raw_size, .. } => f
-                .debug_struct("ZstdSource")
-                .field("raw_size", raw_size)
-                .finish_non_exhaustive(),
-        }
-    }
-}
-
-/// Measurements from one successfully completed file write, using Host clocks.
-/// Payload bytes exclude protocol framing. Request time includes transport and
-/// Guest work; encoder pipeline time overlaps it and includes backpressure.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct FileWriteMeasurements {
-    pub wire_payload_bytes: u64,
-    pub requests: u64,
-    pub file_gate_wait: Duration,
-    pub requests_elapsed: Duration,
-    pub encoder_pipeline_elapsed: Duration,
-    pub publication_elapsed: Duration,
-}
-
 /// Requested terminal disposition for one completed guest staging file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StagedFileDisposition<'a> {
@@ -1086,17 +1047,6 @@ pub trait Sandbox: Send + Sync + Any {
     ///
     /// The guest path must be non-empty and must not contain NUL bytes.
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
-
-    /// Write file bytes using the caller's immutable transport/source choice.
-    /// Implementations must honor it without sampling, switching codecs or retrying raw.
-    /// Successful backends with a measured transport return its diagnostics;
-    /// backends without a wire transport (such as the mock) return `None`.
-    async fn write_file_with_compression(
-        &self,
-        path: &str,
-        content: &[u8],
-        compression: FileCompression,
-    ) -> Result<Option<FileWriteMeasurements>>;
 
     /// Publish or discard one completed guest staging file.
     ///

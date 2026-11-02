@@ -66,7 +66,6 @@ pub(super) enum ConnectionState {
 pub(super) struct Shared {
     pub(super) connection_id: Uuid,
     pub(super) sandbox_id: Option<String>,
-    pub(crate) file_stream: crate::file_stream::State,
     /// Serialises writes to the stream.
     pub(super) writer: tokio::sync::Mutex<tokio::net::unix::OwnedWriteHalf>,
     /// Serialises memory-heavy encoded frame construction without blocking
@@ -434,9 +433,6 @@ async fn reader_loop(
 }
 
 fn dispatch_reader_frame(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Result<()> {
-    if crate::file_stream::dispatch_credit(shared, msg)? {
-        return Ok(());
-    }
     match exec_operation::dispatch_incoming_frame(shared, msg) {
         Ok(true) => {
             return Ok(());
