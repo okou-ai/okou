@@ -33,7 +33,7 @@ import {
 } from "../../signals/projects/project-ui.ts";
 import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts";
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
-import { currentChatAgentRecordId$ } from "../../signals/agent-chat.ts";
+import { projectCreationAgentId$ } from "../../signals/projects/project-selected-agent.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
@@ -132,7 +132,7 @@ export function ProjectSidebar() {
   const enabled = useGet(projectsEnabled$);
   const projects = useGet(projects$);
   const selected = useGet(selectedProjectId$);
-  const agent = useLastResolved(currentChatAgentRecordId$);
+  const agent = useLastResolved(projectCreationAgentId$);
   const open = useSet(openProjectEditor$);
   if (!enabled) {
     return null;
@@ -425,7 +425,7 @@ export function ProjectPage() {
   const id = useGet(selectedProjectId$);
   const projects = useGet(projects$);
   const all = useGet(eventDrivenChatThreads$);
-  const agent = useLastResolved(currentChatAgentRecordId$);
+  const agent = useLastResolved(projectCreationAgentId$);
   const archived = useGet(projectArchiveFilter$);
   const setArchived = useSet(setProjectArchiveFilter$);
   const project = projects.find((item) => {
@@ -511,7 +511,7 @@ export function ProjectReference({
   part: { readonly projectId: string; readonly nameSnapshot: string };
   className?: string;
 }) {
-  const agent = useLastResolved(currentChatAgentRecordId$);
+  const agent = useLastResolved(projectCreationAgentId$);
   return (
     <Link
       pathname="/projects/:projectId"

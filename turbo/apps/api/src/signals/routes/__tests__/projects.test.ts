@@ -9,7 +9,11 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { projectRoutes } from "../projects";
 import { chatThreadRoutes } from "../chat-threads";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  createBddApi,
+  type ApiTestUser,
+  type ApiTestUserOptions,
+} from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -35,8 +39,8 @@ function client() {
 function threads() {
   return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
 }
-async function owner() {
-  const actor = bdd.user();
+async function owner(options?: ApiTestUserOptions) {
+  const actor = bdd.user(options);
   if (!actor.orgId) {
     throw new Error("Project fixture requires an organization");
   }
@@ -131,7 +135,7 @@ describe("private cross-Agent Projects", () => {
       (await accept(client().list({ headers: headers(peer) }), [200])).body
         .projects,
     ).toStrictEqual([]);
-    const elsewhere = await owner();
+    const elsewhere = await owner({ userId: actor.userId });
     expect(
       (
         await client().get({

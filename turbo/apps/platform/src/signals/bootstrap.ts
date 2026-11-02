@@ -1,3 +1,4 @@
+import { activeRoute$ } from "./active-route.ts";
 import { resetProjectUi$ } from "./projects/project-ui.ts";
 import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
 import { command, type Command } from "ccstate";

@@ -5,6 +5,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import {
+  fill,
   setupPage,
   click,
   queryAllByRoleFast,
@@ -69,7 +70,7 @@ test("Project view shows conversations across Agents, filters archives and prese
   metadata();
   await setupPage({
     context,
-    path: `/projects/${id}`,
+    path: `/projects/${id}?projectAgent=${other.agentId}`,
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
@@ -80,6 +81,9 @@ test("Project view shows conversations across Agents, filters archives and prese
   expect(namedLink(main, "Other Agent research")).toHaveAttribute(
     "href",
     expect.stringContaining("/chats/" + other.id),
+  );
+  expect(namedLink(main, "Launch planning")?.getAttribute("href")).toContain(
+    "projectAgent=" + other.agentId,
   );
   expect(namedLink(main, "Ordinary chat")).toBeNull();
   expect(namedLink(main, "Archived research")).toBeNull();
@@ -144,12 +148,14 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
     name: string | null;
     createdAt: string;
   }[] = [];
-  context.mocks.api(projectsContract.events, ({ query, respond }) =>
-    {return respond(200, {
-      events: events.filter((event) => {return event.seqId > query.sinceSeqId}),
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
       hasMore: false,
-    })},
-  );
+    });
+  });
   context.mocks.api(projectsContract.create, ({ body, respond }) => {
     events.push({
       id: body.eventId,
@@ -201,11 +207,12 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   });
   const user = userEvent.setup({ delay: null });
   function button(name: string, container: HTMLElement | Document = document) {
-    const found = queryAllByRoleFast("button", container).find(
-      (item) =>
-        {return item.getAttribute("aria-label") === name ||
-        item.textContent?.trim() === name},
-    );
+    const found = queryAllByRoleFast("button", container).find((item) => {
+      return (
+        item.getAttribute("aria-label") === name ||
+        item.textContent?.trim() === name
+      );
+    });
     if (!found) {
       throw new Error(`Button ${name} not found`);
     }
@@ -228,8 +235,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   await screen.findByRole("heading", { name: "Campaign" });
   await user.click(button("Rename"));
   const input = await screen.findByRole("textbox", { name: "Project name" });
-  await user.clear(input);
-  await user.type(input, "Campaign two");
+  await fill(input, "Campaign two");
   await user.click(button("Save"));
   await screen.findByRole("heading", { name: "Campaign two" });
   await user.click(button("Delete"));
