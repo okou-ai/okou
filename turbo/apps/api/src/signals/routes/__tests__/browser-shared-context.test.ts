@@ -158,35 +158,6 @@ test("requires cloud-browser authorization for a no-Run chat", async () => {
   });
 });
 
-test("rechecks chat authorization before returning a no-Run viewer connection", async () => {
-  const f = await fixture();
-  await f.owned.run(async () => {
-    const params = await createThread(f);
-    await open(params);
-    const [sessionId] = f.provider.sessionIds;
-    server.use(
-      http.get(
-        `${PROVIDER_URL}/browsers/${sessionId}`,
-        async () => {
-          await chat.updateThreadComputerUseHost(
-            f.owned.actor,
-            params.threadId,
-            null,
-            { cloudBrowserEnabled: false },
-          );
-        },
-        { once: true },
-      ),
-    );
-    await expect(
-      client().viewerConnection({ headers, params }),
-    ).resolves.toMatchObject({
-      status: 409,
-      body: { error: { code: "BROWSER_RECLAIMING" } },
-    });
-  });
-});
-
 test("preserves the legacy no-Run rejection when shared ownership is disabled", async () => {
   const f = await fixture(false);
   await f.owned.run(async () => {

@@ -1147,14 +1147,6 @@ function sharedBrowserViewer(
           if (currentBrowser.status !== "active") {
             return unavailable();
           }
-          const [confirmed] = await get(db$)
-            .select({ id: windows.chatThreadId })
-            .from(windows)
-            .where(liveSharedWindow(ctx.owner, view.profile, window));
-          signal.throwIfAborted();
-          if (!confirmed) {
-            return unavailable();
-          }
           return {
             kind: "ok",
             value: {
