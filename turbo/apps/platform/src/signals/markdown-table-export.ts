@@ -125,37 +125,16 @@ interface TableGoogleConnection {
     | { readonly intent: "reconnect"; readonly connectionId: string };
 }
 
-export interface TableGoogleSavedFile {
-  readonly webViewLink: string | null;
-}
-
-interface TableGoogleSavedFiles {
-  readonly artifactId: string;
-  readonly files: Partial<Record<GoogleDriveUploadMode, TableGoogleSavedFile>>;
-}
-
-// Completed exports belong to this page, not the last saved artifact globally.
-const pageSavedTables$ = computed((get) => {
-  get(pageVersion$);
-  return state<ReadonlyMap<Element, TableGoogleSavedFiles>>(new Map());
-});
-
-export const markdownTableSavedFiles$ = computed((get) => {
-  return get(get(pageSavedTables$));
-});
-
 const saveTableFile$ = command(
   async (
-    { get, set },
+    { set },
     params: TableGoogleSave & {
       readonly connectionId?: string;
       readonly authorize: boolean;
     },
     signal: AbortSignal,
   ) => {
-    const savedTables$ = get(pageSavedTables$);
-    const uploads = get(uploadedTables$);
-    const result = await set(
+    await set(
       syncArtifactAndRefresh$,
       {
         ...params,
@@ -170,23 +149,6 @@ const saveTableFile$ = command(
       },
       signal,
     );
-    if (
-      result.kind === "uploaded" &&
-      uploads.get(params.table)?.artifactId === params.artifactId
-    ) {
-      const saved = new Map(get(savedTables$));
-      const previous = saved.get(params.table);
-      saved.set(params.table, {
-        artifactId: params.artifactId,
-        files: {
-          ...(previous?.artifactId === params.artifactId
-            ? previous.files
-            : undefined),
-          [params.mode]: { webViewLink: result.file.webViewLink },
-        },
-      });
-      set(savedTables$, saved);
-    }
   },
 );
 

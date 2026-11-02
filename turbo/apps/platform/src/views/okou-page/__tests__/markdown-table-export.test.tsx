@@ -54,13 +54,11 @@ const CLOUD_EXPORTS = [
     mode: "original",
     action: "Save to Google Drive",
     saved: "Saved to Google Drive",
-    open: "Open in Google Drive",
   },
   {
     mode: "google",
     action: "Save to Google Sheets",
     saved: "Saved to Google Sheets",
-    open: "Open in Google Sheets",
   },
 ] as const;
 const UPLOAD_URL = "https://storage.example.test/table-export";
@@ -123,7 +121,14 @@ async function openExportMenu(index = 0) {
     expect(tableExportButton(index)).toBeEnabled();
   });
   click(tableExportButton(index));
-  return screen.findByRole("menu");
+  const menu = await screen.findByRole("menu");
+  for (const { action } of CLOUD_EXPORTS) {
+    await expect(findNamedMenuItem(action, menu)).resolves.not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  }
+  return menu;
 }
 
 async function closeExportMenu(index = 0) {
@@ -133,12 +138,25 @@ async function closeExportMenu(index = 0) {
   });
 }
 
-async function expectSavedLink(label: string, url: string, menu: HTMLElement) {
-  const item = await findNamedMenuItem(label, menu);
-  expect(item.tagName).toBe("A");
-  expect(item).toHaveAttribute("href", url);
-  expect(item).toHaveAttribute("target", "_blank");
-  expect(item).toHaveAttribute("rel", "noopener noreferrer");
+async function expectSavedToast(label: string, url: string) {
+  const link = await waitFor(() => {
+    const candidate = queryAllByRoleFast("link").find((item) => {
+      return (
+        item.textContent?.trim() === "View it" &&
+        item.getAttribute("href") === url
+      );
+    });
+    if (!candidate) {
+      throw new Error(`Expected a View it link to "${url}"`);
+    }
+    return candidate;
+  });
+  expect(link).toBeInTheDocument();
+  expect(link.closest("[data-sonner-toast]")).toHaveTextContent(label);
+  expect(link.tagName).toBe("A");
+  expect(link).toHaveAttribute("href", url);
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
 }
 
 function googleFile(mode: GoogleDriveUploadMode, webViewLink: string | null) {
@@ -404,7 +422,7 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
       },
     );
     await openTables();
-    for (const { action, mode, saved, open } of CLOUD_EXPORTS) {
+    for (const { action, mode, saved } of CLOUD_EXPORTS) {
       const menu = await openExportMenu();
       click(await findNamedMenuItem(action, menu));
       if (needsConnection) {
@@ -412,18 +430,13 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
         beforeConnectPopupCounts.push(popup.calls.length);
         click(buttonNamed("Connect", dialog));
       }
-      await expect(screen.findByText(saved)).resolves.toBeInTheDocument();
+      await expectSavedToast(saved, `https://drive.google.test/${mode}`);
       expect(saves).toContainEqual({
         artifactId: CATALOG_ID,
         connectionId: CONNECTION_ID,
         mode,
       });
-      const reopened = await openExportMenu();
-      await expectSavedLink(
-        open,
-        `https://drive.google.test/${mode}`,
-        reopened,
-      );
+      await openExportMenu();
       await closeExportMenu();
     }
     expect(beforeConnectPopupCounts).toStrictEqual(
@@ -432,23 +445,42 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
     expect(popup.calls).toHaveLength(
       accountState === "connect" || accountState === "reconnect" ? 1 : 0,
     );
-    expect(storedFiles).toHaveLength(1);
     expect(sheet(storedFiles[0]!).querySelector('c[r="A2"]')?.textContent).toBe(
       "张敏",
     );
-    expect(
-      queryAllByRoleFast("link")
-        .filter((link) => {
-          return link.textContent === "View it";
-        })
-        .map((link) => {
-          return link.getAttribute("href");
-        }),
-    ).toContain("https://drive.google.test/google");
   },
 );
 
-test("Interleaving two tables and Google destinations retains each saved link", async () => {
+test.each(CLOUD_EXPORTS)(
+  "Repeating $action after success shows the new response link",
+  async ({ action, mode, saved }) => {
+    const firstUrl = `https://drive.google.test/first-${mode}`;
+    const repeatedUrl = `https://drive.google.test/repeated-${mode}`;
+    let responseUrl = firstUrl;
+    mockTableCloudFiles();
+    context.mocks.api(
+      artifactGoogleDriveContract.uploadWithMode,
+      ({ body, respond }) => {
+        return respond(200, googleFile(body.mode, responseUrl));
+      },
+    );
+    await openTables();
+
+    let menu = await openExportMenu();
+    click(await findNamedMenuItem(action, menu));
+    await expectSavedToast(saved, firstUrl);
+
+    menu = await openExportMenu();
+    const saveAgain = await findNamedMenuItem(action, menu);
+    expect(saveAgain).not.toHaveAttribute("aria-disabled", "true");
+    responseUrl = repeatedUrl;
+    click(saveAgain);
+    await expectSavedToast(saved, repeatedUrl);
+    await openExportMenu();
+  },
+);
+
+test("Interleaving two tables and Google destinations shows the matching success links", async () => {
   const firstLinks = {
     original: "https://drive.google.test/file/d/first-table/view?usp=sharing",
     google: "https://docs.google.test/spreadsheets/d/first-table/edit",
@@ -470,41 +502,33 @@ test("Interleaving two tables and Google destinations retains each saved link", 
 
   let menu = await openExportMenu(0);
   click(await findNamedMenuItem("Save to Google Drive", menu));
-  menu = await openExportMenu(0);
-  await expectSavedLink("Open in Google Drive", firstLinks.original, menu);
+  await expectSavedToast("Saved to Google Drive", firstLinks.original);
+  await openExportMenu(0);
   await closeExportMenu(0);
 
   menu = await openExportMenu(1);
-  await expect(
-    findNamedMenuItem("Save to Google Drive", menu),
-  ).resolves.not.toHaveAttribute("aria-disabled", "true");
   click(await findNamedMenuItem("Save to Google Sheets", menu));
-  menu = await openExportMenu(1);
-  await expectSavedLink("Open in Google Sheets", secondLinks.google, menu);
+  await expectSavedToast("Saved to Google Sheets", secondLinks.google);
+  await openExportMenu(1);
   await closeExportMenu(1);
 
   menu = await openExportMenu(0);
-  await expectSavedLink("Open in Google Drive", firstLinks.original, menu);
   click(await findNamedMenuItem("Save to Google Sheets", menu));
-  menu = await openExportMenu(0);
-  await expectSavedLink("Open in Google Drive", firstLinks.original, menu);
-  await expectSavedLink("Open in Google Sheets", firstLinks.google, menu);
+  await expectSavedToast("Saved to Google Sheets", firstLinks.google);
+  await openExportMenu(0);
   await closeExportMenu(0);
 
   menu = await openExportMenu(1);
-  await expectSavedLink("Open in Google Sheets", secondLinks.google, menu);
   click(await findNamedMenuItem("Save to Google Drive", menu));
-  menu = await openExportMenu(1);
-  await expectSavedLink("Open in Google Drive", secondLinks.original, menu);
-  await expectSavedLink("Open in Google Sheets", secondLinks.google, menu);
+  await expectSavedToast("Saved to Google Drive", secondLinks.original);
+  await openExportMenu(1);
   await closeExportMenu(1);
 
-  menu = await openExportMenu(0);
-  await expectSavedLink("Open in Google Drive", firstLinks.original, menu);
-  await expectSavedLink("Open in Google Sheets", firstLinks.google, menu);
+  await openExportMenu(0);
+  expect(tableExportButton(1)).toBeEnabled();
 });
 
-test("An unconfirmed Sheets conversion remains retryable without replacing the Drive save", async () => {
+test("An unconfirmed Sheets conversion can be retried after saving to Drive", async () => {
   const driveUrl = "https://drive.google.test/file/d/original-table/view";
   const sheetsUrl =
     "https://docs.google.test/spreadsheets/d/confirmed-table/edit";
@@ -532,31 +556,21 @@ test("An unconfirmed Sheets conversion remains retryable without replacing the D
 
   let menu = await openExportMenu();
   click(await findNamedMenuItem("Save to Google Drive", menu));
-  await expect(
-    screen.findByText("Saved to Google Drive"),
-  ).resolves.toBeInTheDocument();
+  await expectSavedToast("Saved to Google Drive", driveUrl);
   menu = await openExportMenu();
-  await expectSavedLink("Open in Google Drive", driveUrl, menu);
   click(await findNamedMenuItem("Save to Google Sheets", menu));
   await expect(
     screen.findByText(
       "Google conversion could not be confirmed. Check Drive before retrying.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Saved to Google Sheets")).not.toBeInTheDocument();
 
   menu = await openExportMenu();
-  await expectSavedLink("Open in Google Drive", driveUrl, menu);
   const retry = await findNamedMenuItem("Save to Google Sheets", menu);
-  expect(retry).not.toHaveAttribute("aria-disabled", "true");
   conversionConfirmed = true;
   click(retry);
-  await expect(
-    screen.findByText("Saved to Google Sheets"),
-  ).resolves.toBeInTheDocument();
-  menu = await openExportMenu();
-  await expectSavedLink("Open in Google Drive", driveUrl, menu);
-  await expectSavedLink("Open in Google Sheets", sheetsUrl, menu);
+  await expectSavedToast("Saved to Google Sheets", sheetsUrl);
+  await openExportMenu();
 });
 
 test.each([
@@ -599,15 +613,11 @@ test.each([
     await expect(screen.findByText(error)).resolves.toBeInTheDocument();
     menu = await openExportMenu();
     const retry = await findNamedMenuItem(destination.action, menu);
-    expect(retry).not.toHaveAttribute("aria-disabled", "true");
 
     recovered = true;
     click(retry);
-    await expect(
-      screen.findByText(destination.saved),
-    ).resolves.toBeInTheDocument();
-    menu = await openExportMenu();
-    await expectSavedLink(destination.open, savedUrl, menu);
+    await expectSavedToast(destination.saved, savedUrl);
+    await openExportMenu();
   },
 );
 
@@ -640,33 +650,33 @@ test("The table export trigger is disabled and says Saving… during the initial
   expect(tableExportButton(1)).toHaveTextContent("Export");
 
   releaseUpload.resolve();
-  await expect(
-    screen.findByText("Saved to Google Drive"),
-  ).resolves.toBeInTheDocument();
-  const reopened = await openExportMenu();
+  await expectSavedToast("Saved to Google Drive", savedUrl);
+  await openExportMenu();
   expect(tableExportButton()).toHaveAttribute("aria-busy", "false");
-  await expectSavedLink("Open in Google Drive", savedUrl, reopened);
 });
 
 test.each(CLOUD_EXPORTS)(
-  "A completed $mode save without a URL renders a disabled saved item",
-  async ({ action, saved }) => {
+  "A completed $mode save without a URL remains available to save again",
+  async ({ action, mode, saved }) => {
+    const retryUrl = `https://drive.google.test/retried-with-url-${mode}`;
+    let responseUrl: string | null = null;
     mockTableCloudFiles();
     context.mocks.api(
       artifactGoogleDriveContract.uploadWithMode,
       ({ body, respond }) => {
-        return respond(200, googleFile(body.mode, null));
+        return respond(200, googleFile(body.mode, responseUrl));
       },
     );
     await openTables();
 
-    const menu = await openExportMenu();
+    let menu = await openExportMenu();
     click(await findNamedMenuItem(action, menu));
     await expect(screen.findByText(saved)).resolves.toBeInTheDocument();
-    const reopened = await openExportMenu();
-    const savedItem = await findNamedMenuItem(saved, reopened);
-    expect(savedItem).toHaveAttribute("aria-disabled", "true");
-    expect(savedItem).not.toHaveAttribute("href");
-    expect(savedItem.tagName).not.toBe("A");
+
+    menu = await openExportMenu();
+    responseUrl = retryUrl;
+    click(await findNamedMenuItem(action, menu));
+    await expectSavedToast(saved, retryUrl);
+    await openExportMenu();
   },
 );

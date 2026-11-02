@@ -436,15 +436,15 @@ function useGoogleDriveMenuAction(
     if (!syncTarget || !actionSignal) {
       return;
     }
-    const run = async (
+    const run = (
       connectedAccountId: string | undefined,
       authorize: boolean,
       signal: AbortSignal,
     ) => {
       if (!syncTarget.agentId) {
-        return;
+        return Promise.resolve();
       }
-      await syncArtifact(
+      return syncArtifact(
         {
           agentId: syncTarget.agentId,
           artifactId: syncTarget.artifactId,

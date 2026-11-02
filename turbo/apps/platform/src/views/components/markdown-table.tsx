@@ -4,7 +4,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Download, Loader2 } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { GoogleDriveUploadMode } from "@okouai/core/google-workspace-conversion";
 import {
   BrandGoogleDrive,
   BrandGoogleSheets,
@@ -30,8 +29,6 @@ import {
   markdownTableConnection$,
   connectMarkdownTable$,
   closeMarkdownTableConnection$,
-  markdownTableSavedFiles$,
-  type TableGoogleSavedFile,
 } from "../../signals/markdown-table-export.ts";
 import { cancelBuiltinConnectorConnection$ } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -63,7 +60,6 @@ function ExportableTable({
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const threadId = useGet(currentChatThreadId$);
-  const savedFiles = useGet(markdownTableSavedFiles$).get(node)?.files;
   const connection = useGet(markdownTableConnection$);
   const [operation, exportTable] = useLoadableSet(exportMarkdownTable$);
   const pending = operation.state === "loading";
@@ -109,18 +105,28 @@ function ExportableTable({
                 return $.markdown.tableExport.excel;
               })}
             </DropdownMenuItem>
-            <TableGoogleMenuItem
-              mode="original"
-              savedFile={savedFiles?.original}
+            <DropdownMenuItem
               disabled={!threadId}
-              onSave={run}
-            />
-            <TableGoogleMenuItem
-              mode="google"
-              savedFile={savedFiles?.google}
+              onClick={() => {
+                return run("original");
+              }}
+            >
+              <BrandGoogleDrive />
+              {t(($) => {
+                return $.markdown.tableExport.drive;
+              })}
+            </DropdownMenuItem>
+            <DropdownMenuItem
               disabled={!threadId}
-              onSave={run}
-            />
+              onClick={() => {
+                return run("google");
+              }}
+            >
+              <BrandGoogleSheets />
+              {t(($) => {
+                return $.markdown.tableExport.sheets;
+              })}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -131,74 +137,6 @@ function ExportableTable({
       </div>
       <TableGoogleConnectionDialog node={node} />
     </Card>
-  );
-}
-
-function TableGoogleMenuItem({
-  mode,
-  savedFile,
-  disabled,
-  onSave,
-}: {
-  readonly mode: GoogleDriveUploadMode;
-  readonly savedFile: TableGoogleSavedFile | undefined;
-  readonly disabled: boolean;
-  readonly onSave: (mode: GoogleDriveUploadMode) => void;
-}) {
-  const { t } = useTranslation();
-  const icon = mode === "google" ? <BrandGoogleSheets /> : <BrandGoogleDrive />;
-  if (savedFile?.webViewLink) {
-    return (
-      <DropdownMenuItem
-        render={
-          <a
-            href={savedFile.webViewLink}
-            target="_blank"
-            rel="noopener noreferrer"
-          />
-        }
-      >
-        {icon}
-        {mode === "google"
-          ? t(($) => {
-              return $.artifacts.googleDrive.openSheets;
-            })
-          : t(($) => {
-              return $.markdown.tableExport.openDrive;
-            })}
-      </DropdownMenuItem>
-    );
-  }
-  if (savedFile) {
-    return (
-      <DropdownMenuItem disabled>
-        {icon}
-        {mode === "google"
-          ? t(($) => {
-              return $.markdown.tableExport.savedSheets;
-            })
-          : t(($) => {
-              return $.markdown.tableExport.savedDrive;
-            })}
-      </DropdownMenuItem>
-    );
-  }
-  return (
-    <DropdownMenuItem
-      disabled={disabled}
-      onClick={() => {
-        onSave(mode);
-      }}
-    >
-      {icon}
-      {mode === "google"
-        ? t(($) => {
-            return $.markdown.tableExport.sheets;
-          })
-        : t(($) => {
-            return $.markdown.tableExport.drive;
-          })}
-    </DropdownMenuItem>
   );
 }
 
