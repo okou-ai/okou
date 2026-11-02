@@ -83,26 +83,30 @@ export async function sendAgentPhoneRunTyping(
 
   inFlight.add(context.conversationId);
   const startedAt = now();
+  const typingSignal = AbortSignal.any([
+    signal,
+    AbortSignal.timeout(AGENTPHONE_TYPING_REQUEST_TIMEOUT_MS),
+  ]);
   await onRejection(
     sendAgentPhoneTypingIndicator(
       { conversationId: context.conversationId },
-      AbortSignal.any([
-        signal,
-        AbortSignal.timeout(AGENTPHONE_TYPING_REQUEST_TIMEOUT_MS),
-      ]),
+      typingSignal,
     ),
     (error) => {
       inFlight.delete(context.conversationId);
       const status = isAgentPhoneApiError(error) ? error.status : undefined;
+      const timedOut =
+        typingSignal.aborted &&
+        typingSignal.reason === error &&
+        error instanceof Error &&
+        error.name === "TimeoutError";
       recordTypingOutcome(context, "failed", {
         durationMs: now() - startedAt,
         status,
-        reason:
-          error instanceof Error && error.name === "TimeoutError"
-            ? "timeout"
-            : "provider_failed",
+        reason: timedOut ? "timeout" : "provider_failed",
       });
-      L.warn("AgentPhone typing indicator was not sent", {
+      const log = timedOut ? L.debug : L.warn;
+      log("AgentPhone typing indicator was not sent", {
         conversationId: context.conversationId,
         phase: context.phase,
         runId: context.runId,
