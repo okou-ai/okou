@@ -1834,6 +1834,20 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
+      "generationSuggestions": {
+        "apply": "Terapkan pengaturan",
+        "aspectRatio": "Rasio aspek gambar",
+        "change": "Ubah pengaturan pembuatan",
+        "description": "Pilih templat atau terapkan pengaturan untuk pesan ini. Teks Anda tidak berubah.",
+        "dismiss": "Sembunyikan saran",
+        "edit": "Ubah",
+        "label": "Saran pembuatan",
+        "ratioHint": "Rasio aspek adalah preferensi dan bergantung pada model gambar serta templat.",
+        "report": "Laporan",
+        "reportFormat": "Format laporan",
+        "reportHint": "Pilih format atau templat dokumen di bawah.",
+        "thisMessage": "Hanya pesan ini"
+      },
       "mentionHint": "Cari agen atau obrolan…",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",

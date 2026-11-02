@@ -1834,6 +1834,20 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
       },
+      "generationSuggestions": {
+        "apply": "設定を適用",
+        "aspectRatio": "画像の縦横比",
+        "change": "生成設定を変更",
+        "description": "このメッセージ用のテンプレートを選ぶか、設定を適用してください。入力した文章は変更されません。",
+        "dismiss": "候補を閉じる",
+        "edit": "変更",
+        "label": "生成の提案",
+        "ratioHint": "縦横比は希望の指定であり、画像モデルやテンプレートによって異なります。",
+        "report": "レポート",
+        "reportFormat": "レポート形式",
+        "reportHint": "形式を選ぶか、下のドキュメントテンプレートを選んでください。",
+        "thisMessage": "このメッセージのみ"
+      },
       "mentionHint": "エージェントやチャットを検索…",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",

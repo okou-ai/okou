@@ -1,4 +1,8 @@
 import {
+  createComposerGenerationSuggestions,
+  type ComposerGenerationSuggestionsSignals,
+} from "./composer-generation-suggestions.ts";
+import {
   createComposerTaskChipsSignals,
   type ComposerTaskChipsSignals,
 } from "./composer-task-chips.ts";
@@ -252,6 +256,7 @@ export interface ComposerSignals {
   readonly paidToolHints$: Computed<readonly AvailablePaidToolId[]>;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
+  readonly generation: ComposerGenerationSuggestionsSignals;
   readonly agentId: string;
   readonly threadId?: string;
   readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
@@ -559,12 +564,19 @@ export function createComposerSignals(
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
   });
+  const generation = createComposerGenerationSuggestions(
+    draft,
+    workflowComposer,
+    create,
+    taskChips,
+    options.forwardComposer,
+  );
   const voice = createComposerVoiceInput(options, workflowComposer);
   const submission = createComposerSubmissionSignals(
     options,
     eventSignals,
     workflowComposer,
-    { voice, create, taskChips },
+    { voice, create, taskChips, generation },
   );
   const fileInput = createComposerFileInputSignals();
   const connector =
@@ -605,6 +617,7 @@ export function createComposerSignals(
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
+    generation,
     editor: composerEditorSignals(workflowComposer, options),
     voice,
     feedback: workflowComposer.feedback,
@@ -783,12 +796,14 @@ function createSubmitCurrentInput({
   voice,
   create,
   taskChips,
+  generation,
 }: {
   readonly options: CreateComposerSignalsOptions;
   readonly workflowComposer: WorkflowComposerSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
+  readonly generation: ComposerGenerationSuggestionsSignals;
 }) {
   const draft = options.draft.signals;
   const voiceState$ = voice.state$;
@@ -835,6 +850,7 @@ function createSubmitCurrentInput({
       }
       signal.throwIfAborted();
       const mode = get(create.mode$);
+      const generationSelection = get(generation.appliedSelection$);
       const selectedTask = get(taskChips.task$);
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
@@ -846,6 +862,7 @@ function createSubmitCurrentInput({
       const additionalInfo = joinAdditionalInfo(
         callerAdditionalInfo,
         composerAdditionalInfo,
+        get(generation.additionalInfo$),
       );
       const editorDocument = additionalInfo
         ? createEditorDocumentSnapshot(
@@ -860,7 +877,10 @@ function createSubmitCurrentInput({
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
         taskSelection: {
-          task: selectedTask === "jobs" ? null : (selectedTask ?? mode),
+          task:
+            generationSelection || selectedTask === "jobs"
+              ? null
+              : (selectedTask ?? mode),
           presentationSlideCount: get(create.presentationSlideCount$),
           visualization: get(taskChips.visualization.preferences$),
         },
@@ -881,6 +901,9 @@ function createSubmitCurrentInput({
         nextSubmission,
         signal,
       );
+      if (submitted) {
+        set(generation.completeSubmission$, generationSelection);
+      }
       if (submitted && workflowUse) {
         // Browser history must never turn an accepted send into a send error.
         // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
@@ -901,10 +924,12 @@ function createComposerSubmissionSignals(
     voice,
     create,
     taskChips,
+    generation,
   }: {
     voice: ComposerVoiceInputSignals;
     create: ComposerCreateSignals;
     taskChips: ComposerTaskChipsSignals;
+    generation: ComposerGenerationSuggestionsSignals;
   },
 ) {
   const { state$: voiceState$, owner$ } = voice;
@@ -928,6 +953,7 @@ function createComposerSubmissionSignals(
     voice,
     create,
     taskChips,
+    generation,
   });
   const activatePrimaryAction$ = command(
     async (

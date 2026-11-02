@@ -180,6 +180,8 @@ export function createComposerTaskChipsSignals(
    */
   const openTask$ = command(({ get, set }, task: ComposerTask) => {
     set(explicitSelection$, true);
+    // An explicit same-type selection still takes ownership from a recommendation.
+    set(create.invalidateSelection$);
     if (get(task$) === task) {
       return;
     }

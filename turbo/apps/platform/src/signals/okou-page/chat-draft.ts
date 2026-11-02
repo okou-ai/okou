@@ -494,6 +494,8 @@ export interface DraftSignals {
   confirmThreadIdentity$: Command<void, [string]>;
   hasLocalInput$: Computed<boolean>;
   input$: Computed<string>;
+  /** Changes when an empty composer starts a new text draft. */
+  inputSession$: Computed<number>;
   hasInput$: Computed<boolean>;
   readInput$: Command<string, []>;
   setInput$: Command<void, [string]>;
@@ -685,6 +687,10 @@ function createDraftInputSignals(
   draftDocument: ReturnType<typeof createDraftDocumentSignals>,
 ) {
   const internalInput$ = state<string | undefined>(undefined);
+  const internalInputSession$ = state(0);
+  const inputSession$ = computed((get) => {
+    return get(internalInputSession$);
+  });
   const hasLocalInput$ = computed((get) => {
     return get(internalInput$) !== undefined;
   });
@@ -716,7 +722,12 @@ function createDraftInputSignals(
       set(internalInputSyncTarget$, target);
     },
   );
-  const setInput$ = command(({ set }, value: string) => {
+  const setInput$ = command(({ get, set }, value: string) => {
+    if (!(get(internalInput$) ?? "").trim() && value.trim()) {
+      set(internalInputSession$, (session) => {
+        return session + 1;
+      });
+    }
     set(draftDocument.setRestoredUserMessage$, null);
     set(syncInput$, value);
     set(internalInput$, value);
@@ -733,6 +744,7 @@ function createDraftInputSignals(
   return {
     hasLocalInput$,
     input$,
+    inputSession$,
     hasInput$,
     readInput$,
     setInput$,

@@ -1838,6 +1838,20 @@
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
+      "generationSuggestions": {
+        "apply": "Einstellungen anwenden",
+        "aspectRatio": "Bildseitenverhältnis",
+        "change": "Generierungseinstellungen ändern",
+        "description": "Wähle eine Vorlage oder wende Einstellungen für diese Nachricht an. Dein Text bleibt unverändert.",
+        "dismiss": "Vorschläge ausblenden",
+        "edit": "Ändern",
+        "label": "Generierungsvorschläge",
+        "ratioHint": "Das Seitenverhältnis ist ein Wunschwert und hängt vom Bildmodell und der Vorlage ab.",
+        "report": "Bericht",
+        "reportFormat": "Berichtsformat",
+        "reportHint": "Wähle ein Format oder unten eine Dokumentvorlage.",
+        "thisMessage": "Nur diese Nachricht"
+      },
       "mentionHint": "Agenten oder Chats suchen…",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",

@@ -57,13 +57,23 @@ export function createComposerCreateSignals(
 ) {
   const modes = COMPOSER_CREATE_MODES;
   const internalMode$ = state<ComposerCreateMode | null>(null);
+  const internalSelectionRevision$ = state(0);
+  const selectionRevision$ = computed((get) => {
+    return get(internalSelectionRevision$);
+  });
   const { presentationSlideCount$, setPresentationSlideCount$ } =
     createPresentationSlideCountSignals();
   const mode$ = computed((get) => {
     return get(internalMode$);
   });
+  const invalidateSelection$ = command(({ set }) => {
+    set(internalSelectionRevision$, (revision) => {
+      return revision + 1;
+    });
+  });
   const setMode$ = command(
     ({ set }, mode: ComposerCreateMode | null, focus = true) => {
+      set(invalidateSelection$);
       set(internalMode$, mode);
       set(composer.closeSuggestionMenu$);
       set(ui.model.setModelPickerOpen$, false);
@@ -82,6 +92,8 @@ export function createComposerCreateSignals(
   return {
     modes,
     mode$,
+    selectionRevision$,
+    invalidateSelection$,
     setMode$,
     selectCommand$,
     presentationSlideCount$,

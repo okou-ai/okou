@@ -1866,6 +1866,20 @@
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
       },
+      "generationSuggestions": {
+        "apply": "Appliquer les paramètres",
+        "aspectRatio": "Rapport d’aspect de l’image",
+        "change": "Modifier les paramètres de génération",
+        "description": "Choisissez un modèle ou appliquez des paramètres à ce message. Votre texte reste inchangé.",
+        "dismiss": "Masquer les suggestions",
+        "edit": "Modifier",
+        "label": "Suggestions de génération",
+        "ratioHint": "Le rapport d’aspect est indicatif et dépend du modèle d’image et du modèle choisi.",
+        "report": "Rapport",
+        "reportFormat": "Format du rapport",
+        "reportHint": "Choisissez un format ou un modèle de document ci-dessous.",
+        "thisMessage": "Ce message uniquement"
+      },
       "mentionHint": "Rechercher des agents ou des discussions…",
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",

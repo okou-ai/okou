@@ -87,6 +87,8 @@ export function useComposerKeyboard(
   actions: ComposerActions,
 ) {
   const primaryAction = useComposerPrimaryAction(signals, actions);
+  const generationIntent = useGet(signals.generation.panelIntent$);
+  const dismissGeneration = useSet(signals.generation.dismiss$);
   const ensurePushSubscription = useSet(ensurePushSubscription$);
   const rootSignal = useGet(rootSignal$);
   const sendModeLoadable = useLastLoadable(sendMode$);
@@ -117,7 +119,11 @@ export function useComposerKeyboard(
           ? { "mod+enter": submit }
           : {}),
         escape: () => {
-          (event.target as HTMLElement).blur();
+          if (generationIntent) {
+            dismissGeneration();
+          } else {
+            (event.target as HTMLElement).blur();
+          }
         },
       },
       event,

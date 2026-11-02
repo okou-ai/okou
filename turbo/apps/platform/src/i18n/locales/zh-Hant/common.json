@@ -1834,6 +1834,20 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
       },
+      "generationSuggestions": {
+        "apply": "套用設定",
+        "aspectRatio": "圖片比例",
+        "change": "變更生成設定",
+        "description": "選擇模板或套用本則訊息的設定，不會改寫你的原文。",
+        "dismiss": "關閉推薦",
+        "edit": "變更",
+        "label": "生成推薦",
+        "ratioHint": "比例僅為偏好，具體取決於圖片模型和模板的支援。",
+        "report": "報告",
+        "reportFormat": "報告形式",
+        "reportHint": "請選擇形式，或選擇下方的文件模板。",
+        "thisMessage": "僅本則訊息"
+      },
       "mentionHint": "搜尋智慧體或聊天…",
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",

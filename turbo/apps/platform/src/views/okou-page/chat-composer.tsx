@@ -20,6 +20,7 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import { ComposerGenerationSuggestions } from "./composer-generation-suggestions.tsx";
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -7197,8 +7198,14 @@ export function ChatComposer({
         className="@container/composer relative flex w-full min-w-0 flex-col"
       >
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
+        {signals.threadId ? (
+          <ComposerGenerationSuggestions signals={signals} />
+        ) : null}
         <ComposerCard signals={signals} />
         <ComposerNoticeSlot signals={signals} />
+        {!signals.threadId ? (
+          <ComposerGenerationSuggestions signals={signals} />
+        ) : null}
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>
     </>

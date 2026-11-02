@@ -72,6 +72,7 @@ export enum FeatureSwitchKey {
   ProactiveAgent = "proactiveAgent",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
+  ComposerGenerationSuggestions = "composerGenerationSuggestions",
   ChatReplyNameLine = "chatReplyNameLine",
   ChatThreadTimeline = "chatThreadTimeline",
   UnifiedChatWorkspace = "unifiedChatWorkspace",

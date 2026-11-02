@@ -1,4 +1,5 @@
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
+import { ComposerGenerationSelection } from "./composer-generation-suggestions.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChartNoAxesCombined, Globe, Route, X } from "lucide-react";
@@ -121,6 +122,7 @@ export function ComposerTaskControls({
       <div className="h-5 w-px shrink-0 bg-divider/60" aria-hidden />
       <ComposerSelectedTask signals={signals} />
       <ComposerPresentationOptions signals={signals} />
+      <ComposerGenerationSelection signals={signals} />
     </>
   );
 }

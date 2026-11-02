@@ -223,6 +223,7 @@ export interface WorkflowComposerSignals {
   >;
   readonly focus$: Command<void, []>;
   readonly hasInput$: Computed<boolean>;
+  readonly isComposing$: Computed<boolean>;
   readonly hasTemplateAttachment$: Computed<boolean>;
   readonly templateRequests$: Computed<readonly GenerationTemplateRequest[]>;
   readonly activeSlashRange$: Computed<SlashWorkflowRange | null>;
@@ -267,6 +268,16 @@ export interface WorkflowComposerSignals {
   readonly insertTemplate$: Command<
     void,
     [GenerationTemplateRequest, ComposerTemplateAttachment]
+  >;
+  readonly updateTemplate$: Command<
+    boolean,
+    [
+      GenerationTemplateRequest,
+      {
+        readonly request: GenerationTemplateRequest;
+        readonly attachment: ComposerTemplateAttachment;
+      } | null,
+    ]
   >;
   readonly openTemplatePicker$: Command<
     void,
@@ -2132,6 +2143,14 @@ function mountLocalizationListener(
   });
 }
 
+function createIsComposingSignal(
+  query$: State<ComposerCompositionQuery | null>,
+) {
+  return computed((get) => {
+    return get(query$) !== null;
+  });
+}
+
 function createMountCompositionCommand(
   editor: Editor,
   compositionGate: CompositionGate,
@@ -2961,6 +2980,43 @@ function createReadSelectedTemplateCommand(editor: Editor) {
   });
 }
 
+function createUpdateTemplateCommand(
+  editor: Editor,
+): WorkflowComposerSignals["updateTemplate$"] {
+  return command((_context, previous, replacement) => {
+    const previousJson = JSON.stringify(previous);
+    let position: number | null = null;
+    let nodeSize = 0;
+    editor.state.doc.descendants((node, offset) => {
+      if (
+        position === null &&
+        node.type.name === INLINE_TEMPLATE_NODE_NAME &&
+        JSON.stringify(node.attrs.template) === previousJson
+      ) {
+        position = offset;
+        nodeSize = node.nodeSize;
+      }
+    });
+    if (position === null) {
+      return false;
+    }
+    const transaction =
+      replacement === null
+        ? editor.state.tr.delete(position, position + nodeSize)
+        : editor.state.tr.setNodeMarkup(
+            position,
+            undefined,
+            inlineTemplateNode(
+              editor,
+              replacement.request,
+              replacement.attachment,
+            ).attrs,
+          );
+    editor.view.dispatch(transaction.scrollIntoView());
+    return true;
+  });
+}
+
 function createTemplateCommands(
   editor: Editor,
   draft: DraftSignals,
@@ -2990,6 +3046,7 @@ function createTemplateCommands(
     },
   );
   return {
+    updateTemplate$: createUpdateTemplateCommand(editor),
     insertTemplate$: createInsertTemplateCommand(
       editor,
       draft,
@@ -3458,6 +3515,7 @@ export function createWorkflowComposerSignals<
     hasInput$: computed((get) => {
       return get(draft.hasInput$) || get(feedback.active$);
     }),
+    isComposing$: createIsComposingSignal(compositionQuery$),
     hasTemplateAttachment$: templates.legacy.active$,
     templateRequests$: templates.selection.requests$,
     activeSlashRange$,

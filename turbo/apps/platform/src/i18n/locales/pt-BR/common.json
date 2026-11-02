@@ -1866,6 +1866,20 @@
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides"
       },
+      "generationSuggestions": {
+        "apply": "Aplicar configurações",
+        "aspectRatio": "Proporção da imagem",
+        "change": "Alterar configurações de geração",
+        "description": "Escolha um modelo ou aplique configurações a esta mensagem. Seu texto não será alterado.",
+        "dismiss": "Ocultar sugestões",
+        "edit": "Alterar",
+        "label": "Sugestões de geração",
+        "ratioHint": "A proporção é uma preferência e depende do modelo de imagem e do modelo escolhido.",
+        "report": "Relatório",
+        "reportFormat": "Formato do relatório",
+        "reportHint": "Escolha um formato ou selecione um modelo de documento abaixo.",
+        "thisMessage": "Somente esta mensagem"
+      },
       "mentionHint": "Pesquise agentes ou conversas…",
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",

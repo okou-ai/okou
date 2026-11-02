@@ -704,6 +704,8 @@ export function ComposerTaskChips({
   const jobs = useLoadable(entrustedJobsEnabled$);
   const jobsEnabled = jobs.state === "hasData" && jobs.data;
   const current = useGet(signals.taskChips.task$);
+  const generationIntent = useGet(signals.generation.panelIntent$);
+  const generationSelection = useGet(signals.generation.appliedSelection$);
   const selected = current === "jobs" && !jobsEnabled ? null : current;
   const tasks = (
     [
@@ -726,6 +728,9 @@ export function ComposerTaskChips({
       signals.create.modes.includes(task)
     );
   });
+  if (generationIntent || generationSelection) {
+    return null;
+  }
   // Tasks is browsed beside the row; selecting another task moves its chip
   // into the composer and hides the choices.
   if (jobsEnabled && (selected === null || selected === "jobs")) {

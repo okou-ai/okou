@@ -138,6 +138,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ComposerGenerationSuggestions]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Composer generation suggestions",
+    description:
+      "Suggest templates and settings for generation requests without changing the draft.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",
