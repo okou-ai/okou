@@ -21,6 +21,7 @@ connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/conn
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
 data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
 official_workflow_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/official-workflow-bundle-reader")
+content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
 cat >"${fake_bin}/git" <<'SH'
@@ -212,7 +213,7 @@ case "${1:-}" in
       else
         [ "${MOCK_CONTENT_BUNDLE_ARCHIVE_API_VALID:-1}" = "1" ]
       fi
-    elif [ "${3:-}" = "c5f93ab5220486a764f9316a4496288e5bf72991" ]; then
+    elif [ "${3:-}" = "$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_ON_MAIN:-1}" = "1" ]
       else
@@ -369,7 +370,7 @@ case "${1:-}" in
   show)
     if [[ "$*" == *rollback-floors/content-bundle-reference-only-api* ]]; then
       [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE:-1}" = "1" ] || exit 1
-      printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-c5f93ab5220486a764f9316a4496288e5bf72991}"
+      printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR}"
       exit 0
     fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/run-reference-preparation" ]; then
@@ -502,6 +503,7 @@ run_resolver() {
     MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
+    MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR="$content_bundle_reference_api_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \

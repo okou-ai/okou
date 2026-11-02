@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   vncConnectionsContract,
   type VncConnectionResponse,
@@ -9,10 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import {
-  tailscaleContract,
-  type TailscaleConfig,
-} from "@okouai/api-contracts/contracts/tailscale";
+import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -99,24 +95,44 @@ function mockSettings(
   );
   return data;
 }
-async function page() {
-  await setupPage({
-    context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=remote-control&type=vnc",
-    auth,
-  });
+async function page(path = "/connectors?scope=remote-control") {
+  await setupPage({ context, path, auth });
+}
+function getVncForm() {
+  const form = screen.getByLabelText(/Connection name/u).closest("form");
+  if (!form) {
+    throw new Error("Expected the inline VNC connection form");
+  }
+  return form;
 }
 async function openAddHostPage() {
-  await page();
+  await page("/connectors?scope=remote-control&setup=vnc");
+  await screen.findByRole("heading", { name: "Add remote connection" });
   click(
-    await waitFor(() => {
-      return getAction("button", "Add host");
-    }),
+    screen.getByText("Control the device’s screen with a mouse and keyboard."),
   );
+  await screen.findByRole("heading", { name: "Choose a VNC login method" });
+  return getVncForm();
 }
-async function choose(dialog: HTMLElement, label: string, name: string) {
-  click(within(dialog).getByLabelText(label));
+async function openEditHostPage() {
+  await page(`/connectors?scope=remote-control&remoteResource=vnc:${host.id}`);
+  await screen.findByRole("heading", { name: host.displayName });
+  click(getAction("button", "Edit connection"));
+  await screen.findByRole("heading", { name: "Edit connection" });
+  const form = getVncForm();
+  click(within(form).getByText("Connection settings", { selector: "summary" }));
+  return form;
+}
+async function chooseSavedLogin(form: HTMLElement) {
+  click(getAction("button", "Choose saved login details", form));
+  const picker = await screen.findByRole("dialog", {
+    name: "Choose saved login details",
+  });
+  click(within(picker).getByText(host.displayName));
+  await within(form).findByText(host.displayName);
+}
+async function choose(form: HTMLElement, label: string, name: string) {
+  click(within(form).getByLabelText(label));
   const option = await waitFor(() => {
     const matches = queryAllByRoleFast("option").filter((candidate) => {
       return candidate.textContent?.replace(/\s+/gu, " ").trim() === name;
@@ -130,6 +146,9 @@ async function choose(dialog: HTMLElement, label: string, name: string) {
     return match;
   });
   click(option);
+  await waitFor(() => {
+    expect(within(form).getByLabelText(label)).toHaveTextContent(name);
+  });
 }
 
 function mockNativeNetworks() {
@@ -152,53 +171,6 @@ function mockNativeNetworks() {
   });
   return network;
 }
-
-test("Network settings can create a reusable Tailscale configuration for VNC", async () => {
-  mockSettings();
-  const network = mockNativeNetworks();
-  let configs: TailscaleConfig[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs });
-  });
-  context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
-    const created: TailscaleConfig = {
-      ...network,
-      name: body.name,
-      scope: body.scope ?? "personal",
-      tags: body.tags,
-    };
-    configs = [created];
-    return respond(201, created);
-  });
-  await setupPage({
-    context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
-    path: "/connectors?scope=private-network",
-    auth,
-  });
-  const section = await screen.findByRole("region", { name: "Tailscale" });
-  click(
-    await waitFor(() => {
-      return getAction("button", "Add Tailscale", section);
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Name"), "VNC network bootstrap");
-  await fill(within(dialog).getByLabelText("Registration tags"), "tag:okou");
-  await fill(
-    within(dialog).getByLabelText("OAuth client ID"),
-    "synthetic-client",
-  );
-  await fill(
-    within(dialog).getByLabelText("OAuth client secret"),
-    "synthetic-secret",
-  );
-  click(getAction("button", "Save", dialog));
-  await within(section).findByText("VNC network bootstrap");
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
 
 test("A rejected native configuration preserves the draft and both trust layers", async () => {
   const selected = mockNativeNetworks();
@@ -238,32 +210,30 @@ test("A rejected native configuration preserves the draft and both trust layers"
       error: { code: "VNC_UNAVAILABLE", message: "Network unavailable" },
     });
   });
-  await page();
-  click(
-    await waitFor(() => {
-      return getAction("button", "Edit host");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  const form = await openEditHostPage();
   await fill(
-    within(dialog).getByLabelText("Display name"),
+    within(form).getByLabelText(/Connection name/u),
     "Preserved network draft",
   );
   await fill(
-    within(dialog).getByLabelText("RFB destination host"),
+    within(form).getByLabelText("Device address"),
     "gateway.example.com",
   );
+  click(
+    within(form).getByText("Additional network settings", {
+      selector: "summary",
+    }),
+  );
   await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: "Origin TLS" }),
+    within(form).getByRole("checkbox", { name: "Origin TLS" }),
   );
   await fill(
-    within(dialog).getByLabelText("Origin TLS server name"),
+    await within(form).findByLabelText("Origin TLS server name"),
     "origin.example.com",
   );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    expect(requests).toHaveLength(1);
-  });
+  click(getAction("button", "Save", form));
+  await within(form).findByRole("alert");
+  expect(requests).toHaveLength(1);
   expect(requests[0]).toMatchObject({
     displayName: "Preserved network draft",
     host: "gateway.example.com",
@@ -280,37 +250,49 @@ test("A rejected native configuration preserves the draft and both trust layers"
     credential: { id: credential.id },
     security: original.security,
   });
-  await within(dialog).findByRole("alert");
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+  expect(within(form).getByLabelText(/Connection name/u)).toHaveValue(
     "Preserved network draft",
   );
-  expect(within(dialog).getByLabelText("Origin TLS server name")).toHaveValue(
+  expect(within(form).getByLabelText("Device address")).toHaveValue(
+    "gateway.example.com",
+  );
+  expect(within(form).getByLabelText("Origin TLS server name")).toHaveValue(
     "origin.example.com",
   );
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(form).getByLabelText("VNC certificate name")).toHaveValue(
+    "inner.example.com",
+  );
+  expect(within(form).getByLabelText("CA certificates (PEM)")).toHaveValue(
+    "INNER_CA_CANARY",
+  );
+  expect(getAction("button", "Save", form)).toBeDisabled();
 });
 
 test("Mac Cloudflare setup requires origin TLS and keeps its protective controls", async () => {
   mockSettings({ connections: [] });
-  mockNativeNetworks();
-  await openAddHostPage();
-  const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
-  await choose(dialog, "Connection route", "Cloudflare Access");
-  const origin = within(dialog).getByRole("checkbox", { name: "Origin TLS" });
+  const network = mockNativeNetworks();
+  const form = await openAddHostPage();
+  await choose(form, "Service type", "Apple screen sharing");
+  await choose(form, "Login method", "Mac VNC (classic VNC password)");
+  click(getAction("button", "Continue", form));
+  await screen.findByRole("heading", { name: "Connect a device" });
+  await choose(form, "Connection method", "Cloudflare Access");
+  await choose(form, "Saved network", network.name);
+  const origin = within(form).getByRole("checkbox", { name: "Origin TLS" });
   expect(origin).toBeChecked();
   expect(origin).toHaveAttribute("aria-disabled", "true");
-  click(origin);
+  await userEvent.click(origin);
   expect(origin).toBeChecked();
-  expect(
-    within(dialog).getByLabelText("Origin TLS server name"),
-  ).toBeRequired();
-  expect(
-    within(dialog).queryByLabelText("TLS certificate identity"),
-  ).toBeNull();
-  expect(
-    within(dialog).getByText(/other clients from reaching/u),
-  ).toBeVisible();
+  expect(within(form).getByLabelText("Origin TLS server name")).toBeRequired();
+  expect(within(form).queryByLabelText("VNC certificate name")).toBeNull();
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", { name: "Choose a VNC login method" });
+  click(
+    within(form).getByText("Protocol and security details", {
+      selector: "summary",
+    }),
+  );
+  expect(within(form).getByText(/other clients from reaching/u)).toBeVisible();
 });
 
 test("Mac Cloudflare setup requires independently named origin TLS and keeps the RFB authentication profile", async () => {
@@ -338,39 +320,62 @@ test("Mac Cloudflare setup requires independently named origin TLS and keeps the
     data.connections = [created];
     return respond(201, created);
   });
-  await openAddHostPage();
-  const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  await choose(dialog, "Connection route", "Cloudflare Access");
-  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
-  await within(dialog).findByLabelText("Network configuration");
-  await choose(dialog, "Network configuration", selected.name);
+  const form = await openAddHostPage();
+  await choose(form, "Service type", "Apple screen sharing");
+  await choose(form, "Login method", "Mac VNC (classic VNC password)");
+  click(getAction("button", "Continue", form));
+  await screen.findByRole("heading", { name: "Connect a device" });
+  await choose(form, "Connection method", "Cloudflare Access");
+  await within(form).findByLabelText("Saved network");
+  await choose(form, "Saved network", selected.name);
   await fill(
-    within(dialog).getByLabelText("Origin TLS server name"),
+    within(form).getByLabelText("Origin TLS server name"),
     "mac-origin.example.com",
   );
-  await choose(dialog, "Security profile", "Encrypted VNC (X509Vnc)");
-  expect(
-    within(dialog).getByRole("checkbox", { name: "Origin TLS" }),
-  ).toBeChecked();
-  expect(within(dialog).getByLabelText("Origin TLS server name")).toHaveValue(
-    "mac-origin.example.com",
-  );
-  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  await choose(dialog, "Credential", credential.name);
-  expect(getAction("button", "Save", dialog)).toBeEnabled();
-  await fill(within(dialog).getByLabelText("Display name"), "Native Mac");
   await fill(
-    within(dialog).getByLabelText("RFB destination host"),
+    within(form).getByLabelText("Device address"),
     "mac-gateway.example.com",
   );
-  expect(within(dialog).getByLabelText("Origin TLS server name")).toHaveValue(
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", { name: "Choose a VNC login method" });
+  await choose(form, "Service type", "Certificate-based VNC");
+  click(getAction("button", "Continue", form));
+  await screen.findByRole("heading", { name: "Connect a device" });
+  click(
+    within(form).getByText("Additional network settings", {
+      selector: "summary",
+    }),
+  );
+  expect(
+    within(form).getByRole("checkbox", { name: "Origin TLS" }),
+  ).toBeChecked();
+  expect(within(form).getByLabelText("Origin TLS server name")).toHaveValue(
     "mac-origin.example.com",
   );
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    expect(requests).toHaveLength(1);
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", { name: "Choose a VNC login method" });
+  await choose(form, "Service type", "Apple screen sharing");
+  await choose(form, "Login method", "Mac VNC (classic VNC password)");
+  click(getAction("button", "Continue", form));
+  await screen.findByRole("heading", { name: "Connect a device" });
+  expect(within(form).getByLabelText("Device address")).toHaveValue(
+    "mac-gateway.example.com",
+  );
+  expect(within(form).getByLabelText("Origin TLS server name")).toHaveValue(
+    "mac-origin.example.com",
+  );
+  click(getAction("button", "Continue", form));
+  await screen.findByRole("heading", {
+    name: "Enter device login information",
   });
+  await fill(within(form).getByLabelText(/Connection name/u), "Native Mac");
+  await chooseSavedLogin(form);
+  click(getAction("button", "Continue", form));
+  await screen.findByRole("heading", { name: "Review and save" });
+  expect(getAction("button", "Save", form)).toBeEnabled();
+  click(getAction("button", "Save", form));
+  await screen.findByRole("heading", { name: "Connection added" });
+  expect(requests).toHaveLength(1);
   expect(requests[0]).toMatchObject({
     host: "mac-gateway.example.com",
     port: 443,
@@ -385,7 +390,7 @@ test("Mac Cloudflare setup requires independently named origin TLS and keeps the
       },
     },
   });
-  await screen.findByRole("heading", { name: "Native Mac" });
+  expect(screen.getByText("Native Mac")).toBeInTheDocument();
 });
 
 test.each(["cloudflare_access", "tailscale"] as const)(
@@ -415,41 +420,62 @@ test.each(["cloudflare_access", "tailscale"] as const)(
       data.connections = [created];
       return respond(201, created);
     });
-    await openAddHostPage();
-    const dialog = await screen.findByRole("dialog", { name: "Add host" });
-    await fill(within(dialog).getByLabelText("Display name"), "Native desktop");
-    await choose(
-      dialog,
-      "Connection route",
-      type === "cloudflare_access" ? "Cloudflare Access" : "Tailscale",
-    );
-    expect(getAction("button", "Save", dialog)).toBeDisabled();
-    await within(dialog).findByLabelText("Network configuration");
-    await choose(dialog, "Network configuration", network.name);
+    const form = await openAddHostPage();
+    click(getAction("button", "Continue", form));
+    await screen.findByRole("heading", { name: "Connect a device" });
+    const provider =
+      type === "cloudflare_access" ? "Cloudflare Access" : "Tailscale";
+    await choose(form, "Connection method", provider);
+    expect(getAction("button", "Continue", form)).toBeDisabled();
+    await within(form).findByLabelText("Saved network");
+    await choose(form, "Saved network", network.name);
     await fill(
-      within(dialog).getByLabelText("RFB destination host"),
+      within(form).getByLabelText("Device address"),
       type === "cloudflare_access" ? "gateway.example.com" : "100.100.10.2",
     );
-    await fill(
-      within(dialog).getByLabelText("TLS certificate identity"),
-      "inner.example.com",
-    );
-    expect(within(dialog).queryByLabelText("SSH host")).toBeNull();
-    expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
+    expect(within(form).queryByLabelText("SSH host")).toBeNull();
+    click(within(form).getByText("More settings", { selector: "summary" }));
+    expect(within(form).getByLabelText("Port")).toHaveValue(
       type === "cloudflare_access" ? 443 : 5900,
     );
-    click(getAction("button", "Save", dialog));
-    await waitFor(() => {
-      expect(requests).toHaveLength(1);
+    click(getAction("button", "Continue", form));
+    await screen.findByRole("heading", {
+      name: "Enter device login information",
     });
+    await fill(
+      within(form).getByLabelText(/Connection name/u),
+      "Native desktop",
+    );
+    await chooseSavedLogin(form);
+    click(getAction("button", "Continue", form));
+    await screen.findByRole("heading", { name: "Review and save" });
+    await fill(
+      within(form).getByLabelText("VNC certificate name"),
+      "inner.example.com",
+    );
+    expect(
+      within(form).getByText(`${provider} · ${network.name}`, {
+        selector: "dd",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(network.id)).not.toBeInTheDocument();
+    click(getAction("button", "Save", form));
+    await screen.findByRole("heading", { name: "Connection added" });
+    expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       transport: { type, configId: network.id },
       credential: { id: credential.id },
-      security: { serverName: "inner.example.com" },
+      displayName: "Native desktop",
+      host:
+        type === "cloudflare_access" ? "gateway.example.com" : "100.100.10.2",
+      port: type === "cloudflare_access" ? 443 : 5900,
+      security: {
+        type: "x509_vnc",
+        serverName: "inner.example.com",
+        trust: { mode: "system" },
+      },
     });
-    await screen.findByRole("heading", { name: "Native desktop" });
-    await expect(screen.findByText(network.name)).resolves.toBeVisible();
-    expect(screen.queryByText(network.id)).not.toBeInTheDocument();
+    expect(screen.getByText("Native desktop")).toBeInTheDocument();
   },
 );
 
@@ -492,28 +518,32 @@ test("Detached native editing preserves both trust layers and requires explicit 
     data.connections = [updated];
     return respond(200, updated);
   });
-  await page();
-  click(
-    await waitFor(() => {
-      return getAction("button", "Edit host");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
+  const form = await openEditHostPage();
+  expect(within(form).getByLabelText("Connection method")).toHaveTextContent(
     "Cloudflare Access",
   );
-  expect(within(dialog).getByLabelText("Origin TLS server name")).toHaveValue(
+  click(
+    within(form).getByText("Additional network settings", {
+      selector: "summary",
+    }),
+  );
+  expect(within(form).getByLabelText("Origin TLS server name")).toHaveValue(
     "origin.example.com",
   );
-  expect(within(dialog).getByLabelText("TLS certificate identity")).toHaveValue(
+  expect(within(form).getByLabelText("VNC certificate name")).toHaveValue(
     "inner.example.com",
   );
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  await choose(dialog, "Network configuration", network.name);
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    expect(requests).toHaveLength(1);
-  });
+  expect(within(form).getByLabelText("Origin TLS CA certificates")).toHaveValue(
+    "ORIGIN_CA_CANARY",
+  );
+  expect(within(form).getByLabelText("CA certificates (PEM)")).toHaveValue(
+    "INNER_CA_CANARY",
+  );
+  expect(getAction("button", "Save", form)).toBeDisabled();
+  await choose(form, "Saved network", network.name);
+  click(getAction("button", "Save", form));
+  await screen.findByRole("heading", { name: detached.displayName });
+  expect(requests).toHaveLength(1);
   expect(requests[0]).toMatchObject({
     expectedGeneration: detached.generation,
     transport: {
@@ -527,10 +557,8 @@ test("Detached native editing preserves both trust layers and requires explicit 
     credential: { id: credential.id },
     security: detached.security,
   });
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Edit host" })).toBeNull();
-    expect(screen.queryByText(/needs a new configuration/u)).toBeNull();
-  });
+  expect(screen.queryByRole("heading", { name: "Edit connection" })).toBeNull();
+  expect(screen.queryByText(/needs a new configuration/u)).toBeNull();
 });
 
 test("Independent native KDC rebinding keeps the Direct desktop route and Kerberos credential", async () => {
@@ -578,25 +606,18 @@ test("Independent native KDC rebinding keeps the Direct desktop route and Kerber
     data.connections = [updated];
     return respond(200, updated);
   });
-  await page();
-  click(
-    await waitFor(() => {
-      return getAction("button", "Edit host");
-    }),
+  const form = await openEditHostPage();
+  expect(within(form).getByLabelText("Connection method")).toHaveTextContent(
+    "Direct connection",
   );
-  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
-    "Direct from Runner",
-  );
-  expect(within(dialog).getByLabelText("Separate KDC route")).toHaveTextContent(
+  expect(within(form).getByLabelText("Separate KDC route")).toHaveTextContent(
     "Tailscale",
   );
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  await choose(dialog, "Network configuration", network.name);
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    expect(requests).toHaveLength(1);
-  });
+  expect(getAction("button", "Save", form)).toBeDisabled();
+  await choose(form, "Saved network", network.name);
+  click(getAction("button", "Save", form));
+  await screen.findByRole("heading", { name: original.displayName });
+  expect(requests).toHaveLength(1);
   expect(requests[0]).toMatchObject({
     transport: { type: "direct" },
     credential: { id: credential.id },
@@ -606,15 +627,16 @@ test("Independent native KDC rebinding keeps the Direct desktop route and Kerber
         realm: initiator.realm,
         components: ["vnc", "desktop.example.com"],
       },
+      trust: { mode: "system" },
       kdc: {
         host: "kdc.tailnet",
         port: 88,
         transport: { type: "tailscale", configId: network.id },
+        ticketLifetimeSeconds: 1200,
+        renewableLifetimeSeconds: 7200,
       },
     },
   });
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Edit host" })).toBeNull();
-    expect(screen.queryByText(/needs a new configuration/u)).toBeNull();
-  });
+  expect(screen.queryByRole("heading", { name: "Edit connection" })).toBeNull();
+  expect(screen.queryByText(/needs a new configuration/u)).toBeNull();
 });

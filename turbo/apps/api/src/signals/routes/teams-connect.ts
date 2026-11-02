@@ -5,14 +5,12 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
 import {
-  connectTeamsInstallation$,
   disconnectTeamsConnection$,
   publishTeamsChanged$,
   uninstallTeamsInstallation$,
   teamsConnectStatus,
   buildTeamsOauthConnectUrl,
 } from "../services/teams-connect.service";
-import { teamsWorkspaceIdentityEnabled } from "../services/teams-workspace-identity.service";
 import type { RouteEntry } from "../route-entry";
 import { createTeamsOAuthState$ } from "../services/teams-oauth-state";
 
@@ -37,9 +35,6 @@ const teamsConnectStatusIdentity$ = computed((get) => {
     isAdmin: "orgRole" in auth && auth.orgRole === "admin",
   };
 });
-const workspaceIdentity$ = teamsWorkspaceIdentityEnabled(
-  teamsConnectStatusIdentity$,
-);
 const teamsConnectStatus$ = teamsConnectStatus(teamsConnectStatusIdentity$);
 
 const getTeamsConnectStatusInner$ = command(
@@ -81,7 +76,7 @@ const getTeamsConnectStatusInner$ = command(
   },
 );
 
-const connectInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+const connectInner$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   signal.throwIfAborted();
 
@@ -90,63 +85,11 @@ const connectInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
-  const body = bodyResult.data;
-  if (await get(workspaceIdentity$)) {
-    return errorResponse(
-      403,
-      `Verify your Microsoft Teams account through OAuth: ${buildTeamsOauthConnectUrl(auth)}`,
-      "FORBIDDEN",
-    );
-  }
-
-  const result = await set(
-    connectTeamsInstallation$,
-    {
-      userId: auth.userId,
-      orgId: auth.orgId,
-      orgRole:
-        "orgRole" in auth && auth.orgRole === "admin" ? "admin" : "member",
-      tenantId: body.tenantId,
-      teamsUserId: body.teamsUserId,
-      teamsAadObjectId: body.teamsAadObjectId,
-      teamsUserDisplayName: body.teamsUserDisplayName,
-      teamsUserPrincipalName: body.teamsUserPrincipalName,
-      teamId: body.teamId,
-      teamName: body.teamName,
-      serviceUrl: body.serviceUrl,
-      conversationId: body.conversationId,
-      conversationType: body.conversationType,
-      activityId: body.activityId,
-      channelId: body.channelId,
-      threadId: body.threadId,
-    },
-    signal,
+  return errorResponse(
+    403,
+    `Verify your Microsoft Teams account through OAuth: ${buildTeamsOauthConnectUrl(auth)}`,
+    "FORBIDDEN",
   );
-  signal.throwIfAborted();
-
-  if (result.kind === "not_found") {
-    return errorResponse(404, result.message, "NOT_FOUND");
-  }
-
-  if (result.kind === "forbidden") {
-    return errorResponse(403, result.message, "FORBIDDEN");
-  }
-
-  await set(
-    publishTeamsChanged$,
-    { orgId: auth.orgId, userIds: [auth.userId] },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  return {
-    status: 200 as const,
-    body: {
-      success: true as const,
-      connectionId: result.connectionId,
-      role: result.role,
-    },
-  };
 });
 
 const disconnectInner$ = command(async ({ get, set }, signal: AbortSignal) => {

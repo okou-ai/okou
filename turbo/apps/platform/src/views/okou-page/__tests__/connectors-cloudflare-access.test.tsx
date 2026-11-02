@@ -1,10 +1,10 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
+import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -41,12 +41,14 @@ function mockRemoteAccess() {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config] });
   });
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [] });
+  });
 }
 
 async function page(path = "/connectors") {
   await setupPage({
     context,
-    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path,
   });
 }
@@ -55,7 +57,7 @@ test("Private network lists Cloudflare Access configurations", async () => {
   mockRemoteAccess();
   await page("/connectors?scope=private-network");
   expect(screen.getByTestId("connectors-scope-private-network")).toBeVisible();
-  await screen.findByRole("heading", { name: "Protected applications" });
-  expect(getAction("button", "Add Cloudflare Access")).toBeVisible();
-  expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
+  await screen.findByText(config.name);
+  expect(getAction("button", "Add network")).toBeInTheDocument();
+  expect(getAction("link", `Manage ${config.name}`)).toBeInTheDocument();
 });

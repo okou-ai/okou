@@ -7,12 +7,12 @@ import {
 } from "@okouai/db/schema/link-wallet";
 import { now } from "../../lib/time";
 import { db$ } from "../external/db";
-import { linkApprovalEnabled$ } from "./link-approval-config.service";
+import { isLinkApprovalConfigured } from "./link-approval-config.service";
 
 /** UI reads only our recorded state; opening a card never polls Link. */
 export const walletApprovalStatus$ = command(
   async (
-    { get, set },
+    { get },
     owner: { readonly userId: string; readonly orgId: string },
     input: {
       readonly agentId: string;
@@ -23,7 +23,7 @@ export const walletApprovalStatus$ = command(
   ): Promise<{
     status: "pending" | "approved" | "continued" | "stopped" | "unavailable";
   }> => {
-    if (!(await set(linkApprovalEnabled$, owner, signal))) {
+    if (!isLinkApprovalConfigured()) {
       return { status: "unavailable" };
     }
     const database = get(db$);

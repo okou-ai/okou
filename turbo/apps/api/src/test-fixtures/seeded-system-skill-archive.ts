@@ -12,6 +12,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { create as createTar } from "tar";
 
 import rawDevSeedSkillVolumes from "../scripts/dev-seed-skill-volumes.json";
+import seededSkillBundles from "../scripts/dev-seed-skill-bundles.json";
 
 interface SeededSystemSkillVolume {
   readonly name: string;
@@ -61,9 +62,30 @@ function createArchive(volume: SeededSystemSkillVolume): Buffer {
   );
 }
 
+export function seededSkillBundleArchive(
+  archiveKey: string,
+): Buffer | undefined {
+  const bundle = seededSkillBundles.find((skill) => {
+    return `bundles/v1/${skill.contentBundle.sha256}.tar.gz` === archiveKey;
+  });
+  if (bundle) {
+    return readFileSync(
+      new URL(
+        `../scripts/dev-seed-skill-bundles/${bundle.name}.tar.gz`,
+        import.meta.url,
+      ),
+    );
+  }
+  return undefined;
+}
+
 export function seededSystemSkillArchive(
   archiveKey: string,
 ): Buffer | undefined {
+  const bundle = seededSkillBundleArchive(archiveKey);
+  if (bundle) {
+    return bundle;
+  }
   const volume = rawDevSeedSkillVolumes.find((candidate) => {
     return (
       SEED_SKILLS.includes(candidate.name) &&

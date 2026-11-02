@@ -102,6 +102,7 @@ import {
   resetMockUserTemplates,
 } from "./api-user-templates.ts";
 import { apiVoiceIoHandlers } from "./api-voice-io.ts";
+import { apiWalletHandlers } from "./api-wallet.ts";
 import { apiWebFilesHandlers } from "./api-web-files.ts";
 import { apiWorkflowsHandlers, resetMockWorkflows } from "./api-workflows.ts";
 import { chatThreadEmojiHandlers } from "./chat-thread-emoji.ts";
@@ -159,6 +160,7 @@ export const handlers = [
   ...apiRealtimeHandlers,
   ...apiUserPermissionGrantsHandlers,
   ...apiVoiceIoHandlers,
+  ...apiWalletHandlers,
   ...apiWebFilesHandlers,
 ];
 

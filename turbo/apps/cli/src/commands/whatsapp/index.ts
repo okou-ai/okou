@@ -3,7 +3,6 @@ import {
   sendWhatsappMessage,
   WhatsappMessageSendError,
 } from "../../lib/api/domains/integrations-whatsapp";
-import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { uploadWhatsappFileCommand } from "./upload-file";
 import { readMessageText } from "../../lib/command/message-target";
 import {
@@ -76,15 +75,9 @@ Long messages are split; never blindly retry an uncertain or partial send.`,
     ),
   );
 
-const tokenPayload = decodeSandboxTokenPayload();
-
 export const whatsappCommand = new Command("whatsapp")
   .description("Send messages and files to your connected WhatsApp account")
-  .addCommand(uploadWhatsappFileCommand, {
-    hidden:
-      tokenPayload !== undefined &&
-      !tokenPayload.capabilities.includes("whatsapp:file:write"),
-  })
+  .addCommand(uploadWhatsappFileCommand)
   .addCommand(
     new Command("message")
       .description("Send a WhatsApp message")

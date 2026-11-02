@@ -27,7 +27,7 @@ so retries cannot start a second purchase continuation. Watched purchases must
 continue in their original thread. Ordinary approval status is still rechecked
 before credentials are released; approval is not payment.
 
-## Rollout
+## Deployment and operations
 
 1. Apply additive migration `1418_link_approval_continuation`; old requests retain
    null provenance and their manual flow.
@@ -40,12 +40,12 @@ before credentials are released; approval is not payment.
 3. Deploy the Worker with `link-approval-deploy.yml`, initially disabled. Deploy
    the API/platform/CLI and let older API instances drain. No Link credentials
    are configured on the Worker.
-4. Enable the Worker explicitly, then enable `linkWalletApprovalContinuation`
-   for a test user. Validate a Link test-mode spend, manual takeover, rejection,
-   expiry, disconnect, and repeated `/start`/poll delivery before widening.
+4. Enable the Worker explicitly. Validate a Link test-mode spend, manual takeover,
+   rejection, expiry, disconnect, and repeated `/start`/poll delivery.
 
-The feature and Worker both default off. Disable the feature to stop new and
-in-flight watches; disable the Worker as well before rolling back the API.
+Approval continuation is available to all users with an enabled Worker and an API
+configured with the Worker URL and both secrets. The Worker defaults off; disable
+it to stop new and in-flight watches before rolling back the API.
 Existing queued messages remain subject to normal wallet authorization checks.
 Never roll back the additive migration while a newer API is serving traffic.
 

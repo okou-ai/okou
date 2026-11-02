@@ -59,25 +59,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Show published product updates once per user and edition.",
     enabled: false,
   },
-  [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Teams workspace identity",
-    description:
-      "Connect your Microsoft Teams identity independently of bot installation and use it in shared conversations.",
-    enabled: false,
-  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",
     description: "Approve up to 20 connector permissions together.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  // Visibility checks remain enforced independently of this management gate.
-  [FeatureSwitchKey.SharedThreadVisibility]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Conversation share visibility",
-    description: "Choose who can view a shared conversation.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -89,26 +74,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.RemoteControlGuidedSetup]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Remote control guided setup",
-    description:
-      "Set up and manage remote connections and private networks step by step.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",
     description:
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ArtifactDeletion]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Artifact deletion",
-    description: "Delete owned artifacts and withdraw their Okou links.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerGenerationSuggestions]: {
     maintainer: "bingjie@okou.ai",
@@ -144,14 +115,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ChatThreadTimeline]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Chat timeline",
-    description:
-      "Separate chat history by day, with Today shown only alongside Yesterday.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
@@ -229,7 +192,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Share website logins across chats with a separate window for each chat",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
@@ -343,12 +305,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.LinkWalletApprovalContinuation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
-    enabled: false,
-  },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -434,17 +390,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: [...STAFF_ORG_ID_HASHES, "3043664c"],
   },
-  [FeatureSwitchKey.WhatsappFileUpload]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Send private uploaded files to independently verified WhatsApp accounts. Enable after the matching Runner CLI is deployed.",
-    enabled: false,
-  },
   [FeatureSwitchKey.WhatsappIntegration]: {
     maintainer: "yuma@okou.ai",
     description:
       "Connect WhatsApp to Okou through the shared AgentPhone number.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",

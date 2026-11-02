@@ -38,6 +38,7 @@ function captureTeamsRequests(
         return HttpResponse.json({
           id: params.memberId,
           tenantId: teamsTenantId,
+          aadObjectId: installation.teamsAadObjectId,
         });
       },
     ),

@@ -1,21 +1,13 @@
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
-import {
-  remoteControlGuidedEnabled$,
-  remoteSetup$,
-} from "../../remote-control-setup.ts";
+import { remoteSetup$ } from "../../remote-control-setup.ts";
 import { closeSshDialog$ } from "../../ssh.ts";
 import { closeVncDialog$ } from "../../vnc.ts";
 
 export type RemoteControlType = "all" | "ssh" | "vnc";
-export type RemoteControlView = "connections" | "credentials";
-
-const view$ = state<RemoteControlView>("connections");
-
 export const remoteCredentialsPage$ = computed((get) => {
   const params = get(searchParams$);
   return (
-    get(remoteControlGuidedEnabled$) &&
     get(remoteSetup$) === null &&
     params.get("scope") === "remote-control" &&
     params.get("remoteView") === "credentials"
@@ -36,10 +28,6 @@ export const remoteControlType$ = computed((get) => {
   return type === "ssh" || type === "vnc" ? type : "all";
 });
 
-export const remoteControlView$ = computed((get) => {
-  return get(view$);
-});
-
 export const setRemoteControlType$ = command(
   ({ get, set }, value: RemoteControlType) => {
     const params = new URLSearchParams(get(searchParams$));
@@ -49,11 +37,5 @@ export const setRemoteControlType$ = command(
       params.set("type", value);
     }
     set(updateSearchParams$, params);
-  },
-);
-
-export const setRemoteControlView$ = command(
-  ({ set }, value: RemoteControlView) => {
-    set(view$, value);
   },
 );

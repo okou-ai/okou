@@ -16,11 +16,7 @@ import {
   sshConnectionModeEditor$,
 } from "../../signals/ssh.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
-import {
-  AccessFields,
-  CloudflareAccessLoadError,
-} from "./cloudflare-access.tsx";
+import { CloudflareAccessLoadError } from "./cloudflare-access.tsx";
 
 function AccessConfigOptions({
   configs,
@@ -28,7 +24,6 @@ function AccessConfigOptions({
   readonly configs: readonly ScopedCloudflareAccessConfig[];
 }) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   const personal = configs.filter((config) => {
     return config.scope === "personal";
   });
@@ -50,13 +45,6 @@ function AccessConfigOptions({
             </SelectItem>
           );
         })}
-        {!guided && (
-          <SelectItem value="new">
-            {t(($) => {
-              return $.cloudflareAccess.createNew;
-            })}
-          </SelectItem>
-        )}
       </SelectGroup>
       {organization.length > 0 && (
         <SelectGroup>
@@ -80,27 +68,15 @@ function AccessConfigOptions({
 
 export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   const configs = useLoadable(cloudflareAccessConfigs$);
   const editor = useGet(sshConnectionModeEditor$);
   const choose = useSet(chooseSshAccessConfig$);
-  const configItems = [
-    ...(configs.state === "hasData" && configs.data
+  const configItems =
+    configs.state === "hasData" && configs.data
       ? configs.data.map((config) => {
           return { value: config.id, label: config.name };
         })
-      : []),
-    ...(!guided
-      ? [
-          {
-            value: "new",
-            label: t(($) => {
-              return $.cloudflareAccess.createNew;
-            }),
-          },
-        ]
-      : []),
-  ];
+      : [];
   if (configs.state === "hasData" && configs.data === null) {
     return (
       <p role="alert" className="text-sm text-muted-foreground">
@@ -156,7 +132,6 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
             </SelectContent>
           </Select>
           {editor.configId &&
-            editor.configId !== "new" &&
             !configs.data.some((config) => {
               return config.id === editor.configId;
             }) && (
@@ -168,17 +143,12 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
             )}
         </div>
       ) : null}
-      {guided && configs.state === "hasData" && configs.data?.length === 0 && (
+      {configs.state === "hasData" && configs.data?.length === 0 && (
         <p className="text-sm text-muted-foreground">
           {t(($) => {
             return $.remoteControlSetup.networkManagementHelp;
           })}
         </p>
-      )}
-      {!guided && editor.configId === "new" && (
-        <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
-          <AccessFields config={null} />
-        </div>
       )}
     </fieldset>
   );

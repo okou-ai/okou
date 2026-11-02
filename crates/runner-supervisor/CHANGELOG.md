@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.21.19](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.18...runner-supervisor-v0.21.19) (2026-11-02)
+
+## [0.21.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.17...runner-supervisor-v0.21.18) (2026-11-02)
+
+
+### Refactoring
+
+* **runner:** unify content bundle caching through storage planning ([#44595](https://github.com/okou-ai/okou/issues/44595)) ([71bb2b9](https://github.com/okou-ai/okou/commit/71bb2b9ff1b61f769497d6af79af182dbf510209))
+
 ## [0.21.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.16...runner-supervisor-v0.21.17) (2026-11-02)
 
 ## [0.21.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.15...runner-supervisor-v0.21.16) (2026-11-02)

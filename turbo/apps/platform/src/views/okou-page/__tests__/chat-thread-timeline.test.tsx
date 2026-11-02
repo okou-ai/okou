@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -24,11 +23,7 @@ function prompt(content: string, createdAt: string): MockChatEventInput {
   };
 }
 
-async function openChat(
-  events: MockChatEventInput[],
-  lastMessage: string,
-  timelineEnabled = true,
-) {
+async function openChat(events: MockChatEventInput[], lastMessage: string) {
   mockNow(new Date(NOW), context.signal);
   installMessageExperienceChat({
     threadId: context.resourceId,
@@ -37,9 +32,6 @@ async function openChat(
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadTimeline]: timelineEnabled,
-    },
   });
   const message = await screen.findByText(lastMessage);
   const transcript = message.closest<HTMLElement>("[data-message-container]");
@@ -48,21 +40,6 @@ async function openChat(
   }
   return within(transcript);
 }
-
-test("Chat history keeps its existing appearance when the timeline switch is off", async () => {
-  const chat = await openChat(
-    [
-      prompt("Yesterday's plan", "2026-10-27T10:00:00.000Z"),
-      prompt("Today's plan", "2026-10-28T10:00:00.000Z"),
-    ],
-    "Today's plan",
-    false,
-  );
-
-  expect(chat.getByText("Yesterday's plan")).toBeInTheDocument();
-  expect(chat.queryByRole("separator", { name: "Yesterday" })).toBeNull();
-  expect(chat.queryByRole("separator", { name: "Today" })).toBeNull();
-});
 
 test("Chat dates separate days once and include the year only for past years", async () => {
   const chat = await openChat(

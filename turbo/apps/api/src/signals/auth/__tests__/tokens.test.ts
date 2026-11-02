@@ -121,6 +121,7 @@ describe("auth tokens", () => {
       capabilities: expect.arrayContaining([
         "notify:write",
         "data-search:read",
+        "whatsapp:file:write",
       ]),
     });
   });

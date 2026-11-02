@@ -310,14 +310,20 @@ describe("shared Browser public consumers", () => {
       await f.owned.run(async () => {
         installBrowserWindowContentCommands(f.provider.native);
         const a = await f.start();
-        const result = await client().create({
-          headers: runHeaders(a),
-          body: { name: "Regional browser", proxyCountryCode: "us" },
-        });
+        const result = await accept(
+          client().create({
+            headers: runHeaders(a),
+            body: { name: "Regional browser", proxyCountryCode: "us" },
+          }),
+          [201],
+        );
         expect(result.status).toBe(201);
         expect(result.body).toMatchObject({
           browser: { proxyCountryCode: shared ? null : "us" },
         });
+        expect(result.body.extension).toStrictEqual(
+          shared ? TEST_BROWSER_EXTENSION : undefined,
+        );
         expect(f.provider.sessionRequests).toStrictEqual([
           expect.objectContaining({ proxyCountryCode: shared ? null : "us" }),
         ]);
@@ -702,6 +708,8 @@ describe("shared Browser public consumers", () => {
       const a = await f.start();
       const b = await f.start();
       const first = await use(a);
+      expect(first.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
+      expect(first.cdpUrl).toBe(f.provider.native.url);
       const current = await accept(
         client().current({ headers: runHeaders(a) }),
         [200],
@@ -717,12 +725,20 @@ describe("shared Browser public consumers", () => {
       );
       expect(resized.body.browser.window).toStrictEqual(first.browser.window);
       const second = await use(b);
+      expect(second.extension).toStrictEqual(first.extension);
+      expect(second.cdpUrl).toBe(first.cdpUrl);
       expect(first.browser.window?.instanceId).toBe(
         second.browser.window?.instanceId,
       );
       expect(first.browser.window?.primaryWindowId).not.toBe(
         second.browser.window?.primaryWindowId,
       );
+      const reused = await use(a);
+      expect(reused).toMatchObject({
+        browser: { window: first.browser.window },
+        extension: first.extension,
+        cdpUrl: first.cdpUrl,
+      });
       expect(f.provider.createdIds).toHaveLength(1);
       expect(f.provider.sessionRequests).toHaveLength(1);
       expect(f.provider.sessionRequests[0]).toMatchObject({

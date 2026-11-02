@@ -96,7 +96,6 @@ async function configure(enabled = true, echoRouting = true) {
         body: {
           switches: {
             [FeatureSwitchKey.WhatsappIntegration]: true,
-            [FeatureSwitchKey.WhatsappFileUpload]: true,
           },
         },
       }),
@@ -375,30 +374,6 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     expect(setup.sends.at(-1)?.body).toContain("/settings/whatsapp?");
   });
 
-  it("keeps file delivery disabled until its independent rollout switch is enabled", async () => {
-    const setup = await configure();
-    await connect(setup);
-    const { file } = await uploadedWhatsappFile(setup);
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers: headers(setup.actor),
-        body: { switches: { [FeatureSwitchKey.WhatsappFileUpload]: false } },
-      }),
-      [200],
-    );
-    setup.sends.length = 0;
-    await accept(
-      client().sendUploadedFile({
-        headers: headers(setup.actor),
-        body: { fileId: file.id },
-      }),
-      [404],
-    );
-    expect(setup.sends).toHaveLength(0);
-  });
-
   it("sends an owned private artifact as one WhatsApp attachment without publishing its fetch URL", async () => {
     const setup = await configure(true, false);
     const phone = await connect(setup);
@@ -674,20 +649,6 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       const connectionState =
         scenario === "typing-recovery" ? "connected" : scenario;
       const setup = await configure(true, connectionState !== "connected");
-      const fileEnabled = connectionState !== "switch";
-      if (!fileEnabled) {
-        await accept(
-          setupApp({ context, routes: featureSwitchesRoutes })(
-            featureSwitchesContract,
-          ).update({
-            headers: headers(setup.actor),
-            body: {
-              switches: { [FeatureSwitchKey.WhatsappFileUpload]: false },
-            },
-          }),
-          [200],
-        );
-      }
       const runs = createRunsApi(context);
       setup.ap.acceptAgentPhoneObjectStorage();
       runs.acceptStorageDownloads();
@@ -761,16 +722,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       expect(run.appendSystemPrompt).toContain(
         "currently running inside: WhatsApp",
       );
-      if (fileEnabled) {
-        expect(run.appendSystemPrompt).toContain("okou whatsapp upload-file");
-      } else {
-        expect(run.appendSystemPrompt).not.toContain(
-          "okou whatsapp upload-file",
-        );
-        expect(run.appendSystemPrompt).toContain(
-          "Outbound file upload is not available on WhatsApp in this Run",
-        );
-      }
+      expect(run.appendSystemPrompt).toContain("okou whatsapp upload-file");
       expect(run.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("whatsapp");
       expect(run.appendSystemPrompt).toContain(
         "okou whatsapp message send --help",
@@ -960,7 +912,6 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         body: {
           switches: {
             [FeatureSwitchKey.WhatsappIntegration]: true,
-            [FeatureSwitchKey.WhatsappFileUpload]: true,
           },
         },
       }),
