@@ -377,31 +377,43 @@ async fn shutdown_joins_blank_start_and_destroy_before_releasing_budget() {
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let run_handle = tokio::spawn(run(config));
 
-    start_gate
-        .wait_entered(1, Duration::from_secs(5))
-        .await
-        .expect("blank start should enter before stopping");
-    env.trigger_stopping().await;
-    wait_status_mode(
-        &env._temp_dir.path().join("status.json"),
-        "stopping",
-        Duration::from_secs(5),
-    )
+    let assertions = AssertUnwindSafe(async {
+        start_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("blank start should enter before stopping");
+        env.trigger_stopping().await;
+        wait_status_mode(
+            &env._temp_dir.path().join("status.json"),
+            "stopping",
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(calls.destroy_call_count(), 0);
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        assert!(!run_handle.is_finished());
+
+        // Stopping status precedes preparation cancellation, so start may still
+        // reach park. Shutdown must join the owned work and retain its budget
+        // until physical destruction completes in either ordering.
+        start_gate.release_one();
+        destroy_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("stopping should destroy the joined blank");
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        assert!(!run_handle.is_finished());
+    })
+    .catch_unwind()
     .await;
-    assert_eq!(calls.destroy_call_count(), 0);
-    assert_eq!(budget.allocated(), (2, 4096, 1));
 
+    // Release blocked lifecycle work before joining, including on assertion failure.
     start_gate.release_one();
-    destroy_gate
-        .wait_entered(1, Duration::from_secs(5))
-        .await
-        .expect("stopping should destroy the joined blank");
-    assert_eq!(budget.allocated(), (2, 4096, 1));
-    assert!(!run_handle.is_finished());
-    assert_eq!(calls.blank_park_call_count(), 0);
-
     destroy_gate.release_one();
     shutdown(&env, run_handle).await;
+    if let Err(panic) = assertions {
+        std::panic::resume_unwind(panic);
+    }
     assert_eq!(budget.allocated(), (0, 0, 0));
     assert!(idle_pool.lock().await.is_empty());
     assert_eq!(calls.destroy_call_count(), 1);
