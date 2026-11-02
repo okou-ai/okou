@@ -316,6 +316,79 @@ try {
     },
   );
   assert.equal(JSON.parse(nestedReply.params.message).result.result.value, 4);
+  const selectors = await wire(proxyA.endpoint);
+  const browserSession = (
+    await selectors.request("Target.attachToBrowserTarget")
+  ).sessionId;
+  for (const channel of [undefined, browserSession]) {
+    const attached = new Map();
+    const off = selectors.onEvent((event) => {
+      if (event.sessionId !== channel) return;
+      if (event.method === "Target.attachedToTarget")
+        attached.set(event.params.sessionId, event.params.targetInfo);
+      if (event.method === "Target.detachedFromTarget")
+        attached.delete(event.params.sessionId);
+    });
+    try {
+      await selectors.request(
+        "Target.setAutoAttach",
+        {
+          autoAttach: true,
+          waitForDebuggerOnStart: false,
+          flatten: true,
+        },
+        channel,
+      );
+      const invalid = {
+        targetId: a,
+        waitForDebuggerOnStart: "invalid",
+      };
+      await selectors.request("Target.getTargets", {}, channel);
+      const originalSessions = new Set(attached.keys());
+      await assert.rejects(
+        selectors.request("Target.autoAttachRelated", invalid, channel),
+        /\(-32602\)/u,
+      );
+      // An adapted inventory reply drains the preceding Target event queue.
+      await selectors.request("Target.getTargets", {}, channel);
+      assert.deepEqual(new Set(attached.keys()), originalSessions);
+      assert.ok(
+        [...attached.values()].filter((target) => {
+          return target.type === "page";
+        }).length >= 3,
+      );
+      await selectors.request(
+        "Target.autoAttachRelated",
+        {
+          targetId: a,
+          waitForDebuggerOnStart: false,
+          filter: [{ type: "page" }],
+        },
+        channel,
+      );
+      await selectors.request("Target.getTargets", {}, channel);
+      assert.deepEqual(
+        new Set(
+          [...attached.values()].map((target) => {
+            return target.targetId;
+          }),
+        ),
+        new Set([a]),
+      );
+      await selectors.request(
+        "Target.setAutoAttach",
+        {
+          autoAttach: false,
+          waitForDebuggerOnStart: false,
+          flatten: true,
+        },
+        channel,
+      );
+    } finally {
+      off();
+    }
+  }
+  selectors.close();
   const input = async (wire, sessionId, composition) => {
     await value(
       wire,
@@ -557,6 +630,7 @@ try {
         blankCreation: true,
         forTab: true,
         nestedSessions: true,
+        explicitRelatedSelectors: true,
         agentBrowser: true,
         guestTaskAdmission: options["guest-task"],
         getCdpUrlAndIndependentClient: true,

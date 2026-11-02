@@ -23,11 +23,18 @@ interface Internal {
   readonly reject: (error: Error) => void;
   readonly timer: ReturnType<typeof setTimeout>;
 }
-interface AutoAttachment {
-  readonly params: Message;
-  readonly roots: Set<string>;
-  readonly flatten: boolean;
-}
+type AutoAttachment =
+  | {
+      readonly kind: "automatic";
+      readonly params: Message;
+      readonly roots: Map<string, Message>;
+      readonly flatten: boolean;
+    }
+  | {
+      readonly kind: "related";
+      readonly roots: Map<string, Message>;
+      readonly flatten: true;
+    };
 const key = (channel: string | undefined, id: unknown) => {
   return (channel ?? "") + ":" + String(id);
 };
@@ -49,6 +56,21 @@ const ADAPTED_REPLIES = new Set([
   "Target.setAutoAttach",
   "Target.autoAttachRelated",
 ]);
+
+function relatedParameters(params: Message): boolean {
+  return (
+    typeof params.waitForDebuggerOnStart === "boolean" &&
+    (params.filter === undefined ||
+      (Array.isArray(params.filter) &&
+        params.filter.every((entry: unknown) => {
+          return (
+            record(entry) &&
+            (entry.type === undefined || typeof entry.type === "string") &&
+            (entry.exclude === undefined || typeof entry.exclude === "boolean")
+          );
+        })))
+  );
+}
 
 /** Only target/session/window boundaries are adapted; ordinary CDP remains opaque. */
 export class ProxyPeer {
@@ -276,9 +298,10 @@ export class ProxyPeer {
     );
     this.autoAttach.delete(channel);
     if (params.autoAttach !== true) return;
-    const auto = {
+    const auto: AutoAttachment = {
+      kind: "automatic",
       params,
-      roots: new Set<string>(),
+      roots: new Map<string, Message>(),
       flatten: params.flatten === true,
     };
     this.autoAttach.set(channel, auto);
@@ -295,6 +318,46 @@ export class ProxyPeer {
       } catch {
         this.close();
       }
+      throw error;
+    }
+  }
+  private async configureRelated(
+    targetId: string,
+    params: Message,
+    channel?: string,
+  ): Promise<unknown> {
+    const previous = this.autoAttach.get(channel);
+    // Native autoAttachRelated replaces setAutoAttach, whose window-scoped
+    // implementation uses related selectors too. Cancel those before switching.
+    if (previous?.kind === "automatic") {
+      await this.inject(
+        "Target.setAutoAttach",
+        { autoAttach: false, waitForDebuggerOnStart: false, flatten: true },
+        channel,
+      );
+      previous.roots.clear();
+    }
+    const roots =
+      previous?.kind === "related"
+        ? previous.roots
+        : new Map<string, Message>();
+    const prior = roots.get(targetId);
+    const auto: AutoAttachment = { kind: "related", roots, flatten: true };
+    roots.set(targetId, params);
+    this.autoAttach.set(channel, auto);
+    try {
+      return await this.inject("Target.autoAttachRelated", params, channel);
+    } catch (error) {
+      if (prior) roots.set(targetId, prior);
+      else roots.delete(targetId);
+      if (previous?.kind === "automatic") {
+        this.autoAttach.set(channel, previous);
+        try {
+          await this.relate(channel, previous);
+        } catch {
+          this.close();
+        }
+      } else if (!roots.size) this.autoAttach.delete(channel);
       throw error;
     }
   }
@@ -325,6 +388,24 @@ export class ProxyPeer {
       return true;
     }
     const browser = !channel || this.sessions.get(channel)?.target === null;
+    if (
+      method === "Target.autoAttachRelated" &&
+      browser &&
+      typeof params.targetId === "string" &&
+      // Let Chrome reject malformed parameters before changing any selectors.
+      relatedParameters(params)
+    ) {
+      const targetId = params.targetId;
+      const operation = this.control.then(() => {
+        return this.configureRelated(targetId, params, channel);
+      });
+      this.control = operation.then(
+        () => {},
+        () => {},
+      );
+      respond({ result: await operation });
+      return true;
+    }
     if (
       method === "Target.setAutoAttach" &&
       browser &&
@@ -490,8 +571,9 @@ export class ProxyPeer {
     if (method === "Target.setAutoAttach") {
       if (requested.autoAttach === true)
         this.autoAttach.set(channel, {
+          kind: "automatic",
           params: requested,
-          roots: new Set(),
+          roots: new Map(),
           flatten: requested.flatten === true,
         });
       else this.autoAttach.delete(channel);
@@ -501,11 +583,11 @@ export class ProxyPeer {
       typeof requested.targetId === "string"
     ) {
       let auto = this.autoAttach.get(channel);
-      if (!auto) {
-        auto = { params: requested, roots: new Set(), flatten: true };
+      if (auto?.kind !== "related") {
+        auto = { kind: "related", roots: new Map(), flatten: true };
         this.autoAttach.set(channel, auto);
       }
-      auto.roots.add(requested.targetId);
+      auto.roots.set(requested.targetId, requested);
     }
   }
 
@@ -726,21 +808,30 @@ export class ProxyPeer {
     channel: string | undefined,
     auto: AutoAttachment,
   ): Promise<void> {
-    const roots: TargetInfo[] = [];
-    for (const info of this.scope.targets.values())
-      if (
-        ["page", "tab", "service_worker", "shared_worker"].includes(
-          info.type,
-        ) &&
-        this.matches(info, auto.params) &&
-        (await this.scope.contains(info))
-      )
-        roots.push(info);
+    const roots = new Map<string, Message>();
+    if (auto.kind === "automatic") {
+      for (const info of this.scope.targets.values())
+        if (
+          ["page", "tab", "service_worker", "shared_worker"].includes(
+            info.type,
+          ) &&
+          this.matches(info, auto.params) &&
+          (await this.scope.contains(info))
+        )
+          roots.set(info.targetId, {
+            targetId: info.targetId,
+            waitForDebuggerOnStart: auto.params.waitForDebuggerOnStart,
+            ...(auto.params.filter !== undefined
+              ? { filter: auto.params.filter }
+              : {}),
+          });
+    } else {
+      for (const [id, params] of auto.roots)
+        if (await this.scope.allows(id)) roots.set(id, params);
+    }
     if (
-      [...auto.roots].some((id) => {
-        return !roots.some((info) => {
-          return info.targetId === id;
-        });
+      [...auto.roots.keys()].some((id) => {
+        return !roots.has(id);
       })
     ) {
       await this.inject(
@@ -750,23 +841,13 @@ export class ProxyPeer {
       );
       auto.roots.clear();
     }
-    for (const info of roots) {
-      if (auto.roots.has(info.targetId)) continue;
-      auto.roots.add(info.targetId);
+    for (const [targetId, params] of roots) {
+      if (auto.roots.has(targetId)) continue;
+      auto.roots.set(targetId, params);
       try {
-        await this.inject(
-          "Target.autoAttachRelated",
-          {
-            targetId: info.targetId,
-            waitForDebuggerOnStart: auto.params.waitForDebuggerOnStart,
-            ...(auto.params.filter !== undefined
-              ? { filter: auto.params.filter }
-              : {}),
-          },
-          channel,
-        );
+        await this.inject("Target.autoAttachRelated", params, channel);
       } catch (error) {
-        auto.roots.delete(info.targetId);
+        auto.roots.delete(targetId);
         throw error;
       }
     }

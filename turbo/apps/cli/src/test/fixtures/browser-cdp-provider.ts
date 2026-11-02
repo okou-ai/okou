@@ -1,12 +1,27 @@
 import { once } from "node:events";
 import { WebSocketServer, type WebSocket } from "ws";
-import { number, object, record, string, unknown as zUnknown } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  record,
+  string,
+  unknown as zUnknown,
+} from "zod";
 
 const commandSchema = object({
   id: number(),
   method: string(),
   params: record(string(), zUnknown()).default({}),
   sessionId: string().optional(),
+});
+const relatedSchema = object({
+  targetId: string(),
+  waitForDebuggerOnStart: boolean(),
+  filter: array(
+    object({ type: string().optional(), exclude: boolean().optional() }),
+  ).optional(),
 });
 export const EXTENSION_RUNTIME = "abcdefghijklmnopabcdefghijklmnop";
 interface Target {
@@ -102,6 +117,7 @@ export async function browserCdpProvider() {
   let sequence = 0;
   let nextSession = 0;
   let nextTarget = 0;
+  let rejectRelated = false;
   const bounds = new Map<number, Record<string, unknown>>([
     [0, {}],
     [1, {}],
@@ -159,7 +175,7 @@ export async function browserCdpProvider() {
       windowId: window,
       oldWindowId,
     });
-    broadcast("Target.targetInfoChanged", { targetInfo: info(target) });
+    // A window move need not change CDP TargetInfo; native events own that fact.
   }
   function tab(target: Target) {
     return {
@@ -314,6 +330,17 @@ export async function browserCdpProvider() {
           }
         },
         "Target.autoAttachRelated": () => {
+          if (!relatedSchema.safeParse(params).success) {
+            fail(-32602, "Native invalid related parameters");
+            return;
+          }
+          if (rejectRelated) {
+            rejectRelated = false;
+            fail(-32000, "Native related selection unavailable", {
+              original: true,
+            });
+            return;
+          }
           const target = String(params.targetId);
           attach(connection, target, sessionId, true);
           const child = targets.get("IFRAME-" + target);
@@ -468,6 +495,9 @@ export async function browserCdpProvider() {
     endpoint: `ws://127.0.0.1:${address.port}`,
     commands,
     move,
+    rejectNextRelated() {
+      rejectRelated = true;
+    },
     hasWindow: (windowId: number) => {
       return [...targets.values()].some((target) => {
         return target.type === "page" && target.window === windowId;

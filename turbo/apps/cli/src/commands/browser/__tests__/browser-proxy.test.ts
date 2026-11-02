@@ -373,6 +373,198 @@ describe("chat-window CDP proxy protocol", () => {
     ).toStrictEqual({ opaque: { value: "still-connected" } });
   });
 
+  it.each([
+    { channel: "root", automatic: false },
+    { channel: "root", automatic: true },
+    { channel: "browser", automatic: true },
+  ])(
+    "keeps an explicit related selector narrow ($channel, automatic=$automatic)",
+    async ({ channel, automatic }) => {
+      const session =
+        channel === "browser"
+          ? String(
+              (await connection.request("Target.attachToBrowserTarget"))
+                .sessionId,
+            )
+          : undefined;
+      await connection.request(
+        "Target.setDiscoverTargets",
+        { discover: true },
+        session,
+      );
+      if (automatic)
+        await connection.request(
+          "Target.setAutoAttach",
+          {
+            autoAttach: true,
+            waitForDebuggerOnStart: false,
+            flatten: true,
+          },
+          session,
+        );
+      const start = provider.commands.length;
+      await connection.request(
+        "Target.autoAttachRelated",
+        {
+          targetId: "A",
+          waitForDebuggerOnStart: false,
+        },
+        session,
+      );
+      const discovered = connection.event((message) => {
+        return (
+          message.method === "Target.targetCreated" &&
+          message.sessionId === session &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "B"
+        );
+      });
+      provider.move("B", 0);
+      // This synthetic discovery proves reconciliation has begun; disabling then
+      // waits for that channel's current selector work to complete.
+      await discovered;
+      await connection.request(
+        "Target.setAutoAttach",
+        {
+          autoAttach: false,
+          waitForDebuggerOnStart: false,
+          flatten: true,
+        },
+        session,
+      );
+      expect(
+        provider.commands
+          .slice(start)
+          .filter((command) => {
+            return command.method === "Target.autoAttachRelated";
+          })
+          .map((command) => {
+            return command.params.targetId;
+          }),
+      ).toStrictEqual(["A"]);
+    },
+  );
+
+  it("retains each explicit selector's parameters when another selected root leaves", async () => {
+    await connection.request("Target.setDiscoverTargets", { discover: true });
+    const discovered = connection.event((message) => {
+      return (
+        message.method === "Target.targetCreated" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId === "B"
+      );
+    });
+    provider.move("B", 0);
+    await discovered;
+    const first = {
+      targetId: "A",
+      waitForDebuggerOnStart: false,
+      filter: [{ type: "page" }],
+      futureOption: "first",
+    };
+    const second = {
+      targetId: "B",
+      waitForDebuggerOnStart: true,
+      filter: [{ type: "iframe" }, {}],
+      futureOption: "second",
+    };
+    await connection.request("Target.autoAttachRelated", first);
+    await connection.request("Target.autoAttachRelated", second);
+    const removed = connection.event((message) => {
+      return (
+        message.method === "Target.targetDestroyed" &&
+        message.params?.targetId === "A"
+      );
+    });
+    provider.move("A", 1);
+    await removed;
+    await connection.request("Target.setAutoAttach", {
+      autoAttach: false,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    });
+    expect(
+      provider.commands
+        .filter((command) => {
+          return command.method === "Target.autoAttachRelated";
+        })
+        .map((command) => {
+          return command.params;
+        }),
+    ).toStrictEqual([first, second, second]);
+  });
+
+  it.each([
+    { waitForDebuggerOnStart: "invalid" },
+    { waitForDebuggerOnStart: false, filter: [{ exclude: "invalid" }] },
+  ])(
+    "preserves native validation errors without resetting existing automatic sessions: %j",
+    async (invalid) => {
+      const original = connection.event((message) => {
+        return (
+          message.method === "Target.attachedToTarget" &&
+          (message.params?.targetInfo as { targetId?: string })?.targetId ===
+            "A"
+        );
+      });
+      await connection.request("Target.setAutoAttach", {
+        autoAttach: true,
+        waitForDebuggerOnStart: false,
+        flatten: true,
+      });
+      const event = await original;
+      await expect(
+        connection.request("Target.autoAttachRelated", {
+          targetId: "A",
+          ...invalid,
+        }),
+      ).rejects.toStrictEqual({
+        code: -32602,
+        message: "Native invalid related parameters",
+      });
+      expect(
+        await connection.request(
+          "Runtime.enable",
+          {},
+          String(event.params?.sessionId),
+        ),
+      ).toStrictEqual({});
+    },
+  );
+
+  it("restores automatic selection after a native related-selector failure", async () => {
+    await connection.request("Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    });
+    provider.rejectNextRelated();
+    await expect(
+      connection.request("Target.autoAttachRelated", {
+        targetId: "A",
+        waitForDebuggerOnStart: false,
+      }),
+    ).rejects.toStrictEqual({
+      code: -32000,
+      message: "Native related selection unavailable",
+      data: { original: true },
+    });
+    const attached = connection.event((message) => {
+      return (
+        message.method === "Target.attachedToTarget" &&
+        (message.params?.targetInfo as { targetId?: string })?.targetId === "B"
+      );
+    });
+    provider.move("B", 0);
+    const event = await attached;
+    expect(
+      await connection.request(
+        "Runtime.enable",
+        {},
+        String(event.params?.sessionId),
+      ),
+    ).toStrictEqual({});
+  });
+
   it("places a blank-created target using exact native correlation and retires a moved session", async () => {
     const { sessionId } = await connection.request("Target.attachToTarget", {
       targetId: "A",
