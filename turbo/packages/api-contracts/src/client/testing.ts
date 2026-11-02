@@ -101,6 +101,8 @@ import { buildInfoContract as OriginalBuildInfoContract } from "../contracts/bui
 import { buildInfoContract } from "./build-info";
 import { builtInGenerationContract as OriginalBuiltInGenerationContract } from "../contracts/built-in-generation";
 import { builtInGenerationContract } from "./built-in-generation";
+import { chatConnectorAccessContract as OriginalChatConnectorAccessContract } from "../contracts/chat-connector-access";
+import { chatConnectorAccessContract } from "./chat-connector-access";
 import { chatEventsContract as OriginalChatEventsContract } from "../contracts/chat-event-send";
 import { chatEventsContract } from "./chat-event-send";
 import { chatInputStatusContract as OriginalChatInputStatusContract } from "../contracts/chat-input-status";
@@ -835,6 +837,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [browserContract, OriginalBrowserContract],
   [buildInfoContract, OriginalBuildInfoContract],
   [builtInGenerationContract, OriginalBuiltInGenerationContract],
+  [chatConnectorAccessContract, OriginalChatConnectorAccessContract],
   [chatEventsContract, OriginalChatEventsContract],
   [chatInputStatusContract, OriginalChatInputStatusContract],
   [chatRelationsContract, OriginalChatRelationsContract],

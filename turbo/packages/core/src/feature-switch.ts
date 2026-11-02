@@ -53,6 +53,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Receive content-addressed Marketing prompts and attachments with server-side access grants.",
     enabled: false,
   },
+  [FeatureSwitchKey.ConnectorChatAccountAccess]: {
+    maintainer: "liangyou@vm0.ai",
+    displayName: "Chat connector accounts",
+    description:
+      "Configure connector account access and shared permissions per chat.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatThinkingBrandMotion]: {
     maintainer: "ming@okou.ai",
     displayName: "Chat thinking brand motion",

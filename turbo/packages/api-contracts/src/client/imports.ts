@@ -223,6 +223,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "chat-connector-access",
+    contracts: ["chatConnectorAccessContract"],
+    bindings: [],
+  },
+  {
     module: "chat-event-send",
     contracts: ["chatEventsContract"],
     bindings: [],

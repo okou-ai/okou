@@ -1347,6 +1347,7 @@ export const setDefaultGoogleFormsAccount$ = command(
             owner,
             eq(connectors.id, args.connectionId),
             gte(db.select({ value: count() }).from(cleared), 0),
+            eq(connectors.defaultEnabledForChats, true),
           ),
         )
         .returning({ id: connectors.id, updatedAt: connectors.updatedAt }),
@@ -1531,6 +1532,7 @@ const publishConnectorDefault$ = command(
             owner,
             eq(connectors.id, args.connectionId),
             gte(db.select({ value: count() }).from(cleared), 0),
+            eq(connectors.defaultEnabledForChats, true),
           ),
         )
         .returning({ id: connectors.id, updatedAt: connectors.updatedAt }),

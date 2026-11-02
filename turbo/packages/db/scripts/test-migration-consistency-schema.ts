@@ -50,6 +50,7 @@ import { validatePermanentAgentInstructions } from "./test-agent-instructions-pe
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
+import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
@@ -1444,7 +1445,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "ed000b1509cf1ab0dedf32fab614c7b9",
+    bodyHash: "5cacef0ce10a7514862772fa0b51cc81",
   },
   {
     schemaName: "public",
@@ -3185,6 +3186,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     await validateSeedSkillBundleSchema(dbUrl1);
+    await validateChatConnectorAccessSchema(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
     await validateOfficialAutomationBindingSchema(dbUrl1);
     await validateExpandedBrowserSchema(dbUrl1);
@@ -3234,6 +3236,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
     await validateSeedSkillBundleSchema(dbUrl2);
+    await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);
     await validateOfficialAutomationBindingSchema(dbUrl2);
     await validateConnectorAutomaticOAuthConstraints(dbUrl2);
