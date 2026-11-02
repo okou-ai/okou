@@ -267,7 +267,12 @@ try {
   await value(
     scopedA,
     sa,
-    `new Promise(resolve => { const frame = document.createElement("iframe"); frame.onload = () => resolve(true); frame.src = ${JSON.stringify(frameUrl)}; document.body.append(frame); })`,
+    `new Promise(resolve => {
+      const frame = document.createElement("iframe");
+      frame.onload = () => resolve(true);
+      frame.src = location.origin.replace("127.0.0.1", "frame.test") + "/frame";
+      document.body.append(frame);
+    })`,
   );
   const frame = (
     await direct.request("Target.getTargets", { filter: [{}] })
