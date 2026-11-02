@@ -174,12 +174,12 @@ assert_no_fixture_secret_values() {
 
 assert_github_app_mapping_values() {
   local env_file="$1"
-  local repo_vars_json="$2"
+  local doppler_vars_json="$2"
   local repo_secrets_json="$3"
   local suffix
   local expected
   for suffix in "${GITHUB_APP_VAR_SUFFIXES[@]}"; do
-    expected="$(jq -r --arg key "OKOU_GITHUB_APP_${suffix}" '.[$key] // ""' <<< "$repo_vars_json")"
+    expected="$(jq -r --arg key "GITHUB_APP_${suffix}" '.[$key] // ""' <<< "$doppler_vars_json")"
     assert_env_value "$env_file" "GITHUB_APP_${suffix}" "$expected"
   done
   for suffix in "${GITHUB_APP_SECRET_SUFFIXES[@]}"; do
@@ -362,8 +362,12 @@ run_github_app_action() {
   local test_dir="$1"
   local repo_vars_json="$2"
   local repo_secrets_json="$3"
+  local doppler_vars_json="${4:-}"
+  if [[ -z "$doppler_vars_json" ]]; then
+    doppler_vars_json="{}"
+  fi
   run_action \
-    "$(build_doppler_secrets_json)" \
+    "$(build_doppler_secrets_json | jq -c --argjson vars "$doppler_vars_json" '. + $vars')" \
     "$test_dir" \
     api \
     preview \
@@ -435,13 +439,14 @@ fi
 
 github_app_canonical_vars_json='{"OKOU_GITHUB_APP_SLUG":" github-canonical-slug ","OKOU_GITHUB_APP_ID":"github-canonical-id","OKOU_GITHUB_APP_CLIENT_ID":"github-canonical-client-id"}'
 github_app_canonical_secrets_json='{"OKOU_GITHUB_APP_CLIENT_SECRET":"github-canonical-client-secret","OKOU_GITHUB_APP_WEBHOOK_SECRET":"github-canonical-webhook-secret","OKOU_GITHUB_APP_PRIVATE_KEY":"github-canonical-private-key"}'
+github_app_doppler_vars_json='{"GITHUB_APP_SLUG":" doppler-canonical-slug ","GITHUB_APP_ID":"doppler-canonical-id","GITHUB_APP_CLIENT_ID":"doppler-canonical-client-id"}'
 github_app_canonical_dir="$(mktemp -d)"
 TEMP_DIRS+=("$github_app_canonical_dir")
-github_app_canonical_output="$(run_github_app_action "$github_app_canonical_dir" "$github_app_canonical_vars_json" "$github_app_canonical_secrets_json" 2>&1)"
+github_app_canonical_output="$(run_github_app_action "$github_app_canonical_dir" "$github_app_canonical_vars_json" "$github_app_canonical_secrets_json" "$github_app_doppler_vars_json" 2>&1)"
 github_app_canonical_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${github_app_canonical_dir}/github-output")"
 assert_contains "$github_app_canonical_output" "Rendered"
 assert_no_fixture_secret_values "$github_app_canonical_output"
-assert_github_app_mapping_values "$github_app_canonical_env_file" "$github_app_canonical_vars_json" "$github_app_canonical_secrets_json"
+assert_github_app_mapping_values "$github_app_canonical_env_file" "$github_app_doppler_vars_json" "$github_app_canonical_secrets_json"
 assert_github_app_source_keys_absent "$github_app_canonical_env_file"
 
 github_app_empty_dir="$(mktemp -d)"
@@ -452,6 +457,60 @@ assert_contains "$github_app_empty_output" "Rendered"
 assert_no_fixture_secret_values "$github_app_empty_output"
 assert_github_app_empty_outputs "$github_app_empty_env_file"
 assert_github_app_source_keys_absent "$github_app_empty_env_file"
+
+integration_var_keys='[
+  "AGENTPHONE_AGENT_ID",
+  "AGENTPHONE_API_BASE_URL",
+  "AGENTPHONE_PHONE_NUMBER",
+  "DISCORD_APPLICATION_ID",
+  "DISCORD_PUBLIC_KEY",
+  "FINICITY_PARTNER_ID",
+  "GITHUB_APP_CLIENT_ID",
+  "GITHUB_APP_ID",
+  "GITHUB_APP_SLUG",
+  "GMAIL_PUBSUB_PUSH_AUDIENCE",
+  "GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
+  "GMAIL_PUBSUB_TOPIC_NAME",
+  "GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE",
+  "GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
+  "GOOGLE_FORMS_PUBSUB_TOPIC_NAME",
+  "GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE",
+  "GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
+  "GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME",
+  "MERCURY_OAUTH_ENVIRONMENT",
+  "MICROSOFT_TEAMS_APP_TENANT_ID",
+  "MICROSOFT_TEAMS_BOT_APP_ID",
+  "RESEND_FROM_DOMAIN",
+  "TELEGRAM_OFFICIAL_BOT_USERNAME",
+  "VERCEL_INTEGRATION_SLUG",
+  "WECHAT_GATEWAY_URL"
+]'
+for integration_environment in preview production; do
+  integration_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$integration_dir")
+  integration_doppler_json="$(
+    jq -cn --argjson keys "$integration_var_keys" --arg scope "$integration_environment" '
+      reduce $keys[] as $key ({}; .[$key] = ("doppler-" + $scope + "-" + $key))
+    '
+  )"
+  integration_repo_json="$(
+    jq -c 'with_entries(
+      .key |= (if startswith("GITHUB_APP_") then "OKOU_" + . else . end)
+      | .value = "github-conflicting-var"
+    )' <<< "$integration_doppler_json"
+  )"
+  integration_output="$(
+    run_action \
+      "$(build_doppler_secrets_json | jq -c --argjson vars "$integration_doppler_json" '. + $vars')" \
+      "$integration_dir" api "$integration_environment" canonical "$integration_repo_json" '{}' 2>&1
+  )"
+  integration_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${integration_dir}/github-output")"
+  assert_no_fixture_secret_values "$integration_output"
+  while IFS= read -r integration_key; do
+    assert_env_key_count "$integration_env_file" "$integration_key" 1
+    assert_env_value "$integration_env_file" "$integration_key" "doppler-${integration_environment}-${integration_key}"
+  done < <(jq -r '.[]' <<< "$integration_var_keys")
+done
 
 assert_machine_secret_canonical_case \
   preview \
@@ -629,9 +688,9 @@ assert_env_value "$success_env_file" RAMP_OAUTH_CLIENT_ID "doppler-RAMP_OAUTH_CL
 assert_env_value "$success_env_file" RAMP_OAUTH_CLIENT_SECRET "doppler-RAMP_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" TIKTOK_ADS_OAUTH_CLIENT_ID "doppler-TIKTOK_ADS_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" TIKTOK_ADS_OAUTH_CLIENT_SECRET "doppler-TIKTOK_ADS_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_ID "github-teams-bot-app-id"
+assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_ID ""
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-teams-bot-app-password"
-assert_env_value "$success_env_file" MICROSOFT_TEAMS_APP_TENANT_ID "github-teams-app-tenant-id"
+assert_env_value "$success_env_file" MICROSOFT_TEAMS_APP_TENANT_ID ""
 assert_env_value "$success_env_file" GOOGLE_ADS_DEVELOPER_TOKEN "github-google-ads-secret"
 assert_env_value "$success_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
 assert_env_value "$success_env_file" OKOU_BROWSER_USE_EXTENSION_ID "$BROWSER_EXTENSION_ID"
@@ -644,7 +703,7 @@ assert_not_contains "$success_output" "doppler-link-client-secret"
 assert_env_value "$success_env_file" LINK_STRIPE_PUBLISHABLE_KEY "pk_live_link_fixture"
 assert_env_value "$success_env_file" FINICITY_APP_KEY "github-finicity-app-key"
 assert_env_value "$success_env_file" FINICITY_APP_SECRET "github-finicity-app-secret"
-assert_env_value "$success_env_file" FINICITY_PARTNER_ID "github-finicity-partner-id"
+assert_env_value "$success_env_file" FINICITY_PARTNER_ID ""
 assert_env_value "$success_env_file" ATOM_URL "https://tunnel-yuma-atom-api.vm7.ai"
 assert_machine_secret_canonical "$success_env_file" "github-atom-machine-secret"
 assert_env_value "$success_env_file" VERCEL_AUTOMATION_BYPASS_SECRET "github-vercel-bypass-secret"
@@ -676,12 +735,12 @@ assert_env_value "$success_env_file" PUBLIC_ARTIFACT_SHARES_BASE_URL "https://fi
 assert_env_value "$success_env_file" OKOU_PUBLIC_HOST_DOMAIN "okou.app"
 assert_env_value "$success_env_file" OKOU_HOST_SCHEME "https"
 assert_env_value "$success_env_file" OKOU_ONE_TIME_CAMPAIGN "test-campaign"
-assert_env_value "$success_env_file" GMAIL_PUBSUB_TOPIC_NAME "projects/github/topics/gmail"
-assert_env_value "$success_env_file" GMAIL_PUBSUB_PUSH_AUDIENCE "https://api.github.test/api/webhooks/gmail"
-assert_env_value "$success_env_file" GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL "gmail-push@github.test"
-assert_env_value "$success_env_file" GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME "projects/github/topics/google-workspace-events"
-assert_env_value "$success_env_file" GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE "https://api.github.test/api/webhooks/google-workspace-events"
-assert_env_value "$success_env_file" GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL "workspace-events-push@github.test"
+assert_env_value "$success_env_file" GMAIL_PUBSUB_TOPIC_NAME ""
+assert_env_value "$success_env_file" GMAIL_PUBSUB_PUSH_AUDIENCE ""
+assert_env_value "$success_env_file" GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL ""
+assert_env_value "$success_env_file" GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME ""
+assert_env_value "$success_env_file" GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE ""
+assert_env_value "$success_env_file" GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL ""
 assert_env_value "$success_env_file" STRIPE_OAUTH_CLIENT_ID "doppler-STRIPE_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" STRIPE_OAUTH_CLIENT_SECRET "doppler-STRIPE_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID "bpc_test_concurrency"
@@ -802,9 +861,9 @@ assert_env_value "$production_api_env_file" FEISHU_CALLBACK_BASE_URL "https://pr
 assert_env_value "$production_api_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$production_api_env_file" ATOM_URL "https://atom.github.test"
 assert_machine_secret_canonical "$production_api_env_file" "github-atom-machine-secret"
-assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID "github-teams-bot-app-id"
+assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID ""
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "github-teams-bot-app-password"
-assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_APP_TENANT_ID "github-teams-app-tenant-id"
+assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_APP_TENANT_ID ""
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_API_KEY "github-browser-use-api-key"
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_EXTENSION_ID "$BROWSER_EXTENSION_ID"
 assert_env_absent_value "$production_api_env_file" "ONBOARDING_URL="
@@ -827,7 +886,7 @@ for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRE
   assert_no_fixture_secret_values "$missing_kms_output"
 done
 
-wechat_vars_json='{"WECHAT_GATEWAY_URL":"https://wechat-gateway.example.test"}'
+wechat_vars_json='{"WECHAT_GATEWAY_URL":"https://github-wechat-gateway.example.test"}'
 wechat_secrets_json='{"WECHAT_GATEWAY_SECRET":"wechat-hmac-fixture","WECHAT_GATEWAY_CONTROL_SECRET":"wechat-control-fixture"}'
 for wechat_environment in preview production; do
   for wechat_app in api web; do
@@ -835,7 +894,7 @@ for wechat_environment in preview production; do
     TEMP_DIRS+=("$wechat_dir")
     wechat_output="$(
       run_action \
-        "$(build_doppler_secrets_json)" \
+        "$(build_doppler_secrets_json | jq -c '. + {WECHAT_GATEWAY_URL: "https://wechat-gateway.example.test"}')" \
         "$wechat_dir" \
         "$wechat_app" \
         "$wechat_environment" \
@@ -891,10 +950,12 @@ for link_approval_environment in preview production; do
   done
 done
 
-discord_vars_json='{"DISCORD_APPLICATION_ID":"123456789012345678","DISCORD_PUBLIC_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","DISCORD_OAUTH_CLIENT_ID":"github-discord-legacy-client-id","DISCORD_GATEWAY_ENABLED":"true"}'
+discord_vars_json='{"DISCORD_APPLICATION_ID":"987654321098765432","DISCORD_PUBLIC_KEY":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","DISCORD_OAUTH_CLIENT_ID":"github-discord-legacy-client-id","DISCORD_GATEWAY_ENABLED":"true"}'
 discord_secrets_json='{"DISCORD_BOT_TOKEN":"github-discord-bot-token","DISCORD_GATEWAY_SECRET":"github-discord-hmac-secret-1234567890","DISCORD_OAUTH_CLIENT_SECRET":"github-discord-legacy-oauth-secret","DISCORD_GATEWAY_CONTROL_SECRET":"github-discord-control-secret"}'
 discord_doppler_json="$(
   jq -c '. + {
+    DISCORD_APPLICATION_ID: "123456789012345678",
+    DISCORD_PUBLIC_KEY: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     DISCORD_OAUTH_CLIENT_ID: "doppler-discord-client-id",
     DISCORD_OAUTH_CLIENT_SECRET: "doppler-discord-oauth-secret",
     DISCORD_BOT_TOKEN: "doppler-discord-wrong-bot-token",

@@ -35,6 +35,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     steps:
@@ -49,6 +52,15 @@ jobs:
         working-directory: turbo
         run: pnpm --filter @okouai/wechat-gateway-worker run build
 
+      - name: Fetch integration configuration from Doppler
+        id: doppler
+        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: vm0
+          doppler-config: ${{ inputs.environment == 'production' && 'prd' || 'dev' }}
+
       - name: Deploy relay with encrypted bindings
         env:
           GATEWAY_ENVIRONMENT: ${{ inputs.environment }}
@@ -58,5 +70,5 @@ jobs:
           WECHAT_RECEIVER_ENCRYPTION_KEY: ${{ secrets.WECHAT_RECEIVER_ENCRYPTION_KEY }}
           WECHAT_GATEWAY_SECRET: ${{ secrets.WECHAT_GATEWAY_SECRET }}
           WECHAT_GATEWAY_CONTROL_SECRET: ${{ secrets.WECHAT_GATEWAY_CONTROL_SECRET }}
-          WECHAT_API_ORIGIN: ${{ vars.WECHAT_API_ORIGIN }}
+          WECHAT_API_ORIGIN: ${{ steps.doppler.outputs.WECHAT_API_ORIGIN }}
         run: bash .github/scripts/deploy-wechat-gateway.sh "$GATEWAY_ENVIRONMENT" "$GATEWAY_ENABLED"
