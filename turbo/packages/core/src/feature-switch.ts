@@ -435,12 +435,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: [...STAFF_ORG_ID_HASHES, "3043664c"],
   },
-  [FeatureSwitchKey.WhatsappFileUpload]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Send private uploaded files to independently verified WhatsApp accounts. Enable after the matching Runner CLI is deployed.",
-    enabled: false,
-  },
   [FeatureSwitchKey.WhatsappIntegration]: {
     maintainer: "yuma@okou.ai",
     description:
