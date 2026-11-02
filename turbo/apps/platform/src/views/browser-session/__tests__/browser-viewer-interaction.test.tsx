@@ -238,6 +238,65 @@ test("Selecting another tab clears a delayed creation's blank presentation", asy
   expect(screen.queryByText("Browser view unavailable")).toBeNull();
 });
 
+test.each(["created", "existing"] as const)(
+  "A blank tab (%s) navigated before its first image does not expose the previous page",
+  async (origin) => {
+    const browser = mockViewer(0);
+    if (origin === "existing") {
+      browser.targets.push({
+        targetId: "blank-page",
+        title: "about:blank",
+        url: "about:blank",
+        windowId: 0,
+      });
+    }
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const targetId = origin === "created" ? "created-1" : "blank-page";
+    const image = browser.holdFrames(`${targetId}-session`);
+    click(
+      screen.getByLabelText("New tab", {
+        selector: origin === "created" ? "button" : '[role="tab"]',
+      }),
+    );
+    await act(async () => {
+      await image.received;
+    });
+    await screen.findByText("Nothing open yet");
+    act(() => {
+      // The attached document can change before target metadata catches up.
+      browser.event(
+        "Page.frameNavigated",
+        {
+          frame: {
+            id: "example-frame",
+            loaderId: "external-navigation",
+            url: "https://destination.example.com/page",
+          },
+        },
+        `${targetId}-session`,
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        "https://destination.example.com/page",
+      );
+    });
+    expect(screen.queryByText("Nothing open yet")).toBeNull();
+    expect(screen.getByText("Connecting to browser…")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  },
+);
+
 test.each(["first image", "input initialization"] as const)(
   "Selecting a tab waits for its %s before accepting another browser action",
   async (waitingFor) => {

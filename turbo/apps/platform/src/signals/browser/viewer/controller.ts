@@ -1683,11 +1683,10 @@ function createSelectionGraph(
       signal: AbortSignal,
     ): Promise<void> => {
       set(assertAvailable$, signal);
-      if (
-        !get(model.snapshot$).targets.some((target) => {
-          return target.id === targetId;
-        })
-      ) {
+      const target = get(model.snapshot$).targets.find((target) => {
+        return target.id === targetId;
+      });
+      if (!target) {
         throw new CdpFault(
           "target-unavailable",
           "The target is no longer available in this scope.",
@@ -1708,8 +1707,9 @@ function createSelectionGraph(
         return value + 1;
       });
       const preview =
-        get(model.presentation$).status === "streaming" ||
-        get(model.presentation$).loadingPreview;
+        !target.blank &&
+        (get(model.presentation$).status === "streaming" ||
+          get(model.presentation$).loadingPreview);
       set(get(links$).retireCurrent$, "target-replaced", preview);
       set(readinessFailure$, null);
       set(model.transition$, {
