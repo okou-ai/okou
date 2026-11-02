@@ -404,6 +404,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     XCTAssertEqual(summary["failedAttempts"].number, 2)
     XCTAssertEqual(summary["pathTemplate"].string, "/api/computer-use/hosts/:hostId/heartbeat")
     let requests = try XCTUnwrap(first["firstFailure"]["requests"].array)
+    XCTAssertEqual(first["firstFailure"]["errorType"].string, "DesktopFailure")
     XCTAssertEqual(
       first["firstFailure"]["operation"]["phaseTimings"].array?.compactMap { $0["phase"].string },
       ["token_lookup", "token_refresh"])
@@ -1347,6 +1348,62 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await fulfillment(of: [reported, idle], timeout: 3)
     await runtime.stop()
   }
+  func testAPIPreservesNonJSONErrorStatusAndResponseMetadata() async throws {
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.55.0", session: session)
+    for status in [401, 403, 409, 426, 502, 503] {
+      let data = Data((status == 503 ? "{\"error\":" : "<html>Upstream error</html>").utf8)
+      URLProtocolFixture.boundary.set { connection in
+        connection.replyData(
+          data, status: status,
+          headers: [
+            "Content-Type": status == 503 ? "application/json" : "text/html", "Retry-After": "3",
+          ])
+      }
+      let response = try await api.request(ApiRoutes.authMe, token: "session")
+      XCTAssertEqual(response.status, status)
+      XCTAssertEqual(response.body, .null)
+      XCTAssertEqual(response.data, data)
+      XCTAssertEqual(response.retryAfter, 3)
+    }
+  }
+
+  func testAPIPreservesStructuredJSONErrorBodies() async throws {
+    let body: JSONValue = .object([
+      "error": .object(["code": .string("provider_unavailable"), "message": .string("Try later")]),
+    ])
+    URLProtocolFixture.boundary.set { connection in
+      connection.reply(body, status: 503)
+    }
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.55.0", session: session)
+    let response = try await api.request(ApiRoutes.authMe, token: "session")
+    XCTAssertEqual(response.status, 503)
+    XCTAssertEqual(response.body, body)
+    XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: response.data), body)
+  }
+
+  func testAPIMalformedSuccessStillFailsJSONDecoding() async throws {
+    URLProtocolFixture.boundary.set { connection in
+      connection.replyData(
+        Data("<html>Invalid success response</html>".utf8), status: 200,
+        headers: ["Content-Type": "text/html"])
+    }
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.55.0", session: session)
+    do {
+      _ = try await api.request(ApiRoutes.authMe, token: "session")
+      XCTFail("A successful response must retain strict JSON validation")
+    } catch is DecodingError {
+    }
+  }
+
   func testAuthenticationRefreshesRejectedTokenBeforeReportingTheSameResult() async throws {
     let old = expectation(description: "Cached token rejected")
     let renewed = expectation(description: "SDK refresh used for the same result")
@@ -1361,7 +1418,9 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(connection.body, result)
       if connection.request.value(forHTTPHeaderField: "Authorization") == "Bearer cached-session" {
         old.fulfill()
-        connection.reply(.object([:]), status: 401)
+        connection.replyData(
+          Data("<html>Unauthorized</html>".utf8), status: 401,
+          headers: ["Content-Type": "text/html"])
       } else {
         XCTAssertEqual(
           connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer fresh-session")
