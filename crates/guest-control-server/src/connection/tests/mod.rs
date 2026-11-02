@@ -52,7 +52,6 @@ fn operation_messages_count_as_real_host_work() {
         MSG_EXEC_CANCEL,
         MSG_EXEC_CONTROL,
         MSG_WRITE_FILE,
-        guest_control_proto::MSG_WRITE_FILE_STREAM_BEGIN,
         MSG_WRITE_FILES,
         MSG_WRITE_PRIVATE_FILES,
         MSG_GUEST_DNS_READINESS,

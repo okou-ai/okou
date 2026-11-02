@@ -827,7 +827,6 @@ fn shared_with_logged_operation(
     let shared = Arc::new(Shared {
         connection_id: uuid::Uuid::new_v4(),
         sandbox_id: None,
-        file_stream: crate::file_stream::State::default(),
         writer: tokio::sync::Mutex::new(write_half),
         frame_builder: tokio::sync::Mutex::new(()),
         file_write_gate: tokio::sync::Mutex::new(()),

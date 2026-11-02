@@ -24,7 +24,6 @@ const THREAD_FILE_WRITE: &str = "gctl-file-write";
 #[derive(Clone, Copy)]
 pub(crate) enum FileWriteKind {
     File,
-    Stream,
     Files,
     PrivateFiles,
 }
@@ -33,7 +32,6 @@ impl FileWriteKind {
     pub(crate) const fn operation_label(self) -> &'static str {
         match self {
             Self::File => "write_file",
-            Self::Stream => "file_stream",
             Self::Files => "write_files",
             Self::PrivateFiles => "write_private_files",
         }
@@ -45,7 +43,6 @@ impl FileWriteKind {
     ) -> Result<(), guest_control_proto::ProtocolError> {
         match self {
             Self::File => decode_write_file_message(payload).map(|_| ()),
-            Self::Stream => crate::file_stream::validate_begin(payload),
             Self::Files | Self::PrivateFiles => decode_write_files_message(payload).map(|_| ()),
         }
     }
@@ -56,15 +53,8 @@ pub(crate) enum FileWriteSubmitError {
     Disconnected,
 }
 
-enum FileWriteInput {
-    File,
-    Stream(crate::file_stream::Input),
-    Files,
-    PrivateFiles,
-}
-
 struct FileWriteRequest {
-    input: FileWriteInput,
+    kind: FileWriteKind,
     seq: u32,
     payload: Vec<u8>,
     operation_guard: OperationGuard,
@@ -73,8 +63,6 @@ struct FileWriteRequest {
 }
 
 pub(crate) struct FileWriteWorker {
-    streams: Arc<crate::file_stream::Streams>,
-    writer: GuestWriter,
     state: Option<ConnectionWorkerState<FileWriteRequest>>,
     admission: SingleActiveAdmission,
     connection_cancel: Arc<AtomicBool>,
@@ -90,9 +78,6 @@ impl FileWriteWorker {
         // The channel still has capacity so the decoder can use try_send and
         // can never wait for the worker to call recv.
         let (sender, receiver) = mpsc::sync_channel(1);
-        let streams = Arc::new(crate::file_stream::Streams::default());
-        let worker_streams = Arc::clone(&streams);
-        let public_writer = writer.clone();
         let worker_cancel = Arc::clone(&connection_cancel);
         let handle = thread::Builder::new()
             .name(THREAD_FILE_WRITE.to_string())
@@ -102,9 +87,7 @@ impl FileWriteWorker {
                 // host request cannot wait without a response producer.
                 let _shutdown_on_exit = ShutdownConnectionOnDrop::new(writer.clone());
                 while let Ok(request) = receiver.recv() {
-                    if let Err(error) =
-                        handle_request(request, &writer, &worker_cancel, &worker_streams)
-                    {
+                    if let Err(error) = handle_request(request, &writer, &worker_cancel) {
                         log("ERROR", &format!("file-write worker failed: {error}"));
                         break;
                     }
@@ -112,8 +95,6 @@ impl FileWriteWorker {
             })?;
 
         Ok(Self {
-            streams,
-            writer: public_writer,
             state: Some(ConnectionWorkerState::new(sender, handle)),
             admission: SingleActiveAdmission::new(),
             connection_cancel,
@@ -137,26 +118,8 @@ impl FileWriteWorker {
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), FileWriteSubmitError> {
-        let input = match kind {
-            FileWriteKind::File => FileWriteInput::File,
-            FileWriteKind::Stream => FileWriteInput::Stream(
-                self.streams
-                    .begin(
-                        seq,
-                        self.writer.clone(),
-                        Arc::clone(&self.connection_cancel),
-                        crate::file_stream::decode_begin(payload)
-                            .map_err(|_| FileWriteSubmitError::Disconnected)?
-                            .codec
-                            .encoded_size(),
-                    )
-                    .map_err(|_| FileWriteSubmitError::Disconnected)?,
-            ),
-            FileWriteKind::Files => FileWriteInput::Files,
-            FileWriteKind::PrivateFiles => FileWriteInput::PrivateFiles,
-        };
         let request = FileWriteRequest {
-            input,
+            kind,
             seq,
             payload: payload.to_vec(),
             operation_guard,
@@ -171,13 +134,6 @@ impl FileWriteWorker {
             Err(TrySendError::Full(_)) => Err(FileWriteSubmitError::Busy),
             Err(TrySendError::Disconnected(_)) => Err(FileWriteSubmitError::Disconnected),
         }
-    }
-
-    pub(crate) fn stream_data(
-        &self,
-        msg: guest_control_proto::BorrowedRawMessage<'_>,
-    ) -> io::Result<()> {
-        self.streams.accept(msg)
     }
 }
 
@@ -198,10 +154,9 @@ fn handle_request(
     request: FileWriteRequest,
     writer: &GuestWriter,
     connection_cancel: &AtomicBool,
-    streams: &crate::file_stream::Streams,
 ) -> io::Result<()> {
     let FileWriteRequest {
-        input,
+        kind,
         seq,
         payload,
         operation_guard,
@@ -209,16 +164,13 @@ fn handle_request(
         progress,
     } = request;
 
-    let response = match input {
-        FileWriteInput::Stream(stream) => {
-            crate::handlers::handle_file_stream(seq, &payload, stream, connection_cancel, &progress)
-        }
-        FileWriteInput::File => decode_write_file_message(&payload)
+    let response = match kind {
+        FileWriteKind::File => decode_write_file_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_file_message(seq, decoded, connection_cancel, &progress)
             }),
-        FileWriteInput::Files => decode_write_files_message(&payload)
+        FileWriteKind::Files => decode_write_files_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_files_message(
@@ -229,7 +181,7 @@ fn handle_request(
                     &progress,
                 )
             }),
-        FileWriteInput::PrivateFiles => decode_write_files_message(&payload)
+        FileWriteKind::PrivateFiles => decode_write_files_message(&payload)
             .map_err(protocol_error)
             .and_then(|decoded| {
                 handle_decoded_write_files_message(seq, decoded, true, connection_cancel, &progress)
@@ -238,7 +190,6 @@ fn handle_request(
     // Admission may be released at the writer boundary, but do not retain the
     // completed request's large payload while the result frame is being sent.
     drop(payload);
-    streams.finish(seq);
     progress.mark(FileWriteStage::WaitingForWriter);
 
     match response {

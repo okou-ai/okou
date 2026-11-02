@@ -3216,21 +3216,6 @@ impl Sandbox for FirecrackerSandbox {
         .await
     }
 
-    async fn write_file_with_compression(
-        &self,
-        path: &str,
-        content: &[u8],
-        compression: sandbox::FileCompression,
-    ) -> sandbox::Result<Option<sandbox::FileWriteMeasurements>> {
-        self.run_bounded_guest_operation(SandboxOperation::WriteFile, |guest| async move {
-            guest
-                .write_file_with_compression(path, content, false, compression)
-                .await
-        })
-        .await
-        .map(Some)
-    }
-
     async fn finalize_staged_file(
         &self,
         request: &sandbox::StagedFileFinalizeRequest<'_>,
