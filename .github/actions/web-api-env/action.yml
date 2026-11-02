@@ -204,6 +204,10 @@ runs:
           concurrent_run_limit_cap="10"
           slack_redirect_base_url="$(repo_var SLACK_REDIRECT_BASE_URL)"
           strapi_url="$(repo_var STRAPI_URL)"
+          marketing_handoff_bucket="$(repo_var R2_MARKETING_HANDOFF_BUCKET_NAME)"
+          marketing_handoff_access_key_id="$(repo_secret R2_MARKETING_HANDOFF_ACCESS_KEY_ID)"
+          marketing_handoff_secret_access_key="$(repo_secret R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY)"
+          marketing_handoff_publish_token="$(repo_secret MARKETING_HANDOFF_PUBLISH_TOKEN)"
           private_artifacts_bucket="user-artifact-private-prod"
           private_artifacts_access_key_id="$(repo_secret R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID)"
           private_artifacts_secret_access_key="$(repo_secret R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY)"
@@ -222,6 +226,10 @@ runs:
           concurrent_run_limit_cap="0"
           slack_redirect_base_url="$INPUT_WEB_URL"
           strapi_url=""
+          marketing_handoff_bucket="$(repo_var R2_MARKETING_HANDOFF_BUCKET_NAME_DEV)"
+          marketing_handoff_access_key_id="$(repo_secret R2_MARKETING_HANDOFF_ACCESS_KEY_ID_DEV)"
+          marketing_handoff_secret_access_key="$(repo_secret R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY_DEV)"
+          marketing_handoff_publish_token="$(repo_secret MARKETING_HANDOFF_PUBLISH_TOKEN_DEV)"
           private_artifacts_bucket="user-artifact-private-dev"
           private_artifacts_access_key_id="$(repo_secret R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV)"
           private_artifacts_secret_access_key="$(repo_secret R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV)"
@@ -275,6 +283,10 @@ runs:
         add_secret R2_ACCESS_KEY_ID R2_ACCESS_KEY_ID
         add_secret R2_SECRET_ACCESS_KEY R2_SECRET_ACCESS_KEY
         add_var R2_USER_STORAGES_BUCKET_NAME R2_USER_STORAGES_BUCKET_NAME
+        add_env R2_MARKETING_HANDOFF_BUCKET_NAME "$marketing_handoff_bucket"
+        add_env R2_MARKETING_HANDOFF_ACCESS_KEY_ID "$marketing_handoff_access_key_id"
+        add_env R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY "$marketing_handoff_secret_access_key"
+        add_env MARKETING_HANDOFF_PUBLISH_TOKEN "$marketing_handoff_publish_token"
         add_env R2_PRIVATE_ARTIFACTS_BUCKET_NAME "$private_artifacts_bucket"
         add_env R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "$private_artifacts_access_key_id"
         add_env R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY "$private_artifacts_secret_access_key"

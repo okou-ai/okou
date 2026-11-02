@@ -69,17 +69,15 @@ interface SourcesFirstPageConfig {
   readonly enter?: Command<Promise<void>, [AbortSignal]>;
 }
 
-/**
- * A visitor who brings a `prompt` (every Marketing "try it" link does) gets
- * the prompt handoff: the source-first flow ends on its own recommended
- * request and would drop theirs. Only an admin runs the handoff, so an invited
- * member stays in the source-first flow either way.
- */
+/** Preserve a hash handoff's task for every member; legacy prompt links keep their admin-only flow. */
 function hasPromptHandoff(
   searchParams: URLSearchParams,
   status: { readonly isAdmin: boolean },
 ): boolean {
-  return Boolean(searchParams.get("prompt")?.trim()) && status.isAdmin;
+  return (
+    Boolean(searchParams.get("handoff")) ||
+    (Boolean(searchParams.get("prompt")?.trim()) && status.isAdmin)
+  );
 }
 
 /**
@@ -100,7 +98,8 @@ const redirectTo$ = command(({ get, set }, path: RoutePath) => {
  */
 const forwardOnboardedVisitor$ = command(({ get, set }) => {
   const searchParams = get(searchParams$);
-  const prompt = searchParams.get("prompt")?.trim();
+  const prompt =
+    searchParams.get("handoff") || searchParams.get("prompt")?.trim();
   set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
     searchParams: prompt
       ? promptHandoffParams(searchParams)
@@ -210,7 +209,7 @@ const setupOnboardingIndustryEntryPage$ = createSourcesFirstPageSetup({
 export const setupOnboardingEntryPage$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const searchParams = get(searchParams$);
-    if (searchParams.get("prompt")?.trim()) {
+    if (searchParams.get("handoff") || searchParams.get("prompt")?.trim()) {
       const status = await get(onboardingStatus$);
       signal.throwIfAborted();
       if (hasPromptHandoff(searchParams, status)) {

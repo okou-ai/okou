@@ -56,6 +56,8 @@ on:
         required: false
       GOOGLE_ADS_LOGIN_CUSTOMER_ID:
         required: false
+      MARKETING_HANDOFF_PUBLISH_TOKEN_DEV:
+        required: false
       MICROSOFT_TEAMS_BOT_APP_PASSWORD:
         required: false
       NEON_API_KEY:
@@ -91,6 +93,10 @@ on:
       R2_HOSTED_SITES_ACCESS_KEY_ID:
         required: false
       R2_HOSTED_SITES_SECRET_ACCESS_KEY:
+        required: false
+      R2_MARKETING_HANDOFF_ACCESS_KEY_ID_DEV:
+        required: false
+      R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY_DEV:
         required: false
       R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV:
         required: false

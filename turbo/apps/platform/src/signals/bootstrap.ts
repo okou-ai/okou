@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { resetProjectUi$ } from "./projects/project-ui.ts";
 import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
@@ -641,6 +643,9 @@ const completeBootstrap$ = command(
     set(applyFeatureSwitches$, featureSwitches);
 
     await Promise.all([
+      ...(featureSwitches[FeatureSwitchKey.MarketingContentHandoff]
+        ? [set(enrollMarketingHandoffSession$, signal)]
+        : []),
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
       set(bootstrapOnboardingGuard$, signal),

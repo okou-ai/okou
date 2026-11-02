@@ -306,10 +306,25 @@ const privateArtifactsPublicS3Client$ = computed((get): S3Client => {
     : get(privateArtifactsS3Client$);
 });
 
+const marketingHandoffS3Client$ = computed((): S3Client => {
+  const accessKeyId = env("R2_MARKETING_HANDOFF_ACCESS_KEY_ID");
+  const secretAccessKey = env("R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY");
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error("Marketing handoff storage credentials are not configured");
+  }
+  return createS3Client(env("S3_ENDPOINT") ?? defaultS3Endpoint(), {
+    accessKeyId,
+    secretAccessKey,
+  });
+});
+
 function s3ClientForBucket(
   bucket: string,
   usePublicEndpoint = false,
 ): Computed<S3Client> {
+  if (bucket === env("R2_MARKETING_HANDOFF_BUCKET_NAME")) {
+    return marketingHandoffS3Client$;
+  }
   if (bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")) {
     return usePublicEndpoint
       ? privateArtifactsPublicS3Client$

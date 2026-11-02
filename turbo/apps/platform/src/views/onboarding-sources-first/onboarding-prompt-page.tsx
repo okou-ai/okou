@@ -42,6 +42,7 @@ function usePromptOnboarding() {
   return {
     prompt: draft.prompt,
     output: draft.output,
+    files: draft.files,
     setPrompt,
     selectOutput,
     connectorSlugs,
@@ -59,9 +60,24 @@ function usePromptOnboarding() {
 export function OnboardingSourcesFirstPromptPage() {
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
-  const { prompt, output, setPrompt, selectOutput, connectorSlugs, run, busy } =
-    usePromptOnboarding();
+  const {
+    prompt,
+    output,
+    files,
+    setPrompt,
+    selectOutput,
+    connectorSlugs,
+    run,
+    busy,
+  } = usePromptOnboarding();
 
+  const fileLabels = [
+    ...new Map(
+      files.map((file) => {
+        return [`${file.hash}:${file.filename}`, file] as const;
+      }),
+    ).values(),
+  ];
   const promptInput = (
     <Textarea
       id="onboarding-prompt"
@@ -101,7 +117,7 @@ export function OnboardingSourcesFirstPromptPage() {
           : $.onboarding.common.next;
       })}
       onPrimary={run}
-      primaryDisabled={!prompt.trim()}
+      primaryDisabled={!prompt.trim() && files.length === 0}
       primaryBusy={busy}
     >
       <div className="mx-auto flex w-full max-w-[520px] flex-col gap-3">
@@ -111,6 +127,15 @@ export function OnboardingSourcesFirstPromptPage() {
           <ProductBrandMark decorative size="hero" />
         </div>
         {promptInput}
+        {files.length > 0 && (
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {fileLabels.map((file) => {
+              return (
+                <li key={`${file.hash}:${file.filename}`}>{file.filename}</li>
+              );
+            })}
+          </ul>
+        )}
         <section
           aria-labelledby="onboarding-prompt-connectors-title"
           className="mt-3 space-y-3"

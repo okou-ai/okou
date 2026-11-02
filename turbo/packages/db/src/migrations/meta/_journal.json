@@ -3032,6 +3032,13 @@
       "when": 1793607150741,
       "tag": "1511_project_thread_activity_index",
       "breakpoints": true
+    },
+    {
+      "idx": 1512,
+      "version": "7",
+      "when": 1793611801134,
+      "tag": "1512_marketing_content_handoff",
+      "breakpoints": true
     }
   ]
 }

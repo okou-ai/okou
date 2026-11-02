@@ -1,5 +1,11 @@
+import {
+  loadMarketingHandoff$,
+  createMarketingHandoffDraft$,
+  finishMarketingHandoff$,
+} from "./marketing-handoff.ts";
 import { command } from "ccstate";
 import { modelCatalog$ } from "../external/model-catalog.ts";
+import type { MarketingHandoffManifest } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
@@ -123,6 +129,28 @@ function generationTemplateFromSearchParam(
   return undefined;
 }
 
+function promptRequestContent(
+  params: URLSearchParams,
+  manifest?: MarketingHandoffManifest,
+) {
+  if (manifest) {
+    const prompt = manifest.prompt.trim();
+    return {
+      prompt,
+      requestedModel: manifest.options.model,
+      template: manifest.options.template ?? null,
+      hasContent: Boolean(prompt) || manifest.files.length > 0,
+    };
+  }
+  const prompt = params.get("prompt")?.trim();
+  return {
+    prompt,
+    requestedModel: params.get("model")?.trim(),
+    template: params.get("template")?.trim() ?? null,
+    hasContent: Boolean(prompt),
+  };
+}
+
 /**
  * Lightweight prompt deep-link endpoint.
  *
@@ -140,19 +168,22 @@ export const setupPromptPage$ = command(
     );
 
     const params = get(searchParams$);
-    const prompt = params.get("prompt")?.trim();
-    const requestedModel = params.get("model")?.trim();
-    const template = params.get("template")?.trim() ?? null;
+    const handoff = await set(loadMarketingHandoff$, signal);
+    signal.throwIfAborted();
+    const { prompt, requestedModel, template, hasContent } =
+      promptRequestContent(params, handoff?.manifest);
     const resolvedGenerationTemplate =
       generationTemplateFromSearchParam(template);
     // A link naming a template the App no longer offers (for example a retired
     // video style) keeps its brief as an editable draft instead of running it.
     const unresolvedTemplate =
       Boolean(template) && resolvedGenerationTemplate === undefined;
-    if (!prompt || unresolvedTemplate) {
+    if (!hasContent || unresolvedTemplate) {
       set(detachedNavigateTo$, "/", {
         replace: true,
-        searchParams: new URLSearchParams(prompt ? { prompt } : {}),
+        searchParams: handoff
+          ? new URLSearchParams({ handoff: handoff.hash })
+          : new URLSearchParams(prompt ? { prompt } : {}),
       });
       return;
     }
@@ -170,15 +201,29 @@ export const setupPromptPage$ = command(
 
     const cleaned = new URLSearchParams(params);
     cleaned.delete("prompt");
+    cleaned.delete("handoff");
     cleaned.delete("model");
     cleaned.delete("template");
     cleaned.delete("connector");
+    const draft = handoff
+      ? await set(createMarketingHandoffDraft$, handoff.hash, signal)
+      : undefined;
+    signal.throwIfAborted();
     const rootSignal = get(rootSignal$);
     await set(
       sendNewThread$,
       {
         agentId,
-        prompt,
+        prompt: prompt ?? "",
+        ...(draft ? { draft, preserveAgentDraft: true } : {}),
+        ...(handoff
+          ? {
+              onOptimisticSend: () => {
+                // The durable optimistic event now owns the imported attachments.
+                set(finishMarketingHandoff$, handoff);
+              },
+            }
+          : {}),
         modelSelection: resolvedRequestedModel
           ? { selectedModel: resolvedRequestedModel, modelSettings: {} }
           : null,

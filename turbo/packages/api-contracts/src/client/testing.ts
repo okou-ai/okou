@@ -493,6 +493,8 @@ import { mailContract as OriginalMailContract } from "../contracts/mail";
 import { mailContract } from "./mail";
 import { marketingEventsContract as OriginalMarketingEventsContract } from "../contracts/marketing-events";
 import { marketingEventsContract } from "./marketing-events";
+import { marketingHandoffsContract as OriginalMarketingHandoffsContract } from "../contracts/marketing-handoffs";
+import { marketingHandoffsContract } from "./marketing-handoffs";
 import { mcpChatSearchContract as OriginalMcpChatSearchContract } from "../contracts/mcp-chat-search";
 import { mcpChatSearchContract } from "./mcp-chat-search";
 import { mcpConnectorsContract as OriginalMcpConnectorsContract } from "../contracts/mcp-connectors";
@@ -1200,6 +1202,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [logsListContract, OriginalLogsListContract],
   [mailContract, OriginalMailContract],
   [marketingEventsContract, OriginalMarketingEventsContract],
+  [marketingHandoffsContract, OriginalMarketingHandoffsContract],
   [mcpChatSearchContract, OriginalMcpChatSearchContract],
   [mcpConnectorsContract, OriginalMcpConnectorsContract],
   [mcpOAuthContract, OriginalMcpOAuthContract],
