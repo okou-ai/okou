@@ -840,13 +840,15 @@ impl ConnectionDispatcher {
 /// Connect to vsock (Linux only - this binary runs inside Firecracker VM)
 #[cfg(target_os = "linux")]
 pub fn connect_vsock() -> io::Result<UnixStream> {
-    use std::os::unix::io::FromRawFd;
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
     // SAFETY: Creating a vsock socket with valid constants. fd is checked for errors below.
     let fd = unsafe { libc::socket(libc::AF_VSOCK, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
     if fd < 0 {
         return Err(io::Error::last_os_error());
     }
+    // SAFETY: fd is a newly created socket and ownership is adopted exactly once.
+    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
 
     let addr = libc::sockaddr_vm {
         svm_family: libc::AF_VSOCK as u16,
@@ -860,20 +862,17 @@ pub fn connect_vsock() -> io::Result<UnixStream> {
     // size_of returns the correct sockaddr_vm size. Errors are checked below.
     let ret = unsafe {
         libc::connect(
-            fd,
+            fd.as_raw_fd(),
             &addr as *const libc::sockaddr_vm as *const libc::sockaddr,
             std::mem::size_of::<libc::sockaddr_vm>() as u32,
         )
     };
 
     if ret < 0 {
-        // SAFETY: fd is a valid open socket descriptor, and we're about to return an error.
-        unsafe { libc::close(fd) };
         return Err(io::Error::last_os_error());
     }
 
-    // SAFETY: fd is a valid, connected socket descriptor. Ownership transfers to UnixStream.
-    Ok(unsafe { UnixStream::from_raw_fd(fd) })
+    Ok(UnixStream::from(fd))
 }
 
 /// Stub for non-Linux platforms (for IDE support)
