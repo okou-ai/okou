@@ -101,6 +101,8 @@ import { buildInfoContract as OriginalBuildInfoContract } from "../contracts/bui
 import { buildInfoContract } from "./build-info";
 import { builtInGenerationContract as OriginalBuiltInGenerationContract } from "../contracts/built-in-generation";
 import { builtInGenerationContract } from "./built-in-generation";
+import { chatConnectorAccessContract as OriginalChatConnectorAccessContract } from "../contracts/chat-connector-access";
+import { chatConnectorAccessContract } from "./chat-connector-access";
 import { chatEventsContract as OriginalChatEventsContract } from "../contracts/chat-event-send";
 import { chatEventsContract } from "./chat-event-send";
 import { chatInputStatusContract as OriginalChatInputStatusContract } from "../contracts/chat-input-status";
@@ -197,6 +199,8 @@ import { connectorCatalogContract as OriginalConnectorCatalogContract } from "..
 import { connectorCatalogContract } from "./connector-catalog";
 import { connectorCheckContract as OriginalConnectorCheckContract } from "../contracts/connector-check";
 import { connectorCheckContract } from "./connector-check";
+import { connectorPermissionsContract as OriginalConnectorPermissionsContract } from "../contracts/connector-permissions";
+import { connectorPermissionsContract } from "./connector-permissions";
 import { builtinConnectorsSlugCallbackContract as OriginalBuiltinConnectorsSlugCallbackContract } from "../contracts/connectors-slug-callback";
 import { builtinConnectorsSlugCallbackContract } from "./connectors-slug-callback";
 import {
@@ -835,6 +839,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [browserContract, OriginalBrowserContract],
   [buildInfoContract, OriginalBuildInfoContract],
   [builtInGenerationContract, OriginalBuiltInGenerationContract],
+  [chatConnectorAccessContract, OriginalChatConnectorAccessContract],
   [chatEventsContract, OriginalChatEventsContract],
   [chatInputStatusContract, OriginalChatInputStatusContract],
   [chatRelationsContract, OriginalChatRelationsContract],
@@ -889,6 +894,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [connectorAgentAccessContract, OriginalConnectorAgentAccessContract],
   [connectorCatalogContract, OriginalConnectorCatalogContract],
   [connectorCheckContract, OriginalConnectorCheckContract],
+  [connectorPermissionsContract, OriginalConnectorPermissionsContract],
   [
     builtinConnectorsSlugCallbackContract,
     OriginalBuiltinConnectorsSlugCallbackContract,

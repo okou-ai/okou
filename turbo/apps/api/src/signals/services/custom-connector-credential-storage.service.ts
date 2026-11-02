@@ -401,6 +401,7 @@ function accountDeletionStatements(
         accountOwner(args),
         ne(connectors.id, args.memberConnectorId),
         exists(sql`(SELECT 1 FROM deleted_account WHERE is_default)`),
+        eq(connectors.defaultEnabledForChats, true),
       ),
     )
     .orderBy(asc(connectors.createdAt), asc(connectors.id))

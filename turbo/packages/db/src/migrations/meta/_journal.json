@@ -3053,6 +3053,13 @@
       "when": 1793614223919,
       "tag": "1514_ssh_observation_incarnation",
       "breakpoints": true
+    },
+    {
+      "idx": 1515,
+      "version": "7",
+      "when": 1793618241490,
+      "tag": "1515_chat_connector_account_access",
+      "breakpoints": true
     }
   ]
 }

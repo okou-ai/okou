@@ -105,6 +105,10 @@ export const clientDescriptorManifest = [
     contracts: ["builtInGenerationContract"],
   },
   {
+    module: "chat-connector-access",
+    contracts: ["chatConnectorAccessContract"],
+  },
+  {
     module: "chat-event-send",
     contracts: ["chatEventsContract"],
   },
@@ -199,6 +203,10 @@ export const clientDescriptorManifest = [
   {
     module: "connector-check",
     contracts: ["connectorCheckContract"],
+  },
+  {
+    module: "connector-permissions",
+    contracts: ["connectorPermissionsContract"],
   },
   {
     module: "connectors-slug-callback",

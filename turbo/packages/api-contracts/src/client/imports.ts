@@ -223,6 +223,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "chat-connector-access",
+    contracts: ["chatConnectorAccessContract"],
+    bindings: [],
+  },
+  {
     module: "chat-event-send",
     contracts: ["chatEventsContract"],
     bindings: [],
@@ -578,6 +583,11 @@ export const clientContractImportManifest = [
   {
     module: "connector-check",
     contracts: ["connectorCheckContract"],
+    bindings: [],
+  },
+  {
+    module: "connector-permissions",
+    contracts: ["connectorPermissionsContract"],
     bindings: [],
   },
   {

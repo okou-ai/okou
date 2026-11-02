@@ -165,6 +165,15 @@ export {
   type ThreadRemoteHostAccess,
 } from "./chat-remote-access";
 export {
+  chatConnectorAccessContract,
+  type ChatConnectorAccess,
+} from "./chat-connector-access";
+export {
+  connectorPermissionsContract,
+  type ConnectorPermissions,
+  type ApplyConnectorPermissions,
+} from "./connector-permissions";
+export {
   userModelPreferenceResponseSchema,
   updateUserModelPreferenceRequestSchema,
   userModelPreferenceContract,

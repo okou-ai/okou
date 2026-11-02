@@ -43,7 +43,8 @@ BEGIN
   IF was_default THEN
     SELECT id INTO promoted FROM public.connectors
       WHERE org_id = organization AND user_id = member AND connector_slug = slug
-        AND id <> resolved_id ORDER BY created_at, id LIMIT 1;
+        AND id <> resolved_id AND default_enabled_for_chats
+      ORDER BY created_at, id LIMIT 1;
     IF FOUND THEN
       UPDATE public.connectors SET is_default = false, updated_at = clock_timestamp()
         WHERE id = resolved_id;

@@ -6,6 +6,7 @@
 export enum FeatureSwitchKey {
   MarketingContentHandoff = "marketingContentHandoff",
   Projects = "projects",
+  ConnectorChatAccountAccess = "connectorChatAccountAccess",
   ChatThinkingBrandMotion = "chatThinkingBrandMotion",
   FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",
