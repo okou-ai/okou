@@ -15,6 +15,16 @@ export interface NativeInputHost {
   readonly synchronize$: Command<void, []>;
 }
 
+/** Keyboard metadata only; remote field values never enter this observation. */
+export interface EditingContext {
+  readonly type: string;
+  readonly multiline: boolean;
+  readonly inputMode: string;
+  readonly enterKeyHint: string;
+  readonly autoCapitalize: string;
+  readonly lang: string;
+}
+
 /** Session graph capabilities; native bindings retain their original owner. */
 export interface NativeInputPort {
   readonly available$: Computed<boolean>;
@@ -25,6 +35,7 @@ export interface NativeInputPort {
   } | null>;
   readonly clipboardEpoch$: Computed<number>;
   readonly caret$: Computed<Point | null>;
+  readonly editing$: Computed<EditingContext | null>;
   readonly focus$: Command<void, [owner?: InputOwner]>;
   readonly blur$: Command<InputOwner | null, [owner?: InputOwner]>;
   readonly completion$: Command<Promise<void>, [owner: InputOwner]>;
