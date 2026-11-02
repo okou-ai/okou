@@ -32,6 +32,7 @@ import stream_capture
 import usage
 from body_limits import STREAM_BUFFER_LIMIT
 from logging_utils import log_proxy_entry
+from usage.providers.connectors.response_parser import ConnectorResponseParser
 from usage.underbilling import log_usage_underbilling
 
 _HTTP_STATUS_SWITCHING_PROTOCOLS = 101
@@ -63,6 +64,49 @@ class _ResponseStreamSetup(NamedTuple):
     parser: _ResponseChunkParser | None
     needs_buffered_fallback: bool
     reject_uninspectable: bool = False
+
+
+class _ConnectorResponseFinalizer:
+    """Keep failed inspection from reaching either decoder or parser completion."""
+
+    def __init__(
+        self,
+        flow: http.HTTPFlow,
+        parser: ConnectorResponseParser,
+        *,
+        finish_decode: Callable[[], str | None] | None = None,
+    ) -> None:
+        self._flow = flow
+        self._parser = parser
+        self._finish_decode = finish_decode
+        self._inspection_failed = False
+
+    def fail_decode(self, error: str) -> None:
+        self._inspection_failed = True
+        if self._parser.finish_decode_error is not None:
+            self._parser.finish_decode_error(error)
+
+    def interrupt(self, error: str) -> None:
+        self.fail_decode(error)
+        log_usage_underbilling(
+            flow_metadata.proxy_log_path(self._flow.metadata),
+            "Deferred connector response inspection was interrupted",
+            "response_inspection_interrupted",
+            "risk",
+            run_id=flow_metadata.run_id(self._flow.metadata),
+            firewall_name=flow_metadata.firewall_name(self._flow.metadata),
+            parse_error=error,
+        )
+
+    def finish(self) -> None:
+        if self._inspection_failed:
+            return
+        decode_error = self._finish_decode() if self._finish_decode is not None else None
+        if decode_error is not None:
+            self.fail_decode(decode_error)
+            return
+        if self._parser.finish is not None:
+            self._parser.finish()
 
 
 def model_usage_protocol(flow: http.HTTPFlow) -> usage.ModelUsageProtocol:
@@ -168,47 +212,28 @@ def _configure_buffered_connector_inspection(flow: http.HTTPFlow) -> None:
     if parser is None or parser.feed_steps is None or parser.finish_decode_error is None:
         raise RuntimeError("buffered connector inspection requires cooperative parser hooks")
     feed_steps = parser.feed_steps
-    finish_decode_error = parser.finish_decode_error
-    inspection_failed = False
+    finalizer = _ConnectorResponseFinalizer(flow, parser)
 
     def inspect_body(_chunk: bytes) -> Generator[None]:
-        nonlocal inspection_failed
         captured = stream_capture.captured_response_stream_body(flow)
         if captured is None or flow.response is None:
             raise RuntimeError("buffered connector inspection requires a response capture")
         body, error = body_decoding.decode_captured_json_usage_body(captured, flow.response.headers)
         if error is not None:
-            inspection_failed = True
-            finish_decode_error(error)
+            finalizer.fail_decode(error)
             return
         yield from feed_steps(body)
 
-    def fail_inspection(error: str) -> None:
-        nonlocal inspection_failed
-        inspection_failed = True
-        finish_decode_error(error)
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(flow.metadata),
-            "Deferred connector response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(flow.metadata),
-            firewall_name=flow_metadata.firewall_name(flow.metadata),
-            parse_error=error,
-        )
-
-    inspection = response_inspection.CooperativeResponseInspection(inspect_body, fail_inspection)
+    inspection = response_inspection.CooperativeResponseInspection(
+        inspect_body, finalizer.interrupt
+    )
 
     def start_inspection() -> None:
         inspection.feed(b"")
 
-    def finish_response() -> None:
-        if not inspection_failed and parser.finish is not None:
-            parser.finish()
-
     flow.metadata[_RESPONSE_INSPECTION] = inspection
     flow.metadata[_BUFFERED_CONNECTOR_INSPECTION_START] = start_inspection
-    flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finish_response
+    flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finalizer.finish
 
 
 def _configure_response_inspection_stream(
@@ -509,52 +534,27 @@ def _configure_response_inspection_stream(
         if decode_session is None:
             raise RuntimeError("stream-decodable connector response did not create a decoder")
         connector_inspection: response_inspection.CooperativeResponseInspection | None = None
-        inspection_failed = False
+        finalizer = _ConnectorResponseFinalizer(
+            flow, connector_parser, finish_decode=decode_session.finish_error
+        )
         if connector_parser.feed_steps is not None:
             feed_steps = connector_parser.feed_steps
-            finish_decode_error = connector_parser.finish_decode_error
-            if finish_decode_error is None:
+            if connector_parser.finish_decode_error is None:
                 raise RuntimeError(
                     "cooperative response parser requires an inspection failure hook"
-                )
-
-            def fail_inspection(error: str) -> None:
-                nonlocal inspection_failed
-                inspection_failed = True
-                finish_decode_error(error)
-                log_usage_underbilling(
-                    flow_metadata.proxy_log_path(flow.metadata),
-                    "Deferred connector response inspection was interrupted",
-                    "response_inspection_interrupted",
-                    "risk",
-                    run_id=flow_metadata.run_id(flow.metadata),
-                    firewall_name=flow_metadata.firewall_name(flow.metadata),
-                    parse_error=error,
                 )
 
             connector_inspection = response_inspection.CooperativeResponseInspection(
                 lambda chunk: response_inspection.decoded_steps(
                     decode_session.iter_chunks, feed_steps, chunk
                 ),
-                fail_inspection,
+                finalizer.interrupt,
             )
             flow.metadata[_RESPONSE_INSPECTION] = connector_inspection
         if connector_parser.report_on_interruption:
             flow.metadata[_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION] = True
         if connector_parser.finish is not None or connector_parser.finish_decode_error is not None:
-
-            def finish_connector_response() -> None:
-                if inspection_failed:
-                    return
-                decode_error = decode_session.finish_error()
-                if decode_error is not None:
-                    if connector_parser.finish_decode_error is not None:
-                        connector_parser.finish_decode_error(decode_error)
-                    return
-                if connector_parser.finish is not None:
-                    connector_parser.finish()
-
-            flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finish_connector_response
+            flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finalizer.finish
         return _ResponseStreamSetup(
             connector_inspection.feed if connector_inspection is not None else decode_session.feed,
             False,
