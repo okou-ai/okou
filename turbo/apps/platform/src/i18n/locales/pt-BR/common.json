@@ -2141,11 +2141,10 @@
       "title": "Encaminhar para"
     },
     "homeDiscovery": {
-      "allEntries": "Todas as opções",
       "create": {
         "document": "Documento",
         "image": "Imagem",
-        "presentation": "PPT",
+        "presentation": "Presentation",
         "visualization": "Gráfico",
         "website": "Site"
       },
@@ -2166,7 +2165,7 @@
             "second": "Compare ferramentas de gestão de clientes por recursos e preço",
             "third": "Pesquise tendências recentes e empresas líderes de um setor"
           },
-          "label": "Busca geral",
+          "label": "Geral",
           "placeholder": "Descreva sua pergunta ou o que gostaria de saber…",
           "title": "O que você gostaria de descobrir?"
         },
@@ -2176,7 +2175,7 @@
             "second": "Reúna exemplos públicos de lançamentos de produtos bem-sucedidos e explique o que deu certo",
             "third": "Encontre dados confiáveis de um setor para uma apresentação, com datas e links das fontes"
           },
-          "label": "Buscar informações",
+          "label": "Informações",
           "placeholder": "Descreva o tema, o período ou para que precisa das informações…",
           "title": "O que você gostaria de pesquisar?"
         },
@@ -2196,7 +2195,7 @@
             "second": "Encontre criadores de conteúdo que alcancem donos de empresas e explique por que o público deles é adequado",
             "third": "Encontre potenciais clientes para meus serviços de consultoria, com informações públicas relevantes sobre eles"
           },
-          "label": "Buscar pessoas",
+          "label": "Pessoas",
           "placeholder": "Descreva o cargo, a área, a empresa ou a localização…",
           "title": "Quem você está procurando?"
         }
@@ -2209,9 +2208,7 @@
       "label": "Explore o que o Okou pode fazer",
       "placeholder": "Descreva o que você quer fazer…",
       "sources": {
-        "accountScope": "As alterações se aplicam à sua conta. As cobranças das ferramentas continuam valendo.",
-        "description": "Escolha as fontes que o Okou pode usar para pesquisar.",
-        "label": "Fontes de busca"
+        "trigger": "Ferramentas"
       },
       "workflows": "Fluxos de trabalho"
     },

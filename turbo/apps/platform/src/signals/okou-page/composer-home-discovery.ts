@@ -6,7 +6,6 @@ import type {
   ComposerTaskChipsSignals,
 } from "./composer-task-chips.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
-import { onRef } from "../utils.ts";
 
 const homeTaskDiscoveryEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.HomeTaskDiscovery];
@@ -31,7 +30,6 @@ export function createComposerHomeDiscoverySignals(
 ) {
   const internalView$ = state<HomeDiscoveryView>("initial");
   const internalIdeasVisible$ = state(true);
-  const returnFocusEntry$ = state<string | null>(null);
   const enabled$ = computed((get) => {
     return home && get(homeTaskDiscoveryEnabled$);
   });
@@ -44,6 +42,24 @@ export function createComposerHomeDiscoverySignals(
   });
   const searchActive$ = computed((get) => {
     return get(enabled$) && isHomeSearchEntry(get(view$));
+  });
+  const activeEntry$ = computed((get): ComposerHomeEntry | null => {
+    const view = get(view$);
+    return get(enabled$) && view !== "directory" && view !== "task"
+      ? view
+      : null;
+  });
+  const hasSelection$ = computed((get) => {
+    return get(activeEntry$) !== null || get(taskChips.task$) !== null;
+  });
+  const clearSelection$ = command(({ get, set }) => {
+    if (get(activeEntry$) === null) {
+      set(taskChips.selectTask$, null);
+      return;
+    }
+    set(internalView$, "directory");
+    set(internalIdeasVisible$, false);
+    set(editor.focus$);
   });
   const ideasVisible$ = computed((get) => {
     const view = get(view$);
@@ -60,21 +76,6 @@ export function createComposerHomeDiscoverySignals(
     set(taskChips.openTask$, task);
     set(internalView$, "task");
   });
-  const showDirectory$ = command(({ get, set }) => {
-    const view = get(view$);
-    set(returnFocusEntry$, view === "task" ? get(taskChips.task$) : view);
-    // Browsing entries never clears a creation mode, template, or draft.
-    set(internalView$, "directory");
-    set(internalIdeasVisible$, false);
-  });
-  const bindDirectoryEntry$ = onRef<HTMLElement>(
-    command(({ get, set }, element: HTMLElement) => {
-      if (element.dataset.homeEntry === get(returnFocusEntry$)) {
-        element.focus({ preventScroll: true });
-        set(returnFocusEntry$, null);
-      }
-    }),
-  );
   const useExample$ = command(
     async ({ set }, text: string, signal: AbortSignal) => {
       signal.throwIfAborted();
@@ -88,11 +89,12 @@ export function createComposerHomeDiscoverySignals(
     enabled$,
     view$,
     searchActive$,
+    activeEntry$,
+    hasSelection$,
+    clearSelection$,
     ideasVisible$,
     openEntry$,
     openTask$,
-    showDirectory$,
-    bindDirectoryEntry$,
     useExample$,
   };
 }

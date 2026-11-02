@@ -2100,11 +2100,10 @@
       "title": "转发到"
     },
     "homeDiscovery": {
-      "allEntries": "所有入口",
       "create": {
         "document": "Document",
         "image": "Image",
-        "presentation": "PPT",
+        "presentation": "Presentation",
         "visualization": "Chart",
         "website": "Website"
       },
@@ -2125,7 +2124,7 @@
             "second": "按功能和价格对比客户管理工具",
             "third": "调研某个行业的近期趋势和领先企业"
           },
-          "label": "通用搜索",
+          "label": "综合",
           "placeholder": "描述你的问题，或想了解的内容…",
           "title": "想查些什么？"
         },
@@ -2135,7 +2134,7 @@
             "second": "收集成功发布产品的公开案例，并说明哪些做法起了作用",
             "third": "寻找可用于演示文稿的可靠行业数据，附上日期和来源链接"
           },
-          "label": "找资料",
+          "label": "信息",
           "placeholder": "描述主题、时间范围，或资料的用途…",
           "title": "想找哪方面的资料？"
         },
@@ -2155,7 +2154,7 @@
             "second": "寻找能触达企业主的内容创作者，并说明其受众为什么合适",
             "third": "为我的咨询服务寻找潜在客户，并附上相关的公开背景信息"
           },
-          "label": "找人",
+          "label": "人物",
           "placeholder": "描述职位、领域、公司或地区…",
           "title": "找什么样的人？"
         }
@@ -2168,9 +2167,7 @@
       "label": "探索 Okou 能做什么",
       "placeholder": "描述你想完成的事…",
       "sources": {
-        "accountScope": "修改会应用到你的账号；工具费用规则不变。",
-        "description": "选择搜索时可用的信息来源。",
-        "label": "搜索来源"
+        "trigger": "工具"
       },
       "workflows": "Workflows"
     },

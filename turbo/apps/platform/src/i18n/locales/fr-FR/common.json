@@ -2141,11 +2141,10 @@
       "title": "Transférer vers"
     },
     "homeDiscovery": {
-      "allEntries": "Toutes les options",
       "create": {
         "document": "Document",
         "image": "Image",
-        "presentation": "PPT",
+        "presentation": "Presentation",
         "visualization": "Graphique",
         "website": "Site web"
       },
@@ -2166,7 +2165,7 @@
             "second": "Compare des outils de gestion de la relation client selon leurs fonctionnalités et leur prix",
             "third": "Étudie les tendances récentes et les entreprises leaders d’un secteur"
           },
-          "label": "Recherche générale",
+          "label": "Général",
           "placeholder": "Décrivez votre question ou ce que vous souhaitez savoir…",
           "title": "Que souhaitez-vous découvrir ?"
         },
@@ -2176,7 +2175,7 @@
             "second": "Rassemble des exemples publics de lancements de produits réussis et explique ce qui a fonctionné",
             "third": "Trouve des données sectorielles fiables pour une présentation, avec les dates et les liens vers les sources"
           },
-          "label": "Trouver des informations",
+          "label": "Informations",
           "placeholder": "Décrivez le sujet, la période ou l’usage prévu des informations…",
           "title": "Sur quel sujet souhaitez-vous faire des recherches ?"
         },
@@ -2196,7 +2195,7 @@
             "second": "Trouve des créateurs de contenu qui touchent les chefs d’entreprise et explique pourquoi leur audience convient",
             "third": "Trouve des clients potentiels pour mes services de conseil, avec des informations publiques pertinentes sur leur profil"
           },
-          "label": "Trouver des personnes",
+          "label": "Personnes",
           "placeholder": "Décrivez le poste, le domaine, l’entreprise ou la localisation…",
           "title": "Qui recherchez-vous ?"
         }
@@ -2209,9 +2208,7 @@
       "label": "Découvrez ce qu’Okou peut faire",
       "placeholder": "Décrivez ce que vous souhaitez accomplir…",
       "sources": {
-        "accountScope": "Les modifications s’appliquent à votre compte. Les frais habituels des outils continuent de s’appliquer.",
-        "description": "Choisissez les sources qu’Okou peut utiliser pour ses recherches.",
-        "label": "Sources de recherche"
+        "trigger": "Outils"
       },
       "workflows": "Flux de travail"
     },

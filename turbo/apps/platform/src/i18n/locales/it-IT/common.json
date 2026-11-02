@@ -2141,11 +2141,10 @@
       "title": "Inoltra a"
     },
     "homeDiscovery": {
-      "allEntries": "Tutte le opzioni",
       "create": {
         "document": "Documento",
         "image": "Immagine",
-        "presentation": "PPT",
+        "presentation": "Presentation",
         "visualization": "Grafico",
         "website": "Sito web"
       },
@@ -2166,7 +2165,7 @@
             "second": "Confronta gli strumenti di gestione clienti per funzionalità e prezzo",
             "third": "Cerca le tendenze recenti e le aziende leader di un settore"
           },
-          "label": "Ricerca generale",
+          "label": "Generale",
           "placeholder": "Descrivi la tua domanda o cosa vorresti sapere…",
           "title": "Cosa vorresti scoprire?"
         },
@@ -2176,7 +2175,7 @@
             "second": "Raccogli esempi pubblici di lanci di prodotto di successo e spiega cosa ha funzionato",
             "third": "Trova dati di settore affidabili per una presentazione, con date e link alle fonti"
           },
-          "label": "Cerca informazioni",
+          "label": "Informazioni",
           "placeholder": "Descrivi l'argomento, il periodo o a cosa ti servono le informazioni…",
           "title": "Su cosa vorresti fare una ricerca?"
         },
@@ -2196,7 +2195,7 @@
             "second": "Trova creator che raggiungono i titolari d'impresa e spiega perché il loro pubblico è adatto",
             "third": "Trova potenziali clienti per i miei servizi di consulenza, con informazioni pubbliche pertinenti sul loro profilo"
           },
-          "label": "Cerca persone",
+          "label": "Persone",
           "placeholder": "Descrivi il ruolo, il settore, l'azienda o la località…",
           "title": "Chi stai cercando?"
         }
@@ -2209,9 +2208,7 @@
       "label": "Scopri cosa può fare Okou",
       "placeholder": "Descrivi cosa vuoi fare…",
       "sources": {
-        "accountScope": "Le modifiche si applicano al tuo account. I costi previsti per gli strumenti continuano ad applicarsi.",
-        "description": "Scegli le fonti che Okou può usare per le ricerche.",
-        "label": "Fonti di ricerca"
+        "trigger": "Strumenti"
       },
       "workflows": "Flussi di lavoro"
     },

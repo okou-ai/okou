@@ -2107,11 +2107,10 @@
       "title": "Weiterleiten an"
     },
     "homeDiscovery": {
-      "allEntries": "Alle Optionen",
       "create": {
         "document": "Dokument",
         "image": "Bild",
-        "presentation": "PPT",
+        "presentation": "Presentation",
         "visualization": "Diagramm",
         "website": "Website"
       },
@@ -2132,7 +2131,7 @@
             "second": "Vergleiche Kundenmanagement-Tools nach Funktionen und Preis",
             "third": "Recherchiere aktuelle Trends und führende Unternehmen einer Branche"
           },
-          "label": "Allgemeine Suche",
+          "label": "Allgemein",
           "placeholder": "Beschreibe deine Frage oder was du erfahren möchtest…",
           "title": "Was möchtest du herausfinden?"
         },
@@ -2142,7 +2141,7 @@
             "second": "Sammle öffentlich zugängliche Beispiele erfolgreicher Produkteinführungen und erkläre, was gut funktioniert hat",
             "third": "Finde verlässliche Branchendaten für eine Präsentation mit Datumsangaben und Quellenlinks"
           },
-          "label": "Informationen finden",
+          "label": "Informationen",
           "placeholder": "Beschreibe das Thema, den Zeitraum oder wofür du die Informationen brauchst…",
           "title": "Was möchtest du recherchieren?"
         },
@@ -2162,7 +2161,7 @@
             "second": "Finde Content-Creator, die Unternehmer erreichen, und erkläre, warum ihre Zielgruppe passt",
             "third": "Finde potenzielle Kunden für meine Beratungsleistungen mit relevanten, öffentlich zugänglichen Hintergrundinformationen"
           },
-          "label": "Personen finden",
+          "label": "Personen",
           "placeholder": "Beschreibe die Position, das Fachgebiet, das Unternehmen oder den Standort…",
           "title": "Wen suchst du?"
         }
@@ -2175,9 +2174,7 @@
       "label": "Entdecke, was Okou kann",
       "placeholder": "Beschreibe, was du erledigen möchtest…",
       "sources": {
-        "accountScope": "Änderungen gelten für dein Konto. Bestehende Gebühren für die Tools fallen weiterhin an.",
-        "description": "Wähle die Quellen, die Okou für Recherchen nutzen darf.",
-        "label": "Suchquellen"
+        "trigger": "Werkzeuge"
       },
       "workflows": "Workflows"
     },

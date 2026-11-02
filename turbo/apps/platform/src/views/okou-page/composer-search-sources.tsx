@@ -1,7 +1,6 @@
-import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Database, Search, type LucideIcon } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@okouai/ui";
 import {
   Popover,
@@ -27,7 +26,9 @@ function SourcesLoadStatus({ failed = false }: { readonly failed?: boolean }) {
     <p
       role={failed ? "alert" : "status"}
       className={
-        failed ? "text-sm text-destructive" : "text-sm text-muted-foreground"
+        failed
+          ? "text-xs leading-4.5 text-destructive"
+          : "text-xs leading-4.5 text-muted-foreground"
       }
     >
       {t(($) => {
@@ -41,12 +42,10 @@ function SourcesLoadStatus({ failed = false }: { readonly failed?: boolean }) {
 
 function SourceRow({
   tool,
-  icon: Icon,
   title,
   description,
 }: {
   readonly tool: ComposerSearchSource | ComposerSearchDataFamily;
-  readonly icon: LucideIcon;
   readonly title: string;
   readonly description: string;
 }) {
@@ -57,23 +56,26 @@ function SourceRow({
   const signal = useGet(pageSignal$);
   const pending = save.state === "loading";
   return (
-    <div className="flex items-start gap-3 py-3">
-      <Icon
-        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-        aria-hidden
-      />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="text-xs text-muted-foreground">{description}</p>
+    <div className="flex items-start gap-2.5 py-2.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="text-[13px] font-normal leading-5 text-foreground">
+          {title}
+        </p>
+        <p className="text-xs leading-4.5 text-muted-foreground">
+          {description}
+        </p>
         {pending && (
-          <p role="status" className="text-xs text-muted-foreground">
+          <p
+            role="status"
+            className="text-xs leading-4.5 text-muted-foreground"
+          >
             {t(($) => {
               return $.settings.paidTools.saving;
             })}
           </p>
         )}
         {save.state === "hasError" && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-xs leading-4.5 text-destructive">
             {t(($) => {
               return $.settings.paidTools.saveError;
             })}
@@ -84,6 +86,7 @@ function SourceRow({
         )}
       </div>
       <Switch
+        size="compact"
         aria-label={title}
         checked={enabled.state === "hasData" && enabled.data}
         disabled={enabled.state !== "hasData" || pending || signal.aborted}
@@ -108,7 +111,6 @@ function DataFamilyRow({ tool }: { readonly tool: ComposerSearchDataFamily }) {
   return (
     <SourceRow
       tool={tool}
-      icon={Database}
       title={dataRouterFamilyText(tool.family.title, locale, tool.family.id)}
       description={dataRouterFamilyText(
         tool.family.description,
@@ -130,7 +132,6 @@ function SourceRows({
     <div className="divide-y divide-border">
       <SourceRow
         tool={sources.webSearch}
-        icon={Search}
         title={t(($) => {
           return $.settings.paidTools.tools["web-search"].name;
         })}
@@ -143,7 +144,7 @@ function SourceRows({
           return <DataFamilyRow key={tool.toolId} tool={tool} />;
         })
       ) : (
-        <div className="py-3">
+        <div className="py-2.5">
           <SourcesLoadStatus failed={families.state === "hasError"} />
         </div>
       )}
@@ -163,8 +164,8 @@ function SearchSourcesPopover() {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const startDiscovery = useSet(startComposerSearchSources$);
-  const label = t(($) => {
-    return $.chat.homeDiscovery.sources.label;
+  const trigger = t(($) => {
+    return $.chat.homeDiscovery.sources.trigger;
   });
   return (
     <Popover
@@ -175,31 +176,24 @@ function SearchSourcesPopover() {
       }}
     >
       <PopoverTrigger
-        render={<Button type="button" variant="quiet" size="sm" />}
+        render={
+          <Button
+            type="button"
+            variant="quiet"
+            className="h-8 w-auto shrink-0 gap-1 border border-transparent bg-transparent px-2 text-xs font-normal hover:text-muted-foreground [&_svg]:size-3"
+          />
+        }
       >
-        <Search aria-hidden />
-        <span>{label}</span>
-        <ChevronDown aria-hidden />
+        <span>{trigger}</span>
+        <ChevronDown className="opacity-50" aria-hidden />
       </PopoverTrigger>
       <PopoverContent
         side="top"
         align="start"
+        aria-label={trigger}
         className="max-h-[var(--available-height)] w-88 max-w-[var(--available-width)] overflow-y-auto"
       >
-        <PopoverPrimitive.Title className="text-sm font-medium">
-          {label}
-        </PopoverPrimitive.Title>
-        <PopoverPrimitive.Description className="mt-1 text-xs text-muted-foreground">
-          {t(($) => {
-            return $.chat.homeDiscovery.sources.description;
-          })}
-        </PopoverPrimitive.Description>
         <SourcesContent />
-        <p className="border-t border-border pt-3 text-xs text-muted-foreground">
-          {t(($) => {
-            return $.chat.homeDiscovery.sources.accountScope;
-          })}
-        </p>
       </PopoverContent>
     </Popover>
   );

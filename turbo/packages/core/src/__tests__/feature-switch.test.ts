@@ -27,16 +27,16 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("keeps home task discovery off by default and honors explicit overrides", () => {
+  it("defaults home task discovery to staff and honors explicit overrides", () => {
     const key = FeatureSwitchKey.HomeTaskDiscovery;
-    for (const context of [
-      {},
-      { userId: "external-user", orgId: "external-org" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      { email: "BINGJIE@OKOU.AI" },
-    ]) {
-      expect(isFeatureEnabled(key, context)).toBe(false);
-      expect(getAllFeatureStates(context)[key]).toBe(false);
+    for (const [context, enabledByDefault] of [
+      [{}, false],
+      [{ userId: "external-user", orgId: "external-org" }, false],
+      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
+      [{ email: "BINGJIE@OKOU.AI" }, false],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabledByDefault);
+      expect(getAllFeatureStates(context)[key]).toBe(enabledByDefault);
       for (const enabled of [true, false]) {
         const overridden = { ...context, overrides: { [key]: enabled } };
         expect(isFeatureEnabled(key, overridden)).toBe(enabled);
@@ -414,6 +414,9 @@ describe("getFeatureSwitchMetadata", () => {
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
     ).toBe("beta");
+    expect(metadata[FeatureSwitchKey.HomeTaskDiscovery].rolloutStage).toBe(
+      "beta",
+    );
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",
     );

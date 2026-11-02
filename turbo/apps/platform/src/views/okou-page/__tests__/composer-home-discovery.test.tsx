@@ -188,7 +188,7 @@ test("The default-off homepage retains the legacy task entry", async () => {
   ).toBeInTheDocument();
 });
 
-test("The existing Tasks surface returns keyboard focus to its directory entry", async () => {
+test("The Tasks chip returns to the directory and focuses the composer", async () => {
   mockTemplateChat();
   context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
@@ -209,6 +209,7 @@ test("The existing Tasks surface returns keyboard focus to its directory entry",
       [FeatureSwitchKey.ProactiveAgent]: true,
     },
   });
+  const editor = await findComposerEditor();
   await screen.findByRole("region", { name: "Explore what Okou can do" });
   await waitFor(() => {
     expect(button("Tasks", directory())).toBeInTheDocument();
@@ -217,9 +218,9 @@ test("The existing Tasks surface returns keyboard focus to its directory entry",
   await screen.findByText(
     "No tasks in this view. Give Okou a task. It keeps working and comes back when it needs your input or has a result.",
   );
-  click(button("All entries"));
+  click(button("Remove Tasks", composerCard(editor)));
   await screen.findByRole("region", { name: "Explore what Okou can do" });
-  expect(button("Tasks", directory())).toHaveFocus();
+  expect(editor).toHaveFocus();
 });
 
 test("The enabled homepage exposes Search, Create and Automate as one directory", async () => {
@@ -232,11 +233,11 @@ test("The enabled homepage exposes Search, Create and Automate as one directory"
     expect(within(entries).getByRole("heading", { name })).toBeInTheDocument();
   }
   for (const name of [
-    "Find people",
-    "Find information",
-    "General search",
+    "People",
+    "Information",
+    "General",
     "Image",
-    "PPT",
+    "Presentation",
     "Document",
     "Website",
     "Chart",
@@ -246,10 +247,10 @@ test("The enabled homepage exposes Search, Create and Automate as one directory"
   ]) {
     expect(button(name, entries)).toBeInTheDocument();
   }
-  expect(queryButton("Search sources", composerCard(editor))).toBeUndefined();
+  expect(queryButton("Tools", composerCard(editor))).toBeUndefined();
 });
 
-test("Search exploration and All entries preserve the draft and an uploaded attachment", async () => {
+test("Removing Search chips preserves the draft and an uploaded attachment", async () => {
   mockTemplateChat();
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000051",
@@ -275,33 +276,60 @@ test("Search exploration and All entries preserve the draft and an uploaded atta
   await screen.findByText("discovery-brief.txt");
 
   for (const [entry, title] of [
-    ["Find people", "Who are you looking for?"],
-    ["Find information", "What would you like to research?"],
-    ["General search", "What would you like to find out?"],
+    ["People", "Who are you looking for?"],
+    ["Information", "What would you like to research?"],
+    ["General", "What would you like to find out?"],
   ] as const) {
     click(button(entry, directory()));
 
     const ideas = await searchIdeas(title);
+    expect(button(`Remove ${entry}`, composerCard(editor))).toBeInTheDocument();
     expect(queryAllByRoleFast("button", ideas)).toHaveLength(3);
     expect(
       screen.queryByRole("region", { name: "Explore what Okou can do" }),
     ).toBeNull();
-    expect(button("Search sources", composerCard(editor))).toBeInTheDocument();
+    expect(button("Tools", composerCard(editor))).toBeInTheDocument();
     expect(editor).toHaveTextContent("Keep my research context");
     expect(screen.getByText("discovery-brief.txt")).toBeInTheDocument();
 
-    click(button("All entries"));
+    click(button(`Remove ${entry}`, composerCard(editor)));
 
     await screen.findByRole("region", { name: "Explore what Okou can do" });
-    expect(button(entry, directory())).toHaveFocus();
+    expect(editor).toHaveFocus();
     expect(editor).toHaveTextContent("Keep my research context");
     expect(screen.getByText("discovery-brief.txt")).toBeInTheDocument();
-    expect(queryButton("Search sources", composerCard(editor))).toBeUndefined();
+    expect(queryButton("Tools", composerCard(editor))).toBeUndefined();
   }
   expect(window.location.pathname).toBe(HOME_PATH);
 });
 
-test("PPT opens real Presentation templates and retains its selection while exploring Search", async () => {
+test("Discovery chips can be removed without losing the draft, or with Backspace when empty", async () => {
+  mockTemplateChat();
+  const editor = await setupDiscovery();
+  await screen.findByRole("region", { name: "Explore what Okou can do" });
+  await fill(editor, "Keep my research context");
+  click(button("People", directory()));
+  await searchIdeas("Who are you looking for?");
+
+  click(button("Remove People", composerCard(editor)));
+
+  await screen.findByRole("region", { name: "Explore what Okou can do" });
+  expect(editor).toHaveTextContent("Keep my research context");
+  expect(editor).toHaveFocus();
+  await fill(editor, "");
+  click(button("Briefs", directory()));
+  await searchIdeas("What brief would you like to receive?");
+  expect(button("Remove Briefs", composerCard(editor))).toBeInTheDocument();
+  expect(editor).toHaveFocus();
+  const user = userEvent.setup({ delay: null });
+
+  await user.keyboard("{Backspace}");
+
+  await screen.findByRole("region", { name: "Explore what Okou can do" });
+  expect(editor).toHaveFocus();
+});
+
+test("Presentation retains its template while removing task chips and exploring Search", async () => {
   const capture = mockTemplateChat();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   if (!template) {
@@ -311,7 +339,7 @@ test("PPT opens real Presentation templates and retains its selection while expl
   await screen.findByRole("region", { name: "Explore what Okou can do" });
   await fill(editor, "Keep my presentation context");
 
-  click(button("PPT", directory()));
+  click(button("Presentation", directory()));
 
   const templates = await screen.findByRole("group", {
     name: "Presentation templates",
@@ -322,7 +350,7 @@ test("PPT opens real Presentation templates and retains its selection while expl
   expect(
     screen.queryByRole("region", { name: "Explore what Okou can do" }),
   ).toBeNull();
-  expect(queryButton("Search sources", composerCard(editor))).toBeUndefined();
+  expect(queryButton("Tools", composerCard(editor))).toBeUndefined();
   click(button(template.title, templates));
   await waitFor(() => {
     expect(editor).toHaveTextContent(template.title);
@@ -335,31 +363,38 @@ test("PPT opens real Presentation templates and retains its selection while expl
     ).toHaveTextContent("16–20 slides");
   });
 
-  click(button("All entries"));
+  click(button("Remove Presentation", composerCard(editor)));
 
   await screen.findByRole("region", { name: "Explore what Okou can do" });
-  expect(
-    button("Remove Presentation", composerCard(editor)),
-  ).toBeInTheDocument();
-  click(button("Find information", directory()));
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveTextContent(template.title);
+  click(button("Information", directory()));
 
   await searchIdeas("What would you like to research?");
   expect(
-    button("Remove Presentation", composerCard(editor)),
+    button("Remove Information", composerCard(editor)),
   ).toBeInTheDocument();
-  expect(
-    screen.getByRole("combobox", { name: "Slide count" }),
-  ).toHaveTextContent("16–20 slides");
-  expect(button("Search sources", composerCard(editor))).toBeInTheDocument();
+  expect(button("Tools", composerCard(editor))).toBeInTheDocument();
   expect(editor).toHaveTextContent("Keep my presentation context");
   expect(editor).toHaveTextContent(template.title);
 
-  click(button("All entries"));
+  click(button("Remove Information", composerCard(editor)));
 
   await screen.findByRole("region", { name: "Explore what Okou can do" });
+  expect(editor).toHaveFocus();
+  click(button("Presentation", directory()));
+  await screen.findByRole("group", { name: "Presentation templates" });
   expect(
     button("Remove Presentation", composerCard(editor)),
   ).toBeInTheDocument();
+  expect(editor).toHaveTextContent(template.title);
+  click(screen.getByRole("combobox", { name: "Slide count" }));
+  click(await screen.findByRole("option", { name: "16–20 slides" }));
+  await waitFor(() => {
+    expect(
+      screen.getByRole("combobox", { name: "Slide count" }),
+    ).toHaveTextContent("16–20 slides");
+  });
   click(button("Send", composerCard(editor)));
 
   await waitFor(() => {
@@ -381,7 +416,7 @@ test("A people example appends to the editor and waits for an explicit send", as
   const editor = await setupDiscovery();
   await screen.findByRole("region", { name: "Explore what Okou can do" });
   await fill(editor, "Keep my launch context");
-  click(button("Find people", directory()));
+  click(button("People", directory()));
   const ideas = await searchIdeas("Who are you looking for?");
 
   click(button(PEOPLE_PROMPT, ideas));
@@ -393,12 +428,12 @@ test("A people example appends to the editor and waits for an explicit send", as
   expect(
     screen.queryByRole("region", { name: "Ideas to get started" }),
   ).toBeNull();
-  expect(button("All entries")).toBeInTheDocument();
-  expect(button("Search sources", composerCard(editor))).toBeInTheDocument();
+  expect(button("Remove People", composerCard(editor))).toBeInTheDocument();
+  expect(button("Tools", composerCard(editor))).toBeInTheDocument();
   expect(button("Send", composerCard(editor))).toBeEnabled();
   expect(window.location.pathname).toBe(HOME_PATH);
 
-  click(button("All entries"));
+  click(button("Remove People", composerCard(editor)));
 
   await screen.findByRole("region", { name: "Explore what Okou can do" });
   expect(editor.textContent).toBe(expectedDraft);
@@ -417,22 +452,24 @@ test("Briefs and Monitor offer their own ideas without changing the draft on ent
   click(button("Briefs", directory()));
 
   const briefs = await searchIdeas("What brief would you like to receive?");
+  expect(button("Remove Briefs", composerCard(editor))).toBeInTheDocument();
   const briefPrompts = queryAllByRoleFast("button", briefs).map((item) => {
     return item.textContent?.trim();
   });
   expect(briefPrompts).toHaveLength(3);
   expect(editor).toHaveTextContent("Keep my business context");
-  expect(queryButton("Search sources", composerCard(editor))).toBeUndefined();
+  expect(queryButton("Tools", composerCard(editor))).toBeUndefined();
   expect(
     screen.queryByRole("region", { name: "Explore what Okou can do" }),
   ).toBeNull();
 
-  click(button("All entries"));
+  click(button("Remove Briefs", composerCard(editor)));
 
   await screen.findByRole("region", { name: "Explore what Okou can do" });
   click(button("Monitor", directory()));
 
   const monitor = await searchIdeas("What changes would you like to follow?");
+  expect(button("Remove Monitor", composerCard(editor))).toBeInTheDocument();
   const monitorButtons = queryAllByRoleFast("button", monitor);
   expect(monitorButtons).toHaveLength(3);
   expect(
@@ -441,7 +478,7 @@ test("Briefs and Monitor offer their own ideas without changing the draft on ent
     }),
   ).not.toStrictEqual(briefPrompts);
   expect(editor).toHaveTextContent("Keep my business context");
-  expect(queryButton("Search sources", composerCard(editor))).toBeUndefined();
+  expect(queryButton("Tools", composerCard(editor))).toBeUndefined();
   const first = monitorButtons[0];
   const prompt = first?.textContent?.trim();
   if (!first || !prompt) {
@@ -452,7 +489,7 @@ test("Briefs and Monitor offer their own ideas without changing the draft on ent
   await waitFor(() => {
     expect(editor.textContent).toBe(`Keep my business context\n${prompt}`);
   });
-  expect(button("All entries")).toBeInTheDocument();
+  expect(button("Remove Monitor", composerCard(editor))).toBeInTheDocument();
   expect(window.location.pathname).toBe(HOME_PATH);
 });
 
@@ -470,7 +507,7 @@ test("Workflows opens the existing recommendations and Workflow catalog", async 
   expect(
     screen.queryByRole("region", { name: "Explore what Okou can do" }),
   ).toBeNull();
-  expect(queryButton("Search sources", composerCard(editor))).toBeUndefined();
+  expect(queryButton("Tools", composerCard(editor))).toBeUndefined();
   click(button("Browse workflows", workflows));
 
   const picker = await screen.findByRole("dialog");
@@ -486,20 +523,20 @@ test("Workflows opens the existing recommendations and Workflow catalog", async 
   expect(editor.textContent).toBe("Keep my workflow context");
 });
 
-test("Search sources uses catalog families and only an explicit switch saves a preference", async () => {
+test("Search tools use catalog families and only an explicit switch saves a preference", async () => {
   mockTemplateChat();
   const updates = mockResearchSources();
   const editor = await setupDiscovery();
   await screen.findByRole("region", { name: "Explore what Okou can do" });
-  click(button("Find people", directory()));
+  click(button("People", directory()));
   const ideas = await searchIdeas("Who are you looking for?");
   click(button(PEOPLE_PROMPT, ideas));
   await waitFor(() => {
     expect(editor).toHaveTextContent(PEOPLE_PROMPT);
   });
-  click(button("Search sources", composerCard(editor)));
+  click(button("Tools", composerCard(editor)));
 
-  const sources = await screen.findByRole("dialog", { name: "Search sources" });
+  const sources = await screen.findByRole("dialog", { name: "Tools" });
   const web = await within(sources).findByRole("switch", {
     name: "Web search",
   });
@@ -533,7 +570,7 @@ test("Search sources uses catalog families and only an explicit switch saves a p
   expect(window.location.pathname).toBe(HOME_PATH);
 });
 
-test("A source save stays pending across disclosure and All entries remounts until confirmed", async () => {
+test("A source save stays pending across disclosure and directory round-trips until confirmed", async () => {
   mockTemplateChat();
   const patchRequested = context.mocks.deferred<void>();
   const releasePatch = context.mocks.deferred<void>();
@@ -552,10 +589,10 @@ test("A source save stays pending across disclosure and All entries remounts unt
   });
   const editor = await setupDiscovery();
   await screen.findByRole("region", { name: "Explore what Okou can do" });
-  click(button("Find people", directory()));
+  click(button("People", directory()));
   await searchIdeas("Who are you looking for?");
-  click(button("Search sources", composerCard(editor)));
-  const sources = await screen.findByRole("dialog", { name: "Search sources" });
+  click(button("Tools", composerCard(editor)));
+  const sources = await screen.findByRole("dialog", { name: "Tools" });
   const profiles = await within(sources).findByRole("switch", {
     name: "Professional profiles",
   });
@@ -569,13 +606,11 @@ test("A source save stays pending across disclosure and All entries remounts unt
     const user = userEvent.setup({ delay: null });
     await user.keyboard("{Escape}");
     await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Search sources" }),
-      ).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Tools" })).toBeNull();
     });
-    click(button("Search sources", composerCard(editor)));
+    click(button("Tools", composerCard(editor)));
     const reopened = await screen.findByRole("dialog", {
-      name: "Search sources",
+      name: "Tools",
     });
     const pending = await within(reopened).findByRole("switch", {
       name: "Professional profiles",
@@ -587,17 +622,15 @@ test("A source save stays pending across disclosure and All entries remounts unt
 
     await user.keyboard("{Escape}");
     await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Search sources" }),
-      ).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Tools" })).toBeNull();
     });
-    click(button("All entries"));
+    click(button("Remove People", composerCard(editor)));
     await screen.findByRole("region", { name: "Explore what Okou can do" });
-    click(button("Find people", directory()));
+    click(button("People", directory()));
     await searchIdeas("Who are you looking for?");
-    click(button("Search sources", composerCard(editor)));
+    click(button("Tools", composerCard(editor)));
     const returned = await screen.findByRole("dialog", {
-      name: "Search sources",
+      name: "Tools",
     });
     const saving = await within(returned).findByRole("switch", {
       name: "Professional profiles",
@@ -657,10 +690,10 @@ test("A source save rejected while dismissed stays visible on reopen and permits
   });
   const editor = await setupDiscovery();
   await screen.findByRole("region", { name: "Explore what Okou can do" });
-  click(button("Find people", directory()));
+  click(button("People", directory()));
   await searchIdeas("Who are you looking for?");
-  click(button("Search sources", composerCard(editor)));
-  const sources = await screen.findByRole("dialog", { name: "Search sources" });
+  click(button("Tools", composerCard(editor)));
+  const sources = await screen.findByRole("dialog", { name: "Tools" });
   const profiles = await within(sources).findByRole("switch", {
     name: "Professional profiles",
   });
@@ -673,15 +706,13 @@ test("A source save rejected while dismissed stays visible on reopen and permits
     const user = userEvent.setup({ delay: null });
     await user.keyboard("{Escape}");
     await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Search sources" }),
-      ).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Tools" })).toBeNull();
     });
     releaseFailure.resolve();
     await screen.findByText("Sources temporarily unavailable");
-    click(button("Search sources", composerCard(editor)));
+    click(button("Tools", composerCard(editor)));
     const reopened = await screen.findByRole("dialog", {
-      name: "Search sources",
+      name: "Tools",
     });
     const alert = await within(reopened).findByRole("alert");
     expect(alert).toHaveTextContent("Your change was not saved.");

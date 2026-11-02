@@ -2100,11 +2100,10 @@
       "title": "Teruskan ke"
     },
     "homeDiscovery": {
-      "allEntries": "Semua opsi",
       "create": {
         "document": "Dokumen",
         "image": "Gambar",
-        "presentation": "PPT",
+        "presentation": "Presentation",
         "visualization": "Grafik",
         "website": "Situs web"
       },
@@ -2125,7 +2124,7 @@
             "second": "Bandingkan alat manajemen pelanggan berdasarkan fitur dan harga",
             "third": "Teliti tren terbaru dan perusahaan terkemuka dalam suatu industri"
           },
-          "label": "Pencarian umum",
+          "label": "Umum",
           "placeholder": "Jelaskan pertanyaan Anda atau hal yang ingin Anda ketahui…",
           "title": "Apa yang ingin Anda ketahui?"
         },
@@ -2135,7 +2134,7 @@
             "second": "Kumpulkan contoh peluncuran produk yang sukses dari sumber publik dan jelaskan apa yang berhasil",
             "third": "Cari data industri yang tepercaya untuk presentasi, lengkap dengan tanggal dan tautan sumber"
           },
-          "label": "Cari informasi",
+          "label": "Informasi",
           "placeholder": "Jelaskan topik, rentang waktu, atau tujuan penggunaan informasinya…",
           "title": "Apa yang ingin Anda teliti?"
         },
@@ -2155,7 +2154,7 @@
             "second": "Cari kreator yang menjangkau pemilik bisnis dan jelaskan kecocokan audiens mereka",
             "third": "Cari calon pelanggan untuk layanan konsultasi saya, beserta informasi latar belakang yang relevan dari sumber publik"
           },
-          "label": "Cari orang",
+          "label": "Orang",
           "placeholder": "Jelaskan jabatan, bidang, perusahaan, atau lokasi…",
           "title": "Siapa yang Anda cari?"
         }
@@ -2168,9 +2167,7 @@
       "label": "Jelajahi kemampuan Okou",
       "placeholder": "Jelaskan apa yang ingin Anda kerjakan…",
       "sources": {
-        "accountScope": "Perubahan berlaku untuk akun Anda. Biaya penggunaan alat yang ada tetap berlaku.",
-        "description": "Pilih sumber yang dapat digunakan Okou untuk riset.",
-        "label": "Sumber pencarian"
+        "trigger": "Alat"
       },
       "workflows": "Alur kerja"
     },

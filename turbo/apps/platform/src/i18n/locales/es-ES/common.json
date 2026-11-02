@@ -2141,11 +2141,10 @@
       "title": "Reenviar a"
     },
     "homeDiscovery": {
-      "allEntries": "Todas las opciones",
       "create": {
         "document": "Documento",
         "image": "Imagen",
-        "presentation": "PPT",
+        "presentation": "Presentation",
         "visualization": "Gráfico",
         "website": "Sitio web"
       },
@@ -2166,7 +2165,7 @@
             "second": "Compara herramientas de gestión de clientes por funciones y precio",
             "third": "Investiga las tendencias recientes y las empresas líderes de un sector"
           },
-          "label": "Búsqueda general",
+          "label": "General",
           "placeholder": "Describe tu pregunta o lo que te gustaría saber…",
           "title": "¿Qué te gustaría averiguar?"
         },
@@ -2176,7 +2175,7 @@
             "second": "Recopila ejemplos públicos de lanzamientos de productos exitosos y explica qué funcionó",
             "third": "Busca datos sectoriales fiables para una presentación, con fechas y enlaces a las fuentes"
           },
-          "label": "Buscar información",
+          "label": "Información",
           "placeholder": "Describe el tema, el periodo o para qué necesitas la información…",
           "title": "¿Qué te gustaría investigar?"
         },
@@ -2196,7 +2195,7 @@
             "second": "Busca creadores de contenido que lleguen a propietarios de empresas y explica por qué su audiencia encaja",
             "third": "Busca clientes potenciales para mis servicios de consultoría, con información pública relevante sobre ellos"
           },
-          "label": "Buscar personas",
+          "label": "Personas",
           "placeholder": "Describe el puesto, el sector, la empresa o la ubicación…",
           "title": "¿A quién buscas?"
         }
@@ -2209,9 +2208,7 @@
       "label": "Descubre lo que puede hacer Okou",
       "placeholder": "Describe lo que quieres hacer…",
       "sources": {
-        "accountScope": "Los cambios se aplican a tu cuenta. Se siguen aplicando los cargos habituales de las herramientas.",
-        "description": "Elige las fuentes que Okou puede utilizar para investigar.",
-        "label": "Fuentes de búsqueda"
+        "trigger": "Herramientas"
       },
       "workflows": "Flujos de trabajo"
     },

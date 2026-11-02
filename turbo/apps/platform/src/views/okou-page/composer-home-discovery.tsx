@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
-  ArrowLeft,
   ArrowUpLeft,
   Bell,
   ChartNoAxesCombined,
@@ -27,41 +26,73 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 const SEARCH_ENTRIES = [
-  { id: "people", icon: Users },
-  { id: "information", icon: FileSearch },
-  { id: "general", icon: Search },
+  {
+    id: "people",
+    icon: Users,
+    iconClassName: "text-blue-600 dark:text-blue-400",
+  },
+  {
+    id: "information",
+    icon: FileSearch,
+    iconClassName: "text-amber-600 dark:text-amber-400",
+  },
+  {
+    id: "general",
+    icon: Search,
+    iconClassName: "text-teal-600 dark:text-teal-400",
+  },
 ] as const;
 const CREATE_ENTRIES = [
-  { id: "image", icon: Image },
-  { id: "presentation", icon: Presentation },
-  { id: "document", icon: FileText },
-  { id: "website", icon: Globe },
-  { id: "visualization", icon: ChartNoAxesCombined },
+  { id: "image", icon: Image, iconClassName: "text-artifact-image" },
+  {
+    id: "presentation",
+    icon: Presentation,
+    iconClassName: "text-artifact-presentation",
+  },
+  {
+    id: "document",
+    icon: FileText,
+    iconClassName: "text-violet-600 dark:text-violet-400",
+  },
+  {
+    id: "website",
+    icon: Globe,
+    iconClassName: "text-cyan-600 dark:text-cyan-400",
+  },
+  {
+    id: "visualization",
+    icon: ChartNoAxesCombined,
+    iconClassName: "text-rose-600 dark:text-rose-400",
+  },
 ] as const;
 const AUTOMATE_ENTRIES = [
-  { id: "briefs", icon: Newspaper },
-  { id: "monitor", icon: Bell },
+  {
+    id: "briefs",
+    icon: Newspaper,
+    iconClassName: "text-orange-600 dark:text-orange-400",
+  },
+  {
+    id: "monitor",
+    icon: Bell,
+    iconClassName: "text-lime-600 dark:text-lime-400",
+  },
 ] as const;
 
 function EntryButton({
-  signals,
   id,
   icon: Icon,
   children,
   className,
   onClick,
 }: {
-  readonly signals: ComposerSignals;
   readonly id: string;
   readonly icon: LucideIcon;
   readonly children: ReactNode;
   readonly className: string;
   readonly onClick: () => void;
 }) {
-  const bind = useSet(signals.homeDiscovery.bindDirectoryEntry$);
   return (
     <Button
-      ref={bind}
       data-home-entry={id}
       type="button"
       variant="quiet"
@@ -86,11 +117,16 @@ function EntryGroup({
   readonly columns?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-2 py-4 first:pt-0 last:pb-0 @2xl:block @2xl:px-5 @2xl:py-0 @2xl:first:pl-0 @2xl:last:pr-0">
-      <h3 className="mt-1 text-[0.8125rem] leading-6 font-semibold text-foreground @2xl:mt-0 @2xl:mb-3">
+    <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] items-start gap-2 py-4 first:pt-0 last:pb-0 @2xl:block @2xl:px-5 @2xl:py-0 @2xl:first:pl-0 @2xl:last:pr-0">
+      <h3 className="mt-1 truncate text-[0.8125rem] leading-6 font-semibold text-foreground @2xl:mt-0 @2xl:mb-3">
         {title}
       </h3>
-      <div className={cn("grid gap-x-2 gap-y-1", columns && "grid-cols-2")}>
+      <div
+        className={cn(
+          "grid auto-rows-8 gap-x-2 gap-y-1",
+          columns && "grid-cols-2",
+        )}
+      >
         {children}
       </div>
     </div>
@@ -110,18 +146,14 @@ function HomeDirectory({
   const entry = ({
     id,
     icon,
+    iconClassName,
   }: (typeof SEARCH_ENTRIES)[number] | (typeof AUTOMATE_ENTRIES)[number]) => {
     return (
       <EntryButton
         key={id}
-        signals={signals}
         id={id}
         icon={icon}
-        className={
-          id === "briefs" || id === "monitor"
-            ? "text-lime-700/70"
-            : "text-teal-600/80"
-        }
+        className={iconClassName}
         onClick={() => {
           openEntry(id);
         }}
@@ -139,7 +171,7 @@ function HomeDirectory({
         return $.chat.homeDiscovery.label;
       })}
     >
-      <div className="grid grid-cols-1 divide-y divide-border @2xl:grid-cols-3 @2xl:divide-x @2xl:divide-y-0">
+      <div className="grid grid-cols-1 divide-y divide-border @2xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] @2xl:divide-x @2xl:divide-y-0">
         <EntryGroup
           title={t(($) => {
             return $.chat.homeDiscovery.groups.search;
@@ -155,14 +187,13 @@ function HomeDirectory({
         >
           {CREATE_ENTRIES.filter(({ id }) => {
             return tasks.includes(id);
-          }).map(({ id, icon }) => {
+          }).map(({ id, icon, iconClassName }) => {
             return (
               <EntryButton
                 key={id}
-                signals={signals}
                 id={id}
                 icon={icon}
-                className="text-violet-500/80"
+                className={iconClassName}
                 onClick={() => {
                   openTask(id);
                 }}
@@ -181,10 +212,9 @@ function HomeDirectory({
         >
           {AUTOMATE_ENTRIES.map(entry)}
           <EntryButton
-            signals={signals}
             id="workflow"
             icon={Workflow}
-            className="text-lime-700/70"
+            className="text-fuchsia-600 dark:text-fuchsia-400"
             onClick={() => {
               openTask("workflow");
             }}
@@ -198,10 +228,9 @@ function HomeDirectory({
       {tasks.includes("jobs") && (
         <div className="mt-4">
           <EntryButton
-            signals={signals}
             id="jobs"
             icon={ListTodo}
-            className="text-muted-foreground"
+            className="text-slate-500 dark:text-slate-400"
             onClick={() => {
               openTask("jobs");
             }}
@@ -271,27 +300,13 @@ export function ComposerHomeDiscovery({
   readonly tasks: readonly ComposerTask[];
   readonly children: ReactNode;
 }) {
-  const { t } = useTranslation();
   const view = useGet(signals.homeDiscovery.view$);
   const ideasVisible = useGet(signals.homeDiscovery.ideasVisible$);
-  const showDirectory = useSet(signals.homeDiscovery.showDirectory$);
   if (view === "directory") {
     return <HomeDirectory signals={signals} tasks={tasks} />;
   }
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <Button
-        type="button"
-        variant="quiet"
-        size="sm"
-        className="w-fit -ml-2"
-        onClick={showDirectory}
-      >
-        <ArrowLeft aria-hidden />
-        {t(($) => {
-          return $.chat.homeDiscovery.allEntries;
-        })}
-      </Button>
       {view === "task"
         ? children
         : ideasVisible && <HomeIdeas signals={signals} entry={view} />}
