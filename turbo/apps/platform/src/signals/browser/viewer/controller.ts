@@ -2027,7 +2027,7 @@ function createDetachedEvent(
   context: ControllerContext,
   links$: Computed<ControllerLinks>,
 ) {
-  const { model, closingTargets$ } = context;
+  const { closingTargets$ } = context;
   return command(
     (
       { get, set },
@@ -2044,12 +2044,14 @@ function createDetachedEvent(
         !get(closingTargets$).has(selected.attached.owner.targetId)
       ) {
         set(get(links$).retireCurrent$, "target-replaced", false, true);
-        set(model.transition$, {
-          type: "target-lost",
-          error: diagnostic(
-            new CdpFault("target-unavailable", "The selected target detached."),
-          ),
-        });
+        const discovery = get(get(links$).discovery$);
+        if (discovery) {
+          detach(
+            set(discovery.refresh$, selected.attached.client.signal),
+            Reason.DomCallback,
+            "browser detached target validation",
+          );
+        }
       }
     },
   );

@@ -2258,6 +2258,50 @@ test("Mixed IME support retains the safe unsupported receipt and same-tab fence"
   });
 });
 
+test.each(["closed", "still open"])(
+  "A selected CDP session detaching while its tab is %s automatically revalidates and resumes",
+  async (tabState) => {
+    const browser = mockViewer(0);
+    browser.targets[1]!.windowId = 0;
+    await setupPage({ context, path: `/browsers/${threadId}` });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    const membership = browser.holdNextMembership("example-page");
+    act(() => {
+      if (tabState === "closed") {
+        browser.targets.splice(0, 1);
+      }
+      browser.event("Target.detachedFromTarget", {
+        sessionId: "example-page-session",
+        targetId: "example-page",
+      });
+    });
+    await membership.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await membership.release();
+    const survivor = tabState === "closed" ? "Other" : "Example";
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(survivor, { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    if (tabState === "closed") {
+      act(() => {
+        browser.event("Target.targetDestroyed", { targetId: "example-page" });
+      });
+    }
+    const address = screen.getByLabelText("Address");
+    await fill(address, "resumed.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://resumed.example/ready");
+    });
+    expect(browser.targets[0]?.url).toBe("http://resumed.example/ready");
+  },
+);
+
 test.each(["before", "after"])(
   "Selected target destruction %s its failed membership response automatically recovers a scoped survivor",
   async (destruction) => {
