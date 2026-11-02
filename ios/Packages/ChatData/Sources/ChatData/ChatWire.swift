@@ -55,7 +55,8 @@ struct ThreadProjection: Codable, Sendable {
 
   var thread: ChatThread {
     ChatThread(
-      id: id, agentID: agentId, title: title ?? "", projectId: projectId, selectedModel: selectedModel,
+      id: id, agentID: agentId, title: title ?? "", projectId: projectId,
+      selectedModel: selectedModel,
       createdAt: createdAt, updatedAt: updatedAt, sortAt: sortAt,
       pinnedAt: pinnedAt, pinOrder: pinOrder, renamedAt: renamedAt,
       modelSettings: modelSettings ?? [:], serviceTier: serviceTier,
@@ -92,7 +93,8 @@ struct ThreadEvent: Codable, Sendable {
   var change: ChatThreadChange {
     ChatThreadChange(
       kind: kind, chatThreadId: chatThreadId, agentId: agentId,
-      reassignedAgentId: reassignedAgentId, projectId: projectId, title: title, selectedModel: selectedModel,
+      reassignedAgentId: reassignedAgentId, projectId: projectId, title: title,
+      selectedModel: selectedModel,
       pinOrder: pinOrder, hidden: hidden, muted: muted, modelSettings: modelSettings,
       modelSettingsPatch: modelSettingsPatch,
       serviceTier: serviceTier, computerUseHostId: computerUseHostId,
