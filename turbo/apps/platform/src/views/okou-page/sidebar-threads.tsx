@@ -1056,7 +1056,7 @@ function ChatThreadListEmptyState({
 }) {
   return (
     <div className="w-full">
-      <p className="px-2 py-2 text-[13px] leading-5 text-nav-copy-muted">
+      <p className="px-2 py-2 text-sm leading-5 text-nav-copy-muted">
         {message}
       </p>
       {action ? <ChatThreadFilterAction {...action} /> : null}
